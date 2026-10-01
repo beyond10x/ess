@@ -1,0 +1,260 @@
+{
+  "format": "ess-ui-answers/1",
+  "servers": {
+    "gatepass-rust": "PORT=0 cargo run -p gatepass-realization --bin gatepass-server",
+    "gatepass-go": "cd examples/gatepass-go-realization && go build -o gatepass-go ./cmd/gatepass-server && PORT=0 ./gatepass-go"
+  },
+  "vectors": [
+    {
+      "case": "accepted",
+      "status": 202,
+      "body": "{\"outcome\":\"registered\",\"published\":[{\"event\":\"gatepass.visit.VisitRegistered\",\"payload\":{\"visit_id\":\"00000000-0000-4000-8000-000000000001\",\"visitor\":\"Ada\",\"building\":\"North\"}}]}",
+      "expected": {
+        "answer": "accepted"
+      },
+      "source": "gatepass-rust",
+      "command": "POST /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist; body {\"visitor\":\"Ada\",\"building\":\"North\",\"host\":{\"kind\":\"employee\",\"value\":\"E1\"},\"expected_minutes\":30,\"expected_stay\":\"PT30M\",\"deposit\":{\"amount\":\"0\",\"currency\":\"EUR\"},\"escorts\":[],\"notes\":{},\"on_watchlist\":false}"
+    },
+    {
+      "case": "accepted",
+      "status": 202,
+      "body": "{\"outcome\":\"registered\",\"published\":[{\"event\":\"gatepass.visit.VisitRegistered\",\"payload\":{\"building\":\"North\",\"visit_id\":\"00000000-0000-4000-8000-000000000001\",\"visitor\":\"Ada\"}}]}",
+      "expected": {
+        "answer": "accepted"
+      },
+      "source": "gatepass-go",
+      "command": "POST /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist; body {\"visitor\":\"Ada\",\"building\":\"North\",\"host\":{\"kind\":\"employee\",\"value\":\"E1\"},\"expected_minutes\":30,\"expected_stay\":\"PT30M\",\"deposit\":{\"amount\":\"0\",\"currency\":\"EUR\"},\"escorts\":[],\"notes\":{},\"on_watchlist\":false}"
+    },
+    {
+      "case": "refused-422",
+      "status": 422,
+      "body": "{\"outcome\":\"refused\",\"published\":[],\"error\":\"gatepass.visit.InvalidVisitLength\",\"payload\":{\"submitted\":0}}",
+      "expected": {
+        "answer": "refused",
+        "error": "gatepass.visit.InvalidVisitLength",
+        "payload": {
+          "submitted": 0
+        }
+      },
+      "source": "gatepass-rust",
+      "command": "POST /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist; body {\"visitor\":\"Ada\",\"building\":\"North\",\"host\":{\"kind\":\"employee\",\"value\":\"E1\"},\"expected_minutes\":0,\"expected_stay\":\"PT30M\",\"deposit\":{\"amount\":\"0\",\"currency\":\"EUR\"},\"escorts\":[],\"notes\":{},\"on_watchlist\":false}"
+    },
+    {
+      "case": "refused-422",
+      "status": 422,
+      "body": "{\"error\":\"gatepass.visit.InvalidVisitLength\",\"outcome\":\"refused\",\"payload\":{\"submitted\":0},\"published\":[]}",
+      "expected": {
+        "answer": "refused",
+        "error": "gatepass.visit.InvalidVisitLength",
+        "payload": {
+          "submitted": 0
+        }
+      },
+      "source": "gatepass-go",
+      "command": "POST /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist; body {\"visitor\":\"Ada\",\"building\":\"North\",\"host\":{\"kind\":\"employee\",\"value\":\"E1\"},\"expected_minutes\":0,\"expected_stay\":\"PT30M\",\"deposit\":{\"amount\":\"0\",\"currency\":\"EUR\"},\"escorts\":[],\"notes\":{},\"on_watchlist\":false}"
+    },
+    {
+      "case": "refused-409",
+      "status": 409,
+      "body": "{\"outcome\":\"wrong-state\",\"published\":[],\"error\":\"gatepass.visit.VisitStateConflict\"}",
+      "expected": {
+        "answer": "refused",
+        "error": "gatepass.visit.VisitStateConflict"
+      },
+      "source": "gatepass-rust",
+      "command": "POST /visits/commands/sign-out-visitor; Authorization: Actor gatepass.visit.Receptionist; body {\"visit_id\":\"00000000-0000-4000-8000-0000000000ff\"}"
+    },
+    {
+      "case": "refused-409",
+      "status": 409,
+      "body": "{\"error\":\"gatepass.visit.VisitStateConflict\",\"outcome\":\"wrong-state\",\"published\":[]}",
+      "expected": {
+        "answer": "refused",
+        "error": "gatepass.visit.VisitStateConflict"
+      },
+      "source": "gatepass-go",
+      "command": "POST /visits/commands/sign-out-visitor; Authorization: Actor gatepass.visit.Receptionist; body {\"visit_id\":\"00000000-0000-4000-8000-0000000000ff\"}"
+    },
+    {
+      "case": "unknown-path-404",
+      "status": 404,
+      "body": "{\"refused\":\"`/views/gatepass.visit.ExpectedVisits` is not a path this surface declares; `GET /openapi.json` publishes every one that is\"}",
+      "expected": {
+        "answer": "malformed",
+        "refused": "`/views/gatepass.visit.ExpectedVisits` is not a path this surface declares; `GET /openapi.json` publishes every one that is"
+      },
+      "source": "gatepass-rust",
+      "command": "GET /views/gatepass.visit.ExpectedVisits?params=%7B%7D (the path the React httpAdapter asks for today)"
+    },
+    {
+      "case": "unknown-path-404",
+      "status": 404,
+      "body": "{\"refused\":\"`/views/gatepass.visit.ExpectedVisits` is not a path this surface declares; `GET /openapi.json` publishes every one that is\"}",
+      "expected": {
+        "answer": "malformed",
+        "refused": "`/views/gatepass.visit.ExpectedVisits` is not a path this surface declares; `GET /openapi.json` publishes every one that is"
+      },
+      "source": "gatepass-go",
+      "command": "GET /views/gatepass.visit.ExpectedVisits?params=%7B%7D (the path the React httpAdapter asks for today)"
+    },
+    {
+      "case": "not-granted-nobody",
+      "status": 403,
+      "body": "{\"refused\":\"not granted\",\"actor\":null}",
+      "expected": {
+        "answer": "not_granted",
+        "actor": null
+      },
+      "source": "gatepass-rust",
+      "command": "POST /visits/commands/sign-out-visitor; no Authorization header; body {\"visit_id\":\"00000000-0000-4000-8000-0000000000ff\"}"
+    },
+    {
+      "case": "not-granted-nobody",
+      "status": 403,
+      "body": "{\"actor\":null,\"refused\":\"not granted\"}",
+      "expected": {
+        "answer": "not_granted",
+        "actor": null
+      },
+      "source": "gatepass-go",
+      "command": "POST /visits/commands/sign-out-visitor; no Authorization header; body {\"visit_id\":\"00000000-0000-4000-8000-0000000000ff\"}"
+    },
+    {
+      "case": "not-granted-auditor",
+      "status": 403,
+      "body": "{\"refused\":\"not granted\",\"actor\":\"gatepass.visit.SecurityAuditor\"}",
+      "expected": {
+        "answer": "not_granted",
+        "actor": "gatepass.visit.SecurityAuditor"
+      },
+      "source": "gatepass-rust",
+      "command": "POST /visits/commands/sign-out-visitor; Authorization: Actor gatepass.visit.SecurityAuditor; body {\"visit_id\":\"00000000-0000-4000-8000-0000000000ff\"}"
+    },
+    {
+      "case": "not-granted-auditor",
+      "status": 403,
+      "body": "{\"actor\":\"gatepass.visit.SecurityAuditor\",\"refused\":\"not granted\"}",
+      "expected": {
+        "answer": "not_granted",
+        "actor": "gatepass.visit.SecurityAuditor"
+      },
+      "source": "gatepass-go",
+      "command": "POST /visits/commands/sign-out-visitor; Authorization: Actor gatepass.visit.SecurityAuditor; body {\"visit_id\":\"00000000-0000-4000-8000-0000000000ff\"}"
+    },
+    {
+      "case": "malformed-400",
+      "status": 400,
+      "body": "{\"refused\":\"the body is not JSON: at byte 1: expected a member name\"}",
+      "expected": {
+        "answer": "malformed",
+        "refused": "the body is not JSON: at byte 1: expected a member name"
+      },
+      "source": "gatepass-rust",
+      "command": "POST /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist; body {"
+    },
+    {
+      "case": "malformed-400",
+      "status": 400,
+      "body": "{\"refused\":\"the body is not JSON: unexpected EOF\"}",
+      "expected": {
+        "answer": "malformed",
+        "refused": "the body is not JSON: unexpected EOF"
+      },
+      "source": "gatepass-go",
+      "command": "POST /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist; body {"
+    },
+    {
+      "case": "method-405",
+      "status": 405,
+      "body": "{\"refused\":\"this path answers `POST`, and the contract declares no other method for it\"}",
+      "expected": {
+        "answer": "malformed",
+        "refused": "this path answers `POST`, and the contract declares no other method for it"
+      },
+      "source": "gatepass-rust",
+      "command": "GET /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist"
+    },
+    {
+      "case": "method-405",
+      "status": 405,
+      "body": "{\"refused\":\"this path answers `POST`, and the contract declares no other method for it\"}",
+      "expected": {
+        "answer": "malformed",
+        "refused": "this path answers `POST`, and the contract declares no other method for it"
+      },
+      "source": "gatepass-go",
+      "command": "GET /visits/commands/register-visit; Authorization: Actor gatepass.visit.Receptionist"
+    },
+    {
+      "case": "refused-403-declared",
+      "status": 403,
+      "body": "{\"outcome\":\"not-the-host\",\"published\":[],\"error\":\"demo.visit.NotTheHost\"}",
+      "expected": {
+        "answer": "refused",
+        "error": "demo.visit.NotTheHost"
+      },
+      "source": "constructed",
+      "command": "POST a command whose refusing branch is decided by the caller (`caller.<attribute>` guard, ess/16); gatepass declares none",
+      "shape": "crates/generate/ess-synth/src/go/http.rs:1322-1349"
+    },
+    {
+      "case": "refused-400-declared",
+      "status": 400,
+      "body": "{\"outcome\":\"nothing-sent\",\"published\":[],\"error\":\"demo.visit.NothingSent\"}",
+      "expected": {
+        "answer": "refused",
+        "error": "demo.visit.NothingSent"
+      },
+      "source": "constructed",
+      "command": "POST with no body to a command that declares `input_absent:` (ess/16); gatepass declares none",
+      "shape": "crates/generate/ess-synth/src/go/http.rs:1322-1349"
+    },
+    {
+      "case": "unfinished-committed",
+      "status": 501,
+      "body": "{\"refused\":\"delivering what the command published: the binding refused the event\",\"committed\":true}",
+      "expected": {
+        "answer": "unfinished",
+        "committed": true
+      },
+      "source": "constructed",
+      "command": "POST a command whose effect was committed and whose publication failed to reach a binding; gatepass has no binding",
+      "shape": "crates/generate/ess-synth/src/go/http.rs:1675-1689"
+    },
+    {
+      "case": "unfinished-uncommitted",
+      "status": 501,
+      "body": "{\"refused\":\"an obligation is not implemented\",\"committed\":false}",
+      "expected": {
+        "answer": "unfinished",
+        "committed": false
+      },
+      "source": "constructed",
+      "command": "POST a command whose port reports an unmet obligation; the gatepass realization implements every obligation",
+      "shape": "crates/generate/ess-synth/src/go/http.rs:1675-1689"
+    },
+    {
+      "case": "unfinished-without-committed",
+      "status": 501,
+      "body": "{\"refused\":\"not implemented\"}",
+      "expected": {
+        "answer": "malformed",
+        "refused": "not implemented"
+      },
+      "source": "constructed",
+      "command": "a 501 lacking the `committed` member the contract declares on every 501: read as a surface refusal, not as an unfinished realization",
+      "shape": "crates/generate/ess-synth/src/go/http.rs:1675-1689"
+    },
+    {
+      "case": "transport",
+      "status": 502,
+      "body": "<html><body><h1>502 Bad Gateway</h1></body></html>",
+      "expected": {
+        "answer": "transport"
+      },
+      "source": "constructed",
+      "command": "a reverse proxy in front of the served surface answers for it; no synthesized server writes a body that is not JSON",
+      "shape": "not a served answer: the body is not a JSON object (crates/ui/ess-ui/src/binding.rs, `classify`)"
+    }
+  ]
+}
