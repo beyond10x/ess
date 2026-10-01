@@ -607,3 +607,163 @@ fn storage_is_rekeyed_when_the_actor_switches_organization() {
     );
     assert!(!screen(&mut app).contains("before-switch"));
 }
+
+/// Every command run, in order, with its input.
+type Recorded = std::rc::Rc<std::cell::RefCell<Vec<(String, BTreeMap<String, Value>)>>>;
+
+/// The example's fixtures, with a `budget` struct on every invoice row and every command's
+/// input recorded.
+struct Budgeted {
+    inner: FixtureAdapter,
+    commands: Recorded,
+}
+
+impl DataAdapter for Budgeted {
+    fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
+        let mut result = self.inner.read(request)?;
+        if request.view.starts_with("invoices.") {
+            for row in &mut result.rows {
+                let cents = match field(row, "id") {
+                    "in-01" => 9001,
+                    "in-02" => 4202,
+                    "in-03" => 7303,
+                    "in-06" => 1606,
+                    "in-07" => 3707,
+                    _ => 8808,
+                };
+                row["budget"] = serde_yaml::from_str(&format!("{{limit_cents: {cents}}}"))
+                    .expect("a budget parses");
+            }
+        }
+        Ok(result)
+    }
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+        self.commands
+            .borrow_mut()
+            .push((command.to_owned(), input.clone()));
+        self.inner.run(command, input)
+    }
+    fn load_state(&self, path: &str) -> Option<Value> {
+        self.inner.load_state(path)
+    }
+    fn store_state(&mut self, path: &str, value: Value) {
+        self.inner.store_state(path, value);
+    }
+}
+
+/// The example with dotted struct fields: a create form over `budget.*`, and an invoice column
+/// and record field `budget.limit_cents`.
+fn open_budgeted(test: &str) -> (App, Recorded) {
+    let edited = example_text()
+        .replace(
+            "        does: partners.CreatePartner\n        fields: [name, {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}, {field: tags, as: tags}, website]",
+            "        does: partners.CreatePartner\n        fields: [name, {field: budget.limit_cents, as: number}, {field: budget.runtime_minutes, as: number}, {field: budget.labels, as: tags}]",
+        )
+        .replace(
+            "columns: [number, partner, {field: status, as: badge}, {field: due, as: date}]",
+            "columns: [number, partner, {field: status, as: badge}, {field: due, as: date}, {field: budget.limit_cents, as: number}]",
+        )
+        .replace(
+            "fields: [number, partner, {field: status, as: badge}, {field: due, as: date}, {field: lines, as: json}]",
+            "fields: [number, partner, {field: status, as: badge}, {field: due, as: date}, {field: budget.limit_cents, as: number}]",
+        );
+    assert_eq!(
+        edited.matches("budget.limit_cents").count(),
+        3,
+        "every edit applied"
+    );
+    let document = ess_ui::load_str(&edited).expect("the edited example loads");
+    let (inner, scripts) =
+        FixtureAdapter::load(&document, &example_dir(), None).expect("the fixtures load");
+    let commands = Recorded::default();
+    let adapter = Budgeted {
+        inner,
+        commands: commands.clone(),
+    };
+    let app = App::with_adapter(
+        document,
+        Box::new(adapter),
+        scripts,
+        Options::new(state_dir(test)),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    (app, commands)
+}
+
+#[test]
+fn a_form_sends_dotted_fields_nested_and_typed_by_their_as() {
+    let (mut app, commands) = open_budgeted("dotted-input");
+    app.open_page("partners.list", &[]);
+    app.open_overlay("create");
+    app.keys("<enter>Cedar<tab>7500<tab>90<tab>gold, silver");
+    let form = app.render_text(160, HEIGHT);
+    let line = form
+        .lines()
+        .find(|line| line.contains("budget.limit_ce"))
+        .unwrap_or_else(|| panic!("{form}"));
+    assert!(
+        line.contains("[7500]"),
+        "the form shows the typed value:\n{form}"
+    );
+    app.keys("<c-s>");
+    let commands = commands.borrow();
+    let (command, input) = commands.last().expect("the form ran its command");
+    assert_eq!(command, "partners.CreatePartner");
+    let expected: BTreeMap<String, Value> = serde_yaml::from_str(
+        "{name: Cedar, budget: {limit_cents: 7500, runtime_minutes: 90, labels: [gold, silver]}}",
+    )
+    .expect("the expected input parses");
+    assert_eq!(input, &expected, "{input:?}");
+    assert_eq!(
+        input["budget"]["limit_cents"].as_i64(),
+        Some(7500),
+        "{input:?}"
+    );
+    assert_eq!(
+        input["budget"]["runtime_minutes"].as_i64(),
+        Some(90),
+        "{input:?}"
+    );
+}
+
+#[test]
+fn a_dotted_column_and_record_field_show_the_nested_value() {
+    let (mut app, _) = open_budgeted("dotted-display");
+    app.open_page("invoices.list", &[]);
+    app.focus_section("list");
+    app.keys("o");
+    let record = app.render_text(160, HEIGHT);
+    assert!(record.contains("Invoice · drawer"), "{record}");
+    let line = record
+        .lines()
+        .find(|line| line.contains("budget.limit_ce"))
+        .unwrap_or_else(|| panic!("{record}"));
+    assert!(
+        line.contains("9001"),
+        "the record shows budget.limit_cents:\n{record}"
+    );
+    app.keys("<esc>");
+
+    let list = app.render_text(160, HEIGHT);
+    let row = list
+        .lines()
+        .find(|line| line.contains("INV-1051"))
+        .unwrap_or_else(|| panic!("{list}"));
+    assert!(
+        row.contains("4202"),
+        "the column shows budget.limit_cents:\n{list}"
+    );
+
+    // The filter matches the shown value; sorting by the column orders by it.
+    app.keys("/4202<enter>");
+    let filtered = app.render_text(160, HEIGHT);
+    assert!(filtered.contains("INV-1051"), "{filtered}");
+    assert!(!filtered.contains("INV-1042"), "{filtered}");
+    app.keys("/<bs><bs><bs><bs><enter>");
+    app.keys("sssss");
+    let sorted = app.render_text(160, HEIGHT);
+    assert!(sorted.contains("sort budget.limit_cents ↑"), "{sorted}");
+    let line_of = |name: &str| sorted.lines().position(|line| line.contains(name));
+    assert!(line_of("INV-1037") < line_of("INV-1055"), "{sorted}");
+    assert!(line_of("INV-1055") < line_of("INV-1042"), "{sorted}");
+}

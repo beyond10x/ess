@@ -14,7 +14,7 @@ use ess_ui::{
 use serde_yaml::{Mapping, Value};
 
 use crate::data::{DataAdapter, FixtureAdapter, ReadRequest, ReadResult};
-use crate::expr::{self, display, truthy, Resolve, Resolved};
+use crate::expr::{self, display, field_path, truthy, Resolve, Resolved};
 use crate::live::{derived_field, parse_duration, Beat, ChannelState, Played, Player, Script};
 use crate::placement::StateStore;
 use crate::profile::{self, Plan, TUI};
@@ -912,7 +912,7 @@ impl App {
             .filter(|row| {
                 needle.is_empty()
                     || columns.iter().any(|field| {
-                        display(&row[field.field.as_str()])
+                        display(&field_path(row, &field.field))
                             .to_lowercase()
                             .contains(&needle)
                     })
@@ -927,7 +927,7 @@ impl App {
         });
         if let Some((by, descending)) = sort {
             rows.sort_by(|left, right| {
-                let order = compare(&left[by.as_str()], &right[by.as_str()]);
+                let order = compare(&field_path(left, &by), &field_path(right, &by));
                 if descending {
                     order.reverse()
                 } else {
@@ -2024,7 +2024,7 @@ impl App {
         ctx: &Ctx<'_>,
     ) -> Value {
         let current = self.store.get(draft, self.adapter.as_ref());
-        if let Some(value) = current.get(field) {
+        if let Some(value) = lookup(&current, field) {
             return value.clone();
         }
         form.loads
@@ -2032,7 +2032,7 @@ impl App {
             .map(|reads| self.request(reads, ctx))
             .and_then(|request| self.rows_of(&request))
             .and_then(|result| result.rows.first())
-            .map_or(Value::Null, |row| row[field].clone())
+            .map_or(Value::Null, |row| field_path(row, field))
     }
 
     fn set_field(&mut self, draft: &str, field: &str, value: Value) {
@@ -2040,7 +2040,7 @@ impl App {
         if !current.is_mapping() {
             current = Value::Mapping(Mapping::new());
         }
-        current[field] = value;
+        put(&mut current, &field.split('.').collect::<Vec<_>>(), value);
         self.store.set(draft, current, self.adapter.as_mut());
     }
 
@@ -2198,7 +2198,10 @@ impl App {
         };
         let mut text = match &form {
             Some(form) => display(&self.field_value(form, &draft, &field, &ctx)),
-            None => display(&self.store.get(&draft, self.adapter.as_ref())[field.as_str()]),
+            None => display(&field_path(
+                &self.store.get(&draft, self.adapter.as_ref()),
+                &field,
+            )),
         };
         match key.code {
             KeyCode::Backspace => {
@@ -2220,9 +2223,14 @@ impl App {
         };
         for field in form_fields(form, self.ui(&self.target_ui(target)).tab) {
             let value = self.field_value(form, draft, &field.field, &ctx);
-            if !value.is_null() {
-                input.insert(field.field.clone(), value);
+            let value = typed(field.field_as.as_deref(), value);
+            if value.is_null() {
+                continue;
             }
+            // `budget.limit_cents` is sent as the `limit_cents` member of `budget`.
+            let segments: Vec<&str> = field.field.split('.').collect();
+            let entry = input.entry(segments[0].to_owned()).or_insert(Value::Null);
+            put(entry, &segments[1..], value);
         }
         if let Some(Value::String(id)) = self.overlay_params().get("id") {
             input
@@ -2812,6 +2820,58 @@ impl Resolve for Scope<'_> {
             }
             _ => Resolved::Root(Value::Null),
         }
+    }
+}
+
+/// The value at a dotted field of a draft, if the draft holds one.
+fn lookup<'a>(value: &'a Value, field: &str) -> Option<&'a Value> {
+    field
+        .split('.')
+        .try_fold(value, |at, segment| at.get(segment))
+}
+
+/// Sets `segments` inside `target` to `next`, making each level a mapping.
+fn put(target: &mut Value, segments: &[&str], next: Value) {
+    let Some((head, rest)) = segments.split_first() else {
+        *target = next;
+        return;
+    };
+    if !target.is_mapping() {
+        *target = Value::Mapping(Mapping::new());
+    }
+    put(&mut target[*head], rest, next);
+}
+
+/// A form field's text typed by its `as`, as the React renderer types it: `number` text is a
+/// number (empty is no value) and `tags` text a comma-separated list. Text that does not parse
+/// as a number is sent as typed.
+fn typed(field_as: Option<&str>, value: Value) -> Value {
+    let Value::String(text) = &value else {
+        return value;
+    };
+    match field_as {
+        Some("number") => {
+            let text = text.trim();
+            if text.is_empty() {
+                Value::Null
+            } else if let Ok(number) = text.parse::<i64>() {
+                Value::Number(number.into())
+            } else if let Some(number) =
+                text.parse::<f64>().ok().filter(|number| number.is_finite())
+            {
+                Value::Number(number.into())
+            } else {
+                value
+            }
+        }
+        Some("tags") => Value::Sequence(
+            text.split(',')
+                .map(str::trim)
+                .filter(|tag| !tag.is_empty())
+                .map(|tag| Value::String(tag.to_owned()))
+                .collect(),
+        ),
+        _ => value,
     }
 }
 
