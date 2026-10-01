@@ -262,7 +262,11 @@ fn issue_289_synthesis_sends_only_disjoint_lists_and_the_suite_passes() {
             }
         }
     }
-    assert!(sent > 0, "synthesis sent no input at all: {:#?}", result.refusals);
+    assert!(
+        sent > 0,
+        "synthesis sent no input at all: {:#?}",
+        result.refusals
+    );
     let admitted = AdmittedSuite::from_suite(&result.suite).expect("admitted");
     let report = ess_conformance::Runner::for_suite(&result.suite)
         .run_admitted(
