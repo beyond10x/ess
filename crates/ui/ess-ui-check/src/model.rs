@@ -1,5 +1,7 @@
 //! The checks that need the ESS model: every view, command and event the document names exists
-//! in it, and every section's read is readable by some actor.
+//! in it, every section's read is readable by some actor, and every read binds exactly the
+//! parameters its view declares — and, from the same walk, the [`binding`] of a document to the
+//! HTTP surface the model's served components answer.
 //!
 //! A name resolves when it is a qualified name of the model, or becomes one with the system's
 //! name in front: in system `shop`, `stock.Items` names `shop.stock.Items`.
@@ -20,14 +22,22 @@
 //! commands and events are checked at each use, on the expanded body.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
-use ess_compiler::ir::DomainHandle;
+use ess_compiler::ir::{DomainHandle, ResolvedBody, ResolvedTypeRef, ResolvedView};
 use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
-use ess_ui::{ActorSource, Body, Carries, Composite, Document, NavPages, NodePath, NodeRef};
+use ess_domain::component::Reach;
+use ess_domain::types::Primitive;
+use ess_gen::http::{self, Served};
+use ess_ui::binding::{Binding, CommandRoute, ErrorRoute, QueryParam, ViewRoute};
+use ess_ui::{
+    ActorSource, Body, Carries, Composite, Document, Expr, NavPages, NodePath, NodeRef, Paging,
+    Reads,
+};
 
-use crate::walk::{composite_reads, in_declaration, is_section, section_of};
+use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
 use crate::{CheckError, Sink};
 
 /// A compiled ESS model, indexed by the names a document can use.
@@ -38,10 +48,25 @@ use crate::{CheckError, Sink};
 #[derive(Debug)]
 pub struct Model {
     system: String,
-    views: BTreeMap<String, DomainHandle>,
+    views: BTreeMap<String, View>,
     commands: BTreeSet<String>,
     events: BTreeSet<String>,
     readable: BTreeSet<DomainHandle>,
+}
+
+/// One view of the model: the bounded context that owns it and the parameters it declares.
+#[derive(Debug)]
+struct View {
+    domain: DomainHandle,
+    params: Vec<Param>,
+}
+
+/// One declared view parameter: its name, and whether a read must bind it — every parameter but
+/// an `Optional` one and the two a `paging:` block names, which the contract publishes optional.
+#[derive(Debug)]
+struct Param {
+    name: String,
+    required: bool,
 }
 
 /// Reads and compiles an ESS specification: one file, or a directory holding `system.yaml`
@@ -74,6 +99,11 @@ pub fn load_model(path: &Path) -> Result<Model, CheckError> {
 /// resolves a directory through its `ess-inputs.yaml` has them. `shown` names the model in a
 /// refusal.
 pub fn model_from_sources(sources: &[(String, String)], shown: &Path) -> Result<Model, CheckError> {
+    compile_sources(sources, shown).map(|ir| Model::index(&ir))
+}
+
+/// The compiled IR of `(label, text)` sources, refused as [`model_from_sources`] refuses them.
+pub fn compile_sources(sources: &[(String, String)], shown: &Path) -> Result<EssIr, CheckError> {
     let labels: Vec<String> = sources.iter().map(|(label, _)| label.clone()).collect();
     let texts: Vec<String> = sources.iter().map(|(_, text)| text.clone()).collect();
     let path = shown;
@@ -105,9 +135,8 @@ pub fn model_from_sources(sources: &[(String, String)], shown: &Path) -> Result<
     }
     let specification = ess_domain::spec::Specification::assemble(parsed)
         .map_err(|errors| refused(errors.as_slice().iter().map(ToString::to_string).collect()))?;
-    let ir = ess_compiler::compile(&specification, &sources)
-        .map_err(|diagnostics| refused(vec![diagnostics.to_string()]))?;
-    Ok(Model::index(&ir))
+    ess_compiler::compile(&specification, &sources)
+        .map_err(|diagnostics| refused(vec![diagnostics.to_string()]))
 }
 
 fn spec_files(path: &Path) -> Result<Vec<PathBuf>, CheckError> {
@@ -157,7 +186,23 @@ impl Model {
             views: ir
                 .views()
                 .iter()
-                .map(|(name, view)| (name.to_string(), view.domain.clone()))
+                .map(|(name, view)| {
+                    let params = view
+                        .params
+                        .iter()
+                        .map(|param| Param {
+                            name: param.name.clone(),
+                            required: required(view, &param.name, &param.type_ref),
+                        })
+                        .collect();
+                    (
+                        name.to_string(),
+                        View {
+                            domain: view.domain.clone(),
+                            params,
+                        },
+                    )
+                })
                 .collect(),
             commands: ir.commands().keys().map(ToString::to_string).collect(),
             events: ir.events().keys().map(ToString::to_string).collect(),
@@ -173,15 +218,14 @@ impl Model {
             .find(|candidate| known(candidate))
     }
 
-    fn view(&self, name: &str) -> Option<(String, &DomainHandle)> {
+    fn view(&self, name: &str) -> Option<(String, &View)> {
         let qualified = self.qualify(name, |candidate| self.views.contains_key(candidate))?;
-        let domain = &self.views[&qualified];
-        Some((qualified, domain))
+        let view = &self.views[&qualified];
+        Some((qualified, view))
     }
 
-    fn has_command(&self, name: &str) -> bool {
+    fn command(&self, name: &str) -> Option<String> {
         self.qualify(name, |candidate| self.commands.contains(candidate))
-            .is_some()
     }
 
     fn has_event(&self, name: &str) -> bool {
@@ -200,7 +244,7 @@ impl Model {
     }
 
     fn command_ref(&self, sink: &mut Sink, path: &NodePath, name: &str) {
-        if !self.has_command(name) {
+        if self.command(name).is_none() {
             sink.push(
                 "command_in_model",
                 path,
@@ -224,129 +268,136 @@ impl Model {
         // grants, so every view is read without one and `section_readable` does not apply. An
         // UNMAPPED actor is reported by `unmapped_reported` and decides nothing here either.
         let grants_apply = matches!(document.actor, None | Some(ActorSource::FromSession));
-        for located in document.nodes() {
-            let path = &located.path;
-            if in_declaration(path) {
-                continue; // checked at each use, on the expanded body
-            }
-            let reader = grants_apply
-                .then(|| reading_section(document, path))
-                .flatten();
-            let reader = reader.as_ref();
-            match located.node {
-                NodeRef::Shell(shell) => {
-                    for view in shell.preload.iter().flat_map(|preload| &preload.views) {
-                        self.view_ref(sink, &path.child("preload"), &view.view);
-                    }
-                }
-                NodeRef::NavSection(section) => {
-                    if let NavPages::Dynamic(entries) = &section.pages {
-                        self.view_ref(sink, &path.child("pages"), &entries.from_view);
-                    }
-                }
-                NodeRef::Channel(channel) => {
-                    let carries = path.child("carries");
-                    match &channel.carries {
-                        Carries::Events(events) => {
-                            for event in &events.events {
-                                self.event_ref(sink, &carries, event);
-                            }
-                        }
-                        Carries::View(view) => self.view_ref(sink, &carries, &view.view),
-                    }
-                    for command in &channel.sends {
-                        self.command_ref(sink, &path.child("sends"), command);
-                    }
-                }
-                NodeRef::Section(section) => {
-                    if let Some(live) = &section.live {
-                        for event in &live.on {
-                            self.event_ref(sink, &path.child("live"), event);
+        for named in names(document) {
+            match named.kind {
+                Kind::Event(event) => self.event_ref(sink, &named.at, event),
+                Kind::Command(command) => self.command_ref(sink, &named.at, command),
+                Kind::View { name, bound, body } => {
+                    let Some((qualified, view)) = self.view(name) else {
+                        self.view_ref(sink, &named.at, name);
+                        continue;
+                    };
+                    if body && grants_apply {
+                        if let Some(section) = reading_section(document, &named.node) {
+                            self.readable(sink, &section, &qualified, &view.domain);
                         }
                     }
-                    self.body(sink, path, reader, &section.body);
-                }
-                NodeRef::Overlay(overlay) => self.body(sink, path, reader, &overlay.body),
-                NodeRef::Node(node) => self.body(sink, path, reader, &node.body),
-                NodeRef::Action(action) => {
-                    if let Some(command) = &action.does {
-                        self.command_ref(sink, path, command);
-                    }
-                    if let Some(upload) = &action.upload {
-                        self.command_ref(sink, path, &upload.does);
-                    }
-                    if let Some(export) = &action.export {
-                        self.view_ref(sink, path, &export.reads);
-                    }
-                    if let Some(view) = action.loads.as_ref().and_then(|reads| reads.view.as_ref())
-                    {
-                        self.view_ref(sink, &path.child("loads"), view);
+                    if let Some(params) = bound_params(document, &named.node, bound) {
+                        read_params(sink, &named.at, &qualified, view, params);
                     }
                 }
-                NodeRef::FormGroup(group) => {
-                    if let Some(command) = &group.does {
-                        self.command_ref(sink, path, command);
-                    }
-                }
-                _ => {}
             }
         }
     }
 
-    fn body(&self, sink: &mut Sink, path: &NodePath, reader: Option<&NodePath>, body: &Body) {
-        let Body::Composite(composite) = body else {
-            return;
-        };
-        if let Some((key, reads)) = composite_reads(composite) {
-            if let Some(view) = &reads.view {
-                match self.view(view) {
-                    None => self.view_ref(sink, &path.child(key), view),
-                    Some((qualified, domain)) => {
-                        if let Some(section) = reader {
-                            if !self.readable.contains(domain) {
-                                sink.push(
-                                    "section_readable",
-                                    section,
-                                    format!(
-                                        "no actor can read `{qualified}`: no actor may invoke any \
-                                         command of `{domain}`, the bounded context that owns \
-                                         it. This is an approximation: ESS grants commands, not \
-                                         views, so a view counts as readable when some actor \
-                                         may invoke a command of its context"
-                                    ),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+    fn readable(
+        &self,
+        sink: &mut Sink,
+        section: &NodePath,
+        qualified: &str,
+        domain: &DomainHandle,
+    ) {
+        if !self.readable.contains(domain) {
+            sink.push(
+                "section_readable",
+                section,
+                format!(
+                    "no actor can read `{qualified}`: no actor may invoke any command of \
+                     `{domain}`, the bounded context that owns it. This is an approximation: ESS \
+                     grants commands, not views, so a view counts as readable when some actor may \
+                     invoke a command of its context"
+                ),
+            );
         }
-        let commands: Vec<&String> = match composite {
-            Composite::Form(form) => vec![&form.does],
-            Composite::Confirm(confirm) => confirm.does.iter().collect(),
-            Composite::Collection(collection) => collection
-                .reorder
-                .iter()
-                .map(|reorder| &reorder.does)
-                .collect(),
-            Composite::Choice(choice) => choice.creatable.iter().map(|c| &c.does).collect(),
-            Composite::Board(board) => board
-                .layout
-                .iter()
-                .flat_map(|layout| std::iter::once(&layout.persisted_by).chain(&layout.editable_by))
-                .collect(),
-            _ => Vec::new(),
-        };
-        for command in commands {
-            self.command_ref(sink, path, command);
+    }
+}
+
+/// No parameter at all: what a read with no `params:` slot binds.
+static NONE: BTreeMap<String, Expr> = BTreeMap::new();
+
+/// The parameters a view named at `node` is bound with, when the document states them: a read's
+/// `params:` map; nothing, for a menu's `from_view` and an export without `params:`; and for an
+/// export's `params: same_as(<section>)`, that section's read's map. `None` where the document
+/// does not say — any other export expression, a channel's view, a confirm's references, a
+/// completion — so no parameter is reported unbound there.
+fn bound_params<'a>(
+    document: &'a Document,
+    node: &NodePath,
+    bound: Bound<'a>,
+) -> Option<&'a BTreeMap<String, Expr>> {
+    match bound {
+        Bound::Read(read) => Some(read.params),
+        Bound::Nothing | Bound::Export(None) => Some(&NONE),
+        Bound::Export(Some(expr)) => {
+            let section = expr
+                .0
+                .trim()
+                .strip_prefix("same_as(")?
+                .strip_suffix(')')?
+                .trim();
+            let (_, page) = page_of(document, node)?;
+            let section = page.sections.iter().find(|found| found.name == section)?;
+            let Body::Composite(composite) = &section.body else {
+                return None;
+            };
+            composite_reads(composite).map(|(_, reads)| &reads.params)
         }
-        let views: Vec<&String> = match composite {
-            Composite::Confirm(confirm) => confirm.references.iter().collect(),
-            Composite::RichText(text) => text.completes.iter().collect(),
-            _ => Vec::new(),
-        };
-        for view in views {
-            self.view_ref(sink, path, view);
+        Bound::Elsewhere => None,
+    }
+}
+
+/// Whether a read must bind `name`: it is not `Optional`, and it is neither of the two parameters
+/// a `paging:` block names, which the published contract makes optional whatever their type.
+fn required(view: &ResolvedView, name: &str, type_ref: &ResolvedTypeRef) -> bool {
+    !matches!(type_ref, ResolvedTypeRef::Optional { .. })
+        && !view
+            .paging
+            .as_ref()
+            .is_some_and(|paging| paging.params().contains(&name))
+}
+
+/// `read_params`: a read binds exactly parameters its view declares, and every required one.
+fn read_params(
+    sink: &mut Sink,
+    at: &NodePath,
+    qualified: &str,
+    view: &View,
+    bound: &BTreeMap<String, Expr>,
+) {
+    let declared: Vec<&str> = view
+        .params
+        .iter()
+        .map(|param| param.name.as_str())
+        .collect();
+    for name in bound.keys() {
+        if !declared.contains(&name.as_str()) {
+            let listing = if declared.is_empty() {
+                "declares no parameter".to_owned()
+            } else {
+                let names: Vec<String> = declared.iter().map(|name| format!("`{name}`")).collect();
+                format!("declares {}", names.join(", "))
+            };
+            sink.push(
+                "read_params",
+                at,
+                format!(
+                    "`{name}` is not a parameter of view `{qualified}`, which {listing}: the \
+                     served surface would never read it"
+                ),
+            );
+        }
+    }
+    for param in view.params.iter().filter(|param| param.required) {
+        if !bound.contains_key(&param.name) {
+            sink.push(
+                "read_params",
+                at,
+                format!(
+                    "view `{qualified}` requires the parameter `{}` and this read binds none: \
+                     the served surface cannot answer it",
+                    param.name
+                ),
+            );
         }
     }
 }
@@ -369,4 +420,534 @@ fn reading_section(document: &Document, path: &NodePath) -> Option<NodePath> {
             .child(sections)
             .child(section)
     })
+}
+
+// ── the names a document writes ──────────────────────────────────────────────────────────────
+
+/// One view, command or event name the document writes, outside widget declarations.
+struct Named<'a> {
+    /// The node it is written on: a section, an overlay, a nested node, an action, a channel, …
+    node: NodePath,
+    /// Where a finding about it goes.
+    at: NodePath,
+    kind: Kind<'a>,
+}
+
+enum Kind<'a> {
+    View {
+        name: &'a str,
+        /// What binds the view's parameters where the name is written.
+        bound: Bound<'a>,
+        /// `true` for the composite read of a body, which is what a section shows.
+        body: bool,
+    },
+    Command(&'a str),
+    Event(&'a str),
+}
+
+/// What binds a view's parameters where the document names the view.
+#[derive(Clone, Copy)]
+enum Bound<'a> {
+    /// A `params:` map written beside the view, with the read's paging: a section's, a
+    /// composite's, a preload's and an action's `loads`.
+    Read(Read<'a>),
+    /// No `params:` slot, so nothing: a dynamic menu's `from_view`.
+    Nothing,
+    /// An export's `params:` expression, when it has one.
+    Export(Option<&'a Expr>),
+    /// Something the document does not state may supply them — a channel's session, a confirm's
+    /// context, a completion's input — so an unbound parameter is not reported there.
+    Elsewhere,
+}
+
+impl<'a> Bound<'a> {
+    fn paging(self) -> Option<&'a Paging> {
+        match self {
+            Self::Read(read) => read.paging,
+            Self::Nothing | Self::Export(_) | Self::Elsewhere => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Read<'a> {
+    params: &'a BTreeMap<String, Expr>,
+    paging: Option<&'a Paging>,
+}
+
+impl<'a> Read<'a> {
+    fn of(reads: &'a Reads) -> Self {
+        Self {
+            params: &reads.params,
+            paging: reads.paging.as_ref(),
+        }
+    }
+}
+
+/// Every view, command and event name `document` writes, with the node it is written on: the one
+/// walk the model checks and the binding both read, so the two cannot disagree about which names
+/// a document uses.
+fn names(document: &Document) -> Vec<Named<'_>> {
+    let mut out = Vec::new();
+    for located in document.nodes() {
+        let path = &located.path;
+        if in_declaration(path) {
+            continue; // checked at each use, on the expanded body
+        }
+        let mut push = |at: NodePath, kind| {
+            out.push(Named {
+                node: path.clone(),
+                at,
+                kind,
+            });
+        };
+        match located.node {
+            NodeRef::Shell(shell) => {
+                for view in shell.preload.iter().flat_map(|preload| &preload.views) {
+                    let read = Read {
+                        params: &view.params,
+                        paging: None,
+                    };
+                    push(
+                        path.child("preload"),
+                        Kind::View {
+                            name: &view.view,
+                            bound: Bound::Read(read),
+                            body: false,
+                        },
+                    );
+                }
+            }
+            NodeRef::NavSection(section) => {
+                if let NavPages::Dynamic(entries) = &section.pages {
+                    push(
+                        path.child("pages"),
+                        view(&entries.from_view, Bound::Nothing),
+                    );
+                }
+            }
+            NodeRef::Channel(channel) => {
+                let carries = path.child("carries");
+                match &channel.carries {
+                    Carries::Events(events) => {
+                        for event in &events.events {
+                            push(carries.clone(), Kind::Event(event));
+                        }
+                    }
+                    Carries::View(live_view) => {
+                        push(carries, view(&live_view.view, Bound::Elsewhere));
+                    }
+                }
+                for command in &channel.sends {
+                    push(path.child("sends"), Kind::Command(command));
+                }
+            }
+            NodeRef::Section(section) => {
+                if let Some(live) = &section.live {
+                    for event in &live.on {
+                        push(path.child("live"), Kind::Event(event));
+                    }
+                }
+                body_names(path, &section.body, &mut push);
+            }
+            NodeRef::Overlay(overlay) => body_names(path, &overlay.body, &mut push),
+            NodeRef::Node(node) => body_names(path, &node.body, &mut push),
+            NodeRef::Action(action) => {
+                if let Some(command) = &action.does {
+                    push(path.clone(), Kind::Command(command));
+                }
+                if let Some(upload) = &action.upload {
+                    push(path.clone(), Kind::Command(&upload.does));
+                }
+                if let Some(export) = &action.export {
+                    push(
+                        path.clone(),
+                        view(&export.reads, Bound::Export(export.params.as_ref())),
+                    );
+                }
+                if let Some(reads) = &action.loads {
+                    if let Some(name) = &reads.view {
+                        push(
+                            path.child("loads"),
+                            Kind::View {
+                                name,
+                                bound: Bound::Read(Read::of(reads)),
+                                body: false,
+                            },
+                        );
+                    }
+                }
+            }
+            NodeRef::FormGroup(group) => {
+                if let Some(command) = &group.does {
+                    push(path.clone(), Kind::Command(command));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// A view name written outside a body's composite read, its parameters bound as `bound` says.
+fn view<'a>(name: &'a str, bound: Bound<'a>) -> Kind<'a> {
+    Kind::View {
+        name,
+        bound,
+        body: false,
+    }
+}
+
+fn body_names<'a>(path: &NodePath, body: &'a Body, push: &mut impl FnMut(NodePath, Kind<'a>)) {
+    let Body::Composite(composite) = body else {
+        return;
+    };
+    if let Some((key, reads)) = composite_reads(composite) {
+        if let Some(name) = &reads.view {
+            push(
+                path.child(key),
+                Kind::View {
+                    name,
+                    bound: Bound::Read(Read::of(reads)),
+                    body: true,
+                },
+            );
+        }
+    }
+    let commands: Vec<&String> = match composite {
+        Composite::Form(form) => vec![&form.does],
+        Composite::Confirm(confirm) => confirm.does.iter().collect(),
+        Composite::Collection(collection) => collection
+            .reorder
+            .iter()
+            .map(|reorder| &reorder.does)
+            .collect(),
+        Composite::Choice(choice) => choice.creatable.iter().map(|c| &c.does).collect(),
+        Composite::Board(board) => board
+            .layout
+            .iter()
+            .flat_map(|layout| std::iter::once(&layout.persisted_by).chain(&layout.editable_by))
+            .collect(),
+        _ => Vec::new(),
+    };
+    for command in commands {
+        push(path.clone(), Kind::Command(command));
+    }
+    let views: Vec<&String> = match composite {
+        Composite::Confirm(confirm) => confirm.references.iter().collect(),
+        Composite::RichText(text) => text.completes.iter().collect(),
+        _ => Vec::new(),
+    };
+    for name in views {
+        push(path.clone(), view(name, Bound::Elsewhere));
+    }
+}
+
+// ── the binding ──────────────────────────────────────────────────────────────────────────────
+
+/// One reason a document cannot bind to the served surface, at the node that causes it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Refusal {
+    /// The canonical path of the node.
+    pub path: String,
+    /// Why it cannot bind.
+    pub message: String,
+}
+
+impl fmt::Display for Refusal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}: {}", self.path, self.message)
+    }
+}
+
+/// Why [`binding`] produced no binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindingError {
+    /// The model does not compile.
+    Model(CheckError),
+    /// The document names something the served surface cannot answer as written; every refusal,
+    /// ordered by path.
+    Refused(Vec<Refusal>),
+}
+
+impl fmt::Display for BindingError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Model(error) => write!(formatter, "{error}"),
+            Self::Refused(refusals) => {
+                formatter.write_str("the document does not bind to the served surface:")?;
+                for refusal in refusals {
+                    write!(formatter, "\n{refusal}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::error::Error for BindingError {}
+
+/// The routes `document` binds to on the HTTP surface the model `sources` determine, computed by
+/// `ess_gen::http::routes` and covering only the views and commands the document names.
+///
+/// Refused, each at the node that causes it: a name the model does not declare or no
+/// `reached_by: network` component serves; a view parameter that is not a scalar, which no query
+/// string carries; a view the model declares with `paging:`, and a read paged by anything but
+/// the renderer (`paging:` `server`, `cursor` or `append`), since every code target refuses
+/// paging; and state placed in `server` or
+/// `server_session`, which the served surface does not hold.
+pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Binding, BindingError> {
+    let ir = compile_sources(sources, Path::new(&document.model)).map_err(BindingError::Model)?;
+    let model = Model::index(&ir);
+    let served = Surface::of(&ir);
+    let mut binding = Binding {
+        system: model.system.clone(),
+        components: BTreeMap::new(),
+        names: BTreeMap::new(),
+    };
+    let mut refusals = Vec::new();
+    let mut refuse = |at: &NodePath, message: String| {
+        refusals.push(Refusal {
+            path: at.to_string(),
+            message,
+        });
+    };
+    for named in names(document) {
+        match named.kind {
+            Kind::Event(_) => {} // no server stream: a channel polls or refuses
+            Kind::Command(name) => {
+                let Some(qualified) = model.command(name) else {
+                    refuse(
+                        &named.at,
+                        format!("`{name}` names no command of model `{}`", model.system),
+                    );
+                    continue;
+                };
+                let Some((component, route)) = served.commands.get(&qualified) else {
+                    refuse(&named.at, unserved("command", &qualified));
+                    continue;
+                };
+                binding.names.insert(name.to_owned(), qualified.clone());
+                binding
+                    .components
+                    .entry(component.clone())
+                    .or_default()
+                    .commands
+                    .insert(qualified, route.clone());
+            }
+            Kind::View { name, bound, .. } => {
+                let Some((qualified, _)) = model.view(name) else {
+                    refuse(
+                        &named.at,
+                        format!("`{name}` names no view of model `{}`", model.system),
+                    );
+                    continue;
+                };
+                let Some((component, route)) = served.views.get(&qualified) else {
+                    refuse(&named.at, unserved("view", &qualified));
+                    continue;
+                };
+                let unreadable = read_refusals(&served, &qualified, bound);
+                if unreadable.is_empty() {
+                    binding.names.insert(name.to_owned(), qualified.clone());
+                    binding
+                        .components
+                        .entry(component.clone())
+                        .or_default()
+                        .views
+                        .insert(qualified, route.clone());
+                }
+                for message in unreadable {
+                    refuse(&named.at, message);
+                }
+            }
+        }
+    }
+    refusals.extend(state_refusals(document));
+    if refusals.is_empty() {
+        Ok(binding)
+    } else {
+        refusals.sort();
+        refusals.dedup();
+        Err(BindingError::Refused(refusals))
+    }
+}
+
+/// Why a served view cannot be read as `read` reads it: a view the model pages, a read paged by
+/// anything but the renderer, and each declared parameter no query string carries.
+fn read_refusals(served: &Surface, qualified: &str, bound: Bound<'_>) -> Vec<String> {
+    let mut refusals = Vec::new();
+    if served.paged.contains(qualified) {
+        refusals.push(format!(
+            "view `{qualified}` declares `paging:` in the model, and every code target refuses a \
+             paged view (`ess-synth/src/paging.rs`): no served surface answers it"
+        ));
+    }
+    if let Some(paged) = bound.paging().and_then(server_paged) {
+        refusals.push(format!(
+            "this read of `{qualified}` is paged by `{paged}`, and no served surface pages a \
+             view: every code target refuses paging. Page it in the renderer (`paging: client`) \
+             or not at all"
+        ));
+    }
+    for param in &served.non_scalar[qualified] {
+        refusals.push(format!(
+            "view `{qualified}` declares the parameter `{param}` at a type that is not a scalar, \
+             and a query string carries only scalars"
+        ));
+    }
+    refusals
+}
+
+/// Every state entry, outside widget declarations, placed in `server` or `server_session`.
+fn state_refusals(document: &Document) -> Vec<Refusal> {
+    let mut refusals = Vec::new();
+    for located in document.nodes() {
+        let NodeRef::State(state) = located.node else {
+            continue;
+        };
+        if in_declaration(&located.path) {
+            continue;
+        }
+        for store in crate::rules::placements(document, &located.path, state) {
+            if store == "server" || store == "server_session" {
+                refusals.push(Refusal {
+                    path: located.path.to_string(),
+                    message: format!(
+                        "this state is placed in `{store}`, and a document bound to the served \
+                         surface keeps its state in the client: the surface holds no session \
+                         and no store for UI state"
+                    ),
+                });
+            }
+        }
+    }
+    refusals
+}
+
+fn unserved(what: &str, qualified: &str) -> String {
+    format!(
+        "{what} `{qualified}` is served by no `reached_by: network` component: nothing outside \
+         its process can reach it over HTTP"
+    )
+}
+
+/// The `paging:` value of a read that something other than the renderer pages.
+fn server_paged(paging: &Paging) -> Option<&'static str> {
+    match paging {
+        Paging::Server => Some("server"),
+        Paging::Cursor => Some("cursor"),
+        Paging::Append => Some("append"),
+        Paging::Unmapped(_) => Some("UNMAPPED"),
+        Paging::Client | Paging::None => None,
+    }
+}
+
+/// Every route the model's `reached_by: network` components answer, by qualified name, from
+/// `ess_gen::http::routes`.
+struct Surface {
+    views: BTreeMap<String, (String, ViewRoute)>,
+    commands: BTreeMap<String, (String, CommandRoute)>,
+    /// Every served view's parameters that are not scalars, by the view's qualified name.
+    non_scalar: BTreeMap<String, Vec<String>>,
+    /// Every served view whose model declaration carries `paging:`, which no code target serves.
+    paged: BTreeSet<String>,
+}
+
+impl Surface {
+    fn of(ir: &EssIr) -> Self {
+        let mut surface = Self {
+            views: BTreeMap::new(),
+            commands: BTreeMap::new(),
+            non_scalar: BTreeMap::new(),
+            paged: BTreeSet::new(),
+        };
+        for component in ir.components().values() {
+            if component.reached_by != Reach::Network {
+                continue;
+            }
+            let name = component.name.to_string();
+            for route in http::routes(ir, component) {
+                match route.serves {
+                    Served::Command(handle) => {
+                        let command = ir.command(handle);
+                        let mut errors = BTreeMap::new();
+                        let declared = command.outcomes.iter().chain(
+                            ess_gen::unknown_instance::unknown_instance_answer(ir, command),
+                        );
+                        for outcome in declared {
+                            let Some(error) = &outcome.error else {
+                                continue;
+                            };
+                            let error = ir.error(error);
+                            errors
+                                .entry(error.wire_code())
+                                .or_insert_with(|| ErrorRoute {
+                                    status: http::status(outcome)
+                                        .parse()
+                                        .expect("every status the contract declares is a number"),
+                                    display: error.naming.display_or(&error.name).to_owned(),
+                                });
+                        }
+                        let route = CommandRoute {
+                            path: route.path,
+                            body_required: http::body_required(command),
+                            errors,
+                        };
+                        surface
+                            .commands
+                            .insert(handle.to_string(), (name.clone(), route));
+                    }
+                    Served::View(handle) => {
+                        let view = ir.view(handle);
+                        let mut params = Vec::new();
+                        let mut non_scalar = Vec::new();
+                        for param in &view.params {
+                            match scalar(ir, &param.type_ref) {
+                                Some(scalar) => params.push(QueryParam {
+                                    name: param.name.clone(),
+                                    wire: param
+                                        .naming
+                                        .wire
+                                        .clone()
+                                        .unwrap_or_else(|| param.name.clone()),
+                                    required: required(view, &param.name, &param.type_ref),
+                                    scalar: scalar.to_owned(),
+                                }),
+                                None => non_scalar.push(param.name.clone()),
+                            }
+                        }
+                        let route = ViewRoute {
+                            path: route.path,
+                            params,
+                        };
+                        surface.non_scalar.insert(handle.to_string(), non_scalar);
+                        if view.paging.is_some() {
+                            surface.paged.insert(handle.to_string());
+                        }
+                        surface
+                            .views
+                            .insert(handle.to_string(), (name.clone(), route));
+                    }
+                }
+            }
+        }
+        surface
+    }
+}
+
+/// The primitive a value of `type_ref` is written as in a query string, through `Optional` and
+/// newtypes; `String` for an enum. `None` for a list, a map, a struct, a union and `Json`, which
+/// no single query value carries.
+fn scalar(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<&'static str> {
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => (*name != Primitive::Json).then(|| name.as_str()),
+        ResolvedTypeRef::Optional { of } => scalar(ir, of),
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => scalar(ir, of),
+            ResolvedBody::Enum { .. } => Some(Primitive::String.as_str()),
+            ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => None,
+        },
+        ResolvedTypeRef::List { .. } | ResolvedTypeRef::Map { .. } => None,
+    }
 }

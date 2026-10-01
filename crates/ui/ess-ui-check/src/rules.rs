@@ -741,6 +741,32 @@ impl Checker<'_> {
     }
 }
 
+/// Every store the state entry at `path` is placed in: its own `store` or the one
+/// `PlacementProfile.resolution` gives it, and its `fallback` store, each by the schema's name.
+/// A store an UNMAPPED value or an unresolved profile leaves undecided is not among them; those
+/// are `state_resolves` and `unmapped_reported` findings.
+pub(crate) fn placements(document: &Document, path: &NodePath, state: &State) -> Vec<String> {
+    let mut stores = Vec::new();
+    // An explicit store is a placement whatever the class says; only the profile resolution
+    // needs a class it can read.
+    let placed = match &state.store {
+        Some(store) => store_name(store).map(str::to_owned),
+        None => class_name(&state.class).and_then(|class| {
+            let fixtures = Fixtures::default();
+            let checker = Checker {
+                document,
+                fixtures: &fixtures,
+            };
+            checker.resolve(path, &state.class, class).ok().flatten()
+        }),
+    };
+    stores.extend(placed);
+    if let Some(fallback) = &state.fallback {
+        stores.extend(store_name(&fallback.store).map(str::to_owned));
+    }
+    stores
+}
+
 /// `PlacementProfile.resolution.refusals` that a declared or resolved store can break.
 fn refusals(sink: &mut Sink, path: &NodePath, state: &State, class: &str, store: impl AsRef<str>) {
     let store = store.as_ref();
