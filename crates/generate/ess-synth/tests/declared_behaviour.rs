@@ -1000,6 +1000,10 @@ impl Harnessed {
         if status == 501 {
             return Ok(serde_json::json!({"undeclared": answer["answer"]["refused"]}));
         }
+        // The standard refusal for an actor no grant admits (beyond10x/ess#265).
+        if status == 403 && answer["answer"]["refused"] == "not granted" {
+            return Err(TargetError::not_granted(answer["answer"]["actor"].as_str()));
+        }
         let body = &answer["answer"];
         if body.get("outcome").is_none() {
             return Err(failure(observation, &answer));
@@ -1107,6 +1111,7 @@ impl ConformanceTarget for Harnessed {
         let answer = self.ask(&serde_json::json!({
             "op": "command",
             "command": request.command.to_string(),
+            "actor": request.actor.as_ref().map(ToString::to_string),
             "input": input,
             "body": body,
             "caller": caller,

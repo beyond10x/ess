@@ -16,11 +16,28 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 
 	realization "example.invalid/gatepass-realization"
 	"example.invalid/gatepass/server"
 )
+
+// authenticate says who a request was sent by, from a demonstration credential:
+// `Authorization: Actor <qualified actor name>`.
+//
+// How a request proves who sent it is the realization's, never the contract's; a deployment
+// verifies a session, a token or a certificate here. This one trusts the header, which is exactly
+// what a real deployment must not do, and it is here so the demonstration can be driven as any
+// declared actor. A name no actor carries is refused by the served surface's grant check.
+func authenticate(request *http.Request) *server.Caller {
+	name, ok := strings.CutPrefix(request.Header.Get("Authorization"), "Actor ")
+	if !ok {
+		return nil
+	}
+	return &server.Caller{Actor: server.Actor(name)}
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -32,7 +49,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "{\"log\":\"ess/1\",\"event\":\"system.unlinked\",\"reason\":%q}\n", err.Error())
 		os.Exit(1)
 	}
-	if err := server.ServePassService(assembled.System, "127.0.0.1:"+port); err != nil {
+	if err := server.ServePassService(assembled.System, "127.0.0.1:"+port, authenticate); err != nil {
 		fmt.Fprintf(os.Stderr, "{\"log\":\"ess/1\",\"event\":\"system.stopped\",\"reason\":%q}\n", err.Error())
 		os.Exit(1)
 	}

@@ -183,6 +183,7 @@ mod bounded_retry;
 mod caller;
 mod delivery_context;
 mod existence;
+mod grant;
 mod identity;
 mod paging;
 mod related;
@@ -326,6 +327,46 @@ pub enum Note {
         /// The fields copied, in the order first read.
         fields: Vec<String>,
     },
+    /// Every declared actor holds the grant for a command, so no actor is refused it and no
+    /// `…/grant/denied` scenario is owed (beyond10x/ess#265). The coverage fact that stands in for
+    /// the scenario a command some actor lacks the grant for gets.
+    GrantedToEveryActor {
+        /// The command.
+        command: CommandRef,
+    },
+    /// The model declares actors and serves no component (`reached_by: network`), so no
+    /// `…/grant/denied` scenario is owed (beyond10x/ess#265): the standard refusal is the served
+    /// contract's, and where nothing is served enforcing a grant is the caller's, against the
+    /// generated grant table. The coverage fact that stands in for the scenarios a served model gets.
+    GrantEnforcedByCaller,
+    /// A command a served component accepts is granted to no declared actor, so every caller is
+    /// refused it, and no scenario may send it expecting it to run (beyond10x/ess#265). Its
+    /// `…/grant/denied` scenario is its only witness; the scenarios synthesis would otherwise have
+    /// sent it in, as no actor, are withheld and named here.
+    GrantedToNoActor {
+        /// The command.
+        command: CommandRef,
+        /// The scenarios withheld, in id order.
+        withheld: Vec<ScenarioId>,
+    },
+    /// A command a served component accepts, which some declared actor lacks the grant for, has no
+    /// scenario that sends it into an accepting branch, so no `…/grant/denied` scenario is
+    /// synthesized for it (beyond10x/ess#265). A refusal asked of a send the command would have
+    /// refused anyway shows nothing about the grant.
+    GrantDeniedUnwitnessed {
+        /// The command.
+        command: CommandRef,
+    },
+    /// A command a served component accepts is held by two or more actors, and at least one of them
+    /// carries attributes, so its scenarios keep the actor synthesis chose rather than being sent
+    /// by each granted actor in turn (beyond10x/ess#265): their expectations are read for that
+    /// actor's values. Not every actor granted the command is shown to send it.
+    GrantRotationSkipped {
+        /// The command.
+        command: CommandRef,
+        /// The actors holding it that carry attributes, in name order.
+        attributed: Vec<ActorRef>,
+    },
 }
 
 impl fmt::Display for Note {
@@ -421,6 +462,63 @@ impl fmt::Display for Note {
                     names.join(", ")
                 )
             }
+            Self::GrantedToEveryActor { .. }
+            | Self::GrantDeniedUnwitnessed { .. }
+            | Self::GrantRotationSkipped { .. }
+            | Self::GrantedToNoActor { .. }
+            | Self::GrantEnforcedByCaller => self.grant(f),
+        }
+    }
+}
+
+impl Note {
+    /// The notes about who may send what on a served surface (beyond10x/ess#265), kept apart so
+    /// each rendering stays beside its own variant.
+    fn grant(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GrantedToEveryActor { command } => write!(
+                f,
+                "every declared actor may invoke `{command}`, so no actor is refused it and no \
+                 `{command}/grant/denied` scenario is owed"
+            ),
+            Self::GrantDeniedUnwitnessed { command } => write!(
+                f,
+                "no scenario sends `{command}` into a branch that accepts it, so `{command}/grant/\
+                 denied` is not synthesized: a refusal of a send the command would have refused \
+                 anyway shows nothing about the grant"
+            ),
+            Self::GrantRotationSkipped {
+                command,
+                attributed,
+            } => {
+                let names: Vec<String> = attributed.iter().map(|actor| format!("`{actor}`")).collect();
+                write!(
+                    f,
+                    "`{command}` is held by {}, which carry attributes its scenarios are read for, so \
+                     they keep the actor synthesis chose and not every actor granted `{command}` is \
+                     shown to send it",
+                    names.join(", ")
+                )
+            }
+            Self::GrantedToNoActor { command, withheld } => {
+                write!(
+                    f,
+                    "no declared actor may invoke `{command}`, which a served component accepts, so \
+                     every caller is refused it and `{command}/grant/denied` is its only witness"
+                )?;
+                if !withheld.is_empty() {
+                    let names: Vec<String> =
+                        withheld.iter().map(|id| format!("`{id}`")).collect();
+                    write!(f, "; withheld: {}", names.join(", "))?;
+                }
+                Ok(())
+            }
+            Self::GrantEnforcedByCaller => f.write_str(
+                "the specification declares actors and serves no component, so enforcing a grant is \
+                 the caller's, against the generated grant table, and no `<command>/grant/denied` \
+                 scenario is owed",
+            ),
+            _ => Ok(()),
         }
     }
 }
@@ -1648,6 +1746,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+    grant::denied(ir, &mut suite, &mut refusals, &mut notes);
     preconditions(ir, &mut suite);
     for (id, reason) in crate::fixtures::install(ir, &mut suite) {
         suite.scenarios.remove(&id);
@@ -1876,6 +1975,7 @@ pub(crate) fn needs_of(
             | ScenarioStep::ResolveFixtures { .. }
             | ScenarioStep::ExpectNoEvents
             | ScenarioStep::ExpectOutcome { .. }
+            | ScenarioStep::ExpectNotGranted { .. }
             | ScenarioStep::ExpectNoError
             | ScenarioStep::ExpectError { .. }
             | ScenarioStep::ExpectNoEvent { .. }
@@ -11045,6 +11145,9 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         ScenarioId::ValueInvariant { value, .. } => value.clone().into(),
         ScenarioId::Binding { binding, .. } => binding.clone().into(),
         ScenarioId::Aggregate { view } => view.clone().into(),
+        ScenarioId::Grant { command } | ScenarioId::GrantAdmitted { command, .. } => {
+            command.clone().into()
+        }
         // Synthesis mints every id it refuses about and mints no authored one — an authored
         // scenario is a person's claim, compiled and refused by [`crate::authored`] in a vocabulary
         // of its own. The arm is here because the match is total, and it answers with the one

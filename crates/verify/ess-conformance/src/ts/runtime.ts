@@ -1102,7 +1102,7 @@ export function checkedRefusal(
     case 'authored': {
       sourceIdentity(refusal.source);
       let valid = false;
-      for (let n = 1; n <= 37; n += 1) {
+      for (let n = 1; n <= 40; n += 1) {
         if (n === 36) {
           continue;
         }
@@ -2018,6 +2018,16 @@ export interface CommandResult {
   consistency?: string | undefined;
   /** The events emitted as part of the command returning. */
   directEvents?: ObservedEvent[] | undefined;
+  /**
+   * True when the target refused the command before it ran, with the standard refusal for an
+   * actor no grant admits (beyond10x/ess#265): on a served surface, 403
+   * `{"refused": "not granted", "actor": …}`. A refused command takes no branch: leave `outcome`,
+   * `error` and `directEvents` empty. A target that checks no grant never sets it, and fails every
+   * `…/grant/denied` scenario, which is the point of them.
+   */
+  notGranted?: boolean | undefined;
+  /** The qualified name of the actor the refusal names, empty where it names none. */
+  notGrantedActor?: string | undefined;
 }
 
 /** ObservedEvent is one event and what it carried. */
@@ -2348,6 +2358,8 @@ export interface Step {
   step: string;
   command: string;
   actor: string;
+  /** The events no new occurrence of which may follow a refused send (`expect_not_granted`). */
+  unpublished?: string[];
   input?: { [field: string]: Value };
   /** The caller's attribute values a command is sent as (suite/26). */
   caller?: { [attribute: string]: Node };
@@ -2823,6 +2835,8 @@ export interface ObservedCommandResult {
   error: string;
   consistency: string;
   directEvents: ObservedEvent[];
+  notGranted: boolean;
+  notGrantedActor: string;
 }
 
 /**
@@ -2949,6 +2963,8 @@ function normalizeResult(result: CommandResult | undefined): ObservedCommandResu
     error: result?.error ?? '',
     consistency: result?.consistency ?? '',
     directEvents: result?.directEvents ?? [],
+    notGranted: result?.notGranted === true,
+    notGrantedActor: result?.notGrantedActor ?? '',
   };
 }
 
@@ -2980,6 +2996,8 @@ export class ScenarioRun {
    * what some earlier step in this scenario published.
    */
   readonly seen: ObservedEvent[] = [];
+  /** Occurrences of each event a refused send must not add, counted just before it (beyond10x/ess#265). */
+  logBefore: { [event: string]: number } = {};
   /** What the most recent command did, for the assertions that read it. */
   last: ObservedCommandResult = normalizeResult(undefined);
   lastCommand = '';
@@ -3058,7 +3076,18 @@ export class ScenarioRun {
         index < scenario.steps.length;
         index += 1
       ) {
-        if (!(await this.step(index, itemAt(scenario.steps, index)))) {
+        const step = itemAt(scenario.steps, index);
+        const next = scenario.steps[index + 1];
+        // A send the next step requires refused is preceded by a count of what its refusal must
+        // not add to the log (beyond10x/ess#265).
+        if (
+          (step.step === 'execute_command' || step.step === 'execute_command_without_input') &&
+          next?.step === 'expect_not_granted' &&
+          !(await this.countBefore(index, next.unpublished ?? []))
+        ) {
+          return;
+        }
+        if (!(await this.step(index, step))) {
           return;
         }
       }
@@ -3105,6 +3134,8 @@ export class ScenarioRun {
         return this.executeCommand(index, step);
       case 'expect_outcome':
         return this.expectOutcome(index, step);
+      case 'expect_not_granted':
+        return this.expectNotGranted(index, step);
       case 'snapshot_subject':
       case 'expect_subject_unchanged':
       case 'snapshot_complete_subject':
@@ -3243,6 +3274,11 @@ export class ScenarioRun {
     // Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
     // command.
     this.observed = {};
+    // A refused command published nothing, so nothing a refusal hands back is remembered as seen;
+    // `expect_not_granted` fails the refusal for handing it back (beyond10x/ess#265).
+    if (normalized.notGranted) {
+      return true;
+    }
     for (const event of normalized.directEvents) {
       (this.observed[event.event] ??= []).push(event);
       this.remember(event);
@@ -3264,12 +3300,107 @@ export class ScenarioRun {
     if (step.outcome === undefined) {
       return this.fail(index, 'the suite names no outcome, which is a generator defect');
     }
+    if (this.last.notGranted === true) {
+      return this.fail(
+        index,
+        `\`${step.outcome.command}\` was refused as not granted to ` +
+          `\`${orNone(this.last.notGrantedActor)}\`, and the specification says ` +
+          `\`${step.outcome.outcome}\``,
+      );
+    }
     if (this.last.outcome !== step.outcome.outcome) {
       return this.fail(
         index,
         `\`${step.outcome.command}\` took \`${orNone(this.last.outcome)}\`, and the specification ` +
           `says \`${step.outcome.outcome}\``,
       );
+    }
+    return true;
+  }
+
+  /**
+   * Requires that the last command was refused before it ran, with the standard refusal for an
+   * actor no grant admits, naming the actor it was sent as (beyond10x/ess#265).
+   */
+  async expectNotGranted(index: number, step: Step): Promise<boolean> {
+    if (this.lastCommand === '') {
+      return this.fail(index, 'no command preceded the refusal an ungranted actor gets');
+    }
+    if (this.last.notGranted !== true) {
+      return this.fail(
+        index,
+        `\`${this.lastCommand}\` ran and took \`${orNone(this.last.outcome)}\`; the specification ` +
+          `refuses it as not granted to \`${step.actor}\``,
+      );
+    }
+    if ((this.last.notGrantedActor ?? '') !== step.actor) {
+      return this.fail(
+        index,
+        `\`${this.lastCommand}\` was refused as not granted to ` +
+          `\`${orNone(this.last.notGrantedActor)}\`, and it was sent as \`${step.actor}\``,
+      );
+    }
+    // A refusal hands back nothing: an occurrence beside it is one the refused run published.
+    if (this.last.directEvents.length > 0) {
+      return this.fail(
+        index,
+        `\`${this.lastCommand}\` was refused as not granted and handed back ` +
+          `${this.last.directEvents.length} event(s) beside the refusal: the command ran before ` +
+          `it was refused`,
+      );
+    }
+    // What the refused send must not have set in motion anywhere: the log may hold no more
+    // occurrences of each event after the send than it held just before it.
+    for (const event of step.unpublished ?? []) {
+      const after = await this.logCount(index, event, 'after');
+      if (after === undefined) {
+        return false;
+      }
+      const before = this.logBefore[event] ?? 0;
+      if (after > before) {
+        return this.fail(
+          index,
+          `${after} occurrence(s) of \`${event}\` in the target's log after ` +
+            `\`${this.lastCommand}\` was refused, ${before} before it: the command ran before it ` +
+            `was refused`,
+        );
+      }
+    }
+    return true;
+  }
+
+  /** How many occurrences of `event` the target's log holds, observed once; `undefined` where it cannot say. */
+  async logCount(index: number, event: string, when: string): Promise<number | undefined> {
+    let observed: ObservedEvent[];
+    try {
+      observed =
+        (await this.target.observeEvents({
+          event,
+          correlation: this.correlation,
+          deadline: { attempts: 1 },
+        })) ?? [];
+    } catch (error) {
+      if (isUnsupported(error)) {
+        this.skip(`step ${index}: the target cannot observe \`${event}\``);
+      }
+      this.fail(index, `observing \`${event}\` ${when} the refused send: ${errorText(error)}`);
+      return undefined;
+    }
+    for (const seen of observed) {
+      this.remember(seen);
+    }
+    return observed.filter((seen) => seen.event === event).length;
+  }
+
+  /** Counts, just before a send the next step requires refused, what its refusal must not add. */
+  async countBefore(index: number, unpublished: string[]): Promise<boolean> {
+    this.logBefore = {};
+    for (const event of unpublished) {
+      const count = await this.logCount(index, event, 'before');
+      if (count === undefined) {
+        return false;
+      }
+      this.logBefore[event] = count;
     }
     return true;
   }
@@ -5158,6 +5289,18 @@ export function scenarioIdentity(id: string, major = 21): void {
         segment(2) === 'mapping' ||
         segment(2) === 'on-failure' ||
         segment(2) === 'final-failure');
+  } else if (parts.length === 3 && segment(1) === 'grant') {
+    // The refusal an ungranted actor gets (beyond10x/ess#265) is suite/26 vocabulary.
+    if (major < 26) {
+      throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
+    }
+    valid = q(segment(0)) && segment(2) === 'denied';
+  } else if (parts.length === 4 && segment(1) === 'grant') {
+    // Each granted actor sends its command (beyond10x/ess#265): suite/26 vocabulary as well.
+    if (major < 26) {
+      throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
+    }
+    valid = q(segment(0)) && segment(2) === 'admitted' && q(segment(3));
   } else if (parts.length === 2 && segment(1) === 'aggregate' && q(segment(0))) {
     // An aggregate scenario (beyond10x/ess#96) is suite/16 vocabulary and every later major's.
     if (major < 16) {
@@ -5631,6 +5774,12 @@ function decodeStep(value: Node): Step {
   }
   if (isObject(written.caller)) {
     step.caller = exactNumbers(written.caller) as { [attribute: string]: Node };
+  }
+  // What a refused send must not add to the log (`expect_not_granted`, beyond10x/ess#265).
+  if (Array.isArray(written.unpublished)) {
+    step.unpublished = written.unpublished.filter(
+      (event): event is string => typeof event === 'string',
+    );
   }
   if (!isNil(written.times)) {
     step.times = decodeNumber(written.times);
@@ -6303,6 +6452,13 @@ export function admitStep(value: Node, major: number): void {
     case 'expect_outcome':
       required += ' outcome';
       break;
+    case 'expect_not_granted':
+      if (major < 26) {
+        throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
+      }
+      required += ' actor';
+      optional = 'unpublished';
+      break;
     case 'snapshot_subject':
       if (major < 10) throw new Error('subject snapshots require suite/10 or /11');
       required += ' view subject';
@@ -6590,6 +6746,7 @@ export function admitEntitySetups(steps: Node[]): void {
       case 'expect_view':
       case 'eventually_view':
       case 'expect_outcome':
+      case 'expect_not_granted':
       case 'expect_no_error':
       case 'expect_subject_unchanged':
       case 'expect_subject_absent':

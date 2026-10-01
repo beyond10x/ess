@@ -339,7 +339,8 @@ fn cascade(ir: &EssIr, plan: &SynthesisPlan, refused: &mut BTreeMap<Capability, 
         }
     }
 
-    for (capability, detail) in ports.into_iter().chain(bindings) {
+    let grants = unserved_grants(ir, &ports);
+    for (capability, detail) in ports.into_iter().chain(bindings).chain(grants) {
         if matches!(
             plan.disposition_of(capability.kind, &capability.source),
             Some(SynthesisDisposition::Generated | SynthesisDisposition::Obligation(_))
@@ -347,6 +348,44 @@ fn cascade(ir: &EssIr, plan: &SynthesisPlan, refused: &mut BTreeMap<Capability, 
             refused.insert(capability, detail);
         }
     }
+}
+
+/// Every actor's grant, refused, where the specification serves components and this target
+/// refuses the port of every one of them (beyond10x/ess#265).
+///
+/// A grant is enforced by the served surface. A target that serves nothing enforces none, so the
+/// plan's generated row would otherwise be a claim about code this target does not emit.
+fn unserved_grants(
+    ir: &EssIr,
+    ports: &BTreeMap<Capability, String>,
+) -> BTreeMap<Capability, String> {
+    let network: Vec<_> = ir
+        .components()
+        .values()
+        .filter(|component| component.reached_by == ess_domain::component::Reach::Network)
+        .collect();
+    let serves_nothing = !network.is_empty()
+        && network.iter().all(|component| {
+            ports.contains_key(&Capability {
+                kind: CapabilityKind::ComponentPort,
+                source: component.name.to_string(),
+            })
+        });
+    if !serves_nothing {
+        return BTreeMap::new();
+    }
+    ir.actors()
+        .keys()
+        .map(|actor| {
+            (
+                Capability {
+                    kind: CapabilityKind::ActorGrants,
+                    source: actor.to_string(),
+                },
+                "this target serves no component, so no surface checks the grant".to_owned(),
+            )
+        })
+        .collect()
 }
 
 /// Why a declared type's body cannot be represented in Go, or `None`.

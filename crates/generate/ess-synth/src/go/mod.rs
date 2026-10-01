@@ -581,7 +581,9 @@ fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
             affects: vec![CapabilityKind::ComponentTransport],
         });
     }
-    out.extend(grant_table_weakening(ir));
+    if !serves {
+        out.extend(grant_table_weakening(ir));
+    }
     if crate::determined::any_generated(ir) {
         out.push(TargetWeakening {
             guarantee: "a command behaviour the specification fully determines is generated, \
@@ -609,7 +611,8 @@ fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
     out
 }
 
-/// The first target's types crate carries every actor's grants as data; this one does not.
+/// The first target's types crate carries every actor's grants as data; this one does not, where it
+/// serves nothing. A served surface carries the table and enforces it (beyond10x/ess#265).
 fn grant_table_weakening(ir: &EssIr) -> Option<TargetWeakening> {
     (!ir.actors().is_empty()).then(|| TargetWeakening {
         guarantee: "an actor's declared grants are available as generated data: every declared \

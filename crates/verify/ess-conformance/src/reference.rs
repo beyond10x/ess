@@ -74,6 +74,8 @@ pub(crate) const PAY_INVOICE: &str = "billing.invoice.PayInvoice";
 pub(crate) const CANCEL_INVOICE: &str = "billing.invoice.CancelInvoice";
 /// `billing.email.SendEmail`.
 const SEND_EMAIL: &str = "billing.email.SendEmail";
+/// `billing.invoice.Customer`, the one actor `examples/billing/` grants a command.
+const CUSTOMER: &str = "billing.invoice.Customer";
 
 /// `billing.invoice.InvalidAmount`.
 pub(crate) const INVALID_AMOUNT: &str = "billing.invoice.InvalidAmount";
@@ -412,6 +414,7 @@ impl ConformanceTarget for Billing {
         &self,
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
+        refuse_ungranted(&request)?;
         refuse_caller(&request)?;
         let mut state = self.state.borrow_mut();
         match request.command.to_string().as_str() {
@@ -673,6 +676,36 @@ fn send_email(state: &mut State, request: &SemanticCommandRequest) -> SemanticCo
         }
         None => SemanticCommandResult::took(outcome(SEND_EMAIL, "failed"))
             .with_error(DeclaredErrorValue::new(declared_error(UNDELIVERABLE))),
+    }
+}
+
+/// The standard refusal for an actor no grant admits, before the command runs (beyond10x/ess#265).
+///
+/// `examples/billing/` grants `billing.invoice.Customer` `CreateInvoice` and nothing else, and
+/// `billing.invoice.Auditor` nothing: every other command is invoked by no declared actor. A
+/// command sent as no actor is sent as this implementation's own authority, which the suite uses
+/// for exactly those commands, and is not refused.
+fn refuse_ungranted(request: &SemanticCommandRequest) -> Result<(), TargetError> {
+    let Some(actor) = &request.actor else {
+        return Ok(());
+    };
+    // A command `examples/billing/` does not declare is refused as unknown, not as ungranted: the
+    // grant table this checks is billing's.
+    let declared = [
+        CREATE_INVOICE,
+        ISSUE_INVOICE,
+        CANCEL_INVOICE,
+        PAY_INVOICE,
+        SEND_EMAIL,
+    ];
+    if !declared.contains(&request.command.to_string().as_str()) {
+        return Ok(());
+    }
+    let actor = actor.to_string();
+    if actor == CUSTOMER && request.command.to_string() == CREATE_INVOICE {
+        Ok(())
+    } else {
+        Err(TargetError::not_granted(Some(actor)))
     }
 }
 

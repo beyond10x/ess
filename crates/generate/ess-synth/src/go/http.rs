@@ -91,6 +91,13 @@ pub(super) fn server_package(
         wire_file(ir, plan, layout, refusals, package, provenance),
     ];
 
+    // Every served command checks the caller's grant before it runs (beyond10x/ess#265).
+    for actor in ir.actors().keys() {
+        covered.insert(Capability {
+            kind: CapabilityKind::ActorGrants,
+            source: actor.to_string(),
+        });
+    }
     for component in &components {
         covered.insert(Capability {
             kind: CapabilityKind::ComponentTransport,
@@ -136,14 +143,98 @@ fn helpers_file(
     emit.import("net/http");
     emit.import("strconv");
     emit.import("sync");
-    if super::json::used(ir) {
-        return emit.file(
-            provenance,
-            SERVER_DOC,
-            &super::json::with_json(SURFACE_HELPERS, super::json::SURFACE_SUBSTITUTIONS),
+    let mut helpers = if super::json::used(ir) {
+        super::json::with_json(SURFACE_HELPERS, super::json::SURFACE_SUBSTITUTIONS)
+    } else {
+        SURFACE_HELPERS.to_owned()
+    };
+    if http::checks_grants(ir) {
+        helpers.push_str(&grant_helpers(ir));
+    }
+    emit.file(provenance, SERVER_DOC, &helpers)
+}
+
+/// The Go identifier of one declared actor's constant: every segment of its qualified name,
+/// pascal-joined, so two domains declaring one local name cannot collide.
+fn actor_ident(actor: &QualifiedName) -> String {
+    let mut out = String::from("Actor");
+    for segment in actor.segments() {
+        out.push_str(&name::pascal(segment));
+    }
+    out
+}
+
+/// Every declared actor, its grants as data, the authenticated caller the surface is handed, and
+/// the grant check every command route runs first (beyond10x/ess#265).
+///
+/// In the server package rather than the types: the served surface is what enforces a grant, and
+/// the caller type is what the shell that authenticates a request hands it.
+fn grant_helpers(ir: &EssIr) -> String {
+    let mut out = String::from(
+        "\n// Actor is an actor the specification declares, by its qualified name.\ntype Actor \
+         string\n\n// Every declared actor.\nconst (\n",
+    );
+    // Aligned as gofmt aligns a block of one-line specs, so the emitted file is gofmt-clean.
+    let width = ir
+        .actors()
+        .keys()
+        .map(|actor| actor_ident(actor).len())
+        .max()
+        .unwrap_or(0);
+    for actor in ir.actors().keys() {
+        let _ = writeln!(
+            out,
+            "\t{:width$} Actor = {:?}",
+            actor_ident(actor),
+            actor.to_string()
         );
     }
-    emit.file(provenance, SERVER_DOC, SURFACE_HELPERS)
+    out.push_str(
+        ")\n\n// grants is every declared actor's grants: the qualified names of the commands it \
+         may invoke.\nvar grants = map[Actor][]string{\n",
+    );
+    for (actor, declared) in ir.actors() {
+        let commands: Vec<String> = declared
+            .may
+            .iter()
+            .map(|command| format!("{:?}", command.name().to_string()))
+            .collect();
+        let key = format!("{}:", actor_ident(actor));
+        let _ = writeln!(
+            out,
+            "\t{key:<pad$} {{{}}},",
+            commands.join(", "),
+            pad = width + 1
+        );
+    }
+    let _ = write!(
+        out,
+        "}}\n\n// Caller is who a request was authenticated as.\n//\n// Built by whatever \
+         authenticates the request — a session, a token, a certificate — and\n// handed to the \
+         served surface, which checks its grant before the command runs. Never\n// derived from \
+         the request itself: a client can write anything into a request.\ntype Caller struct \
+         {{\n\tActor Actor\n}}\n\n// May reports whether the caller may invoke command, named by \
+         its qualified name.\nfunc (c Caller) May(command string) bool {{\n\tfor _, granted := \
+         range grants[c.Actor] {{\n\t\tif granted == command {{\n\t\t\treturn \
+         true\n\t\t}}\n\t}}\n\treturn false\n}}\n\n// Admit reports whether caller may invoke command, checked as every command route \
+         checks it before\n// the command runs. Where it may not, it also names the actor the \
+         standard refusal names: the\n// caller's declared actor, or \"\" where the request \
+         was authenticated as no actor or as\n// an actor the specification does not declare. \
+         A command no declared actor may invoke is\n// refused to every caller.\nfunc \
+         Admit(caller *Caller, command string) (bool, Actor) {{\n\tif caller == nil {{\n\t\treturn \
+         false, \"\"\n\t}}\n\tif caller.May(command) {{\n\t\treturn true, \"\"\n\t}}\n\tif _, \
+         declared := grants[caller.Actor]; !declared {{\n\t\treturn false, \"\"\n\t}}\n\treturn \
+         false, caller.Actor\n}}\n\n// admit is nil where caller may invoke command, and \
+         otherwise the standard refusal the\n// contract declares: {status}, {{\"refused\": \
+         \"not granted\", \"actor\": <name or null>}}.\nfunc admit(caller *Caller, command \
+         string) *response {{\n\tadmitted, named := Admit(caller, command)\n\tif admitted \
+         {{\n\t\treturn nil\n\t}}\n\tvar actor any\n\tif named != \"\" {{\n\t\tactor = \
+         string(named)\n\t}}\n\tanswer := rendered({status}, map[string]any{{\"refused\": \
+         {not_granted:?}, \"actor\": actor}})\n\treturn &answer\n}}\n",
+        status = http::FORBIDDEN,
+        not_granted = http::NOT_GRANTED,
+    );
+    out
 }
 
 // ---- the codecs -------------------------------------------------------------------------------
@@ -848,6 +939,7 @@ fn surface_file(
     route_table(&mut body, &rows, &exported);
     startup(&mut body, ir, plan, component, &rows, served, &exported);
 
+    let grants = http::checks_grants(ir);
     let _ = write!(
         body,
         "\n// Serve{exported} serves `{}` at address, and does not return while it can \
@@ -855,14 +947,31 @@ fn surface_file(
          record says which one\n// was taken, because a caller that cannot learn the port cannot \
          make a request.\n//\n// It chooses no realization. Every command reaches the port, and a \
          port over unimplemented\n// obligations answers the typed refusal this surface reports as \
-         501.\nfunc Serve{exported}(system *{system}, address string) error {{\n\tlistener, err := \
-         net.Listen(\"tcp\", address)\n\tif err != nil {{\n\t\treturn err\n\t}}\n\tbound, ok := \
-         listener.Addr().(*net.TCPAddr)\n\tif !ok {{\n\t\treturn fmt.Errorf(\"the listener bound \
-         something that is not a TCP address\")\n\t}}\n\tannounce{exported}(bound)\n\treturn \
+         501.{}\nfunc Serve{exported}(system *{system}, address string{}) error {{\n\tlistener, \
+         err := net.Listen(\"tcp\", address)\n\tif err != nil {{\n\t\treturn err\n\t}}\n\tbound, \
+         ok := listener.Addr().(*net.TCPAddr)\n\tif !ok {{\n\t\treturn fmt.Errorf(\"the listener \
+         bound something that is not a TCP address\")\n\t}}\n\tannounce{exported}(bound)\n\treturn \
          http.Serve(listener, http.HandlerFunc(func(writer http.ResponseWriter, request \
-         *http.Request) {{\n\t\tanswer := dispatch{exported}(system, \
-         request)\n\t\tanswer.write(writer)\n\t}}))\n}}\n",
-        component.name
+         *http.Request) {{\n\t\tanswer := dispatch{exported}(system, {}request)\n\t\t\
+         answer.write(writer)\n\t}}))\n}}\n",
+        component.name,
+        if grants {
+            "\n//\n// authenticate is the realization's: it says who each request was sent by, or \
+             nil, and every\n// command checks that caller's grant before it runs. Nothing here \
+             reads an actor from the\n// request itself."
+        } else {
+            ""
+        },
+        if grants {
+            ", authenticate func(*http.Request) *Caller"
+        } else {
+            ""
+        },
+        if grants {
+            "authenticate(request), "
+        } else {
+            ""
+        },
     );
 
     dispatch(&mut body, ir, &routes, &rows, &system, &exported);
@@ -920,14 +1029,25 @@ fn dispatch(
     system: &str,
     exported: &str,
 ) {
+    let grants = http::checks_grants(ir);
+    let (grant_doc, caller) = if grants {
+        (
+            "\n//\n// caller is who the realization authenticated the request as, or nil. Every \
+             command checks\n// its grant before it runs, and answers the standard refusal when \
+             the caller is nil or is\n// an actor the specification does not grant the command.",
+            "caller *Caller, ",
+        )
+    } else {
+        ("", "")
+    };
     let _ = write!(
         body,
         "\n// dispatch{exported} answers one request.\n//\n// A path this table does not hold is a \
          404 naming where the whole table is published; a path\n// it holds under a different \
          method is a 405 naming the one it answers. Neither is a status\n// the contract declares, \
          and neither should be: both are facts about a transport rather than\n// about any \
-         command.\nfunc dispatch{exported}(system *{system}, request *http.Request) response \
-         {{\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
+         command.{grant_doc}\nfunc dispatch{exported}(system *{system}, {caller}request \
+         *http.Request) response {{\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
          *refused\n\t}}\n\t// Held from the port call through Pump and TakePublished: the system \
          is shared by\n\t// every connection.\n\tserving.Lock()\n\tdefer \
          serving.Unlock()\n\tswitch request.URL.Path {{\n"
@@ -957,6 +1077,14 @@ fn dispatch(
                 .expect("every non-document row of the table is a route");
             match route.serves {
                 Served::Command(handle) => {
+                    if grants {
+                        let _ = writeln!(
+                            body,
+                            "\t\tif refused := admit(caller, {:?}); refused != nil {{\n\t\t\treturn \
+                             *refused\n\t\t}}",
+                            ir.command(handle).name.to_string()
+                        );
+                    }
                     let _ = writeln!(
                         body,
                         "\t\treturn serve{}(system, body)",

@@ -153,6 +153,63 @@ fn validate_refuses_a_listed_scenario_that_synthesize_refuses() {
     );
 }
 
+/// An act sent as `Auditor`, which `examples/billing/` does not grant `CreateInvoice`, that expects
+/// the refusal an ungranted actor gets (beyond10x/ess#265).
+const EXPECTS_THE_REFUSAL: &str = "type: ess-scenario/4
+domain: billing.invoice
+scenario: auditor-is-refused
+summary: The auditor may not create an invoice, and is refused before anything happens.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: billing.invoice.CreateInvoice
+    actor: billing.invoice.Auditor
+    input:
+      account_id: 00000000-0000-4000-8000-000000000001
+      customer_email: buyer@example.test
+      amount: {amount: 10, currency: EUR}
+    refused: not_granted
+    no_events: [billing.invoice.InvoiceCreated]
+";
+
+#[test]
+fn an_ungranted_actor_expecting_the_refusal_validates_and_synthesizes() {
+    let fixture = Fixture::new(&[("authored/auditor.yaml", EXPECTS_THE_REFUSAL.to_owned())]);
+    let validated = fixture.ess(&["specify", "validate", "--path", "."]);
+    assert!(validated.status.success(), "{validated:?}");
+    assert_eq!(
+        text(&validated.stdout),
+        "billing v3 — 5 file(s), 1 scenario(s), valid\n"
+    );
+    let synthesized = fixture.ess(&[
+        "verify",
+        "conform",
+        "synthesize",
+        "--path",
+        ".",
+        "--scenarios",
+        ".",
+        "--target",
+        "ir",
+        "--out",
+        "suite.json",
+    ]);
+    assert!(synthesized.status.success(), "{synthesized:?}");
+    let suite = fs::read_to_string(fixture.0.join("suite.json")).unwrap();
+    let document: Value = serde_json::from_str(&suite).unwrap();
+    let steps = &document["scenarios"]["billing.invoice/authored/auditor-is-refused"]["steps"];
+    assert_eq!(steps[0]["step"], "execute_command", "{steps}");
+    assert_eq!(steps[0]["actor"], "billing.invoice.Auditor", "{steps}");
+    assert_eq!(
+        steps[1],
+        serde_json::json!({
+            "step": "expect_not_granted",
+            "actor": "billing.invoice.Auditor",
+            "unpublished": ["billing.invoice.InvoiceCreated"],
+        }),
+        "{steps}"
+    );
+}
+
 #[test]
 fn validate_counts_the_listed_scenarios_it_checked() {
     let fixture = Fixture::new(&[

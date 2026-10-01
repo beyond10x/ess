@@ -138,3 +138,70 @@ func readJSON(body []byte) (any, *response) {
 	}
 	return value, nil
 }
+
+// Actor is an actor the specification declares, by its qualified name.
+type Actor string
+
+// Every declared actor.
+const (
+	ActorGatepassVisitReceptionist    Actor = "gatepass.visit.Receptionist"
+	ActorGatepassVisitSecurityAuditor Actor = "gatepass.visit.SecurityAuditor"
+)
+
+// grants is every declared actor's grants: the qualified names of the commands it may invoke.
+var grants = map[Actor][]string{
+	ActorGatepassVisitReceptionist:    {"gatepass.visit.AdmitVisitor", "gatepass.visit.RegisterVisit", "gatepass.visit.SignOutVisitor"},
+	ActorGatepassVisitSecurityAuditor: {},
+}
+
+// Caller is who a request was authenticated as.
+//
+// Built by whatever authenticates the request — a session, a token, a certificate — and
+// handed to the served surface, which checks its grant before the command runs. Never
+// derived from the request itself: a client can write anything into a request.
+type Caller struct {
+	Actor Actor
+}
+
+// May reports whether the caller may invoke command, named by its qualified name.
+func (c Caller) May(command string) bool {
+	for _, granted := range grants[c.Actor] {
+		if granted == command {
+			return true
+		}
+	}
+	return false
+}
+
+// Admit reports whether caller may invoke command, checked as every command route checks it before
+// the command runs. Where it may not, it also names the actor the standard refusal names: the
+// caller's declared actor, or "" where the request was authenticated as no actor or as
+// an actor the specification does not declare. A command no declared actor may invoke is
+// refused to every caller.
+func Admit(caller *Caller, command string) (bool, Actor) {
+	if caller == nil {
+		return false, ""
+	}
+	if caller.May(command) {
+		return true, ""
+	}
+	if _, declared := grants[caller.Actor]; !declared {
+		return false, ""
+	}
+	return false, caller.Actor
+}
+
+// admit is nil where caller may invoke command, and otherwise the standard refusal the
+// contract declares: 403, {"refused": "not granted", "actor": <name or null>}.
+func admit(caller *Caller, command string) *response {
+	admitted, named := Admit(caller, command)
+	if admitted {
+		return nil
+	}
+	var actor any
+	if named != "" {
+		actor = string(named)
+	}
+	answer := rendered(403, map[string]any{"refused": "not granted", "actor": actor})
+	return &answer
+}

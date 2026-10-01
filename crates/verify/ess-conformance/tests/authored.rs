@@ -1819,13 +1819,15 @@ fn every_cause_is_reachable_from_a_document() {
     // ship as a refusal nobody has seen the wording of — and the wording is the whole product here.
     let billing = example("billing");
     let gatepass = example("gatepass");
+    let desk = served_desk();
     let reached: BTreeSet<String> = refusable()
         .into_iter()
+        .chain(refusal_refusable())
         .flat_map(|(model, documents)| {
-            let ir = if model == "gatepass" {
-                &gatepass
-            } else {
-                &billing
+            let ir = match model {
+                "gatepass" => &gatepass,
+                "desk" => &desk,
+                _ => &billing,
             };
             let sources: Vec<Source> = documents
                 .into_iter()
@@ -1850,7 +1852,7 @@ fn every_cause_is_reachable_from_a_document() {
 ///
 /// Written down rather than counted, because the point of the case above is that the numbering and
 /// the documents agree: a count taken from the enum would agree with itself whatever happened.
-const CAUSES: u16 = 37;
+const CAUSES: u16 = 40;
 
 /// The one cause no document reaches: `ESS-AUTHOR-036` refuses the model before any file is read
 /// (`sparse_models_cannot_publish_an_empty_success_for_binary64` in `tests/suite.rs`).
@@ -1976,6 +1978,188 @@ fn refusable() -> Vec<(&'static str, Vec<String>)> {
                 .to_owned(),
         ),
     ]
+}
+
+/// The refusals of an act that expects the refusal an ungranted actor gets (beyond10x/ess#265).
+fn refusal_refusable() -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        // 38 the refusal expected of a granted actor, 39 the refusal beside a branch
+        ("billing", vec![refusal_expected(CREATED)]),
+        (
+            "billing",
+            vec![refusal_expected(&CREATED.replace(
+                "billing.invoice.Customer",
+                "billing.invoice.Auditor",
+            ))],
+        ),
+        // 40 a served command no actor is granted, sent as no actor
+        (
+            "desk",
+            vec![
+                "type: ess-scenario/4\ndomain: desk.ops\nscenario: sweeps\nsummary: A sweep \
+                  runs.\ntimeline:\n  - at: 2026-01-05T09:00:00Z\n    command: desk.ops.Sweep\n    \
+                  input: {id: one}\n    outcome: swept\n"
+                    .to_owned(),
+            ],
+        ),
+    ]
+}
+
+/// A served component accepting `Ping`, which `Operator` is granted, and `Sweep`, which no actor
+/// is: every caller is refused `Sweep` (beyond10x/ess#265).
+fn served_desk() -> EssIr {
+    let text = "format: ess/15
+system: desk
+version: v1
+domain: desk.ops
+events:
+  - name: desk.ops.Swept
+    fields:
+      - {name: id, type: String}
+  - name: desk.ops.Pinged
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: desk.ops.Ping
+    input:
+      - {name: id, type: String}
+    outcomes:
+      - name: pinged
+        emits: [desk.ops.Pinged]
+        payload:
+          desk.ops.Pinged: {id: input.id}
+  - name: desk.ops.Sweep
+    input:
+      - {name: id, type: String}
+    outcomes:
+      - name: swept
+        emits: [desk.ops.Swept]
+        payload:
+          desk.ops.Swept: {id: input.id}
+actors:
+  - name: desk.ops.Operator
+    may: [desk.ops.Ping]
+components:
+  - component: desk-service
+    owns: {domains: [desk.ops]}
+    accepts: {commands: [desk.ops.Ping, desk.ops.Sweep]}
+    publishes: {events: [desk.ops.Swept, desk.ops.Pinged]}
+    reached_by: network
+";
+    let raw = RawSpecFile::parse(text).expect("well formed");
+    let specification = Specification::assemble([(SpecSource::new("desk.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("desk validates:\n{errors}"));
+    compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("desk resolves:\n{diagnostics}"))
+}
+
+/// `text` as an ess-scenario/4 document whose act expects the refusal an ungranted actor gets.
+fn refusal_expected(timeline: &str) -> String {
+    document(timeline)
+        .replace("ess-scenario/1", "ess-scenario/4")
+        .replace(
+            "    outcome: accepted\n",
+            "    outcome: accepted\n    refused: not_granted\n",
+        )
+}
+
+// ---- the refusal an ungranted actor gets (beyond10x/ess#265) -------------------------------------
+
+/// The act that sends `CreateInvoice` as `Auditor`, which the specification does not grant it, and
+/// expects the refusal.
+fn ungranted_act() -> String {
+    document(
+        &CREATED
+            .replace("billing.invoice.Customer", "billing.invoice.Auditor")
+            .replace(
+                "    outcome: accepted\n",
+                "    refused: not_granted\n    no_events: [billing.invoice.InvoiceCreated]\n",
+            ),
+    )
+    .replace("ess-scenario/1", "ess-scenario/4")
+}
+
+#[test]
+fn an_ungranted_actor_is_accepted_where_the_act_expects_the_refusal() {
+    let ir = example("billing");
+    let authoring = authoring(&ir, &ungranted_act());
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+    let scenario = authoring.scenarios.values().next().expect("one scenario");
+    let steps: Vec<String> = scenario
+        .steps
+        .iter()
+        .map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, actor, .. } => format!(
+                "execute {command} as {}",
+                actor.as_ref().map(ToString::to_string).unwrap_or_default()
+            ),
+            ScenarioStep::ExpectNotGranted { actor, unpublished } => format!(
+                "not granted to {actor}, publishing no {}",
+                unpublished
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            "execute billing.invoice.CreateInvoice as billing.invoice.Auditor",
+            // `no_events:` is held against the whole log, as the refusal step's own claim.
+            "not granted to billing.invoice.Auditor, publishing no billing.invoice.InvoiceCreated",
+        ]
+    );
+}
+
+#[test]
+fn the_refusal_expected_of_a_granted_actor_is_refused() {
+    let ir = example("billing");
+    assert!(matches!(
+        cause(&ir, &refusal_expected(CREATED).replace("    outcome: accepted\n", "")),
+        Cause::ActorGranted { actor, command }
+            if actor.to_string() == "billing.invoice.Customer"
+                && command.to_string() == "billing.invoice.CreateInvoice"
+    ));
+}
+
+#[test]
+fn the_refusal_beside_what_only_a_command_that_ran_answers_is_refused() {
+    let ir = example("billing");
+    let text =
+        refusal_expected(&CREATED.replace("billing.invoice.Customer", "billing.invoice.Auditor"));
+    assert!(matches!(
+        cause(&ir, &text),
+        Cause::RefusalContradicted { claims, .. } if claims == ["`outcome:`"]
+    ));
+    let unsent = ungranted_act().replace("    actor: billing.invoice.Auditor\n", "");
+    assert!(matches!(
+        cause(&ir, &unsent),
+        Cause::RefusalContradicted { claims, .. } if claims == ["a missing `actor:`"]
+    ));
+}
+
+#[test]
+fn the_refusal_is_written_in_ess_scenario_4_only() {
+    let ir = example("billing");
+    let older = ungranted_act().replace("ess-scenario/4", "ess-scenario/3");
+    assert!(matches!(
+        cause(&ir, &older),
+        Cause::Unreadable { detail } if detail.contains("`refused: not_granted`")
+    ));
+}
+
+#[test]
+fn an_ungranted_actor_without_the_refusal_keeps_author_009() {
+    let ir = example("billing");
+    let text = ungranted_act().replace("    refused: not_granted\n", "");
+    assert!(matches!(
+        cause(&ir, &text),
+        Cause::ActorMayNot { actor, .. } if actor.to_string() == "billing.invoice.Auditor"
+    ));
+    assert_eq!(refusal(&ir, &text).code().to_string(), "ESS-AUTHOR-009");
 }
 
 // ---- the early stop ------------------------------------------------------------------------------
