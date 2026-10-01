@@ -470,6 +470,8 @@ function runFor(
       error: last.error ?? '',
       consistency: last.consistency ?? '',
       directEvents: last.directEvents ?? [],
+      notGranted: last.notGranted === true,
+      notGrantedActor: last.notGrantedActor ?? '',
     },
     lastCommand,
     fail(index: number, message: string): boolean {

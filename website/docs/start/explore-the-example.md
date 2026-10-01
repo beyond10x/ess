@@ -59,6 +59,7 @@ built into `ess`:
 
 ```shell-session ess-tutorial checkout
 $ ess verify conform synthesize --path examples/billing --out target/billing-suite.json
+note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
 32 scenario(s) (0 authored), 0 refusal(s), written to target/billing-suite.json
 $ ess verify conform run --suite target/billing-suite.json --target billing
 …

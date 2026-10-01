@@ -45,7 +45,7 @@ pub const ROUTES: &[(&str, &str)] = &[
 /// Everything outside `runtime` is the same in every language this plan is emitted into, and
 /// `cargo xtask synth --check` starts both and compares them.
 pub const STARTUP: &[&str] = &[
-    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba\",\"contract_digest\":\"a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":26,\"obligations\":1,\"refused\":2}",
+    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba\",\"contract_digest\":\"a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":28,\"obligations\":1,\"refused\":0}",
     "{\"log\":\"ess/1\",\"event\":\"surface.serving\",\"component\":\"pass-service\",\"reached_by\":\"network\",\"transport\":\"http/1.1\",\"routes\":7,\"paths\":[{\"method\":\"GET\",\"path\":\"/docs\",\"serves\":\"documentation\",\"name\":\"docs\"},{\"method\":\"GET\",\"path\":\"/openapi.json\",\"serves\":\"contract\",\"name\":\"openapi\"},{\"method\":\"POST\",\"path\":\"/visits/commands/admit-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.AdmitVisitor\"},{\"method\":\"POST\",\"path\":\"/visits/commands/register-visit\",\"serves\":\"command\",\"name\":\"gatepass.visit.RegisterVisit\"},{\"method\":\"POST\",\"path\":\"/visits/commands/sign-out-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.SignOutVisitor\"},{\"method\":\"GET\",\"path\":\"/visits/views/by-id\",\"serves\":\"view\",\"name\":\"gatepass.visit.VisitById\"},{\"method\":\"GET\",\"path\":\"/visits/views/expected\",\"serves\":\"view\",\"name\":\"gatepass.visit.ExpectedVisits\"}]",
     "{\"log\":\"ess/1\",\"event\":\"system.ready\",\"system\":\"gatepass\",\"surfaces\":1",
 ];
@@ -72,11 +72,15 @@ fn announce(address: &std::net::SocketAddr) {
 /// obligations answers the typed refusal this surface reports as `501` — the honest empty
 /// state rather than a server that pretends.
 ///
+/// `authenticate` is the realization's: it says who each request was sent by, or `None`, and
+/// [`dispatch`] checks that caller's grant before the command runs. Nothing here reads an
+/// actor from the request itself.
+///
 /// # Errors
 ///
 /// Anything the listener refuses: the address is taken, the port is privileged, the socket
 /// died.
-pub fn serve<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, address: &str) -> std::io::Result<()>
+pub fn serve<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<gatepass_types::actor::Caller>) -> std::io::Result<()>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -85,7 +89,7 @@ where
     for connection in listener.incoming() {
         let mut reader = std::io::BufReader::new(connection?);
         let answer = match http::read(&mut reader) {
-            Ok(request) => dispatch(system, &request),
+            Ok(request) => dispatch(system, authenticate(&request).as_ref(), &request),
             Err(refusal) => refusal,
         };
         let mut stream = reader.into_inner();
@@ -103,7 +107,11 @@ where
 ///
 /// Public so a caller can hand it a request it built itself: [`serve`] is this function behind a
 /// socket, and nothing else.
-pub fn dispatch<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, request: &http::Request) -> http::Response
+///
+/// `caller` is who the realization authenticated the request as, or `None`. Every command
+/// checks its grant before it runs, and answers the standard refusal when the caller is none
+/// or is an actor the specification does not grant the command.
+pub fn dispatch<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, caller: Option<&gatepass_types::actor::Caller>, request: &http::Request) -> http::Response
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -124,17 +132,26 @@ where
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
             }
+            if let Err(actor) = admit(caller, "gatepass.visit.AdmitVisitor") {
+                return not_granted(actor);
+            }
             serve_gatepass_visit_admit_visitor(system, &request.body)
         }
         "/visits/commands/register-visit" => {
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
             }
+            if let Err(actor) = admit(caller, "gatepass.visit.RegisterVisit") {
+                return not_granted(actor);
+            }
             serve_gatepass_visit_register_visit(system, &request.body)
         }
         "/visits/commands/sign-out-visitor" => {
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
+            }
+            if let Err(actor) = admit(caller, "gatepass.visit.SignOutVisitor") {
+                return not_granted(actor);
             }
             serve_gatepass_visit_sign_out_visitor(system, &request.body)
         }
@@ -171,20 +188,61 @@ where
 /// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation, and
 /// [`entry::Refused::Undelivered`] when the command took effect and delivering what it published
 /// failed (the route's `501`, with `committed` `false` and `true`).
-pub fn handle<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
+/// [`entry::Refused::NotGranted`] when `caller` — who the realization authenticated the call
+/// as — is none, or is an actor the specification does not grant the command; checked before
+/// the command runs (the route's `403`).
+pub fn handle<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, caller: Option<&gatepass_types::actor::Caller>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
     let answered = match name {
-        "gatepass.visit.AdmitVisitor" => run_gatepass_visit_admit_visitor(system, &input),
+        "gatepass.visit.AdmitVisitor" => match admit(caller, "gatepass.visit.AdmitVisitor") {
+            Ok(()) => run_gatepass_visit_admit_visitor(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
         "gatepass.visit.ExpectedVisits" => run_gatepass_visit_expected_visits(system),
-        "gatepass.visit.RegisterVisit" => run_gatepass_visit_register_visit(system, &input),
-        "gatepass.visit.SignOutVisitor" => run_gatepass_visit_sign_out_visitor(system, &input),
+        "gatepass.visit.RegisterVisit" => match admit(caller, "gatepass.visit.RegisterVisit") {
+            Ok(()) => run_gatepass_visit_register_visit(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
+        "gatepass.visit.SignOutVisitor" => match admit(caller, "gatepass.visit.SignOutVisitor") {
+            Ok(()) => run_gatepass_visit_sign_out_visitor(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
         "gatepass.visit.VisitById" => run_gatepass_visit_visit_by_id(system),
         other => return Err(entry::Refused::Unknown(other.to_owned())),
     };
     let (_, body) = answered?;
     Ok(entry::read(&body))
+}
+
+/// Nothing, where `caller` may invoke `command`; otherwise the actor the standard refusal names,
+/// `None` where the request was authenticated as no actor.
+///
+/// Checked before the command runs, on the caller the realization authenticated the request
+/// as and never on anything the request says about itself. Public, so code that drives the system
+/// in process checks the grant exactly as every route does.
+pub fn admit(caller: Option<&gatepass_types::actor::Caller>, command: &str) -> Result<(), Option<&'static str>> {
+    match caller {
+        Some(caller) if caller.may(command) => Ok(()),
+        Some(caller) => Err(Some(caller.actor.name())),
+        None => Err(None),
+    }
+}
+
+/// The standard refusal for an actor no grant admits, as the contract declares it: `403`,
+/// `{"refused": "not granted", "actor": <name or null>}`.
+fn not_granted(actor: Option<&str>) -> http::Response {
+    let mut body = String::from("{");
+    json::member(&mut body, "refused");
+    json::push_text(&mut body, "not granted");
+    json::member(&mut body, "actor");
+    match actor {
+        Some(actor) => json::push_text(&mut body, actor),
+        None => body.push_str("null"),
+    }
+    body.push('}');
+    http::Response::new(403, http::JSON, body)
 }
 
 /// `POST` `gatepass.visit.AdmitVisitor`: reads the declared input, runs the port, answers the declared outcome.

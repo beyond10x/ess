@@ -340,7 +340,10 @@ pub fn reads_state(predicate: &ess_primitives::predicate::Predicate) -> bool {
 /// The fields a `when_subject` predicate reads, in declaration order: the entity's stored fields,
 /// then, where the format admits it (ess/18), the held state as `state`, typed by the lifecycle's
 /// own synthesised enum so the partition treats it as the closed set it is.
-fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types::Field> {
+///
+/// A `when_related` predicate reads the related row through the same list, from `ess/20`
+/// (beyond10x/ess#229).
+pub(super) fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types::Field> {
     let mut fields = entity.fields.clone();
     if admits_state
         && !entity
@@ -358,9 +361,15 @@ fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types:
 
 /// Whether this build reads `state` in a `when_subject` predicate at the document's format.
 fn admits_state(types: &TypeRegistry) -> bool {
+    admits_state_from(types, crate::system::FormatVersion::V18)
+}
+
+/// Whether the document's format is `since` or later, where `state` is read in a predicate over a
+/// row: `ess/18` for the addressed subject, `ess/20` for a related row.
+pub(super) fn admits_state_from(types: &TypeRegistry, since: crate::system::FormatVersion) -> bool {
     types
         .format()
-        .is_none_or(|format| format.major() >= crate::system::FormatVersion::V18.major())
+        .is_none_or(|format| format.major() >= since.major())
 }
 
 fn declares_input_field(entity: &EntitySpec) -> bool {

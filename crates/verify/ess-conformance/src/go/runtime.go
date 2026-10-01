@@ -344,7 +344,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, err
 		}
 		valid := false
-		for n := 1; n <= 37; n++ {
+		for n := 1; n <= 40; n++ {
 			if n == 36 {
 				continue
 			}
@@ -1250,6 +1250,15 @@ type CommandResult struct {
 	Consistency string
 	// DirectEvents are the events emitted as part of the command returning.
 	DirectEvents []ObservedEvent
+	// NotGranted is true when the target refused the command before it ran, with the standard
+	// refusal for an actor no grant admits (beyond10x/ess#265): on a served surface, 403
+	// {"refused": "not granted", "actor": ...}. A refused command takes no branch: leave Outcome,
+	// Error and DirectEvents empty. A target that checks no grant never sets it, and fails every
+	// `.../grant/denied` scenario, which is the point of them.
+	NotGranted bool
+	// NotGrantedActor is the qualified name of the actor the refusal names, empty where it names
+	// none.
+	NotGrantedActor string
 }
 
 // ObservedEvent is one event and what it carried.
@@ -1551,10 +1560,13 @@ type Step struct {
 	Step          string               `json:"step"`
 	Command       string               `json:"command,omitempty"`
 	Actor         string               `json:"actor,omitempty"`
-	Input         map[string]Value     `json:"input,omitempty"`
-	Outcome       *OutcomeRef          `json:"outcome,omitempty"`
-	Force         *OutcomeRef          `json:"force,omitempty"`
-	Event         string               `json:"event,omitempty"`
+	// Unpublished names the events no new occurrence of which may appear in the target's log after a
+	// refused send (`expect_not_granted`, beyond10x/ess#265).
+	Unpublished []string         `json:"unpublished,omitempty"`
+	Input       map[string]Value `json:"input,omitempty"`
+	Outcome     *OutcomeRef      `json:"outcome,omitempty"`
+	Force       *OutcomeRef      `json:"force,omitempty"`
+	Event       string           `json:"event,omitempty"`
 	// Payload is plain values, not Value: an event's fields are compared against what the
 	// specification declared them to be, and there is nothing earlier in the scenario for them to
 	// refer to. `input` and a view expectation's `fields` are the ones that can refer back.
@@ -1933,6 +1945,9 @@ type run struct {
 	// a scenario that arranges further instances after the branch would otherwise lose the branch's
 	// own occurrence the moment the next command ran.
 	seen []ObservedEvent
+	// logBefore counts, just before a send the next step requires refused, the occurrences of each
+	// event the refusal must not add to the target's log (beyond10x/ess#265).
+	logBefore map[string]int
 	// last is what the most recent command did, for the assertions that read it.
 	last        CommandResult
 	lastCommand string
@@ -2000,10 +2015,55 @@ func (r *run) execute(id string, scenario Scenario) {
 		if prelude && index == 0 {
 			continue
 		}
+		// A send the next step requires refused is preceded by a count of what its refusal must not
+		// add to the log (beyond10x/ess#265).
+		if (step.Step == "execute_command" || step.Step == "execute_command_without_input") && index+1 < len(scenario.Steps) && scenario.Steps[index+1].Step == "expect_not_granted" {
+			if !r.countBefore(index, scenario.Steps[index+1].Unpublished) {
+				return
+			}
+		}
 		if !r.step(index, step) {
 			return
 		}
 	}
+}
+
+// logCount is how many occurrences of event the target's log holds, observed once.
+func (r *run) logCount(index int, event, when string) (int, bool) {
+	observed, err := r.target.ObserveEvents(EventObservationRequest{
+		Event:       event,
+		Correlation: r.correlation,
+		Deadline:    Deadline{Attempts: 1},
+	})
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target cannot observe `%s`", index, event)
+		return 0, false
+	}
+	if err != nil {
+		return 0, r.fail(index, "observing `%s` %s the refused send: %v", event, when, err)
+	}
+	count := 0
+	for _, seen := range observed {
+		if seen.Event == event {
+			count++
+		}
+		r.remember(seen)
+	}
+	return count, true
+}
+
+// countBefore counts, just before a send the next step requires refused, the occurrences of each
+// event its refusal must not add to the target's log.
+func (r *run) countBefore(index int, unpublished []string) bool {
+	r.logBefore = map[string]int{}
+	for _, event := range unpublished {
+		count, ok := r.logCount(index, event, "before")
+		if !ok {
+			return false
+		}
+		r.logBefore[event] = count
+	}
+	return true
 }
 
 // step performs one step, reporting whether the scenario should continue.
@@ -2044,6 +2104,8 @@ func (r *run) step(index int, step Step) bool {
 		return r.executeCommand(index, step)
 	case "expect_outcome":
 		return r.expectOutcome(index, step)
+	case "expect_not_granted":
+		return r.expectNotGranted(index, step)
 	case "snapshot_subject", "expect_subject_unchanged":
 		return r.snapshotSubject(index, step)
 	case "snapshot_complete_subject", "expect_complete_subject_unchanged":
@@ -2146,12 +2208,45 @@ func (r *run) expectOutcome(index int, step Step) bool {
 	if step.Outcome == nil {
 		return r.fail(index, "the suite names no outcome, which is a generator defect")
 	}
+	if r.last.NotGranted {
+		return r.fail(index, "`%s` was refused as not granted to `%s`, and the specification says `%s`", step.Outcome.Command, orNone(r.last.NotGrantedActor), step.Outcome.Outcome)
+	}
 	if r.last.Outcome != step.Outcome.Outcome {
 		return r.fail(
 			index,
 			"`%s` took `%s`, and the specification says `%s`",
 			step.Outcome.Command, orNone(r.last.Outcome), step.Outcome.Outcome,
 		)
+	}
+	return true
+}
+
+// expectNotGranted requires that the last command was refused before it ran, with the standard
+// refusal for an actor no grant admits, naming the actor it was sent as (beyond10x/ess#265).
+func (r *run) expectNotGranted(index int, step Step) bool {
+	if r.lastCommand == "" {
+		return r.fail(index, "no command preceded the refusal an ungranted actor gets")
+	}
+	if !r.last.NotGranted {
+		return r.fail(index, "`%s` ran and took `%s`; the specification refuses it as not granted to `%s`", r.lastCommand, orNone(r.last.Outcome), step.Actor)
+	}
+	if r.last.NotGrantedActor != step.Actor {
+		return r.fail(index, "`%s` was refused as not granted to `%s`, and it was sent as `%s`", r.lastCommand, orNone(r.last.NotGrantedActor), step.Actor)
+	}
+	// A refusal hands back nothing: an occurrence beside it is one the refused run published.
+	if len(r.last.DirectEvents) > 0 {
+		return r.fail(index, "`%s` was refused as not granted and handed back %d event(s) beside the refusal: the command ran before it was refused", r.lastCommand, len(r.last.DirectEvents))
+	}
+	// What the refused send must not have set in motion anywhere: the log may hold no more
+	// occurrences of each event after the send than it held just before it.
+	for _, event := range step.Unpublished {
+		after, ok := r.logCount(index, event, "after")
+		if !ok {
+			return false
+		}
+		if before := r.logBefore[event]; after > before {
+			return r.fail(index, "%d occurrence(s) of `%s` in the target's log after `%s` was refused, %d before it: the command ran before it was refused", after, event, r.lastCommand, before)
+		}
 	}
 	return true
 }
@@ -3737,6 +3832,10 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0]) && q(p[3]) && p[4] != ""
 	case len(p) == 2 && p[1] == "aggregate":
 		valid = q(p[0])
+	case len(p) == 3 && p[1] == "grant":
+		valid = q(p[0]) && p[2] == "denied"
+	case len(p) == 4 && p[1] == "grant":
+		valid = q(p[0]) && p[2] == "admitted" && q(p[3])
 	}
 	if !valid {
 		return fmt.Errorf("malformed scenario ID %q", id)
@@ -3803,6 +3902,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		// A bounded retry's final-failure scenario (beyond10x/ess#165) arrived in suite/26 and /27.
 		if strings.HasSuffix(id, "/binding/final-failure") && major < 26 {
 			return suite, fmt.Errorf("a bounded retry requires suite/26 or /27")
+		}
+		// The refusal an ungranted actor gets (beyond10x/ess#265) arrived in suite/26 and /27.
+		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
+			return suite, fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
 		}
 		s, err := closed(scenario, "purpose steps source", "")
 		if err != nil {
@@ -4521,6 +4624,12 @@ func admitStep(value any, major int) error {
 		required += " view"
 	case "expect_outcome":
 		required += " outcome"
+	case "expect_not_granted":
+		if major < 26 {
+			return fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
+		}
+		required += " actor"
+		optional = "unpublished"
 	case "snapshot_complete_subject":
 		if major < 12 {
 			return fmt.Errorf("complete subject snapshots require suite/12 or /13")
@@ -4754,7 +4863,7 @@ func admitEntitySetups(steps []any) error {
 				return fmt.Errorf("duplicate setup instance binding")
 			}
 			instances[instance] = true
-		case "expect_replay_result", "expect_no_events", "expect_no_error", "expect_subject_unchanged", "expect_subject_absent", "expect_view_unchanged", "expect_complete_subject_unchanged", "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
+		case "expect_replay_result", "expect_no_events", "expect_no_error", "expect_subject_unchanged", "expect_subject_absent", "expect_view_unchanged", "expect_complete_subject_unchanged", "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_not_granted", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
 			asserted = true
 		}
 	}
@@ -7603,6 +7712,11 @@ func (r *run) took(index int, command string, result CommandResult) bool {
 	// command — a scenario that creates an invoice and then pays it asserts that paying emitted no
 	// `InvoiceCreated`, which would be false against everything seen so far.
 	r.observed = map[string][]ObservedEvent{}
+	// A refused command published nothing, so nothing a refusal hands back is remembered as seen;
+	// `expect_not_granted` fails the refusal for handing it back (beyond10x/ess#265).
+	if result.NotGranted {
+		return true
+	}
 	for _, event := range result.DirectEvents {
 		r.observed[event.Event] = append(r.observed[event.Event], event)
 		r.remember(event)

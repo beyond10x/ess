@@ -1041,6 +1041,19 @@ pub enum TargetError {
         /// What went wrong, in the target's own vocabulary.
         detail: String,
     },
+    /// The command was refused before it ran, with the standard refusal for an actor no grant
+    /// admits (beyond10x/ess#265) — on a served surface, `403` `{refused: "not granted", actor}`.
+    ///
+    /// Not an adapter failure, and the runner does not read it as one: it is the command's answer.
+    /// A command step may answer it; the runner records it as that command's result, which
+    /// [`ExpectNotGranted`](crate::scenario::ScenarioStep::ExpectNotGranted) requires and in which
+    /// every other assertion finds no declared outcome. A target that checks no grant never answers
+    /// it, and fails every `…/grant/denied` scenario, which is the point of them.
+    NotGranted {
+        /// The qualified name of the actor the refusal names; `None` where the command was sent as
+        /// no actor.
+        actor: Option<String>,
+    },
 }
 
 impl TargetError {
@@ -1060,6 +1073,13 @@ impl TargetError {
         }
     }
 
+    /// The standard refusal for an actor no grant admits, naming `actor` (beyond10x/ess#265).
+    pub fn not_granted(actor: Option<impl Into<String>>) -> Self {
+        Self::NotGranted {
+            actor: actor.map(Into::into),
+        }
+    }
+
     /// `true` for the case §28 calls `unsupported`.
     pub fn is_unsupported(&self) -> bool {
         matches!(self, Self::Unsupported { .. })
@@ -1073,6 +1093,10 @@ impl fmt::Display for TargetError {
                 write!(f, "cannot expose {observation}: {why}")
             }
             Self::Unavailable { operation, detail } => write!(f, "{operation} failed: {detail}"),
+            Self::NotGranted { actor: Some(actor) } => {
+                write!(f, "refused as not granted to `{actor}`")
+            }
+            Self::NotGranted { actor: None } => f.write_str("refused as not granted to no actor"),
         }
     }
 }

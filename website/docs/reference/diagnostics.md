@@ -133,7 +133,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-006` | The model declares no such command. | Name a command the specification declares; a scenario that invokes anything else is checking a system this model does not describe. |
 | `ESS-AUTHOR-007` | That command declares no such branch. | Name one of the branches the command declares, or declare the branch you meant. |
 | `ESS-AUTHOR-008` | The model declares no such actor. | Name an actor the specification declares, or drop `actor:`. |
-| `ESS-AUTHOR-009` | The actor is declared, and the specification does not grant it this command. | Grant the command to this actor with `may:`, or act as one that already has it. |
+| `ESS-AUTHOR-009` | The actor is declared, and the specification does not grant it this command. | Grant the command to this actor with `may:`, act as one that already has it, or write `refused: not_granted` where the act expects the refusal. |
 | `ESS-AUTHOR-010` | The model declares no such event. | Name an event the specification declares. |
 | `ESS-AUTHOR-011` | The model declares no such error. | Name a declared error the specification declares. |
 | `ESS-AUTHOR-012` | The model declares no such view. | Name a view the specification declares. |
@@ -162,6 +162,9 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-035` | An assertion's paths resolve, but its operands or quantified target are ill-typed. | Use compatible scalar operands and quantify only over a declared List or Map. |
 | `ESS-AUTHOR-036` | The model needs a finite codec outside the current conformance contract. | Use checked format-5 normalization; finite Binary64 conformance codecs are not implemented. |
 | `ESS-AUTHOR-037` | An act claims what only an external answer it does not state satisfies. | No input the act sends decides an external branch, so name the act's own one under `outcome:` and the suite configures that answer for its call; an answer a command invoked through a binding must give cannot be stated in an authored act, so drop the claim there and leave it to synthesis. |
+| `ESS-AUTHOR-038` | An act expects the refusal an ungranted actor gets, and the actor holds the grant. | Act as an actor the specification does not grant the command, or drop `refused: not_granted` and claim what the command answers. |
+| `ESS-AUTHOR-039` | An act expects the refusal an ungranted actor gets, and names no actor or claims what only a command that ran answers. | A refused command takes no branch, reports no declared error and returns nothing: keep `actor:` beside `refused: not_granted`, drop `outcome`, `error`, `response`, `events` and `capture`, and list under `no_events:` what must not appear anywhere in the target's log after the refused send. |
+| `ESS-AUTHOR-040` | An act sends a served command no actor is granted, which every caller is refused. | Grant the command to an actor with `may:` and send the act as that actor, or write `refused: not_granted` with an `actor:` the specification declares. |
 
 ## Synthesis: `ESS-SYNTH`
 

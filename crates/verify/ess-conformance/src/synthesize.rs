@@ -183,6 +183,7 @@ mod bounded_retry;
 mod caller;
 mod delivery_context;
 mod existence;
+mod grant;
 mod identity;
 mod paging;
 mod related;
@@ -304,6 +305,68 @@ pub enum Note {
         /// Why no input in the overlap is sent.
         gap: OverlapGap,
     },
+    /// A scenario sending a command that reads the caller keeps its first run only: the run with
+    /// the two callers' roles swapped would send a caller-supplied identity again, and the input's
+    /// type has too few values to give it one no scenario sends (beyond10x/ess#275). A target that
+    /// answers one caller by name is not failed by it.
+    UnswappedCallers {
+        /// The scenario.
+        scenario: ScenarioId,
+        /// The input that becomes the created identity.
+        input: String,
+        /// Its declared type.
+        type_ref: String,
+    },
+    /// A branch copying fields of the row its `when_related:` guard reads (`{related: …}` through
+    /// the same input) whose scenario arranges no second row the guard accepts holding other values
+    /// there (beyond10x/ess#270). A target that copies from a row the guard accepts, rather than
+    /// the row the input names, is not failed by it.
+    UnaccompaniedRelatedCopy {
+        /// The branch's scenario.
+        scenario: ScenarioId,
+        /// The fields copied, in the order first read.
+        fields: Vec<String>,
+    },
+    /// Every declared actor holds the grant for a command, so no actor is refused it and no
+    /// `…/grant/denied` scenario is owed (beyond10x/ess#265). The coverage fact that stands in for
+    /// the scenario a command some actor lacks the grant for gets.
+    GrantedToEveryActor {
+        /// The command.
+        command: CommandRef,
+    },
+    /// The model declares actors and serves no component (`reached_by: network`), so no
+    /// `…/grant/denied` scenario is owed (beyond10x/ess#265): the standard refusal is the served
+    /// contract's, and where nothing is served enforcing a grant is the caller's, against the
+    /// generated grant table. The coverage fact that stands in for the scenarios a served model gets.
+    GrantEnforcedByCaller,
+    /// A command a served component accepts is granted to no declared actor, so every caller is
+    /// refused it, and no scenario may send it expecting it to run (beyond10x/ess#265). Its
+    /// `…/grant/denied` scenario is its only witness; the scenarios synthesis would otherwise have
+    /// sent it in, as no actor, are withheld and named here.
+    GrantedToNoActor {
+        /// The command.
+        command: CommandRef,
+        /// The scenarios withheld, in id order.
+        withheld: Vec<ScenarioId>,
+    },
+    /// A command a served component accepts, which some declared actor lacks the grant for, has no
+    /// scenario that sends it into an accepting branch, so no `…/grant/denied` scenario is
+    /// synthesized for it (beyond10x/ess#265). A refusal asked of a send the command would have
+    /// refused anyway shows nothing about the grant.
+    GrantDeniedUnwitnessed {
+        /// The command.
+        command: CommandRef,
+    },
+    /// A command a served component accepts is held by two or more actors, and at least one of them
+    /// carries attributes, so its scenarios keep the actor synthesis chose rather than being sent
+    /// by each granted actor in turn (beyond10x/ess#265): their expectations are read for that
+    /// actor's values. Not every actor granted the command is shown to send it.
+    GrantRotationSkipped {
+        /// The command.
+        command: CommandRef,
+        /// The actors holding it that carry attributes, in name order.
+        attributed: Vec<ActorRef>,
+    },
 }
 
 impl fmt::Display for Note {
@@ -377,6 +440,85 @@ impl fmt::Display for Note {
                     why.replace("{first}", first.as_str())
                 )
             }
+            Self::UnswappedCallers {
+                scenario,
+                input,
+                type_ref,
+            } => write!(
+                f,
+                "`{scenario}` runs once, with the callers' roles as first assigned: its run with \
+                 them swapped would send `{input}` again, and `{type_ref}` has too few values to \
+                 give it an identity no other scenario sends, so a target that answers one caller \
+                 by name is not failed by it"
+            ),
+            Self::UnaccompaniedRelatedCopy { scenario, fields } => {
+                let names: Vec<String> = fields.iter().map(|name| format!("`{name}`")).collect();
+                write!(
+                    f,
+                    "`{scenario}` copies {} from the row its `when_related:` guard reads, and no \
+                     second row the guard accepts holding another value there could be arranged, \
+                     so a target copying from a row the guard accepts rather than the row named \
+                     is not failed by it",
+                    names.join(", ")
+                )
+            }
+            Self::GrantedToEveryActor { .. }
+            | Self::GrantDeniedUnwitnessed { .. }
+            | Self::GrantRotationSkipped { .. }
+            | Self::GrantedToNoActor { .. }
+            | Self::GrantEnforcedByCaller => self.grant(f),
+        }
+    }
+}
+
+impl Note {
+    /// The notes about who may send what on a served surface (beyond10x/ess#265), kept apart so
+    /// each rendering stays beside its own variant.
+    fn grant(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GrantedToEveryActor { command } => write!(
+                f,
+                "every declared actor may invoke `{command}`, so no actor is refused it and no \
+                 `{command}/grant/denied` scenario is owed"
+            ),
+            Self::GrantDeniedUnwitnessed { command } => write!(
+                f,
+                "no scenario sends `{command}` into a branch that accepts it, so `{command}/grant/\
+                 denied` is not synthesized: a refusal of a send the command would have refused \
+                 anyway shows nothing about the grant"
+            ),
+            Self::GrantRotationSkipped {
+                command,
+                attributed,
+            } => {
+                let names: Vec<String> = attributed.iter().map(|actor| format!("`{actor}`")).collect();
+                write!(
+                    f,
+                    "`{command}` is held by {}, which carry attributes its scenarios are read for, so \
+                     they keep the actor synthesis chose and not every actor granted `{command}` is \
+                     shown to send it",
+                    names.join(", ")
+                )
+            }
+            Self::GrantedToNoActor { command, withheld } => {
+                write!(
+                    f,
+                    "no declared actor may invoke `{command}`, which a served component accepts, so \
+                     every caller is refused it and `{command}/grant/denied` is its only witness"
+                )?;
+                if !withheld.is_empty() {
+                    let names: Vec<String> =
+                        withheld.iter().map(|id| format!("`{id}`")).collect();
+                    write!(f, "; withheld: {}", names.join(", "))?;
+                }
+                Ok(())
+            }
+            Self::GrantEnforcedByCaller => f.write_str(
+                "the specification declares actors and serves no component, so enforcing a grant is \
+                 the caller's, against the generated grant table, and no `<command>/grant/denied` \
+                 scenario is owed",
+            ),
+            _ => Ok(()),
         }
     }
 }
@@ -1521,7 +1663,8 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     // the suite does not hold points at nothing, so it goes with it (beyond10x/ess#202).
     let suite = &synthesis.suite;
     synthesis.notes.retain(|note| match note {
-        Note::UnseparatedSources { scenario, .. } => suite.scenario(scenario).is_some(),
+        Note::UnseparatedSources { scenario, .. }
+        | Note::UnaccompaniedRelatedCopy { scenario, .. } => suite.scenario(scenario).is_some(),
         _ => true,
     });
     // Read off the finished suite, so every path that builds a branch's scenario is held to it.
@@ -1580,6 +1723,13 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
                 continue;
             };
             unseparated_notes.extend(unseparated(command, outcome, &id, &scenario));
+            let fields = related_guard::unaccompanied(ir, command, outcome, &actors);
+            if !fields.is_empty() {
+                unseparated_notes.push(Note::UnaccompaniedRelatedCopy {
+                    scenario: id.clone(),
+                    fields,
+                });
+            }
             insert(&mut suite, id, scenario, &mut refusals);
         }
     }
@@ -1596,6 +1746,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+    grant::denied(ir, &mut suite, &mut refusals, &mut notes);
     preconditions(ir, &mut suite);
     for (id, reason) in crate::fixtures::install(ir, &mut suite) {
         suite.scenarios.remove(&id);
@@ -1824,6 +1975,7 @@ pub(crate) fn needs_of(
             | ScenarioStep::ResolveFixtures { .. }
             | ScenarioStep::ExpectNoEvents
             | ScenarioStep::ExpectOutcome { .. }
+            | ScenarioStep::ExpectNotGranted { .. }
             | ScenarioStep::ExpectNoError
             | ScenarioStep::ExpectError { .. }
             | ScenarioStep::ExpectNoEvent { .. }
@@ -3562,6 +3714,18 @@ fn under_owner(
     if !shares_owner(ir, entity) {
         return None;
     }
+    filed_under(ir, entity, creator, owner)
+}
+
+/// [`under_owner`] without its `cardinality: many` test: for an owner the caller knows holds no row
+/// of `entity` yet ([`holds_none`]), which a `cardinality: one` relation admits one of
+/// (beyond10x/ess#271).
+fn filed_under(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    owner: &InstanceName,
+) -> Option<(String, Arrangement)> {
     let belongs = ir.owner_of(entity)?;
     let field = creator
         .outcome
@@ -3586,6 +3750,50 @@ fn under_owner(
             unwritten: BTreeSet::new(),
         },
     ))
+}
+
+/// Whether `steps` bring `owner` into being and file no row of `entity` under it: each step
+/// sending a command that creates `entity` is read at the input its `sets:` names the owner
+/// through (beyond10x/ess#271). An owner the steps did not create may hold rows they do not show,
+/// so it is not known to hold none.
+fn holds_none(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    steps: &[ScenarioStep],
+    owner: &InstanceName,
+) -> bool {
+    let Some(belongs) = ir.owner_of(entity) else {
+        return false;
+    };
+    let all = ir.drivers();
+    let creators: Vec<(String, String)> = all
+        .get(entity)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .filter_map(|driver| {
+            driver.outcome.sets.iter().find_map(|set| match &set.value {
+                ResolvedPayloadValue::InputField { field, .. } if set.target == belongs.via => {
+                    Some((driver.command.name.to_string(), field.clone()))
+                }
+                _ => None,
+            })
+        })
+        .collect();
+    let created = steps.iter().any(
+        |step| matches!(step, ScenarioStep::CaptureInstance { instance, .. } if instance == owner),
+    );
+    created
+        && !steps.iter().any(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. } => {
+                creators.iter().any(|(name, field)| {
+                    command.to_string() == *name
+                        && matches!(input.get(field), Some(ScenarioValue::Instance { instance })
+                            if instance == owner)
+                })
+            }
+            _ => false,
+        })
 }
 
 /// Whether an owner of `entity` may hold several of its rows: the owning relation is
@@ -3650,7 +3858,7 @@ fn created_owned(
             None,
             actors,
             distinction,
-            &bound,
+            (&bound, &steps),
             input,
             &chain,
         )
@@ -3799,7 +4007,7 @@ fn invoke(
             instance,
             actors,
             distinction,
-            bound,
+            (bound, &[]),
             None,
             arranging,
         )
@@ -8117,7 +8325,8 @@ fn unknown_instance(
         }));
     };
     let field = names_existing(attempt).unwrap_or_default();
-    input.insert(field.to_owned(), fresh_identity(ir, command, field)?);
+    let fresh = fresh_identity(ir, command, field, Some(&input))?;
+    input.insert(field.to_owned(), fresh);
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
@@ -8448,16 +8657,172 @@ fn recreates(steps: &[ScenarioStep], creates: &[Recreated]) -> bool {
     })
 }
 
+/// How far either side of each value a guard's ladder gives a number [`guided_values`] moves it:
+/// enough fresh identities inside a guard's interval for every slot a suite draws from one.
+const GUIDED_SPAN: u32 = 128;
+
+/// Every guard that reads a command's input: each branch's `when:`, an external branch's input
+/// guard, and the input half of a stored-row or related-row guard.
+pub(super) fn input_guards(command: &ResolvedCommand) -> Vec<&Predicate> {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+            ResolvedCondition::SubjectPredicate { input, .. }
+            | ResolvedCondition::Related { input, .. } => input.as_ref(),
+            _ => when(outcome),
+        })
+        .collect()
+}
+
+/// Whether `value` may stand for `field` in `input` without changing the branch the command
+/// takes (beyond10x/ess#275): a value of the field's type that decides every input guard as
+/// `input` decides it and refutes no entity invariant `input` meets.
+///
+/// Where `input` cannot be flattened — it holds a value only a run binds — there is no decision to
+/// keep, and the value is taken.
+pub(super) fn keeps_branch(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    field: &str,
+    value: &Node,
+) -> bool {
+    let Some(declared) = command.input.iter().find(|declared| declared.name == field) else {
+        return false;
+    };
+    if crate::input::validate_typed_value(ir, &declared.type_ref, value).is_err() {
+        return false;
+    }
+    let mut moved = input.clone();
+    moved.insert(field.to_owned(), value.clone());
+    let Ok(before) = flatten(ir, command, input) else {
+        return true;
+    };
+    let Ok(after) = flatten(ir, command, &moved) else {
+        return false;
+    };
+    let decided = |facts: &crate::InputFacts<'_>, guard: &Predicate| {
+        std::mem::discriminant(&facts.decide(guard))
+    };
+    input_guards(command)
+        .into_iter()
+        .all(|guard| decided(&before, guard) == decided(&after, guard))
+        && command.outcomes.iter().all(|outcome| {
+            crate::witness::invariant_broken_by(ir, command, outcome, input).is_some()
+                || crate::witness::invariant_broken_by(ir, command, outcome, &moved).is_none()
+        })
+}
+
+/// The values the input guards' ladder gives `field`: the literals they compare it with and one
+/// either side, and the values deciding sign.
+fn guard_ladder(ir: &EssIr, command: &ResolvedCommand, field: &str) -> Vec<Node> {
+    let guards = input_guards(command);
+    if guards.is_empty() {
+        return Vec::new();
+    }
+    let mut ladder: Vec<Node> = Vec::new();
+    for input in candidates(ir, command, &guards, Distinction::PLAIN).unwrap_or_default() {
+        if let Some(value) = input.get(field) {
+            if !ladder.contains(value) {
+                ladder.push(value.clone());
+            }
+        }
+    }
+    ladder
+}
+
+/// The values `field` is tried at where its far witnesses break a guard the input meets: each value
+/// of the guards' ladder, then each number of it moved one, two, … up to [`GUIDED_SPAN`] either way,
+/// nearest first — values inside every interval the guards' literals bound, derived from what the
+/// guards write.
+pub(super) fn guided_values(ir: &EssIr, command: &ResolvedCommand, field: &str) -> Vec<Node> {
+    let ladder = guard_ladder(ir, command, field);
+    let numbers: Vec<f64> = ladder
+        .iter()
+        .filter_map(|value| match value {
+            Node::Number(number) => Some(number.get()),
+            _ => None,
+        })
+        .collect();
+    let mut values = ladder;
+    for step in 1..=GUIDED_SPAN {
+        for number in &numbers {
+            for moved in [number - f64::from(step), number + f64::from(step)] {
+                if let Ok(moved) = ess_primitives::facts::Number::new(moved) {
+                    let moved = Node::Number(moved);
+                    if !values.contains(&moved) {
+                        values.push(moved);
+                    }
+                }
+            }
+        }
+    }
+    values
+}
+
+/// The `nth` value of `field` that keeps the branch `input` takes ([`keeps_branch`]) and that no
+/// arrangement sends: neither the far witness of any distinction an arrangement numbers or of
+/// [`Distinction::UNKNOWN`], nor a value of the guards' ladder, which an arrangement whose far
+/// witness breaks the guard sends instead. `None` where the guards leave fewer than `nth + 1`.
+pub(super) fn guided_identity(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+    input: &BTreeMap<String, Node>,
+    nth: usize,
+) -> Option<Node> {
+    let mut arranged: Vec<Node> = guard_ladder(ir, command, field);
+    for distinction in (0..=MAX_CANDIDATES)
+        .map(Distinction::further)
+        .chain([Distinction::UNKNOWN])
+    {
+        if let Some(value) = candidates(ir, command, &[], distinction)
+            .ok()
+            .and_then(|inputs| inputs.into_iter().next())
+            .and_then(|mut input| input.remove(field))
+        {
+            arranged.push(value);
+        }
+    }
+    guided_values(ir, command, field)
+        .into_iter()
+        .filter(|value| !arranged.contains(value))
+        .filter(|value| keeps_branch(ir, command, input, field, value))
+        .nth(nth)
+}
+
+/// Why a guarded identity has no fresh value: the guards the input meets leave too few.
+pub(super) fn unguided(command: &ResolvedCommand, field: &str) -> RefusalCause {
+    RefusalCause::NoWitness(WitnessGap {
+        path: field.to_owned(),
+        type_ref: command
+            .input
+            .iter()
+            .find(|input| input.name == field)
+            .map(|input| input.type_ref.to_string())
+            .unwrap_or_default(),
+        reason: "has too few values inside the guards the input meets to name an identity no \
+                 other scenario sends, so no instance is known to be new or unknown",
+    })
+}
+
 /// A value of the identity field that no other scenario sends.
 ///
 /// The witness at [`Distinction::UNKNOWN`], checked against the witness at every distinction an
 /// arrangement numbers. Where the type has too few values to keep it apart — a `Boolean`, a
 /// `Timestamp` a month wide — no identity is known to name no record on a target the scenarios
 /// share, and the scenario is refused rather than asserted on a record another scenario made.
+///
+/// Where that witness would change the branch `input` takes — a guard reads the identity — the
+/// first value inside the guards that no arrangement sends is taken instead
+/// ([`guided_identity`]), and the scenario is refused where there is none (beyond10x/ess#275).
 fn fresh_identity(
     ir: &EssIr,
     command: &ResolvedCommand,
     field: &str,
+    input: Option<&BTreeMap<String, Node>>,
 ) -> Result<Node, RefusalCause> {
     let at = |distinction: Distinction| {
         candidates(ir, command, &[], distinction)
@@ -8483,6 +8848,14 @@ fn fresh_identity(
         })
     };
     let fresh = at(Distinction::UNKNOWN)?.ok_or_else(unfresh)?;
+    if let Some(input) = input {
+        if !keeps_branch(ir, command, input, field, &fresh) {
+            // The unknown identity takes the first guided value; the existence family's slots
+            // take the ones after it.
+            return guided_identity(ir, command, field, input, 0)
+                .ok_or_else(|| unguided(command, field));
+        }
+    }
     for nth in 0..=MAX_CANDIDATES {
         if at(Distinction::further(nth))?.as_ref() == Some(&fresh) {
             return Err(unfresh());
@@ -10772,6 +11145,9 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         ScenarioId::ValueInvariant { value, .. } => value.clone().into(),
         ScenarioId::Binding { binding, .. } => binding.clone().into(),
         ScenarioId::Aggregate { view } => view.clone().into(),
+        ScenarioId::Grant { command } | ScenarioId::GrantAdmitted { command, .. } => {
+            command.clone().into()
+        }
         // Synthesis mints every id it refuses about and mints no authored one — an authored
         // scenario is a person's claim, compiled and refused by [`crate::authored`] in a vocabulary
         // of its own. The arm is here because the match is total, and it answers with the one

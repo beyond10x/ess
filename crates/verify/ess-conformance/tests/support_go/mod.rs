@@ -207,6 +207,15 @@ impl<T> Recorder<T> {
         let (error, result) = match &answer {
             Ok(value) => (Value::Null, render(value)),
             Err(TargetError::Unsupported { .. }) => ("unsupported".into(), Value::Null),
+            // The command's answer rather than a failure (beyond10x/ess#265): the Go runtime reads
+            // it as a result that took no branch and carries the refusal.
+            Err(TargetError::NotGranted { actor }) => (
+                Value::Null,
+                json!({
+                    "outcome": null, "error": null, "consistency": null, "direct_events": [],
+                    "response": null, "not_granted": true, "not_granted_actor": actor,
+                }),
+            ),
             Err(other) => (other.to_string().into(), Value::Null),
         };
         let mut entry = serde_json::Map::new();

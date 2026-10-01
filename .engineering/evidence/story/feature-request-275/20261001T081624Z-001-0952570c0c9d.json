@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T08:16:24Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-275",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: adversary_275 pass1 4/4, pass2 7/7, caller_fresh_identity 8/8; merged tree ess-conformance 1987 passed 0 failed"
+  }
+}

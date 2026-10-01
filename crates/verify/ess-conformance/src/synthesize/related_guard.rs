@@ -31,6 +31,7 @@ use ess_compiler::ir::{
 };
 use ess_domain::command::TestStrategy;
 use ess_domain::name::QualifiedName;
+use ess_primitives::facts::FactPath;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Predicate, Truth};
 
@@ -49,6 +50,14 @@ const BLOCK: usize = 27_720;
 /// arrangement that drives such a command before the branch under test names no row twice.
 const OWN: usize = 5;
 const DRIVEN: usize = 7;
+
+/// The block a related row of an entity already being arranged is created in, one level deep
+/// ([`nested`]): apart from both, so it names no row a scenario or a driver arranges.
+const NESTED: usize = 9;
+
+/// The block the companions of a named row are created in (beyond10x/ess#270, [`surround`]): apart
+/// from every other, so they name no row a scenario, a driver or a nested arrangement does.
+const COMPANION: usize = 11;
 
 /// The distinction the related row of the `distinction`th witness is arranged at, in block `base`:
 /// four apart, so no row and no decoy either side of it (one away) is another witness's, and every
@@ -99,6 +108,18 @@ pub(super) fn owner_is_related(
                 && set.conversion.is_none()
                 && matches!(&set.value, ResolvedPayloadValue::InputField { field, .. } if field == via.field())
         })
+}
+
+/// Whether the document's format arranges a related row of an entity already being arranged, one
+/// level deep ([`nested`]): from `ess/20`, the format whose `state` operand in `when_related` needs
+/// it (beyond10x/ess#229). Below it such a run stops, as it did before that format existed.
+pub(super) fn nests(ir: &EssIr) -> bool {
+    ir.format().major() >= ess_domain::system::FormatVersion::V20.major()
+}
+
+/// Whether this command's related guards read a row of `entity`.
+pub(super) fn reads_entity(command: &ResolvedCommand, entity: &EntityHandle) -> bool {
+    read(command).is_some_and(|(_, related)| related == entity)
 }
 
 /// Whether any branch of this command reads a related row.
@@ -285,6 +306,10 @@ fn is_absent(outcome: &ResolvedOutcome) -> bool {
 /// `distinction` is the caller's: the input searched for and the related row arranged are that
 /// witness's, so a further instance created through this command carries an identity and a related
 /// row of its own rather than the plain instance's.
+///
+/// `known` are the steps the caller ran to arrange what `bound` names: an owner they create and
+/// file no row of the related entity under is one a `cardinality: one` relation still admits a row
+/// under (beyond10x/ess#271, [`super::holds_none`]).
 // One argument per thing an arranging run is told, and the witness it is for.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn drive(
@@ -293,7 +318,10 @@ pub(super) fn drive(
     instance: Option<&crate::scenario::InstanceName>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    (bound, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
     input: Option<&BTreeMap<String, Node>>,
     arranging: &[&EntityHandle],
 ) -> Result<super::Invocation, RefusalCause> {
@@ -302,14 +330,20 @@ pub(super) fn drive(
     let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
         matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
     });
-    if names_subject || bound.contains_key(field) || arranging.contains(&entity) {
+    // Below `ess/20` a related row of an entity already being arranged stops the run, before
+    // any branch is looked at, as it always did: a document without an `ess/20` construct
+    // synthesizes the suite it did (beyond10x/ess#229, adversary pass 2).
+    if names_subject || bound.contains_key(field) || (!nests(ir) && arranging.contains(&entity)) {
         return Err(unarranged());
     }
+    // From `ess/20`, a missing row arranges nothing, so the `exists: false` branch is sent
+    // whatever is being arranged around it: no row of `entity` is created, and nothing recurses.
     if is_absent(driver.outcome) {
         let input = match input {
             Some(chosen) => {
                 let mut chosen = chosen.clone();
-                chosen.insert(field.to_owned(), fresh_identity(ir, driver.command, field)?);
+                let fresh = fresh_identity(ir, driver.command, field, Some(&chosen))?;
+                chosen.insert(field.to_owned(), fresh);
                 chosen
             }
             None => without_row(ir, driver.command, entity, field, distinction)?,
@@ -318,7 +352,28 @@ pub(super) fn drive(
             ir, driver, instance, actors, bound, &input,
         ));
     }
-    let (row, _, input) = with_row(
+    // A related row of an entity already being arranged — the mover that brings a candidate to
+    // `Accepted` reading a parent candidate — is arranged one level deep, where it rests in its
+    // initial state, and never searched for along its lifecycle (beyond10x/ess#229, adversary pass
+    // 1).
+    // Reached from `ess/20` only: below it the run stopped above.
+    if arranging.contains(&entity) {
+        return nested(
+            ir,
+            driver,
+            instance,
+            actors,
+            distinction,
+            bound,
+            input,
+            arranging,
+        );
+    }
+    // An owner the caller already bound for a link input — the one `created_owned` arranged for the
+    // subject this run creates — is the owner the run is sent naming: the related row is arranged
+    // against it, never against a second owner that would replace it (beyond10x/ess#271).
+    let pins = pins(ir, driver.command, driver.outcome, entity, instance, bound);
+    let (mut row, _, input) = with_row(
         ir,
         driver.command,
         driver.outcome,
@@ -327,7 +382,105 @@ pub(super) fn drive(
         (DRIVEN, distinction, arranging),
         input,
         None,
+        (&pins, known),
     )?;
+    let owners = subject_fact::bind_pinned(
+        ir,
+        driver.command,
+        driver.outcome,
+        entity,
+        actors,
+        &mut row,
+        &input,
+        &pins,
+    )?;
+    let mut bound = bound.clone();
+    bound.extend(owners);
+    bound.insert(field.to_owned(), row.instance.clone());
+    let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
+    let mut steps = row.steps;
+    steps.append(&mut invocation.steps);
+    invocation.steps = steps;
+    invocation.source.extend(row.source);
+    Ok(invocation)
+}
+
+/// [`drive`] where the related row is of an entity `arranging` already names: one level deep, a
+/// fresh row where its lifecycle starts, and the run sent only where that row selects its branch.
+///
+/// A row searched for along its lifecycle would be moved by the same commands that are arranging
+/// the outer row, and could need a related row of its own again, without end; the initial state
+/// needs no move. Inside that nested row's own arrangement the entity is named twice, and a
+/// further related row of it is refused, naming why. Where the fresh row does not select the
+/// branch — "accept only below an accepted parent" — the refusal says so: the row the guard needs
+/// is one this bound does not arrange.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+fn nested(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    chosen: Option<&BTreeMap<String, Node>>,
+    arranging: &[&EntityHandle],
+) -> Result<super::Invocation, RefusalCause> {
+    let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
+    let field = via.field();
+    let refused = |why: &str, tried: usize| RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "a related row of `{}` for `input.{field}` of `{}`, inside an arrangement of `{}`: \
+             {why}",
+            entity.name(),
+            driver.command.name,
+            entity.name()
+        ),
+        tried,
+    };
+    if arranging.iter().filter(|held| **held == entity).count() > 1 {
+        return Err(refused(
+            "already nested once; a related row of an entity being arranged is arranged one \
+             level deep only",
+            0,
+        ));
+    }
+    let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
+    let row = row_at(ir, entity, actors, block_start(NESTED, distinction), &chain)
+        .ok_or_else(|| refused("no row of it can be created where its lifecycle starts", 0))?;
+    let inputs = if let Some(chosen) = chosen {
+        vec![chosen.clone()]
+    } else {
+        let predicates = predicates(driver.command);
+        let grounded = subject_fact::grounded(ir, entity, &row.settled, &predicates);
+        let mut searched: Vec<&Predicate> = driver
+            .command
+            .outcomes
+            .iter()
+            .filter_map(input_guard)
+            .collect();
+        searched.extend(grounded.iter());
+        candidates(ir, driver.command, &searched, distinction).map_err(RefusalCause::NoWitness)?
+    };
+    let tried = inputs.len();
+    let input = inputs
+        .into_iter()
+        .find(|input| {
+            selects(ir, driver.command, entity, Some(&row), input)
+                .ok()
+                .flatten()
+                .is_some_and(|branch| branch.name == driver.outcome.name)
+        })
+        .ok_or_else(|| {
+            refused(
+                &format!(
+                    "a fresh row in state `{}` does not select `{}`, and a row in any other state \
+                     would be moved by the arrangement it is nested in",
+                    row.state, driver.outcome.name
+                ),
+                tried,
+            )
+        })?;
     let mut bound = bound.clone();
     bound.insert(field.to_owned(), row.instance.clone());
     let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
@@ -336,6 +489,27 @@ pub(super) fn drive(
     invocation.steps = steps;
     invocation.source.extend(row.source);
     Ok(invocation)
+}
+
+/// The link inputs over rows of `entity` ([`subject_fact::link_pins`]) the send of `outcome`
+/// already names an arranged owner through: `bound`, and the field the branch names its subject
+/// by, where `instance` is that subject — the one `super::supply` sends before anything `bound`
+/// says (beyond10x/ess#271).
+fn pins(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    instance: Option<&crate::scenario::InstanceName>,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+) -> BTreeMap<String, crate::scenario::InstanceName> {
+    let mut held = bound.clone();
+    if let (Some(subject), Some(instance)) = (&outcome.subject, instance) {
+        if let ResolvedInstance::Supplied { field } = &subject.instance {
+            held.insert(field.name.clone(), instance.clone());
+        }
+    }
+    subject_fact::link_pins(ir, command, entity, &held)
 }
 
 /// A row of the related entity where its lifecycle starts, under the further witness `at`, inside
@@ -491,13 +665,147 @@ pub(super) fn prepare_at(
     distinction: Distinction,
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    arranged_at(ir, command, outcome, actors, distinction, goal)
+        .map(|(setup, input, _)| (setup, input))
+}
+
+/// Whether `outcome`'s own scenario ([`prepare`]) copies a field from the row its guard reads and
+/// arranges no second row the guard accepts holding another value there ([`companion`],
+/// beyond10x/ess#270): a target copying from "a row the guard accepts" rather than the row named
+/// is then not failed by it. The fields copied, where it is; none for a branch copying nothing
+/// from that row, without arranging anything.
+pub(super) fn unaccompanied(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Vec<String> {
+    let Some((via, entity)) = read(command) else {
+        return Vec::new();
+    };
+    let copied = super::related::guarded_fields(ir, outcome, (via.field(), entity));
+    if !routes(command, outcome) || is_absent(outcome) || copied.is_empty() {
+        return Vec::new();
+    }
+    let lonely = arranged_at(ir, command, outcome, actors, Distinction::PLAIN, None)
+        .is_ok_and(|(_, _, lonely)| lonely);
+    if lonely {
+        copied.into_iter().map(str::to_owned).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// [`prepare_at`], and whether the scenario is [`unaccompanied`].
+fn arranged_at(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    goal: Option<&Goal>,
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     let (via, entity) = read(command).ok_or_else(unarranged)?;
     let field = via.field();
     // A missing row reads no predicate, so no boundary of one is witnessed on it.
     if goal.is_some() && is_absent(outcome) {
         return Err(unarranged());
     }
-    let mut setup = match (&outcome.subject, acting(command)) {
+    let mut setup = own_arrangement(ir, command, outcome, actors, distinction, (field, entity))?;
+    let names_subject = outcome.subject.as_ref().is_some_and(|subject| {
+        matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
+    });
+    if names_subject || setup.bound.contains_key(field) {
+        return Err(unarranged());
+    }
+    let mut steps = Vec::new();
+    let mut pinned = BTreeMap::new();
+    let mut lonely = false;
+    let input = if is_absent(outcome) {
+        let mut each = without_row_each(ir, command, entity, field, distinction)?.into_iter();
+        let input = each.next().ok_or_else(unarranged)?;
+        // Rows of the entity exist, each carrying an identity other than the one sent.
+        let first = block_start(OWN, distinction);
+        for at in [first - 1, first + 1] {
+            if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
+                steps.extend(decoy.steps);
+                setup.source.extend(decoy.source);
+            }
+        }
+        // Every other input guard's input is sent for the missing row too, before the scenario's
+        // own send: each is answered by this refusal, so a target answering that guard's branch
+        // before reading the row fails. Only for a refusal, which changes nothing, so the sends
+        // leave the row missing for the next.
+        send_each_without_row(ir, command, outcome, actors, &setup.bound, each, &mut steps);
+        input
+    } else {
+        // The owners the branch's own arrangement already names for a link input — its subject,
+        // or the subject's owner — are the ones it is sent naming: the related row is arranged
+        // against them, and never against a second owner the send would not name (#271).
+        pinned = pins(
+            ir,
+            command,
+            outcome,
+            entity,
+            setup.instance.as_ref(),
+            &setup.bound,
+        );
+        let (mut row, first, input) = with_row(
+            ir,
+            command,
+            outcome,
+            entity,
+            actors,
+            (OWN, distinction, &[]),
+            None,
+            goal,
+            (&pinned, &setup.steps),
+        )?;
+        let owners = subject_fact::bind_pinned(
+            ir, command, outcome, entity, actors, &mut row, &input, &pinned,
+        )?;
+        setup.bound.extend(owners);
+        lonely = surround(
+            ir,
+            (command, outcome, entity),
+            actors,
+            (first, &input),
+            (
+                &row,
+                &super::related::guarded_fields(ir, outcome, (field, entity)),
+            ),
+            (&mut steps, &mut setup.source),
+        );
+        observe_read(ir, command, entity, &row, &mut steps, &mut setup.source);
+        setup.bound.insert(field.to_owned(), row.instance.clone());
+        super::related::settle(ir, outcome, &mut setup, (field, entity), &row);
+        input
+    };
+    // The related rows go ahead of the branch's own arrangement, but for rows filed under an owner
+    // that arrangement brings into being (`pinned`): those follow it.
+    if pinned.is_empty() {
+        std::mem::swap(&mut steps, &mut setup.steps);
+    }
+    setup.steps.append(&mut steps);
+    setup.source.insert(entity_ref(entity));
+    Ok((setup, input, lonely))
+}
+
+/// The branch's own arrangement, ahead of the related row [`prepare_at`] arranges for its guard.
+///
+/// A `{related: …}` value read through the input the guard reads names the guard's own row
+/// (`guarded`): it is left out here, arranged once by [`prepare_at`], and its values carried from
+/// it (beyond10x/ess#270).
+fn own_arrangement(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    guarded: super::related::Guarded<'_>,
+) -> Result<Setup, RefusalCause> {
+    let guarded = Some(guarded);
+    let setup = match (&outcome.subject, acting(command)) {
         // A branch naming no subject of its own, beside one acting on an existing row, is sent for
         // a row that branch could act on: the related row is then the only thing that refuses it.
         (None, Some((sibling, named))) => {
@@ -517,7 +825,7 @@ pub(super) fn prepare_at(
                 .into
                 .as_ref()
                 .unwrap_or(&ir.entity(&subject.entity).lifecycle.initial);
-            super::related::arrange(
+            super::related::arrange_except(
                 ir,
                 outcome,
                 actors,
@@ -526,104 +834,340 @@ pub(super) fn prepare_at(
                     after: Some(born.clone()),
                     ..Setup::none()
                 },
+                guarded,
             )?
         }
-        _ => prepare_in(ir, outcome, actors, None, distinction)?,
+        _ => {
+            let setup = super::prepare_subject(ir, outcome, actors, None, distinction)?;
+            super::related::arrange_except(ir, outcome, actors, distinction, setup, guarded)?
+        }
     };
-    let names_subject = outcome.subject.as_ref().is_some_and(|subject| {
-        matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
-    });
-    if names_subject || setup.bound.contains_key(field) {
-        return Err(unarranged());
+    Ok(setup)
+}
+
+/// The row's fields the guards read, observed before the command where a view shows them: the row
+/// is a fact the scenario is about, not one it assumes.
+fn observe_read(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    row: &Arrangement,
+    steps: &mut Vec<super::ScenarioStep>,
+    source: &mut BTreeSet<crate::scenario::EssSemanticRef>,
+) {
+    let read_fields: BTreeSet<String> = predicates(command)
+        .iter()
+        .flat_map(|predicate| subject_fact::read_by(ir, entity, predicate))
+        .collect();
+    if let Ok((observed, view)) = subject_fact::observe_fields(ir, entity, &read_fields, row) {
+        steps.extend(observed);
+        source.insert(view.into());
     }
-    let mut steps = Vec::new();
-    let input = if is_absent(outcome) {
-        let mut each = without_row_each(ir, command, entity, field, distinction)?.into_iter();
-        let input = each.next().ok_or_else(unarranged)?;
-        // Rows of the entity exist, each carrying an identity other than the one sent.
-        let first = block_start(OWN, distinction);
-        for at in [first - 1, first + 1] {
-            if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
-                steps.extend(decoy.steps);
-                setup.source.extend(decoy.source);
+}
+
+/// The named row `row` between its decoys, at `first` in its block, pushed onto `steps`: a decoy
+/// one before it and one after, each selecting another branch where one is found — and, where the
+/// branch copies fields from the named row (`copied`, beyond10x/ess#270), a companion the guard
+/// accepts too created before all of them and another after all of them ([`companion`]), so the
+/// named row is neither the first nor the last row the guard accepts. Whether the branch copies a
+/// field and neither companion was found.
+fn surround(
+    ir: &EssIr,
+    (command, outcome, entity): (&ResolvedCommand, &ResolvedOutcome, &EntityHandle),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (first, input): (usize, &BTreeMap<String, Node>),
+    (row, copied): (&Arrangement, &[&str]),
+    (steps, source): (
+        &mut Vec<super::ScenarioStep>,
+        &mut BTreeSet<crate::scenario::EssSemanticRef>,
+    ),
+) -> bool {
+    // The companions' witnesses lie in a block of their own, one either side of its start: no
+    // other row's, and one away from a multiple of `BLOCK`, so an enum reads another variant there.
+    let base = first + BLOCK * (COMPANION - OWN);
+    let branch = (command, outcome, entity);
+    let [before, after] = [(base - 1, Side::Below), (base + 1, Side::Above)]
+        .map(|(at, side)| companion(ir, branch, actors, at, input, (row, copied), side));
+    let lonely = !copied.is_empty() && before.is_none() && after.is_none();
+    let owner = super::owner_of_row(ir, entity, &row.settled).map(|(_, owner)| owner.clone());
+    let mut named = row.steps.clone();
+    if let Some(before) = before {
+        // A companion filed under the named row's owner follows the step creating that owner.
+        let captured = owner.as_ref().and_then(|owner| {
+            named.iter().position(|step| {
+                matches!(step, super::ScenarioStep::CaptureInstance { instance, .. }
+                    if instance == owner)
+            })
+        });
+        match captured {
+            Some(at) => {
+                let after = at + 1;
+                named.splice(after..after, before.steps);
             }
+            None => steps.extend(before.steps),
         }
-        // Every other input guard's input is sent for the missing row too, before the scenario's
-        // own send: each is answered by this refusal, so a target answering that guard's branch
-        // before reading the row fails. Only for a refusal, which changes nothing, so the sends
-        // leave the row missing for the next.
-        send_each_without_row(ir, command, outcome, actors, &setup.bound, each, &mut steps);
-        input
-    } else {
-        let (row, first, input) = with_row(
-            ir,
-            command,
-            outcome,
-            entity,
-            actors,
-            (OWN, distinction, &[]),
-            None,
-            goal,
-        )?;
-        for at in [first - 1, first + 1] {
-            if at == first + 1 {
-                steps.extend(row.steps.iter().cloned());
-                setup.source.extend(row.source.iter().cloned());
-            }
-            if let Some(decoy) = decoy(ir, command, outcome, entity, actors, at, &input) {
-                steps.extend(decoy.steps);
-                setup.source.extend(decoy.source);
-            }
+        source.extend(before.source);
+    }
+    for at in [first - 1, first + 1] {
+        if at == first + 1 {
+            steps.append(&mut named);
+            source.extend(row.source.iter().cloned());
         }
-        // The row's fields the guards read are observed before the command, where a view shows
-        // them: the row is a fact the scenario is about, not one it assumes.
-        let read_fields: BTreeSet<String> = predicates(command)
-            .iter()
-            .flat_map(|predicate| subject_fact::read_by(ir, entity, predicate))
-            .collect();
-        if let Ok((observed, view)) = subject_fact::observe_fields(ir, entity, &read_fields, &row) {
-            steps.extend(observed);
-            setup.source.insert(view.into());
+        if let Some(decoy) = decoy(ir, branch, actors, at, input, (row, copied)) {
+            steps.extend(decoy.steps);
+            source.extend(decoy.source);
         }
-        setup.bound.insert(field.to_owned(), row.instance.clone());
-        input
-    };
-    steps.append(&mut setup.steps);
-    setup.steps = steps;
-    setup.source.insert(entity_ref(entity));
-    Ok((setup, input))
+    }
+    if let Some(after) = after {
+        steps.extend(after.steps);
+        source.extend(after.source);
+    }
+    lonely
 }
 
 /// A row beside the one the input names, under the further witness `at`: one on which the same
 /// input selects another branch, where the stored-row search finds one, so an implementation
 /// reading it in place of the named row answers otherwise — else the plain row there.
+///
+/// `copied` are the fields the branch copies from the named row (`{related: …}` through the
+/// guard's input, beyond10x/ess#270): a row that also holds another value in each is searched for
+/// first, so an implementation copying from it publishes another value.
 fn decoy(
     ir: &EssIr,
-    command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
-    entity: &EntityHandle,
+    (command, outcome, entity): (&ResolvedCommand, &ResolvedOutcome, &EntityHandle),
     actors: &BTreeMap<QualifiedName, ActorRef>,
     at: usize,
     input: &BTreeMap<String, Node>,
+    (named, copied): (&Arrangement, &[&str]),
 ) -> Option<Arrangement> {
     let predicates = predicates(command);
-    subject_fact::search_within(
+    let other = |node: &Arrangement| {
+        selects(ir, command, entity, Some(node), input)
+            .map(|branch| branch.is_some_and(|branch| branch.name != outcome.name))
+    };
+    let apart = (!copied.is_empty())
+        .then(|| {
+            let steers = plain_steers(ir, entity, actors, at, named, copied);
+            search_rows(
+                ir,
+                entity,
+                actors,
+                (at, None),
+                &steered(&predicates, &steers),
+                |node| Ok(other(node)? && copied.iter().all(|f| differs(node, named, f))),
+            )
+        })
+        .flatten();
+    apart
+        .or_else(|| search_rows(ir, entity, actors, (at, None), &predicates, other))
+        .or_else(|| row_at(ir, entity, actors, at, &[]))
+}
+
+/// The side of the named row's value a companion's copied values are sought on.
+#[derive(Debug, Clone, Copy)]
+enum Side {
+    Below,
+    Above,
+}
+
+/// A value next to `value` on `side` of it, for a value with an order: a text one character
+/// shorter (a prefix sorts first) or with its last character repeated, a number one less or one
+/// more. `None` for a value with no order to be on a side of — an enum variant, a flag — or no
+/// next value.
+fn beyond(value: &Node, side: Side) -> Option<Node> {
+    match (value, side) {
+        (Node::Text(text), Side::Below) => {
+            let mut shorter = text.clone();
+            shorter.pop()?;
+            Some(Node::Text(shorter))
+        }
+        (Node::Text(text), Side::Above) => {
+            let last = text.chars().last()?;
+            Some(Node::Text(format!("{text}{last}")))
+        }
+        (Node::Number(number), side) => {
+            let step = ess_primitives::facts::Number::decimal_literal(match side {
+                Side::Below => "-1",
+                Side::Above => "1",
+            })?;
+            number.checked_add(step).map(Node::Number)
+        }
+        _ => None,
+    }
+}
+
+/// A second row the guard accepts beside the one the input names, under the further witness `at`
+/// (beyond10x/ess#270): one on which the same input selects `outcome` too, holding another value
+/// than the named row in the fields the branch copies from it (`copied`), so an implementation
+/// copying from a row the guard accepts other than the one named publishes another value.
+///
+/// Searched for in three passes, each first under the named row's owner, where it has one — a row
+/// filed elsewhere would answer a guard comparing the row's owner otherwise — then anywhere: every
+/// copied field holding the value next to the named row's on `side` of it ([`beyond`]) where the
+/// field is ordered, and another value where not, so the named row's value lies strictly between
+/// two companions'; then every copied field holding another value; then at least one — a field
+/// the guard pins to one value differs in no row it accepts. `None` where the branch copies
+/// nothing, or no pass finds a row.
+fn companion(
+    ir: &EssIr,
+    (command, outcome, entity): (&ResolvedCommand, &ResolvedOutcome, &EntityHandle),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    at: usize,
+    input: &BTreeMap<String, Node>,
+    (named, copied): (&Arrangement, &[&str]),
+    side: Side,
+) -> Option<Arrangement> {
+    if copied.is_empty() {
+        return None;
+    }
+    let predicates = predicates(command);
+    let plain = plain_steers(ir, entity, actors, at, named, copied);
+    let targets: Vec<(&str, Option<Node>)> = copied
+        .iter()
+        .map(|field| {
+            let target = literal(named, field).and_then(|value| beyond(&value, side));
+            (*field, target)
+        })
+        .collect();
+    let ordered: Vec<(&str, Node)> = targets
+        .iter()
+        .filter_map(|(field, target)| {
+            target
+                .clone()
+                .or_else(|| {
+                    plain
+                        .iter()
+                        .find(|(held, _)| held == field)
+                        .map(|(_, v)| v.clone())
+                })
+                .map(|value| (*field, value))
+        })
+        .collect();
+    let on_side = |node: &Arrangement| {
+        targets.iter().all(|(field, target)| match target {
+            Some(target) => literal(node, field).as_ref() == Some(target),
+            None => differs(node, named, field),
+        })
+    };
+    let every = |node: &Arrangement| copied.iter().all(|field| differs(node, named, field));
+    let any = |node: &Arrangement| copied.iter().any(|field| differs(node, named, field));
+    let passes: [Pass<'_>; 3] = [(&ordered, &on_side), (&plain, &every), (&plain, &any)];
+    let owner = super::owner_of_row(ir, entity, &named.settled).map(|(_, owner)| owner);
+    let unders: Vec<subject_fact::Under<'_>> = owner
+        .into_iter()
+        .map(|owner| Some((owner, false)))
+        .chain([None])
+        .collect();
+    for (steers, accepts) in passes {
+        let hints = steered(&predicates, steers);
+        for under in &unders {
+            let found = search_rows(ir, entity, actors, (at, *under), &hints, |node| {
+                Ok(selects(ir, command, entity, Some(node), input)?
+                    .is_some_and(|branch| branch.name == outcome.name)
+                    && accepts(node))
+            });
+            if found.is_some() {
+                return found;
+            }
+        }
+    }
+    None
+}
+
+/// One pass of the [`companion`] search: the values its rows are steered toward, and what it takes.
+type Pass<'a> = (&'a [(&'a str, Node)], &'a dyn Fn(&Arrangement) -> bool);
+
+/// What `row` holds in `field`, where it is a literal.
+fn literal(row: &Arrangement, field: &str) -> Option<Node> {
+    match &row.settled.get(field)?.value {
+        crate::scenario::ScenarioValue::Literal { value } => Some(value.clone()),
+        _ => None,
+    }
+}
+
+/// Whether `node` holds another value in `field` than `named`.
+fn differs(node: &Arrangement, named: &Arrangement, field: &str) -> bool {
+    let held = |row: &Arrangement| row.settled.get(field).map(|held| held.value.clone());
+    held(node) != held(named)
+}
+
+/// The value the plain row at the further witness `at` holds in each of `copied` where it differs
+/// from what `named` holds there: the value a row apart from the named one is steered toward.
+fn plain_steers<'f>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    at: usize,
+    named: &Arrangement,
+    copied: &[&'f str],
+) -> Vec<(&'f str, Node)> {
+    let Some(plain) = row_at(ir, entity, actors, at, &[]) else {
+        return Vec::new();
+    };
+    copied
+        .iter()
+        .filter_map(|field| {
+            let other = literal(&plain, field)?;
+            (Some(&other) != literal(named, field).as_ref()).then_some((*field, other))
+        })
+        .collect()
+}
+
+/// The command's predicates, then each side of every predicate joined with each field holding its
+/// value in `steers`, then those values alone: the stored-row search tries the literals its hints
+/// name, so a row on either side of the guard is tried with them.
+fn steered(predicates: &[Predicate], steers: &[(&str, Node)]) -> Vec<Predicate> {
+    let steers: Vec<Predicate> = steers
+        .iter()
+        .filter_map(|(field, value)| {
+            Some(Predicate::AnyOf {
+                path: FactPath::new(field).ok()?,
+                values: vec![super::fact_value(value)?],
+            })
+        })
+        .collect();
+    let mut hints = predicates.to_vec();
+    if steers.is_empty() {
+        return hints;
+    }
+    for predicate in predicates {
+        for side in [
+            predicate.clone(),
+            Predicate::Not(Box::new(predicate.clone())),
+        ] {
+            hints.push(Predicate::All(
+                std::iter::once(side)
+                    .chain(steers.iter().cloned())
+                    .collect(),
+            ));
+        }
+    }
+    hints.extend(steers);
+    hints
+}
+
+/// The first row of `entity` the stored-row search reaches under the further witness `at`, filed
+/// under `under` where it names an owner, that `accepts` takes.
+fn search_rows(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (at, under): (usize, subject_fact::Under<'_>),
+    hints: &[Predicate],
+    accepts: impl Fn(&Arrangement) -> Result<bool, RefusalCause>,
+) -> Option<Arrangement> {
+    subject_fact::search_under(
         ir,
         entity,
         actors,
-        &predicates,
-        Distinction::further(at),
-        "related decoy",
+        hints,
+        (Distinction::further(at), "related decoy"),
         &[],
-        |node| {
-            Ok(selects(ir, command, entity, Some(node), input)?
-                .is_some_and(|branch| branch.name != outcome.name)
-                .then_some(()))
-        },
+        under,
+        |node| Ok(accepts(node)?.then_some(())),
     )
     .map(|(row, ())| row)
     .ok()
-    .or_else(|| row_at(ir, entity, actors, at, &[]))
 }
 
 /// The input that reaches the `exists: false` branch: a fresh identity for `field`, and — where the
@@ -688,7 +1232,7 @@ fn without_row_each(
     field: &str,
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
-    let fresh = fresh_identity(ir, command, field)?;
+    let fresh = fresh_identity(ir, command, field, None)?;
     let refusals = command
         .outcomes
         .iter()
@@ -763,6 +1307,10 @@ fn with_row(
     (base, distinction, arranging): (usize, Distinction, &[&EntityHandle]),
     chosen: Option<&BTreeMap<String, Node>>,
     goal: Option<&Goal>,
+    (pins, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
 ) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
     let guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
     let predicates = predicates(command);
@@ -802,7 +1350,11 @@ fn with_row(
                     inputs.extend(further);
                 }
             }
-            inputs
+            // A predicate comparing the row's link to its owner with an input naming an owner is
+            // decided only on an input naming an arranged owner: the row's own, or a second one
+            // (beyond10x/ess#271). The caller sends the owner named through `Setup::bound`, and a
+            // link input already bound (`pins`) names that owner whatever is chosen here.
+            subject_fact::naming_owners(ir, command, entity, node, inputs, pins)
         };
         Ok(inputs.into_iter().find(|input| {
             meets(node, input)
@@ -821,15 +1373,15 @@ fn with_row(
                     ))
         }))
     };
-    let search = |strict: bool| {
-        subject_fact::search_within(
+    let search = |strict: bool, under: subject_fact::Under<'_>| {
+        subject_fact::search_under(
             ir,
             entity,
             actors,
             &predicates,
-            Distinction::further(first),
-            "related row",
+            (Distinction::further(first), "related row"),
             arranging,
+            under,
             |node| selecting(node, strict),
         )
     };
@@ -837,10 +1389,26 @@ fn with_row(
     // a row and input that witness it element by element are searched for first
     // (`subject_fact::witnesses_elements`, beyond10x/ess#240), and the plain search runs only where
     // none does. Every other command searches once, as it always did.
-    let (row, input) = if subject_fact::has_elementwise(ir, entity, &predicates) {
-        search(true).or_else(|_| search(false))?
-    } else {
-        search(false)?
+    let elementwise = subject_fact::has_elementwise(ir, entity, &predicates);
+    let run = |under: subject_fact::Under<'_>| {
+        if elementwise {
+            search(true, under).or_else(|_| search(false, under))
+        } else {
+            search(false, under)
+        }
+    };
+    // A link input already bound to an owner (`pins`) is sent naming that owner, so the side of a
+    // link comparison where it names the row's own is reached only on a row filed under it: where
+    // the row under an owner of its own selects no branch here, it is searched for there
+    // (beyond10x/ess#271), and refused naming the first search's cause where that fails too.
+    let (row, input) = match run(None) {
+        Ok(found) => found,
+        Err(cause) => match pins.values().next() {
+            Some(held) => {
+                run(Some((held, super::holds_none(ir, entity, known, held)))).map_err(|_| cause)?
+            }
+            None => return Err(cause),
+        },
     };
     Ok((row, first, input))
 }
@@ -876,7 +1444,7 @@ pub(super) fn point_at_missing(
     input: &mut BTreeMap<String, Node>,
 ) -> Result<(), RefusalCause> {
     let (via, _) = read(command).ok_or_else(unarranged)?;
-    let fresh = fresh_identity(ir, command, via.field())?;
+    let fresh = fresh_identity(ir, command, via.field(), Some(&*input))?;
     input.insert(via.field().to_owned(), fresh);
     Ok(())
 }

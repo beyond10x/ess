@@ -1,12 +1,174 @@
 {
   "provenance": {
-    "suite_version": "ess-conformance/4",
+    "suite_version": "ess-conformance/26",
     "system": "gatepass",
     "specification_version": "v1",
     "spec_digest": "f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba",
     "contract_digest": "a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c"
   },
   "scenarios": {
+    "gatepass.visit.AdmitVisitor/grant/denied": {
+      "purpose": "`gatepass.visit.AdmitVisitor` sent as `gatepass.visit.SecurityAuditor`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.RegisterVisit",
+          "actor": "gatepass.visit.Receptionist",
+          "input": {
+            "building": {
+              "kind": "literal",
+              "value": "North"
+            },
+            "deposit": {
+              "kind": "literal",
+              "value": {
+                "amount": 1.0,
+                "currency": "deposit.currency"
+              }
+            },
+            "escorts": {
+              "kind": "literal",
+              "value": []
+            },
+            "expected_minutes": {
+              "kind": "literal",
+              "value": 1.0
+            },
+            "expected_stay": {
+              "kind": "literal",
+              "value": "PT1S"
+            },
+            "host": {
+              "kind": "literal",
+              "value": {
+                "kind": "contractor",
+                "value": "host"
+              }
+            },
+            "notes": {
+              "kind": "literal",
+              "value": {
+                "notes": "notes.0"
+              }
+            },
+            "on_watchlist": {
+              "kind": "literal",
+              "value": true
+            },
+            "visitor": {
+              "kind": "literal",
+              "value": "visitor"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "gatepass.visit.RegisterVisit",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "visit",
+          "entity": "gatepass.visit.Visit",
+          "event": "gatepass.visit.VisitRegistered",
+          "field": "visit_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.AdmitVisitor",
+          "actor": "gatepass.visit.SecurityAuditor",
+          "input": {
+            "badge": {
+              "kind": "literal",
+              "value": {
+                "printed_at": "2020-01-01T00:00:00Z",
+                "serial": "badge.serial",
+                "signature": "AA=="
+              }
+            },
+            "visit_id": {
+              "kind": "instance",
+              "instance": "visit"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "gatepass.visit.SecurityAuditor",
+          "unpublished": [
+            "gatepass.visit.VisitRegistered",
+            "gatepass.visit.VisitorAdmitted",
+            "gatepass.visit.VisitorDeparted"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "gatepass.visit.Badge"
+        },
+        {
+          "kind": "type",
+          "name": "gatepass.visit.VisitId"
+        },
+        {
+          "kind": "entity",
+          "name": "gatepass.visit.Visit"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.AdmitVisitor"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.RegisterVisit"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.AdmitVisitor",
+            "outcome": "admitted"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.RegisterVisit",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorAdmitted"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorDeparted"
+        },
+        {
+          "kind": "view",
+          "name": "gatepass.visit.ExpectedVisits"
+        },
+        {
+          "kind": "view",
+          "name": "gatepass.visit.VisitById"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.Receptionist"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.SecurityAuditor"
+        }
+      ]
+    },
     "gatepass.visit.AdmitVisitor/outcome/admitted": {
       "purpose": "`gatepass.visit.AdmitVisitor` answers `admitted` for an input no other branch's guard claims",
       "steps": [
@@ -439,6 +601,136 @@
         }
       ]
     },
+    "gatepass.visit.RegisterVisit/grant/denied": {
+      "purpose": "`gatepass.visit.RegisterVisit` sent as `gatepass.visit.SecurityAuditor`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.RegisterVisit",
+          "actor": "gatepass.visit.SecurityAuditor",
+          "input": {
+            "building": {
+              "kind": "literal",
+              "value": "North"
+            },
+            "deposit": {
+              "kind": "literal",
+              "value": {
+                "amount": 1.0,
+                "currency": "deposit.currency"
+              }
+            },
+            "escorts": {
+              "kind": "literal",
+              "value": []
+            },
+            "expected_minutes": {
+              "kind": "literal",
+              "value": 1.0
+            },
+            "expected_stay": {
+              "kind": "literal",
+              "value": "PT1S"
+            },
+            "host": {
+              "kind": "literal",
+              "value": {
+                "kind": "contractor",
+                "value": "host"
+              }
+            },
+            "notes": {
+              "kind": "literal",
+              "value": {
+                "notes": "notes.0"
+              }
+            },
+            "on_watchlist": {
+              "kind": "literal",
+              "value": true
+            },
+            "visitor": {
+              "kind": "literal",
+              "value": "visitor"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "gatepass.visit.SecurityAuditor",
+          "unpublished": [
+            "gatepass.visit.VisitRegistered",
+            "gatepass.visit.VisitorAdmitted",
+            "gatepass.visit.VisitorDeparted"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "gatepass.visit.Building"
+        },
+        {
+          "kind": "type",
+          "name": "gatepass.visit.Deposit"
+        },
+        {
+          "kind": "type",
+          "name": "gatepass.visit.EmployeeId"
+        },
+        {
+          "kind": "type",
+          "name": "gatepass.visit.Host"
+        },
+        {
+          "kind": "type",
+          "name": "gatepass.visit.VendorRef"
+        },
+        {
+          "kind": "type",
+          "name": "gatepass.visit.VisitorName"
+        },
+        {
+          "kind": "entity",
+          "name": "gatepass.visit.Visit"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.RegisterVisit"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.RegisterVisit",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorAdmitted"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorDeparted"
+        },
+        {
+          "kind": "view",
+          "name": "gatepass.visit.ExpectedVisits"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.Receptionist"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.SecurityAuditor"
+        }
+      ]
+    },
     "gatepass.visit.RegisterVisit/outcome/refused": {
       "purpose": "`gatepass.visit.RegisterVisit` answers `refused` for an input no other branch's guard claims",
       "steps": [
@@ -777,6 +1069,193 @@
         {
           "kind": "actor",
           "name": "gatepass.visit.Receptionist"
+        }
+      ]
+    },
+    "gatepass.visit.SignOutVisitor/grant/denied": {
+      "purpose": "`gatepass.visit.SignOutVisitor` sent as `gatepass.visit.SecurityAuditor`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.RegisterVisit",
+          "actor": "gatepass.visit.Receptionist",
+          "input": {
+            "building": {
+              "kind": "literal",
+              "value": "North"
+            },
+            "deposit": {
+              "kind": "literal",
+              "value": {
+                "amount": 1.0,
+                "currency": "deposit.currency"
+              }
+            },
+            "escorts": {
+              "kind": "literal",
+              "value": []
+            },
+            "expected_minutes": {
+              "kind": "literal",
+              "value": 1.0
+            },
+            "expected_stay": {
+              "kind": "literal",
+              "value": "PT1S"
+            },
+            "host": {
+              "kind": "literal",
+              "value": {
+                "kind": "contractor",
+                "value": "host"
+              }
+            },
+            "notes": {
+              "kind": "literal",
+              "value": {
+                "notes": "notes.0"
+              }
+            },
+            "on_watchlist": {
+              "kind": "literal",
+              "value": true
+            },
+            "visitor": {
+              "kind": "literal",
+              "value": "visitor"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "gatepass.visit.RegisterVisit",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "visit",
+          "entity": "gatepass.visit.Visit",
+          "event": "gatepass.visit.VisitRegistered",
+          "field": "visit_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.AdmitVisitor",
+          "actor": "gatepass.visit.Receptionist",
+          "input": {
+            "badge": {
+              "kind": "literal",
+              "value": {
+                "printed_at": "2020-01-01T00:00:00Z",
+                "serial": "badge.serial",
+                "signature": "AA=="
+              }
+            },
+            "visit_id": {
+              "kind": "instance",
+              "instance": "visit"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "gatepass.visit.AdmitVisitor",
+            "outcome": "admitted"
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.SignOutVisitor",
+          "actor": "gatepass.visit.SecurityAuditor",
+          "input": {
+            "visit_id": {
+              "kind": "instance",
+              "instance": "visit"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "gatepass.visit.SecurityAuditor",
+          "unpublished": [
+            "gatepass.visit.VisitRegistered",
+            "gatepass.visit.VisitorAdmitted",
+            "gatepass.visit.VisitorDeparted"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "gatepass.visit.VisitId"
+        },
+        {
+          "kind": "entity",
+          "name": "gatepass.visit.Visit"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.AdmitVisitor"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.RegisterVisit"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.SignOutVisitor"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.AdmitVisitor",
+            "outcome": "admitted"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.RegisterVisit",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.SignOutVisitor",
+            "outcome": "signed-out"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorAdmitted"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorDeparted"
+        },
+        {
+          "kind": "view",
+          "name": "gatepass.visit.ExpectedVisits"
+        },
+        {
+          "kind": "view",
+          "name": "gatepass.visit.VisitById"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.Receptionist"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.SecurityAuditor"
         }
       ]
     },

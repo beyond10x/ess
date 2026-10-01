@@ -9,6 +9,26 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.49.0 — 2026-10-01
+
+### Generated servers enforce actor grants
+
+breaking · significant impact · [release post](https://beyond10x.github.io/ess/releases/actor-grants-and-related-state) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.49.0)
+
+In a specification that declares actors, generated Rust and Go servers take the authenticated caller and answer `403 not granted` before a command runs for a caller the specification does not grant it; served suites witness the refusal. Existing callers of `dispatch`, `handle` and `serve` must pass the caller.
+
+### A when_related guard reads the related row's lifecycle state
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/actor-grants-and-related-state) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.49.0)
+
+`ess/20` lets a `when_related` predicate read the related row's held lifecycle state as `state`, and synthesis arranges a related row of an entity already being arranged one level deep; earlier formats refuse the path and keep their suites.
+
+### Synthesis witnesses related copies, owner-linked guards and overlapping branches
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/actor-grants-and-related-state) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.49.0)
+
+Synthesis now witnesses aggregate keys and values copied from a related row, `when_related` over an `owns` via field, a fresh caller-supplied identity under swapped callers, and a `when:` beside a `when_subject:`; `ess verify diff` leaves no residual for a one-sided declaration.
+
 ## 0.48.0 — 2026-09-30
 
 ### An outside runner's results become a conformance report

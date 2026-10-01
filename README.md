@@ -71,7 +71,7 @@ Pick the target for your machine from the [release page](https://github.com/beyo
 For example, to install the current release for Apple Silicon in the current directory:
 
 ```console
-version=0.48.0
+version=0.49.0
 target=aarch64-apple-darwin
 archive="ess-${version}-${target}.tar.gz"
 base="https://github.com/beyond10x/ess/releases/download/${version}"

@@ -1,10 +1,11 @@
 //! The types crate's `actor` module: every declared actor, and the commands each may invoke, as
 //! data (`story:actor-grants-as-data`).
 //!
-//! The plan refuses *enforcing* a grant — a grant is checked against a caller identity, which
-//! types do not carry — and says the grant is generated as data. This is that data: an `Actor`
-//! enum with one variant per declared actor and `may(actor)`, the qualified names of the commands
-//! it may invoke. Nothing here checks anything; the caller that knows who is calling does.
+//! This is the grant as data: an `Actor` enum with one variant per declared actor, `may(actor)`,
+//! the qualified names of the commands it may invoke, and `Caller`, who a request was
+//! authenticated as. Nothing here checks anything. A served surface checks a `Caller` it is handed
+//! before the command runs (beyond10x/ess#265); without one, the caller that knows who is calling
+//! does, and the plan says so.
 //!
 //! Emitted only for a model that declares an actor, so a model without one keeps its bytes.
 //!
@@ -45,10 +46,11 @@ pub(crate) fn module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Op
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push_str(
         "\n//! Every actor the specification declares, and the commands each may invoke — as \
-         data.\n//!\n//! Generated, not enforced: a grant is checked against a caller identity, \
-         which types do not\n//! carry, so the caller that knows who is calling enforces it, \
-         against [`may`]. The `PLAN.md`\n//! beside this workspace records the same refusal \
-         for every actor.\n\n/// An actor the specification declares.\n#[derive(Debug, \
+         data.\n//!\n//! A grant is checked against a caller identity, which these types do not \
+         read from anywhere:\n//! whatever authenticates a request builds a [`Caller`], and a \
+         served surface checks it against\n//! [`may`] before the command runs. The `PLAN.md` \
+         beside this workspace says, per actor,\n//! whether a generated surface enforces the \
+         grant or the caller does.\n\n/// An actor the specification declares.\n#[derive(Debug, \
          Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]\npub enum Actor {\n",
     );
     for (actor, variant) in &variants {
@@ -90,11 +92,28 @@ pub(crate) fn module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Op
         out.push_str("        ],\n");
     }
     out.push_str("    }\n}\n");
+    out.push_str(CALLER);
     Some(Artifact::new(
         format!("crates/{}/src/{MODULE}.rs", layout.package()),
         out,
     ))
 }
+
+/// The authenticated caller, and the one question a surface asks of it (beyond10x/ess#265).
+///
+/// A value the shell that authenticated a request hands the served surface, never one the surface
+/// reads out of the request: a client can write anything into a request, so an actor derived from
+/// it is an actor any client can claim.
+const CALLER: &str = "\n/// Who a request was authenticated as.\n///\n/// Built by whatever \
+                      authenticates the request — a session, a token, a certificate — and\n/// \
+                      handed to the served surface's `dispatch` and `handle`, which check its \
+                      grant\n/// before the command runs. Never derived from the request itself: \
+                      a client can write\n/// anything into a request.\n#[derive(Debug, Clone, \
+                      Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]\npub struct Caller {\n    /// \
+                      The declared actor.\n    pub actor: Actor,\n}\n\nimpl Caller {\n    /// \
+                      `true` when this caller may invoke `command`, named by its qualified \
+                      name.\n    pub fn may(&self, command: &str) -> bool {\n        \
+                      may(self.actor).contains(&command)\n    }\n}\n";
 
 /// One variant name per actor, collision-free by rule: the actor's domain-relative type name, or
 /// — when two domains declare the same one — every actor's full name minus the system prefix,

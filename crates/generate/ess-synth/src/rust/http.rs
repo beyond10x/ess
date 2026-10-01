@@ -167,10 +167,21 @@ pub(super) fn server_crate(
         ),
         Artifact::new(
             format!("crates/{package}/src/entry.rs"),
-            format!("{}{}", provenance.commented_for("//", REGENERATE), ENTRY),
+            format!(
+                "{}{}",
+                provenance.commented_for("//", REGENERATE),
+                entry_module(http::checks_grants(ir))
+            ),
         ),
     ];
 
+    // Every served command checks the caller's grant before it runs (beyond10x/ess#265).
+    for actor in ir.actors().keys() {
+        covered.insert(Capability {
+            kind: CapabilityKind::ActorGrants,
+            source: actor.to_string(),
+        });
+    }
     for component in &components {
         covered.insert(Capability {
             kind: CapabilityKind::ComponentTransport,
@@ -291,6 +302,26 @@ fn lib_module(
     Artifact::new(format!("crates/{package}/src/lib.rs"), out)
 }
 
+/// Whether any route serves a command: the only routes a grant check guards.
+fn commands_served(routes: &[http::Route<'_>]) -> bool {
+    routes
+        .iter()
+        .any(|route| matches!(route.serves, Served::Command(_)))
+}
+
+/// The caller parameter `dispatch` and `handle` take in a model that declares an actor, named
+/// with a leading underscore where the surface serves no command and so checks no grant.
+fn caller_parameter(server: &Server<'_>, routes: &[http::Route<'_>]) -> String {
+    if !http::checks_grants(server.ir) {
+        return String::new();
+    }
+    format!(
+        "{}caller: Option<&{}::actor::Caller>, ",
+        if commands_served(routes) { "" } else { "_" },
+        server.types
+    )
+}
+
 /// The module identifier one component's surface lands in.
 fn module_ident(component: &ResolvedComponent) -> String {
     name::value_ident(&component.name.to_string())
@@ -330,6 +361,9 @@ fn surface_module(
     serve_function(&mut out, server, component);
     dispatch(&mut out, server, &routes);
     entry_point(&mut out, server, component, &routes);
+    if http::checks_grants(ir) && commands_served(&routes) {
+        grant_check(&mut out, server);
+    }
     handlers(&mut out, server, component, &routes);
 
     Artifact::new(
@@ -570,14 +604,67 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
          which one\n/// was taken, because a caller that cannot learn the port cannot make a \
          request.\n///\n/// It chooses no realization. Every command reaches the port, and a port \
          over unimplemented\n/// obligations answers the typed refusal this surface reports as \
-         `501` — the honest empty\n/// state rather than a server that pretends.\n///\n\
-         /// # Errors\n///\n/// Anything the listener refuses: the address is taken, the port is \
-         privileged, the socket\n/// died.\npub fn serve{angled}(system: &mut \
-         {system_crate}::System{angled}, address: &str) -> std::io::Result<()>\n",
+         `501` — the honest empty\n/// state rather than a server that pretends.\n",
         component.name
     );
+    let grants = http::checks_grants(server.ir);
+    if grants {
+        out.push_str(
+            "///\n/// `authenticate` is the realization's: it says who each request was sent by, \
+             or `None`, and\n/// [`dispatch`] checks that caller's grant before the command \
+             runs. Nothing here reads an\n/// actor from the request itself.\n",
+        );
+    }
+    let _ = write!(
+        out,
+        "///\n/// # Errors\n///\n/// Anything the listener refuses: the address is taken, the \
+         port is privileged, the socket\n/// died.\npub fn serve{angled}(system: &mut \
+         {system_crate}::System{angled}, address: &str{}) -> std::io::Result<()>\n",
+        if grants {
+            format!(
+                ", authenticate: impl Fn(&http::Request) -> Option<{}::actor::Caller>",
+                server.types
+            )
+        } else {
+            String::new()
+        }
+    );
     out.push_str(&where_clause(server));
-    out.push_str(SERVE_BODY);
+    out.push_str(&if grants {
+        SERVE_BODY.replace(
+            "dispatch(system, &request)",
+            "dispatch(system, authenticate(&request).as_ref(), &request)",
+        )
+    } else {
+        SERVE_BODY.to_owned()
+    });
+}
+
+/// The grant check every command route and every command `handle` runs first (beyond10x/ess#265),
+/// and the standard refusal the route answers when it fails. Emitted only in a model that declares
+/// an actor.
+fn grant_check(out: &mut String, server: &Server<'_>) {
+    let types = &server.types;
+    let _ = write!(
+        out,
+        "\n/// Nothing, where `caller` may invoke `command`; otherwise the actor the standard \
+         refusal names,\n/// `None` where the request was authenticated as no actor.\n///\n/// \
+         Checked before the command runs, on the caller the realization authenticated the \
+         request\n/// as and never on anything the request says about itself. Public, so code that drives the system\n/// in process checks the grant exactly as every route does.\npub fn admit(caller: \
+         Option<&{types}::actor::Caller>, command: &str) -> Result<(), Option<&'static str>> \
+         {{\n    match caller {{\n        Some(caller) if caller.may(command) => Ok(()),\n        \
+         Some(caller) => Err(Some(caller.actor.name())),\n        None => Err(None),\n    \
+         }}\n}}\n\n/// The standard refusal for an actor no grant admits, as the contract declares \
+         it: `403`,\n/// `{{\"refused\": \"not granted\", \"actor\": <name or null>}}`.\nfn \
+         not_granted(actor: Option<&str>) -> http::Response {{\n    let mut body = \
+         String::from(\"{{\");\n    json::member(&mut body, \"refused\");\n    \
+         json::push_text(&mut body, {not_granted:?});\n    json::member(&mut body, \
+         \"actor\");\n    match actor {{\n        Some(actor) => json::push_text(&mut body, \
+         actor),\n        None => body.push_str(\"null\"),\n    }}\n    body.push('}}');\n    \
+         http::Response::new({status}, http::JSON, body)\n}}\n",
+        not_granted = http::NOT_GRANTED,
+        status = http::FORBIDDEN,
+    );
 }
 
 /// The `where` clause every function over the system carries: the bounds `System::pump` carries,
@@ -640,9 +727,22 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
          `405` naming the one it answers. Neither is a\n/// status the contract declares, and \
          neither should be: both are facts about a transport rather\n/// than about any \
          command.\n///\n/// Public so a caller can hand it a request it built itself: [`serve`] \
-         is this function behind a\n/// socket, and nothing else.\npub fn \
-         dispatch{angled}(system: &mut {system_crate}::System{angled}, request: \
-         &http::Request) -> http::Response\n"
+         is this function behind a\n/// socket, and nothing else.\n"
+    );
+    let grants = http::checks_grants(ir);
+    if grants {
+        out.push_str(
+            "///\n/// `caller` is who the realization authenticated the request as, or `None`. \
+             Every command\n/// checks its grant before it runs, and answers the standard refusal \
+             when the caller is none\n/// or is an actor the specification does not grant the \
+             command.\n",
+        );
+    }
+    let _ = writeln!(
+        out,
+        "pub fn dispatch{angled}(system: &mut {system_crate}::System{angled}, {}request: \
+         &http::Request) -> http::Response",
+        caller_parameter(server, routes)
     );
     out.push_str(&where_clause(server));
     out.push_str("{\n    match request.path.as_str() {\n");
@@ -663,6 +763,13 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
                     .find(|route| route.path == path)
                     .expect("every non-document row of the table is a route");
                 let call = match route.serves {
+                    Served::Command(handle) if grants => format!(
+                        "            if let Err(actor) = admit(caller, {:?}) {{\n                \
+                         return not_granted(actor);\n            }}\n            {}(system, \
+                         &request.body)\n        }}\n",
+                        ir.command(handle).name.to_string(),
+                        handler_ident(&ir.command(handle).name)
+                    ),
                     Served::Command(handle) => format!(
                         "            {}(system, &request.body)\n        }}\n",
                         handler_ident(&ir.command(handle).name)
@@ -732,10 +839,22 @@ fn entry_point(
          input (the\n/// route's `400`); [`entry::Refused::Unmet`] when the port reports an \
          unmet obligation, and\n/// [`entry::Refused::Undelivered`] when the command took \
          effect and delivering what it published\n/// failed (the route's `501`, with \
-         `committed` `false` and `true`).\npub fn handle{angled}({system}: &mut \
-         {system_crate}::System{angled}, name: &str, {input}: json::Value) -> \
-         Result<json::Value, entry::Refused>\n",
+         `committed` `false` and `true`).\n",
         component.name
+    );
+    let grants = http::checks_grants(ir);
+    if grants {
+        out.push_str(
+            "/// [`entry::Refused::NotGranted`] when `caller` — who the realization authenticated \
+             the call\n/// as — is none, or is an actor the specification does not grant the \
+             command; checked before\n/// the command runs (the route's `403`).\n",
+        );
+    }
+    let _ = writeln!(
+        out,
+        "pub fn handle{angled}({system}: &mut {system_crate}::System{angled}, {}name: &str, \
+         {input}: json::Value) -> Result<json::Value, entry::Refused>",
+        caller_parameter(server, routes)
     );
     out.push_str(&where_clause(server));
     if routes.is_empty() {
@@ -746,6 +865,19 @@ fn entry_point(
     let mut arms: Vec<(String, String)> = routes
         .iter()
         .map(|route| match route.serves {
+            Served::Command(handle) if grants => {
+                let declared = &ir.command(handle).name;
+                (
+                    declared.to_string(),
+                    format!(
+                        "match admit(caller, {:?}) {{\n            Ok(()) => {}(system, \
+                         &input),\n            Err(actor) => \
+                         Err(entry::Refused::NotGranted(actor.map(str::to_owned))),\n        }}",
+                        declared.to_string(),
+                        runner_ident(declared)
+                    ),
+                )
+            }
             Served::Command(handle) => {
                 let declared = &ir.command(handle).name;
                 (
@@ -1415,6 +1547,35 @@ pub fn reason(status: u16) -> &'static str {
 
 /// The body of the emitted `entry` module: what the transport-free entry point answers when it
 /// answers no declared outcome. No specification changes it.
+/// The `entry` module: [`ENTRY`], and — in a model that declares an actor — the refusal a caller no
+/// grant admits meets (beyond10x/ess#265). A model without one keeps its bytes.
+fn entry_module(grants: bool) -> String {
+    if !grants {
+        return ENTRY.to_owned();
+    }
+    ENTRY
+        .replace(
+            "    Undelivered(String),\n}",
+            "    Undelivered(String),\n    /// The caller is no actor, or one the specification \
+             does not grant the command; checked\n    /// before the command runs, and the route \
+             answers this `403` with the standard refusal,\n    /// `{\"refused\": \"not \
+             granted\", \"actor\": <name or null>}`. Carries the actor's qualified name,\n    \
+             /// `None` where the call was authenticated as no actor.\n    \
+             NotGranted(Option<String>),\n}",
+        )
+        .replace(
+            "            Self::Unmet(_) | Self::Undelivered(_) => 501,\n",
+            "            Self::Unmet(_) | Self::Undelivered(_) => 501,\n            \
+             Self::NotGranted(_) => 403,\n",
+        )
+        .replace(
+            "                f.write_str(detail)\n            }\n",
+            "                f.write_str(detail)\n            }\n            \
+             Self::NotGranted(Some(actor)) => write!(f, \"not granted: `{actor}`\"),\n            \
+             Self::NotGranted(None) => f.write_str(\"not granted: no actor\"),\n",
+        )
+}
+
 const ENTRY: &str = r#"
 //! The transport-free entry point's refusals.
 //!

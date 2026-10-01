@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+## [0.49.0] — 2026-10-01
+
+### Added
+
+- `ess/20`: a `when_related` predicate may read the related row's held lifecycle state as
+  `state`; older formats refuse it with `unsupported_format_version` naming `ess/20`. From
+  `ess/20`, synthesis arranges a related row of an entity already being arranged one level deep,
+  in its initial state; suites for earlier formats are unchanged (beyond10x/ess#229).
+
+### Changed
+
+- **Breaking for a caller of a generated server in a specification that declares actors**: served
+  surfaces enforce actor grants. The generated server's `dispatch` and `handle` (Rust) and
+  `dispatch` (Go) take the caller your realization authenticated the request as, and `serve` /
+  `Serve<Component>` take an `authenticate` function that returns it. `admit` (Rust) and `Admit`
+  (Go) expose the check. Before a command runs, a request with no caller, or with an actor the
+  specification does not grant the command, gets `403 {"refused": "not granted", "actor": <name
+  or null>}`. A command no actor is granted is refused to every caller; views are not
+  grant-checked. The OpenAPI contract of a served component declares this refusal on every
+  command. For served components the synthesized suite adds `<command>/grant/denied`, which
+  borrows a scenario whose send the command accepts and requires that the target's event log
+  grows by nothing, and `<command>/grant/admitted/<actor>` where a granted actor would otherwise
+  never send its command (suite/26). A specification that serves nothing gets a note that
+  enforcement is the caller's. Authored scenarios can expect the refusal with `refused:
+  not_granted` (ess-scenario/4). New codes: ESS-AUTHOR-038 and 039, and ESS-AUTHOR-040 for an act
+  sending a served command no actor is granted. How a request proves its actor remains the
+  realization's job (beyond10x/ess#265).
+
+### Fixed
+
+- Synthesis: a scenario sending a command that reads the caller now also runs with the callers
+  swapped and a fresh caller-supplied identity. That identity is replaced in every copy the model
+  makes of it, including converted ones, and is always drawn inside the guards that read it. A
+  run with no fresh identity left is named in a note, and a guard that leaves no fresh identity
+  refuses the scenario (beyond10x/ess#275).
+- Synthesis: a command that copies a value from a related row (`{related: …}` in `sets:` or
+  `payload:`) through the same input its `when_related` guard reads now gets its success
+  scenario. One row the guard also accepts is created before it and another after it, under the
+  same owner where the row has one, so a target copying from the first, last, least or greatest
+  accepted row fails. Where no such row can be arranged, `Note::UnaccompaniedRelatedCopy` says so.
+  Previously the branch was refused with ESS-SYNTH-008 (beyond10x/ess#270).
+- Synthesis: a branch with a `when:` beside a `when_subject:`, declared before a sibling with the
+  same `when:`, gets its outcome, transition and wrong-state scenarios; the first declared of
+  several selected branches answers. A refused wrong-state witness no longer states `c and none
+  of: c, …` for a sibling admitting the same inputs, however it is spelled: it names the one
+  sibling taking those inputs first, or the row the witness needed (beyond10x/ess#278).
+- Synthesis: an aggregate view grouped by a key the creating command copies from a related row
+  (`{related: …}` in `sets:`) gets its `<view>/aggregate` scenario: each row first creates the
+  related row holding the key it wants, so a target aggregating under the wrong key or ignoring
+  the owner link fails. ESS-SYNTH-017 says "does not set" only of a key nothing sets
+  (beyond10x/ess#257).
+- Synthesis: a `when_related` guard over the `via` field of an `owns` relation is witnessed on
+  both sides, with a row of another owner for the refusal and one of the input's owner for
+  success, instead of being refused with ESS-SYNTH-003 (beyond10x/ess#271).
+- `ess verify diff`: a declaration added or removed on one side, in any of the nine families,
+  leaves no residual and yields only its `<family>/<name>/added|removed` change, not
+  `unclassified-changed`. An `attributes` edit on an actor present on both sides is still
+  `unclassified-changed` (beyond10x/ess#276).
+
 ## [0.48.0] — 2026-09-30
 
 ### Added

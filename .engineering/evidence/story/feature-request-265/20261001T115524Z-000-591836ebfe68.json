@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T11:55:24Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-265",
+  "kind": "story",
+  "revision": 29,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: adversary_265 pass1 4/4, pass2 7/7, grant_denied 7/7; merged-tree gate on integrate/gaps-w1"
+  }
+}

@@ -9,6 +9,7 @@ package gatepass
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"essgatepass/essconform"
 
 	realization "example.invalid/gatepass-realization"
+	"example.invalid/gatepass/server"
 	"example.invalid/gatepass/system"
 	"example.invalid/gatepass/types/obligation"
 	"example.invalid/gatepass/types/primitives"
@@ -70,6 +72,16 @@ func unmet(refusal *obligation.UnmetObligation) error {
 func (t *Target) ExecuteCommand(request essconform.CommandRequest) (essconform.CommandResult, error) {
 	if t.assembled == nil {
 		return essconform.CommandResult{}, fmt.Errorf("no scenario is open")
+	}
+	// The grant, checked by the generated surface's own Admit before anything runs
+	// (beyond10x/ess#265): the step's actor is who this call is authenticated as, and a step naming
+	// none is authenticated as nobody.
+	var caller *server.Caller
+	if request.Actor != "" {
+		caller = &server.Caller{Actor: server.Actor(request.Actor)}
+	}
+	if admitted, named := server.Admit(caller, request.Command); !admitted {
+		return essconform.CommandResult{NotGranted: true, NotGrantedActor: string(named)}, nil
 	}
 	var result essconform.CommandResult
 	var err error
@@ -282,7 +294,7 @@ func registration(input map[string]essconform.Node) (visit.RegisterVisit, error)
 	default:
 		return command, fmt.Errorf("the input `host.kind` is %v", host["kind"])
 	}
-	minutes, ok := input["expected_minutes"].(float64)
+	minutes, ok := number(input["expected_minutes"])
 	if !ok || minutes != math.Trunc(minutes) {
 		return command, fmt.Errorf("the input `expected_minutes` is not an integral number")
 	}
@@ -296,13 +308,13 @@ func registration(input map[string]essconform.Node) (visit.RegisterVisit, error)
 	if !ok {
 		return command, fmt.Errorf("the input `deposit` is not a map")
 	}
-	amount, ok := deposit["amount"].(float64)
+	amount, ok := numeral(deposit["amount"])
 	if !ok {
 		return command, fmt.Errorf("the input `deposit.amount` is not a number")
 	}
 	currency, _ := deposit["currency"].(string)
 	command.Deposit = visit.Deposit{
-		Amount:   primitives.NewDecimal(strconv.FormatFloat(amount, 'f', -1, 64)),
+		Amount:   primitives.NewDecimal(amount),
 		Currency: currency,
 	}
 	escorts, ok := input["escorts"].([]essconform.Node)
@@ -411,4 +423,26 @@ func observed(event system.SystemEvent) essconform.ObservedEvent {
 		}}
 	}
 	return essconform.ObservedEvent{}
+}
+
+// numeral is a suite number in its decimal spelling. Under report/2 the runner hands a number over
+// as the json.Number it arrived as, keeping its exact digits; a float64 is the older reading.
+func numeral(value essconform.Node) (string, bool) {
+	switch value := value.(type) {
+	case json.Number:
+		return value.String(), true
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64), true
+	}
+	return "", false
+}
+
+// number is a suite number as a float64, whichever way the runner handed it over.
+func number(value essconform.Node) (float64, bool) {
+	spelled, ok := numeral(value)
+	if !ok {
+		return 0, false
+	}
+	parsed, err := strconv.ParseFloat(spelled, 64)
+	return parsed, err == nil
 }

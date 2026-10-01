@@ -393,6 +393,21 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
          Events emitted by a branch are published to consumers through the event transport, and \
          the `published` property of every response body lists them too, in publication order.",
     );
+    if http::grants_checked_on(ir, component) {
+        text.push_str(
+            "\n\nThe specification declares who may invoke what (`x-ess-may-invoke` on each \
+             operation), so every command is sent as a declared actor. How a request proves which \
+             actor it is belongs to the realization, which authenticates it and hands the surface \
+             the caller; nothing in the request itself names one. The grant is checked before the \
+             command runs, and a request authenticated as no actor, or as one without the grant, \
+             is answered 403 with one standard refusal, the same for every command: \
+             `{\"refused\": \"not granted\", \"actor\": <name or null>}`. A 403 a declared branch \
+             answers carries `outcome` and the declared `error` instead, so a client tells the two \
+             apart by the members present. A command no declared actor may invoke is refused to \
+             every caller. Views are not grant-checked: a grant names commands, and any caller may \
+             read what a view publishes.",
+        );
+    }
     if component.reached_by == Reach::Network {
         text.push_str(
             "\n\nThis component declares `reached_by: network`, so its callers are not deployed \
@@ -443,12 +458,15 @@ fn paths(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, PathItem
     // question a path asks — who may invoke *this* command — is an inversion, and inverting it per
     // operation would make the cost quadratic in a specification with many actors.
     let grants = ir.grants();
+    let checked = http::grants_checked_on(ir, component);
 
     let mut out: BTreeMap<String, PathItem> = BTreeMap::new();
     for route in http::routes(ir, component) {
         let item = out.entry(route.path).or_default();
         match route.serves {
-            http::Served::Command(handle) => item.post = Some(operation(ir, handle, &grants)),
+            http::Served::Command(handle) => {
+                item.post = Some(operation(ir, handle, &grants, checked));
+            }
             http::Served::View(handle) => item.get = Some(query(ir, handle)),
         }
     }
@@ -456,7 +474,12 @@ fn paths(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, PathItem
 }
 
 /// One command, as an operation.
-fn operation(ir: &EssIr, handle: &CommandHandle, grants: &Grants<'_>) -> Operation {
+fn operation(
+    ir: &EssIr,
+    handle: &CommandHandle,
+    grants: &Grants<'_>,
+    checks_grants: bool,
+) -> Operation {
     let command = ir.command(handle);
     let domain = ir.domain(&command.domain);
     Operation {
@@ -497,8 +520,39 @@ fn operation(ir: &EssIr, handle: &CommandHandle, grants: &Grants<'_>) -> Operati
         consistency: None,
         parameters: idempotency(ir, command).into_iter().collect(),
         request_body: request_body(command),
-        responses: responses(command),
+        responses: responses(command, checks_grants),
     }
+}
+
+/// What the standard refusal for an ungranted actor means, for the `403` response's description.
+const NOT_GRANTED_MEANING: &str = "the standard refusal for an actor no grant admits: the request \
+                                   was authenticated as no actor, or as one `x-ess-may-invoke` does \
+                                   not list. It is checked before the command runs, so nothing was \
+                                   read, written or published, and the same request from a granted \
+                                   actor is decided by the command. Its body carries `refused` and \
+                                   `actor`, never the `outcome` and `error` a declared branch \
+                                   carries.";
+
+/// The standard refusal's body: `{"refused": "not granted", "actor": …}`, the same for every
+/// command (beyond10x/ess#265).
+fn not_granted_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["refused", "actor"],
+        "properties": {
+            "refused": {
+                "type": "string",
+                "enum": [http::NOT_GRANTED],
+                "description": "The standard refusal for an actor no grant admits.",
+            },
+            "actor": {
+                "type": ["string", "null"],
+                "description": "The qualified name of the actor the request was authenticated \
+                                as, or null where it was authenticated as none.",
+            },
+        },
+    })
 }
 
 /// One view, as an operation.
@@ -651,8 +705,14 @@ fn request_body(command: &ResolvedCommand) -> Option<RequestBody> {
 }
 
 /// One response per status the command's outcomes reach, and the `501` every served command can
-/// answer.
-fn responses(command: &ResolvedCommand) -> BTreeMap<String, Response> {
+/// answer — and, where the model declares an actor, the standard refusal for one no grant admits,
+/// under `403` (beyond10x/ess#265).
+///
+/// A command whose caller decides a branch already answers `403` with that branch; the two share
+/// the status, and the schema is `oneOf` the declared branch (or branches, with their
+/// discriminator kept inside) and the standard refusal. They cannot be confused: a branch's body
+/// requires `outcome`, the refusal's is closed over `refused` and `actor`.
+fn responses(command: &ResolvedCommand, checks_grants: bool) -> BTreeMap<String, Response> {
     let mut grouped: BTreeMap<&'static str, Vec<&ResolvedOutcome>> = BTreeMap::new();
     for outcome in &command.outcomes {
         grouped.entry(status(outcome)).or_default().push(outcome);
@@ -687,24 +747,41 @@ fn responses(command: &ResolvedCommand) -> BTreeMap<String, Response> {
                     },
                 })
             };
+            let mut description = format!(
+                "{} {}: {}",
+                if names.len() == 1 {
+                    "Outcome"
+                } else {
+                    "Outcomes"
+                },
+                list(&names),
+                meaning(status)
+            );
+            let schema = if checks_grants && status == FORBIDDEN {
+                description.push_str(" Or: ");
+                description.push_str(NOT_GRANTED_MEANING);
+                json!({"oneOf": [schema, not_granted_schema()]})
+            } else {
+                schema
+            };
             (
                 status.to_owned(),
                 Response {
-                    description: format!(
-                        "{} {}: {}",
-                        if names.len() == 1 {
-                            "Outcome"
-                        } else {
-                            "Outcomes"
-                        },
-                        list(&names),
-                        meaning(status)
-                    ),
+                    description,
                     content: Some(content(schema)),
                 },
             )
         })
         .collect();
+    if checks_grants && !out.contains_key(FORBIDDEN) {
+        out.insert(
+            FORBIDDEN.to_owned(),
+            Response {
+                description: format!("No declared outcome: {NOT_GRANTED_MEANING}"),
+                content: Some(content(not_granted_schema())),
+            },
+        );
+    }
     out.insert(
         http::UNFINISHED.to_owned(),
         Response {

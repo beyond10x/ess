@@ -33,6 +33,7 @@ use std::rc::Rc;
 
 use desk_server::desk_service as served;
 use desk_server::{http, json, wire};
+use desk_types::actor::{Actor, Caller};
 use desk_types::behaviour::{Context, Generated, TicketStorage};
 use desk_types::primitives::Uuid;
 use desk_types::ticket;
@@ -119,6 +120,7 @@ fn assemble(ports: &Ports) -> System {
 fn serve(
     system: &mut System,
     routes: &[(String, String, String)],
+    caller: Option<&Caller>,
     name: &str,
     input: &str,
 ) -> Result<String, String> {
@@ -139,7 +141,7 @@ fn serve(
             input.as_bytes().to_vec()
         },
     };
-    let answered = served::dispatch(system, &request);
+    let answered = served::dispatch(system, caller, &request);
     // What the served dispatch left behind: the log, and the component's outbox. Draining the
     // outbox here would hide a leak rather than measure one, but an outbox the dispatch left
     // non-empty is counted before it is dropped.
@@ -357,13 +359,21 @@ fn main() {
                         .map(|outcome| (name.clone(), outcome.to_owned()));
                 }
                 let body = text(&request, "body").unwrap_or_default().to_owned();
-                let answer = serve(&mut system, &routes, &name, &body);
+                // Who the request was authenticated as: the step's actor, where it names one.
+                let caller = text(&request, "actor").and_then(|actor| {
+                    Actor::ALL
+                        .iter()
+                        .find(|declared| declared.name() == actor)
+                        .map(|declared| Caller { actor: *declared })
+                });
+                let answer = serve(&mut system, &routes, caller.as_ref(), &name, &body);
                 ports.0.borrow_mut().forced = None;
                 answer
             }
             Some("view") if via_served => serve(
                 &mut system,
                 &routes,
+                None,
                 text(&request, "view").unwrap_or_default(),
                 "",
             ),

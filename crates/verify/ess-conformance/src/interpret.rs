@@ -154,6 +154,20 @@ impl ConformanceTarget for Interpreted {
     ) -> Result<SemanticCommandResult, TargetError> {
         let observation = format!("invoking `{}`", request.command);
         let model = self.model(observation.clone())?;
+        // The standard refusal for an actor no grant admits, before the command runs
+        // (beyond10x/ess#265). A command sent as no actor is sent as the interpreter's own
+        // authority: the suite sends a command no actor is granted that way.
+        if let Some(actor) = &request.actor {
+            let granted = model.actors().get(actor.name()).is_some_and(|declared| {
+                declared
+                    .may
+                    .iter()
+                    .any(|command| command.name() == request.command.name())
+            });
+            if !granted {
+                return Err(TargetError::not_granted(Some(actor.to_string())));
+            }
+        }
         let mut scenario = self.scenario.borrow_mut();
         let externals = match scenario.forced.take() {
             Some(forced) if forced.command == request.command => {

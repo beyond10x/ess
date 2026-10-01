@@ -34,6 +34,7 @@ use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 use gatepass_realization::linker::{self, Assembled};
 use gatepass_system::SystemEvent;
+use gatepass_types::actor::{Actor, Caller};
 use gatepass_types::obligation::UnmetObligation;
 use gatepass_types::primitives::{Decimal, Duration, Timestamp, Uuid};
 use gatepass_types::visit::{
@@ -65,7 +66,7 @@ const UNKNOWN_INSTANCE: [&str; 2] = [
 ];
 
 /// How many scenarios the committed suite holds; the criterion is all of them.
-const SCENARIOS: usize = 14;
+const SCENARIOS: usize = 17;
 
 // ---- the Rust target -------------------------------------------------------------------------
 
@@ -114,6 +115,20 @@ impl ConformanceTarget for Synthesized {
         &self,
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
+        // The grant, checked by the generated surface's own `admit` before anything runs
+        // (beyond10x/ess#265): the step's actor is who this call is authenticated as, and a step
+        // naming none, or naming no declared actor, is authenticated as nobody.
+        let caller = request.actor.as_ref().and_then(|actor| {
+            Actor::ALL
+                .iter()
+                .find(|declared| declared.name() == actor.to_string())
+                .map(|declared| Caller { actor: *declared })
+        });
+        if let Err(named) =
+            gatepass_server::pass_service::admit(caller.as_ref(), &request.command.to_string())
+        {
+            return Err(TargetError::not_granted(named));
+        }
         let mut live = self.live.borrow_mut();
         let live = open(&mut live)?;
         let result = match request.command.to_string().as_str() {
@@ -741,14 +756,17 @@ fn the_committed_suite_passes_the_linked_rust_realization_including_unknown_inst
         include_str!("../../../generated/rust/gatepass/plan.json"),
     );
 
+    // The committed suite is suite/26 (it witnesses the refusal an ungranted actor gets), which
+    // only an admitted run executes.
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).expect("the suite admits");
     let report = Runner::for_suite(&suite)
-        .run(
-            &suite,
+        .run_admitted(
+            &admitted,
             &Synthesized {
                 live: RefCell::new(None),
             },
         )
-        .unwrap();
+        .into_report();
 
     let failures: Vec<String> = report
         .failures()
@@ -848,6 +866,8 @@ fn the_committed_suite_passes_the_linked_go_realization_including_unknown_instan
         .current_dir(&directory)
         .env("GOFLAGS", "-mod=mod")
         .env("GOPROXY", "off")
+        // The committed suite is suite/26, which the Go runner executes only under report/2.
+        .env("ESS_REPORT_FORMAT", "2")
         .output()
         .expect("go test runs");
     let printed = format!(
@@ -905,15 +925,22 @@ fn serve(program: &mut Command) -> (Served, u16) {
     (served, port)
 }
 
-/// One `POST` with a JSON body; the status and the parsed body of the answer.
-fn post(port: u16, path: &str, body: &str) -> (u16, serde_json::Value) {
+/// The demonstration credential both gatepass servers accept for the receptionist.
+const RECEPTIONIST: Option<&str> = Some("gatepass.visit.Receptionist");
+
+/// One `POST` with a JSON body, sent as `actor` through the demonstration credential
+/// (`authorization: Actor <name>`), or as nobody; the status and the parsed body of the answer.
+fn post(port: u16, actor: Option<&str>, path: &str, body: &str) -> (u16, serde_json::Value) {
     use std::io::{Read as _, Write as _};
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the server accepts");
     write!(
         stream,
         "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
+         Content-Length: {}\r\nConnection: close\r\n{}\r\n{body}",
+        body.len(),
+        actor.map_or_else(String::new, |actor| format!(
+            "Authorization: Actor {actor}\r\n"
+        ))
     )
     .expect("the request writes");
     let mut answer = String::new();
@@ -951,7 +978,7 @@ fn assert_unknown_visit_is_wrong_state(language: &str, port: u16) {
         } else {
             unknown
         };
-        let (status, answer) = post(port, path, body);
+        let (status, answer) = post(port, RECEPTIONIST, path, body);
         assert_eq!(
             (status, &answer),
             (409, &expected),
@@ -961,10 +988,35 @@ fn assert_unknown_visit_is_wrong_state(language: &str, port: u16) {
     }
 }
 
+/// What both surfaces must answer a caller no grant admits (beyond10x/ess#265): `403` with the
+/// standard refusal, before the command runs — for the auditor, whom the specification grants
+/// nothing, and for a request the credential names nobody in.
+fn assert_ungranted_callers_get_the_standard_refusal(language: &str, port: u16) {
+    let unknown = r#"{"visit_id":"00000000-0000-4000-8000-0000000000ff"}"#;
+    for (actor, named) in [
+        (
+            Some("gatepass.visit.SecurityAuditor"),
+            serde_json::json!("gatepass.visit.SecurityAuditor"),
+        ),
+        (None, serde_json::Value::Null),
+    ] {
+        let (status, answer) = post(port, actor, "/visits/commands/sign-out-visitor", unknown);
+        assert_eq!(
+            (status, &answer),
+            (
+                403,
+                &serde_json::json!({"refused": "not granted", "actor": named})
+            ),
+            "the {language} surface refuses `SignOutVisitor` sent as {actor:?}"
+        );
+    }
+}
+
 #[test]
 fn an_unknown_visit_is_answered_wrong_state_on_the_rust_served_surface() {
     let (_served, port) = serve(&mut Command::new(env!("CARGO_BIN_EXE_gatepass-server")));
     assert_unknown_visit_is_wrong_state("Rust", port);
+    assert_ungranted_callers_get_the_standard_refusal("Rust", port);
 }
 
 #[test]
@@ -990,6 +1042,7 @@ fn an_unknown_visit_is_answered_wrong_state_on_the_go_served_surface() {
     {
         let (_served, port) = serve(&mut Command::new(&binary));
         assert_unknown_visit_is_wrong_state("Go", port);
+        assert_ungranted_callers_get_the_standard_refusal("Go", port);
     }
     let _ = std::fs::remove_file(&binary);
 }

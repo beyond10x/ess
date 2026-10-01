@@ -86,7 +86,7 @@ left out of the IR document when absent, so a model without them keeps its bytes
 | `ess-gen` `OpenAPI` | every operation names the caller attributes it reads under `x-ess-caller`, beside `x-ess-may-invoke`; like that one it is an annotation, because the model states what a credential carries and not how a caller proves it |
 | `ess-gen` documentation | an actor's section lists what its credential carries |
 | Entity Runtime | refuses a caller value or guard with `CallerUnsupported`: entity-core decides from a command's arguments and the stored row and has no operand for who sent the command |
-| `ess-synth` | unchanged: a command's behaviour is an implementation obligation there, and actor grants are already refused with `NeedsCallerIdentity` |
+| `ess-synth` | a command's behaviour reads a caller value through the `Context` port. A served surface is handed the authenticated `Caller` and enforces its actor's grant before the port runs, answering `403` `{refused: "not granted", actor}` otherwise (beyond10x/ess#265); without a served surface, actor grants stay refused with `NeedsCallerIdentity` |
 | `ess-diff` | reports a changed source through `describe()` ("the caller's account_id"); an added or removed actor attribute is not yet a delta of its own |
 
 ## Conformance

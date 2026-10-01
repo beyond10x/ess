@@ -463,6 +463,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || crate::outcome_shapes::needs_newer(tag, major)
         || crate::absent_input::needs_newer(tag, major)
         || crate::delivery_context::needs_newer(tag, major)
+        || (major < crate::grant::ORDINARY && tag == "expect_not_granted")
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
@@ -491,6 +492,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "execute_command" => (&["step", "command"], &["actor", "caller", "input"]),
         "execute_command_without_input" => (&["step", "command"], &["actor", "caller"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
+        "expect_not_granted" => (&["step", "actor"], &["unpublished"]),
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
         "expect_subject_unchanged" if major >= 10 => (&["step", "view"], &[]),
@@ -621,6 +623,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::now_offset::admit_format(suite)?;
     crate::caller_values::admit_format(suite)?;
     crate::bounded_retry::admit_format(suite)?;
+    crate::grant::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;
@@ -804,6 +807,7 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                 ScenarioStep::ExpectView { .. }
                 | ScenarioStep::EventuallyView { .. }
                 | ScenarioStep::ExpectOutcome { .. }
+                | ScenarioStep::ExpectNotGranted { .. }
                 | ScenarioStep::ExpectNoError
                 | ScenarioStep::ExpectSubjectUnchanged { .. }
                 | ScenarioStep::ExpectSubjectAbsent { .. }

@@ -433,6 +433,9 @@ fn authored_refusal(
         | Cause::UndeclaredOutcome { .. }
         | Cause::UndeclaredActor { .. }
         | Cause::ActorMayNot { .. }
+        | Cause::ActorGranted { .. }
+        | Cause::RefusalContradicted { .. }
+        | Cause::UngrantedOnServedSurface { .. }
         | Cause::UndeclaredEvent { .. }
         | Cause::UndeclaredError { .. }
         | Cause::UndeclaredView { .. }
@@ -490,6 +493,7 @@ fn coverage_version(
         || crate::caller_values::used_by(suite)
         || crate::view_paging::used_by(suite)
         || crate::bounded_retry::used_by(suite)
+        || crate::grant::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
     crate::scenario::SuiteFormat::parse(if crate::structured_values::used_by(suite) {
         "ess-conformance/33"

@@ -542,6 +542,29 @@ tenant", "the configuration does not register this client".
   the command needs a genuine default.
 - **Format.** Below `ess/18` the key is refused with `unsupported_format_version` at
   `outcomes.<name>.when_related`, in YAML and JSON sources alike.
+- **Held state (`ess/20`, beyond10x/ess#229).** From `ess/20` the predicate also reads the related
+  row's held lifecycle state as `state` — "a release needs a candidate in state `Accepted`":
+  `predicate: state != Accepted` on the refusal, beside a default that moves the release. It is
+  the operand `when_subject` gained at `ess/18` (#204), for another row: the same readable-field
+  list (`subject_fact::readable_fields`), typed by the related entity's lifecycle enum, so an
+  undeclared state is refused and the path enters the related-row × input partition as a closed
+  domain. An entity cannot declare a stored field named `state`, so the root is new and no
+  document that validated before changes meaning; still the operand is gated at the next format
+  rather than admitted silently at `ess/18` (coordinator decision, 2026-09-30), and under `ess/18`
+  and `ess/19` it is refused with `unsupported_format_version` naming `ess/20`, not as
+  `unobservable_fact`. Synthesis needs nothing new: the related-row search already drives the row
+  along its lifecycle and reads its held state, so the refusal is sent for a row in a refusing
+  state between decoys in an accepting one, and the default the other way round; a target that
+  checks only that the row exists fails the refusal
+  (`ess-conformance/tests/related_guard_state.rs`). Under `ess/20` only, where the move that brings
+  the row into the state the guard needs itself reads a related row of the same entity — accepting a candidate
+  names a parent candidate — that inner row is arranged one level deep, fresh where its lifecycle
+  starts, and the move is sent only where that row selects it; it is never searched for along its
+  lifecycle, which would recurse through the same move. Anything deeper is refused, and a branch
+  left without a witness by that bound says so in its `ESS-SYNTH-003` refusal. Below `ess/20`
+  none of this applies — such a move stops the arrangement, and an `exists: false` creator inside
+  one is not driven — so a document without an `ess/20` construct synthesizes the suite it did
+  (`EssIr::format`, read by `related_guard::nests`).
 - **Conformance.** `synthesize/related_guard.rs` arranges every branch of such a command. The
   `exists: false` branch is sent an identity no row carries, beside two rows of the entity that
   carry others, so an implementation answering "some row exists" fails it; where an accepting

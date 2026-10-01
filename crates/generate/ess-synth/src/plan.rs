@@ -314,7 +314,9 @@ pub enum RefusalReason {
     /// is *enforcement*: the declared grants themselves are generated as data (0.46,
     /// `story:actor-grants-as-data`), so the caller that knows who is calling enforces a generated
     /// table rather than a hand-copied one. Deliberately not an obligation: a stub the implementor
-    /// fills with grant checks would be a second grant path beside that table.
+    /// fills with grant checks would be a second grant path beside that table. Only where the
+    /// specification serves no component: a served surface is handed the authenticated caller and
+    /// enforces the grant (beyond10x/ess#265).
     NeedsCallerIdentity,
     /// Delivery lands on the component that accepts the command, and the specification does not
     /// declare exactly one. Deliberately not an obligation and never a choice: picking an acceptor
@@ -931,15 +933,31 @@ pub(crate) fn mechanical_conversion<'a>(
     (from_inner == to_inner).then_some((from, to))
 }
 
-/// Enforcing a grant is refused, not owed; the grant itself is generated as data.
+/// A grant is enforced where the specification serves a component, and refused, not owed, where it
+/// serves none; the grant itself is generated as data either way.
 ///
-/// One capability with one disposition, because the half a reader must not miss is the refused
-/// one: no generated code checks who is calling. The row says in the same breath that the grant is
-/// available as data — the declared actors and the qualified commands each may invoke — so the
-/// caller enforces a generated table. A separate "generated" row would split one fact across two
-/// tables and give every target a capability to cover that only restates the refusal's detail.
+/// Served (beyond10x/ess#265): the generated server is handed the caller the realization
+/// authenticated a request as, and checks it against the grant table before the command runs,
+/// answering the standard refusal otherwise. How a request proves who sent it is the
+/// realization's, and nothing is read from the request itself. Served by nothing: no generated code checks who is calling,
+/// because types carry no caller identity; the row says in the same breath that the grant is
+/// available as data, so the caller enforces a generated table.
 fn plan_actors(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
+    let served = ir
+        .components()
+        .values()
+        .any(|component| component.reached_by == Reach::Network);
     for actor in ir.actors().values() {
+        if served {
+            capabilities.push(PlannedCapability {
+                capability: Capability {
+                    kind: CapabilityKind::ActorGrants,
+                    source: actor.name.to_string(),
+                },
+                disposition: SynthesisDisposition::Generated,
+            });
+            continue;
+        }
         let grants = if actor.may.is_empty() {
             "observes only; it may invoke no command".to_owned()
         } else {

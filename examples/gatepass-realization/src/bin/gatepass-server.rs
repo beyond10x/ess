@@ -15,11 +15,33 @@
 
 use std::process::ExitCode;
 
+use gatepass_types::actor::{Actor, Caller};
+
+/// Who a request was sent by, from a demonstration credential: `authorization: Actor <qualified
+/// actor name>`.
+///
+/// How a request proves who sent it is the realization's, never the contract's; a deployment
+/// verifies a session, a token or a certificate here. This one trusts the header, which is exactly
+/// what a real deployment must not do, and it is here so the demonstration can be driven as any
+/// declared actor. A request naming none, or naming no declared actor, is authenticated as nobody
+/// and the served surface refuses it.
+fn authenticate(request: &gatepass_server::http::Request) -> Option<Caller> {
+    let (_, value) = request
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))?;
+    let name = value.strip_prefix("Actor ")?;
+    Actor::ALL
+        .iter()
+        .find(|actor| actor.name() == name)
+        .map(|actor| Caller { actor: *actor })
+}
+
 fn main() -> ExitCode {
     let port = std::env::var("PORT").unwrap_or_else(|_| "0".to_owned());
     let address = format!("127.0.0.1:{port}");
     let mut assembled = gatepass_realization::linker::honest();
-    match gatepass_server::pass_service::serve(&mut assembled.system, &address) {
+    match gatepass_server::pass_service::serve(&mut assembled.system, &address, authenticate) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{{\"log\":\"ess/1\",\"event\":\"system.stopped\",\"reason\":\"{error}\"}}");

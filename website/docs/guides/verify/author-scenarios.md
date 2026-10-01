@@ -68,7 +68,7 @@ $ cat create-only.json
 $ ess verify conform select --suite target/coverage-suite.json --ids create-only.json \
     --out target/create-only.json
 $ ess verify conform run --target billing --suite-input target/create-only.json --report-format 2
-billing v3 against billing-reference 0.48.0 — passed
+billing v3 against billing-reference 0.49.0 — passed
   passed billing.invoice.CreateInvoice/outcome/accepted
   passed billing.invoice.CreateInvoice/outcome/rejected
   2 scenarios: 2 passed, 0 failed, 0 error, 0 unsupported
@@ -119,6 +119,51 @@ For example, an act on `billing.invoice.CreateInvoice` that claims
 `SendEmail` call fails only on that external branch, and an authored act has no key for the
 answer a binding's call gives. Generated scenarios cover the escalation. An event that some
 command's input-decided branch publishes exempts a claim only when the act reaches that command.
+
+## Expect the refusal an ungranted actor gets
+
+An act sent as an actor the specification does not grant its command is refused with
+`ESS-AUTHOR-009`, because it checks a system the model does not describe. To claim that such an
+actor is refused, write `refused: not_granted` on the act, in `type: ess-scenario/4`:
+
+```yaml
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: billing.invoice.CreateInvoice
+    actor: billing.invoice.Auditor
+    input:
+      account_id: 00000000-0000-4000-8000-000000000001
+      customer_email: buyer@example.test
+      amount: {amount: 10, currency: EUR}
+    refused: not_granted
+    no_events: [billing.invoice.InvoiceCreated]
+```
+
+The act compiles into its `execute_command`, sent as that actor, and an `expect_not_granted` step
+naming it. A target passes the step when it refuses the command before running it with the
+standard refusal naming that actor: on a served surface, `403`
+`{"refused": "not granted", "actor": "billing.invoice.Auditor"}`. The step is suite/26 vocabulary,
+so the suite is written at `ess-conformance/26` or later.
+
+A refused command takes no branch and publishes nothing, so `no_events:` is the only claim it can
+carry. It is checked against the target's whole event log: the log may hold no more of each listed event
+after the send than just before it, counting repeats, and a refusal that hands back events fails.
+So a target that runs the command and only then refuses it fails. The act is refused:
+
+| When | Refusal |
+|---|---|
+| its actor holds the grant | `ESS-AUTHOR-038` |
+| it names no `actor:`, or carries `outcome:`, `error:`, `response:`, `events:` or `capture:` | `ESS-AUTHOR-039` |
+| the document is `ess-scenario/1` to `/3` | `ESS-AUTHOR-001`, naming `refused: not_granted` |
+
+Where the specification serves a component (`reached_by: network`), synthesis already witnesses the
+refusal once per command, as `<command>/grant/denied`, for every
+command some declared actor lacks the grant for. An authored act adds a particular input or a
+particular actor.
+
+A served command no declared actor is granted is refused to every caller, so an act that sends it
+with no `actor:` and expects it to run is refused with `ESS-AUTHOR-040`. Grant the command to an
+actor and send the act as that actor, or expect the refusal as above.
 
 ## Establish backend state in an authored scenario
 

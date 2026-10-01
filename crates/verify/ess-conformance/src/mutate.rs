@@ -2500,9 +2500,18 @@ fn contained(dir: &str) -> Result<(), String> {
 
 /// The suite `ir` obliges, synthesized as the built-in audit synthesizes it, and its refusals,
 /// sorted.
+///
+/// Without its `…/grant/denied` scenarios (beyond10x/ess#265), for the reason no authored scenario
+/// is run here: no class alters a grant, so each asks every mutant's suite exactly the question it
+/// asks the baseline's and could never kill one. Leaving them in would move a suite that needs
+/// nothing newer onto the suite major that carries them, which the audit's report/1 evidence does
+/// not read.
 fn synthesized(ir: &EssIr) -> (crate::ConformanceSuite, Vec<RefusalKey>) {
     let synthesis = crate::synthesize(ir);
     let mut suite = synthesis.suite;
+    suite
+        .scenarios
+        .retain(|id, _| !matches!(id, crate::ScenarioId::Grant { .. }));
     suite.select_fresh_format_for(ir);
     let mut refused: Vec<RefusalKey> = synthesis.refusals.iter().map(RefusalKey::of).collect();
     refused.sort();

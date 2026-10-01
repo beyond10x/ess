@@ -1502,6 +1502,7 @@ impl<'a> Resolver<'a> {
             components,
             workloads,
             preconditions,
+            format: self.spec.system().format,
         }))
     }
 
