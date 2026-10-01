@@ -13,7 +13,11 @@
 //! [`Document::nodes`] then yields every node with its canonical path.
 //!
 //! This crate has no command line. [`check`] is the entry point a command wraps.
+//!
+//! [`binding`] is the contract between a document and the HTTP surface ESS synthesizes: the route
+//! table a renderer reads, and the one classification of a command's answer.
 
+pub mod binding;
 mod expand;
 mod locate;
 mod model;

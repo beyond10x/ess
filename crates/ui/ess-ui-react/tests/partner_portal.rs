@@ -2,6 +2,8 @@
 //! node with its canonical `data-ui-path`, honours each state's placement and plays channel
 //! fixtures; generation is deterministic, and a document without a construct gets no code for it.
 
+mod support;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -139,21 +141,130 @@ fn the_generated_project_type_checks_offline() {
     let (out, files) = generate_example("typecheck");
     for path in [
         "package.json",
-        "index.html",
-        "vite.config.ts",
+        "www/index.html",
         "tsconfig.json",
         "tsconfig.offline.json",
         "types/react.d.ts",
+        "types/react-jsx-runtime.d.ts",
         "types/react-dom-client.d.ts",
-        "types/react-router.d.ts",
         "src/main.tsx",
         "src/App.tsx",
+        "src/routes.ts",
+        "src/runtime/router.tsx",
         "README.md",
     ] {
         file(&files, path);
     }
+    for absent in ["index.html", "vite.config.ts", "types/react-router.d.ts"] {
+        assert!(!files.files.contains_key(absent), "{absent} is generated");
+    }
     assert!(file(&files, "README.md").contains("npm install"));
+    assert!(
+        !file(&files, "tsconfig.offline.json").contains("react-router"),
+        "{}",
+        file(&files, "tsconfig.offline.json")
+    );
     tsc(&out);
+}
+
+/// `dependencies` are `react` and `react-dom` and nothing else; the build is esbuild and
+/// `tsc`; no source imports a package other than those two.
+#[test]
+fn the_project_depends_on_react_and_react_dom_only() {
+    let (_, files) = generate_example("dependencies");
+    let package: serde_json::Value =
+        serde_json::from_str(file(&files, "package.json")).expect("package.json parses");
+    let keys = |field: &str| -> Vec<String> {
+        package[field]
+            .as_object()
+            .unwrap_or_else(|| panic!("package.json has no {field}"))
+            .keys()
+            .cloned()
+            .collect()
+    };
+    assert_eq!(keys("dependencies"), ["react", "react-dom"]);
+    assert_eq!(
+        keys("devDependencies"),
+        ["@types/react", "@types/react-dom", "esbuild", "typescript"]
+    );
+    assert_eq!(package["devDependencies"]["esbuild"], "^0.28.0");
+    for (name, expected) in [
+        (
+            "dev",
+            "esbuild src/main.tsx --bundle --jsx=automatic --sourcemap --outdir=www/assets --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:5173 --watch=forever",
+        ),
+        (
+            "build",
+            "tsc --noEmit && esbuild src/main.tsx --bundle --jsx=automatic --minify --outdir=www/assets",
+        ),
+        (
+            "preview",
+            "esbuild --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:4173 --watch=forever",
+        ),
+        ("typecheck", "tsc --noEmit"),
+        ("typecheck:offline", "tsc -p tsconfig.offline.json --noEmit"),
+    ] {
+        assert_eq!(package["scripts"][name], expected, "script {name}");
+    }
+    let allowed = ["react", "react/jsx-runtime", "react-dom/client"];
+    for (path, text) in &files.files {
+        if !std::path::Path::new(path)
+            .extension()
+            .is_some_and(|ext| ext == "ts" || ext == "tsx")
+            || path.starts_with("types/")
+        {
+            continue;
+        }
+        for line in text.lines() {
+            let Some(start) = line.find(" from \"") else {
+                continue;
+            };
+            let specifier = &line[start + " from \"".len()..];
+            let specifier = &specifier[..specifier.find('"').unwrap_or(specifier.len())];
+            assert!(
+                specifier.starts_with('.') || allowed.contains(&specifier),
+                "{path} imports {specifier}"
+            );
+        }
+    }
+}
+
+/// Every page of one shell renders under the same shell element at the same place, so moving
+/// between them keeps the shell mounted; a page of another shell renders under that one.
+#[test]
+fn every_page_of_a_shell_renders_under_one_shell_element() {
+    let (out, _) = generate_example("one-shell");
+    support::compile(&out, &["App.tsx"]);
+    support::node(
+        &out,
+        "one-shell",
+        r#"
+const b = browser("/overview");
+const { Pages } = out("App");
+const router = out("runtime/router");
+const { pages, hrefFor } = out("routes");
+const expand = (t) => t === router.Router || t === Pages || t === router.Matched;
+const root = React.__root(jsx(router.Router, { children: jsx(Pages, {}) }), { expand });
+root.settle();
+const pascal = (name) => name.split(/[._-]/).map((p) => p[0].toUpperCase() + p.slice(1)).join("");
+const shellAt = {};
+for (const [name, route] of Object.entries(pages)) {
+  const params = Object.fromEntries(route.params.map((param) => [param, "p-1"]));
+  b.pop(hrefFor(name, params));
+  root.settle();
+  assert.strictEqual(root.leaves.length, 1, `${name}: one shell`);
+  const [leaf] = root.leaves;
+  const shell = out(`shells/${pascal(route.shell)}Shell`)[`${pascal(route.shell)}Shell`];
+  assert.strictEqual(leaf.component, shell, `${name} renders under ${route.shell}`);
+  shellAt[route.shell] = shellAt[route.shell] || leaf.at;
+  assert.strictEqual(leaf.at, shellAt[route.shell], `${name}: the ${route.shell} shell moved, so it remounts`);
+  const outlet = root.rendered.find((r) => r.component === router.Matched).props.outlet;
+  assert.strictEqual(outlet.type, out(`pages/${pascal(name)}`)[`${pascal(name)}Page`], `${name} is at the outlet`);
+}
+assert.deepStrictEqual(Object.keys(shellAt).sort(), ["app", "auth"]);
+assert.deepStrictEqual(b.calls, [], "no page redirects");
+"#,
+    );
 }
 
 #[test]
@@ -179,7 +290,8 @@ fn routes_come_from_navigation_and_every_page_has_a_component() {
     let (_, files) = generate_example("routes");
     let app = file(&files, "src/App.tsx");
     let routes = file(&files, "src/routes.ts");
-    assert!(app.contains("BrowserRouter"), "{app}");
+    assert!(app.contains("<Router>"), "{app}");
+    assert!(app.contains("matchPage("), "{app}");
     for (name, page) in &document.pages {
         let pattern = ess_ui_react::route_pattern(name, page);
         assert!(

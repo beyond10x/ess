@@ -4,22 +4,20 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "esbuild src/main.tsx --bundle --jsx=automatic --sourcemap --outdir=www/assets --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:5173 --watch=forever",
+    "build": "tsc --noEmit && esbuild src/main.tsx --bundle --jsx=automatic --minify --outdir=www/assets",
     "typecheck": "tsc --noEmit",
     "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
-    "preview": "vite preview"
+    "preview": "esbuild --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:4173 --watch=forever"
   },
   "dependencies": {
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router": "^7.0.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.0",
-    "typescript": "^5.6.0",
-    "vite": "^6.0.0"
+    "esbuild": "^0.28.0",
+    "typescript": "^5.6.0"
   }
 }

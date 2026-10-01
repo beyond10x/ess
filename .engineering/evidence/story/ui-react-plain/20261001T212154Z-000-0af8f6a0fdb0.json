@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-01T21:21:54Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-react-plain",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-ui-react (9 targets) and -p ess-cli --test ui_commands, all green at 7bb4ec03d8; npm run build of the generated partner portal against real @types/react 19.3.0",
+    "reference": "7bb4ec03d8"
+  }
+}
