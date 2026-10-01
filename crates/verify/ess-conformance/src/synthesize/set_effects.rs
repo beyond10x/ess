@@ -35,9 +35,9 @@ use super::{
     instance_name, lifecycle_state, not_emitted, prepare_in, reach, reach_in_state, require,
     settled, shown, subject_fact, supply, ActorRef, Arrangement, AssertionStyle, BTreeMap,
     BTreeSet, CommandRef, ConformanceScenario, ConformanceSuite, Determined, EntityHandle,
-    EntityRef, EssIr, EssSemanticRef, EventRef, InstanceName, Node, OutcomeRef, QualifiedName,
-    Refusal, RefusalCause, ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedView,
-    ScenarioId, ScenarioStep, ScenarioValue, StateName, ViewExpectation, ViewRef,
+    EntityRef, EssIr, EssSemanticRef, EventRef, Focus, InstanceName, Node, OutcomeRef,
+    QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedEffect, ResolvedOutcome,
+    ResolvedView, ScenarioId, ScenarioStep, ScenarioValue, StateName, ViewExpectation, ViewRef,
 };
 
 /// How many rows the filter must select, so a target that changes one of them is caught.
@@ -47,10 +47,14 @@ const MATCHING: usize = 3;
 pub(super) fn set_effects(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         for outcome in &command.outcomes {
             let id = ScenarioId::Outcome {
                 outcome: OutcomeRef::new(

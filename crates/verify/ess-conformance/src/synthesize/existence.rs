@@ -23,7 +23,7 @@ use super::{
     clipped, created, insert, is_input_guarded_refusal, not_emitted, outcome_scenario, reach, run,
     shows, subject_fact, supply, ActorRef, AssertionStyle, BTreeMap, BTreeSet, CommandRef,
     ConformanceScenario, ConformanceSuite, Distinction, EntityRef, ErrorRef, EssIr, EssSemanticRef,
-    InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
+    Focus, InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
     ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedSubject,
     ResolvedView, Run, ScenarioId, ScenarioStep, ScenarioValue, Setup, ViewRef, FRESH_WITNESSES,
 };
@@ -218,10 +218,14 @@ pub(super) fn fresh_created(
 pub(super) fn existence(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         for creating in command
             .outcomes
             .iter()

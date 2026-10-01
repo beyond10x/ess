@@ -39,7 +39,7 @@ use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate};
 
-use super::{synthesize_plain, Note, Synthesis};
+use super::{grant, synthesize_plain, Focus, Note, Synthesis};
 use crate::scenario::{
     ConformanceScenario, ScenarioId, ScenarioStep, ScenarioValue, ViewExpectation,
 };
@@ -160,11 +160,12 @@ impl Callers {
 /// The suite for a model whose actors carry attributes (see the module documentation).
 pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
     let Some(callers) = Callers::of(ir) else {
-        return synthesize_plain(ir);
+        return synthesize_plain(ir, Focus::Whole);
     };
     let reading = reading(ir, &callers);
-    let mut whole = run(ir, &callers, &|_| Who::First);
-    let swapped = run(ir, &callers, &|_| Who::Second);
+    let rotated = grant::rotated(ir);
+    let mut whole = run(ir, &callers, &|_| Who::First, Focus::Whole);
+    let swapped = run(ir, &callers, &|_| Who::Second, Focus::Whole);
     let mut identities = Identities::of(ir, whole.suite.scenarios.values());
     // The model read with one command sent as `second` and every other as `first`, by command:
     // read only for a scenario acting on the one row of a singleton entity.
@@ -199,8 +200,8 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
                 Who::First
             }
         };
-        let other = run(ir, &callers, &sent);
-        let back = run(ir, &callers, &|name| sent(name).other());
+        let back = |name: &QualifiedName| sent(name).other();
+        let (other, back) = about_command(ir, &callers, (&sent, &back), command, &rotated);
         for (id, mut scenario) in other.suite.scenarios {
             if whole.suite.scenarios.contains_key(&id) || !about(&id, command) {
                 continue;
@@ -227,9 +228,64 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
     whole
 }
 
+/// Which caller each command is sent as.
+type Assignment<'a> = &'a dyn Fn(&QualifiedName) -> Who;
+
+/// The two runs one caller-reading command is read under — sent as the second caller with
+/// everything else sent as the first, and the reverse — of which only the scenarios [`about`] the
+/// command are kept.
+///
+/// Each is synthesized for that command's scenarios alone (beyond10x/ess#301): a whole synthesis
+/// per caller-reading command made a model with a hundred of them a hundred times slower than one
+/// with none. Every family files a command's scenarios from its own loop over that command, so
+/// those are the scenarios the whole run writes, but for one exception: a command sent in turn as
+/// each actor granted it ([`grant::rotated`]) is sent by turn across every scenario sending it. A
+/// kept scenario sending one is read from the whole runs, as before.
+fn about_command(
+    ir: &EssIr,
+    callers: &Callers,
+    (sent, back): (Assignment<'_>, Assignment<'_>),
+    command: &QualifiedName,
+    rotated: &BTreeSet<QualifiedName>,
+) -> (Synthesis, Synthesis) {
+    #[cfg(test)]
+    if tests::UNFOCUSED.get() {
+        return (
+            run(ir, callers, sent, Focus::Whole),
+            run(ir, callers, back, Focus::Whole),
+        );
+    }
+    let focus = Focus::About(command);
+    let other = run(ir, callers, sent, focus);
+    let back_run = run(ir, callers, back, focus);
+    let turned = [&other, &back_run].iter().any(|synthesis| {
+        synthesis
+            .suite
+            .scenarios
+            .iter()
+            .any(|(id, scenario)| about(id, command) && sends_any(scenario, rotated))
+    });
+    if turned {
+        return (
+            run(ir, callers, sent, Focus::Whole),
+            run(ir, callers, back, Focus::Whole),
+        );
+    }
+    (other, back_run)
+}
+
 /// The model read under one assignment, synthesized, with every command step marked with the
 /// caller it is sent as.
-fn run(ir: &EssIr, callers: &Callers, who: &dyn Fn(&QualifiedName) -> Who) -> Synthesis {
+fn run(
+    ir: &EssIr,
+    callers: &Callers,
+    who: &dyn Fn(&QualifiedName) -> Who,
+    focus: Focus<'_>,
+) -> Synthesis {
+    #[cfg(test)]
+    if focus.is_whole() {
+        tests::WHOLE.set(tests::WHOLE.get() + 1);
+    }
     let written = ir.with_commands_rewritten(|command| {
         written(
             ir,
@@ -237,7 +293,7 @@ fn run(ir: &EssIr, callers: &Callers, who: &dyn Fn(&QualifiedName) -> Who) -> Sy
             &callers.for_command(ir, who(&command.name), &command.name),
         )
     });
-    let mut synthesis = synthesize_plain(&written);
+    let mut synthesis = synthesize_plain(&written, focus);
     for scenario in synthesis.suite.scenarios.values_mut() {
         for step in &mut scenario.steps {
             mark(ir, callers, who, step);
@@ -564,13 +620,18 @@ fn one_row_acted_on(
     let mixed = acted_on_as_second
         .entry(command.clone())
         .or_insert_with(|| {
-            run(ir, callers, &|name| {
-                if name.to_string() == command {
-                    Who::Second
-                } else {
-                    Who::First
-                }
-            })
+            run(
+                ir,
+                callers,
+                &|name| {
+                    if name.to_string() == command {
+                        Who::Second
+                    } else {
+                        Who::First
+                    }
+                },
+                Focus::Whole,
+            )
         });
     mixed
         .suite
@@ -1113,5 +1174,203 @@ fn rename(value: &mut serde_json::Value) {
         }
         serde_json::Value::Array(items) => items.iter_mut().for_each(rename),
         _ => {}
+    }
+}
+
+/// The caller-synthesis work guards (beyond10x/ess#301): how many whole syntheses a model with
+/// caller-reading commands costs, and that reading a command's scenarios from a run written for
+/// that command alone gives the suite the whole runs gave.
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use ess_compiler::resolve::compile;
+    use ess_compiler::source::SourceMap;
+    use ess_domain::spec::{RawSpecFile, Specification};
+    use ess_domain::system::Source;
+
+    use super::*;
+
+    thread_local! {
+        /// How many whole syntheses of an assignment ran.
+        pub(super) static WHOLE: Cell<usize> = const { Cell::new(0) };
+        /// Whether every per-command run is a whole synthesis, as before beyond10x/ess#301.
+        pub(super) static UNFOCUSED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Two caller-reading commands, one of them sent in its scenarios only after a command its two
+    /// unattributed holders are sent in turn as.
+    const NOTES: &str = "format: ess/16
+system: demo
+version: v1
+summary: Caller values beside a command sent in turn.
+domain: demo.notes
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: Uuid}
+  - {name: demo.notes.AccountId, kind: newtype, of: Uuid}
+  - {name: demo.notes.AgentId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: agent_id, type: demo.notes.AgentId}
+      - {name: text, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Tagged, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: tag, from: [Open], to: Tagged}
+        - {name: close, from: [Tagged], to: Closed}
+actors:
+  - name: demo.notes.AccountUser
+    attributes:
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: agent_id, type: demo.notes.AgentId}
+    may: [demo.notes.CreateNote, demo.notes.CloseNote]
+  - name: demo.notes.Clerk
+    may: [demo.notes.AddTag]
+  - name: demo.notes.Auditor
+    may: [demo.notes.AddTag]
+commands:
+  - name: demo.notes.CreateNote
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - name: created
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {account_id: {caller: account_id}, agent_id: {caller: agent_id}, text: input.text}
+        emits: [demo.notes.NoteCreated]
+        payload:
+          demo.notes.NoteCreated: {note_id: {generated: true}, account_id: {caller: account_id}, text: input.text}
+  - name: demo.notes.AddTag
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+    outcomes:
+      - name: tagged
+        moves: demo.notes.Note.tag
+        instance: note_id
+        emits: [demo.notes.NoteTagged]
+        payload:
+          demo.notes.NoteTagged: {note_id: input.note_id}
+  - name: demo.notes.CloseNote
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+    outcomes:
+      - name: forbidden
+        when_subject: {predicate: agent_id != caller.agent_id}
+        error: demo.notes.NotYourNote
+      - name: closed
+        moves: demo.notes.Note.close
+        instance: note_id
+        emits: [demo.notes.NoteClosed]
+        payload:
+          demo.notes.NoteClosed: {note_id: input.note_id}
+errors:
+  - name: demo.notes.NotYourNote
+    summary: The caller is not the note's agent.
+events:
+  - name: demo.notes.NoteCreated
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: text, type: String}
+  - name: demo.notes.NoteTagged
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+  - name: demo.notes.NoteClosed
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+views:
+  - name: demo.notes.NoteDetails
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: agent_id, type: demo.notes.AgentId}
+      - {name: text, type: String}
+      - {name: state, type: demo.notes.Note.State}
+";
+
+    /// Serves the commands, so `AddTag` is sent in turn as `Clerk` and `Auditor`.
+    const SERVED: &str = "components:
+  - component: notes-service
+    owns: {domains: [demo.notes]}
+    accepts: {commands: [demo.notes.CreateNote, demo.notes.AddTag, demo.notes.CloseNote]}
+    publishes: {events: [demo.notes.NoteCreated, demo.notes.NoteTagged, demo.notes.NoteClosed]}
+    reached_by: network
+";
+
+    fn compiled(text: &str) -> EssIr {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+        let spec = Specification::assemble([(Source::new("notes.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("{errors}"));
+        compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
+    }
+
+    /// The synthesis, and how many whole syntheses of an assignment it ran.
+    fn counted(ir: &EssIr, unfocused: bool) -> (Synthesis, usize) {
+        WHOLE.set(0);
+        UNFOCUSED.set(unfocused);
+        let synthesis = super::super::synthesize(ir);
+        UNFOCUSED.set(false);
+        (synthesis, WHOLE.get())
+    }
+
+    #[test]
+    fn a_caller_reading_command_costs_no_whole_synthesis_of_its_own() {
+        let ir = compiled(NOTES);
+        let callers = Callers::of(&ir).expect("the model reads callers");
+        assert_eq!(
+            reading(&ir, &callers).len(),
+            2,
+            "two commands read the caller"
+        );
+        assert!(grant::rotated(&ir).is_empty(), "nothing is served");
+
+        let (synthesis, whole) = counted(&ir, false);
+        assert!(!synthesis.suite.scenarios.is_empty());
+        assert_eq!(
+            whole, 2,
+            "the model is synthesized whole under all-first and all-second only, not once more \
+             per caller-reading command"
+        );
+    }
+
+    #[test]
+    fn a_command_sent_in_turn_reads_its_scenarios_from_the_whole_runs() {
+        let ir = compiled(&format!("{NOTES}{SERVED}"));
+        let rotated = grant::rotated(&ir);
+        assert_eq!(
+            rotated.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ["demo.notes.AddTag"]
+        );
+
+        let (_, whole) = counted(&ir, false);
+        // All-first, all-second, and the pair for `CloseNote`, whose scenarios send `AddTag`.
+        assert_eq!(whole, 4);
+    }
+
+    #[test]
+    fn a_run_written_for_one_command_gives_the_suite_the_whole_runs_gave() {
+        for text in [NOTES.to_owned(), format!("{NOTES}{SERVED}")] {
+            let ir = compiled(&text);
+            let (focused, _) = counted(&ir, false);
+            let (unfocused, whole) = counted(&ir, true);
+            assert_eq!(
+                whole,
+                2 + 2 * 2,
+                "the reference runs every assignment whole"
+            );
+            assert!(!focused.suite.scenarios.is_empty());
+            assert_eq!(
+                focused.suite.to_canonical_json(),
+                unfocused.suite.to_canonical_json()
+            );
+            assert_eq!(focused, unfocused);
+        }
     }
 }

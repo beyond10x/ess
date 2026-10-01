@@ -497,7 +497,23 @@ fn search(
     guards: &[&Predicate],
     distinction: Distinction,
     between: bool,
-) -> Result<(Vec<BTreeMap<String, Node>>, bool), WitnessGap> {
+) -> Searched {
+    crate::witness_memo::answer(ir, command, guards, distinction, between, || {
+        search_uncached(ir, command, guards, distinction, between)
+    })
+}
+
+/// What one [`search`] answers: the candidates, and whether midpoints were added.
+pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool), WitnessGap>;
+
+/// [`search`], run.
+fn search_uncached(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    distinction: Distinction,
+    between: bool,
+) -> Searched {
     let mut added = false;
     // A quantifier's body reads its element through a binder. Rebound onto the element a one-
     // element list carries — `t == vip` over `tags` becomes `tags.0 == vip` — it is an ordinary
