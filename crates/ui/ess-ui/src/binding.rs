@@ -146,7 +146,10 @@ pub fn classify(status: u16, body: &str) -> Answer {
             None if success => Answer::Accepted,
             Some(serde_json::Value::String(error)) if !success => Answer::Refused {
                 error: error.clone(),
-                payload: members.get("payload").cloned(),
+                payload: members
+                    .get("payload")
+                    .filter(|payload| !payload.is_null())
+                    .cloned(),
             },
             _ => Answer::Transport,
         };

@@ -282,9 +282,11 @@ impl Model {
                             self.readable(sink, &section, &qualified, &view.domain);
                         }
                     }
-                    if let Some(read) = read {
-                        read_params(sink, &named.at, &qualified, view, read.params);
-                    }
+                    // A read with no `params:` slot (a menu, an export, a channel, references,
+                    // completions) binds none, so a required parameter is unbound there too.
+                    let none = BTreeMap::new();
+                    let bound = read.map_or(&none, |read| read.params);
+                    read_params(sink, &named.at, &qualified, view, bound);
                 }
             }
         }
@@ -626,8 +628,9 @@ impl std::error::Error for BindingError {}
 ///
 /// Refused, each at the node that causes it: a name the model does not declare or no
 /// `reached_by: network` component serves; a view parameter that is not a scalar, which no query
-/// string carries; a read paged by anything but the renderer (`paging:` `server`, `cursor` or
-/// `append`), since every code target refuses paging; and state placed in `server` or
+/// string carries; a view the model declares with `paging:`, and a read paged by anything but
+/// the renderer (`paging:` `server`, `cursor` or `append`), since every code target refuses
+/// paging; and state placed in `server` or
 /// `server_session`, which the served surface does not hold.
 pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Binding, BindingError> {
     let ir = compile_sources(sources, Path::new(&document.model)).map_err(BindingError::Model)?;
@@ -706,10 +709,16 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
     }
 }
 
-/// Why a served view cannot be read as `read` reads it: a paging no served surface does, and each
-/// declared parameter no query string carries.
+/// Why a served view cannot be read as `read` reads it: a view the model pages, a read paged by
+/// anything but the renderer, and each declared parameter no query string carries.
 fn read_refusals(served: &Surface, qualified: &str, read: Option<Read<'_>>) -> Vec<String> {
     let mut refusals = Vec::new();
+    if served.paged.contains(qualified) {
+        refusals.push(format!(
+            "view `{qualified}` declares `paging:` in the model, and every code target refuses a \
+             paged view (`ess-synth/src/paging.rs`): no served surface answers it"
+        ));
+    }
     if let Some(paged) = read.and_then(|read| read.paging).and_then(server_paged) {
         refusals.push(format!(
             "this read of `{qualified}` is paged by `{paged}`, and no served surface pages a \
@@ -777,6 +786,8 @@ struct Surface {
     commands: BTreeMap<String, (String, CommandRoute)>,
     /// Every served view's parameters that are not scalars, by the view's qualified name.
     non_scalar: BTreeMap<String, Vec<String>>,
+    /// Every served view whose model declaration carries `paging:`, which no code target serves.
+    paged: BTreeSet<String>,
 }
 
 impl Surface {
@@ -785,6 +796,7 @@ impl Surface {
             views: BTreeMap::new(),
             commands: BTreeMap::new(),
             non_scalar: BTreeMap::new(),
+            paged: BTreeSet::new(),
         };
         for component in ir.components().values() {
             if component.reached_by != Reach::Network {
@@ -846,6 +858,9 @@ impl Surface {
                             params,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
+                        if view.paging.is_some() {
+                            surface.paged.insert(handle.to_string());
+                        }
                         surface
                             .views
                             .insert(handle.to_string(), (name.clone(), route));

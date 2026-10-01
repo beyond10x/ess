@@ -747,18 +747,20 @@ impl Checker<'_> {
 /// are `state_resolves` and `unmapped_reported` findings.
 pub(crate) fn placements(document: &Document, path: &NodePath, state: &State) -> Vec<String> {
     let mut stores = Vec::new();
-    if let Some(class) = class_name(&state.class) {
-        let fixtures = Fixtures::default();
-        let checker = Checker {
-            document,
-            fixtures: &fixtures,
-        };
-        let placed = match &state.store {
-            Some(store) => store_name(store).map(str::to_owned),
-            None => checker.resolve(path, &state.class, class).ok().flatten(),
-        };
-        stores.extend(placed);
-    }
+    // An explicit store is a placement whatever the class says; only the profile resolution
+    // needs a class it can read.
+    let placed = match &state.store {
+        Some(store) => store_name(store).map(str::to_owned),
+        None => class_name(&state.class).and_then(|class| {
+            let fixtures = Fixtures::default();
+            let checker = Checker {
+                document,
+                fixtures: &fixtures,
+            };
+            checker.resolve(path, &state.class, class).ok().flatten()
+        }),
+    };
+    stores.extend(placed);
     if let Some(fallback) = &state.fallback {
         stores.extend(store_name(&fallback.store).map(str::to_owned));
     }
