@@ -1651,12 +1651,14 @@ impl fmt::Display for InstanceNeed {
 /// value it chooses is a function of the model, and nothing here reads a clock or a random device.
 /// `tests/synthesis.rs` synthesises the billing example twice and compares bytes.
 pub fn synthesize(ir: &EssIr) -> Synthesis {
+    // Each witness search is run once per question for the whole synthesis (beyond10x/ess#301).
+    let _memoised = crate::witness_memo::memoise(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`).
     let mut synthesis = if caller::uses(ir) {
         caller::synthesize(ir)
     } else {
-        synthesize_plain(ir)
+        synthesize_plain(ir, Focus::Whole)
     };
     // A note about an unseparated pair is recorded with its branch's scenario, and later passes
     // (fixtures, clock offsets, caller readings) may drop that scenario; a note naming a scenario
@@ -1673,8 +1675,41 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     synthesis
 }
 
+/// Which scenarios a synthesis writes.
+///
+/// A caller assignment that sends one command as the second caller is read only for that command's
+/// own scenarios (`caller::synthesize`), and writing every other scenario of the model to throw it
+/// away cost a whole synthesis per caller-reading command (beyond10x/ess#301).
+#[derive(Clone, Copy)]
+enum Focus<'a> {
+    /// Every scenario the model obliges.
+    Whole,
+    /// Only the scenarios about a branch of this command: its `outcome`, `transition`, `refusal`
+    /// and `invariant` ids, which every family files from its loop over that one command. Families
+    /// that file no such id (bindings, aggregates, value-object invariants) are not run, and the
+    /// passes over the finished suite run as they always do, over fewer scenarios.
+    About(&'a QualifiedName),
+}
+
+impl Focus<'_> {
+    /// Whether the scenarios of `command` are written.
+    fn takes(self, command: &QualifiedName) -> bool {
+        match self {
+            Self::Whole => true,
+            Self::About(focus) => focus == command,
+        }
+    }
+
+    /// Whether every scenario is written.
+    fn is_whole(self) -> bool {
+        matches!(self, Self::Whole)
+    }
+}
+
 /// [`synthesize`], for a model in which nothing depends on who sends a command.
-fn synthesize_plain(ir: &EssIr) -> Synthesis {
+fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
+    // A caller assignment's model is another model: its answers are held apart and dropped with it.
+    let _memoised = crate::witness_memo::memoise(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     for (path, subject) in ess_compiler::binary64::uses(ir) {
@@ -1694,6 +1729,9 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
 
     let mut unseparated_notes = Vec::new();
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         for outcome in &command.outcomes {
             // A wrong-state branch gets no scenario from here. §10 asks for one scenario per
             // *reachable* outcome, and the states this branch is reachable in are exactly the ones
@@ -1734,18 +1772,20 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
         }
     }
     let mut partial = Vec::new();
-    lifecycle(ir, &actors, &mut suite, &mut refusals, &mut partial);
-    state_refusals(ir, &actors, &mut suite, &mut refusals);
+    lifecycle(ir, &actors, focus, &mut suite, &mut refusals, &mut partial);
+    state_refusals(ir, &actors, focus, &mut suite, &mut refusals);
     let mut notes = Vec::new();
-    unknown_instances(ir, &actors, &mut suite, &mut refusals, &mut notes);
-    absent_input::absent_inputs(ir, &actors, &mut suite, &mut refusals);
-    existence::existence(ir, &actors, &mut suite, &mut refusals);
-    set_effects::set_effects(ir, &actors, &mut suite, &mut refusals);
+    unknown_instances(ir, &actors, focus, &mut suite, &mut refusals, &mut notes);
+    absent_input::absent_inputs(ir, &actors, focus, &mut suite, &mut refusals);
+    existence::existence(ir, &actors, focus, &mut suite, &mut refusals);
+    set_effects::set_effects(ir, &actors, focus, &mut suite, &mut refusals);
     notes.extend(partial);
     notes.extend(unseparated_notes);
-    invariants(ir, &actors, &mut suite, &mut refusals);
-    bindings(ir, &actors, &mut suite, &mut refusals);
-    aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+    invariants(ir, &actors, focus, &mut suite, &mut refusals);
+    if focus.is_whole() {
+        bindings(ir, &actors, &mut suite, &mut refusals);
+        aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+    }
     grant::denied(ir, &mut suite, &mut refusals, &mut notes);
     preconditions(ir, &mut suite);
     for (id, reason) in crate::fixtures::install(ir, &mut suite) {
@@ -2851,10 +2891,14 @@ fn run_state_refusal(
 fn state_refusals(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         let refusing: Vec<&ResolvedOutcome> = command
             .outcomes
             .iter()
@@ -7826,6 +7870,7 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
 fn lifecycle(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
     notes: &mut Vec<Note>,
@@ -7838,6 +7883,7 @@ fn lifecycle(
             for driver in drivers
                 .iter()
                 .filter(|driver| driver.takes(&transition.name))
+                .filter(|driver| focus.takes(&driver.command.name))
             {
                 let id = ScenarioId::Transition {
                     transition: TransitionRef::new(entity.clone(), &transition.name)
@@ -7890,7 +7936,7 @@ fn lifecycle(
             .collect();
         for state in &states.states {
             for (command, wrong) in &movers {
-                if !wrong.contains(state) {
+                if !wrong.contains(state) || !focus.takes(command) {
                     continue;
                 }
                 // Whether the id reads `refuses` or `accepts` is the command's own claim, read
@@ -8200,11 +8246,15 @@ fn names_existing(outcome: &ResolvedOutcome) -> Option<&str> {
 fn unknown_instances(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
     notes: &mut Vec<Note>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         let acting: Vec<&ResolvedOutcome> = command
             .outcomes
             .iter()
@@ -10003,11 +10053,15 @@ fn clipped(text: &str) -> ScenarioPurpose {
 fn invariants(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     let projections = row_projections(ir);
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         for outcome in &command.outcomes {
             let Some(subject) = &outcome.subject else {
                 continue;
@@ -10027,7 +10081,9 @@ fn invariants(
             insert(suite, id, scenario, refusals);
         }
     }
-    value_object_invariants(ir, actors, suite, refusals);
+    if focus.is_whole() {
+        value_object_invariants(ir, actors, suite, refusals);
+    }
 }
 
 /// The scenario that runs one branch and then reads the entity's invariants off a view.
