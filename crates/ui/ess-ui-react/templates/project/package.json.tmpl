@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "esbuild src/main.tsx --bundle --jsx=automatic --sourcemap --outdir=www/assets --servedir=www --serve-fallback=www/index.html --serve=5173",
+    "dev": "esbuild src/main.tsx --bundle --jsx=automatic --sourcemap --outdir=www/assets --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:5173 --watch=forever",
     "build": "tsc --noEmit && esbuild src/main.tsx --bundle --jsx=automatic --minify --outdir=www/assets",
     "typecheck": "tsc --noEmit",
     "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
-    "preview": "esbuild --servedir=www --serve-fallback=www/index.html --serve=4173"
+    "preview": "esbuild --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:4173 --watch=forever"
   },
   "dependencies": {
     "react": "^19.0.0",

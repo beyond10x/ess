@@ -191,7 +191,7 @@ fn the_project_depends_on_react_and_react_dom_only() {
     for (name, expected) in [
         (
             "dev",
-            "esbuild src/main.tsx --bundle --jsx=automatic --sourcemap --outdir=www/assets --servedir=www --serve-fallback=www/index.html --serve=5173",
+            "esbuild src/main.tsx --bundle --jsx=automatic --sourcemap --outdir=www/assets --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:5173 --watch=forever",
         ),
         (
             "build",
@@ -199,7 +199,7 @@ fn the_project_depends_on_react_and_react_dom_only() {
         ),
         (
             "preview",
-            "esbuild --servedir=www --serve-fallback=www/index.html --serve=4173",
+            "esbuild --servedir=www --serve-fallback=www/index.html --serve=127.0.0.1:4173 --watch=forever",
         ),
         ("typecheck", "tsc --noEmit"),
         ("typecheck:offline", "tsc -p tsconfig.offline.json --noEmit"),

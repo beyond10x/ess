@@ -81,10 +81,12 @@ export function useSearchParams(): [URLSearchParams, SetURLSearchParams] {
 
 /**
  * An `<a href>` to a page of this app. An unmodified primary-button click navigates in place;
- * any other click is left to the browser (a new tab, a new window, a download).
+ * any other click is left to the browser (a new tab, a new window, a download). A link to the
+ * location the browser is already on replaces the entry, so Back is not a no-op.
  */
 export function Link(props: { to: string; children?: ReactNode; className?: string; title?: string }): ReactNode {
-  const navigate = useNavigate();
+  const { location, navigate } = useContext(RouterContext);
+  const current = `${location.pathname}${location.search}${location.hash}`;
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (
       event.defaultPrevented ||
@@ -97,7 +99,7 @@ export function Link(props: { to: string; children?: ReactNode; className?: stri
       return;
     }
     event.preventDefault();
-    navigate(props.to);
+    navigate(props.to, { replace: props.to === current });
   };
   return (
     <a href={props.to} className={props.className} title={props.title} onClick={onClick}>

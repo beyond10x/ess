@@ -199,7 +199,10 @@ fn the_dev_server_answers_a_page_path_with_index_html() {
         .port();
     let mut words = dev.split_whitespace();
     assert_eq!(words.next(), Some("esbuild"), "`dev` runs esbuild: {dev}");
-    assert!(dev.contains("--serve=5173"), "`dev` serves on 5173: {dev}");
+    assert!(
+        dev.contains("--serve=127.0.0.1:5173"),
+        "`dev` serves on 5173: {dev}"
+    );
     let args: Vec<String> = words
         .map(|word| {
             if word.starts_with("--serve=") {
