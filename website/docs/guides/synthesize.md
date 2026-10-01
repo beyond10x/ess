@@ -277,8 +277,8 @@ the same for every command: `403` with `{"refused": "not granted", "actor": <nam
 contract declares it on every command. A `403` a caller-decided branch answers carries `outcome` and
 the declared `error` instead, so a client tells the two apart by the members present. A command no
 declared actor may invoke is refused to every caller. Views are not grant-checked. The plan marks
-the `actor grants` row generated. The Go server carries its own grant table, and both servers
-export the check (`admit` in Rust, `Admit` in Go) for code that drives the system in process.
+the `actor grants` row generated. The Go server carries its own grant table, and both servers expose
+the check (`admit` in Rust, `Admit` in Go) for code that drives the system in process.
 
 Where the specification serves no component, nothing generated sees a caller, so the plan keeps the
 `actor grants` row refused and enforcement stays with the caller. The Go target then emits no grant
