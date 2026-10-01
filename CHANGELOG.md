@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.50.0] — 2026-10-01
+
+### Fixed
+
+- Synthesis: an aggregate view whose creating command has a `when_related` guard is witnessed
+  instead of refused with ESS-SYNTH-017. Each row's related row is arranged, shared by rows given
+  one value of the guard's input; every input a guard predicate compares with that row's owner
+  link names an arranged owner; and a group key read from a related row's owner link holds one
+  owner per value (beyond10x/ess#272).
+
 ## [0.49.0] — 2026-10-01
 
 ### Added

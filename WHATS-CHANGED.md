@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.50.0](#synthesis-witnesses-an-aggregate-over-rows-a-whenrelated-guarded-command-creates) | Synthesis witnesses an aggregate over rows a when_related-guarded command creates | capability | notable |
 | [0.49.0](#generated-servers-enforce-actor-grants) | Generated servers enforce actor grants | breaking | significant |
 | [0.49.0](#a-whenrelated-guard-reads-the-related-rows-lifecycle-state) | A when_related guard reads the related row's lifecycle state | capability | notable |
 | [0.49.0](#synthesis-witnesses-related-copies-owner-linked-guards-and-overlapping-branches) | Synthesis witnesses related copies, owner-linked guards and overlapping branches | capability | notable |
@@ -49,6 +50,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.50.0 — 2026-10-01
+
+### Synthesis witnesses an aggregate over rows a when_related-guarded command creates
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.50.0)
+
+An aggregate view whose creating command has a `when_related` guard gets its `<view>/aggregate` scenario instead of ESS-SYNTH-017: each row's related row is arranged, owner-linked guard inputs name an arranged owner, and a group key read from a related row's owner link holds one owner per value.
 
 ## 0.49.0 — 2026-10-01
 
