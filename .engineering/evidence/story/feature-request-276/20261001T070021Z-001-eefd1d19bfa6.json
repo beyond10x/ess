@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T07:00:21Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-276",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: ess-diff 267 passed 0 failed; clippy -D warnings"
+  }
+}
