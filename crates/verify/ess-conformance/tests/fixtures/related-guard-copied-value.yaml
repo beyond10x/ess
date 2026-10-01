@@ -1,0 +1,79 @@
+format: ess/18
+system: mini
+version: v1
+domain: mini.m
+summary: A start copies the note of the item it is guarded on.
+types:
+  - {name: mini.m.ItemId, kind: newtype, of: Uuid}
+  - {name: mini.m.RunId, kind: newtype, of: Uuid}
+entities:
+  - name: mini.m.Item
+    identity: {name: item_id, type: mini.m.ItemId}
+    fields:
+      - {name: note, type: String}
+      - {name: archived, type: Boolean}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed]}
+  - name: mini.m.Run
+    identity: {name: run_id, type: mini.m.RunId}
+    fields:
+      - {name: item_id, type: mini.m.ItemId}
+      - {name: note, type: String}
+    lifecycle: {initial: Running, states: [Running], terminal: [Running]}
+errors:
+  - {name: mini.m.NoItem, summary: No item carries the identity., fields: []}
+  - {name: mini.m.Archived, summary: The item is archived., fields: []}
+events:
+  - name: mini.m.ItemAdded
+    fields:
+      - {name: item_id, type: mini.m.ItemId}
+  - name: mini.m.Started
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+      - {name: note, type: String}
+actors:
+  - name: mini.m.Operator
+    may: [mini.m.AddItem, mini.m.Start]
+commands:
+  - name: mini.m.AddItem
+    input:
+      - {name: note, type: String}
+      - {name: archived, type: Boolean}
+    outcomes:
+      - name: added
+        creates: mini.m.Item
+        instance: item_id
+        emits: [mini.m.ItemAdded]
+        payload:
+          mini.m.ItemAdded: {item_id: {generated: true}}
+        sets:
+          note: input.note
+          archived: input.archived
+  - name: mini.m.Start
+    input:
+      - {name: item_id, type: mini.m.ItemId}
+    outcomes:
+      - name: no-item
+        when_related: {via: input.item_id, exists: false}
+        error: mini.m.NoItem
+      - name: archived
+        when_related: {via: input.item_id, predicate: archived == true}
+        error: mini.m.Archived
+      - name: started
+        creates: mini.m.Run
+        instance: run_id
+        emits: [mini.m.Started]
+        payload:
+          mini.m.Started:
+            run_id: {generated: true}
+            note: {related: {via: input.item_id, field: note}}
+        sets:
+          item_id: input.item_id
+          note: {related: {via: input.item_id, field: note}}
+views:
+  - name: mini.m.Runs
+    source: mini.m.Run
+    consistency: read_your_writes
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+      - {name: item_id, type: mini.m.ItemId}
+      - {name: note, type: String}

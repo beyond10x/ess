@@ -316,6 +316,16 @@ pub enum Note {
         /// Its declared type.
         type_ref: String,
     },
+    /// A branch copying fields of the row its `when_related:` guard reads (`{related: …}` through
+    /// the same input) whose scenario arranges no second row the guard accepts holding other values
+    /// there (beyond10x/ess#270). A target that copies from a row the guard accepts, rather than
+    /// the row the input names, is not failed by it.
+    UnaccompaniedRelatedCopy {
+        /// The branch's scenario.
+        scenario: ScenarioId,
+        /// The fields copied, in the order first read.
+        fields: Vec<String>,
+    },
 }
 
 impl fmt::Display for Note {
@@ -400,6 +410,17 @@ impl fmt::Display for Note {
                  give it an identity no other scenario sends, so a target that answers one caller \
                  by name is not failed by it"
             ),
+            Self::UnaccompaniedRelatedCopy { scenario, fields } => {
+                let names: Vec<String> = fields.iter().map(|name| format!("`{name}`")).collect();
+                write!(
+                    f,
+                    "`{scenario}` copies {} from the row its `when_related:` guard reads, and no \
+                     second row the guard accepts holding another value there could be arranged, \
+                     so a target copying from a row the guard accepts rather than the row named \
+                     is not failed by it",
+                    names.join(", ")
+                )
+            }
         }
     }
 }
@@ -1544,7 +1565,8 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     // the suite does not hold points at nothing, so it goes with it (beyond10x/ess#202).
     let suite = &synthesis.suite;
     synthesis.notes.retain(|note| match note {
-        Note::UnseparatedSources { scenario, .. } => suite.scenario(scenario).is_some(),
+        Note::UnseparatedSources { scenario, .. }
+        | Note::UnaccompaniedRelatedCopy { scenario, .. } => suite.scenario(scenario).is_some(),
         _ => true,
     });
     // Read off the finished suite, so every path that builds a branch's scenario is held to it.
@@ -1603,6 +1625,13 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
                 continue;
             };
             unseparated_notes.extend(unseparated(command, outcome, &id, &scenario));
+            let fields = related_guard::unaccompanied(ir, command, outcome, &actors);
+            if !fields.is_empty() {
+                unseparated_notes.push(Note::UnaccompaniedRelatedCopy {
+                    scenario: id.clone(),
+                    fields,
+                });
+            }
             insert(&mut suite, id, scenario, &mut refusals);
         }
     }

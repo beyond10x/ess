@@ -124,9 +124,30 @@ pub(super) fn arrange(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    mut setup: Setup,
+    setup: Setup,
 ) -> Result<Setup, RefusalCause> {
-    for (nth, read) in reads(outcome).into_iter().enumerate() {
+    arrange_except(ir, outcome, actors, distinction, setup, None)
+}
+
+/// A row a `when_related:` guard reads: the input that names it and the entity it is a row of.
+pub(super) type Guarded<'a> = (&'a str, &'a EntityHandle);
+
+/// [`arrange`], but for the reads of the row `guarded` names: that row is the one the guard reads
+/// too, which [`super::related_guard`] arranges so that it selects the branch, and whose values
+/// [`settle`] carries once it exists (beyond10x/ess#270). Arranging it here as well would point the
+/// input at a second row before the guard could point it at its own.
+pub(super) fn arrange_except(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    mut setup: Setup,
+    guarded: Option<Guarded<'_>>,
+) -> Result<Setup, RefusalCause> {
+    let reads = reads(outcome)
+        .into_iter()
+        .filter(|read| !is_guarded(ir, outcome, read, guarded));
+    for (nth, read) in reads.enumerate() {
         let first = RELATED_WITNESS * (1 + distinction.get() + 8 * nth);
         let initial = ir.entity(read.entity).lifecycle.initial.clone();
         let row = |at: usize| {
@@ -224,6 +245,78 @@ pub(super) fn arrange(
         setup.steps = steps;
     }
     Ok(setup)
+}
+
+/// Whether `read` reads the row `guarded` names: through the same input, of the same entity.
+fn is_guarded(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    read: &Read<'_>,
+    guarded: Option<Guarded<'_>>,
+) -> bool {
+    guarded.is_some_and(|(field, entity)| {
+        read.entity == entity && input_read(ir, outcome, read.via) == Some(field)
+    })
+}
+
+/// The stored fields — not the identity — `outcome` reads through the input `guarded` names
+/// ([`arrange_except`]): the values a row beside the guarded one should hold otherwise, so that an
+/// implementation copying from another row publishes another value.
+pub(super) fn guarded_fields<'a>(
+    ir: &EssIr,
+    outcome: &'a ResolvedOutcome,
+    guarded: Guarded<'_>,
+) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    for read in reads(outcome)
+        .iter()
+        .filter(|read| is_guarded(ir, outcome, read, Some(guarded)))
+    {
+        let identity = &ir.entity(read.entity).identity.name;
+        for field in &read.fields {
+            if identity != field && !out.contains(field) {
+                out.push(*field);
+            }
+        }
+    }
+    out
+}
+
+/// Carries, under [`key`], what `row` — the row a `when_related:` guard reads, arranged to select
+/// the branch — holds for every field `outcome` reads of it through the same input
+/// ([`arrange_except`], beyond10x/ess#270): its identity, or the value it settled. A field the row
+/// left undetermined is carried as nothing, and stays covered by the payload shape alone.
+pub(super) fn settle(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    setup: &mut Setup,
+    guarded: Guarded<'_>,
+    row: &Arrangement,
+) {
+    for read in reads(outcome)
+        .iter()
+        .filter(|read| is_guarded(ir, outcome, read, Some(guarded)))
+    {
+        let identity = &ir.entity(read.entity).identity;
+        for field in &read.fields {
+            let held = if identity.name == *field {
+                Some(Determined {
+                    value: ScenarioValue::instance(row.instance.clone()),
+                    type_ref: identity.type_ref.clone(),
+                })
+            } else {
+                row.settled.get(*field).cloned()
+            };
+            match held {
+                Some(held) => {
+                    setup.settled.insert(key(read.via, field), held);
+                }
+                None => {
+                    setup.settled.remove(&key(read.via, field));
+                }
+            }
+        }
+    }
 }
 
 /// Whether `read` follows the subject's own identity to a row of another entity, through a
