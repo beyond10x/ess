@@ -4,6 +4,12 @@
 
 ### Added
 
+- Synthesized Rust and Go network components include ephemeral in-memory stores and executable
+  server entry points, with `--listen`, explicit `--callers` selection and optional same-origin
+  static files. Startup refuses unresolved reachable obligations. The default authenticates no
+  caller; `actor-header` is an explicit demonstration mode. Generated Rust libraries retain their
+  dependency-free default and WASM support; the native server dependencies support Rust 1.85
+  (beyond10x/ess#318).
 - `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
   and terminal semantics after live effects and before local paging. Filters never reach the
   server, share raw requests, and are not authorization. Seven `filter_*` checks reject invalid
@@ -13,6 +19,9 @@
 
 ### Changed
 
+- Generated behaviour contexts expose fallible companion methods, so an unavailable context
+  answer refuses execution before storage or event effects. Existing context implementations keep
+  their original methods; generated memory contexts implement the fallible seam.
 - **Breaking for a realization of a view with parameters, and for hand-written server code**:
   synthesized Go and Rust servers decode a view's declared parameters from the query string by
   wire name and pass them, typed, to the view port, whose method now takes them. A missing
@@ -34,8 +43,7 @@
   (`BrokenInvariant()`). `<ctx>.Unimplemented` now covers owed seams only, so code that passed it
   as the whole behaviour bundle no longer compiles; pass `behaviour.New(ports)` and implement the
   owed seams. Package names `behaviour` and `invariant` are reserved, and a domain named like a
-  standard-library package a generated file imports gets a renamed package. A store and a server
-  entry point are not generated yet (beyond10x/ess#314).
+  standard-library package a generated file imports gets a renamed package (beyond10x/ess#314).
 - The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
 
 ## [0.51.0] — 2026-10-01
