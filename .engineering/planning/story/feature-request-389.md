@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -173,3 +173,9 @@ Coordinator executions in the integration carrier, 2026-10-02, before the genera
 - task site-build passed again after all current public prose changes, including the actual existing WASM boundary21 claims and deterministic lab28-step checks. This does not establish #389 target execution. Documentation committed as86cf019bc. Raw log and exit file: target/backlog-input/runtime-parity-site-build.*.
 
 The reviewed generated disclosure identity contract is integrated as d213671dd; its source-only coordinator review and implementor red/green evidence are in review-result:consumer-one-time-identifiers. All referenced carrier commits have verified bot author and committer. The carrier is local and unpublished. Full changed-package checks and release gates remain pending; no partial result here authorizes marking #389 implemented or released.
+
+## Generated target declared error payload
+
+The shared live observer declared-error case exposed a generated target API omission: native DeclaredErrorValue carries fields, while Go CommandResult.Error and TypeScript CommandResult.error carried only the declared error name. Accept an additive optional payload alongside the unchanged name: Go ErrorPayload map[string]Node and TypeScript errorPayload?: Record<string, Node>. The private observer must inspect the whole bounded payload, including unknown keys and nested strings, before persistence. Do not silently drop fields or fabricate conformance from the error name.
+
+This is a generated target API addition, not a suite/count/history format change. Omitted payload preserves legacy target behavior. Go users with unkeyed CommandResult struct literals must update those literals; documentation and release notes must disclose that source compatibility implication. Ports compare the same real shared declared-error callback against the native pinned status/counts/trace and verify that its observed plaintext never enters persisted evidence. This approval implements the existing accepted full-surface disclosure requirement and does not relax the complete runtime parity gate.
