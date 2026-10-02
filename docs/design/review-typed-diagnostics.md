@@ -259,7 +259,7 @@ this block, a count that does not match, and a listed file that has none, are ea
 accessor.rs 1 0
 actor.rs 1 2
 binding.rs 34 0
-command.rs 13 50
+command.rs 13 52
 component.rs 15 9
 domain.rs 5 0
 entity.rs 17 4

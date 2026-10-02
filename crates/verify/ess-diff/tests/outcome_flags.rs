@@ -86,6 +86,39 @@ commands:\n  - name: library.api.Read\n    response:\n      - {name: value, type
 outcomes:\n      - {name: returned, returns: true}\n";
 
 #[test]
+fn one_time_disclosure_policy_has_a_typed_direction_and_new_envelope() {
+    let plain = LIBRARY
+        .replace("ess/17", "ess/21")
+        .replace("type: Integer", "type: String");
+    let marked = plain.replace("returns: true", "returns: true, one_time_response: [value]");
+    for (before, after, direction) in [
+        (plain.as_str(), marked.as_str(), SemanticRelation::Narrowed),
+        (marked.as_str(), plain.as_str(), SemanticRelation::Expanded),
+    ] {
+        let changed = delta(before, after);
+        let json = changed.to_canonical_json();
+        assert_eq!(changed.format.to_string(), "ess-diff/13", "{json}");
+        assert!(!json.contains("unclassified"), "{json}");
+        let policy = changed
+            .changes()
+            .iter()
+            .find(|change| {
+                change
+                    .id()
+                    .to_string()
+                    .contains("outcome-one-time-response-changed")
+            })
+            .unwrap();
+        assert_eq!(policy.relation(), direction);
+        assert!(changed
+            .to_canonical_json_for("ess-diff/12".parse().unwrap())
+            .is_err());
+        let raw: RawEssDelta = serde_json::from_str(&json).unwrap();
+        assert_eq!(EssDelta::try_from(raw).unwrap(), changed);
+    }
+}
+
+#[test]
 fn returning_the_response_is_classified_both_ways() {
     let nothing = LIBRARY.replace("returns: true", "accepts: nothing");
     assert_ne!(nothing, LIBRARY);

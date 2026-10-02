@@ -410,11 +410,25 @@ impl<C: Clock> Runner<C> {
         let context = ScenarioContext::new(id.clone(), self.ids.correlation());
         let mut run = Run::new(id.clone(), context);
 
-        let fixture_ready = match scenario.steps.first() {
-            Some(ScenarioStep::ResolveFixtures { fixtures }) => {
-                resolve_fixtures(fixtures, &mut run, target)
+        // The contract stage admits the closed DTO before its execution engine lands.
+        // Never execute it as if the new authority were absent in an intermediate build.
+        let fixture_ready = if scenario.one_time_response.is_some() {
+            run.record(target_failure(
+                &run.id,
+                "one-time response execution",
+                &TargetError::unsupported(
+                    "one-time response execution",
+                    "the contract-stage build has no one-time observer yet",
+                ),
+            ));
+            Flow::Stop
+        } else {
+            match scenario.steps.first() {
+                Some(ScenarioStep::ResolveFixtures { fixtures }) => {
+                    resolve_fixtures(fixtures, &mut run, target)
+                }
+                _ => Flow::Continue,
             }
-            _ => Flow::Continue,
         };
         if fixture_ready == Flow::Stop {
             // Invalid fixture data must not reach BeginScenario, which may open a real session.

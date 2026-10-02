@@ -185,24 +185,30 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=33) {
+    if !matches!(version.major(), 1..=35) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–33",
+            "execution readers admit suite majors 1–35",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /33",
+            "coverage is required exactly for odd suite majors from /5 through /35",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
-        let s = scenario.closed(&["purpose", "steps", "source"], &[])?;
+        let s = scenario.closed(&["purpose", "steps", "source"], &["one_time_response"])?;
+        if version.major() < 34 && s.contains_key("one_time_response") {
+            return Err(scenario.error(
+                "UnsupportedVocabulary",
+                "one-time response authority requires suite/34 or /35",
+            ));
+        }
         for step in s["steps"].array()? {
             step_value(step, version.major())?;
         }
@@ -612,6 +618,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// The construct-owned format gates: each refuses an explicitly pinned older suite version that
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::one_time_response::admit(suite)?;
     crate::direct_response::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::structured_values::admit(suite)?;
