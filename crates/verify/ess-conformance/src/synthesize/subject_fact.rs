@@ -2326,6 +2326,36 @@ fn mapped(outcome: &ResolvedOutcome) -> BTreeMap<&str, &str> {
         .collect()
 }
 
+/// The inputs `creator` creates a row of `entity` with, chosen toward the stored-field guards of
+/// every command moving it: a row created with one of them is one such a move can be taken on
+/// without searching for another row (beyond10x/ess#279). Empty where no move reads stored fields,
+/// or the creating branch maps none of the fields they read.
+pub(super) fn toward_moves(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+) -> Vec<BTreeMap<String, Node>> {
+    let all = ir.drivers();
+    let mut read: Vec<Predicate> = Vec::new();
+    for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
+        if driver.effect.transition().is_none() || !uses(driver.command) {
+            continue;
+        }
+        for hint in hints(driver.command) {
+            if !read.contains(&hint) {
+                read.push(hint);
+            }
+        }
+    }
+    if read.is_empty() {
+        return Vec::new();
+    }
+    hinted(ir, entity, creator, &read)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
 /// The candidate inputs for one arranging branch, varied toward the stored-field goal.
 ///
 /// Every hint is translated through the branch's `sets:` mappings onto its own input, and the
@@ -2997,7 +3027,201 @@ fn creations(
             }
         }
     }
+    if under.is_none() && !super::related_guard::routes(creator.command, creator.outcome) {
+        out.extend(copied_creations(
+            ir,
+            entity,
+            creator,
+            actors,
+            hints,
+            distinction,
+            arranging,
+        ));
+    }
     Ok(out)
+}
+
+/// The copies one creating branch's `sets:` makes through one input naming a related row: the
+/// entity that row is of, and each target field with the related field it copies.
+type Copies<'a> = (&'a EntityHandle, Vec<(&'a str, &'a str)>);
+
+/// Every `{related: {via: input.f, field: g}}` of `outcome`'s `sets:`, by the input `f`.
+fn copies_by_input(outcome: &ResolvedOutcome) -> BTreeMap<&str, Copies<'_>> {
+    let mut out: BTreeMap<&str, Copies<'_>> = BTreeMap::new();
+    for set in outcome.sets.iter().filter(|set| set.conversion.is_none()) {
+        if let ResolvedPayloadValue::RelatedField {
+            via: ess_compiler::ir::ResolvedRelatedVia::Input { field: via, .. },
+            entity: related,
+            field,
+            ..
+        } = &set.value
+        {
+            out.entry(via.as_str())
+                .or_insert_with(|| (related, Vec::new()))
+                .1
+                .push((set.target.as_str(), field.as_str()));
+        }
+    }
+    out
+}
+
+/// The hints that read a copied field, rewritten over the related row's field the copy reads, with
+/// every comparison with the command's input dropped ([`without_input`]).
+fn through_copies(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    hints: &[Predicate],
+    copies: &[(&str, &str)],
+) -> Vec<Predicate> {
+    let onto: BTreeMap<&str, &str> = copies.iter().copied().collect();
+    hints
+        .iter()
+        .map(|hint| without_input(ir, entity, hint))
+        .filter(|hint| {
+            hint.fact_paths()
+                .iter()
+                .any(|path| onto.contains_key(path.namespace()))
+        })
+        .map(|hint| {
+            map_paths(&hint, &|path: &FactPath| match onto.get(path.namespace()) {
+                Some(field) => {
+                    let mut segments = vec![(*field).to_owned()];
+                    segments.extend(path.segments()[1..].iter().cloned());
+                    FactPath::from_segments(segments)
+                }
+                None => path.clone(),
+            })
+        })
+        .collect()
+}
+
+/// The block the related rows a creation copies a field from are arranged at ([`copied_creations`]):
+/// past every block [`super::related_guard`] and [`super::related`] number, so its rows name no row
+/// either arranges.
+const COPIED: usize = 27_720 * 13;
+
+/// The rows a creating branch leaves where its `sets:` copies a field the hints read from a related
+/// row its input names (`{related: {via: input.f, field: g}}`, beyond10x/ess#307): that row is
+/// arranged first, at each value the related entity's own creation can be steered to toward the
+/// hints read through the copy, and the creation is sent naming it, so the copied field holds the
+/// value the row was given. Empty where the branch copies no field the hints read, where the
+/// related entity is already being arranged, or where the related row is the creation's owner.
+fn copied_creations(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    distinction: Distinction,
+    arranging: &[&EntityHandle],
+) -> Vec<Arrangement> {
+    let read: BTreeSet<String> = hints
+        .iter()
+        .flat_map(Predicate::fact_paths)
+        .map(|path| path.namespace().to_owned())
+        .collect();
+    let mut out = Vec::new();
+    for (via, (related, copies)) in copies_by_input(creator.outcome) {
+        if !copies.iter().any(|(target, _)| read.contains(*target))
+            || related == entity
+            || arranging.contains(&related)
+            || ir
+                .owner_of(entity)
+                .is_some_and(|owned| owned.owner == *related)
+        {
+            continue;
+        }
+        let translated = through_copies(ir, entity, hints, &copies);
+        let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
+        let at = Distinction::further(COPIED + distinction.get());
+        let all = ir.drivers();
+        let rows: Vec<Arrangement> = all
+            .get(related)
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+            .filter_map(|row_creator| {
+                creations(
+                    ir,
+                    related,
+                    row_creator,
+                    actors,
+                    &translated,
+                    at,
+                    (&chain, None),
+                )
+                .ok()
+            })
+            .flatten()
+            .collect();
+        let owner =
+            super::arrange_owner(ir, creator.outcome, entity, actors, distinction, arranging);
+        for row in rows {
+            let Ok(mut arrangement) = super::created_by(
+                ir,
+                entity,
+                creator,
+                distinction,
+                owner.as_ref(),
+                |bound, _| {
+                    let input = super::reach(ir, creator.command, creator.outcome, distinction)?;
+                    let mut bound = bound.clone();
+                    bound.insert(via.to_owned(), row.instance.clone());
+                    let mut invocation = invoke_with(ir, creator, None, actors, &bound, &input);
+                    let mut steps = row.steps.clone();
+                    steps.append(&mut invocation.steps);
+                    invocation.steps = steps;
+                    invocation.source.extend(row.source.iter().cloned());
+                    Ok::<_, RefusalCause>(invocation)
+                },
+            ) else {
+                continue;
+            };
+            settle_copies(
+                ir,
+                creator.outcome,
+                (related, &copies),
+                &row,
+                &mut arrangement,
+            );
+            out.push(arrangement);
+        }
+    }
+    out
+}
+
+/// Settles on `arrangement` each field the creation copied from `row`: the row's identity as its
+/// instance, an `Optional` field no step of the row wrote as `null`, and any other as the row
+/// settled it. A field the row did not determine stays undetermined.
+fn settle_copies(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    (related, copies): (&EntityHandle, &[(&str, &str)]),
+    row: &Arrangement,
+    arrangement: &mut Arrangement,
+) {
+    let identity = &ir.entity(related).identity;
+    for (target, field) in copies {
+        let held = if identity.name == *field {
+            Some(ScenarioValue::instance(row.instance.clone()))
+        } else if row.unwritten.contains(*field) && !row.settled.contains_key(*field) {
+            Some(ScenarioValue::Literal { value: Node::Null })
+        } else {
+            row.settled.get(*field).map(|held| held.value.clone())
+        };
+        let (Some(value), Some(set)) =
+            (held, outcome.sets.iter().find(|set| set.target == *target))
+        else {
+            continue;
+        };
+        arrangement.settled.insert(
+            (*target).to_owned(),
+            super::Determined {
+                value,
+                type_ref: set.target_type.clone(),
+            },
+        );
+    }
 }
 
 /// The row after `driver` runs on `arrangement` with this input, carrying the counters `follow`

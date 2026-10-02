@@ -141,3 +141,45 @@ fn commands_and_fixture_overrides_go_through_the_http_adapter_routes() {
         .expect("the stale test");
     assert!(!stale.contains("page.route"), "{stale}");
 }
+
+/// `choose` at a form field drives the field's own choice control, as it does a filter bar's.
+#[test]
+fn choose_at_a_form_choice_field_picks_in_its_choice_control() {
+    let document = ess_ui::load_path(&example_dir().join("ui.yaml")).expect("the example loads");
+    let text = "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: c\n  steps:\n\
+                \x20 - open: partners.list\n\
+                \x20 - act: pages/partners.list/header/actions/create\n\
+                \x20 - choose: {at: pages/partners.list/overlays/create/fields/tier, option: gold}\n\
+                \x20 - choose: {at: pages/partners.list/overlays/create/fields/tier/choice, option: silver}\n";
+    let file = ess_ui_test::parse_str(text, &example_dir().join("inline.yaml")).expect("parses");
+    let spec = ess_ui_test::playwright(&[file], &document);
+    for wanted in [
+        "await page.locator('[data-ui-path=\"pages/partners.list/overlays/create/fields/tier\"]').locator(\"select\").selectOption({ label: \"gold\" });",
+        "await page.locator('[data-ui-path=\"pages/partners.list/overlays/create/fields/tier/choice\"]').locator(\"select\").selectOption({ label: \"silver\" });",
+    ] {
+        assert!(spec.contains(wanted), "{wanted}\n\n{spec}");
+    }
+    assert!(!spec.contains("test.fixme"), "{spec}");
+}
+
+/// A number of four or more digits in expected text matches the browser's grouped spelling too,
+/// as it does in the terminal; text without such a number stays a plain string.
+#[test]
+fn expected_text_matches_numbers_with_or_without_grouping() {
+    let document = ess_ui::load_path(&example_dir().join("ui.yaml")).expect("the example loads");
+    let text = "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: n\n  steps:\n\
+                \x20 - open: partners.list\n\
+                \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, text: '150,000 EUR (x)'}\n\
+                \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, not_text: '1840'}\n\
+                \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, text: 'Cedar 12'}\n";
+    let file = ess_ui_test::parse_str(text, &example_dir().join("inline.yaml")).expect("parses");
+    let spec = ess_ui_test::playwright(&[file], &document);
+    let row = "page.locator('[data-ui-path=\"pages/partners.list/sections/list/rows/pt-003\"]')";
+    for wanted in [
+        format!("await expect({row}).toContainText(new RegExp(\"150[,\\\\u00a0\\\\u202f]?000 EUR \\\\(x\\\\)\"));"),
+        format!("await expect({row}).not.toContainText(new RegExp(\"1[,\\\\u00a0\\\\u202f]?840\"));"),
+        format!("await expect({row}).toContainText(\"Cedar 12\");"),
+    ] {
+        assert!(spec.contains(&wanted), "{wanted}\n\n{spec}");
+    }
+}

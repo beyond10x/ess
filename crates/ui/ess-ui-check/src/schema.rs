@@ -201,6 +201,72 @@ pub(crate) fn marker_accepted_by() -> &'static MarkerAccepted {
     })
 }
 
+/// The names of the schema's constructs (`Page`, `Reads`, `State`, …), which a type may name.
+pub(crate) fn construct_names() -> &'static BTreeSet<String> {
+    static NAMES: OnceLock<BTreeSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| keys(&schema()["constructs"]))
+}
+
+/// Every closed enum the schema's constructs declare, by `<Construct>.<field>` — a record field
+/// inside a field's type is `<field>.<key>`, a map value `<field>.*` — with the values it lists.
+/// An enum reached through `optional`, `list` or `one_of` is the same field.
+pub(crate) fn enum_fields() -> &'static BTreeMap<String, BTreeSet<String>> {
+    static FIELDS: OnceLock<BTreeMap<String, BTreeSet<String>>> = OnceLock::new();
+    FIELDS.get_or_init(|| {
+        let mut fields = BTreeMap::new();
+        for (construct, entry) in schema()["constructs"].as_mapping().into_iter().flatten() {
+            let Some(construct) = construct.as_str() else {
+                continue;
+            };
+            for (field, spec) in entry["fields"].as_mapping().into_iter().flatten() {
+                let Some(field) = field.as_str() else {
+                    continue;
+                };
+                collect_enums(&spec["type"], &format!("{construct}.{field}"), &mut fields);
+            }
+        }
+        fields
+    })
+}
+
+fn collect_enums(ty: &Value, at: &str, fields: &mut BTreeMap<String, BTreeSet<String>>) {
+    let Some(constructor) = ty.as_mapping() else {
+        return;
+    };
+    if let Some(values) = constructor.get("enum") {
+        fields
+            .entry(at.to_owned())
+            .or_default()
+            .extend(strings(values));
+    }
+    for inner in ["optional", "list"] {
+        if let Some(inner) = constructor.get(inner) {
+            collect_enums(inner, at, fields);
+        }
+    }
+    for branch in constructor
+        .get("one_of")
+        .and_then(Value::as_sequence)
+        .into_iter()
+        .flatten()
+    {
+        collect_enums(branch, at, fields);
+    }
+    if let Some(map) = constructor.get("map") {
+        collect_enums(&map["value"], &format!("{at}.*"), fields);
+    }
+    for (key, inner) in constructor
+        .get("record")
+        .and_then(Value::as_mapping)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(key) = key.as_str() {
+            collect_enums(inner, &format!("{at}.{key}"), fields);
+        }
+    }
+}
+
 /// `unmapped_marker.pattern`, `^UNMAPPED: .+$`, as a test.
 pub(crate) fn is_unmapped_marker(text: &str) -> bool {
     text.strip_prefix("UNMAPPED: ")

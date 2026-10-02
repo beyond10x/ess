@@ -51,7 +51,7 @@ type_rule:
 
 expressions:
   summary: Binding expressions — the values of fields typed `expr`.
-  doc: Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path.
+  doc: Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path. A string that does not parse, or that joins words with an operator but reads no path or function form (`Limit in cents`, `not yet sent`), is literal text, including a widget argument substituted into an `expr` position.
   forms:
     - {form: "state.<name>",             note: "page, section or overlay state"}
     - {form: "params.<name>",            note: "path params of the page, or values passed to an overlay"}
@@ -381,7 +381,8 @@ constructs:
       A page owns the state a link should reproduce (filters, paging, selection) and composes
       sections, each loading on its own. Start from a page kind and declare only what differs.
       `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as
-      a view switch.
+      a view switch; switching keeps every current param the target page declares, by name, so
+      sibling views of one record stay on that record.
     inheritance:
       from: kind
       merge: shorthands.inheritance
@@ -520,9 +521,11 @@ constructs:
       selection. `component` names a member of the composite union or a widget; its props are
       written inline beside the section's own fields, and a key that is neither is refused.
       `children` adds widgets or primitives rendered with the section (a caption, a button).
+      `title` is the heading a reader sees, which tells two sections over the same view apart.
     fields:
       name:       {type: name, required: true, note: node name among the page's sections}
       component:  {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: true, note: what the section renders}
+      title:      {type: string, note: "heading shown above the section; absent, none"}
       reads:      {type: Reads, note: "the section's data; one per section; it is the composite's own `reads`"}
       live:       {type: Live, note: how channel events change the rows}
       load:       {type: {enum: [eager, on_visible, on_demand]}, default: eager, note: when the read starts}
@@ -584,7 +587,7 @@ constructs:
     fields:
       reads:        {type: Reads, note: the rows}
       columns:      {type: {one_of: [{list: Field}, {record: {binds: expr, all: {list: Field}}}, string]}, note: "fixed columns, user-selectable columns, or an UNMAPPED string"}
-      sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {list: name}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
+      sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {optional: {list: name}}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
       style:        {type: {enum: [table, cards, list, tree]}, default: table, note: presentation hint}
       selection:    {type: {one_of: [{enum: [none, single, multiple]}, {record: {mode: {enum: [single, multiple]}, enabled: expr}}]}, default: none, note: "row selection, optionally only in a mode"}
       row_actions:  {type: {list: Action}, note: actions per row}
@@ -594,6 +597,8 @@ constructs:
       item:         {type: {list: Node}, note: "nested named nodes per row, in order"}
       reorder:      {type: {record: {does: {ref: command}, endpoint: {optional: string}}}, note: "drag to reorder, saved by a command"}
       group_by:     {type: name, note: field rows are grouped under}
+      group_order:  {type: {list: string}, note: "order groups are shown in; values not listed follow in the order they first appear"}
+      show_empty_groups: {type: boolean, default: false, note: "a heading for every `group_order` value, even one no row falls under"}
     example:
       component: collection
       style: cards
@@ -725,6 +730,8 @@ constructs:
       title:     {type: string, note: "overlay title; a confirm shows it as its question"}
       params:    {type: {map: {key: name, value: expr}}, note: values passed by the opener}
       state:     {type: {map: {key: name, value: State}}, note: overlay-local state}
+      visible:   {type: expr, note: shows the overlay only when true}
+      degrades:  {type: Degrades, note: fallbacks for renderers lacking a capability}
       same_as:   {type: {ref: overlay}, note: reuse another overlay; local props override}
       unmapped:  {type: {list: string}, note: gaps found by a retrofit}
     example:
@@ -742,7 +749,7 @@ constructs:
     doc: Use before destructive commands, inside an overlay whose `title` is the question. `references` shows what still uses the record; `input` asks the user to type a value; `alternatives` offers a softer action.
     fields:
       body:          {type: string, note: explanation}
-      does:          {type: {ref: command}, note: command run on confirm}
+      does:          {type: {ref: command}, note: "command run on confirm, unless the action that opened the confirm runs the same command"}
       references:    {type: {ref: view}, note: the used-by view shown first}
       consequences:  {type: {list: string}, note: what the command will do}
       confirm_label: {type: string, default: Delete, note: confirm button text}
@@ -770,6 +777,8 @@ constructs:
       window: {type: duration, note: time window the value covers}
       format: {type: {enum: [number, duration, percent, bytes]}, default: number, note: display format}
       label:  {type: string, note: caption}
+      aggregate: {type: {enum: [count, sum, min, max, avg]}, note: "computed over every row of the read instead of read from one; needs `reads`"}
+      field:  {type: name, note: "row field `aggregate` reads; required for every aggregate but count"}
     example: {component: metric, from: channel.metrics.overdue_invoices, label: Overdue invoices}
 
   chart:
@@ -808,11 +817,11 @@ constructs:
     group: composites
     order: 12
     summary: Nodes and edges of a model, editable on a canvas.
-    doc: For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. A renderer without a canvas falls back to a collection of nodes.
+    doc: For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. `reads` holds the nodes, and the edges too unless `edges.reads` names a view of their own; `nodes.key` is the field edge endpoints name and `nodes.label` the field a node shows. A renderer without a canvas falls back to a collection of nodes.
     fields:
-      reads:        {type: Reads, required: true, note: the graph}
-      nodes:        {type: {record: {kind_by: name, opens: {optional: {ref: overlay}}}}, note: node kind field and edit overlay}
-      edges:        {type: {record: {from: name, to: name, kind_by: {optional: name}}}, note: edge endpoints and kind}
+      reads:        {type: Reads, required: true, note: "the nodes, and the edges unless they have their own read"}
+      nodes:        {type: {record: {key: {optional: name}, label: {optional: name}, kind_by: {optional: name}, opens: {optional: {ref: overlay}}}}, note: "node key (default id), label and kind fields, and edit overlay"}
+      edges:        {type: {record: {reads: {optional: Reads}, from: name, to: name, kind_by: {optional: name}}}, note: "edge read, endpoint fields (node keys) and kind"}
       node_actions: {type: {list: Action}, note: context menu of a node}
       edge_actions: {type: {list: Action}, note: context menu of an edge}
       toolbar:      {type: {list: Node}, note: "named nodes above the canvas, left to right"}
@@ -888,6 +897,7 @@ constructs:
     expansion:
       - {step: substitute, detail: "args.<param> in the body is replaced by the bound expression"}
       - {step: validate,   detail: "the expanded nodes are checked like built-ins; findings are reported at <instance path>/body/<node name>"}
+      - {step: bound,      detail: "the expanded bodies of all uses in a document hold at most 100000 YAML values; the outermost use that passes the limit is refused (widget_expands)"}
     example: {component: status_badge, args: {status: row.stage, tones: {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}}}
 
   Node:
@@ -917,6 +927,7 @@ constructs:
       sortable: {type: boolean, default: false, note: column can sort}
       visible:  {type: expr, note: shows the field only when true}
       binds:    {type: expr, note: bind to UI state instead of the command input}
+      label_from: {type: {record: {view: {ref: view}, field: name, key: {optional: name}}}, note: "show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params"}
       note:     {type: string, note: author remark}
     example: {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}
 
@@ -1015,6 +1026,8 @@ constructs:
       primitive: {type: {enum: [text, badge, icon, button, link, input, toggle, image, divider]}, required: true, note: kind of primitive}
       name:      {type: name, note: "node name, required inside lists"}
       visible:   {type: expr, note: shows the primitive only when true}
+      state:     {type: {map: {key: name, value: State}}, note: state local to the primitive}
+      degrades:  {type: Degrades, note: fallbacks for renderers lacking a capability}
     tone: {enum: [neutral, info, success, warning, danger]}
     example: {name: hint, primitive: text, text: "Tip: drop a CSV here to import partners", style: caption}
 
@@ -1132,7 +1145,9 @@ constructs:
       Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says
       who pages. While a screen is designed before its model exists, write `placeholder` with a
       view name and a `fixture` file instead of `view`; renderers read the fixture, validators
-      report the placeholder as a warning until it is bound. `endpoint` and `derived` are
+      report the placeholder as a warning until it is bound. `key` names the field that identifies
+      a row when it is not `id`, so row paths and row actions address the rows of a view keyed
+      by another field, with or without a channel. `endpoint` and `derived` are
       traceability for retrofits.
     shorthand:
       - {accepts: {ref: view}, expands_to: {view: $value}}
@@ -1144,6 +1159,7 @@ constructs:
       view:        {type: {ref: view}, note: ESS view name}
       placeholder: {type: name, note: a view name not yet bound to the model}
       fixture:     {type: string, note: fixture file answering the placeholder}
+      key:         {type: name, note: "the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id`"}
       params:      {type: {map: {key: name, value: expr}}, note: view params bound to state}
       paging:      {type: {enum: [server, client, cursor, append, none]}, default: none, note: who pages}
       debounce:    {type: duration, note: coalesce param changes before reading}
@@ -1181,7 +1197,7 @@ constructs:
       as:         {type: {enum: [button, icon, toggle, choice, menu_item, link]}, default: button, note: presentation hint}
       choice:     {type: Node, note: options for as choice}
       loads:      {type: Reads, note: current value for a header toggle or choice}
-      confirm:    {type: {one_of: [{ref: overlay}, {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}]}, note: confirm first}
+      confirm:    {type: {one_of: [{ref: overlay}, {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}]}, note: "confirm first; confirming runs this action, whether or not the confirm declares `does`"}
       optimistic: {type: boolean, default: false, requires: {does.outcome: unique_for_input}, note: apply the expected outcome at once and revert on refusal}
       bulk:       {type: boolean, default: false, note: applies to the collection's selection}
       visible:    {type: expr, note: UI condition beyond grants}
@@ -1271,7 +1287,7 @@ constructs:
       channel:         {type: {ref: channel}, required: true, note: channel to consume}
       on:              {type: {list: {ref: event}}, note: subset of the channel's events}
       effect:          {type: {enum: [patch_row, insert_or_patch, insert_top, remove_row, replace, refetch]}, required: true, note: what an event does to the rows}
-      match:           {type: name, default: id, note: row identity field}
+      match:           {type: name, note: "row identity field; absent, the read's `key`, else `id`"}
       only_if:         {type: expr, note: drop events that fail the condition}
       coalesce:        {type: duration, note: batch bursts into one render}
       when_paged_away: {type: {enum: [count_new, ignore, insert]}, default: count_new, note: behaviour when the reader is not on page one}
@@ -1475,10 +1491,13 @@ checks:
   list:
     - {id: names_unique,        subject: "every node", must: unique_name_among_siblings, severity: error}
     - {id: nav_resolves,        subject: ["navigation.sections[].pages[]", "navigation.hidden[]", navigation.home], must_resolve: {ref: page}, severity: error}
+    - {id: nav_unique,          subject: "navigation.sections[].pages[]", must: list_each_page_once, severity: error}
     - {id: page_reachable,      subject: "pages.*", must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"], severity: error}
     - {id: opens_resolves,      subject: "**.opens", must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays], severity: error}
     - {id: same_as_resolves,    subject: "**.same_as", must_resolve: {ref: overlay}, severity: error}
     - {id: page_refs,           subject: ["**.navigate.to", "**.to.to", "pages.*.switch_to[]", "shells.*.guards[].then.redirect"], must_resolve: {ref: page}, severity: error}
+    - {id: shell_refs,          subject: "pages.*.shell", must_resolve: {ref: shell}, severity: error}
+    - {id: page_outlet,         subject: "shells.* a page renders in", must: have_a_region_of_kind_page_outlet, severity: error}
     - {id: channel_refs,        subject: ["**.live.channel", "**.header.live[]", "channel.<name> inside expr"], must_resolve: {ref: channel}, severity: error}
     - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]"], must_resolve_in: [page.sections], severity: error}
     - {id: layout_complete,     subject: "pages.*.layout", must: place_every_section_once, severity: warning}

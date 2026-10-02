@@ -200,6 +200,70 @@ fn the_loader_holds_names_to_the_schemas_segment_pattern() {
     );
 }
 
+/// What the loader accepts the schema declares (beyond10x/ess#305): an overlay's `visible` and
+/// `degrades`, a primitive's `state` and `degrades`, and a sort written without `allowed`.
+#[test]
+fn the_keys_the_loader_accepts_on_an_overlay_a_primitive_and_a_sort_are_declared() {
+    let loaded = ess_ui::load_str(
+        "format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: p
+  sections: [{name: all, pages: [p]}]
+pages:
+  p:
+    kind: detail_page
+    title: P
+    overlays:
+      o: {kind: dialog, component: confirm, does: t.X, visible: state.on, degrades: {no_drawer: dialog}}
+    sections:
+      - name: rows
+        component: collection
+        reads: t.Rows
+        sort: {by: due}
+      - name: info
+        component: record
+        reads: t.ById
+        children:
+          - {name: hint, primitive: text, text: T, state: {open: {type: boolean, class: component_state}}, degrades: {no_charts: table}}
+",
+    );
+    if let Err(error) = loaded {
+        panic!("the loader refuses: {error}");
+    }
+    let schema = schema();
+    let fields = |construct: &str| -> BTreeSet<String> {
+        schema["constructs"][construct]["fields"]
+            .as_mapping()
+            .expect("the construct has fields")
+            .keys()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    };
+    for (construct, key) in [
+        ("overlay", "visible"),
+        ("overlay", "degrades"),
+        ("Primitive", "state"),
+        ("Primitive", "degrades"),
+    ] {
+        assert!(
+            fields(construct).contains(key),
+            "the loader accepts `{key}` on {construct}, and the schema does not declare it"
+        );
+    }
+    let allowed =
+        &schema["constructs"]["collection"]["fields"]["sort"]["type"]["record"]["allowed"];
+    assert!(
+        allowed.get("optional").is_some(),
+        "the loader defaults `sort.allowed`, and the schema requires it: {allowed:?}"
+    );
+}
+
 #[test]
 fn a_copy_action_derives_no_name() {
     let schema = schema();

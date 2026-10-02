@@ -3,7 +3,7 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "./core";
 import { hrefFor } from "../routes";
-import { ScopeLayer, useScope, type Scope } from "./core";
+import { ScopeLayer, useScope, type Opener, type Scope } from "./core";
 import { dataAdapter, invalidate } from "./data";
 import { evaluate, truthy } from "./expr";
 import { isObject } from "./json";
@@ -127,17 +127,23 @@ function rowsToCsv(rows: unknown[]): string {
 export function ActionControl(props: { action: ActionSpec }): ReactNode {
   const { action } = props;
   const scope = useScope();
-  const [pending, setPending] = useState(false);
+  // While the inline confirm is open: the extra input the pick that opened it carried.
+  const [pending, setPending] = useState<{ extra?: Record<string, unknown> } | undefined>(undefined);
   if (action.visible !== undefined && !truthy(evaluate(action.visible, scope.values))) {
     return null;
   }
+  // Confirming runs this action, whether or not the confirm declares `does`.
+  const opener = (extra?: Record<string, unknown>): Opener => ({
+    does: action.does,
+    run: () => runAction(action, scope, extra),
+  });
   const start = (extra?: Record<string, unknown>) => {
     if (action.confirmOpens) {
-      scope.open(action.confirmOpens, isObject(scope.values.row) ? { ...scope.values.row } : undefined);
+      scope.open(action.confirmOpens, isObject(scope.values.row) ? { ...scope.values.row } : undefined, opener(extra));
       return;
     }
     if (action.confirm && (action.confirmShow === undefined || truthy(evaluate(action.confirmShow, scope.values)))) {
-      setPending(true);
+      setPending({ extra });
       return;
     }
     void runAction(action, scope, extra);
@@ -207,7 +213,9 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
     <>
       {control}
       {pending && action.confirm ? (
-        <ScopeLayer actions={{ close: () => setPending(false) }}>{action.confirm}</ScopeLayer>
+        <ScopeLayer actions={{ close: () => setPending(undefined), confirmed: opener(pending.extra) }}>
+          {action.confirm}
+        </ScopeLayer>
       ) : null}
     </>
   );

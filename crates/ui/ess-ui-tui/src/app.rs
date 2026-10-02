@@ -143,6 +143,9 @@ pub(crate) struct OpenOverlay {
     pub overlay: Overlay,
     pub params: BTreeMap<String, Value>,
     pub then: Option<(Action, Option<Value>)>,
+    /// The path the overlay is drawn at when it differs from `path`: an inline confirm opened
+    /// from a row is scoped under that row (`<collection>/rows/<key>/…`), as in React.
+    pub drawn_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -803,6 +806,7 @@ impl App {
                 if let Some(reads) = body_reads(body) {
                     out.push(self.request(reads, ctx));
                 }
+                Self::composite_label_reads(composite, out);
                 match composite {
                     Composite::Collection(collection) => {
                         if let Some(expand) = &collection.expand {
@@ -864,7 +868,12 @@ impl App {
                             self.node_reads(&node.body, ui, ctx, out);
                         }
                     }
-                    Composite::GraphEditor(editor) => each(&editor.toolbar, ctx, out),
+                    Composite::GraphEditor(editor) => {
+                        if let Some(reads) = editor.edges.as_ref().and_then(|e| e.reads.as_ref()) {
+                            out.push(self.request(reads, ctx));
+                        }
+                        each(&editor.toolbar, ctx, out);
+                    }
                     Composite::RichText(text) => {
                         if let Some(view) = &text.completes {
                             out.push(ReadRequest {
@@ -878,6 +887,75 @@ impl App {
                 }
             }
         }
+    }
+
+    /// The read a `label_from` looks its labels up in: the related view, without params.
+    fn label_request(label_from: &ess_ui::LabelFrom) -> ReadRequest {
+        ReadRequest {
+            view: label_from.view.clone(),
+            fixture: None,
+            params: BTreeMap::new(),
+        }
+    }
+
+    /// One read per related view the fields label from.
+    fn label_reads(fields: &[Field], out: &mut Vec<ReadRequest>) {
+        out.extend(
+            fields
+                .iter()
+                .filter_map(|field| field.label_from.as_ref())
+                .map(Self::label_request),
+        );
+    }
+
+    /// The related views a composite's shown fields label from: a collection's columns, a
+    /// record's fields and tab fields, a references list's columns.
+    fn composite_label_reads(composite: &Composite, out: &mut Vec<ReadRequest>) {
+        match composite {
+            Composite::Collection(collection) => match &collection.columns {
+                Some(Columns::Fixed(fields)) => Self::label_reads(fields, out),
+                Some(Columns::Selectable(columns)) => Self::label_reads(&columns.all, out),
+                _ => {}
+            },
+            Composite::Record(record) => {
+                Self::label_reads(&record.fields, out);
+                for tab in &record.tabs {
+                    if let Some(TabFields::Fields(fields)) = &tab.fields {
+                        Self::label_reads(fields, out);
+                    }
+                }
+            }
+            Composite::References(references) => Self::label_reads(&references.columns, out),
+            _ => {}
+        }
+    }
+
+    /// `row` as it is shown: each field with a `label_from` holds the label of the related row
+    /// its value keys, where the related view has one (beyond10x/ess#364). The row an action
+    /// sees keeps the value.
+    pub(crate) fn labelled(&self, fields: &[Field], row: &Value) -> Value {
+        let mut shown = row.clone();
+        for field in fields {
+            let Some(label_from) = &field.label_from else {
+                continue;
+            };
+            let key = display(&row[field.field.as_str()]);
+            let label = self
+                .rows_of(&Self::label_request(label_from))
+                .and_then(|result| {
+                    result
+                        .rows
+                        .iter()
+                        .find(|related| display(&related[label_from.key()]) == key)
+                })
+                .map(|related| related[label_from.field.as_str()].clone());
+            if let (Some(label), Value::Mapping(shown)) = (label, &mut shown) {
+                if !label.is_null() {
+                    shown.insert(Value::from(field.field.as_str()), label);
+                }
+            }
+        }
+        shown
     }
 
     pub(crate) fn overlay_params(&self) -> BTreeMap<String, Value> {
@@ -936,7 +1014,11 @@ impl App {
             });
         }
         if let Some(group) = &collection.group_by {
-            rows.sort_by_key(|row| display(&row[group.as_str()]));
+            let groups = group_names(collection, &rows);
+            rows.sort_by_key(|row| {
+                let value = display(&row[group.as_str()]);
+                groups.iter().position(|name| *name == value)
+            });
         }
         rows
     }
@@ -1221,6 +1303,10 @@ impl App {
         }
         let result = match self.read_state(&request) {
             Some(ReadState::Ready(result)) => result,
+            // A refetch arriving while a read is outstanding is answered by that read: it is
+            // answered when it completes, after the event. So a burst, or a coalesced batch
+            // applied one payload at a time, is one re-read.
+            None | Some(ReadState::Loading { .. }) if live.effect == Effect::Refetch => return,
             // A read outstanding (a resume refetch, a new filter): apply once it has answered.
             None | Some(ReadState::Loading { .. }) => {
                 self.deferred.push((section.to_owned(), payload.clone()));
@@ -1663,19 +1749,33 @@ impl App {
             Composite::Form(form) => self.form_key(target, &ui, &form, &draft, key),
             Composite::FilterBar(bar) => self.bar_key(&ui, &bar, section.as_deref(), key),
             Composite::Record(record) => {
-                if let KeyCode::Char(letter) = key.code {
-                    let ctx = Ctx {
-                        section: section.as_deref(),
-                        overlay,
-                        ..Ctx::default()
-                    };
-                    if let Some((_, action)) = self
-                        .action_keys(&record.actions, &ctx)
-                        .into_iter()
-                        .find(|(key, _)| *key == letter)
-                    {
-                        self.run_action(&action, None, false);
+                let tabs = record.tabs.len().max(1);
+                let tab = self.ui(&ui).tab.min(tabs - 1);
+                match key.code {
+                    KeyCode::Char(']') => {
+                        let state = self.ui_mut(&ui);
+                        state.tab = (tab + 1) % tabs;
                     }
+                    KeyCode::Char('[') => {
+                        let state = self.ui_mut(&ui);
+                        state.tab = (tab + tabs - 1) % tabs;
+                    }
+                    KeyCode::Char(letter) => {
+                        let ctx = Ctx {
+                            section: section.as_deref(),
+                            overlay,
+                            ..Ctx::default()
+                        };
+                        let actions = crate::view::record_actions(&record, tab);
+                        if let Some((_, action)) = self
+                            .action_keys(&actions, &ctx)
+                            .into_iter()
+                            .find(|(key, _)| *key == letter)
+                        {
+                            self.run_action(&action, None, false);
+                        }
+                    }
+                    _ => {}
                 }
             }
             Composite::Confirm(confirm) => self.confirm_key(&ui, &confirm, key),
@@ -2310,18 +2410,69 @@ impl App {
         }
     }
 
+    /// Confirming runs the action that opened the confirm, once, whether or not the confirm
+    /// declares `does`. A confirm's own `does` runs too when it names another command, or when no
+    /// action opened it.
     fn confirmed(&mut self, confirm: &ess_ui::Confirm) {
         let open = self.overlay.take();
+        let then = open.as_ref().and_then(|open| open.then.clone());
         if let Some(does) = &confirm.does {
-            let input = open
+            let opener_runs_it = then
                 .as_ref()
-                .map(|open| open.params.clone())
-                .unwrap_or_default();
-            self.run_command(does, &input);
+                .is_some_and(|(action, _)| action.does.as_deref() == Some(does.as_str()));
+            if !opener_runs_it {
+                let input = open
+                    .as_ref()
+                    .map(|open| open.params.clone())
+                    .unwrap_or_default();
+                self.run_command(does, &input);
+            }
         }
-        if let Some((action, row)) = open.and_then(|open| open.then) {
+        if let Some((action, row)) = then {
             self.run_action(&action, row, true);
         }
+    }
+
+    /// The canonical path of `action` on the page shown or its shell.
+    fn action_path(&self, action: &Action) -> Option<NodePath> {
+        let page = format!("{}/", self.page_path());
+        let shell = format!("shells/{}/", self.page_def().shell);
+        self.doc
+            .nodes()
+            .into_iter()
+            .filter(|located| {
+                let path = located.path.to_string();
+                path.starts_with(&page) || path.starts_with(&shell)
+            })
+            .find_map(|located| match located.node {
+                ess_ui::NodeRef::Action(found) if found == action => Some(located.path),
+                _ => None,
+            })
+    }
+
+    /// `path` scoped under `row` when it lies inside a collection's `row_actions`:
+    /// `<collection>/rows/<key>/row_actions/…`, the key being the section's `live.match` field,
+    /// else `id`.
+    fn row_scoped(&self, path: &NodePath, row: &Value) -> Option<String> {
+        let segments = path.segments();
+        let at = segments
+            .iter()
+            .position(|segment| segment == "row_actions")?;
+        let container = &segments[..at];
+        let key_field = match container {
+            [pages, _, sections, section] if pages == "pages" && sections == "sections" => self
+                .section_by_name(section)
+                .and_then(|section| section.live.as_ref())
+                .and_then(|live| live.match_field.clone()),
+            _ => None,
+        }
+        .unwrap_or_else(|| "id".to_owned());
+        let key = display(row.get(key_field.as_str())?);
+        Some(format!(
+            "{}/rows/{key}/{}",
+            container.join("/"),
+            segments[at..].join("/")
+        ))
     }
 
     fn run_command(&mut self, command: &str, input: &BTreeMap<String, Value>) {
@@ -2403,7 +2554,12 @@ impl App {
                     return;
                 }
                 Some(ActionConfirm::Inline(inline)) => {
-                    let path = self.page_path().child("confirm").child(&action.name);
+                    // The inline confirm's canonical path is its action's, `confirm/overlay`.
+                    let path = self.action_path(action).map_or_else(
+                        || self.page_path().child("confirm").child(&action.name),
+                        |at| at.child("confirm").child("overlay"),
+                    );
+                    let drawn_at = row.as_ref().and_then(|row| self.row_scoped(&path, row));
                     let params = row
                         .as_ref()
                         .and_then(|row| row.get("id"))
@@ -2415,6 +2571,7 @@ impl App {
                         overlay: (*inline.overlay).clone(),
                         params,
                         then: Some((action.clone(), row)),
+                        drawn_at,
                     });
                     return;
                 }
@@ -2533,6 +2690,7 @@ impl App {
             overlay,
             params,
             then,
+            drawn_at: None,
         });
     }
 
@@ -2600,9 +2758,47 @@ impl App {
         self.prompt = Some(prompt);
     }
 
+    /// The sibling pages the page shown offers as a switch (`header.switch`, then `switch_to`),
+    /// each with the current params the target declares, by name.
+    fn switch_targets(&self) -> Vec<(String, BTreeMap<String, Value>)> {
+        let page = self.page_def();
+        let header = page.header.iter().flat_map(|header| header.switch.iter());
+        let mut seen = BTreeSet::new();
+        header
+            .chain(page.switch_to.iter())
+            .filter(|target| **target != self.page && seen.insert((*target).clone()))
+            .filter_map(|target| {
+                let declared = &self.doc.pages.get(target)?.params;
+                let params = self
+                    .params
+                    .iter()
+                    .filter(|(name, _)| declared.contains_key(*name))
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect();
+                Some((target.clone(), params))
+            })
+            .collect()
+    }
+
     /// Palette entries matching `query`, best first.
     pub(crate) fn palette(&self, query: &str) -> Vec<PaletteItem> {
         let mut items = Vec::new();
+        for (page, params) in self.switch_targets() {
+            let def = &self.doc.pages[&page];
+            let label = def
+                .nav
+                .as_ref()
+                .and_then(|nav| nav.label.clone())
+                .or_else(|| def.title.clone())
+                .unwrap_or_else(|| page.clone());
+            items.push((
+                vec![label.clone()],
+                PaletteItem {
+                    label: format!("⇄ {label}"),
+                    target: PaletteTarget::Page(page, params),
+                },
+            ));
+        }
         for entry in self.nav().into_iter().flat_map(|group| group.entries) {
             let mut words = vec![entry.label.clone()];
             words.extend(entry.synonyms.clone());
@@ -2616,9 +2812,17 @@ impl App {
         }
         if let Some(header) = &self.page_def().header {
             for action in &header.actions {
+                if !self.visible(
+                    action.visible.as_ref().map(|expr| expr.0.as_str()),
+                    &Ctx::default(),
+                ) {
+                    continue;
+                }
                 let label = action.label.clone().unwrap_or_else(|| action.name.clone());
+                // `do: <label>` names the action alone, past any page or synonym it shares
+                // its label with.
                 items.push((
-                    vec![label.clone()],
+                    vec![label.clone(), format!("do: {label}")],
                     PaletteItem {
                         label: format!("do: {label}"),
                         target: PaletteTarget::Action(Box::new(action.clone())),
@@ -2993,6 +3197,64 @@ pub(crate) fn form_fields(form: &Form, tab: usize) -> Vec<&Field> {
     fields
 }
 
+/// The groups of a grouped collection, in the order they are shown: its `group_order`, then
+/// every other value in the order it first appears in `rows` (beyond10x/ess#351).
+pub(crate) fn group_names(collection: &ess_ui::Collection, rows: &[Value]) -> Vec<String> {
+    let mut groups = collection.group_order.clone();
+    if let Some(by) = &collection.group_by {
+        for row in rows {
+            let value = display(&row[by.as_str()]);
+            if !groups.contains(&value) {
+                groups.push(value);
+            }
+        }
+    }
+    groups
+}
+
+/// A metric's value computed over `rows` (beyond10x/ess#358): `Null` when no row holds a
+/// number for an aggregate that needs one.
+pub(crate) fn aggregate(
+    kind: ess_ui::MetricAggregate,
+    field: Option<&str>,
+    rows: &[Value],
+) -> Value {
+    use ess_ui::MetricAggregate::{Avg, Count, Max, Min, Sum};
+    if kind == Count {
+        return Value::Number(rows.len().into());
+    }
+    let numbers: Vec<f64> = rows
+        .iter()
+        .filter_map(|row| field.and_then(|field| row[field].as_f64()))
+        .collect();
+    if numbers.is_empty() {
+        return if kind == Sum {
+            Value::Number(0.into())
+        } else {
+            Value::Null
+        };
+    }
+    let value = match kind {
+        Sum => numbers.iter().sum(),
+        Min => numbers.iter().copied().fold(f64::INFINITY, f64::min),
+        Max => numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        #[allow(clippy::cast_precision_loss)] // a row count far below 2^52
+        Avg => numbers.iter().sum::<f64>() / numbers.len() as f64,
+        Count => unreachable!("answered above"),
+    };
+    number(value)
+}
+
+/// A whole number as an integer, so `60` is not shown as `60.0`.
+fn number(value: f64) -> Value {
+    #[allow(clippy::cast_possible_truncation)] // checked to be whole and in range
+    if value.fract() == 0.0 && value.abs() < 9e15 {
+        Value::Number((value as i64).into())
+    } else {
+        Value::Number(value.into())
+    }
+}
+
 /// The columns of a collection, or one per key of its first row when it names none.
 pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec<Field> {
     match &collection.columns {
@@ -3013,6 +3275,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         sortable: false,
                         visible: None,
                         binds: None,
+                        label_from: None,
                         note: None,
                     })
                     .collect()
@@ -3031,25 +3294,33 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         sortable: false,
         visible: None,
         binds: None,
+        label_from: None,
         note: None,
     }
 }
 
 /// A graph editor degraded to a collection of its nodes: label, kind, and its actions.
 pub(crate) fn graph_collection(editor: &ess_ui::GraphEditor) -> ess_ui::Collection {
-    let mut columns = vec![plain_field("id", None), plain_field("label", None)];
-    if let Some(nodes) = &editor.nodes {
-        columns.push(plain_field(&nodes.kind_by, Some("badge")));
+    let nodes = editor.nodes.as_ref();
+    let key = nodes.and_then(|nodes| nodes.key.as_deref()).unwrap_or("id");
+    let label = nodes
+        .and_then(|nodes| nodes.label.as_deref())
+        .unwrap_or("label");
+    let mut columns = vec![plain_field(key, None), plain_field(label, None)];
+    if let Some(kind) = nodes.and_then(|nodes| nodes.kind_by.as_ref()) {
+        columns.push(plain_field(kind, Some("badge")));
     }
-    if let Some(edges) = &editor.edges {
+    let mut row_actions = editor.node_actions.clone();
+    // Edges in the graph's own read are rows of this collection; edges with a read of their
+    // own are drawn after it (`graph_edges`).
+    if let Some(edges) = editor.edges.as_ref().filter(|edges| edges.reads.is_none()) {
         columns.push(plain_field(&edges.from, None));
         columns.push(plain_field(&edges.to, None));
         if let Some(kind) = &edges.kind_by {
             columns.push(plain_field(kind, Some("badge")));
         }
+        row_actions.extend(editor.edge_actions.clone());
     }
-    let mut row_actions = editor.node_actions.clone();
-    row_actions.extend(editor.edge_actions.clone());
     ess_ui::Collection {
         reads: Some(editor.reads.clone()),
         columns: Some(Columns::Fixed(columns)),
@@ -3063,6 +3334,8 @@ pub(crate) fn graph_collection(editor: &ess_ui::GraphEditor) -> ess_ui::Collecti
         item: Vec::new(),
         reorder: None,
         group_by: None,
+        group_order: Vec::new(),
+        show_empty_groups: false,
     }
 }
 
@@ -3082,6 +3355,8 @@ pub(crate) fn references_collection(references: &ess_ui::References) -> ess_ui::
         item: Vec::new(),
         reorder: None,
         group_by: None,
+        group_order: Vec::new(),
+        show_empty_groups: false,
     }
 }
 

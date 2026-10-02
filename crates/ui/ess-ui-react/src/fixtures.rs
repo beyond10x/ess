@@ -134,6 +134,11 @@ fn placeholder_reads(document: &Document) -> Vec<(String, String)> {
             if let Some(reads) = reads {
                 push(reads);
             }
+            if let Composite::GraphEditor(editor) = composite {
+                if let Some(reads) = editor.edges.as_ref().and_then(|e| e.reads.as_ref()) {
+                    push(reads);
+                }
+            }
         }
     }
     found.sort();

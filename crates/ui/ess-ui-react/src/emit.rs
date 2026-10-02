@@ -84,7 +84,7 @@ struct Opts {
     degrades: BTreeMap<String, String>,
     /// The enclosing section or overlay frame already carries this path.
     framed: bool,
-    /// The field keying rows (`live.match` of the section).
+    /// The field keying rows: the section's `reads.key`, else its `live.match` (#320).
     row_key: Option<String>,
     /// The row key a choice takes each option's value from (the form field it picks for).
     choice_value: Option<String>,
@@ -729,6 +729,13 @@ impl<'d> Gen<'d> {
             opts.choice_value = Some(field.field.clone());
             self.node(&at.child("choice"), node, &opts)
         });
+        let label_from = field.label_from.as_ref().map(|label_from| {
+            ts::object([
+                ("view", Some(ts::string(&label_from.view))),
+                ("field", Some(ts::string(&label_from.field))),
+                ("key", quoted(label_from.key.as_ref())),
+            ])
+        });
         ts::object([
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("field", Some(ts::string(&field.field))),
@@ -738,6 +745,7 @@ impl<'d> Gen<'d> {
             ("sortable", field.sortable.then(|| "true".to_owned())),
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
+            ("labelFrom", label_from),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
         ])
@@ -975,7 +983,22 @@ impl<'d> Gen<'d> {
                     .opt("item", item)
                     .opt("reorder", reorder)
                     .opt("groupBy", quoted(c.group_by.as_ref()))
-                    .opt("rowKey", opts.row_key.as_ref().map(|key| ts::string(key)))
+                    .opt(
+                        "groupOrder",
+                        (!c.group_order.is_empty()).then(|| strings(&c.group_order)),
+                    )
+                    .opt(
+                        "showEmptyGroups",
+                        c.show_empty_groups.then(|| "true".to_owned()),
+                    )
+                    .opt(
+                        "rowKey",
+                        c.reads
+                            .as_ref()
+                            .and_then(|reads| reads.key.as_ref())
+                            .or(opts.row_key.as_ref())
+                            .map(|key| ts::string(key)),
+                    )
                     .opt("degrades", Self::degrades(opts))
                     .render()
             }
@@ -1186,6 +1209,11 @@ impl<'d> Gen<'d> {
                         m.format.as_ref().and_then(variant).map(|f| ts::string(&f)),
                     )
                     .opt("label", quoted(m.label.as_ref()))
+                    .opt(
+                        "aggregate",
+                        m.aggregate.map(|kind| ts::string(kind.as_str())),
+                    )
+                    .opt("field", quoted(m.field.as_ref()))
                     .render()
             }
             Composite::Chart(c) => {
@@ -1243,7 +1271,9 @@ impl<'d> Gen<'d> {
                         "nodes",
                         g.nodes.as_ref().map(|nodes| {
                             ts::object([
-                                ("kindBy", Some(ts::string(&nodes.kind_by))),
+                                ("key", quoted(nodes.key.as_ref())),
+                                ("label", quoted(nodes.label.as_ref())),
+                                ("kindBy", quoted(nodes.kind_by.as_ref())),
                                 ("opens", quoted(nodes.opens.as_ref())),
                             ])
                         }),
@@ -1252,6 +1282,7 @@ impl<'d> Gen<'d> {
                         "edges",
                         g.edges.as_ref().map(|edges| {
                             ts::object([
+                                ("reads", edges.reads.as_ref().and_then(Self::reads)),
                                 ("from", Some(ts::string(&edges.from))),
                                 ("to", Some(ts::string(&edges.to))),
                                 ("kindBy", quoted(edges.kind_by.as_ref())),
@@ -1707,7 +1738,8 @@ impl<'d> Gen<'d> {
         let reads = Self::section_reads(&section.body).and_then(Self::reads);
         let mut frame = El::new(&self.import("runtime/core", "SectionFrame"))
             .path(&at.to_string())
-            .expr("name", ts::string(&section.name));
+            .expr("name", ts::string(&section.name))
+            .opt("title", quoted(section.title.as_ref()));
         if let Some(reads) = &reads {
             let use_scope = self.import("runtime/core", "useScope");
             let trigger = self.import("runtime/core", "useLoadTrigger");
@@ -1800,10 +1832,7 @@ impl<'d> Gen<'d> {
             selection_state: Self::selection_state(page, section),
             degrades: section.common.degrades.clone(),
             framed: true,
-            row_key: section
-                .live
-                .as_ref()
-                .and_then(|live| live.match_field.clone()),
+            row_key: section.row_key().map(str::to_owned),
             choice_value: None,
         };
         if let Body::Composite(Composite::Form(form)) = &section.body {
@@ -1851,7 +1880,7 @@ impl<'d> Gen<'d> {
                             ),
                             (
                                 "href",
-                                Some(format!("{href}({}, {{}})", ts::string(target))),
+                                Some(format!("{href}({}, __params)", ts::string(target))),
                             ),
                         ])
                     }),

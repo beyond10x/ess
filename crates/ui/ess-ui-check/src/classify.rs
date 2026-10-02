@@ -56,6 +56,7 @@ fn classify(message: &str) -> &'static str {
     } else if message.contains("names neither a member of the composite union nor a widget")
         || message.contains("of widget `")
         || message.contains("so a widget of that name could never be used")
+        || message.contains("widget expansion exceeds")
         || (message.starts_with("widget `")
             && (message.contains("contains itself")
                 || message.contains("has no param")

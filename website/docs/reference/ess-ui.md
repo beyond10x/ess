@@ -51,7 +51,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 
 Binding expressions — the values of fields typed `expr`.
 
-Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path.
+Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path. A string that does not parse, or that joins words with an operator but reads no path or function form (`Limit in cents`, `not yet sent`), is literal text, including a widget argument substituted into an `expr` position.
 
 | Form | Meaning |
 |---|---|
@@ -338,6 +338,12 @@ preload:
 guards: [{name: signed_in, when: not actor.signed_in, then: {redirect: auth.sign_in}}]
 ```
 
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `page_outlet` | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
+
 ### Region
 
 One named area of a shell.
@@ -536,7 +542,7 @@ Routes, layouts, page templates, and the section as the unit of loading.
 
 One route — its state, layout, header, sections and overlays.
 
-A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch.
+A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch; switching keeps every current param the target page declares, by name, so sibling views of one record stay on that record.
 
 **Properties**
 
@@ -605,6 +611,7 @@ overlays: {edit: {kind: drawer, component: form, same_as: partners.list.edit}}
 |---|---|---|---|
 | `page_reachable` | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
 
 ### PageLayout
 
@@ -773,7 +780,7 @@ header:
 
 A region of a page with one read and its own loading lifecycle.
 
-The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button).
+The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button). `title` is the heading a reader sees, which tells two sections over the same view apart.
 
 **Properties**
 
@@ -781,6 +788,7 @@ The section, not the page, is the unit of loading. Each has at most one `reads`,
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name among the page's sections |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the section renders |
+| `title` | `string` |   |   | heading shown above the section; absent, none |
 | `reads` | [Reads](#reads) |   |   | the section's data; one per section; it is the composite's own `reads` |
 | `live` | [Live](#live) |   |   | how channel events change the rows |
 | `load` | one of: `eager` \| `on_visible` \| `on_demand` |   | `eager` | when the read starts |
@@ -882,7 +890,7 @@ Use for any list, table or card grid. Columns are fields of the rows; `as` picks
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | the rows |
 | `columns` | one of: list of [Field](#field) \| record \{ `binds`: `expr`, `all`: list of [Field](#field) \} \| `string` |   |   | fixed columns, user-selectable columns, or an UNMAPPED string |
-| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
+| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: optional list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
 | `style` | one of: `table` \| `cards` \| `list` \| `tree` |   | `table` | presentation hint |
 | `selection` | one of: `none` \| `single` \| `multiple` \| record \{ `mode`: (one of: `single` \| `multiple`), `enabled`: `expr` \} |   | `none` | row selection, optionally only in a mode |
 | `row_actions` | list of [Action](#action) |   |   | actions per row |
@@ -892,6 +900,8 @@ Use for any list, table or card grid. Columns are fields of the rows; `as` picks
 | `item` | list of [Node](#node) |   |   | nested named nodes per row, in order |
 | `reorder` | record \{ `does`: name of an ESS `command`, `endpoint`: optional `string` \} |   |   | drag to reorder, saved by a command |
 | `group_by` | `name` |   |   | field rows are grouped under |
+| `group_order` | list of `string` |   |   | order groups are shown in; values not listed follow in the order they first appear |
+| `show_empty_groups` | `boolean` |   | `false` | a heading for every `group_order` value, even one no row falls under |
 
 **Example**
 
@@ -1096,6 +1106,8 @@ Overlays hold forms, confirms and detail views opened by actions. They belong to
 | `title` | `string` |   |   | overlay title; a confirm shows it as its question |
 | `params` | map of `name` → `expr` |   |   | values passed by the opener |
 | `state` | map of `name` → [State](#state) |   |   | overlay-local state |
+| `visible` | `expr` |   |   | shows the overlay only when true |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 | `same_as` | name of an [overlay](#overlay) |   |   | reuse another overlay; local props override |
 | `unmapped` | list of `string` |   |   | gaps found by a retrofit |
 
@@ -1134,7 +1146,7 @@ Use before destructive commands, inside an overlay whose `title` is the question
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `body` | `string` |   |   | explanation |
-| `does` | name of an ESS `command` |   |   | command run on confirm |
+| `does` | name of an ESS `command` |   |   | command run on confirm, unless the action that opened the confirm runs the same command |
 | `references` | name of an ESS `view` |   |   | the used-by view shown first |
 | `consequences` | list of `string` |   |   | what the command will do |
 | `confirm_label` | `string` |   | `Delete` | confirm button text |
@@ -1170,6 +1182,8 @@ For KPI tiles and per-row live numbers. With `from` a metric reads a channel fie
 | `window` | `duration` |   |   | time window the value covers |
 | `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format |
 | `label` | `string` |   |   | caption |
+| `aggregate` | one of: `count` \| `sum` \| `min` \| `max` \| `avg` |   |   | computed over every row of the read instead of read from one; needs `reads` |
+| `field` | `name` |   |   | row field `aggregate` reads; required for every aggregate but count |
 
 **Example**
 
@@ -1237,15 +1251,15 @@ degrades: {no_free_layout: stack}
 
 Nodes and edges of a model, editable on a canvas.
 
-For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. A renderer without a canvas falls back to a collection of nodes.
+For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. `reads` holds the nodes, and the edges too unless `edges.reads` names a view of their own; `nodes.key` is the field edge endpoints name and `nodes.label` the field a node shows. A renderer without a canvas falls back to a collection of nodes.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `reads` | [Reads](#reads) | yes |   | the graph |
-| `nodes` | record \{ `kind_by`: `name`, `opens`: optional name of an [overlay](#overlay) \} |   |   | node kind field and edit overlay |
-| `edges` | record \{ `from`: `name`, `to`: `name`, `kind_by`: optional `name` \} |   |   | edge endpoints and kind |
+| `reads` | [Reads](#reads) | yes |   | the nodes, and the edges unless they have their own read |
+| `nodes` | record \{ `key`: optional `name`, `label`: optional `name`, `kind_by`: optional `name`, `opens`: optional name of an [overlay](#overlay) \} |   |   | node key (default id), label and kind fields, and edit overlay |
+| `edges` | record \{ `reads`: optional [Reads](#reads), `from`: `name`, `to`: `name`, `kind_by`: optional `name` \} |   |   | edge read, endpoint fields (node keys) and kind |
 | `node_actions` | list of [Action](#action) |   |   | context menu of a node |
 | `edge_actions` | list of [Action](#action) |   |   | context menu of an edge |
 | `toolbar` | list of [Node](#node) |   |   | named nodes above the canvas, left to right |
@@ -1365,6 +1379,8 @@ Written like a composite with `component` naming the widget and `args` supplying
 - {step: substitute, detail: args.<param> in the body is replaced by the bound expression}
 - step: validate
   detail: the expanded nodes are checked like built-ins; findings are reported at <instance path>/body/<node name>
+- step: bound
+  detail: the expanded bodies of all uses in a document hold at most 100000 YAML values; the outermost use that passes the limit is refused (widget_expands)
 ```
 
 **Example**
@@ -1426,6 +1442,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `sortable` | `boolean` |   | `false` | column can sort |
 | `visible` | `expr` |   |   | shows the field only when true |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
+| `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `note` | `string` |   |   | author remark |
 
 **You may also write**
@@ -1608,6 +1625,8 @@ Composites are the normal level of a spec. Primitives exist for the small pieces
 | `primitive` | one of: `text` \| `badge` \| `icon` \| `button` \| `link` \| `input` \| `toggle` \| `image` \| `divider` | yes |   | kind of primitive |
 | `name` | `name` |   |   | node name, required inside lists |
 | `visible` | `expr` |   |   | shows the primitive only when true |
+| `state` | map of `name` → [State](#state) |   |   | state local to the primitive |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 
 **Tone**
 
@@ -1873,7 +1892,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `endpoint` and `derived` are traceability for retrofits.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits.
 
 **Properties**
 
@@ -1882,6 +1901,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `view` | name of an ESS `view` |   |   | ESS view name |
 | `placeholder` | `name` |   |   | a view name not yet bound to the model |
 | `fixture` | `string` |   |   | fixture file answering the placeholder |
+| `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
@@ -1944,7 +1964,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
 | `choice` | [Node](#node) |   |   | options for as choice |
 | `loads` | [Reads](#reads) |   |   | current value for a header toggle or choice |
-| `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first |
+| `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
 | `visible` | `expr` |   |   | UI condition beyond grants |
@@ -2120,7 +2140,7 @@ How a section applies a channel's events to its rows.
 | `channel` | name of a [Channel](#channel) | yes |   | channel to consume |
 | `on` | list of name of an ESS `event` |   |   | subset of the channel's events |
 | `effect` | one of: `patch_row` \| `insert_or_patch` \| `insert_top` \| `remove_row` \| `replace` \| `refetch` | yes |   | what an event does to the rows |
-| `match` | `name` |   | `id` | row identity field |
+| `match` | `name` |   |   | row identity field; absent, the read's `key`, else `id` |
 | `only_if` | `expr` |   |   | drop events that fail the condition |
 | `coalesce` | `duration` |   |   | batch bursts into one render |
 | `when_paged_away` | one of: `count_new` \| `ignore` \| `insert` |   | `count_new` | behaviour when the reader is not on page one |
@@ -2445,10 +2465,13 @@ What a validator checks in a document, and the construct each check applies to. 
 |---|---|---|---|---|
 | `names_unique` | every node | `every node` | `{must: unique_name_among_siblings}` | error |
 | `nav_resolves` | [Navigation](#navigation) | `navigation.sections[].pages[]`, `navigation.hidden[]`, `navigation.home` | `{must_resolve: {ref: page}}` | error |
+| `nav_unique` | every node | `navigation.sections[].pages[]` | `{must: list_each_page_once}` | error |
 | `page_reachable` | [Page](#page) | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `opens_resolves` | [Action](#action) | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `same_as_resolves` | [overlay](#overlay) | `**.same_as` | `{must_resolve: {ref: overlay}}` | error |
 | `page_refs` | [Action](#action), [link](#link), [Page](#page), [Guard](#guard) | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | [Page](#page) | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
+| `page_outlet` | [Shell](#shell) | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
 | `channel_refs` | [Live](#live), [header](#header) | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
 | `section_refs` | [header](#header), [Section](#section), [PageLayout](#pagelayout) | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
 | `layout_complete` | [PageLayout](#pagelayout) | `pages.*.layout` | `{must: place_every_section_once}` | warning |

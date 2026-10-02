@@ -450,3 +450,16 @@ fn a_removal_entry_with_anything_beside_name_and_remove_is_refused() {
         "{error}"
     );
 }
+
+/// beyond10x/ess#330: `options` naming an enum of the ESS model is refused, and the refusal says
+/// why (a renderer has no model) and what to write instead.
+#[test]
+fn options_naming_a_model_enum_say_what_to_write_instead() {
+    let text = DOCUMENT.replace(
+        "{name: stage, component: choice, options: Stage}",
+        "{name: stage, component: choice, options: factory.objective.RiskLevel}",
+    );
+    let error = ess_ui::load_str(&text).expect_err("a model enum has no variants here");
+    assert!(error.message().contains("`types`"), "{error}");
+    assert!(error.message().contains("--model"), "{error}");
+}

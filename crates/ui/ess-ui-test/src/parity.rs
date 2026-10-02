@@ -67,6 +67,18 @@ fn is_column(rest: &[&str]) -> bool {
 /// it, if it is. Holds for every step, not only `text`.
 pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String> {
     let path = &target.written;
+    // A row action's inline confirm is drawn where its action is: under the row that opened it.
+    if let (None, Some((_, overlay))) = (&target.row, target.overlay()) {
+        if let Some((container, _)) = overlay.split_once("/row_actions/") {
+            if matches!(body_at(document, container), Some((Held::Collection(_), _))) {
+                return Some(format!(
+                    "{path}: a row action's confirm is drawn under the row that opened it; \
+                     address it under its row, as {container}/rows/<key>/{}",
+                    &target.node[container.len() + 1..]
+                ));
+            }
+        }
+    }
     if let Some(row) = &target.row {
         let rest = relative(&target.node, &row.container)?;
         return match body_at(document, &row.container)?.0 {
@@ -101,6 +113,47 @@ pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String>
     }
 }
 
+/// Why any step at `target` is refused because the terminal draws the node but cannot drive or
+/// address it, if it is. Both renderers read this, so the spec marks the same steps `test.fixme`:
+///
+/// - a collection that is not a section's or an overlay's own body (nested in a record's
+///   `item`, a tab, a section's `children`, a form's `parts`), and its rows: the terminal draws
+///   them inside their section, without a cursor or row regions of their own;
+/// - a tab's nested node (`tabs/<t>/form` when it is a node) and what is inside it: the terminal
+///   draws it below the tab's fields but moves no focus into it. A tab's `form` that is an action
+///   is driven by its key, like the record's own actions.
+pub(crate) fn undriven(document: &Document, target: &Target) -> Option<String> {
+    let path = &target.written;
+    let container = target
+        .row
+        .as_ref()
+        .map_or(&target.node, |row| &row.container);
+    if let Some((Held::Collection(_), false)) = body_at(document, container) {
+        return Some(format!(
+            "{path}: the terminal draws a collection nested inside a record, a tab or a node \
+             without addressing it or its rows; address a section's or an overlay's own \
+             collection instead"
+        ));
+    }
+    let segments: Vec<&str> = target.node.split('/').collect();
+    let nested_tab = segments
+        .windows(3)
+        .position(|window| window[0] == "tabs" && window[2] == "form")
+        .map(|at| segments[..at + 3].join("/"));
+    if let Some(form) = nested_tab {
+        let is_node = document.nodes().into_iter().any(|located| {
+            located.path.to_string() == form && matches!(located.node, NodeRef::Node(_))
+        });
+        if is_node {
+            return Some(format!(
+                "{path}: the terminal draws a tab's nested node but does not move into it, so \
+                 one test cannot drive it in both renderers"
+            ));
+        }
+    }
+    None
+}
+
 /// Why `text` (or `not_text`) at `target` is refused, if it is: a node the generated app renders
 /// no element at ([`unrendered`]), a node the terminal does not draw on cells of its own, or an
 /// action that shows no label in the browser.
@@ -116,6 +169,12 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
         )
     };
     let segments: Vec<&str> = target.node.split('/').collect();
+    // An overlay's own pane, a row action's inline confirm under its row included.
+    if let Some((_, overlay)) = target.overlay() {
+        if overlay == target.node && target.in_overlay() {
+            return None;
+        }
+    }
     if let Some(row) = &target.row {
         let Some(rest) = relative(&target.node, &row.container) else {
             return Some(own_cells());
@@ -170,6 +229,46 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
                 _ => Some(own_cells()),
             }
         }
+    }
+}
+
+/// The form field a `choose` at `target` picks in: the target is a field drawn `as: choice`, or
+/// that field's `choice` node.
+pub(crate) fn choice_field(document: &Document, target: &Target) -> Option<ess_ui::Field> {
+    let field_path = target.node.strip_suffix("/choice").unwrap_or(&target.node);
+    let segments: Vec<&str> = field_path.split('/').collect();
+    if segments.len() < 2 || segments[segments.len() - 2] != "fields" {
+        return None;
+    }
+    document
+        .nodes()
+        .into_iter()
+        .find_map(|located| match located.node {
+            NodeRef::Field(field)
+                if located.path.to_string() == field_path
+                    && field.field_as.as_deref() == Some("choice") =>
+            {
+                Some(field.clone())
+            }
+            _ => None,
+        })
+}
+
+/// Why a `choose` at `target` is refused, if it is: a form choice field the two renderers cannot
+/// drive alike. The terminal steps a form choice field through single values, and the generated
+/// app renders a field without a `choice` node as a text input.
+pub(crate) fn choose(document: &Document, target: &Target) -> Option<String> {
+    let field = choice_field(document, target)?;
+    let path = &target.written;
+    match field.choice.as_ref().map(|node| &node.body) {
+        Some(Body::Composite(Composite::Choice(choice))) if choice.multiple => Some(format!(
+            "{path}: the terminal sets one value in a form's choice field, so a multiple choice \
+             there cannot be chosen alike in both renderers"
+        )),
+        Some(Body::Composite(Composite::Choice(_))) => None,
+        _ => Some(format!(
+            "{path}: a choice field without a `choice` node offers no options in either renderer"
+        )),
     }
 }
 

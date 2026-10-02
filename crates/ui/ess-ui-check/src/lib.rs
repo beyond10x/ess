@@ -2,8 +2,10 @@
 //!
 //! The checks are the schema's `checks.list` (`schemas/ui/ess-ui.schema.yaml`), the rules the
 //! schema states elsewhere that the loader does not refuse (placement refusals, the type rule, a
-//! widget containing itself, the `degrades` capabilities, a primitive's `exactly_one_of`), and —
-//! given an ESS model — that every view, command and event the document names exists in it and
+//! widget containing itself, the `degrades` capabilities, a primitive's `exactly_one_of`, the
+//! values of a closed enum, an overlay's params read inside it), and — given an ESS model — that
+//! every view, command, event and page parameter type the document names exists in it, that form
+//! fields, `bind` keys, columns and `row.<field>` paths name inputs and fields that exist, and
 //! that every section's read is readable by some actor — an approximation, since ESS grants
 //! commands and not views (documented on [`Model`]). [`CHECKS`] lists them all.
 //!
@@ -16,8 +18,10 @@
 //! text or JSON (`ess-ui-check/1`) and exiting 1 when any finding is an error.
 
 mod classify;
+mod enums;
 mod expr;
 mod model;
+mod names;
 mod raw;
 mod rules;
 mod schema;
@@ -107,10 +111,13 @@ const fn rule(id: &'static str) -> Check {
 pub const CHECKS: &[Check] = &[
     schema_check("names_unique", Severity::Error),
     schema_check("nav_resolves", Severity::Error),
+    schema_check("nav_unique", Severity::Error),
     schema_check("page_reachable", Severity::Error),
     schema_check("opens_resolves", Severity::Error),
     schema_check("same_as_resolves", Severity::Error),
     schema_check("page_refs", Severity::Error),
+    schema_check("shell_refs", Severity::Error),
+    schema_check("page_outlet", Severity::Error),
     schema_check("channel_refs", Severity::Error),
     schema_check("section_refs", Severity::Error),
     schema_check("layout_complete", Severity::Warning),
@@ -130,6 +137,10 @@ pub const CHECKS: &[Check] = &[
     rule("degrades_known"),
     // `Degrades.rule`: a renderer lacking a capability finds a fallback that is not `refuse`.
     rule("degrades_cover"),
+    // A value written where the schema declares a closed enum is one of its values.
+    rule("enum_values"),
+    // Every key of an overlay's `params` is read inside it as `params.<key>`.
+    rule("overlay_params"),
     // With `--model`: the names the document resolves in the ESS model.
     rule("view_in_model"),
     rule("command_in_model"),
@@ -138,6 +149,23 @@ pub const CHECKS: &[Check] = &[
     // With `--model`: a read binds a parameter its view does not declare, or leaves a required
     // one unbound.
     rule("read_params"),
+    // With `--model`: a page parameter's named type resolves in the document, the schema or
+    // the model.
+    rule("type_in_model"),
+    // With `--model`: form fields and `bind` keys are inputs of their command; columns, record
+    // fields and `row.<field>` paths are fields of the view read.
+    rule("field_in_model"),
+    // With `--model`: a `group_by`, an aggregate's `field` or a `label_from` names a row field
+    // the view does not have.
+    rule("row_fields"),
+    // With `--model`: a `group_order` value, or a form choice's fixed option, is no variant of the
+    // enum the field holds, or the options leave a variant out.
+    rule("model_enum_values"),
+    // `metric`: `aggregate` reads rows, so it needs `reads`; every aggregate but `count` needs a
+    // `field`, and `field` means nothing without one.
+    rule("metric_aggregate"),
+    // `collection`: `group_order` and `show_empty_groups` order the groups of `group_by`.
+    rule("group_order"),
 ];
 
 fn severity_of(id: &str) -> Severity {
@@ -347,6 +375,7 @@ pub fn check_source(
             raw::run(text, &document, &mut sink);
             if let Some(model) = model {
                 model.check(&document, &mut sink);
+                names::run(model, &document, &mut sink);
             }
         }
     }

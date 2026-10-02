@@ -1,0 +1,101 @@
+format: ess/18
+system: mini
+version: v1
+domain: mini.m
+summary: A run copies a policy flag from its target at creation, and a later report reads it.
+types:
+  - {name: mini.m.TargetId, kind: newtype, of: Uuid}
+  - {name: mini.m.RunId, kind: newtype, of: Uuid}
+  - {name: mini.m.Result, kind: enum, variants: [Healthy, Failed]}
+entities:
+  - name: mini.m.Target
+    identity: {name: target_id, type: mini.m.TargetId}
+    fields:
+      - {name: auto_promote, type: Optional<Boolean>}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed]}
+  - name: mini.m.Run
+    identity: {name: run_id, type: mini.m.RunId}
+    fields:
+      - {name: target_id, type: mini.m.TargetId}
+      - {name: auto_promote, type: Optional<Boolean>}
+    lifecycle:
+      initial: Running
+      states: [Running, Promoted, Done]
+      terminal: [Promoted, Done]
+      transitions:
+        - {name: promote, from: [Running], to: Promoted}
+        - {name: finish, from: [Running], to: Done}
+errors:
+  - {name: mini.m.Conflict, summary: The run has finished., fields: []}
+events:
+  - name: mini.m.TargetAdded
+    fields:
+      - {name: target_id, type: mini.m.TargetId}
+  - name: mini.m.RunCreated
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+  - name: mini.m.Promoted
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+  - name: mini.m.Finished
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+actors:
+  - name: mini.m.Operator
+    may: [mini.m.AddTarget, mini.m.CreateRun, mini.m.Report]
+commands:
+  - name: mini.m.AddTarget
+    input:
+      - {name: auto_promote, type: Optional<Boolean>}
+    outcomes:
+      - name: added
+        creates: mini.m.Target
+        instance: target_id
+        emits: [mini.m.TargetAdded]
+        payload:
+          mini.m.TargetAdded: {target_id: {generated: true}}
+        sets:
+          auto_promote: input.auto_promote
+  - name: mini.m.CreateRun
+    input:
+      - {name: target_id, type: mini.m.TargetId}
+    outcomes:
+      - name: created
+        creates: mini.m.Run
+        instance: run_id
+        emits: [mini.m.RunCreated]
+        payload:
+          mini.m.RunCreated: {run_id: {generated: true}}
+        sets:
+          target_id: input.target_id
+          auto_promote: {related: {via: input.target_id, field: auto_promote}}
+  - name: mini.m.Report
+    input:
+      - {name: run_id, type: mini.m.RunId}
+      - {name: result, type: mini.m.Result}
+    outcomes:
+      - name: promoted
+        when_subject: {predicate: {all: ["defined(auto_promote)", auto_promote == true, input.result == Healthy]}}
+        moves: mini.m.Run.promote
+        instance: run_id
+        emits: [mini.m.Promoted]
+        payload:
+          mini.m.Promoted: {run_id: input.run_id}
+      - name: finished
+        moves: mini.m.Run.finish
+        instance: run_id
+        emits: [mini.m.Finished]
+        payload:
+          mini.m.Finished: {run_id: input.run_id}
+      - name: wrong-state
+        wrong_state: true
+        error: mini.m.Conflict
+views:
+  - name: mini.m.Runs
+    source: mini.m.Run
+    consistency: read_your_writes
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+      - {name: state, type: mini.m.Run.State}
+      - {name: target_id, type: mini.m.TargetId}
+      - {name: auto_promote, type: Optional<Boolean>}
