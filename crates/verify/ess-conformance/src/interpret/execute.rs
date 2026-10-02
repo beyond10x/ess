@@ -12,7 +12,7 @@
 //! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`), then the first declared input-guarded refusal whose `when:` holds, before anything else is read (`refused_by_input`); else the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
-//! | what a refused move answers | the command's `wrong_state:` branch, or its `unknown_instance:` branch for an identity nobody holds |
+//! | what a refused move answers | the command's `wrong_state:` branch; for an identity nobody holds, its `unknown_instance:` branch, else its one declared not-found refusal, else `wrong_state:` |
 //! | what a created instance holds | `creates:` lands at `into:` or the lifecycle's `initial`; `sets:` writes `input.<field>` or a typed literal |
 //! | what each emitted event carries | `payload:` for a determined field, the new identity for the field `instance:` names, a minted value for an undetermined one |
 //! | whether the instance may rest there | the entity's `invariants:`, evaluated over what it now holds |
@@ -943,11 +943,15 @@ fn identity_key(identity: &Node, entity: &QualifiedName) -> Result<String, Undet
         })
 }
 
-/// The command's `unknown_instance:` branch, else its `wrong_state:` branch, else no declared one.
+/// The command's `unknown_instance:` branch, else its one declared not-found refusal, else its
+/// `wrong_state:` branch, else no declared one.
 ///
-/// The order is the model's (`ResolvedCondition::UnknownInstance`): an identity nobody holds is
-/// answered by the marker that exists for it, and before it existed by the wrong-state branch — an
-/// instance that does not exist rests in no state any move starts from.
+/// The order is the model's (`ResolvedCondition::UnknownInstance`, and existence before held state
+/// in `docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`): an identity
+/// nobody holds is answered by the marker that exists for it; then by an `external:` refusal whose
+/// error carries the identity's type, which synthesis reads as the not-found answer
+/// (`synthesize::declared_not_found`, beyond10x/ess#291); and only then by the wrong-state branch —
+/// an instance that does not exist rests in no state any move starts from.
 fn unknown_instance(
     ir: &EssIr,
     spec: &ResolvedCommand,
@@ -958,6 +962,7 @@ fn unknown_instance(
         .outcomes
         .iter()
         .find(|outcome| matches!(outcome.condition, ResolvedCondition::UnknownInstance))
+        .or_else(|| crate::synthesize::declared_not_found(ir, spec))
     {
         Some(outcome) => refusal(ir, spec, outcome, store, input, None),
         None => wrong_state(ir, spec, store, input, None),
