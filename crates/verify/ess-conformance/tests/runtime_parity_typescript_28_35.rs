@@ -1437,6 +1437,95 @@ fn private_adapter_observation(label: &str, replacement: &str, status: &str, cod
 }
 
 #[test]
+fn typescript_one_time_ordinary_event_batch_eventual_bound() {
+    for bytes in [500_000, 600_000] {
+        ordinary_event_batch(false, bytes);
+    }
+}
+
+#[test]
+fn typescript_one_time_ordinary_event_batch_refusal_bound() {
+    for bytes in [500_000, 600_000] {
+        ordinary_event_batch(true, bytes);
+    }
+}
+
+fn ordinary_event_batch(refusal: bool, bytes: usize) {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/one-time-execution/healthy.json");
+    let mut document: Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture).unwrap()).unwrap();
+    let scenario = document["scenarios"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+        .next()
+        .unwrap();
+    let steps = scenario["steps"].as_array_mut().unwrap();
+    if refusal {
+        steps.extend([
+            json!({"step":"execute_command","command":"credentials.api.Issue","actor":"credentials.api.Denied"}),
+            json!({"step":"expect_not_granted","actor":"credentials.api.Denied","unpublished":["credentials.api.Issued"]}),
+        ]);
+    } else {
+        steps.push(json!({"step":"eventually_event","event":"credentials.api.Issued"}));
+    }
+    scenario["source"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"kind":"event","name":"credentials.api.Issued"}));
+    let original = serde_json::to_string(&document).unwrap();
+    let admitted = AdmittedSuite::from_json(&original).unwrap();
+    let label = format!("event-batch-{refusal}-{bytes}");
+    let input = runtime_package().join(format!("{label}.json"));
+    std::fs::write(&input, original).unwrap();
+    let driver = std::fs::read_to_string(one_time_driver()).unwrap()
+        .replace("const target=()=>", "let eventReads=0;const target=()=>")
+        .replace("const value=await call('execute',upper(request));return", "const value=await call('execute',upper(request));if(request.actor==='credentials.api.Denied')return {notGranted:true,notGrantedActor:request.actor,directEvents:[]};return")
+        .replace("observeEvents:async request=>events(await call('events',upper(request))),", &format!("observeEvents:async request=>{{await call('events',upper(request));return ++eventReads===1?[{{event:request.event,payload:{{audit:'x'.repeat({bytes})}}}},{{event:request.event,payload:{{audit:'y'.repeat({bytes})}}}}]:[];}},"));
+    let driver_path = runtime_package().join(format!("{label}.mjs"));
+    std::fs::write(&driver_path, driver).unwrap();
+    let report_path = runtime_package().join(format!("{label}-report.json"));
+    if report_path.exists() {
+        std::fs::remove_file(&report_path).unwrap();
+    }
+    let host = support_typescript_prerequisite::DisclosureHost::start(Mode::Healthy);
+    let output = Command::new("node")
+        .arg(driver_path)
+        .arg(input)
+        .arg(&host.address)
+        .env("ESS_REPORT_FORMAT", "2")
+        .env("ESS_REPORT_OUT", &report_path)
+        .output()
+        .unwrap();
+    let (trace, captured) = host.stop();
+    assert!(trace.contains(&"observe_events"));
+    let raw = std::fs::read_to_string(report_path).unwrap_or_default();
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for value in captured {
+        assert!(!raw.contains(&value) && !diagnostic.contains(&value));
+    }
+    CountReport::from_json(&raw, &admitted).unwrap();
+    let result: Value = serde_json::from_str(&raw).unwrap();
+    let over = bytes == 600_000;
+    assert_eq!(
+        result["counts"],
+        json!({"total":1,"passed":usize::from(!over),"failed":0,"error":0,"unsupported":usize::from(over),"skipped":0}),
+        "{label}: complete event batch"
+    );
+    assert_eq!(output.status.code(), Some(i32::from(over)));
+    assert!(diagnostic.contains(if over {
+        "ESS-CF-TARGET"
+    } else {
+        "ESS-CF-DISCLOSURE"
+    }));
+}
+
+#[test]
 fn typescript_one_time_malformed_and_old_authority_refuses_before_callbacks() {
     let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let mut checked = 0;
