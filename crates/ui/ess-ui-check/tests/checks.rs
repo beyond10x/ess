@@ -1222,7 +1222,11 @@ fn model_enum_values() {
           fields: [label, {field: shelf, as: choice, choice: {component: choice, options: [Top, Middle]}}]}, \
          {name: fine, component: collection, reads: stock.Items, group_by: shelf, group_order: [Bottom, Top]}",
     );
-    let order = trips_in(&report, "model_enum_values", "pages/p/sections/list/group_order");
+    let order = trips_in(
+        &report,
+        "model_enum_values",
+        "pages/p/sections/list/group_order",
+    );
     assert!(order.message.contains("`Floor`"), "{order:#?}");
     let options = trips_in(
         &report,
@@ -1230,7 +1234,11 @@ fn model_enum_values() {
         "pages/p/sections/add/fields/shelf/choice/options",
     );
     assert!(options.message.contains("`Bottom`"), "{options:#?}");
-    assert_eq!(tripped(&report, "model_enum_values").len(), 2, "{report:#?}");
+    assert_eq!(
+        tripped(&report, "model_enum_values").len(),
+        2,
+        "{report:#?}"
+    );
 }
 
 /// beyond10x/ess#358: `aggregate` needs `reads`, and a `field` unless it counts.
