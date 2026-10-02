@@ -299,7 +299,6 @@ impl crate::rust::wire::Surface for Bridge<'_> {
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Web)?;
     crate::failure::input_absent(ir, plan, crate::Target::Web)?;
-    crate::existence::refuse(ir, plan, crate::Target::Web)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Web)?;
     crate::paging::refuse(ir, plan, crate::Target::Web)?;
     crate::failure::retry_bound(ir, plan, crate::Target::Web)?;
