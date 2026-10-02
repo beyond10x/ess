@@ -45,6 +45,7 @@
 //! value whatever payload source it declares, and an identity the store already holds is never
 //! created again.
 
+mod set_effects;
 mod subject;
 
 use std::collections::BTreeMap;
@@ -932,13 +933,23 @@ fn take(
                 }
             }
         }
-    } else if !outcome.sets.is_empty() {
+    } else if outcome.instances.is_none() && !outcome.sets.is_empty() {
         return Err(Undetermined::NotInterpreted {
             construct: format!("`sets:` without a subject, in `{}`", branch(spec, outcome)),
         });
     }
 
-    let events = or_no_step!(emit(ir, spec, outcome, input, created.as_ref(), &mut work));
+    let changed = set_effects::apply(ir, spec, outcome, store, input, &mut work)?;
+    let events = or_no_step!(emit(
+        ir,
+        spec,
+        outcome,
+        input,
+        created.as_ref(),
+        changed,
+        &mut work
+    ));
+
     if let Some((entity, key)) = &touched {
         at_rest(ir, &work.next, entity, key)?;
     }
@@ -1110,6 +1121,27 @@ fn value(
             .cloned()),
         ResolvedPayloadValue::Literal { value } => literal(ir, &field.target_type, value).map(Some),
         ResolvedPayloadValue::Generated => mint(ir, &field.target_type, work),
+        ResolvedPayloadValue::Struct { fields } => {
+            let mut members = BTreeMap::new();
+            for member in fields {
+                if let Some(value) = value(ir, member, input, work)? {
+                    members.insert(member.target.clone(), value);
+                }
+            }
+            Ok(Some(Node::Map(members)))
+        }
+        ResolvedPayloadValue::InputOrGenerated {
+            field: source,
+            otherwise,
+            ..
+        } => match input.get(source).filter(|value| **value != Node::Null) {
+            Some(value) => Ok(Some(value.clone())),
+            None => match otherwise {
+                Some(text) => literal(ir, &field.target_type, text).map(Some),
+                None => mint(ir, &field.target_type, work),
+            },
+        },
+
         other => Err(Undetermined::NotInterpreted {
             construct: format!("the value source `{}`", other.describe()),
         }),
@@ -1121,25 +1153,26 @@ fn literal(ir: &EssIr, target: &ResolvedTypeRef, text: &str) -> Result<Node, Und
     let gap = || Undetermined::NotInterpreted {
         construct: format!("the literal `{text}` over `{target}`"),
     };
-    match representation(ir, target) {
-        Representation::Primitive(Primitive::Integer) => text
-            .parse::<i64>()
-            .map(|value| Node::Number(Number::from(value)))
-            .map_err(|_| gap()),
-        Representation::Primitive(Primitive::Decimal) => Number::decimal_literal(text)
-            .map(Node::Number)
-            .ok_or_else(gap),
-        Representation::Primitive(Primitive::Boolean) => match text {
-            "true" => Ok(Node::Bool(true)),
-            "false" => Ok(Node::Bool(false)),
-            _ => Err(gap()),
-        },
-        Representation::Primitive(
-            Primitive::String | Primitive::Uuid | Primitive::Timestamp | Primitive::Duration,
-        )
-        | Representation::Enum => Ok(Node::Text(text.to_owned())),
-        Representation::Primitive(_) | Representation::Other => Err(gap()),
+    let mut current = target.required();
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        let value = match current {
+            ResolvedTypeRef::Primitive { name } => {
+                input::primitive_literal(*name, text).ok_or_else(gap)?
+            }
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => {
+                    current = of.required();
+                    continue;
+                }
+                ResolvedBody::Enum { .. } => Node::Text(text.into()),
+                _ => return Err(gap()),
+            },
+            _ => return Err(gap()),
+        };
+        input::validate_typed_value(ir, target, &value).map_err(Undetermined::Request)?;
+        return Ok(value);
     }
+    Err(gap())
 }
 
 /// The observable value the implementation assigns to `field` of the emitted `event`.
@@ -1244,6 +1277,7 @@ fn emit(
     outcome: &ResolvedOutcome,
     input: &BTreeMap<String, Node>,
     created: Option<&(String, Node)>,
+    changed: Option<usize>,
     work: &mut Work<'_>,
 ) -> Result<Result<Vec<ObservedEvent>, Unmatched>, Undetermined> {
     let mut events = Vec::with_capacity(outcome.emits.len());
@@ -1284,7 +1318,20 @@ fn emit(
                     &field.type_ref,
                     work
                 )),
+                (
+                    false,
+                    Some(ResolvedPayloadField {
+                        value: ResolvedPayloadValue::ChangedCount,
+                        ..
+                    }),
+                ) => {
+                    let count = changed.ok_or_else(|| {
+                        Undetermined::Request("changed count without a set subject".into())
+                    })?;
+                    Some(Node::Number(Number::from(count)))
+                }
                 (false, Some(source)) => value(ir, source, input, work)?,
+
                 (false, None) => {
                     or_no_step!(
                         assign(ir, &declared.name, &field.name, &field.type_ref, work).map_err(
