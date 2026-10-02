@@ -694,6 +694,8 @@ const NODE_COMMON_KEYS: &[&str] = &["name", "state", "visible", "degrades", "unm
 pub struct Section {
     /// Node name among the page's sections.
     pub name: String,
+    /// The heading shown above the section, where it has one (beyond10x/ess#281).
+    pub title: Option<String>,
     /// State, visibility, degrades and unmapped notes of the section.
     pub common: NodeCommon,
     /// How channel events change the rows.
@@ -716,6 +718,7 @@ pub struct Section {
 #[serde(deny_unknown_fields)]
 struct SectionFrame {
     name: String,
+    title: Option<String>,
     #[serde(default)]
     state: BTreeMap<String, State>,
     visible: Option<Expr>,
@@ -734,6 +737,7 @@ struct SectionFrame {
 
 const SECTION_FRAME_KEYS: &[&str] = &[
     "name",
+    "title",
     "state",
     "visible",
     "degrades",
@@ -761,6 +765,7 @@ impl<'de> Deserialize<'de> for Section {
         }
         Ok(Self {
             name: frame.name,
+            title: frame.title,
             common: NodeCommon {
                 name: None,
                 state: frame.state,

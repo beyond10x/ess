@@ -1706,7 +1706,8 @@ impl<'d> Gen<'d> {
         let reads = Self::section_reads(&section.body).and_then(Self::reads);
         let mut frame = El::new(&self.import("runtime/core", "SectionFrame"))
             .path(&at.to_string())
-            .expr("name", ts::string(&section.name));
+            .expr("name", ts::string(&section.name))
+            .opt("title", quoted(section.title.as_ref()));
         if let Some(reads) = &reads {
             let use_scope = self.import("runtime/core", "useScope");
             let trigger = self.import("runtime/core", "useLoadTrigger");

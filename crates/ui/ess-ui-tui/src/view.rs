@@ -484,7 +484,12 @@ impl App {
             .feeding_channels(section)
             .iter()
             .any(|channel| self.channel_status(channel) == "stale");
-        let mut title = format!(" {} ", section.name);
+        // The name stays first in the border, where a reader of the screen finds the section; the
+        // heading follows it (#281).
+        let mut title = match &section.title {
+            Some(heading) => format!(" {} · {heading} ", section.name),
+            None => format!(" {} ", section.name),
+        };
         if stale {
             let mark = section
                 .states

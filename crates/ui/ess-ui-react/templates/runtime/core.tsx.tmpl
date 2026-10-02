@@ -362,6 +362,7 @@ function Skeleton(props: { style: "skeleton" | "spinner" | "none" }): ReactNode 
 export function SectionFrame(props: {
   "data-ui-path": string;
   name: string;
+  title?: string;
   data?: ReadState;
   states?: SectionStates;
   load?: "eager" | "on_visible" | "on_demand";
@@ -433,6 +434,7 @@ export function SectionFrame(props: {
           data-status={data?.status ?? "ready"}
           data-profile={props.profile}
         >
+          {props.title ? <h2 className="ui-section-title">{props.title}</h2> : null}
           {mark === "badge" || mark === "both" ? <span className="ui-stale-badge">stale</span> : null}
           {data?.newCount ? <span className="ui-new-count">{data.newCount} new</span> : null}
           {body}

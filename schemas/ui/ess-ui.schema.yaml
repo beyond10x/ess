@@ -520,9 +520,11 @@ constructs:
       selection. `component` names a member of the composite union or a widget; its props are
       written inline beside the section's own fields, and a key that is neither is refused.
       `children` adds widgets or primitives rendered with the section (a caption, a button).
+      `title` is the heading a reader sees, which tells two sections over the same view apart.
     fields:
       name:       {type: name, required: true, note: node name among the page's sections}
       component:  {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: true, note: what the section renders}
+      title:      {type: string, note: "heading shown above the section; absent, none"}
       reads:      {type: Reads, note: "the section's data; one per section; it is the composite's own `reads`"}
       live:       {type: Live, note: how channel events change the rows}
       load:       {type: {enum: [eager, on_visible, on_demand]}, default: eager, note: when the read starts}

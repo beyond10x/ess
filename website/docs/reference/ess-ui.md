@@ -773,7 +773,7 @@ header:
 
 A region of a page with one read and its own loading lifecycle.
 
-The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button).
+The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button). `title` is the heading a reader sees, which tells two sections over the same view apart.
 
 **Properties**
 
@@ -781,6 +781,7 @@ The section, not the page, is the unit of loading. Each has at most one `reads`,
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name among the page's sections |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the section renders |
+| `title` | `string` |   |   | heading shown above the section; absent, none |
 | `reads` | [Reads](#reads) |   |   | the section's data; one per section; it is the composite's own `reads` |
 | `live` | [Live](#live) |   |   | how channel events change the rows |
 | `load` | one of: `eager` \| `on_visible` \| `on_demand` |   | `eager` | when the read starts |
