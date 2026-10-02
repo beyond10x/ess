@@ -845,3 +845,26 @@ test('a response field is held to the spelling of absence it declares', () => {
   );
   compareResponse(omitted, { receipt: 'r-1' }, { receiptId: 'r-1' });
 });
+
+test('response snapshots stay lossless without JSON.parse reviver source context', () => {
+  const nativeParse = JSON.parse;
+  JSON.parse = (raw, revive) =>
+    nativeParse(
+      raw,
+      revive === undefined
+        ? undefined
+        : function (key, value) {
+            return revive.call(this, key, value);
+          },
+    );
+  try {
+    const result = snapshotResponseResult({
+      response: { exact: new JsonNumber('9007199254740993') },
+      outcome: 'returned',
+    });
+    assert.ok(result.response?.exact instanceof JsonNumber);
+    assert.equal(result.response.exact.raw, '9007199254740993');
+  } finally {
+    JSON.parse = nativeParse;
+  }
+});

@@ -156,7 +156,10 @@ export function admitReading(value: unknown): void {
  * type error here instead of an `undefined` at the first reading. `skip` is widened to `void`
  * because a stand-in in a case does not have to abort the way the real one does.
  */
-export type ReadingRun = Pick<ScenarioRun, 'target' | 'correlation' | 'seen' | 'fail'> & {
+export type ReadingRun = Pick<
+  ScenarioRun,
+  'target' | 'correlation' | 'seen' | 'fail' | 'targetError'
+> & {
   skip(message: string): void;
 };
 
@@ -271,7 +274,7 @@ export function expectReadingOrder(run: ReadingRun, index: number, step: Step): 
     run.skip(`clock comparison unsupported: ${errorText(failure)}`);
     return false;
   }
-  return run.fail(index, `clock reading: ${errorText(failure)}`);
+  return run.targetError(index, `clock reading: ${errorText(failure)}`);
 }
 
 /**

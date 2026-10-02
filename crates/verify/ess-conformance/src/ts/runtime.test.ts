@@ -736,12 +736,12 @@ test('report/2 counts every terminal verdict and is refused for an incomplete ru
       passed: 1,
       failed: 1,
       error: 0,
-      unsupported: 0,
-      skipped: 1,
+      unsupported: 1,
+      skipped: 0,
     });
     assert.equal(document.execution_status, 'failed');
     assert.equal(document.conformance_status, 'failed');
-    assert.equal(document.producer_profile, 'go-scenario-status/1');
+    assert.equal(document.producer_profile, 'go-scenario-status/2');
     assert.equal(document.coverage.knowledge, 'unknown');
   } finally {
     rmSync(directory, { recursive: true, force: true });

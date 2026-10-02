@@ -183,7 +183,23 @@ test('bad provider data and missing capability prevent session startup', async (
       run.execute('example.Open/outcome/opened', suite.scenarios['example.Open/outcome/opened']!),
     );
     assert.equal(begun, 0);
-    assert.equal(run.status, mode === 'missing' ? 'skipped' : 'failed');
+    assert.equal(run.status, mode === 'missing' ? 'unsupported' : 'error');
     assert.equal(run.callbacksComplete, true);
+  }
+});
+
+test('delivery invocation selectors and expected inputs admit fixture references', () => {
+  for (const position of ['selecting', 'input']) {
+    const observation = {
+      step: 'expect_every_invocation',
+      binding: 'received',
+      command: 'example.Open',
+      input: {},
+      [position]: { principal: fixture },
+    };
+    assert.doesNotThrow(() =>
+      admitFixtureSteps([{ step: 'resolve_fixtures', fixtures: contract }, observation]),
+    );
+    assert.throws(() => admitFixtureSteps([observation]), /fixture declarations/);
   }
 });

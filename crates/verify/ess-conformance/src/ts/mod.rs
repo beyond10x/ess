@@ -62,16 +62,25 @@ pub struct TsArtifact {
 /// the system, so an adopter's import path does not change when the specification's name does.
 pub const PACKAGE: &str = "essconform";
 
+/// This runtime's ceiling is independent of another language's port status.
+fn refuse_unadmitted(suite: &ConformanceSuite) -> Result<(), crate::admission::AdmissionError> {
+    if suite.provenance.suite_version.major() > 33 {
+        return Err(crate::admission::AdmissionError::new(
+            "UnsupportedTarget",
+            "$suite",
+            "TypeScript executes suites through ess-conformance/33",
+        ));
+    }
+    Ok(())
+}
+
 /// The suite as a TypeScript test package: the runner, the evaluator, the suite it runs, and the
 /// manifest that makes the three of them something `npm test` can execute.
 ///
 /// Deterministic: the same suite produces the same bytes, because every `.ts` file is a constant
 /// and the only file that moves is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
-    crate::direct_response::refuse_generation(suite, "TypeScript")?;
-    crate::delivery_context::refuse_generation(suite, "TypeScript")?;
-    crate::structured_values::refuse_generation(suite, "TypeScript")?;
-    crate::go::refuse_unadmitted(suite, "TypeScript")?;
+    refuse_unadmitted(suite)?;
     let json = suite.to_canonical_json()?;
     let mut files = sources(RUNTIME_TS.to_owned());
     files.push(file("suite.json", json));
@@ -229,10 +238,7 @@ pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
 ) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
-    crate::direct_response::refuse_generation(suite.suite(), "TypeScript")?;
-    crate::delivery_context::refuse_generation(suite.suite(), "TypeScript")?;
-    crate::structured_values::refuse_generation(suite.suite(), "TypeScript")?;
-    crate::go::refuse_unadmitted(suite.suite(), "TypeScript")?;
+    refuse_unadmitted(suite.suite())?;
     let mut files = sources(RUNTIME_TS.replace(SUITE_DOCUMENT, INPUT_DOCUMENT));
     files.push(file("suite.json", suite.original_json().into()));
     files.push(file("input.json", input.document().to_canonical_json()?));
@@ -271,6 +277,10 @@ fn sources(runtime: String) -> Vec<TsArtifact> {
         file("src/runtime.ts", runtime),
         file("src/predicate.ts", include_str!("predicate.ts").to_owned()),
         file("src/response.ts", include_str!("response.ts").to_owned()),
+        file(
+            "src/direct_response.ts",
+            include_str!("direct_response.ts").to_owned(),
+        ),
         file("src/fixtures.ts", include_str!("fixtures.ts").to_owned()),
         file("src/reading.ts", include_str!("reading.ts").to_owned()),
         file(
@@ -321,6 +331,7 @@ export * from './runtime.js';
 export * from './coordinate.js';
 export * from './reading.js';
 export * from './response.js';
+export type { DirectResponse } from './direct_response.js';
 export type { FixtureContract } from './fixtures.js';
 ";
 
@@ -477,6 +488,11 @@ interface beside `Target` whose method answers with `ClockReadingEvidence`: the 
 observed for one occurrence, which the runtime compares rather than recomputes. Both are reachable
 from this package's entry point; implement it where the specification declares one.
 
+Suite versions 28–33 execute direct response contracts, external event deliveries with separate
+context, and instance references nested in lists or mappings. Implement `deliverEvent` where the
+suite requires it; a missing capability is recorded as unsupported. Delivery invocation checks
+observe the complete finite window, so a late wrong retry cannot be hidden by an early correct one.
+
 ## Numbers a binary64 cannot hold
 
 A value the runtime sends you — a command's `input` and `caller`, an entity setup's `identity` and
@@ -493,8 +509,10 @@ string keeps the value where a number would silently round it. Answer such a val
 ## What to throw when you cannot answer
 
 `ErrUnsupported`, not an ordinary error. A scenario whose semantic the implementation does not
-expose is reported as skipped, which is a different fact from a failed one — `observeInvocations`
-is the method most often in that position, and the specification explicitly does not require it.
+expose is recorded as `unsupported`; an ordinary target error is recorded as `error`.
+Report/2 keeps both categories under `go-scenario-status/2`: unsupported makes execution fail,
+while an error leaves execution inconclusive. Both fail the test invocation. Report/1 retains
+its legacy skipped/failed diagnostic presentation.
 
 Every method may say it, `executeCommand` included: a command whose actor is the implementation
 itself has no caller a target can be, and answering for it would be the target deciding its own
