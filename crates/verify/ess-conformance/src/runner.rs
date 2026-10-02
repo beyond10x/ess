@@ -54,6 +54,7 @@
 
 mod bounded_retry;
 mod delivery_context;
+mod disclosure;
 
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
@@ -376,9 +377,14 @@ impl<C: Clock> Runner<C> {
     ) -> ExecutedRun {
         let suite = admitted.suite();
         let started_at = self.clock.now();
-        let implementation = target
-            .identity()
-            .unwrap_or_else(|error| ImplementationIdentity::new("unidentified", error.to_string()));
+        let identity = target.identity();
+        let implementation = if crate::one_time_response::used_by(suite) {
+            ImplementationIdentity::new("one-time-protected-target", "")
+        } else {
+            identity.unwrap_or_else(|error| {
+                ImplementationIdentity::new("unidentified", error.to_string())
+            })
+        };
 
         let mut scenarios = Vec::with_capacity(suite.len());
         for (id, scenario) in &suite.scenarios {
@@ -409,26 +415,16 @@ impl<C: Clock> Runner<C> {
         let started = self.clock.now();
         let context = ScenarioContext::new(id.clone(), self.ids.correlation());
         let mut run = Run::new(id.clone(), context);
+        run.disclosure = scenario
+            .one_time_response
+            .clone()
+            .map(disclosure::Captures::new);
 
-        // The contract stage admits the closed DTO before its execution engine lands.
-        // Never execute it as if the new authority were absent in an intermediate build.
-        let fixture_ready = if scenario.one_time_response.is_some() {
-            run.record(target_failure(
-                &run.id,
-                "one-time response execution",
-                &TargetError::unsupported(
-                    "one-time response execution",
-                    "the contract-stage build has no one-time observer yet",
-                ),
-            ));
-            Flow::Stop
-        } else {
-            match scenario.steps.first() {
-                Some(ScenarioStep::ResolveFixtures { fixtures }) => {
-                    resolve_fixtures(fixtures, &mut run, target)
-                }
-                _ => Flow::Continue,
+        let fixture_ready = match scenario.steps.first() {
+            Some(ScenarioStep::ResolveFixtures { fixtures }) => {
+                resolve_fixtures(fixtures, &mut run, target)
             }
+            _ => Flow::Continue,
         };
         if fixture_ready == Flow::Stop {
             // Invalid fixture data must not reach BeginScenario, which may open a real session.
@@ -458,16 +454,37 @@ impl<C: Clock> Runner<C> {
                         break;
                     }
                 }
-                if self.step(step, &mut run, target) == Flow::Stop {
+                if self.step(step, &mut run, target) == Flow::Stop || run.disclosure_stopped {
+                    break;
+                }
+                if self.disclosure_windows(scenario, index, &mut run, target) == Flow::Stop {
                     break;
                 }
             }
+            self.disclosure_final(scenario, &mut run, target);
             if let Err(error) = target.end_scenario(&run.context) {
                 run.record(target_failure(
                     &run.id,
                     "closing the execution context",
                     &error,
                 ));
+            }
+        }
+
+        if let Some(captures) = &run.disclosure {
+            if !run
+                .checks
+                .iter()
+                .any(|check| matches!(check.status, Status::Error | Status::Unsupported))
+            {
+                if captures.complete() {
+                    run.record(CheckResult::passed(
+                        CheckCode::Disclosure,
+                        "one-time disclosure trace",
+                    ));
+                } else {
+                    run.disclosure_violation(disclosure::Violation::Disclosure);
+                }
             }
         }
 
@@ -915,6 +932,9 @@ impl<C: Clock> Runner<C> {
         };
         match target.query_view(request) {
             Ok(result) => {
+                if !run.disclosure_rows(&result.rows) {
+                    return Flow::Stop;
+                }
                 run.unreadable = None;
                 run.last_view = Some((view.clone(), result));
                 Flow::Continue
@@ -1041,6 +1061,9 @@ impl<C: Clock> Runner<C> {
                     return Flow::Stop;
                 }
             };
+            if !run.disclosure_rows(&result.rows) {
+                return Flow::Stop;
+            }
             let verdict = decide(&required, &result);
             match verdict {
                 Verdict::Satisfied | Verdict::Undecidable { .. } => {
@@ -1221,6 +1244,12 @@ fn execute_command<T: ConformanceTarget>(
     };
     match target.execute_command(request) {
         Ok(result) => {
+            if let Some(captures) = &mut run.disclosure {
+                if let Err(violation) = captures.command(command, &result) {
+                    run.disclosure_violation(violation);
+                    return Flow::Stop;
+                }
+            }
             run.remember(&result.direct_events);
             run.last_command = Some(Executed {
                 command: command.to_string(),
@@ -1277,6 +1306,12 @@ fn execute_command_without_input<T: ConformanceTarget>(
     };
     match target.execute_command_without_input(request) {
         Ok(result) => {
+            if let Some(captures) = &mut run.disclosure {
+                if let Err(violation) = captures.command(command, &result) {
+                    run.disclosure_violation(violation);
+                    return Flow::Stop;
+                }
+            }
             run.remember(&result.direct_events);
             run.last_command = Some(Executed {
                 command: command.to_string(),
@@ -2675,6 +2710,8 @@ fn resolve_fixtures<T: ConformanceTarget>(
 
 /// What one scenario has established so far.
 struct Run {
+    disclosure: Option<disclosure::Captures>,
+    disclosure_stopped: bool,
     id: ScenarioId,
     context: ScenarioContext,
     last_command: Option<Executed>,
@@ -2704,6 +2741,8 @@ struct Run {
 impl Run {
     fn new(id: ScenarioId, context: ScenarioContext) -> Self {
         Self {
+            disclosure: None,
+            disclosure_stopped: false,
             id,
             context,
             last_command: None,
@@ -2724,17 +2763,66 @@ impl Run {
         }
     }
 
-    fn record(&mut self, check: CheckResult) {
+    fn record(&mut self, mut check: CheckResult) {
+        if self.disclosure.is_some() {
+            check.about = "one-time protected observation".into();
+            if check.diagnostic.is_some() {
+                check.diagnostic = Some(
+                    Diagnostic::new(check.code, self.id.clone())
+                        .expected(check.code.rule())
+                        .observed("protected observation did not satisfy the declared rule"),
+                );
+            }
+        }
         self.checks.push(check);
+    }
+
+    fn disclosure_violation(&mut self, violation: disclosure::Violation) {
+        let check = match violation {
+            disclosure::Violation::Resource => target_failure(
+                &self.id,
+                "one-time observation bound",
+                &TargetError::unsupported("one-time observation", "finite resource bound exceeded"),
+            ),
+            disclosure::Violation::Disclosure | disclosure::Violation::Payload => {
+                let code = if matches!(violation, disclosure::Violation::Payload) {
+                    CheckCode::Payload
+                } else {
+                    CheckCode::Disclosure
+                };
+                CheckResult::failed(
+                    "one-time observation",
+                    Diagnostic::new(code, self.id.clone()),
+                )
+            }
+        };
+        self.record(check);
+        self.disclosure_stopped = true;
     }
 
     /// Remembers occurrences observed away from a command, without recording one twice.
     fn remember(&mut self, observed: &[ObservedEvent]) {
+        if let Some(captures) = &self.disclosure {
+            if let Err(violation) = captures.maps(observed.iter().map(|event| &event.payload)) {
+                self.disclosure_violation(violation);
+                return;
+            }
+        }
         for event in observed {
             if !self.seen.contains(event) {
                 self.seen.push(event.clone());
             }
         }
+    }
+
+    fn disclosure_rows(&mut self, rows: &[ViewRow]) -> bool {
+        if let Some(captures) = &self.disclosure {
+            if let Err(violation) = captures.maps(rows) {
+                self.disclosure_violation(violation);
+                return false;
+            }
+        }
+        true
     }
 
     /// Turns a suite's reference into the value this run bound for it.
@@ -3427,7 +3515,7 @@ fn quote_row(row: &ViewRow) -> String {
 /// spell. A mapping or a sequence is present at its own path (beyond10x/ess#176). A row that does
 /// not publish what a predicate reads makes that predicate `Unknown`, which
 /// [`decide`] reports rather than retries.
-fn row_facts(row: &ViewRow) -> FactStore {
+pub(crate) fn row_facts(row: &ViewRow) -> FactStore {
     let mut facts = FactStore::new();
     for (field, value) in row {
         if let Ok(path) = FactPath::new(field) {

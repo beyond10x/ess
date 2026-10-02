@@ -425,6 +425,8 @@ impl Imported {
 /// Every way an adapter or a log is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportRefusal {
+    /// The model requires private one-time observations that legacy histories do not represent.
+    UnsupportedOneTimeDisclosure,
     /// The adapter is not an `ess-history-adapter/1` document.
     Adapter {
         /// What was wrong.
@@ -474,6 +476,7 @@ impl ImportRefusal {
     /// The refusal's stable name.
     pub fn code(&self) -> &'static str {
         match self {
+            Self::UnsupportedOneTimeDisclosure => "import.one-time-disclosure-unsupported",
             Self::Adapter { .. } => "import.adapter-malformed",
             Self::Line { .. } => "import.line-malformed",
             Self::Field { .. } => "import.field-malformed",
@@ -497,6 +500,10 @@ impl fmt::Display for ImportRefusal {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let code = self.code();
         match self {
+            Self::UnsupportedOneTimeDisclosure => write!(
+                formatter,
+                "{code}: one-time response observation is unsupported by recorded histories"
+            ),
             Self::Adapter { detail } => write!(formatter, "{code}: {detail}"),
             Self::Line { line, detail } => write!(formatter, "{code}: line {line}: {detail}"),
             Self::Field {
@@ -969,6 +976,7 @@ impl Reads<'_> {
 ///
 /// As [`import`].
 pub fn import_for(log: &[u8], adapter: &Adapter, ir: &EssIr) -> Result<Imported, ImportRefusal> {
+    crate::record::refuse_one_time(ir).map_err(|_| ImportRefusal::UnsupportedOneTimeDisclosure)?;
     convert(
         log,
         adapter,

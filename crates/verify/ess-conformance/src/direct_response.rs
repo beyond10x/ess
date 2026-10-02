@@ -70,10 +70,20 @@ impl Observation {
                 result
             })
             .collect();
+        let protected = outcome.as_ref().is_some_and(|selected| {
+            command.outcomes.iter().any(|branch| {
+                branch.name == selected.outcome && !branch.one_time_response.is_empty()
+            })
+        });
+        let declarations = if protected {
+            crate::one_time_response::Response::of(ir, command)?.declarations
+        } else {
+            crate::typed_fields::direct_response_declarations(ir, &fields)?
+        };
         let result = Self {
             command: CommandRef::new(command.name.clone()),
             outcome,
-            declarations: crate::typed_fields::direct_response_declarations(ir, &fields)?,
+            declarations,
             fields,
             expected,
         };

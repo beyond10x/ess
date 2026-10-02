@@ -182,6 +182,7 @@ mod aggregate;
 mod bounded_retry;
 mod caller;
 mod delivery_context;
+mod disclosure;
 mod existence;
 mod grant;
 mod identity;
@@ -1739,6 +1740,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     // Read off the finished suite, so every path that builds a branch's scenario is held to it.
     let overlaps = unwitnessed_overlaps(ir, &synthesis.suite);
     synthesis.notes.extend(overlaps);
+    disclosure::augment(ir, &mut synthesis);
     synthesis
 }
 

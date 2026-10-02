@@ -127,6 +127,8 @@ pub struct Workload {
 /// Why a workload could not be recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordError {
+    /// Legacy histories cannot prove one-time disclosure or retain its private observation state.
+    UnsupportedOneTimeDisclosure,
     /// The workload names no client, or more than [`MAX_INTEGER`].
     NoClients,
     /// A call names a command the model does not declare.
@@ -145,6 +147,8 @@ pub enum RecordError {
 impl fmt::Display for RecordError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedOneTimeDisclosure => formatter
+                .write_str("one-time response observation is unsupported by recorded histories"),
             Self::NoClients => write!(formatter, "the workload names no client"),
             Self::UnknownCommand(command) => {
                 write!(formatter, "the model declares no command `{command}`")
@@ -382,6 +386,7 @@ pub fn record<T: Interleaved>(
     workload: &Workload,
     seed: u64,
 ) -> Result<History, RecordError> {
+    refuse_one_time(ir)?;
     let clients = workload.clients.len().max(1) as u64;
     if workload.clients.is_empty() && workload.prefix.is_empty() || clients > MAX_INTEGER {
         return Err(RecordError::NoClients);
@@ -433,4 +438,12 @@ pub fn record<T: Interleaved>(
         clients,
         operations: recording.operations,
     })
+}
+
+pub(crate) fn refuse_one_time(ir: &EssIr) -> Result<(), RecordError> {
+    if crate::one_time_response::marked_model(ir) {
+        Err(RecordError::UnsupportedOneTimeDisclosure)
+    } else {
+        Ok(())
+    }
 }
