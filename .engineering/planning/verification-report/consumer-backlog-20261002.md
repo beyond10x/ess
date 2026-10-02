@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 12
+revision: 13
 ---
 ## Intake
 
@@ -323,3 +323,15 @@ Exact task site-build passed with Node24.15.0/npm12.2.0 and unchanged website al
 UI review now has two further source counterexamples under focused reproduction: filtered live refetch bypasses only_if, and Rust number-to-text differs from JavaScript at exponent thresholds. The owner is correcting these before publication. Add workspace Cargo.toml and crates/ui/ess-ui/Cargo.toml to the issue365 scope for ryu-js ECMAScript formatting; Cargo.lock was already scoped. No unrelated numeric semantics change is authorized.
 
 Issue318 reachability testing also exposed a pre-existing zero-input binding emitted unused event parameter under strict Rust warnings in rust/system.rs. The entry/store story remains bounded; the observation needs its own backlog disposition after an exact reproduction is retained. Non-scalar identity ordering remains under investigation, not silently declared supported.
+
+## Additional AEP reconciliation, 2026-10-02
+
+Read-only independent source audit by server_corrections; own new test executions: 0. References below identify retained current validation evidence, not reconstructed historical red runs.
+
+- **validate-sees-what-synthesize-refuses:** both issue112 admission/refusal behaviors are delivered. `crates/edge/ess-cli/src/main.rs:2271-2304` and six CLI regressions passed in the full browser CLI log (lines1635-1646); source matches0.51.0. Remaining gap is historical red-first evidence, not an observed implementation defect.
+- **create-only-command-cannot-refuse:** ess/16 supplied-identity `existing_instance` error with no effects is delivered. Domain upsert15 pass, synthesis adversary4 pass/2 pre-existing ignored, honest fresh-caller control passes. The original consumer distinction (four states, refuse in only two) has not been replayed. Do not claim that consumer replay or retain the obsolete assertion that lookup semantics remain undecided.
+- **outcome-decided-by-environment:** genuine design work remains: pusher/CIDR example, costs of all three alternatives, chosen rule and independent review. The existing guarded-external-outcomes design settles InjectFault eligibility, not this question. Keep open.
+- **typescript-conformance-target:** implementation is largely delivered. Retained full CLI evidence has five ESM tests passing (lines1594-1603); typecheck/runtime4, Rust-to-TypeScript per-scenario29 and adversary7 tests pass. Explicit same-suite Go-to-TypeScript comparison of all four report counts remains unverified, and the design still defers it. Record an evidence gap, not a demonstrated runtime defect.
+- **shared-public-gates:** source adoption is delivered. Fresh GitHub audit found secret scanning and push protection enabled and active main ruleset22765952 requiring common security, Gate, both macOS ownership checks and planning validation with strict base updates. Workflow pin95d64e differs from the original acceptance's literal Gates0.1.0 tag4317ac; version qualification needs reconciliation. Historic producer-asset/receipt/task-check/site evidence was not re-executed. Historical SKIP_CONSUMER_CHECKS guidance is superseded by current opt-in CONSUMER_CHECKS.
+
+These findings distinguish shipped behavior, missing evidence and actual unfinished design. None alone authorizes an unsupported implemented transition.
