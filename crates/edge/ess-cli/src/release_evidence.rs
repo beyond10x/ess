@@ -246,7 +246,7 @@ fn conformance_line(report: &CountReport) -> String {
                 "conformance: passed (results supplied by {supplier}; ESS executed nothing) for the supplied exact declared selection"
             )
         }
-        ProducerProfile::Rust | ProducerProfile::Go => {
+        ProducerProfile::Rust | ProducerProfile::Go | ProducerProfile::GoV2 => {
             "conformance: passed for the supplied exact declared selection".to_owned()
         }
     }

@@ -520,6 +520,14 @@ ESS's own run would. Its `producer_profile`, `external-scenario-status/1`, says 
 nothing; a reader that admits only `rust-scenario-status/1` and `go-scenario-status/1` refuses it.
 `message` is read and not carried into the report.
 
+Generated Go and TypeScript count reports use `go-scenario-status/2` to distinguish a
+failed assertion, an execution error, an unsupported required observation and an explicit skip.
+An unsupported observation makes execution fail; an error or skip makes it inconclusive unless
+another scenario failed or was unsupported. Counts and outcome lists retain each category.
+The older `go-scenario-status/1` remains readable with its original passed/failed/skipped
+categories; it cannot carry error or unsupported outcomes. Unknown producer profiles are refused.
+Legacy report/1 keeps its diagnostic presentation and does not establish this count-profile parity.
+
 `ess-conformance-input/1` has exactly `format`, original selected `suite_json` and nearest-first
 `parent_suites` strings. Every explicit child needs its complete original parent chain. The selected
 inner string is hashed, never the carrier or the reduced execution DTO; all surviving definitions,
