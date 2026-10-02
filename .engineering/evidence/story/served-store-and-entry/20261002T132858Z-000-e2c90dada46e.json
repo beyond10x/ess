@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T13:28:58Z",
+  "actor": "human:timo",
+  "artifact": "story:served-store-and-entry",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:served-store-and-entry-adversary-pass-1-20261002",
+    "reference": "review-result:served-store-and-entry-adversary-pass-1-20261002",
+    "review": "review-result:served-store-and-entry-adversary-pass-1-20261002",
+    "outcome": "fixed"
+  }
+}

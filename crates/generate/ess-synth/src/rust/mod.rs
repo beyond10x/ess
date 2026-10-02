@@ -359,15 +359,16 @@ fn lib_module(
     if actor::used(ir) {
         modules.push(actor::MODULE.to_owned());
     }
+    let with_memory_module = behaviour::used(ir) && !http::served(ir).is_empty();
     if behaviour::used(ir) {
         modules.push("behaviour".to_owned());
-        if !http::served(ir).is_empty() {
-            modules.push("memory".to_owned());
-        }
+    }
+    if with_memory_module {
+        modules.push("memory".to_owned());
     }
     modules.sort();
     for module in modules {
-        if module == "memory" {
+        if with_memory_module && module == "memory" {
             out.push_str("#[cfg(all(feature = \"memory\", not(target_arch = \"wasm32\")))]\n");
         }
         let _ = writeln!(out, "pub mod {module};");

@@ -9,6 +9,75 @@ use std::sync::OnceLock;
 
 const MODEL: &str = include_str!("fixtures/served-notes/system.yaml");
 
+#[test]
+fn a_network_domain_named_memory_remains_available() {
+    let model = ir(&MODEL.replace("notes.notes", "notes.memory"));
+    let routes = ess_gen::http::routes(&model, model.components().values().next().unwrap());
+    let command = routes
+        .iter()
+        .find(|route| match route.serves {
+            ess_gen::http::Served::Command(command) => {
+                model.command(command).name.to_string().ends_with("AddNote")
+            }
+            ess_gen::http::Served::View(_) => false,
+        })
+        .unwrap();
+    let view = routes
+        .iter()
+        .find(|route| matches!(route.serves, ess_gen::http::Served::View(_)))
+        .unwrap();
+    for (single, label) in [(false, "network-memory"), (true, "network-memory-single")] {
+        let binary = build(&model, Target::Rust, single, label, "notes");
+        let server = start(&binary, true, None);
+        let (status, added) = json_request(
+            &server,
+            "POST",
+            &command.path,
+            Some("Writer"),
+            r#"{"title":"domain memory"}"#,
+        );
+        assert_eq!(status, 202, "{added}");
+        let (status, rows) = json_request(&server, "GET", &view.path, None, "");
+        assert_eq!(status, 200);
+        assert_eq!(rows["rows"][0]["title"], "domain memory");
+        assert_eq!(
+            rows["rows"][0]["id"],
+            added["published"][0]["payload"]["id"]
+        );
+    }
+}
+
+#[test]
+fn a_non_network_domain_named_memory_remains_available() {
+    let text = MODEL
+        .replace("notes.notes", "notes.memory")
+        .replace("reached_by: network", "reached_by: in_process");
+    let model = ir(&text);
+    let output = root().join("domain-memory");
+    let synthesis = synthesize_for(&model, Target::Rust).unwrap();
+    for (path, artifact) in synthesis.artifacts {
+        let path = output.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, artifact.contents).unwrap();
+    }
+    let result = Command::new(std::env::var_os("CARGO").unwrap())
+        .args(["check", "--offline", "-p", "notes-types", "--target-dir"])
+        .arg(root().join("rust-target"))
+        .current_dir(&output)
+        .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env("CARGO_INCREMENTAL", "0")
+        .env("CARGO_PROFILE_DEV_DEBUG", "0")
+        .env("RUSTFLAGS", "-D warnings")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "generated non-network domain remains usable: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
 fn ir(text: &str) -> EssIr {
     let specification = Specification::assemble([(
         Source::new("system.yaml"),

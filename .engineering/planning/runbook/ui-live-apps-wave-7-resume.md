@@ -6,7 +6,7 @@ status: draft
 title: Resume ui-live-apps wave 7 after the Claude session limit
 relations:
 - informed_by: story:served-store-and-entry
-revision: 5
+revision: 6
 ---
 ## Continuation
 
@@ -62,3 +62,11 @@ Fixture ownership recovery completed: exact-base CLI build exit 0; all four base
 ## Validator compatibility
 
 CI Planning store workflow pinned AEP 0.62.0, while the installed and used writer is 0.68.0. Read-only inspection of PR #387 run 37006394257 demonstrated the exact incompatibility: 0.62 rejects transitions[*].executor as unknown, making otherwise-present artifacts disappear from its graph. Raw log retained as w7s-codex/pr387-planning-readonly.log. This unit must record a completion transition with the current writer, so .github/workflows/planning.yml now pins the verified published AEP 0.68.0 release (2026-09-30). No installed tool upgrade was applied. This is coordinator-owned validation compatibility, not takeover of PR #387. Local AEP validation uses the same version. task ci-lint exited 0; the only subsequent workflow edit is that validator version pin.
+
+## Public delivery checkout and first review
+
+Bot commit of the first immutable review record was refused by common checks: 43 personal-path findings in raw compiler output. The original report is preserved byte-for-byte (SHA-256 74d3a96619c9a689d37487526ab92a9308c27f765691737cc8dbc8c3421bbfa7), together with the original immutable AEP artifact and recorded outcome, in the managed private archive for ess-w7-store-entry. No immutable artifact was rewritten and no policy exception or bypass was used. The reviewer returned a publication copy that normalizes only home-directory prefixes to $HOME and explicitly labels its excerpts path-normalized.
+
+Public delivery now uses managed tree ess-w7-server-public, branch unit/served-store-and-entry-public, base d58db28ea230fd5e6a1844c7e65977b95128d6b1 and coordinator lease codex-resume-459ab620-public. The first correction source/test patch was transferred exactly (SHA-256 b4afdefac8bd031806f80e35f7a6f0c722478962501ed383558c0c2f242968a5). The public report was created afresh through AEP in this clean store and its fixed outcome recorded there. The old tree is retired through archive-backed managed cleanup before its build cache is reused here.
+
+Pass 1 covered d58db28ea2 and added two tests: 11 to 13 executed, one CONFIRMED blocker. The review leaves origin undecided because it did not execute the base. The coordinator routes it as introduced based on the exact source diff: the baseline emits ordinary modules unconditionally, while this unit added the runtime feature guard by module spelling. The non-network memory domain fails; its network sibling passes both layouts. Same implementor reproduced red, then used one predicate for runtime-module insertion and feature gating. Both adversarial tests and assertions remain intact. Verification: served_entry 13, feasibility 49, single_crate_layout 6, all 68 passed with zero ignored; package Clippy, task fmt-check and diff-check exit 0. Committed fixture bytes are unchanged, so regeneration was unnecessary. Source delta is nine lines in rust/mod.rs. Logs remain in assigned scratch under correction-pass-1. The second and final adversary pass follows this correction.
