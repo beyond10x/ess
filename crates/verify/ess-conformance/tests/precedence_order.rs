@@ -86,7 +86,7 @@ fn configured(ir: &EssIr) -> (Store, String) {
     assert_eq!(steps.len(), 1);
     let next = steps[0].next.clone();
     let tenant = next
-        .instances()
+        .text_instances()
         .find(|(entity, _, _)| entity.to_string() == "demo.signin.Configuration")
         .map(|(_, identity, _)| identity.to_owned())
         .expect("a configuration is stored");

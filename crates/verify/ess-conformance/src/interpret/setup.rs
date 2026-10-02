@@ -14,18 +14,10 @@ impl Interpreted {
             &request.state,
         )
         .map_err(|detail| TargetError::unavailable("entity setup", detail))?;
-        // The interpreter's existing store addresses only text identities. A valid nontext
-        // identity remains a named capability gap; rendering it as text would change its type.
-        let identity = request.identity.as_text().ok_or_else(|| {
-            TargetError::unsupported(
-                "entity setup",
-                "the interpreted store requires a text identity",
-            )
-        })?;
         let mut scenario = self.scenario.borrow_mut();
         if !scenario.store.establish(
             request.entity.name().clone(),
-            identity.to_owned(),
+            request.identity,
             Instance {
                 state: request.state,
                 fields: request.fields,

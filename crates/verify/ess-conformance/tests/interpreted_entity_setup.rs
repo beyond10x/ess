@@ -261,7 +261,7 @@ fn setup_is_immediately_visible_even_to_eventual_views() {
 }
 
 #[test]
-fn unknown_invariant_and_nontext_store_identity_are_honest_refusals() {
+fn unknown_invariant_refuses_and_integer_identity_is_preserved() {
     let target = Interpreted::for_model(model(
         &MODEL.replace("duration_seconds >= 0", "note == recorded"),
     ));
@@ -273,11 +273,9 @@ fn unknown_invariant_and_nontext_store_identity_are_honest_refusals() {
     target.begin_scenario(&context()).unwrap();
     let mut integer = request();
     integer.identity = Node::Number(7_u32.into());
-    assert!(target
-        .establish_entity(integer)
-        .unwrap_err()
-        .is_unsupported());
-    assert!(rows(&target).is_empty());
+    target.establish_entity(integer).unwrap();
+    assert_eq!(rows(&target).len(), 1);
+    assert_eq!(rows(&target)[0]["call_id"], Node::Number(7_u32.into()));
 }
 
 const CREATOR: &str = r"

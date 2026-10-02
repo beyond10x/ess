@@ -78,7 +78,7 @@ use crate::target::{DeclaredErrorValue, ObservedEvent};
 /// the store after it. That is what lets a search keep two branches of one history side by side.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Store {
-    instances: BTreeMap<QualifiedName, BTreeMap<String, Instance>>,
+    instances: BTreeMap<QualifiedName, BTreeMap<Node, Instance>>,
     minted: u64,
 }
 
@@ -87,7 +87,7 @@ impl Store {
     pub(super) fn establish(
         &mut self,
         entity: QualifiedName,
-        identity: String,
+        identity: Node,
         instance: Instance,
     ) -> bool {
         if let std::collections::btree_map::Entry::Vacant(slot) =
@@ -100,16 +100,28 @@ impl Store {
         }
     }
 
-    /// The instance of `entity` with this identity, when one is held.
+    /// Convenience lookup for a text identity. Other identity types use [`Self::instance_typed`].
     pub fn instance(&self, entity: &QualifiedName, identity: &str) -> Option<&Instance> {
+        self.instance_typed(entity, &Node::Text(identity.into()))
+    }
+
+    /// The instance of `entity` with this exact typed identity, when one is held.
+    pub fn instance_typed(&self, entity: &QualifiedName, identity: &Node) -> Option<&Instance> {
         self.instances.get(entity)?.get(identity)
     }
 
     /// Every held instance, by entity and then by identity.
-    pub fn instances(&self) -> impl Iterator<Item = (&QualifiedName, &str, &Instance)> {
+    pub fn instances(&self) -> impl Iterator<Item = (&QualifiedName, &Node, &Instance)> {
         self.instances.iter().flat_map(|(entity, held)| {
             held.iter()
-                .map(move |(identity, instance)| (entity, identity.as_str(), instance))
+                .map(move |(identity, instance)| (entity, identity, instance))
+        })
+    }
+
+    /// Only rows whose identities are text; use [`Self::instances`] to enumerate every row.
+    pub fn text_instances(&self) -> impl Iterator<Item = (&QualifiedName, &str, &Instance)> {
+        self.instances().filter_map(|(entity, identity, instance)| {
+            identity.as_text().map(|text| (entity, text, instance))
         })
     }
 
@@ -429,8 +441,8 @@ pub fn execute_generating(
         let identity = input.get(&field.name).ok_or_else(|| {
             Undetermined::Request("the guarded subject identity is absent".into())
         })?;
-        let key = identity_key(identity, entity)?;
-        let Some(held) = store.instance(entity, &key) else {
+        let key = identity.clone();
+        let Some(held) = store.instance_typed(entity, &key) else {
             return Ok(vec![unknown_instance(ir, spec, store, input)?]);
         };
         held_subjects.insert(
@@ -591,7 +603,7 @@ fn select<'s>(
 ///
 /// `existing_instance:` answers before it on such a command, and this module does not decide the
 /// command's own existence, so a command declaring one is declined here. A related row named
-/// through a stored field of the subject, or through an input the request does not carry as text,
+/// through a stored field of the subject, or through an input the request does not carry,
 /// is declined too: nothing here reads it.
 fn related_absent(
     ir: &EssIr,
@@ -628,14 +640,14 @@ fn related_absent(
             branch(spec, first)
         ));
     };
-    let Some(identity) = input.get(field).and_then(Node::as_text) else {
+    let Some(identity) = input.get(field) else {
         return gap(format!(
-            "the guard over a related row of `{}` with no text identity in `{field}`",
+            "the guard over a related row of `{}` with no identity in `{field}`",
             branch(spec, first)
         ));
     };
     let entity = &ir.entity(entity).name;
-    if store.instance(entity, identity).is_some() {
+    if store.instance_typed(entity, identity).is_some() {
         return Ok(None);
     }
     let Some(absent) = related.iter().find(|outcome| {
@@ -912,7 +924,7 @@ fn creation_identity(
     event: &QualifiedName,
     field: &ess_compiler::ir::ResolvedField,
     work: &mut Work<'_>,
-) -> Result<Result<(Node, String), Unmatched>, Undetermined> {
+) -> Result<Result<(Node, Node), Unmatched>, Undetermined> {
     let supplied = work
         .supply
         .given
@@ -925,13 +937,13 @@ fn creation_identity(
             .ok_or_else(|| Undetermined::NoValue {
                 what: format!("the identity of a new `{entity}`"),
             })?;
-        let key = identity_key(&identity, entity)?;
-        if work.next.instance(entity, &key).is_none() {
+        let key = identity.clone();
+        if work.next.instance_typed(entity, &key).is_none() {
             return Ok(Ok((identity, key)));
         }
         if supplied {
             return Ok(Err(format!(
-                "the identity `{key}` is already held by a `{entity}`, and `creates:` never \
+                "the identity `{key:?}` is already held by a `{entity}`, and `creates:` never \
                  replaces an instance"
             )));
         }
@@ -957,7 +969,7 @@ fn take(
         supply: Supply::of(generated),
     };
     let mut created: Option<(String, Node)> = None;
-    let mut touched: Option<(QualifiedName, String)> = None;
+    let mut touched: Option<(QualifiedName, Node)> = None;
     // The row an existing subject held before this branch, which an error field may read.
     let mut before: Option<Instance> = None;
 
@@ -966,7 +978,7 @@ fn take(
         match (&subject.effect, &subject.instance) {
             (ResolvedEffect::Creates, ResolvedInstance::Observed { field, .. }) => {
                 let identity = or_no_step!(create(ir, outcome, subject, input, &mut work));
-                let key = identity_key(&identity, &entity.name)?;
+                let key = identity.clone();
                 created = Some((field.name.clone(), identity));
                 touched = Some((entity.name.clone(), key));
             }
@@ -991,8 +1003,8 @@ fn take(
                         spec.name, field.name
                     ))
                 })?;
-                let key = identity_key(identity, &entity.name)?;
-                let Some(held) = store.instance(&entity.name, &key) else {
+                let key = identity.clone();
+                let Some(held) = store.instance_typed(&entity.name, &key) else {
                     return Ok(Ok(unknown_instance(ir, spec, store, input)?));
                 };
                 before = Some(held.clone());
@@ -1076,16 +1088,6 @@ enum Acted {
     Rests(Instance),
     /// The instance is removed.
     Removed,
-}
-
-/// The identity of an instance as the store keys it: the text an identity type is written as.
-fn identity_key(identity: &Node, entity: &QualifiedName) -> Result<String, Undetermined> {
-    identity
-        .as_text()
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| Undetermined::NotInterpreted {
-            construct: format!("an identity of `{entity}` that is not text"),
-        })
 }
 
 /// The command's `unknown_instance:` branch, else its one declared not-found refusal, else its
@@ -1449,26 +1451,25 @@ fn at_rest(
     ir: &EssIr,
     store: &Store,
     entity: &QualifiedName,
-    key: &str,
+    key: &Node,
 ) -> Result<(), Undetermined> {
     let Some(declared) = ir.entities().get(entity) else {
         return Ok(());
     };
-    let Some(instance) = store.instance(entity, key) else {
+    let Some(instance) = store.instance_typed(entity, key) else {
         return Ok(());
     };
-    let facts = input::bind(
-        ir,
-        &declared.fields,
-        &instance.fields,
-        Completeness::Partial,
-    )
-    .map_err(|errors| Undetermined::Request(errors.to_string()))?;
-    let facts = TypedFacts::new(ir, &declared.fields, facts);
+    let mut fields = declared.fields.clone();
+    fields.push(declared.identity.clone());
+    let mut values = instance.fields.clone();
+    values.insert(declared.identity.name.clone(), key.clone());
+    let facts = input::bind(ir, &fields, &values, Completeness::Partial)
+        .map_err(|errors| Undetermined::Request(errors.to_string()))?;
+    let facts = TypedFacts::new(ir, &fields, facts);
     for invariant in &declared.invariants {
         if invariant.predicate.evaluate(&facts) == Truth::False {
             return Err(Undetermined::BrokenInvariant {
-                instance: format!("`{entity}` `{key}`"),
+                instance: format!("`{entity}` `{key:?}`"),
                 invariant: invariant.statement.clone(),
             });
         }

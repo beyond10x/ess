@@ -13,7 +13,7 @@ struct Plan<'a> {
     entity: &'a ResolvedEntity,
     effect: ResolvedEffect,
     sets: &'a [ResolvedPayloadField],
-    keys: Vec<String>,
+    keys: Vec<Node>,
 }
 
 /// None means this is not an instances outcome. Some(0) is its successful zero-match result.
@@ -41,7 +41,7 @@ pub(super) fn apply(
                 .into_iter()
                 .filter(|key| match &set.effect {
                     ResolvedEffect::Moves { transition } => before
-                        .instance(&entity.name, key)
+                        .instance_typed(&entity.name, key)
                         .is_some_and(|row| transition.from.contains(&row.state)),
                     _ => true,
                 })
@@ -77,7 +77,7 @@ pub(super) fn apply(
         for key in plan.keys {
             let row = work
                 .next
-                .instance(&plan.entity.name, &key)
+                .instance_typed(&plan.entity.name, &key)
                 .expect("a selected row remains held through moves and updates")
                 .clone();
             let Acted::Rests(after) = act(ir, plan.sets, &plan.effect, &row, supplied, work)?
@@ -127,7 +127,7 @@ fn subject<'a>(
     outcome: &ResolvedOutcome,
     store: &'a Store,
     supplied: &'a BTreeMap<String, Node>,
-) -> Result<(&'a ResolvedEntity, &'a str, &'a Instance), Undetermined> {
+) -> Result<(&'a ResolvedEntity, &'a Node, &'a Instance), Undetermined> {
     let declared = outcome.subject.as_ref().ok_or_else(|| {
         Undetermined::Request("secondary effects require an existing subject".into())
     })?;
@@ -137,14 +137,11 @@ fn subject<'a>(
         ));
     };
     let entity = ir.entity(&declared.entity);
-    let key = supplied
-        .get(&field.name)
-        .and_then(Node::as_text)
-        .ok_or_else(|| {
-            Undetermined::Request("secondary effect subject identity is absent".into())
-        })?;
+    let key = supplied.get(&field.name).ok_or_else(|| {
+        Undetermined::Request("secondary effect subject identity is absent".into())
+    })?;
     let row = store
-        .instance(&entity.name, key)
+        .instance_typed(&entity.name, key)
         .ok_or_else(|| Undetermined::Request("secondary effect subject is not held".into()))?;
     Ok((entity, key, row))
 }
@@ -159,11 +156,11 @@ fn row_facts<'a>(
     ir: &'a EssIr,
     fields: &'a [ResolvedField],
     entity: &ResolvedEntity,
-    key: &str,
+    key: &Node,
     row: &Instance,
 ) -> Result<TypedFacts<'a>, Undetermined> {
     let mut values = row.fields.clone();
-    values.insert(entity.identity.name.clone(), Node::Text(key.into()));
+    values.insert(entity.identity.name.clone(), key.clone());
     let facts = input::bind(ir, fields, &values, Completeness::Partial)
         .map_err(|why| Undetermined::Request(why.to_string()))?;
     let mut facts = TypedFacts::new(ir, fields, facts);
@@ -181,8 +178,8 @@ fn select(
     filter: &Predicate,
     input: &input::InputFacts<'_>,
     subject: Option<&TypedFacts<'_>>,
-    excluded: Option<&str>,
-) -> Result<Vec<String>, Undetermined> {
+    excluded: Option<&Node>,
+) -> Result<Vec<Node>, Undetermined> {
     let fields = fields(entity);
     let mut selected = Vec::new();
     for (_, key, row) in store
@@ -195,7 +192,7 @@ fn select(
             input,
             subject: subject.map(|facts| facts as &dyn FactSource),
         }) {
-            Truth::True => selected.push(key.into()),
+            Truth::True => selected.push(key.clone()),
             Truth::False => {}
             Truth::Unknown => {
                 return Err(Undetermined::Undecidable {
