@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 35
+revision: 37
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -255,3 +255,68 @@ This scope does not claim the backlog or native runtime complete. Ambiguous exis
 Coordinator accepts the recommended bounded pre-outcome subject values unit under the active full-runtime task, after the current312 independent review. Owner recover_typed creates a new managed tree from integrated641fdfa28 or a later reviewed coordinator checkpoint; uses its idle servers cache. Exact ownership: interpret/execute.rs take/act/write/value/emit/declared_error context; new private execute/values.rs if needed; new tests/interpreted_value_expressions.rs; additive actual-target control in existing tests/value_expressions.rs only if preferable to duplicating the fixture. No caller evaluator, existence selection, response ownership, related-value lookup, Store public API or schema change in this unit. Existing set-effect row contexts remain compatible and source admission must not broaden.
 
 Acceptance is actual EXPRESSIONS suite execution plus direct pre-outcome snapshot, subject identity, nested/Optional leaves, exact Integer/Number increments, constraint/overflow refusal and unchanged state controls. Retain measured red on identical tests before source edits, focused neighbors, strict scoped lint/fmt and independent review before bot commit. A missing before-value is not guessed or coerced. Root keeps AEP/changelog/integration/publication ownership. All committed executable code Rust; bounded builds and8GiB floor apply. Related and response sections above are subsequent read-only scope, not implementation authority in this unit.
+
+# Native RelatedField: bounded next unit
+
+Read-only scope preparation on subject-values commit 1cf63c283ac2e690f5472b2b93161ad7ee09565e, from carrier f26efc2eb. No builds, source edits, AEP writes or publication in this preparation. Root records/authorizes implementation separately.
+
+## Contract and correction to the earlier brief
+
+Binding source is docs/design/value-expressions.md E8 (around lines206–268). RelatedField is a one-hop read of the exact related row before the outcome. Via comes from input, or the existing subject's original field/identity. The entity is already resolved from its identity type or explicit reference/ownership relation; native execution must use the resolved handle rather than rediscover a relation or scan rows by matching values. Related identity fields are valid read targets, and leaves are admitted in nested mappings. A missing related row is not an absent Optional field and this expression does not choose a not-found outcome.
+
+IMPORTANT CORRECTION: the earlier interpreted-values-next-scope.md said creation Subject-via reads are compiler-lowered to Input. Current resolve.rs:2935 preserves ResolvedRelatedVia::Subject. The special creation rule is source-authorized but must be interpreted explicitly. Domain command/related_value.rs:204 subject_field_from_input admits a subject field whose selected branch sets it from unchanged input. It also admits the created identity when that identity carries a one-to-one references relation and the published identity is sourced unchanged from input. Do not read partially built fields from Work.next to implement this exception.
+
+## Small implementation design
+
+1. Extend the private expression read context with an immutable borrow of the command's original Store, alongside the already-reviewed Work.before subject snapshot. Keep this context separate from Work.next and minting. A borrowed original store avoids another full clone.
+2. Add one RelatedField evaluator in execute/values.rs. Resolve its address from Invocation for Input, or Work.before for an existing Subject. Validate the address at via.type_ref and the resolved entity identity type. Look up only Store::instance_typed(resolved_entity.name, exact Node). No coercion/stringification, no first/last row scan, no value matching.
+3. For a creation Subject-via, resolve only the selected outcome's admitted unchanged InputField carrier. Ordinary field: find that exact target in outcome.sets. Identity carrier: read the selected published identity's InputField source (existence::identity_source already identifies it). Verify the admitted identity reference relation when needed. Keep this as an explicit creation-carrier mapping/context; do not manufacture a preexisting subject and do not permit generated/literal/fallback/arbitrary expression carriers.
+4. Read the related identity from the actual lookup key; read ordinary fields from the original related Instance. Reuse presence/type validation from the subject-value helper: missing required fields fail, absent Optional/newtype-Optional remains absent, and a stored Node::Null stays a value where its type permits it. Validate target constraints. Missing row always returns an explicit undetermined/refused execution with no state/event publication, even when the field's type is Optional.
+5. Route assignments and recursive event leaves through the ordinary value evaluator. RelatedField is also admitted by the shared error-payload validator/compiler (command.rs:3177 only excludes response sources; resolve.rs:2405 delegates to payload_field), so use the same original-store evaluator for recursive declared-error leaves. This requires passing read context to declared_error/error_value, including early input/related refusals and wrong-state paths; preserve each path's existing selection/subject authority. Do not mint arbitrary error fields.
+6. Keep selection untouched: existing existence -> related-missing -> input-refusal -> selected branch/guard authority remains in its current functions. Evaluate only sources of the outcome that actually answers. A missing row needed only by an unselected branch cannot preempt the selected refusal. Do not broaden ResolvedCondition::Related guard syntax or fix the separately tracked ambiguous existence/related combinations in this unit.
+
+Likely owned production files: interpret/execute.rs and execute/values.rs, with at most a small read-only helper extracted in execute/related.rs if it does not mix value lookup with guard decisions. No public Store/API, compiler/source-schema, suite format or response-authority change.
+
+## Red-capable actual sources
+
+- tests/related_values.rs SHIPPING, lines24–109: Register creates customers; Pack reads region via input.customer_id on creation; Dispatch reads the original shipment.customer_id for both stored and emitted region. Existing synthesis arranges the addressed customer between two decoys. Add an actual Interpreted runner of the existing synthesized suite without dropping any assertions. Existing tests use handwritten targets and do not prove native support.
+- fixtures/related-guard-copied-value.yaml: missing/archived related-row refusals precede Start, which stores and emits the selected item's note. Execute its real generated suite and direct missing/archived controls to prove value support preserves guard-selected outcomes.
+- fixtures/related-copied-view-parameter.yaml: Pack copies both related identity and depot; views later select those exact stored copies. This is an existing identity-field regression source.
+- fixtures/subject-guard-copied-field.yaml: CreateRun copies optional policy flags, Report branches from those stored values. This joins related reads to actual later subject-guard behavior.
+
+## Required direct controls
+
+- Two or three different typed identities (Integer adjacent above2^53 and Json structured identity through an unambiguous relation), distinct referent fields; exact addressed row must win over decoys. Include equal ordinary field values with different identities and read the identity itself to detect matching-by-value.
+- Input-via and existing Subject-via; nested mapping leaves; related identity-as-field; optional present/absent/null and newtype-Optional. Required Json null must remain distinguishable from an absent member.
+- Change the subject's reference field during the outcome while assigning and emitting from the original referenced row: both reads stay on the old referent, while the stored reference changes.
+- Mutate the referent itself in the same outcome (the simplest admitted case is an input-via read of the updated row itself) and emit its old field: reading Work.next would fail this control.
+- Both admitted creation Subject-via forms: ordinary field sourced directly from input, and created identity carrying a one-to-one reference and sourced directly from input. Assert the resolved IR really remains Subject so the regression covers the correction above.
+- Missing related row versus present row with absent Optional field; unknown required source/address values; constraint failure; actual target rows/events unchanged after failure.
+- Input-guarded refusal with a missing unrelated source on the unselected accepting branch still answers the selected refusal. Related exists:false and guarded refusal must also retain their source-selected outcomes without reading the accepting branch's value expressions.
+- Admitted related error payload, including one nested leaf and wrong-state Subject-via where applicable, reads the exact original referent and leaves rows/events untouched.
+
+Run identical actual red tests first, then focused green tests plus subject-value, typed-identity, related-guard and error-payload neighbors. Strict library/changed-binary Clippy and scoped formatting; no full gate or remote publication. Rust only, own managed tree/lease and servers cache, jobs2/debug0/incremental0/external TMPDIR, 8GiB floor. Freeze for root independent review before bot commit.
+
+ResponseField remains a separate authority unit: generate one actual response and share it with event/result, never independently mint the same-looking value. It is explicitly not authorized by this scope.
+
+## Accepted continuation and integrated checkpoint
+
+Coordinator accepts this bounded RelatedField implementation under active task consumer-backlog-20261002. Owner recover_typed creates a new managed tree from integrated73faabfaf9 or later carrier, with the same exclusive servers cache. Own execute.rs, execute/values.rs, optional narrowly read-only execute/related.rs helper, new tests/interpreted_related_values.rs and actual-target addition to tests/related_values.rs. No source grammar, public Store, response or selection changes. Root owns AEP and release notes. Preserve compiler-admitted baseline tests, exact original-store semantics, independent review and bounded build rules stated above.
+
+The previous accepted subject-value unit was independently approved with no findings, owner52 unique passing tests and strict scoped lint/fmt, then bot-committed1cf63c283ac2e690f5472b2b93161ad7ee09565e and integrated73faabfaf9. Review consumer-subject-values records reviewer zero executions; integrated rerun remains pending.
+
+Root integrated312 core13e40c33f9. Initial format-migration group measured138pass/21fail in12 binaries, then159pass/0fail after updating fresh34/35 expectations and preserving legacy vocabulary tests without new metadata. One periodic legacy test subsequently strengthened to remove provenance through actual JSON parsing; rerun remains pending. One-time contract producer initially3pass/4fail because its template explicitly pinned34 without the required empty field; corrected template7/0. Other canonical one-time producers passed and rewrote their own fixtures. Source suites/generated README names removed cargo xtask suite; actual CLI synthesize producer will be used and documentation corrected. These are scoped integration results, not a whole-package or release gate.
+
+## Cross-session coordination and runtime continuation
+
+Reconciled live ownership with the serial UI/server coordinator and release coordinator. The release coordinator owns PR398 only (release/0.52.0-20261003), with clean local metadata/docs candidate73282a13dd93346edfc2ded3041b544a401765c8 and published e88442ef. Its operator hold awaits the third Claude session's transports390–395 batch; no tag, merge, candidate push or full gate until that hold clears. That release hold is separate from the serial coordinator's full ess/21 bundle hold. This session neither replaces those owners nor claims their work complete.
+
+The serial coordinator owns318/282/304/319 in batch/ui-live-apps-complete-20261003. Its318 recovered source overlaps our earlier e9355b003a plus tests2969953014 and regeneration2291c5adfa. Its final reviewed318 will be canonical; preserve all earlier work until source-equivalence reconciliation. Later282/304 overlap interpret/execute.rs, synthesize.rs, synthesize/related_guard.rs and related.rs, and remain undispatched until an agreed runtime source base. Root retains native runtime and312. Third session owns ALL transport390–395. Our independently reviewed local393 (carrier0a5f61d852, source21c5f6347) duplicates PR397 with a different CLI/report design; hold publication and hand off reconciliation, do not publish a competing PR. Our394 equality-intersection correction remains preserved locally; original394 alone landed remotely through396.
+
+RelatedField frozen patch1bc0bccde4892209ef65ee8b76581910ababcba9acc187771590159966adae78 is independently approved, findings empty, reviewer executions0; report SHA d7e9af6cf586bfb33610fca65239f253bb6efacac58ee227eaa89dfd33b9038f in integration target/backlog-input/related-values-independent-review.md. Owner measured53 unique focused tests, strict lint and formatting green. Bot commit/import pending at this checkpoint. No response/replay implementation claim.
+
+312 migration independent review of frozen e2ead419a978a0065833130516168ec789a4b6c5f380c1700da9faabcb6c5238 requested one correction: accessor Go legacy negative test retained new initial-state metadata and could refuse before testing accessor version authority. Review SHA5e2ca4b72e83b49726ddd33153441c7c4831a8bd9d4be05bda45901ef70c1022, reviewer executions0. Narrow correction assigned; no production finding. Root also measured and repaired a real count_json direct-payload depth-profile omission for34/35; existing depth128 acceptance/129 refusal regression now passes. Migration groups1 (159 tests) and2 corrected subsets, plus canonical one-time fixtures, are green as recorded in root logs; group3 targeted tests now running, whole-package gate not yet complete.
+
+Latest CLI regenerated billing33, gatepass17 and oracle34 scenarios to exact producer bytes, with0/5/6 explicit refusals respectively; each generator exited0. Canonical suite files now carry initial-state metadata, and their README replaces the nonexistent cargo xtask suite command with actual CLI commands. Caller-sensitive312 continuation remains active with measured compiled reds, native target witnesses and no expansion to compiler-rejected source syntax.
+
+No new remote gate or publication was triggered by this continuation. Source0.51.0 remains the last verified release. Full backlog disposition, complete affected-package checks and agreed release candidate remain outstanding.

@@ -33,7 +33,7 @@ scope:
   path: crates/generate/schema-contract/tests/integer_widths.rs
 - confidence: cited
   path: docs/design/types-only-realizations.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T22:58:32Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T22:59:31Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -76,3 +76,11 @@ External frozen source0cb925e997e19ce6c2cedeea05d1a546db0fd211 and planning4ab8c
 Coordinator accepts a bounded correction in a new managed tree from4ab8c3aab: owner recover_typed adds actual validator regression for both equality orders and consistent equalities, reproduces red, then fixes integer_bounds in ess-gen/src/types.rs preserving conjunction (no broad format or width redesign). Include equality plus bounds and optional/null controls. Use existing types pipeline and retain original native-width work. Verify scoped ess-gen integer_bounds and schema-contract integer_widths/binary64_structural tests plus strict lint/fmt; root independently reviews the correction. Native codec boundary execution remains explicit integration validation. Root writes AEP and release notes; no PR/remote gate or external-tree changes in this unit. All committed executable source Rust, own idle servers cache, bounded jobs/externalTMPDIR and8GiB floor.
 
 393 implementation is staged behind this source checkpoint at shared realize.rs; its already-measured --event red and design remain preserved. The native pre-outcome values unit is recorded but waits until this review correction and312 rereview free the owner.
+
+## Corrected source integrated
+
+Source 0cb925e997e19ce6c2cedeea05d1a546db0fd211 and reviewed correction 1c4e6149a47588311b920f7501c680ab3581ab5a integrated together as f26efc2eb600c9377e3bac5b7c57218712431c23. Both bot identities verified by owner. Independent correction review consumer-integer-bounds-394-pass2 approves with no findings, reviewer executions zero; owner final scoped tests17/0, both strict lint steps and fmt exit0.
+
+Root independently reran integrated integer_bounds8/0 and integer_widths3/0 plus binary64_structural6/0 (including actual generated Rust codec execution). Logs retained in carrier target/backlog-input/394-integrated-bounds and 394-integrated-widths, each .log/.exit0. Additional native integer-boundary regression is under construction; first attempt failed to compile its test due to using unqualified Reading instead of generated ProbeMeterReading. This is a test construction error, not evidence of a codec defect. Full affected-package checks and remote gate remain pending. Story stays active.
+
+393 has resumed from this exact integrated source; its type-only baseline will be captured again because the admitted integer-bound changes intentionally alter generated declarations and obligations. No component PR or remote gate launched.
