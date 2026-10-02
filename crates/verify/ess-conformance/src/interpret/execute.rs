@@ -29,7 +29,7 @@
 //! refusal the model does not declare is not available, so it is never answered as a declared one.
 //!
 //! Where the model uses a construct this module does not execute yet — a retained replay, a value
-//! expression reading a related row or a response — the answer is [`Undetermined::NotInterpreted`], never a
+//! expression reading a response — the answer is [`Undetermined::NotInterpreted`], never a
 //! guess. A guard that evaluates to `Unknown` is [`Undetermined::Undecidable`] for the same reason.
 //!
 //! # Minted values
@@ -875,20 +875,26 @@ fn reference(spec: &ResolvedCommand, outcome: &ResolvedOutcome) -> OutcomeRef {
 /// `{subject: …}` the row the refusal is answered for (`held`). A `{generated: true}` field is
 /// the implementation's to choose, so it is not carried, and a field with no source is not
 /// carried either, as before `ess/19`. Caller attributes come from this invocation's validated
-/// authentication facts, including nested leaves. An unread source, such as a related row,
-/// remains a gap, as it is on an event's payload.
+/// authentication facts, including nested leaves. Related values read the original store, through
+/// the same typed address and presence rules as event payloads and assignments.
 fn declared_error(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     input: &Invocation<'_>,
     held: Option<&Instance>,
+    store: &Store,
 ) -> Result<Option<DeclaredErrorValue>, Undetermined> {
     let Some(handle) = outcome.error.as_ref().filter(|_| outcome.refuses) else {
         return Ok(None);
     };
     let mut error = DeclaredErrorValue::new(ErrorRef::from(handle));
+    let reads = values::Reads {
+        original: store,
+        before: held,
+        outcome,
+    };
     for field in &outcome.error_payload {
-        if let Some(value) = error_value(ir, field, input, held)? {
+        if let Some(value) = error_value(ir, field, input, reads)? {
             error = error.with(field.target.clone(), value);
         }
     }
@@ -899,7 +905,7 @@ fn error_value(
     ir: &EssIr,
     field: &ResolvedPayloadField,
     input: &Invocation<'_>,
-    held: Option<&Instance>,
+    reads: values::Reads<'_>,
 ) -> Result<Option<Node>, Undetermined> {
     Ok(match &field.value {
         ResolvedPayloadValue::Generated => None,
@@ -910,7 +916,7 @@ fn error_value(
         ResolvedPayloadValue::Struct { fields } => {
             let mut values = BTreeMap::new();
             for member in fields {
-                if let Some(value) = error_value(ir, member, input, held)? {
+                if let Some(value) = error_value(ir, member, input, reads)? {
                     values.insert(member.target.clone(), value);
                 }
             }
@@ -919,7 +925,8 @@ fn error_value(
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,
-        } => values::subject(ir, read, type_ref, &field.target_type, held)?,
+        } => values::subject(ir, read, type_ref, &field.target_type, reads.before)?,
+        ResolvedPayloadValue::RelatedField { .. } => reads.related(ir, field, input)?,
         ResolvedPayloadValue::InputField { field: read, .. } => input
             .get(read)
             .filter(|value| **value != Node::Null)
@@ -935,10 +942,22 @@ fn error_value(
 
 /// The store a branch is building, and where its assigned values come from.
 struct Work<'g> {
+    original: &'g Store,
+    outcome: &'g ResolvedOutcome,
     next: Store,
     supply: Supply<'g>,
     /// Immutable pre-outcome fields, including the exact identity held outside `Instance.fields`.
     before: Option<Instance>,
+}
+
+impl Work<'_> {
+    fn reads(&self) -> values::Reads<'_> {
+        values::Reads {
+            original: self.original,
+            before: self.before.as_ref(),
+            outcome: self.outcome,
+        }
+    }
 }
 
 /// Brings the instance `subject` creates into existence in `work`, and returns its identity.
@@ -1036,9 +1055,11 @@ fn take(
     generated: &Generated,
 ) -> Result<Result<Step, Unmatched>, Undetermined> {
     let mut work = Work {
+        original: store,
+        outcome,
         next: store.clone(),
         supply: Supply::of(generated),
-        before: None,
+        before: values::selected_subject(ir, spec, outcome, store, input),
     };
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, Node)> = None;
@@ -1077,11 +1098,6 @@ fn take(
                 let Some(held) = store.instance_typed(&entity.name, &key) else {
                     return Ok(Ok(unknown_instance(ir, spec, store, input, generated)?));
                 };
-                let mut before = held.clone();
-                before
-                    .fields
-                    .insert(entity.identity.name.clone(), key.clone());
-                work.before = Some(before);
                 let after = match act(ir, &outcome.sets, effect, held, input, &mut work)? {
                     Acted::NotFromHere => {
                         return Ok(Ok(wrong_state(
@@ -1129,7 +1145,7 @@ fn take(
     }
     Ok(Ok(Step {
         outcome: Some(reference(spec, outcome)),
-        error: declared_error(ir, outcome, input, work.before.as_ref())?,
+        error: declared_error(ir, outcome, input, work.before.as_ref(), store)?,
         events,
         next: work.next,
     }))
@@ -1236,7 +1252,7 @@ fn refusal(
 ) -> Result<Step, Undetermined> {
     Ok(Step {
         outcome: Some(reference(spec, outcome)),
-        error: declared_error(ir, outcome, input, held)?,
+        error: declared_error(ir, outcome, input, held, store)?,
         events: Vec::new(),
         next: store.clone(),
     })
@@ -1277,6 +1293,7 @@ fn value(
     work: &mut Work<'_>,
 ) -> Result<Option<Node>, Undetermined> {
     match &field.value {
+        ResolvedPayloadValue::RelatedField { .. } => work.reads().related(ir, field, input),
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,
