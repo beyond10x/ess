@@ -766,6 +766,15 @@ test('asJSON reads a target answer as JSON does', () => {
   assert.equal(Object.hasOwn(asJSON({ a: undefined }) as object, 'a'), false);
 });
 
+test('asJSON preserves special own object keys without changing the prototype', () => {
+  const input = JSON.parse('{"__proto__":{"audit":"private"},"constructor":"data"}');
+  const observed = asJSON(input) as Record<string, Node>;
+  assert.deepEqual(observed, input);
+  assert.equal(Object.hasOwn(observed, '__proto__'), true);
+  assert.equal(Object.getPrototypeOf(observed), Object.prototype);
+  assert.equal(Object.hasOwn(Object.prototype, 'audit'), false);
+});
+
 // Everything is read exactly as `JSON.parse(JSON.stringify(x))` reads it, with two documented
 // exceptions that keep a number exact: a JsonNumber passes as is, and a BigInt — which
 // JSON.stringify refuses — becomes the JsonNumber of its digits.

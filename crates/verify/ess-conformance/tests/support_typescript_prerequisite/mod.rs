@@ -326,7 +326,79 @@ fn fields(value: &Value) -> BTreeMap<String, Node> {
         serde_json::from_value(value.clone()).unwrap()
     }
 }
-fn dispatch(target: &Fixture, request: &Value) -> Result<Value, TargetError> {
+
+/// Runs the shared disclosure service itself; replies are never prerecorded.
+pub struct DisclosureHost {
+    pub address: String,
+    handle: Option<thread::JoinHandle<(Vec<&'static str>, Vec<String>)>>,
+}
+impl DisclosureHost {
+    pub fn start(mode: super::support_one_time::Mode) -> Self {
+        Self::start_with(
+            move || super::support_one_time::Service::new(mode),
+            |service| (service.trace(), service.returned_plaintexts()),
+        )
+    }
+    pub fn start_resource(mode: super::disclosure_resources::ResourceMode) -> Self {
+        Self::start_with(
+            move || super::disclosure_resources::ResourceService::new(mode),
+            |service| (service.inner.trace(), service.inner.returned_plaintexts()),
+        )
+    }
+    pub fn start_fields(mode: super::disclosure_fields::FieldMode) -> Self {
+        Self::start_with(
+            move || super::disclosure_fields::FieldService::new(mode),
+            |service| (service.inner.trace(), service.returned_plaintexts()),
+        )
+    }
+    fn start_with<T: ConformanceTarget + 'static>(
+        factory: impl FnOnce() -> T + Send + 'static,
+        observations: fn(&T) -> (Vec<&'static str>, Vec<String>),
+    ) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let handle = thread::spawn(move || {
+            let service = factory();
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut line = String::new();
+                BufReader::new(&mut stream).read_line(&mut line).unwrap();
+                let request: Value = serde_json::from_str(&line).unwrap();
+                if request["method"] == "stop" {
+                    break;
+                }
+                let reply = match dispatch(&service, &request) {
+                    Ok(value) => json!({"ok":value}),
+                    Err(error) => {
+                        json!({"error":error.to_string(),"unsupported":error.is_unsupported()})
+                    }
+                };
+                writeln!(stream, "{reply}").unwrap();
+            }
+            observations(&service)
+        });
+        Self {
+            address,
+            handle: Some(handle),
+        }
+    }
+    pub fn stop(mut self) -> (Vec<&'static str>, Vec<String>) {
+        let mut stream = TcpStream::connect(&self.address).unwrap();
+        writeln!(stream, "{{\"method\":\"stop\"}}").unwrap();
+        self.handle.take().unwrap().join().unwrap()
+    }
+}
+impl Drop for DisclosureHost {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            if let Ok(mut stream) = TcpStream::connect(&self.address) {
+                let _ = writeln!(stream, "{{\"method\":\"stop\"}}");
+            }
+            let _ = handle.join();
+        }
+    }
+}
+fn dispatch(target: &impl ConformanceTarget, request: &Value) -> Result<Value, TargetError> {
     let args = &request["args"];
     let text = |key: &str| args[key].as_str().unwrap();
     let correlation = ess_primitives::ids::CorrelationId::new("parity-1").unwrap();
@@ -334,7 +406,7 @@ fn dispatch(target: &Fixture, request: &Value) -> Result<Value, TargetError> {
     match request["method"].as_str().unwrap() {
         "identity" => target
             .identity()
-            .map(|_| json!({"Name":"prerequisite-fixture","Version":"1"})),
+            .map(|identity| json!({"Name":identity.name,"Version":identity.version})),
         "begin" | "end" => {
             let context = ScenarioContext::new(text("Scenario").parse().unwrap(), correlation);
             if request["method"] == "begin" {
@@ -344,21 +416,7 @@ fn dispatch(target: &Fixture, request: &Value) -> Result<Value, TargetError> {
             }
             Ok(Value::Null)
         }
-        "execute" => {
-            let result = target.execute_command(SemanticCommandRequest {
-                command: text("Command").parse().unwrap(),
-                actor: args["Actor"]
-                    .as_str()
-                    .filter(|value| !value.is_empty())
-                    .map(|value| value.parse().unwrap()),
-                caller: (!args["Caller"].is_null()).then(|| fields(&args["Caller"])),
-                input: fields(&args["Input"]),
-                correlation,
-            })?;
-            Ok(
-                json!({"Outcome":result.outcome.map(|outcome|outcome.outcome.to_string()),"Response":result.response,"DirectEvents":result.direct_events.into_iter().map(|event|json!({"Event":event.event,"Payload":event.payload})).collect::<Vec<_>>()}),
-            )
-        }
+        "execute" => dispatch_execute(target, args),
         "events" => {
             let result = target.observe_events(EventObservationRequest {
                 event: text("Event").parse().unwrap(),
@@ -415,6 +473,7 @@ fn dispatch(target: &Fixture, request: &Value) -> Result<Value, TargetError> {
             })?;
             Ok(Value::Null)
         }
+        "mark" | "elapsed" => dispatch_clock(target, request),
         "query" => {
             let result = target.query_view(SemanticViewRequest {
                 view: text("View").parse().unwrap(),
@@ -427,4 +486,45 @@ fn dispatch(target: &Fixture, request: &Value) -> Result<Value, TargetError> {
         }
         method => panic!("unknown callback {method}"),
     }
+}
+
+fn dispatch_clock(target: &impl ConformanceTarget, request: &Value) -> Result<Value, TargetError> {
+    let args = &request["args"];
+    let instant = args["Instant"].as_str().unwrap().parse().unwrap();
+    let correlation = ess_primitives::ids::CorrelationId::new("parity-1").unwrap();
+    if request["method"] == "mark" {
+        target.mark_instant(InstantMark {
+            instant,
+            correlation,
+        })?;
+        return Ok(Value::Null);
+    }
+    let result = target.observe_elapsed(ElapsedObservationRequest {
+        instant,
+        hold: ess_conformance::scenario::Elapsed::seconds(
+            u32::try_from(args["Hold"].as_u64().unwrap()).unwrap(),
+        ),
+        watching: args["Watching"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse().unwrap()),
+        correlation,
+    })?;
+    Ok(json!({"ElapsedMillis":result.elapsed_ms,"Published":result.published}))
+}
+
+fn dispatch_execute(target: &impl ConformanceTarget, args: &Value) -> Result<Value, TargetError> {
+    let result = target.execute_command(SemanticCommandRequest {
+        command: args["Command"].as_str().unwrap().parse().unwrap(),
+        actor: args["Actor"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse().unwrap()),
+        caller: (!args["Caller"].is_null()).then(|| fields(&args["Caller"])),
+        input: fields(&args["Input"]),
+        correlation: ess_primitives::ids::CorrelationId::new("parity-1").unwrap(),
+    })?;
+    Ok(
+        json!({"Outcome":result.outcome.map(|outcome|outcome.outcome.to_string()),"Response":result.response,"Error":result.error.as_ref().map(|error|error.error.to_string()),"ErrorPayload":result.error.map(|error|error.fields),"Consistency":result.consistency,"DirectEvents":result.direct_events.into_iter().map(|event|json!({"Event":event.event,"Payload":event.payload})).collect::<Vec<_>>()}),
+    )
 }
