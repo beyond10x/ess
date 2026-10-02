@@ -8,20 +8,28 @@ pub(crate) fn declarations<'a>(
     ir: &EssIr,
     fields: impl IntoIterator<Item = &'a Field>,
 ) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
-    declarations_with_presence(ir, fields, false)
+    declarations_with_presence(ir, fields, false, false)
 }
 
 pub(crate) fn direct_response_declarations<'a>(
     ir: &EssIr,
     fields: impl IntoIterator<Item = &'a Field>,
 ) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
-    declarations_with_presence(ir, fields, true)
+    declarations_with_presence(ir, fields, true, false)
+}
+
+pub(crate) fn one_time_declarations<'a>(
+    ir: &EssIr,
+    fields: impl IntoIterator<Item = &'a Field>,
+) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
+    declarations_with_presence(ir, fields, true, true)
 }
 
 fn declarations_with_presence<'a>(
     ir: &EssIr,
     fields: impl IntoIterator<Item = &'a Field>,
     preserve_presence: bool,
+    carry_string_constraints: bool,
 ) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
     let mut declarations = BTreeMap::new();
     let mut pending: Vec<_> = fields
@@ -36,7 +44,10 @@ fn declarations_with_presence<'a>(
             return Err("response declaration resource limit".into());
         }
         let ty = ir.types().get(&name).ok_or("response type is absent")?;
-        if ty.reading.is_some() || ty.body.is_constrained() {
+        if ty.reading.is_some()
+            || (ty.body.is_constrained()
+                && !(carry_string_constraints && matches!(ty.body, ResolvedBody::Newtype { .. })))
+        {
             return Err(
                 "response constrained type needs an executable invariant/reading observer".into(),
             );
