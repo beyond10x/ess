@@ -119,10 +119,17 @@ input, select, textarea { font: inherit; padding: 0.3rem 0.5rem; border: 1px sol
 .ui-metric-value { font-size: 1.6rem; font-weight: 600; }
 .ui-metric-label { color: var(--ui-muted); font-size: 0.8rem; }
 .ui-bars { display: flex; align-items: flex-end; gap: 0.75rem; height: 10rem; }
-.ui-bar-group { display: flex; align-items: flex-end; gap: 2px; height: 100%; position: relative; padding-bottom: 1.2rem; }
+.ui-bar-group { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 100%; position: relative; padding-bottom: 1.2rem; flex: 1 1 0; min-width: 0; }
 .ui-bar { width: 1rem; background: var(--ui-accent); }
 .ui-bar.ui-series-1 { background: var(--ui-info); opacity: 0.6; }
-.ui-bar-label { position: absolute; bottom: 0; font-size: 0.7rem; }
+.ui-bar-group > .ui-chart-x-label { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; }
+.ui-chart-x { display: flex; }
+.ui-chart-x-slot { flex: 1 1 0; min-width: 0; text-align: center; }
+.ui-chart-x-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; }
+.ui-chart-legend { list-style: none; margin: 0.25rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.8rem; }
+.ui-legend-item { display: flex; align-items: center; gap: 0.3rem; }
+.ui-swatch { width: 0.7rem; height: 0.7rem; border-radius: 2px; background: var(--ui-accent); }
+.ui-swatch.ui-series-1 { background: var(--ui-info); opacity: 0.6; }
 .ui-chart-svg { width: 100%; height: 10rem; }
 .ui-chart-svg polyline { stroke: var(--ui-accent); stroke-width: 0.6; }
 .ui-chart-svg polyline.ui-series-1 { stroke: var(--ui-info); stroke-dasharray: 2 1; }
