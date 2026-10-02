@@ -2334,6 +2334,17 @@ fn outcome_state_changes(
             after: new.returns,
         });
     }
+    let mut before = old.one_time_response.clone();
+    let mut after = new.one_time_response.clone();
+    before.sort();
+    after.sort();
+    if before != after {
+        push(CommandChange::OutcomeOneTimeResponseChanged {
+            outcome: name.to_owned(),
+            before,
+            after,
+        });
+    }
     if old.decided_by_caller != new.decided_by_caller {
         push(CommandChange::OutcomeDecidedByCallerChanged {
             outcome: name.to_owned(),
@@ -2458,7 +2469,7 @@ fn residual_command(declaration: &mut serde_json::Value) {
 /// they are a pure function of one that does. `refs` is deliberately absent: it stays residual.
 ///
 /// [`outcome_keys_accounted`] names every field of the struct, so the two cannot drift silently.
-const OUTCOME_KEYS_ACCOUNTED: [&str; 19] = [
+const OUTCOME_KEYS_ACCOUNTED: [&str; 20] = [
     "name",
     "condition",
     "subject",
@@ -2473,6 +2484,7 @@ const OUTCOME_KEYS_ACCOUNTED: [&str; 19] = [
     "refuses",
     "accepts_nothing",
     "returns",
+    "one_time_response",
     "summary",
     "sets",
     "decided_by_caller",
@@ -2502,6 +2514,7 @@ fn outcome_keys_accounted(outcome: &ResolvedOutcome) -> &'static [&'static str] 
         refuses: _,        // OutcomeRefusesChanged
         accepts_nothing: _, // OutcomeAcceptsNothingChanged
         returns: _,        // OutcomeReturnsChanged
+        one_time_response: _, // Accounted by the one-time contract comparison below.
         summary: _,        // OutcomeSummaryChanged
         refs: _,           // residual, deliberately
         sets: _,           // OutcomeSetsChanged
@@ -2647,7 +2660,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// Specifications whose outcomes, together, write every optional `ResolvedOutcome` key.
-    const MODELS: [&str; 6] = [
+    const MODELS: [&str; 7] = [
+        include_str!("../../../../docs/design/one-time-response-values.example.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/outcome-shapes.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects.yaml"),
         include_str!("../../ess-conformance/tests/fixtures/error-payload-sources.yaml"),

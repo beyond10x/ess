@@ -471,7 +471,7 @@ fn the_new_majors_are_supported_and_the_next_is_not() {
             "{version}"
         );
     }
-    assert!(!SuiteFormat::parse("ess-conformance/34")
+    assert!(!SuiteFormat::parse("ess-conformance/36")
         .unwrap()
         .is_supported());
 }

@@ -401,6 +401,7 @@ impl SemanticChange {
                     | BindingChange::ContextFieldSummaryChanged { .. },
                 ..
             } => 10,
+            Self::Command { changed, .. } if changed.is_one_time_response() => 13,
             Self::Command { changed, .. } if changed.is_diff_12() => 12,
             Self::Type { changed, .. } if changed.is_prefix() => 11,
             Self::View {
@@ -2299,8 +2300,16 @@ pub enum CommandChange {
         /// Whether it accepts nothing.
         after: bool,
     },
-    /// Whether a branch returns the command's typed response (ess/17 `returns:`) moved.
-    /// `ess-diff/12`.
+    /// Which fields a branch may disclose only on its originating response moved (ess-diff/13).
+    OutcomeOneTimeResponseChanged {
+        /// Which originating outcome.
+        outcome: String,
+        /// Previously restricted response fields.
+        before: Vec<String>,
+        /// Now restricted response fields.
+        after: Vec<String>,
+    },
+    /// Whether the outcome returns its response (ess-diff/12).
     OutcomeReturnsChanged {
         /// Which branch.
         outcome: String,
@@ -2431,6 +2440,7 @@ impl CommandChange {
             Self::OutcomeErrorPayloadChanged { .. } => "outcome-error-payload-changed",
             Self::OutcomeAcceptsNothingChanged { .. } => "outcome-accepts-nothing-changed",
             Self::OutcomeReturnsChanged { .. } => "outcome-returns-changed",
+            Self::OutcomeOneTimeResponseChanged { .. } => "outcome-one-time-response-changed",
             Self::OutcomeDecidedByCallerChanged { .. } => "outcome-decided-by-caller-changed",
             Self::OutcomeErrorChanged { .. } => "outcome-error-changed",
             Self::OutcomeSummaryChanged { .. } => "outcome-summary-changed",
@@ -2468,6 +2478,7 @@ impl CommandChange {
             | Self::OutcomeErrorPayloadChanged { outcome, .. }
             | Self::OutcomeAcceptsNothingChanged { outcome, .. }
             | Self::OutcomeReturnsChanged { outcome, .. }
+            | Self::OutcomeOneTimeResponseChanged { outcome, .. }
             | Self::OutcomeDecidedByCallerChanged { outcome, .. }
             | Self::OutcomeErrorChanged { outcome, .. }
             | Self::OutcomeSummaryChanged { outcome, .. } => Some(outcome.clone()),
@@ -2475,10 +2486,16 @@ impl CommandChange {
         }
     }
 
-    /// How it relates the revisions. No command change decides a direction: an outcome added looks
-    /// like a widening and is not one — whether callers can reach it depends on every other
-    /// branch's condition, which is exactly the proof this slice refuses to attempt.
-    pub const fn relation(&self) -> SemanticRelation {
+    /// Disclosure restrictions have a set direction; other command edits remain changed.
+    pub fn relation(&self) -> SemanticRelation {
+        if let Self::OutcomeOneTimeResponseChanged { before, after, .. } = self {
+            if before.iter().all(|field| after.contains(field)) {
+                return SemanticRelation::Narrowed;
+            }
+            if after.iter().all(|field| before.contains(field)) {
+                return SemanticRelation::Expanded;
+            }
+        }
         SemanticRelation::Changed
     }
 
@@ -2497,8 +2514,24 @@ impl CommandChange {
         )
     }
 
+    const fn is_one_time_response(&self) -> bool {
+        matches!(self, Self::OutcomeOneTimeResponseChanged { .. })
+    }
+
     /// The clause for an outcome flag or error payload change, and empty for every other change.
     fn flag_clause(&self) -> String {
+        if let Self::OutcomeOneTimeResponseChanged {
+            outcome,
+            before,
+            after,
+        } = self
+        {
+            return format!(
+                "outcome `{outcome}` one-time response fields: {} → {}",
+                before.join(", "),
+                after.join(", ")
+            );
+        }
         let (outcome, flag, before, after) = match self {
             Self::OutcomeAcceptsNothingChanged {
                 outcome,
@@ -2673,7 +2706,7 @@ impl CommandChange {
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),
-            // The `ess-diff/12` outcome kinds: error payload sources and outcome flags.
+            // Later outcome kinds: error payloads, flags and one-time restrictions.
             _ => self.flag_clause(),
         }
     }

@@ -203,6 +203,7 @@ pub mod caller_value;
 pub mod finite;
 pub mod fixture_inputs;
 mod narrowing;
+mod one_time_response;
 pub(crate) mod outcome_shapes;
 pub mod related_guard;
 pub use related_guard::RelatedTest;
@@ -1872,6 +1873,8 @@ pub struct Outcome {
     /// No persistence or absence of side effects is implied by a direct return.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// Response fields disclosed only by this successful invocation (ess/21).
+    pub one_time_response: Vec<String>,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1899,6 +1902,7 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
@@ -1920,6 +1924,7 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
@@ -1945,6 +1950,7 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
@@ -2113,6 +2119,13 @@ impl CommandSpec {
                 "replay declares no independent identity, effect, assignment, event, payload or error"));
         }
         let origin = self.outcome(name);
+        if origin.is_some_and(|origin| !origin.one_time_response.is_empty()) {
+            errors.push(ValidationError::at(
+                site.clone(),
+                ValidationCode::ConflictingDeclaration,
+                "replays conflicts with its origin's one_time_response disclosure restriction",
+            ));
+        }
         if name == &outcome.name
             || origin.is_none_or(|origin| {
                 origin.replays.is_some()
@@ -2267,6 +2280,14 @@ impl CommandSpec {
     fn validate_outcome(&self, outcome: &Outcome, inputs: &BTreeSet<&str>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let location = self.site().key("outcomes").named(outcome.name.as_str());
+
+        if !outcome.one_time_response.is_empty() && !outcome.returns {
+            errors.push(ValidationError::at(
+                location.clone().key("one_time_response"),
+                ValidationCode::ConflictingDeclaration,
+                "one_time_response requires a successful returns outcome",
+            ));
+        }
 
         if outcome.returns
             && (self.response.is_empty()
@@ -3237,6 +3258,7 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
         }
         for outcome in &command.outcomes {
             let at = command.site().key("outcomes").named(outcome.name.as_str());
+            errors.extend(one_time_response::validate(spec, command, outcome, &at));
             if outcome.returns
                 && spec.system().format.major() < crate::system::FormatVersion::V17.major()
             {
@@ -4927,6 +4949,14 @@ pub struct RawOutcome {
     /// The outcome returns the command's typed response (ess/17), without implying effects.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// Outcome-local names of required String response fields (ess/21).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "one_time_response::present_fields"
+    )]
+    #[schemars(with = "Vec<String>")]
+    pub one_time_response: Option<Vec<String>>,
     /// The originating success of this same command, retained without another effect (ess/7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replays: Option<OutcomeName>,
@@ -5379,6 +5409,13 @@ impl TryFrom<RawOutcome> for Outcome {
             .filter(|error| !raw.emits.contains(error))
             .and_then(|error| payload.remove(error))
             .unwrap_or_default();
+        if raw.one_time_response.as_ref().is_some_and(Vec::is_empty) {
+            return Err(conflict(
+                "one_time_response",
+                "one_time_response must name at least one field".into(),
+                "omit the key when no field is marked",
+            ));
+        }
         Ok(Self {
             payload,
             error_payload,
@@ -5392,6 +5429,7 @@ impl TryFrom<RawOutcome> for Outcome {
             refuses,
             accepts_nothing: raw.accepts.is_some(),
             returns: raw.returns,
+            one_time_response: raw.one_time_response.unwrap_or_default(),
             summary: raw.summary,
             refs: raw.refs,
             set_effects: SetEffects { instances, affects },
@@ -5792,6 +5830,8 @@ impl From<Outcome> for RawOutcome {
             into,
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),
             returns: outcome.returns,
+            one_time_response: (!outcome.one_time_response.is_empty())
+                .then_some(outcome.one_time_response),
             creates,
             moves,
             updates,
@@ -6082,6 +6122,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6131,6 +6172,7 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6170,6 +6212,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6202,6 +6245,7 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6265,6 +6309,7 @@ outcomes:
             refuses: false,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6347,6 +6392,7 @@ outcomes:
             refuses: false,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6394,6 +6440,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6579,6 +6626,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6616,6 +6664,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6742,6 +6791,7 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -7065,6 +7115,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -7196,6 +7247,7 @@ outcomes:
                     refuses: true,
                     accepts_nothing: false,
                     returns: false,
+                    one_time_response: Vec::new(),
                     set_effects: SetEffects::default(),
                     summary: None,
                     refs: Refs::new(),

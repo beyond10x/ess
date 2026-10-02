@@ -908,6 +908,9 @@ pub struct ResolvedOutcome {
     /// The outcome returns the command's complete typed response (ess/17).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// Required String response fields disclosed only by their originating invocation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub one_time_response: Vec<String>,
     /// One line for generated documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
