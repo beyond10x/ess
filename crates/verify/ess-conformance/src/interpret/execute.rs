@@ -355,7 +355,35 @@ pub fn execute_generating(
     )?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
-    let selected = select(spec, &facts, command, externals)?;
+    let mut held_states = BTreeMap::new();
+    for outcome in &spec.outcomes {
+        if !matches!(
+            outcome.condition,
+            ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. }
+        ) {
+            continue;
+        }
+        let subject =
+            spec.selection_subject(outcome)
+                .ok_or_else(|| Undetermined::NotInterpreted {
+                    construct: "a state guard with no resolved subject".into(),
+                })?;
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return Err(Undetermined::NotInterpreted {
+                construct: "a state guard without a supplied subject".into(),
+            });
+        };
+        let entity = &ir.entity(&subject.entity).name;
+        let identity = input.get(&field.name).ok_or_else(|| {
+            Undetermined::Request("the guarded subject identity is absent".into())
+        })?;
+        let key = identity_key(identity, entity)?;
+        let Some(held) = store.instance(entity, &key) else {
+            return Ok(vec![unknown_instance(ir, spec, store, input)?]);
+        };
+        held_states.insert(outcome.name.clone(), held.state.clone());
+    }
+    let selected = select(spec, &facts, command, externals, &held_states)?;
 
     if selected.is_empty() {
         return Ok(vec![undeclared(store)]);
@@ -396,6 +424,7 @@ fn select<'s>(
     facts: &input::InputFacts<'_>,
     command: &QualifiedName,
     externals: &Externals,
+    held_states: &BTreeMap<OutcomeName, StateName>,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
     let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(facts) {
         Truth::True => Ok(true),
@@ -446,6 +475,18 @@ fn select<'s>(
     if selected.is_empty() {
         let mut answered = false;
         for outcome in &spec.outcomes {
+            if let Some(takes) = state_guard(
+                &outcome.condition,
+                held_states.get(&outcome.name),
+                |guard| holds(outcome, guard),
+            )? {
+                if takes {
+                    selected.push(outcome);
+                    answered = true;
+                    break;
+                }
+                continue;
+            }
             match &outcome.condition {
                 ResolvedCondition::When { predicate } if outcome.error.is_none() => {
                     if holds(outcome, predicate)? {
@@ -656,14 +697,13 @@ fn interpretable(
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
             | ResolvedCondition::WrongState
-            | ResolvedCondition::UnknownInstance => {}
+            | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::SubjectState { .. }
+            | ResolvedCondition::StateChange { .. } => {}
             ResolvedCondition::SubjectField { .. } | ResolvedCondition::SubjectPredicate { .. } => {
                 return gap(format!(
                     "the guard over the subject's stored fields of `{at}`"
                 ));
-            }
-            ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. } => {
-                return gap(format!("the guard over the subject's held state of `{at}`"));
             }
             ResolvedCondition::Related { .. } => {
                 return gap(format!("the guard over a related row of `{at}`"));
@@ -1288,4 +1328,23 @@ fn at_rest(
         }
     }
     Ok(())
+}
+
+fn state_guard(
+    condition: &ResolvedCondition,
+    held: Option<&StateName>,
+    holds: impl Fn(&Predicate) -> Result<bool, Undetermined>,
+) -> Result<Option<bool>, Undetermined> {
+    let (admitted, predicate) = match condition {
+        ResolvedCondition::SubjectState { state, predicate } => {
+            (held.is_some_and(|held| state.contains(held)), predicate)
+        }
+        ResolvedCondition::StateChange {
+            states, predicate, ..
+        } => (held.is_some_and(|held| states.contains(held)), predicate),
+        _ => return Ok(None),
+    };
+    Ok(Some(
+        admitted && predicate.as_ref().map_or(Ok(true), holds)?,
+    ))
 }
