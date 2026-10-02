@@ -27,6 +27,8 @@ pub struct Report {
     target: &'static str,
     configuration: TargetConfiguration,
     roots: BTreeSet<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_roots: Option<BTreeSet<ess_gen::schema::ModelRoot>>,
     declarations: BTreeMap<String, String>,
     annotations: BTreeSet<Finding>,
     obligations: BTreeSet<Finding>,
@@ -94,6 +96,7 @@ pub struct Plan {
     definitions: BTreeMap<String, Node>,
     names: BTreeMap<String, String>,
     roots: BTreeSet<String>,
+    model_roots: Option<BTreeSet<ess_gen::schema::ModelRoot>>,
     source_digest: String,
     input: InputIdentity,
     newtypes: BTreeSet<String>,
@@ -260,6 +263,13 @@ impl Plan {
             },
             model.newtypes().clone(),
         )?;
+        if model
+            .model_roots()
+            .iter()
+            .any(|root| matches!(root, ess_gen::schema::ModelRoot::Event(_)))
+        {
+            plan.model_roots = Some(model.model_roots().clone());
+        }
         plan.binary64.clone_from(model.binary64_locations());
         for at in &plan.binary64 {
             plan.obligations.insert(finding(at, "model_binary64", "finite IEEE-754 binary64 requires nearest-even token decoding, signed-zero preservation and finite round-tripping serialization; the structural number representation alone does not enforce this contract"));
@@ -338,6 +348,7 @@ impl Plan {
             definitions,
             names,
             roots: roots.clone(),
+            model_roots: None,
             source_digest,
             input,
             newtypes,
@@ -434,13 +445,18 @@ impl Plan {
             }
         }
         Report {
-            format: "ess-types-report/3",
+            format: if self.model_roots.is_some() {
+                "ess-types-report/4"
+            } else {
+                "ess-types-report/3"
+            },
             source_digest: self.source_digest.clone(),
             input: self.input.clone(),
             generator_version: env!("CARGO_PKG_VERSION"),
             target: configuration.name(),
             configuration,
             roots: self.roots.clone(),
+            model_roots: self.model_roots.clone(),
             declarations: self.names.clone(),
             annotations: self.annotations.clone(),
             obligations,

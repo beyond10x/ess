@@ -46,6 +46,11 @@ imported schema root; that connection requires its own checked identity contract
 
 ## Shared Structural Plan
 
+Existing event payloads can also be selected with `generate types --event`, alone or beside
+explicit type roots. This uses the same sealed selection and structural plan, with typed event
+root provenance in `ess-types-report/4`; type-only and bundle outputs retain `/3`.
+See [Event payload roots](event-payload-type-roots.md) for the selector and compatibility contract.
+
 A language-neutral, in-memory plan owns selected roots, component identities,
 declaration names and concrete structural nodes. Nodes distinguish unrestricted JSON,
 impossible values, scalar types, literals, references, objects, arrays, unions and

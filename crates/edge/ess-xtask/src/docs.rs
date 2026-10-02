@@ -275,6 +275,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-component-ir", 1, Some("0.13.0")),
     ("ess-release-bundle", 1, Some("0.13.0")),
     ("ess-types-report", 3, Some("0.19.0")),
+    ("ess-types-report", 4, None),
     ("ess-normalization-target", 1, Some("0.19.0")),
     ("ess-normalization-target", 2, Some("0.20.0")),
     ("ess-normalization-target", 3, Some("0.20.0")),

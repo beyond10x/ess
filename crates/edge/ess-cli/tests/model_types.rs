@@ -41,6 +41,126 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn event_root_selects_existing_payload() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.0.join("model/system.yaml"),
+        "format: ess/20\nsystem: audit\nversion: v1\ndomain: audit.entries\nevents:\n  - name: audit.entries.Recorded\n    fields: [{name: sequence, type: Integer}]\n",
+    ).unwrap();
+    let output = fixture.run(&[
+        "--event",
+        "audit.entries.Recorded",
+        "--target",
+        "typescript",
+        "--out",
+        "event",
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    let report: Value =
+        serde_json::from_slice(&fs::read(fixture.0.join("event/types-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["format"], "ess-types-report/4");
+    assert_eq!(
+        report["model_roots"],
+        serde_json::json!([{"kind":"event", "name":"audit.entries.Recorded"}])
+    );
+}
+
+#[test]
+fn mixed_event_selectors_and_refusals_preserve_existing_output() {
+    let fixture = Fixture::new();
+    let source = include_str!("../../../generate/ess-gen/tests/fixtures/model-event-types.yaml");
+    fs::write(fixture.0.join("model/system.yaml"), source).unwrap();
+    let args = [
+        "--event",
+        "telemetry.data.Recorded",
+        "--event",
+        "telemetry.data.Recorded",
+        "--root",
+        "telemetry.data.Details",
+        "--target",
+        "typescript",
+        "--out",
+        "event",
+    ];
+    let result = fixture.run(&args);
+    assert!(result.status.success(), "{result:?}");
+    let report = fs::read(fixture.0.join("event/types-report.json")).unwrap();
+    let library = fs::read(fixture.0.join("event/types.ts")).unwrap();
+    let schema = fs::read(fixture.0.join("event/source.schema.json")).unwrap();
+    let value: Value = serde_json::from_slice(&report).unwrap();
+    assert_eq!(value["model_roots"].as_array().unwrap().len(), 2);
+    assert_eq!(value["declarations"].as_object().unwrap().len(), 3);
+    for selection in [
+        vec!["--event", "telemetry.data.Details"],
+        vec!["--event", "telemetry.data.Missing"],
+        vec!["--root", "telemetry.data.Recorded"],
+        vec!["--event", "telemetry.data.Recorded", "--all-types"],
+        vec![
+            "--event",
+            "telemetry.data.Recorded",
+            "--root",
+            "missing.Type",
+        ],
+    ] {
+        let mut args = vec!["--target", "typescript", "--out", "event"];
+        args.extend(selection);
+        assert!(!fixture.run(&args).status.success());
+        assert_eq!(
+            fs::read(fixture.0.join("event/types-report.json")).unwrap(),
+            report
+        );
+        assert_eq!(fs::read(fixture.0.join("event/types.ts")).unwrap(), library);
+        assert_eq!(
+            fs::read(fixture.0.join("event/source.schema.json")).unwrap(),
+            schema
+        );
+    }
+    assert!(fixture
+        .run(&["--all-types", "--target", "typescript", "--out", "types"])
+        .status
+        .success());
+    let value: Value =
+        serde_json::from_slice(&fs::read(fixture.0.join("types/types-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(value["format"], "ess-types-report/3");
+    assert!(value.get("model_roots").is_none());
+    assert!(value["declarations"]
+        .get("telemetry.data.Recorded")
+        .is_none());
+
+    fs::write(
+        fixture.0.join("model/system.yaml"),
+        source.replace("wire: record-id", "wire: details"),
+    )
+    .unwrap();
+    assert!(!fixture.run(&args).status.success());
+    assert_eq!(fs::read(fixture.0.join("event/types.ts")).unwrap(), library);
+}
+
+#[test]
+fn event_host_collisions_refuse_before_publication() {
+    let fixture = Fixture::new();
+    fs::write(fixture.0.join("model/system.yaml"), "format: ess/20\nsystem: audit\nversion: v1\ndomain: audit.entries\nevents:\n  - {name: audit.entries.RecordEd, fields: [{name: one, type: String}]}\n  - {name: audit.entries.Record_ed, fields: [{name: two, type: Boolean}]}\n").unwrap();
+    let output = fixture.run(&[
+        "--event",
+        "audit.entries.RecordEd",
+        "--event",
+        "audit.entries.Record_ed",
+        "--target",
+        "typescript",
+        "--out",
+        "event",
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("name_collision"),
+        "{output:?}"
+    );
+    assert!(!fixture.0.join("event").exists());
+}
+
+#[test]
 fn each_target_retains_the_same_model_selection_and_distinct_input_provenance() {
     let fixture = Fixture::new();
     for (target, extension, native) in [

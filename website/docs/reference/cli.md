@@ -700,13 +700,14 @@ ess generate output recover [OPTIONS] --ownership-root <OWNERSHIP_ROOT>
 Realize selected model types as standalone, accounted data libraries
 
 ```text
-ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-types>
+ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--event <EVENT>|--all-types>
 ```
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--root` | `<ROOT>`… | no |  | Qualified model type root. Repeat for a shared transitive closure |
+| `--event` | `<EVENT>`… | no |  | Qualified event payload root. Repeat or combine with explicit type roots |
 | `--all-types` |  | no |  | Explicitly select every named type in the resolved model |
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |

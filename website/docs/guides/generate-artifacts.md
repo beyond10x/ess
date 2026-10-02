@@ -341,6 +341,12 @@ ess generate types --path examples/billing --all-types \
 ```
 
 Repeat `--root` for a shared closure, or explicitly choose `--all-types`, never both.
+Use `--event QUALIFIED_EVENT` to generate an existing event's payload without duplicating its
+fields in a named struct. Repeat `--event` or combine it with explicit `--root` selections to share
+the reachable type closure. `--all-types` remains exclusive and selects only named types.
+Event-bearing selections emit `ess-types-report/4` with typed `model_roots`; existing type-only
+and bundle selections retain `/3`. This generates the event record and its data codecs, without
+adding broker connection or message-batching behavior.
 The output directory must be outside the input specification tree. The model path
 reuses ESS's existing JSON wire mapping: decimal strings, wire field names, optional
 object properties, nullable collection values, map-key spellings and adjacent tagged

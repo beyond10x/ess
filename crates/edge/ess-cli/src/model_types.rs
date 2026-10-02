@@ -6,15 +6,18 @@ use std::process::ExitCode;
 use anyhow::{bail, Result};
 
 #[derive(Debug, clap::Args)]
-#[command(group(clap::ArgGroup::new("selection").required(true).args(["root", "all_types"])))]
+#[command(group(clap::ArgGroup::new("selection").required(true).multiple(true).args(["root", "event", "all_types"])))]
 pub struct Args {
     #[command(flatten)]
     input: crate::SpecLocation,
     /// Qualified model type root. Repeat for a shared transitive closure.
     #[arg(long)]
     root: Vec<String>,
-    /// Explicitly select every named type in the resolved model.
+    /// Qualified event payload root. Repeat or combine with explicit type roots.
     #[arg(long)]
+    event: Vec<ess_domain::name::QualifiedName>,
+    /// Explicitly select every named type in the resolved model.
+    #[arg(long, conflicts_with_all = ["root", "event"])]
     all_types: bool,
     #[command(flatten)]
     options: crate::schema_bundle::TypeOptions,
@@ -32,7 +35,22 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     } else {
         args.root.iter().cloned().collect()
     };
-    let selection = match ess_gen::schema::ModelTypes::select(&ir, &roots) {
+    let selected = if args.event.is_empty() {
+        ess_gen::schema::ModelTypes::select(&ir, &roots)
+    } else {
+        let mut typed = std::collections::BTreeSet::new();
+        for root in &roots {
+            typed.insert(ess_gen::schema::ModelRoot::Type(root.parse()?));
+        }
+        typed.extend(
+            args.event
+                .iter()
+                .cloned()
+                .map(ess_gen::schema::ModelRoot::Event),
+        );
+        ess_gen::schema::ModelTypes::select_roots(&ir, &typed)
+    };
+    let selection = match selected {
         Ok(selection) => selection,
         Err(errors) => {
             for error in errors {
