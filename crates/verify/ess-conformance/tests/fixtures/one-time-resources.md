@@ -28,3 +28,9 @@ singleton arrays below the outer rows array and row object, placing null at dept
 Expected per-case counts are native live execution evidence, not fixture replay evidence. The
 original nine test bytes were red 4 pass / 5 fail before the correction and green 9 / 0 afterward;
 the additional manifest reproduction test verifies all nine actual count reports and encoded sizes.
+
+Four additive numeric controls put `number` and `padding` in one row. `number` is native Number
+1.0 or 0.125, whose canonical JSON spelling is respectively `1.0` and `0.125`; the adapter must not
+silently count the integral binary64 value as `1`. ASCII padding makes each pair exactly 1,048,576
+or 1,048,577 bytes. These controls bring the resource manifest to thirteen cases (fourteen tests
+including manifest reproduction), leaving the original nine entries unchanged.
