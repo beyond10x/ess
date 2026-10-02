@@ -564,7 +564,9 @@ func fromCallback(err error) error {
 }
 
 func (r *run) recordStatus(status string) {
-	if r.disclosure != nil && (status == statusError || status == statusUnsupported) { r.disclosureUnavailable = true }
+	if r.disclosure != nil && (status == statusError || status == statusUnsupported) {
+		r.disclosureUnavailable = true
+	}
 	if !r.preciseStatuses {
 		r.status = status
 		return
