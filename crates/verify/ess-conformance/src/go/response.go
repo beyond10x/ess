@@ -96,7 +96,7 @@ func checkResponseType(declarations map[string]selectionDeclaration, source stri
 		}
 		return checkResponseType(declarations, inner, used, stack, depth+1)
 	}
-	if accessorPrimitive(source) && source != "Binary64" {
+	if source == "Json" || accessorPrimitive(source) && source != "Binary64" {
 		return nil
 	}
 	body, ok := declarations[source]

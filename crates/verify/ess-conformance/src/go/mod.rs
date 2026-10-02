@@ -47,9 +47,6 @@ pub const PACKAGE: &str = "essconform";
 /// Deterministic: the same suite produces the same bytes, because the three Go files are constants
 /// and the fourth is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
-    crate::direct_response::refuse_generation(suite, "Go")?;
-    crate::delivery_context::refuse_generation(suite, "Go")?;
-    crate::structured_values::refuse_generation(suite, "Go")?;
     refuse_unadmitted(suite, "Go")?;
     let json = suite.to_canonical_json()?;
     let file = |name: &str, contents: String| GoArtifact {
@@ -71,9 +68,6 @@ pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
 ) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
-    crate::direct_response::refuse_generation(suite.suite(), "Go")?;
-    crate::delivery_context::refuse_generation(suite.suite(), "Go")?;
-    crate::structured_values::refuse_generation(suite.suite(), "Go")?;
     refuse_unadmitted(suite.suite(), "Go")?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
@@ -347,19 +341,22 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
                 "ESS_REPORT_OUT=$PWD/report.json go test ./...",
                 "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...",
             )
+            .replace(
+                "reported as skipped, which is a different fact from a failed one",
+                "reported as unsupported under `go-scenario-status/2`, with a nonzero test exit",
+            )
+            .replace(
+                "run `inconclusive`, because a target that could not answer a question has not shown the answer.",
+                "run `inconclusive`. Report/2 preserves all five categories: unsupported makes execution failed, while an ordinary target error makes execution inconclusive; both exit nonzero.",
+            )
     } else {
         readme
     }
 }
 
-/// The newest suite major the generated Go and TypeScript runners admit.
-///
-/// The Rust side of `newestSuiteMajor` in `runtime.go` and of the `SUITE_MAJORS` table in
-/// `runtime.ts`. `/28` and `/29` carry direct-return observations neither runner executes, so a
-/// package for them would be refused by its own runner at admission; [`refuse_unadmitted`] refuses
-/// it at generation instead, and `tests/generated_docs.rs` runs both emitted runners over every
-/// major and fails when either disagrees (beyond10x/ess#186).
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 27;
+/// The newest suite major the generated Go runtime admits and executes.
+/// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 33;
 
 /// The oldest suite major the generated runners execute only under an explicit
 /// `ESS_REPORT_FORMAT=2`: `/5` through `/7` and `/8` onwards, the two gates in `Run` / `runWith`.
@@ -429,12 +426,13 @@ pub(crate) fn report_format_requirement(
 
 fn runtime() -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("runtime.go"),
         include_str!("reading.go"),
         include_str!("response.go"),
         include_str!("replay.go"),
         include_str!("fixtures.go"),
+        include_str!("prerequisites.go"),
         include_str!("../../../../specify/ess-domain/src/reading/coordinate.go")
     )
 }
