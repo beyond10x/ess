@@ -50,6 +50,7 @@ mod bindings;
 pub mod execute;
 mod facts;
 mod protected;
+mod setup;
 mod views;
 
 use std::cell::RefCell;
@@ -143,6 +144,13 @@ fn refusal(observation: String, why: &Undetermined) -> TargetError {
 }
 
 impl ConformanceTarget for Interpreted {
+    fn establish_entity(
+        &self,
+        request: crate::target::EntitySetupRequest,
+    ) -> Result<(), TargetError> {
+        self.setup_entity(request)
+    }
+
     fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
         // Answered rather than refused: §30 requires a report to name the implementation that
         // answered, whether or not it holds a model.

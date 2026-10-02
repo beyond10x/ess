@@ -82,6 +82,23 @@ pub struct Store {
 }
 
 impl Store {
+    /// Establish already-validated upstream state without replacing an existing identity.
+    pub(super) fn establish(
+        &mut self,
+        entity: QualifiedName,
+        identity: String,
+        instance: Instance,
+    ) -> bool {
+        if let std::collections::btree_map::Entry::Vacant(slot) =
+            self.instances.entry(entity).or_default().entry(identity)
+        {
+            slot.insert(instance);
+            true
+        } else {
+            false
+        }
+    }
+
     /// The instance of `entity` with this identity, when one is held.
     pub fn instance(&self, entity: &QualifiedName, identity: &str) -> Option<&Instance> {
         self.instances.get(entity)?.get(identity)
@@ -819,8 +836,8 @@ struct Work<'g> {
 
 /// Brings the instance `subject` creates into existence in `work`, and returns its identity.
 ///
-/// The identity is assigned once, from the published slot `instance:` names. One the store already
-/// holds is not a new instance, so the branch yields no step rather than replacing it.
+/// A supplied identity already held yields no step. An interpreter-minted identity skips held
+/// candidates before any other field is generated; setup may have reserved the next counter value.
 fn create(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
@@ -832,18 +849,13 @@ fn create(
     let ResolvedInstance::Observed { event, field } = &subject.instance else {
         unreachable!("`creates:` publishes its identity; `take` routes nothing else here")
     };
-    let identity = or_no_step!(assign(ir, event.name(), &field.name, &field.type_ref, work))
-        .ok_or_else(|| Undetermined::NoValue {
-            what: format!("the identity of a new `{}`", entity.name),
-        })?;
-    let key = identity_key(&identity, &entity.name)?;
-    if work.next.instance(&entity.name, &key).is_some() {
-        return Ok(Err(format!(
-            "the identity `{key}` is already held by a `{}`, and `creates:` never replaces an \
-             instance",
-            entity.name
-        )));
-    }
+    let (identity, key) = or_no_step!(creation_identity(
+        ir,
+        &entity.name,
+        event.name(),
+        field,
+        work
+    ));
     let state = subject
         .into
         .clone()
@@ -856,6 +868,41 @@ fn create(
         .or_default()
         .insert(key, Instance { state, fields });
     Ok(Ok(identity))
+}
+
+fn creation_identity(
+    ir: &EssIr,
+    entity: &QualifiedName,
+    event: &QualifiedName,
+    field: &ess_compiler::ir::ResolvedField,
+    work: &mut Work<'_>,
+) -> Result<Result<(Node, String), Unmatched>, Undetermined> {
+    let supplied = work
+        .supply
+        .given
+        .is_some_and(|given| given.contains_key(&GeneratedSlot::new(event.clone(), &field.name)));
+    let occupied = work.next.instances.get(entity).map_or(0, BTreeMap::len);
+    // At most one candidate beyond the held population: sufficient for the counter's distinct
+    // UUIDs, and a bounded refusal when a constrained witness repeats or is exhausted.
+    for _ in 0..=occupied {
+        let identity = or_no_step!(assign(ir, event, &field.name, &field.type_ref, work))
+            .ok_or_else(|| Undetermined::NoValue {
+                what: format!("the identity of a new `{entity}`"),
+            })?;
+        let key = identity_key(&identity, entity)?;
+        if work.next.instance(entity, &key).is_none() {
+            return Ok(Ok((identity, key)));
+        }
+        if supplied {
+            return Ok(Err(format!(
+                "the identity `{key}` is already held by a `{entity}`, and `creates:` never \
+                 replaces an instance"
+            )));
+        }
+    }
+    Err(Undetermined::NoValue {
+        what: format!("a fresh identity of `{entity}` within the bounded witness search"),
+    })
 }
 
 /// Takes one selected outcome: resolves its subject, writes, emits, and checks what now rests.
