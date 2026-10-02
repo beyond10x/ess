@@ -1,6 +1,6 @@
 [package]
 name = "ess-ui-react"
-description = "Generates a Vite + React + TypeScript application from an ess-ui/1 document: routing, shells, one component per page and section, state placement, overlays, fixtures and live channels."
+description = "Generates a plain React + TypeScript application (react and react-dom only, built with esbuild) from an ess-ui/1 document: routing, shells, one component per page and section, state placement, overlays, fixtures and live channels."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

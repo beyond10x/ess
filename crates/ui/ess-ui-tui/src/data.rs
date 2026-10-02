@@ -213,14 +213,23 @@ impl DataAdapter for FixtureAdapter {
                 }
                 continue;
             }
-            // A list-valued param narrows the field of the same name (a multi-choice filter).
-            let Value::Sequence(wanted) = value else {
-                continue;
+            // Any other param narrows the field of the same name, as the React output's
+            // `matchesParams` does: compared as text, a list param (a multi-choice filter)
+            // matching any of its items, a row without the field kept.
+            let wanted: Vec<String> = match value {
+                Value::Sequence(items) => items.iter().map(display).collect(),
+                Value::Null | Value::Mapping(_) => continue,
+                Value::String(text) if text.is_empty() => continue,
+                scalar => {
+                    if !rows.iter().any(|row| row.get(name.as_str()).is_some()) {
+                        continue;
+                    }
+                    vec![display(scalar)]
+                }
             };
             if wanted.is_empty() {
                 continue;
             }
-            let wanted: Vec<String> = wanted.iter().map(display).collect();
             rows.retain(|row| match row.get(name.as_str()) {
                 Some(Value::Sequence(have)) => {
                     have.iter().any(|item| wanted.contains(&display(item)))
@@ -281,4 +290,84 @@ fn view_data(file: &Value, view: &str) -> Option<ViewData> {
         total: entry.get("total").and_then(Value::as_u64),
         by_params: entry.get("by_params").and_then(Value::as_mapping).cloned(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn adapter(rows: &str) -> FixtureAdapter {
+        let mut adapter = FixtureAdapter::default();
+        adapter.views.insert(
+            "things.Page".to_owned(),
+            ViewData {
+                rows: serde_yaml::from_str(rows).expect("the rows parse"),
+                total: Some(40),
+                by_params: None,
+            },
+        );
+        adapter
+    }
+
+    fn ids(adapter: &FixtureAdapter, params: &str) -> (Vec<String>, Option<u64>) {
+        let request = ReadRequest {
+            view: "things.Page".to_owned(),
+            fixture: None,
+            params: serde_yaml::from_str(params).expect("the params parse"),
+        };
+        let result = adapter.read(&request).expect("the read is answered");
+        let ids = result.rows.iter().map(|row| display(&row["id"])).collect();
+        (ids, result.total)
+    }
+
+    /// A single-value param narrows the field of the same name the way the React output's
+    /// `matchesParams` does: compared as text, a row without the field kept, an empty value
+    /// ignored.
+    #[test]
+    fn a_single_value_param_narrows_the_field_of_its_name() {
+        let adapter = adapter(
+            "[{id: a, rank: 1, tags: [x, y]}, {id: b, rank: \"2\", tags: [y]}, {id: c}, plain]",
+        );
+        assert_eq!(
+            ids(&adapter, "{id: b}"),
+            (vec!["b".to_owned(), String::new()], Some(2)),
+            "the rows with another id go; the non-record stays"
+        );
+        assert_eq!(
+            ids(&adapter, "{rank: 2}").0,
+            ["b", "c", ""],
+            "a number param matches a string field by its text; the row without the field stays"
+        );
+        assert_eq!(
+            ids(&adapter, "{tags: x}").0,
+            ["a", "c", ""],
+            "a scalar param matches a list field holding it"
+        );
+        assert_eq!(
+            ids(&adapter, "{id: \"\"}"),
+            (
+                vec![
+                    "a".to_owned(),
+                    "b".to_owned(),
+                    "c".to_owned(),
+                    String::new()
+                ],
+                Some(40)
+            ),
+            "an empty value narrows nothing and leaves the view's total"
+        );
+        assert_eq!(
+            ids(&adapter, "{page: 2}"),
+            (
+                vec![
+                    "a".to_owned(),
+                    "b".to_owned(),
+                    "c".to_owned(),
+                    String::new()
+                ],
+                Some(40)
+            ),
+            "a param no row carries narrows nothing and leaves the view's total"
+        );
+    }
 }
