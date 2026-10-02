@@ -151,20 +151,117 @@ fn generate_ui_react_writes_the_project_the_crate_renders() {
     }
 }
 
+/// `--model` binds the project to the served surface: the files are what the crate renders with
+/// the binding `ess_ui_check::binding` computes, and a document that does not bind is refused by
+/// node path, writing nothing.
 #[test]
-fn generate_ui_offers_react_as_its_only_target() {
+fn generate_ui_react_with_a_model_writes_the_bound_project() {
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let document = scratch.path().join("desk.yaml");
+    let desk = "format: ess-ui/1\napp: desk\nmodel: gatepass\nplacement_profile: fat\n\
+                shells: {app: {regions: {main: {kind: page_outlet}}}}\n\
+                navigation: {home: desk, sections: [{name: all, pages: [desk]}]}\n\
+                pages: {desk: {kind: detail_page, title: Desk, sections: [{name: expected, \
+                component: collection, reads: visit.ExpectedVisits, \
+                actions: [{name: register, does: visit.RegisterVisit}]}]}}\n";
+    std::fs::write(&document, desk).expect("writable");
+    let loaded = ess_ui::load_path(&document).expect("the desk loads");
+    let model = workspace_root().join("examples/gatepass");
+    let sources: Vec<(String, String)> = ["system.yaml", "components.yaml", "domains/visit.yaml"]
+        .iter()
+        .map(|file| {
+            let text = std::fs::read_to_string(model.join(file)).expect("the model reads");
+            ((*file).to_owned(), text)
+        })
+        .collect();
+    let binding = ess_ui_check::binding(&loaded, &sources).expect("the desk binds");
+    let expected = ess_ui_react::render_bound(&loaded, scratch.path(), Some(&binding))
+        .expect("the desk renders");
+
+    let out = scratch.path().join("desk");
+    let output = ess(&[
+        "generate",
+        "ui",
+        "--target",
+        "react",
+        "--path",
+        utf8(&document),
+        "--model",
+        "examples/gatepass",
+        "--out",
+        utf8(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    assert!(expected.files.contains_key("src/binding.ts"));
+    for (relative, contents) in &expected.files {
+        let written = std::fs::read_to_string(out.join(relative))
+            .unwrap_or_else(|error| panic!("{relative} was not written: {error}"));
+        assert_eq!(&written, contents, "{relative} differs");
+    }
+
+    let unbound = scratch.path().join("unbound.yaml");
+    std::fs::write(
+        &unbound,
+        desk.replace("visit.RegisterVisit", "visit.Nothing"),
+    )
+    .expect("writable");
+    let refused_out = scratch.path().join("refused");
+    let output = ess(&[
+        "generate",
+        "ui",
+        "--target",
+        "react",
+        "--path",
+        utf8(&unbound),
+        "--model",
+        "examples/gatepass",
+        "--out",
+        utf8(&refused_out),
+    ]);
+    assert_eq!(output.status.code(), Some(1), "{}", text(&output.stdout));
+    assert!(
+        text(&output.stderr).contains("pages/desk/sections/expected/actions/register"),
+        "{}",
+        text(&output.stderr)
+    );
+    assert!(!refused_out.exists(), "a refused binding writes nothing");
+}
+
+#[test]
+fn generate_ui_offers_react_and_tui_as_its_targets() {
     let unknown = ess(&[
         "generate", "ui", "--target", "vue", "--path", EXAMPLE, "--out", "unused",
     ]);
     assert_eq!(unknown.status.code(), Some(2));
     assert!(
-        text(&unknown.stderr).contains("[possible values: react]"),
+        text(&unknown.stderr).contains("[possible values: react, tui]"),
         "{}",
         text(&unknown.stderr)
     );
     let missing = ess(&["generate", "ui", "--path", EXAMPLE, "--out", "unused"]);
     assert_eq!(missing.status.code(), Some(2));
     assert!(text(&missing.stderr).contains("--target"));
+
+    // The terminal app is always bound: without `--model` it is refused, writing nothing.
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let out = scratch.path().join("app");
+    let unbound = ess(&[
+        "generate",
+        "ui",
+        "--target",
+        "tui",
+        "--path",
+        EXAMPLE,
+        "--out",
+        utf8(&out),
+    ]);
+    assert_eq!(unbound.status.code(), Some(1), "{}", text(&unbound.stdout));
+    assert!(
+        text(&unbound.stderr).contains("--target tui needs --model"),
+        "{}",
+        text(&unbound.stderr)
+    );
+    assert!(!out.exists(), "a refused generation writes nothing");
 }
 
 #[test]

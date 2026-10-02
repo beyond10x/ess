@@ -33,7 +33,7 @@ impl DataAdapter for Shared {
     fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
         self.0.borrow().read(request)
     }
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
         self.0.borrow_mut().run(command, input)
     }
     fn load_state(&self, path: &str) -> Option<Value> {
@@ -139,6 +139,9 @@ impl<'d> Runner<'d> {
         if let Some(reason) = crate::parity::unrendered(self.doc, &target) {
             return Err(reason);
         }
+        if let Some(reason) = crate::parity::undriven(self.doc, &target) {
+            return Err(reason);
+        }
         if let Some(page) = target.page() {
             if page != self.app.page() {
                 return Err(format!(
@@ -178,8 +181,8 @@ impl<'d> Runner<'d> {
             }
             return Ok(());
         }
-        if let Some((name, _)) = target.overlay() {
-            return self.require_overlay(&name);
+        if target.overlay().is_some() {
+            return self.require_overlay(target);
         }
         self.require_no_overlay(target)?;
         if let Some(row) = &target.row {
@@ -192,6 +195,7 @@ impl<'d> Runner<'d> {
             )
         })?;
         self.app.focus_section(&section);
+        self.select_tab(target)?;
         Ok(())
     }
 
@@ -250,10 +254,16 @@ impl<'d> Runner<'d> {
     fn choose(&mut self, target: &Target, option: &str) -> Result<(), String> {
         let unsupported = || {
             format!(
-                "{}: the terminal chooses in a filter bar's choices",
+                "{}: the terminal chooses in a filter bar's choices and a form's choice fields",
                 target.written
             )
         };
+        if let Some(reason) = crate::parity::choose(self.doc, target) {
+            return Err(reason);
+        }
+        if let Some(field) = crate::parity::choice_field(self.doc, target) {
+            return self.choose_field(target, &field, option);
+        }
         let segments: Vec<&str> = target.node.split('/').collect();
         let ["pages", _, "sections", section, "choices", choice] = segments.as_slice() else {
             return Err(unsupported());
@@ -296,8 +306,80 @@ impl<'d> Runner<'d> {
         Ok(())
     }
 
+    /// Chooses `option` in a form's choice field: move to the field, then `space` steps through
+    /// the options until the field shows the one wanted.
+    fn choose_field(
+        &mut self,
+        target: &Target,
+        field: &ess_ui::Field,
+        option: &str,
+    ) -> Result<(), String> {
+        let Some(Body::Composite(Composite::Choice(choice))) =
+            field.choice.as_ref().map(|node| &node.body)
+        else {
+            return Err(format!("{}: the field offers no options", target.written));
+        };
+        let options = self.choice_options(choice);
+        let (value, _) = options
+            .iter()
+            .find(|(value, label)| scalar(value) == option || label == option)
+            .ok_or_else(|| {
+                format!(
+                    "{} has no option {option:?}; it offers [{}]",
+                    target.written,
+                    options
+                        .iter()
+                        .map(|(_, label)| label.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+        let (form, in_overlay) = self.form_of(target)?;
+        let fields = form_fields(&form);
+        let index = fields
+            .iter()
+            .position(|known| known.name == field.name)
+            .ok_or_else(|| {
+                format!(
+                    "{}: the terminal moves through a form's own fields, groups and first tab",
+                    target.written
+                )
+            })?;
+        if !in_overlay {
+            self.require_no_overlay(target)?;
+            self.app
+                .focus_section(&target.section().unwrap_or_default());
+        }
+        self.app.keys(&"k".repeat(fields.len()));
+        self.app.keys(&"j".repeat(index));
+        let label = field.label.clone().unwrap_or_else(|| field.field.clone());
+        let wanted = format!("[‹{}› of ", scalar(value));
+        let shows = |runner: &Self| {
+            runner
+                .screen()
+                .text()
+                .lines()
+                .any(|line| line.contains(&label) && line.contains(&wanted))
+        };
+        for _ in 0..=options.len() {
+            if shows(self) {
+                return Ok(());
+            }
+            self.app.keys("<space>");
+        }
+        Err(format!(
+            "{}: the field does not show {option:?} after stepping through its options",
+            target.written
+        ))
+    }
+
     fn act(&mut self, target: &Target) -> Result<(), String> {
-        if let Some(row) = &target.row {
+        // A row action's inline confirm is an overlay, though its path is under the row.
+        if let Some(row) = target
+            .row
+            .as_ref()
+            .filter(|_| target.row_overlay().is_none())
+        {
             self.select_row(target, row)?;
             if target.node == row.container {
                 self.app.keys("<enter>");
@@ -317,8 +399,8 @@ impl<'d> Runner<'d> {
             self.app.keys(&key_spec(key));
             return Ok(());
         }
-        if let Some((name, path)) = target.overlay() {
-            self.require_overlay(&name)?;
+        if let Some((_, path)) = target.overlay() {
+            self.require_overlay(target)?;
             let overlay_body = self.overlay_body(&path)?;
             if target.node == path {
                 return match overlay_body {
@@ -362,8 +444,10 @@ impl<'d> Runner<'d> {
         self.require_no_overlay(target)?;
         let segments: Vec<&str> = target.node.split('/').collect();
         if let ["pages", _, "header", "actions", _] = segments.as_slice() {
-            self.app
-                .keys(&format!(":{}<enter>", label(&action).replace('<', "<lt>")));
+            self.app.keys(&format!(
+                ":do: {}<enter>",
+                label(&action).replace('<', "<lt>")
+            ));
             return Ok(());
         }
         let section = target.section().ok_or_else(|| {
@@ -373,6 +457,7 @@ impl<'d> Runner<'d> {
             )
         })?;
         self.app.focus_section(&section);
+        self.select_tab(target)?;
         let lines = self.section_box(&section)?.lines;
         let key =
             hint_key(lines.iter().map(|line| line.text.as_str()), &action).ok_or_else(|| {
@@ -401,6 +486,28 @@ impl<'d> Runner<'d> {
             return Err(format!("{} shows page {shown}, not {to}", target.written));
         }
         Ok(())
+    }
+
+    /// When `target` lies in a tab of its section's record (`…/sections/<s>/tabs/<t>/…`), shows
+    /// that tab: `]` until the tab's cells are drawn as the current one.
+    fn select_tab(&mut self, target: &Target) -> Result<(), String> {
+        let segments: Vec<&str> = target.node.split('/').collect();
+        let ["pages", _, "sections", section, "tabs", tab, ..] = segments.as_slice() else {
+            return Ok(());
+        };
+        let tab_path = segments[..6].join("/");
+        let tabs = match &self.section_def(section)?.body {
+            Body::Composite(Composite::Record(record)) => record.tabs.len(),
+            _ => return Ok(()),
+        };
+        for _ in 0..=tabs {
+            match self.screen().reversed(&tab_path) {
+                Some(true) => return Ok(()),
+                Some(false) => self.app.keys("]"),
+                None => return Err(format!("tab {tab} of section {section} is not drawn")),
+            }
+        }
+        Err(format!("{}: tab {tab} does not come up", target.written))
     }
 
     // ── rows ────────────────────────────────────────────────────────────────────────────────
@@ -482,8 +589,7 @@ impl<'d> Runner<'d> {
     fn key_field(&self, section: &str) -> String {
         self.section_def(section)
             .ok()
-            .and_then(|section| section.live.as_ref())
-            .and_then(|live| live.match_field.clone())
+            .and_then(|section| section.row_key().map(str::to_owned))
             .unwrap_or_else(|| "id".to_owned())
     }
 
@@ -497,7 +603,11 @@ impl<'d> Runner<'d> {
                 }
                 let region = self.region(target)?;
                 let wanted = matches!(check, Check::Text(_));
-                if region.contains(text.as_str()) == wanted {
+                // Numbers compare by value: `1840` and `1,840` are one text
+                // ([`crate::numbers`]).
+                let shows = crate::numbers::ungrouped(&region)
+                    .contains(crate::numbers::ungrouped(text).as_str());
+                if shows == wanted {
                     return Ok(());
                 }
                 Err(format!(
@@ -570,8 +680,8 @@ impl<'d> Runner<'d> {
         if target.is_page() {
             return Ok(self.screen().text());
         }
-        if let Some((name, path)) = target.overlay() {
-            self.require_overlay(&name)?;
+        if let Some((_, path)) = target.overlay() {
+            self.require_overlay(target)?;
             if target.node == path && target.row.is_none() {
                 let screen = self.screen();
                 return Ok(screen
@@ -632,22 +742,22 @@ impl<'d> Runner<'d> {
                 others.join(", ")
             ));
         }
-        let holds = |given: &BTreeMap<String, Value>| {
-            input
-                .iter()
-                .all(|(field, value)| given.get(field).map(scalar) == Some(scalar(value)))
-        };
-        if named.iter().any(|given| holds(given)) {
+        let mismatches: Vec<String> = named
+            .iter()
+            .filter_map(|given| input_mismatch(input, given))
+            .collect();
+        if mismatches.len() < named.len() {
             return Ok(());
         }
         Err(format!(
-            "command {command} was sent with {}, not with {}",
+            "command {command} was sent with {}, not with {}: {}",
             named
                 .iter()
                 .map(|given| show_input(given))
                 .collect::<Vec<_>>()
                 .join(" and "),
-            show_input(input)
+            show_input(input),
+            mismatches.join("; ")
         ))
     }
 
@@ -718,8 +828,8 @@ impl<'d> Runner<'d> {
                 target.written
             )
         };
-        if let Some((name, path)) = target.overlay() {
-            self.require_overlay(&name)?;
+        if let Some((_, path)) = target.overlay() {
+            self.require_overlay(target)?;
             return match self.overlay_body(&path)? {
                 Body::Composite(Composite::Form(form)) => Ok((form, true)),
                 _ => Err(unsupported()),
@@ -772,19 +882,43 @@ impl<'d> Runner<'d> {
             .unwrap_or_default()
     }
 
-    fn require_overlay(&self, name: &str) -> Result<(), String> {
+    /// The overlay `target` is in is the one open. A row action's inline confirm must be open
+    /// at its path under the row the target names.
+    fn require_overlay(&self, target: &Target) -> Result<(), String> {
+        let Some((name, path)) = target.overlay() else {
+            return Err(format!("{}: not an overlay", target.written));
+        };
         let screen = self.screen();
-        let title = self.overlay_title(name).unwrap_or_else(|| name.to_owned());
+        if let Some(written) = target.row_overlay() {
+            if screen.overlay_open() && screen.region(&written).is_some() {
+                return Ok(());
+            }
+            return Err(format!("overlay {written} is not open"));
+        }
+        let title = self
+            .overlay_title(&name)
+            .or_else(|| self.overlay_at(&path).and_then(|overlay| overlay.title))
+            .unwrap_or_else(|| name.clone());
         // The terminal records the open overlay by its path: a page's or shell's
         // `overlays/<name>`, or an action's inline `<name>/confirm/overlay`.
-        let open = screen.region_where(|path| {
-            path.ends_with(&format!("/overlays/{name}"))
-                || path.ends_with(&format!("/{name}/confirm/overlay"))
-        });
+        let open = screen
+            .region_where(|drawn| drawn.ends_with(&format!("/overlays/{name}")) || drawn == path);
         if screen.overlay_open() && open && screen.text().contains(&title) {
             return Ok(());
         }
         Err(format!("overlay {name} is not open"))
+    }
+
+    fn overlay_at(&self, path: &str) -> Option<ess_ui::Overlay> {
+        self.doc
+            .nodes()
+            .into_iter()
+            .find_map(|located| match located.node {
+                NodeRef::Overlay(overlay) if located.path.to_string() == path => {
+                    Some(overlay.clone())
+                }
+                _ => None,
+            })
     }
 
     fn require_no_overlay(&self, target: &Target) -> Result<(), String> {
@@ -857,9 +991,99 @@ fn key_spec(key: char) -> String {
 fn show_input(input: &BTreeMap<String, Value>) -> String {
     let fields: Vec<String> = input
         .iter()
-        .map(|(name, value)| format!("{name}={}", scalar(value)))
+        .map(|(name, value)| format!("{name}={}", json(value)))
         .collect();
     format!("{{{}}}", fields.join(", "))
+}
+
+/// A value as JSON, so `7500` and `"7500"` read differently.
+fn json(value: &Value) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| scalar(value))
+}
+
+/// A value with its JSON type: `number 7500`, `string "7500"`.
+fn typed(value: &Value) -> String {
+    let kind = match value {
+        Value::Null => return "null".to_owned(),
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Sequence(_) => "list",
+        Value::Mapping(_) => "object",
+        Value::Tagged(tagged) => return typed(&tagged.value),
+    };
+    format!("{kind} {}", json(value))
+}
+
+/// Where `given` (a sent input) departs from `expected`, if it does: the first expected field it
+/// lacks or holds another value at, with both values and their types. A field name with dots
+/// reaches into nested objects (`limits.cents`).
+fn input_mismatch(
+    expected: &BTreeMap<String, Value>,
+    given: &BTreeMap<String, Value>,
+) -> Option<String> {
+    let given = Value::Mapping(
+        given
+            .iter()
+            .map(|(name, value)| (Value::String(name.clone()), value.clone()))
+            .collect(),
+    );
+    expected.iter().find_map(|(field, wanted)| {
+        let found = field
+            .split('.')
+            .try_fold(&given, |value, segment| value.get(segment));
+        match found {
+            None => Some(format!("{field} is absent, expected {}", typed(wanted))),
+            Some(found) => value_mismatch(wanted, found, field),
+        }
+    })
+}
+
+/// Where `found` departs from `wanted` at `path`: values compare as JSON, with their types; an
+/// expected object holds when every field it names holds, a list when it is equal item by item.
+fn value_mismatch(wanted: &Value, found: &Value, path: &str) -> Option<String> {
+    let differs = || {
+        Some(format!(
+            "at {path} it sent {}, expected {}",
+            typed(found),
+            typed(wanted)
+        ))
+    };
+    match (wanted, found) {
+        (Value::Tagged(tagged), _) => value_mismatch(&tagged.value, found, path),
+        (_, Value::Tagged(tagged)) => value_mismatch(wanted, &tagged.value, path),
+        (Value::Mapping(fields), Value::Mapping(_)) => fields.iter().find_map(|(name, value)| {
+            let name = scalar(name);
+            let at = format!("{path}.{name}");
+            match found.get(name.as_str()) {
+                None => Some(format!("{at} is absent, expected {}", typed(value))),
+                Some(inner) => value_mismatch(value, inner, &at),
+            }
+        }),
+        (Value::Sequence(items), Value::Sequence(sent)) => {
+            if items.len() != sent.len() {
+                return differs();
+            }
+            items
+                .iter()
+                .zip(sent)
+                .enumerate()
+                .find_map(|(index, (item, sent))| {
+                    value_mismatch(item, sent, &format!("{path}[{index}]"))
+                })
+        }
+        (Value::Number(left), Value::Number(right)) => {
+            let same = match (left.as_f64(), right.as_f64()) {
+                (Some(left), Some(right)) => {
+                    left.partial_cmp(&right) == Some(std::cmp::Ordering::Equal)
+                }
+                _ => left == right,
+            };
+            (!same).then(differs).flatten()
+        }
+        _ if wanted == found => None,
+        _ => differs(),
+    }
 }
 
 /// The fields a form edits, in the order the terminal moves through them (first tab).

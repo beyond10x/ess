@@ -45,7 +45,8 @@ fn views_of(file: &Value) -> Vec<(String, Value)> {
     Vec::new()
 }
 
-/// Durations `500ms`, `4s`, `2m`, `1h` in milliseconds.
+/// Durations `500ms`, `4s`, `2m`, `1h` in milliseconds; `None` for anything else, and for a
+/// duration too large for a `u64` of milliseconds.
 pub(crate) fn millis(text: &str) -> Option<u64> {
     let (digits, factor) = if let Some(digits) = text.strip_suffix("ms") {
         (digits, 1)
@@ -60,7 +61,7 @@ pub(crate) fn millis(text: &str) -> Option<u64> {
         .trim()
         .parse::<u64>()
         .ok()
-        .map(|value| value * factor)
+        .and_then(|value| value.checked_mul(factor))
 }
 
 /// A script with every `at` in milliseconds.
@@ -133,6 +134,11 @@ fn placeholder_reads(document: &Document) -> Vec<(String, String)> {
             };
             if let Some(reads) = reads {
                 push(reads);
+            }
+            if let Composite::GraphEditor(editor) = composite {
+                if let Some(reads) = editor.edges.as_ref().and_then(|e| e.reads.as_ref()) {
+                    push(reads);
+                }
             }
         }
     }

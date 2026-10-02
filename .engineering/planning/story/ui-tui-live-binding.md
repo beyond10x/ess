@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-tui-live-binding
 kind: story
-status: active
+status: implemented
 title: The TUI reads and commands a synthesized server (ess ui run --tui --model --base-url)
 refs:
 - provider: github
@@ -19,10 +19,11 @@ scope:
   path: crates/edge/ess-cli/tests/ui_run_live.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:51Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "active", to: "implemented", at: "2026-10-02T02:07:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":16}}}
 ---
 ## Outcome
 

@@ -1897,6 +1897,75 @@ fn arrange_row(
             creator.command.name, creator.outcome.name, row.label
         )));
     }
+    let drive = |input: &BTreeMap<String, Node>| {
+        drive_row(
+            plan,
+            creator,
+            mapped,
+            row,
+            distinction,
+            (owner, guard),
+            actors,
+            params,
+            input,
+        )
+    };
+    let first = drive(&input);
+    if first.is_ok() {
+        return first;
+    }
+    // A move guarded by the row's stored fields that the plain witness does not select would send
+    // the route searching for another row, with values of its own in the fields the pattern chose
+    // (beyond10x/ess#279). So the row is created again with every field the pattern did not choose
+    // taken toward those guards, and the pattern's own values kept.
+    let mut planned: BTreeSet<String> = identity_inputs(creator.command).into_iter().collect();
+    planned.extend(
+        row.values
+            .keys()
+            .filter_map(|field| mapped.get(field.as_str()))
+            .map(|read| (*read).to_owned()),
+    );
+    planned.extend(
+        input
+            .iter()
+            .filter(|(field, value)| base.get(*field) != Some(*value))
+            .map(|(field, _)| field.clone()),
+    );
+    for toward in subject_fact::toward_moves(ir, plan.handle, creator) {
+        let mut retried = input.clone();
+        for (field, value) in toward {
+            if !planned.contains(&field) {
+                retried.insert(field, value);
+            }
+        }
+        if retried == input
+            || !subject_fact::input_selects(ir, creator.command, creator.outcome, &retried)
+                .unwrap_or(false)
+        {
+            continue;
+        }
+        if let Ok(created) = drive(&retried) {
+            return Ok(created);
+        }
+    }
+    first
+}
+
+/// [`arrange_row`] from the creating command's `input`: the row created, driven to a state its
+/// filter truth needs, and refused where a move on the way rewrote what the pattern chose.
+#[allow(clippy::too_many_arguments)]
+fn drive_row(
+    plan: &Plan<'_>,
+    creator: &Driver<'_>,
+    mapped: &BTreeMap<&str, &str>,
+    row: &Row,
+    distinction: Distinction,
+    (owner, guard): (Option<&Owner>, &RowGuard),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    params: &BTreeMap<String, ScenarioValue>,
+    input: &BTreeMap<String, Node>,
+) -> Result<Created, RefusalCause> {
+    let ir = plan.ir;
     let created = create_row(
         plan,
         creator,
@@ -1905,7 +1974,7 @@ fn arrange_row(
         distinction,
         (owner, guard),
         actors,
-        &input,
+        input,
     )?;
     let start = &created.reached;
 

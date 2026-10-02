@@ -451,10 +451,14 @@ fn a_document_without_a_construct_gets_no_code_for_it() {
 #[test]
 fn the_command_entry_point_writes_the_project() {
     let out = scratch("command");
-    let summary = ess_ui_react::run(&ess_ui_react::ReactArgs {
-        path: example_file(),
-        out: out.clone(),
-    })
+    let summary = ess_ui_react::run(
+        &ess_ui_react::ReactArgs {
+            path: example_file(),
+            out: out.clone(),
+            model: None,
+        },
+        None,
+    )
     .unwrap_or_else(|error| panic!("{error}"));
     assert!(summary.contains("files written"), "{summary}");
     assert!(out.join("src/App.tsx").is_file());

@@ -111,16 +111,9 @@ pub(crate) fn expand(raw: Value, schema: &Schema) -> Result<Value> {
             composites.value(value, &root.child(key), Ctx::Plain)?;
         }
     }
-    let widgets = document
-        .get("widgets")
-        .and_then(Value::as_mapping)
-        .cloned()
-        .unwrap_or_default();
-    for key in ["shells", "pages"] {
-        if let Some(value) = document.get_mut(key) {
-            widget_uses(value, &root.child(key), &widgets, &mut Vec::new())?;
-        }
-    }
+    expand_widgets(&mut document)?;
+    // `tone_by.tones`, once every argument it may come from is substituted
+    resolve_tones(&mut document)?;
 
     // 3. local shorthands
     let local = Local {
@@ -630,6 +623,12 @@ impl Local<'_> {
                             at.clone(),
                             format!("`{type_name}` is not an enum type of this document"),
                         )
+                        .with_hint(
+                            "a renderer runs without the ESS model, so it cannot list a model \
+                             enum's variants; list them, or declare them under `types`, and \
+                             `ess ui check --model` holds a form field's options to its command \
+                             input's variants",
+                        )
                     })?;
                 let shape = &self.schema.template("choice", "options")["as"];
                 *short = Value::Sequence(
@@ -1125,11 +1124,82 @@ fn same_as(local: &Mapping, pages: &Mapping, at: &NodePath, depth: usize) -> Res
 
 // ── pass 4: widget instances ─────────────────────────────────────────────────────────────────
 
+/// Gives every widget use under `shells` and `pages` its expanded body, within one
+/// [`Budget`] for the document.
+fn expand_widgets(document: &mut Mapping) -> Result<()> {
+    let root = NodePath::root();
+    let widgets = document
+        .get("widgets")
+        .and_then(Value::as_mapping)
+        .cloned()
+        .unwrap_or_default();
+    let mut budget = Budget::default();
+    for key in ["shells", "pages"] {
+        if let Some(value) = document.get_mut(key) {
+            widget_uses(
+                value,
+                &root.child(key),
+                &widgets,
+                &mut Vec::new(),
+                &mut budget,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// The most YAML values the widget bodies of one document may expand to, all uses together.
+///
+/// A widget may use another more than once, so expansion can grow exponentially with nesting
+/// depth while every widget is still free of cycles (beyond10x/ess#300). The limit keeps loading
+/// a document linear in its size: the use that would pass it is refused, after at most this many
+/// values have been copied.
+pub(crate) const EXPANSION_LIMIT: usize = 100_000;
+
+/// What is left of [`EXPANSION_LIMIT`] for the document.
+struct Budget {
+    left: usize,
+    exceeded: bool,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self {
+            left: EXPANSION_LIMIT,
+            exceeded: false,
+        }
+    }
+}
+
+fn exceeded(widget: &str, at: &NodePath) -> LoadError {
+    LoadError::new(
+        at.clone(),
+        format!(
+            "widget `{widget}`: widget expansion exceeds {EXPANSION_LIMIT} values for the \
+             document; a widget used more than once at each level of nesting grows exponentially"
+        ),
+    )
+}
+
+/// The number of YAML values in `value`, itself included.
+fn values_in(value: &Value) -> usize {
+    1 + match value {
+        Value::Mapping(mapping) => mapping
+            .iter()
+            .map(|(key, child)| values_in(key) + values_in(child))
+            .sum(),
+        Value::Sequence(entries) => entries.iter().map(values_in).sum(),
+        Value::Tagged(tagged) => values_in(&tagged.value),
+        _ => 0,
+    }
+}
+
 fn widget_uses(
     value: &mut Value,
     at: &NodePath,
     widgets: &Mapping,
     stack: &mut Vec<String>,
+    budget: &mut Budget,
 ) -> Result<()> {
     match value {
         Value::Mapping(mapping) => {
@@ -1138,7 +1208,7 @@ fn widget_uses(
                 if OPAQUE.contains(&key.as_str()) {
                     continue;
                 }
-                widget_uses(child, &at.child(&key), widgets, stack)?;
+                widget_uses(child, &at.child(&key), widgets, stack, budget)?;
             }
             let widget = mapping
                 .get("component")
@@ -1146,7 +1216,7 @@ fn widget_uses(
                 .filter(|component| !COMPOSITE_KINDS.contains(component))
                 .map(str::to_owned);
             if let Some(widget) = widget {
-                let body = instance_body(&widget, mapping, at, widgets, stack)?;
+                let body = instance_body(&widget, mapping, at, widgets, stack, budget)?;
                 mapping.insert(Value::from("body"), body);
             }
             Ok(())
@@ -1154,7 +1224,7 @@ fn widget_uses(
         Value::Sequence(entries) => {
             for entry in entries {
                 let here = at.child(&entry_segment(entry));
-                widget_uses(entry, &here, widgets, stack)?;
+                widget_uses(entry, &here, widgets, stack, budget)?;
             }
             Ok(())
         }
@@ -1168,6 +1238,7 @@ fn instance_body(
     at: &NodePath,
     widgets: &Mapping,
     stack: &mut Vec<String>,
+    budget: &mut Budget,
 ) -> Result<Value> {
     let Some(definition) = widgets.get(widget) else {
         return Err(LoadError::new(
@@ -1223,6 +1294,11 @@ fn instance_body(
     }
     let mut body = definition.get("body").cloned().unwrap_or_default();
     substitute(&mut body, &bindings);
+    let Some(left) = budget.left.checked_sub(values_in(&body)) else {
+        budget.exceeded = true;
+        return Err(exceeded(widget, at));
+    };
+    budget.left = left;
     if let Some(unbound) = unbound_arg(&body) {
         let message = if bindings.contains_key(unbound.as_str()) {
             format!(
@@ -1235,9 +1311,119 @@ fn instance_body(
         return Err(LoadError::new(at.child("body"), message));
     }
     stack.push(widget.to_owned());
-    widget_uses(&mut body, &at.child("body"), widgets, stack)?;
+    let expanded = widget_uses(&mut body, &at.child("body"), widgets, stack, budget);
     stack.pop();
-    Ok(body)
+    match expanded {
+        // Reported at the outermost use, the one an author can see and change, rather than at
+        // the nested copy where the count happened to run out.
+        Err(_) if budget.exceeded && stack.is_empty() => Err(exceeded(widget, at)),
+        Err(error) => Err(error),
+        Ok(()) => Ok(body),
+    }
+}
+
+// ── tone maps ────────────────────────────────────────────────────────────────────────────────
+
+/// Resolves every `tone_by` written with `tones: <name>` in the shells, pages and widget
+/// declarations to the `tone_maps` entry it names.
+fn resolve_tones(document: &mut Mapping) -> Result<()> {
+    let maps = document
+        .get("tone_maps")
+        .and_then(Value::as_mapping)
+        .cloned()
+        .unwrap_or_default();
+    for key in ["shells", "pages", "widgets"] {
+        if let Some(value) = document.get_mut(key) {
+            let tones = Tones {
+                maps: &maps,
+                declaration: key == "widgets",
+            };
+            tones.value(value, &NodePath::root().child(key))?;
+        }
+    }
+    Ok(())
+}
+
+/// Resolves a `tone_by` written with `tones: <name>` to the `tone_maps` entry it names, so
+/// that after loading `ToneBy.map` is always the map and no reader looks a name up.
+struct Tones<'a> {
+    maps: &'a Mapping,
+    /// Walking widget declarations, where `tones: args.<param>` is still unbound.
+    declaration: bool,
+}
+
+impl Tones<'_> {
+    fn value(&self, value: &mut Value, at: &NodePath) -> Result<()> {
+        match value {
+            Value::Mapping(mapping) => {
+                for (key, child) in mapping.iter_mut() {
+                    let key = key_text(key);
+                    let here = at.child(&key);
+                    if key == "tone_by" {
+                        self.tone_by(child, &here)?;
+                    } else if !OPAQUE.contains(&key.as_str()) {
+                        self.value(child, &here)?;
+                    }
+                }
+                Ok(())
+            }
+            Value::Sequence(entries) => {
+                for entry in entries {
+                    let here = at.child(&entry_segment(entry));
+                    self.value(entry, &here)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn tone_by(&self, tone_by: &mut Value, at: &NodePath) -> Result<()> {
+        let Value::Mapping(tone_by) = tone_by else {
+            return Ok(()); // the reader refuses a `tone_by` that is not a map
+        };
+        let has_map = tone_by.contains_key("map");
+        let Some(tones) = tone_by.get("tones").cloned() else {
+            if has_map {
+                return Ok(());
+            }
+            return Err(LoadError::new(
+                at.clone(),
+                "a `tone_by` has exactly one of `map` and `tones`; this one has neither",
+            ));
+        };
+        if has_map {
+            return Err(LoadError::new(
+                at.clone(),
+                "a `tone_by` has exactly one of `map` and `tones`; this one has both",
+            ));
+        }
+        let Value::String(name) = tones else {
+            return Err(LoadError::new(
+                at.child("tones"),
+                format!("`tones` is the name of a tone map, not {tones:?}"),
+            ));
+        };
+        let map = if self.declaration && name.starts_with("args.") {
+            Value::String(name)
+        } else if let Some(map) = self.maps.get(name.as_str()) {
+            map.clone()
+        } else {
+            let declared: Vec<String> = self.maps.keys().map(key_text).collect();
+            let hint = if declared.is_empty() {
+                "the document declares no `tone_maps`".to_owned()
+            } else {
+                format!("the tone maps are {}", declared.join(", "))
+            };
+            return Err(LoadError::new(
+                at.child("tones"),
+                format!("`{name}` names no entry of `tone_maps`"),
+            )
+            .with_hint(&hint));
+        };
+        tone_by.insert(Value::from("map"), map);
+        Ok(())
+    }
 }
 
 fn is_name_char(character: char) -> bool {

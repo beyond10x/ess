@@ -23,6 +23,18 @@ types:
   TicketPriority: {enum: [low, normal, high, urgent]}
   Tag:           string
 
+# ── Style: themes, the theme choice, tone maps ───────────────────────────────────────────────
+themes:
+  light: {}
+  dark:
+    color: {surface: '#1f2024', text: '#ecedf0', line: '#34363c', danger_fill: '#4a2420'}
+  dense:
+    space: {xs: 0.125rem, sm: 0.25rem, md: 0.5rem, lg: 0.75rem}
+theme: {default: light, chosen_by: shell.theme}
+tone_maps:
+  partner_tier: {registered: neutral, silver: info, gold: warning, platinum: success}
+  deal_stage:   {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}
+
 # ── Widgets: app-defined composites ─────────────────────────────────────────────────────────
 widgets:
   money:
@@ -36,10 +48,10 @@ widgets:
     summary: A status value rendered as a toned badge.
     params:
       status: {type: string, required: true, note: the status value}
-      tones:  {type: {map: {key: string, value: Tone}}, required: true, note: tone per status value}
+      tones:  {type: {ref: tone_map}, required: true, note: the tone map of the status values}
     arrange: row
     body:
-      - {name: badge, primitive: badge, text: args.status, tone_by: {value: args.status, map: args.tones}}
+      - {name: badge, primitive: badge, text: args.status, tone_by: {value: args.status, tones: args.tones}}
   partner_card:
     summary: A partner as a card with logo, tier and revenue.
     params:
@@ -48,7 +60,7 @@ widgets:
     body:
       - {name: logo,    primitive: image, src: args.partner.logo_url, alt: Partner logo, fit: contain}
       - {name: title,   primitive: text, text: args.partner.name, style: heading}
-      - {name: tier,    component: status_badge, args: {status: args.partner.tier, tones: {registered: neutral, silver: info, gold: warning, platinum: success}}}
+      - {name: tier,    component: status_badge, args: {status: args.partner.tier, tones: partner_tier}}
       - {name: revenue, component: money, args: {value: args.partner.revenue_ytd}}
       - {name: rule,    primitive: divider}
       - {name: open,    primitive: link, text: Open, to: {to: partners.detail, params: {id: args.partner.id}}}
@@ -319,7 +331,7 @@ pages:
         reads: {view: deals.ByPartner, params: {partner_id: params.id}}
         columns: [title, {field: stage, as: badge}, {field: value, as: number}]
         item:
-          - {name: stage, component: status_badge, args: {status: row.stage, tones: {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}}}
+          - {name: stage, component: status_badge, args: {status: row.stage, tones: deal_stage}}
         expand: {component: record, reads: {view: deals.ById, params: {id: row.id}}, fields: [owner, {field: close_date, as: date}, notes]}
       - name: invoices
         component: collection

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T01:56:09Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-tui-live-binding",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction 1",
+    "reference": "review-result:ui-tui-live-binding-adversary-pass1#finding-7",
+    "review": "review-result:ui-tui-live-binding-adversary-pass1",
+    "outcome": "fixed"
+  }
+}

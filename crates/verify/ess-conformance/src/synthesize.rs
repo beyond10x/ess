@@ -8429,6 +8429,25 @@ fn not_found<'a>(
         .collect()
 }
 
+/// The one outcome [`not_found`] reads as `command`'s answer for an identity naming no record, over
+/// its branches acting on an input-named instance; `None` where it declares none, or several. The
+/// model interpreter answers a never-created identity with it, after an `unknown_instance:` branch
+/// and before `wrong_state`, as synthesis does (beyond10x/ess#291).
+pub(crate) fn declared_not_found<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+) -> Option<&'a ResolvedOutcome> {
+    let acting: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| names_existing(outcome).is_some())
+        .collect();
+    match not_found(ir, command, &acting).as_slice() {
+        [answer] => Some(answer),
+        _ => None,
+    }
+}
+
 /// The scenario itself: the command, sent for an identity no record carries, answering `declared`.
 ///
 /// The input is the one that reaches a branch acting on an existing instance, for the reason

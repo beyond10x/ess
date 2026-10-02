@@ -44,14 +44,14 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `enum` | `{enum: [a, b]}` | `{enum: [light, dark]}` |   |
 | `one_of` | `{one_of: [T1, T2]}` | `{one_of: [duration, expr]}` |   |
 | `record` | `{record: {field: T}}` | `{record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}` |   |
-| `ref` | `{ref: kind}` | `{ref: view}` | view, command and event resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, view, command, event]` |
+| `ref` | `{ref: kind}` | `{ref: view}` | view, command and event resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event]` |
 | `const` | `{const: value}` | `{const: ess-ui/1}` |   |
 
 ### Expressions
 
 Binding expressions — the values of fields typed `expr`.
 
-Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path.
+Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path. A string that does not parse, or that joins words with an operator but reads no path or function form (`Limit in cents`, `not yet sent`), is literal text, including a widget argument substituted into an `expr` position.
 
 | Form | Meaning |
 |---|---|
@@ -161,6 +161,10 @@ One document describes one frontend. It names the ESS model every view, command 
 | `channels` | map of `name` → [Channel](#channel) |   |   | live data sources |
 | `fixtures` | [FixtureIndex](#fixtureindex) |   |   | sample data so renderers run without a backend |
 | `unmapped` | list of `string` |   |   | document-level gaps found by a retrofit |
+| `tokens` | [Tokens](#tokens) |   |   | design tokens, merged over the built-in table |
+| `themes` | map of `name` → [Theme](#theme) |   |   | named looks, each the tokens it overrides |
+| `theme` | [ThemeChoice](#themechoice) |   |   | which theme is shown and the shell state that chooses it |
+| `tone_maps` | map of `name` → [ToneMap](#tonemap) |   |   | value-to-tone maps, named by `tone_by.tones` |
 
 **Example**
 
@@ -337,6 +341,12 @@ preload:
   views: [{view: session.Me}, {view: tags.All}]
 guards: [{name: signed_in, when: not actor.signed_in, then: {redirect: auth.sign_in}}]
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `page_outlet` | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
 
 ### Region
 
@@ -536,7 +546,7 @@ Routes, layouts, page templates, and the section as the unit of loading.
 
 One route — its state, layout, header, sections and overlays.
 
-A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch.
+A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch; switching keeps every current param the target page declares, by name, so sibling views of one record stay on that record.
 
 **Properties**
 
@@ -605,6 +615,7 @@ overlays: {edit: {kind: drawer, component: form, same_as: partners.list.edit}}
 |---|---|---|---|
 | `page_reachable` | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
 
 ### PageLayout
 
@@ -773,7 +784,7 @@ header:
 
 A region of a page with one read and its own loading lifecycle.
 
-The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button).
+The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button). `title` is the heading a reader sees, which tells two sections over the same view apart.
 
 **Properties**
 
@@ -781,6 +792,7 @@ The section, not the page, is the unit of loading. Each has at most one `reads`,
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name among the page's sections |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the section renders |
+| `title` | `string` |   |   | heading shown above the section; absent, none |
 | `reads` | [Reads](#reads) |   |   | the section's data; one per section; it is the composite's own `reads` |
 | `live` | [Live](#live) |   |   | how channel events change the rows |
 | `load` | one of: `eager` \| `on_visible` \| `on_demand` |   | `eager` | when the read starts |
@@ -882,7 +894,7 @@ Use for any list, table or card grid. Columns are fields of the rows; `as` picks
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | the rows |
 | `columns` | one of: list of [Field](#field) \| record \{ `binds`: `expr`, `all`: list of [Field](#field) \} \| `string` |   |   | fixed columns, user-selectable columns, or an UNMAPPED string |
-| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
+| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: optional list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
 | `style` | one of: `table` \| `cards` \| `list` \| `tree` |   | `table` | presentation hint |
 | `selection` | one of: `none` \| `single` \| `multiple` \| record \{ `mode`: (one of: `single` \| `multiple`), `enabled`: `expr` \} |   | `none` | row selection, optionally only in a mode |
 | `row_actions` | list of [Action](#action) |   |   | actions per row |
@@ -892,6 +904,8 @@ Use for any list, table or card grid. Columns are fields of the rows; `as` picks
 | `item` | list of [Node](#node) |   |   | nested named nodes per row, in order |
 | `reorder` | record \{ `does`: name of an ESS `command`, `endpoint`: optional `string` \} |   |   | drag to reorder, saved by a command |
 | `group_by` | `name` |   |   | field rows are grouped under |
+| `group_order` | list of `string` |   |   | order groups are shown in; values not listed follow in the order they first appear |
+| `show_empty_groups` | `boolean` |   | `false` | a heading for every `group_order` value, even one no row falls under |
 
 **Example**
 
@@ -1096,6 +1110,8 @@ Overlays hold forms, confirms and detail views opened by actions. They belong to
 | `title` | `string` |   |   | overlay title; a confirm shows it as its question |
 | `params` | map of `name` → `expr` |   |   | values passed by the opener |
 | `state` | map of `name` → [State](#state) |   |   | overlay-local state |
+| `visible` | `expr` |   |   | shows the overlay only when true |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 | `same_as` | name of an [overlay](#overlay) |   |   | reuse another overlay; local props override |
 | `unmapped` | list of `string` |   |   | gaps found by a retrofit |
 
@@ -1134,7 +1150,7 @@ Use before destructive commands, inside an overlay whose `title` is the question
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `body` | `string` |   |   | explanation |
-| `does` | name of an ESS `command` |   |   | command run on confirm |
+| `does` | name of an ESS `command` |   |   | command run on confirm, unless the action that opened the confirm runs the same command |
 | `references` | name of an ESS `view` |   |   | the used-by view shown first |
 | `consequences` | list of `string` |   |   | what the command will do |
 | `confirm_label` | `string` |   | `Delete` | confirm button text |
@@ -1170,6 +1186,8 @@ For KPI tiles and per-row live numbers. With `from` a metric reads a channel fie
 | `window` | `duration` |   |   | time window the value covers |
 | `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format |
 | `label` | `string` |   |   | caption |
+| `aggregate` | one of: `count` \| `sum` \| `min` \| `max` \| `avg` |   |   | computed over every row of the read instead of read from one; needs `reads` |
+| `field` | `name` |   |   | row field `aggregate` reads; required for every aggregate but count |
 
 **Example**
 
@@ -1237,15 +1255,15 @@ degrades: {no_free_layout: stack}
 
 Nodes and edges of a model, editable on a canvas.
 
-For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. A renderer without a canvas falls back to a collection of nodes.
+For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. `reads` holds the nodes, and the edges too unless `edges.reads` names a view of their own; `nodes.key` is the field edge endpoints name and `nodes.label` the field a node shows. A renderer without a canvas falls back to a collection of nodes.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `reads` | [Reads](#reads) | yes |   | the graph |
-| `nodes` | record \{ `kind_by`: `name`, `opens`: optional name of an [overlay](#overlay) \} |   |   | node kind field and edit overlay |
-| `edges` | record \{ `from`: `name`, `to`: `name`, `kind_by`: optional `name` \} |   |   | edge endpoints and kind |
+| `reads` | [Reads](#reads) | yes |   | the nodes, and the edges unless they have their own read |
+| `nodes` | record \{ `key`: optional `name`, `label`: optional `name`, `kind_by`: optional `name`, `opens`: optional name of an [overlay](#overlay) \} |   |   | node key (default id), label and kind fields, and edit overlay |
+| `edges` | record \{ `reads`: optional [Reads](#reads), `from`: `name`, `to`: `name`, `kind_by`: optional `name` \} |   |   | edge read, endpoint fields (node keys) and kind |
 | `node_actions` | list of [Action](#action) |   |   | context menu of a node |
 | `edge_actions` | list of [Action](#action) |   |   | context menu of an edge |
 | `toolbar` | list of [Node](#node) |   |   | named nodes above the canvas, left to right |
@@ -1365,15 +1383,15 @@ Written like a composite with `component` naming the widget and `args` supplying
 - {step: substitute, detail: args.<param> in the body is replaced by the bound expression}
 - step: validate
   detail: the expanded nodes are checked like built-ins; findings are reported at <instance path>/body/<node name>
+- step: bound
+  detail: the expanded bodies of all uses in a document hold at most 100000 YAML values; the outermost use that passes the limit is refused (widget_expands)
 ```
 
 **Example**
 
 ```yaml
 component: status_badge
-args:
-  status: row.stage
-  tones: {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}
+args: {status: row.stage, tones: deal_stage}
 ```
 
 **Checks**
@@ -1426,6 +1444,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `sortable` | `boolean` |   | `false` | column can sort |
 | `visible` | `expr` |   |   | shows the field only when true |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
+| `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `note` | `string` |   |   | author remark |
 
 **You may also write**
@@ -1608,6 +1627,8 @@ Composites are the normal level of a spec. Primitives exist for the small pieces
 | `primitive` | one of: `text` \| `badge` \| `icon` \| `button` \| `link` \| `input` \| `toggle` \| `image` \| `divider` | yes |   | kind of primitive |
 | `name` | `name` |   |   | node name, required inside lists |
 | `visible` | `expr` |   |   | shows the primitive only when true |
+| `state` | map of `name` → [State](#state) |   |   | state local to the primitive |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 
 **Tone**
 
@@ -1664,7 +1685,7 @@ currency: args.value.currency
 
 A short value in a toned pill.
 
-For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value.
+For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`.
 
 **Properties**
 
@@ -1672,8 +1693,8 @@ For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value.
 |---|---|---|---|---|
 | `text` | `expr` |   |   | literal or expression |
 | `field` | `name` |   |   | row field shown |
-| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | fixed tone |
-| `tone_by` | record \{ `value`: `expr`, `map`: map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} |   |   | tone per value |
+| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | fixed tone, and the tone of a value `tone_by` does not map |
+| `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
 
 **Exactly one of**
 
@@ -1685,21 +1706,28 @@ For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value.
 name: badge
 primitive: badge
 text: args.status
-tone_by: {value: args.status, map: args.tones}
+tone_by: {value: args.status, tones: args.tones}
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
 
 ### icon
 
 A semantic icon with an accessible label.
 
-The renderer maps the semantic name to its icon set; a TUI shows a glyph or the label.
+The renderer maps the semantic name to its icon set; a TUI shows a glyph or the label. Its tone is fixed (`tone`) or picked from a value (`tone_by`), exactly as on a badge, so a state shown as an icon follows the same tone map as the badge showing it elsewhere.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `icon` | `string` | yes |   | semantic icon name |
-| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | colour role |
+| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | colour role, and the tone of a value `tone_by` does not map |
+| `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
 | `label` | `string` | yes |   | accessible text |
 
 **Example**
@@ -1713,11 +1741,17 @@ label: Someone is typing
 visible: channel.ticket_chat.typing
 ```
 
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+
 ### button
 
 A button that runs one action.
 
-Use inside widgets and section children; page-level actions belong in the header.
+Use inside widgets and section children; page-level actions belong in the header. Its emphasis (`tone`) has no token group of its own: a renderer draws it from color tokens by the fixed table under Emphasis, the values the React renderer uses today, so a theme that overrides `accent` restyles every primary button. `none` draws nothing.
 
 **Properties**
 
@@ -1727,6 +1761,15 @@ Use inside widgets and section children; page-level actions belong in the header
 | `action` | [Action](#action) | yes |   | what the button does |
 | `tone` | one of: `primary` \| `secondary` \| `danger` \| `ghost` |   | `secondary` | emphasis |
 | `icon` | `string` |   |   | optional semantic icon |
+
+**Emphasis**
+
+```yaml
+primary: {fill: accent, text: on_accent, border: accent}
+secondary: {fill: surface, text: text, border: line}
+danger: {fill: danger, text: on_accent, border: danger}
+ghost: {fill: none, text: text, border: none}
+```
 
 **Example**
 
@@ -1873,7 +1916,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `endpoint` and `derived` are traceability for retrofits.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits.
 
 **Properties**
 
@@ -1882,6 +1925,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `view` | name of an ESS `view` |   |   | ESS view name |
 | `placeholder` | `name` |   |   | a view name not yet bound to the model |
 | `fixture` | `string` |   |   | fixture file answering the placeholder |
+| `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
@@ -1944,7 +1988,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
 | `choice` | [Node](#node) |   |   | options for as choice |
 | `loads` | [Reads](#reads) |   |   | current value for a header toggle or choice |
-| `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first |
+| `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
 | `visible` | `expr` |   |   | UI condition beyond grants |
@@ -2120,7 +2164,7 @@ How a section applies a channel's events to its rows.
 | `channel` | name of a [Channel](#channel) | yes |   | channel to consume |
 | `on` | list of name of an ESS `event` |   |   | subset of the channel's events |
 | `effect` | one of: `patch_row` \| `insert_or_patch` \| `insert_top` \| `remove_row` \| `replace` \| `refetch` | yes |   | what an event does to the rows |
-| `match` | `name` |   | `id` | row identity field |
+| `match` | `name` |   |   | row identity field; absent, the read's `key`, else `id` |
 | `only_if` | `expr` |   |   | drop events that fail the condition |
 | `coalesce` | `duration` |   |   | batch bursts into one render |
 | `when_paged_away` | one of: `count_new` \| `ignore` \| `insert` |   | `count_new` | behaviour when the reader is not on page one |
@@ -2437,6 +2481,173 @@ pages:
   invoices.list: {kind: report_page, profile: thin}
 ```
 
+## Style tokens and themes
+
+What the roles a document names look like: design tokens, themes, the theme preference and tone maps.
+
+### Tokens
+
+Design tokens — the values a renderer draws a document's roles with, in five groups.
+
+A document says what a node means, never how it looks: a badge has a tone, a text a style, a button an emphasis. Tokens say what those roles look like. Each group is a map of name to value. The built-in table below is merged under a document's `tokens:` group by group and name by name, so a document without `tokens:` looks as it always did and one that names three colors changes three. A node never names a token: a tone reaches `tone`, a text style reaches `type`, a button's emphasis reaches `color` through the table on `button`, and space and radius are read by the renderer's own stylesheet. Inside `tone`, a value is the bare name of a color. A `type` entry replaces the entry of its name whole, and a field it leaves out falls back to `body`, then to the built-in `body`. The values follow the grammar below; quote a color, since an unquoted `#` starts a YAML comment. A terminal draws no color: it draws a tone as the emphasis below, which adds no text and never uses reversed video, the mark of the cursor, and it reads no space, type or radius.
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| `color` | map of `name` → `string` |   |   | color literals by name; see the grammar |
+| `space` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `radius` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `type` | map of (one of: `body` \| `caption` \| `heading` \| `mono`) → record \{ `family`: optional `string`, `size`: optional `string`, `weight`: optional `integer` \} |   |   | family, size and weight per text style |
+| `tone` | map of (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) → record \{ `text`: `name`, `fill`: `name` \} |   |   | the color names a tone's text and fill are drawn with |
+
+**Grammar**
+
+```yaml
+color: "`#rgb`, `#rrggbb` or `#rrggbbaa` in hexadecimal digits, or `rgb(r g b / a)` with r, g and b whole numbers from 0 to 255 and a a decimal from 0 to 1; no `hsl()`, no named colors"
+length: "`0`, or a decimal followed by `px`, `rem` or `em`"
+weight: a whole number from 100 to 900 in steps of 100
+```
+
+**Builtins**
+
+```yaml
+color:
+  bg: "#f7f7f8"
+  surface: "#ffffff"
+  text: "#1c1d21"
+  muted: "#676a73"
+  line: "#dcdde1"
+  accent: "#2f5bd3"
+  info: "#2f7fd3"
+  success: "#2e8a4f"
+  warning: "#b7791f"
+  danger: "#c0392b"
+  danger_fill: "#f6d5d1"
+  success_fill: "#d7f0df"
+  warning_fill: "#f7e7c6"
+  info_fill: "#d9e4fb"
+  focus: "#eef2fd"
+  on_accent: "#fff"
+  backdrop: rgb(0 0 0 / 0.3)
+space: {xs: 0.25rem, sm: 0.5rem, md: 1rem, lg: 1.5rem}
+radius: {sm: 4px, md: 6px, lg: 8px, pill: 999px}
+type:
+  body: {family: "system-ui, sans-serif"}
+  caption: {size: 0.8rem}
+  heading: {size: 1.05rem, weight: 600}
+  mono: {family: "ui-monospace, monospace"}
+tone:
+  neutral: {text: text, fill: line}
+  info: {text: info, fill: line}
+  success: {text: success, fill: line}
+  warning: {text: warning, fill: line}
+  danger: {text: danger, fill: danger_fill}
+```
+
+**Terminal emphasis**
+
+```yaml
+neutral: bold
+info: italic
+success: bold
+warning: underlined
+danger: bold and underlined
+```
+
+**Example**
+
+```yaml
+color: {surface: "#1f2024", text: "#ecedf0", line: "#34363c", danger_fill: "#4a2420"}
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `types_structural` | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
+| `token_values` | `tokens.color.*`, `tokens.space.*`, `tokens.radius.*`, `tokens.type.*` | `{must_match: Tokens.grammar}` | error |
+| `token_names` | `tokens.type.*`, `tokens.tone.*` | `{must_be_in: [text.style, Primitive.tone]}` | error |
+| `token_refs` | `tokens.tone.*` | `{must_resolve_in: [Tokens.builtins.color, tokens.color]}` | error |
+
+### Theme
+
+A named look — the tokens it overrides.
+
+A theme holds only the values that differ, in the groups and names of `tokens:`, and is the built-in table, then `tokens:`, then its own overrides; a theme without overrides is the base values. Every theme therefore defines every token. A theme may override any group: one that overrides `space` alone is a denser look. One theme is shown at a time and themes do not combine, so a look both dark and dense is a theme of its own. An override may name only a token the built-in table or `tokens:` declares.
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| (value) | [Tokens](#tokens) |   |   | the values that differ from the base, by group and name |
+
+**Example**
+
+```yaml
+space: {xs: 0.125rem, sm: 0.25rem, md: 0.5rem, lg: 0.75rem}
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `theme_tokens` | `themes.*` | `{must: [override_a_declared_token, match_Tokens.grammar, tone_names_a_color_of_the_theme]}` | error |
+
+### ThemeChoice
+
+Which theme is shown, and the shell state the user chooses it with.
+
+`default` names the theme shown. `chosen_by` names shell state, `shell.<name>`: a state of class `preference` whose type is an enum, each variant naming a theme. A renderer shows the theme that state holds, and `default` where the shell declares no such state (a sign-in shell) or it holds no value. The user changes it like any state, with an action that `sets` it; where it is stored, how long it lives and who shares it are the state's own `store`, `scope` and `pinned`. To keep one choice across shells, each declares a state of the same name with `scope: user` in `local_storage`. A theme no variant names is not offered. A terminal never reads the choice.
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| `default` | `name` | yes |   | the theme shown where no state chooses one |
+| `chosen_by` | `expr` |   |   | `shell.<name>`: a preference state whose enum variants name themes |
+
+**Example**
+
+```yaml
+default: light
+chosen_by: shell.theme
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `theme_choice` | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
+
+### ToneMap
+
+A value-to-tone map, declared once and named by every `tone_by` that colors by it.
+
+A status written by hand at every badge can be colored two ways in two places. A tone map names it once: `tone_by: {value: row.stage, tones: deal_stage}` on a badge or an icon is resolved by the loader to that map. A widget parameter that carries a map name is typed `{ref: tone_map}`. The chain is value to tone (`tone_maps`), tone to text and fill (`Tokens.tone`), and those to color values (`Tokens.color`, per theme).
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| (value) | map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) |   |   | tone per value |
+
+**Example**
+
+```yaml
+lead: neutral
+qualified: info
+proposal: warning
+won: success
+lost: danger
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `tone_map_unused` | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+
 ## Checks
 
 What a validator checks in a document, and the construct each check applies to. Every finding names the failing node by its [NodePath](#nodepath).
@@ -2445,10 +2656,13 @@ What a validator checks in a document, and the construct each check applies to. 
 |---|---|---|---|---|
 | `names_unique` | every node | `every node` | `{must: unique_name_among_siblings}` | error |
 | `nav_resolves` | [Navigation](#navigation) | `navigation.sections[].pages[]`, `navigation.hidden[]`, `navigation.home` | `{must_resolve: {ref: page}}` | error |
+| `nav_unique` | every node | `navigation.sections[].pages[]` | `{must: list_each_page_once}` | error |
 | `page_reachable` | [Page](#page) | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `opens_resolves` | [Action](#action) | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `same_as_resolves` | [overlay](#overlay) | `**.same_as` | `{must_resolve: {ref: overlay}}` | error |
 | `page_refs` | [Action](#action), [link](#link), [Page](#page), [Guard](#guard) | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | [Page](#page) | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
+| `page_outlet` | [Shell](#shell) | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
 | `channel_refs` | [Live](#live), [header](#header) | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
 | `section_refs` | [header](#header), [Section](#section), [PageLayout](#pagelayout) | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
 | `layout_complete` | [PageLayout](#pagelayout) | `pages.*.layout` | `{must: place_every_section_once}` | warning |
@@ -2458,8 +2672,15 @@ What a validator checks in a document, and the construct each check applies to. 
 | `fixture_per_view` | [Reads](#reads) | `**.reads.view` | `{must_be_in: [fixtures.views, fixtures.derived]}` | warning |
 | `script_per_channel` | [Channel](#channel) | `channels.*` | `{must_be_in: [fixtures.scripts]}` | warning |
 | `state_resolves` | [State](#state) | `**.state.*` | `{must: resolve_to_store, refusals: PlacementProfile.resolution.refusals}` | error |
-| `types_structural` | [Type](#type) | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
+| `types_structural` | [Type](#type), [Tokens](#tokens) | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
 | `unmapped_reported` | every node | `**` | `{matches: unmapped_marker.pattern, action: report}` | warning |
+| `token_values` | [Tokens](#tokens) | `tokens.color.*`, `tokens.space.*`, `tokens.radius.*`, `tokens.type.*` | `{must_match: Tokens.grammar}` | error |
+| `token_names` | [Tokens](#tokens) | `tokens.type.*`, `tokens.tone.*` | `{must_be_in: [text.style, Primitive.tone]}` | error |
+| `token_refs` | [Tokens](#tokens) | `tokens.tone.*` | `{must_resolve_in: [Tokens.builtins.color, tokens.color]}` | error |
+| `theme_tokens` | [Theme](#theme) | `themes.*` | `{must: [override_a_declared_token, match_Tokens.grammar, tone_names_a_color_of_the_theme]}` | error |
+| `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
+| `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+| `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
 
 ## Retrofits and lowering
 
@@ -2568,3 +2789,7 @@ Every construct with its one-line summary, chapter by chapter.
 | [StateClass](#stateclass) | [State placement](#state-placement) | The kind of a state — the key the placement profile uses. |
 | [Store](#store) | [State placement](#state-placement) | Where a state lives, with its durability, sharing, and reload/reconnect behaviour. |
 | [PlacementProfile](#placementprofile) | [State placement](#state-placement) | A default store per state class — thin, fat or hybrid. |
+| [Tokens](#tokens) | [Style tokens and themes](#style-tokens-and-themes) | Design tokens — the values a renderer draws a document's roles with, in five groups. |
+| [Theme](#theme) | [Style tokens and themes](#style-tokens-and-themes) | A named look — the tokens it overrides. |
+| [ThemeChoice](#themechoice) | [Style tokens and themes](#style-tokens-and-themes) | Which theme is shown, and the shell state the user chooses it with. |
+| [ToneMap](#tonemap) | [Style tokens and themes](#style-tokens-and-themes) | A value-to-tone map, declared once and named by every `tone_by` that colors by it. |

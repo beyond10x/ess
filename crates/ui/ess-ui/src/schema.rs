@@ -46,6 +46,12 @@ impl Schema {
             .unwrap_or_else(|| panic!("the schema has no shorthand for {construct} at `{at}`"))
     }
 
+    /// The built-in token table (`constructs.Tokens.builtins`).
+    pub(crate) fn builtin_tokens(&self) -> crate::model::Tokens {
+        serde_yaml::from_value(self.value["constructs"]["Tokens"]["builtins"].clone())
+            .expect("the schema declares a built-in token table")
+    }
+
     /// The built-in page kinds (`constructs.PageKind.builtins`).
     pub(crate) fn builtin_kinds(&self) -> Mapping {
         self.value["constructs"]["PageKind"]["builtins"]

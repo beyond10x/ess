@@ -1,0 +1,75 @@
+// The one reading of a command's answer: a port of `ess_ui::binding::classify`, held to the same
+// recorded answers (`crates/ui/ess-ui/tests/vectors/answers.json`). A served command answers a
+// declared branch (`outcome`, `published`, and `error`/`payload` when it refused) or a refusal
+// the surface makes itself (`refused`, plus `actor` on a 403 for a caller no grant admits and
+// `committed` on a 501). The two are told apart by the body's members, the status deciding only
+// between shapes that share members.
+
+import type { Json } from "./json";
+
+/** What a command's answer means to the user who sent it. */
+export type Answer =
+  /** A declared branch that refused nothing was taken. */
+  | { answer: "accepted" }
+  /** A declared branch refused: its error's wire code and, where it has fields, their values. */
+  | { answer: "refused"; error: string; payload?: Json }
+  /** No grant admits the caller: the actor it was authenticated as, or `null` for nobody. */
+  | { answer: "not_granted"; actor: string | null }
+  /** The surface refused the request itself: a body it could not read, a path or method it lacks. */
+  | { answer: "malformed"; refused: string }
+  /** The realization is unfinished; when `committed`, the effect stands and must not be retried. */
+  | { answer: "unfinished"; committed: boolean }
+  /** Not an answer the served surface gives: no JSON object, or one of no known shape. */
+  | { answer: "transport" };
+
+function has(members: Record<string, unknown>, name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(members, name);
+}
+
+/** Classifies one answer by its body's members, as `ess_ui::binding::classify` does. */
+export function classify(status: number, body: string): Answer {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { answer: "transport" };
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { answer: "transport" };
+  }
+  const members = parsed as Record<string, unknown>;
+  const success = status >= 200 && status < 300;
+  if (has(members, "outcome")) {
+    if (typeof members.outcome !== "string") {
+      return { answer: "transport" };
+    }
+    if (!has(members, "error")) {
+      return success ? { answer: "accepted" } : { answer: "transport" };
+    }
+    const error = members.error;
+    if (typeof error === "string" && !success) {
+      const payload = members.payload;
+      return payload === undefined || payload === null
+        ? { answer: "refused", error }
+        : { answer: "refused", error, payload: payload as Json };
+    }
+    return { answer: "transport" };
+  }
+  const refused = members.refused;
+  if (!has(members, "refused") || typeof refused !== "string") {
+    return { answer: "transport" };
+  }
+  if (status === 403 && has(members, "actor")) {
+    const actor = members.actor;
+    if (typeof actor === "string") {
+      return { answer: "not_granted", actor };
+    }
+    if (actor === null) {
+      return { answer: "not_granted", actor: null };
+    }
+  }
+  if (status === 501 && typeof members.committed === "boolean") {
+    return { answer: "unfinished", committed: members.committed };
+  }
+  return { answer: "malformed", refused };
+}
