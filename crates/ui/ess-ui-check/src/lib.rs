@@ -21,6 +21,7 @@ mod model;
 mod raw;
 mod rules;
 mod schema;
+mod style;
 mod walk;
 
 use std::fmt::{self, Write as _};
@@ -122,6 +123,13 @@ pub const CHECKS: &[Check] = &[
     schema_check("state_resolves", Severity::Error),
     schema_check("types_structural", Severity::Error),
     schema_check("unmapped_reported", Severity::Warning),
+    schema_check("token_values", Severity::Error),
+    schema_check("token_names", Severity::Error),
+    schema_check("token_refs", Severity::Error),
+    schema_check("theme_tokens", Severity::Error),
+    schema_check("theme_choice", Severity::Error),
+    schema_check("tone_map_refs", Severity::Error),
+    schema_check("tone_map_unused", Severity::Warning),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.
@@ -344,6 +352,7 @@ pub fn check_source(
         Err(error) => classify::refusal(text, &error, &mut sink),
         Ok(document) => {
             rules::run(&document, base, options, &mut sink);
+            style::run(&document, &mut sink);
             raw::run(text, &document, &mut sink);
             if let Some(model) = model {
                 model.check(&document, &mut sink);
