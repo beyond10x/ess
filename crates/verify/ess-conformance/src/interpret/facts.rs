@@ -37,7 +37,7 @@ impl Facts {
         };
     }
 
-    fn check(&self, correlation: &CorrelationId) -> Result<(), TargetError> {
+    pub(super) fn check(&self, correlation: &CorrelationId) -> Result<(), TargetError> {
         if self.correlation.as_ref() == Some(correlation) {
             Ok(())
         } else {
