@@ -19,7 +19,7 @@ scope:
   path: crates/generate/ess-synth/src/web/mod.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/upsert_by_existence.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:36:18Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:36:18Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -52,3 +52,7 @@ Accept, redesigned around existing target seams. Go is already implemented but t
 ## Scope
 
 Cited: crates/generate/ess-synth/src/existence.rs; src/lib.rs; src/web/mod.rs; src/clap/mod.rs; tests/upsert_by_existence.rs; tests/web.rs; tests/clap.rs. Bridge/tree edits require concrete runtime/report evidence.
+
+## Verification 2026-10-02
+
+Committed278c195833518261d82e70c28b097d681a609800 after independent source/test review without findings. Actual Web wasm dispatch selects both existence forms; generated Clap commands name their unimplemented handler obligation instead of refusing projection. Go support is already on main through PR386. Final valid baseline9cases:6pass/3fail; treatment38passed across upsert/Web/Clap binaries. Strict all-target Clippy/fmt pass. Evidence: managed tree ess-backlog-servers-20261002, target/backlog-input/379-report.md and frozen hashes/logs. Final grouped package/projection checks and publication pending.

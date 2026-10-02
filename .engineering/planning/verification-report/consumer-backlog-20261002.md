@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 6
+revision: 7
 ---
 ## Intake
 
@@ -291,3 +291,10 @@ This section supersedes earlier intake-row snapshots where state changed.
 - #101/#102/#105/#106/#110 delivered behavior is source/release corroborated, but historical red-first evidence is incomplete; explicit qualifications retained in each story. Do not reimplement these delivered behaviors merely to clear stale state.
 
 Full intake remains82 issues plus161 initially nonterminal stories. Counts are intake, not a completion total. Remaining unresolved rows require ongoing fit/design/implementation or evidence-backed disposition.
+
+## Additional source reconciliation 2026-10-02
+
+- #304's archived intake story was deliberately superseded, not completed or lost: commit169415193 introduced active stories related-via-optional-input and related-via-stored-reference under epic:ui-live-apps. Their ess/21 design and prerequisites287/282 remain the delivery authority. Do not revive the archived duplicate; preserve full accepted Optional/stored-reference scope.
+- #347: actual seven-case runtime audit at55061600 passed, including Rust/Go/TypeScript late-refusal and event-log corruption cases. Existing expect_not_granted already uses ObserveEvents before and after refusal. Consumer answer-only checking does not implement that expectation; private consumer correctness is unverified. Full reconciliation recorded in story:feature-request-347.
+- #365: accepted existing read-filter design now has canonical active story and a dedicated managed worktree based on55061600. Complete model/checker/both-renderer/parity work is assigned as one future PR, separate from running381.
+- #328: legacy same-name form selection is delivered, but arbitrary value/label selection and model-derived default identity are still required. #330: inline/local-enum drift checking is delivered; direct model-enum lookup still requires a model-aware loading contract and remains open. #354: node live ownership and header record scope need a design; existing Header.live means channel lifecycle indicators. None of these partial behaviors closes the original request.

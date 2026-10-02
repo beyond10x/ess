@@ -14,12 +14,14 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/set_effects.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:02:27Z", actor: "human:timo", revision: 8, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:02:27Z", actor: "human:timo", revision: 9, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -52,3 +54,7 @@ beyond10x/ess#288, found in the 2026-10-01 fit review.
 ## Decisions
 
 Accept as proposed, choosing synthesis support over new validation refusal. Preserve captured identity references rather than substituting invented literal values. Needs fresh red reproduction against the current batch before implementation; the original report predates this candidate.
+
+## Implementation scope refinement
+
+Worker traced a second coupled seam: Selection closes input predicates from raw witness values, while generated identities are supplied as captured ScenarioValue::Instance. Include synthesize.rs only for a bounded creator-input binding helper; foreign-key relationships need not be owns relations, so ownership-only bind_links is insufficient. Preserve existing arrangement search and scenario representation; escalate if a broader rewrite or format change becomes necessary. The equivalent input and subject filter regressions must use actual generated identities and detect an ignored-filter mutant.
