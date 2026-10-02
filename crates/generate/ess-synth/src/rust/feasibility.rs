@@ -313,7 +313,7 @@ fn paths_and_packages(
         );
     }
     if !served.is_empty() {
-        for fixed in ["http", "json", "wire"] {
+        for fixed in ["entry", "http", "json", "wire", "memory", "static_assets"] {
             inventory.symbol("server root", fixed, &system, "fixed module");
             inventory.path(
                 format!("crates/{}/src/{fixed}.rs", layout.server_package()),

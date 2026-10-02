@@ -139,6 +139,15 @@ pub(super) fn server_crate(
     let mut artifacts = vec![
         manifest(ir, layout, provenance),
         lib_module(ir, layout, &components, provenance),
+        super::store::module(ir, plan, layout),
+        Artifact::new(
+            format!("crates/{package}/src/static_assets.rs"),
+            format!(
+                "{}{}",
+                provenance.commented_for("//", REGENERATE),
+                super::entry::STATIC
+            ),
+        ),
         Artifact::new(
             format!("crates/{package}/src/json.rs"),
             format!(
@@ -193,6 +202,7 @@ pub(super) fn server_crate(
             source: component.name.to_string(),
         });
         artifacts.push(surface_module(&server, component, &components));
+        artifacts.push(super::entry::binary(ir, plan, layout, component));
         artifacts.push(Artifact::new(
             format!("crates/{package}/src/{}.openapi.json", component.name),
             ess_gen::openapi::json(ir, component),
@@ -243,7 +253,7 @@ fn system_event_encoder(server: &Server<'_>) -> String {
 }
 
 /// The server crate's manifest: the types crate, every component crate and the system crate, by
-/// path — the workspace stays self-contained and zero third-party dependencies.
+/// path, plus the generated executable's explicit command-line and context dependencies.
 fn manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     let package = layout.server_package();
     let mut out = provenance.commented_for("#", REGENERATE);
@@ -265,6 +275,7 @@ fn manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     for dependency in dependencies {
         let _ = writeln!(out, "{dependency} = {{ path = \"../{dependency}\" }}");
     }
+    out.push_str("clap = { version = \"4.6.7\", features = [\"derive\"] }\nuuid = { version = \"1.26.1\", features = [\"v4\"] }\ntime = { version = \"0.3.55\", features = [\"formatting\"] }\n");
     Artifact::new(format!("crates/{package}/Cargo.toml"), out)
 }
 
@@ -304,6 +315,7 @@ fn lib_module(
     for component in components {
         let _ = writeln!(out, "pub mod {};", module_ident(component));
     }
+    out.push_str("pub mod memory;\nmod static_assets;\n");
     Artifact::new(format!("crates/{package}/src/lib.rs"), out)
 }
 
@@ -638,13 +650,17 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
         }
     );
     out.push_str(&where_clause(server));
+    let authentication = if grants { ", authenticate" } else { "" };
+    let _ = writeln!(out, "{{ serve_with_static(system, address{authentication}, None) }}\n\n/// Serves the declared surface, with files only for paths outside its route table.\n///\n/// # Errors\n/// Returns a listener or static-root error before announcing readiness.\npub fn serve_with_static{angled}(system: &mut {system_crate}::System{angled}, address: &str{}, static_root: Option<&std::path::Path>) -> std::io::Result<()>", if grants { format!(", authenticate: impl Fn(&http::Request) -> Option<{}::actor::Caller>", server.types) } else { String::new() });
+    out.push_str(&where_clause(server));
+    let body = SERVE_BODY.replace("    let listener", "    let static_root = static_root.map(std::fs::canonicalize).transpose()?;\n    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, \"static root is not a directory\")); }\n    let listener").replace("Ok(request) => (dispatch(system, &request), false),", "Ok(request) => {\n                if !ROUTES.iter().any(|(_, path)| *path == request.path) {\n                    if let Some(root) = &static_root {\n                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);\n                        continue;\n                    }\n                }\n                (dispatch(system, &request), false)\n            },");
     out.push_str(&if grants {
-        SERVE_BODY.replace(
+        body.replace(
             "dispatch(system, &request)",
             "dispatch(system, authenticate(&request).as_ref(), &request)",
         )
     } else {
-        SERVE_BODY.to_owned()
+        body
     });
 }
 

@@ -30,6 +30,11 @@ jsonschema = { version = "0.52.1", default-features = false }
 # servers.
 ess-ui.workspace = true
 ess-ui-check.workspace = true
+# Generated network executables are built offline by served_entry and existing synthesis tests.
+# Admit the same runtime dependencies here so a clean test build populates the Cargo cache.
+clap = { workspace = true, features = ["derive"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+time = { version = "0.3.55", features = ["formatting", "parsing"] }
 
 [lints]
 workspace = true

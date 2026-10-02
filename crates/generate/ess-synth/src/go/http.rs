@@ -986,6 +986,8 @@ fn surface_file(
         },
     );
 
+    serve_static(&mut body, &system, &exported, grants);
+
     dispatch(&mut body, ir, &routes, &rows, &system, &exported);
 
     for route in &routes {
@@ -1030,6 +1032,51 @@ fn surface_file(
         ),
         &body,
     )
+}
+
+fn serve_static(body: &mut String, system: &str, exported: &str, grants: bool) {
+    let authenticate = if grants {
+        ", authenticate func(*http.Request) *Caller"
+    } else {
+        ""
+    };
+    let caller = if grants {
+        "authenticate(request), "
+    } else {
+        ""
+    };
+    let _ = writeln!(
+        body,
+        r#"
+// Serve{exported}WithStatic adds files only for paths outside this surface's route table.
+func Serve{exported}WithStatic(system *{system}, address string{authenticate}, staticRoot string) error {{
+	root, err := memoryStaticRoot(staticRoot)
+	if err != nil {{
+		return err
+	}}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {{
+		return err
+	}}
+	bound := listener.Addr().(*net.TCPAddr)
+	announce{exported}(bound)
+	return http.Serve(listener, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {{
+		known := false
+		for _, route := range Routes{exported} {{
+			if route[1] == request.URL.Path {{
+				known = true
+				break
+			}}
+		}}
+		if !known && root != "" {{
+			memoryStatic(writer, request, root)
+			return
+		}}
+		answer := dispatch{exported}(system, {caller}request)
+		answer.write(writer)
+	}}))
+}}"#
+    );
 }
 
 /// The route match: one arm per path, and one arm for everything else.
