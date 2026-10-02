@@ -105,3 +105,56 @@ fn an_integer_constant_stays_a_runtime_obligation() {
         "the constant is not discharged by the native type: {obligations}"
     );
 }
+
+#[test]
+fn native_rust_integer_widths_preserve_wire_boundaries() {
+    let output = plan().rust("integer_widths").unwrap();
+    let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("integer-widths-rust-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("tests")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), &output.supporting["Cargo.toml"]).unwrap();
+    std::fs::write(root.join("types.rs"), &output.declarations).unwrap();
+    std::fs::write(root.join("tests/wire.rs"), RUST_WIRE).unwrap();
+    for args in [
+        vec!["generate-lockfile", "--offline"],
+        vec!["test", "--offline", "--locked"],
+    ] {
+        let result = std::process::Command::new(env!("CARGO"))
+            .args(args)
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
+const RUST_WIRE: &str = r##"
+use integer_widths::ProbeMeterReading as Reading;
+
+#[test]
+fn exact_boundaries_and_overflow() {
+    for amount in [i32::MIN, i32::MAX] {
+        for total in [9007199254740992_i64, 9007199254740993] {
+            let wire = format!(r#"{{"version":2,"amount":{amount},"total":{total},"count":0,"free":0}}"#);
+            let decoded: Reading = serde_json::from_str(&wire).unwrap();
+            assert_eq!(decoded.amount, amount);
+            assert_eq!(decoded.total, total);
+            let encoded = serde_json::to_string(&decoded).unwrap();
+            assert!(encoded.contains(&format!(r#""total":{total}"#)));
+        }
+    }
+    for (amount, total) in [
+        ("2147483648", "0"), ("-2147483649", "0"),
+        ("0", "9223372036854775808"), ("0", "-9223372036854775809"),
+        ("null", "0"), ("1.5", "0"),
+    ] {
+        let wire = format!(r#"{{"version":2,"amount":{amount},"total":{total},"count":0,"free":0}}"#);
+        assert!(serde_json::from_str::<Reading>(&wire).is_err(), "{wire}");
+    }
+}
+"##;
