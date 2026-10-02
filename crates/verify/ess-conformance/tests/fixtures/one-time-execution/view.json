@@ -1,0 +1,94 @@
+{
+  "provenance": {
+    "suite_version": "ess-conformance/34",
+    "system": "credentials",
+    "specification_version": "v1",
+    "spec_digest": "a099e5f6b0d62a9e2d535fe73b6dafc1e778468425bde1f5649ecb50c007a0fe",
+    "contract_digest": "6bbc99d68005d4aed663092208f83b98789842f4f0e69fc8be3bc28dab1a1f0c"
+  },
+  "scenarios": {
+    "credentials.api.Issue/outcome/issued": {
+      "one_time_response": {
+        "origins": [
+          {
+            "command": "credentials.api.Issue",
+            "outcome": {
+              "command": "credentials.api.Issue",
+              "outcome": "issued"
+            },
+            "response": {
+              "fields": [
+                {
+                  "name": "secret",
+                  "type": "String"
+                }
+              ],
+              "declarations": {},
+              "constraints": {}
+            },
+            "fields": [
+              "secret"
+            ]
+          }
+        ],
+        "required_origins": [
+          {
+            "command": "credentials.api.Issue",
+            "outcome": "issued"
+          }
+        ],
+        "events": [],
+        "event_windows": []
+      },
+      "purpose": "`credentials.api.Issue` answers `issued` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "credentials.api.Issue"
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "credentials.api.Issue",
+            "outcome": "issued"
+          }
+        },
+        {
+          "step": "expect_direct_response",
+          "response": {
+            "command": "credentials.api.Issue",
+            "outcome": {
+              "command": "credentials.api.Issue",
+              "outcome": "issued"
+            },
+            "fields": [
+              {
+                "name": "secret",
+                "type": "String"
+              }
+            ],
+            "declarations": {},
+            "expected": {}
+          }
+        },
+        {
+          "step": "query_view",
+          "view": "credentials.api.Audit"
+        }
+      ],
+      "source": [
+        {
+          "kind": "command",
+          "name": "credentials.api.Issue"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "credentials.api.Issue",
+            "outcome": "issued"
+          }
+        }
+      ]
+    }
+  }
+}
