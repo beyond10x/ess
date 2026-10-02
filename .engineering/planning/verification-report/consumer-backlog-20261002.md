@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 19
+revision: 21
 ---
 ## Intake
 
@@ -615,3 +615,13 @@ None of the six issues is wholly completed by the inspected tree. No runtime cla
 Independent source/acceptance audit by scope_boolean found every enumerated acceptance item complete for ui-react-live-binding, ui-tui-live-binding, ui-tui-app-generator and served-view-params. The accepted redesign uses model-derived routes, explicit authorization and base URLs, polling or named no_live refusal, and HTTP-only TUI support. No SSE/WebSocket transport or private adopter replay is claimed.
 
 Retained actual execution: React live_binding11, TUI http_adapter5, generated TUI3, CLI live-run3, served-view-params8 passed with no failed/ignored cases. Their adversarial suites also passed. Full audit identifies each assertion and source/log location in ess-backlog-served-entry-20261002/target/backlog-input/311-acceptance-reconciliation.md; its own new execution count is0. The current PR387 full Gate atad45061626 passed all workspace tests and merged as1ff305685 with the identical tree. These stories are delivered on main; a release after0.51.0 is still pending.
+
+## Runtime integration verification, 2026-10-02
+
+Integrated runtime candidate 511ba5146 includes #307, #360, #318, unused-event binding and child-signal corrections, plus regenerated fixtures and the unchanged aggregate-order regression correction. The complete ess-conformance package run passed: 301 test summaries, 2191 passed, 0 failed, 11 ignored; process exit0. Command: cargo test -p ess-conformance --locked --no-fail-fast. Retained raw output: ess-backlog-next-20261002/target/backlog-input/conformance-after-integration-fix.log and .exit. Ignored tests remain explicit existing coverage gaps, not passes. Full CLI and ci-lint are still running; this is not remote-gate or release evidence.
+
+## Current release group and intake correction
+
+Issue311 is now closed after checking all accepted replacement-story criteria against source, retained execution and the green PR387 gate. The four remaining active replacement stories moved to implemented. This closes one further issue beyond the 34 already resolved before the prior status answer. Current last verified intake is therefore48 open GitHub issues (49 after PR387, minus311), including newly reported389; refresh again before delivery.
+
+Issue389 is active and prioritized in the next release group, alongside implemented local fixes307,360,318. Its independently approved design requires complete execution parity across native Rust, generated Go and TypeScript, and actual applicable WASM adapters. Existing Go/TypeScript suites28–33 gaps are prerequisites; suite34/35 adds one-time disclosure. Root acceptance is recorded on story:feature-request-389. No runtime-specific refusal-only or partial-runtime release satisfies the operator's instruction.
