@@ -189,6 +189,7 @@ mod paging;
 mod related;
 mod related_guard;
 mod set_effects;
+mod singleton;
 mod subject_fact;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -842,7 +843,32 @@ pub enum RefusalCause {
     /// walk have come to disagree about what a type accepts, which would otherwise surface as a
     /// guard that mysteriously cannot be decided.
     WitnessRejected(ShapeErrors),
+    /// A synthesized step requires a branch for an input the guards answer otherwise
+    /// (beyond10x/ess#280): an input-guarded refusal, or an accepting `when:` branch declared
+    /// before it, claims the input first, or the branch's own `when:` refutes it.
+    ///
+    /// A drift alarm, read off the finished suite by [`precedence_contradictions`]: under the
+    /// precedence order (`docs/design/cross-record-and-stored-field-guards.md`) an input-guarded
+    /// refusal answers before every accepting branch and every refusal declared after it, and the
+    /// first declared accepting `when:` branch whose guard holds answers before the later ones, so
+    /// such a step fails every target that honours the specification. The scenario is withdrawn
+    /// rather than emitted.
+    PrecedenceContradicted {
+        /// The branch the step requires.
+        required: OutcomeName,
+        /// The branch that answers the input first, or `None` where the required branch's own
+        /// guard refutes it.
+        first: Option<OutcomeName>,
+        /// The guard that decides it — `first`'s, or the required branch's own — as it reads.
+        guard: String,
+        /// The input the step sends, by field, as it reads.
+        input: String,
+    },
 }
+
+/// `RefusalCause::PrecedenceContradicted`'s number in the `SYNTH` family, the next after
+/// [`COUNT_UNWITNESSED`].
+pub const PRECEDENCE_CONTRADICTED: u16 = 19;
 
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
@@ -907,6 +933,7 @@ impl RefusalCause {
     }
 
     /// What would have to change for the construct to be testable.
+    #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
             // A gap in what a view lets a scenario observe is repaired by declaring a view, not by
@@ -1013,6 +1040,10 @@ impl RefusalCause {
             }
             Self::WitnessRejected(_) => {
                 "the witness walk and the flattener disagree about this type; they read one table"
+            }
+            Self::PrecedenceContradicted { .. } => {
+                "nothing to change in the specification; this is a defect in ess to report, with \
+                 the specification that produced it"
             }
         }
     }
@@ -1124,10 +1155,16 @@ crate::authored::diagnostic_catalogue! {
              synthesizer builds.",
             "the guard compares `.count` with a value above the 1024 this synthesizer builds; \
              cover the branch with an authored scenario (ess-scenario/1), or lower the bound";
+        Self::PrecedenceContradicted { .. } => PRECEDENCE_CONTRADICTED,
+            "A synthesized step requires a branch for an input its own guard refutes, or another \
+             branch answers first under the precedence order.",
+            "nothing to change in the specification; this is a defect in ess to report, with the \
+             specification that produced it";
     }
 }
 
 impl fmt::Display for RefusalCause {
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
@@ -1220,6 +1257,25 @@ impl fmt::Display for RefusalCause {
                 )
             }
             Self::BindingUnobservable { binding, gap } => write!(f, "`{binding}` {gap}"),
+            Self::PrecedenceContradicted {
+                required,
+                first: Some(first),
+                guard,
+                input,
+            } => write!(
+                f,
+                "a step requires `{required}` for {input}, which `{first}` ({guard}) answers \
+                 first under the precedence order"
+            ),
+            Self::PrecedenceContradicted {
+                required,
+                first: None,
+                guard,
+                input,
+            } => write!(
+                f,
+                "a step requires `{required}` for {input}, which its own guard ({guard}) refutes"
+            ),
             Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
                 value,
@@ -1651,13 +1707,26 @@ impl fmt::Display for InstanceNeed {
 /// value it chooses is a function of the model, and nothing here reads a clock or a random device.
 /// `tests/synthesis.rs` synthesises the billing example twice and compares bytes.
 pub fn synthesize(ir: &EssIr) -> Synthesis {
+    // Each witness search is run once per question for the whole synthesis (beyond10x/ess#301).
+    let _memoised = crate::witness_memo::memoise(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`).
     let mut synthesis = if caller::uses(ir) {
         caller::synthesize(ir)
     } else {
-        synthesize_plain(ir)
+        synthesize_plain(ir, Focus::Whole)
     };
+    // Read off the finished suite: no scenario expects the one row of a singleton entity created
+    // twice in a run, whichever family built it (beyond10x/ess#287).
+    singleton::withdraw_second_creations(ir, &mut synthesis);
+    // A scenario requiring a branch for an input an input-guarded refusal answers first fails every
+    // target that honours the specification, so it is withdrawn and refused (beyond10x/ess#280).
+    for refusal in precedence_contradictions(ir, &synthesis.suite) {
+        if let Some(id) = &refusal.scenario {
+            synthesis.suite.scenarios.remove(id);
+        }
+        synthesis.refusals.push(refusal);
+    }
     // A note about an unseparated pair is recorded with its branch's scenario, and later passes
     // (fixtures, clock offsets, caller readings) may drop that scenario; a note naming a scenario
     // the suite does not hold points at nothing, so it goes with it (beyond10x/ess#202).
@@ -1673,8 +1742,41 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     synthesis
 }
 
+/// Which scenarios a synthesis writes.
+///
+/// A caller assignment that sends one command as the second caller is read only for that command's
+/// own scenarios (`caller::synthesize`), and writing every other scenario of the model to throw it
+/// away cost a whole synthesis per caller-reading command (beyond10x/ess#301).
+#[derive(Clone, Copy)]
+enum Focus<'a> {
+    /// Every scenario the model obliges.
+    Whole,
+    /// Only the scenarios about a branch of this command: its `outcome`, `transition`, `refusal`
+    /// and `invariant` ids, which every family files from its loop over that one command. Families
+    /// that file no such id (bindings, aggregates, value-object invariants) are not run, and the
+    /// passes over the finished suite run as they always do, over fewer scenarios.
+    About(&'a QualifiedName),
+}
+
+impl Focus<'_> {
+    /// Whether the scenarios of `command` are written.
+    fn takes(self, command: &QualifiedName) -> bool {
+        match self {
+            Self::Whole => true,
+            Self::About(focus) => focus == command,
+        }
+    }
+
+    /// Whether every scenario is written.
+    fn is_whole(self) -> bool {
+        matches!(self, Self::Whole)
+    }
+}
+
 /// [`synthesize`], for a model in which nothing depends on who sends a command.
-fn synthesize_plain(ir: &EssIr) -> Synthesis {
+fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
+    // A caller assignment's model is another model: its answers are held apart and dropped with it.
+    let _memoised = crate::witness_memo::memoise(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     for (path, subject) in ess_compiler::binary64::uses(ir) {
@@ -1694,6 +1796,9 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
 
     let mut unseparated_notes = Vec::new();
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         for outcome in &command.outcomes {
             // A wrong-state branch gets no scenario from here. §10 asks for one scenario per
             // *reachable* outcome, and the states this branch is reachable in are exactly the ones
@@ -1734,18 +1839,20 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
         }
     }
     let mut partial = Vec::new();
-    lifecycle(ir, &actors, &mut suite, &mut refusals, &mut partial);
-    state_refusals(ir, &actors, &mut suite, &mut refusals);
+    lifecycle(ir, &actors, focus, &mut suite, &mut refusals, &mut partial);
+    state_refusals(ir, &actors, focus, &mut suite, &mut refusals);
     let mut notes = Vec::new();
-    unknown_instances(ir, &actors, &mut suite, &mut refusals, &mut notes);
-    absent_input::absent_inputs(ir, &actors, &mut suite, &mut refusals);
-    existence::existence(ir, &actors, &mut suite, &mut refusals);
-    set_effects::set_effects(ir, &actors, &mut suite, &mut refusals);
+    unknown_instances(ir, &actors, focus, &mut suite, &mut refusals, &mut notes);
+    absent_input::absent_inputs(ir, &actors, focus, &mut suite, &mut refusals);
+    existence::existence(ir, &actors, focus, &mut suite, &mut refusals);
+    set_effects::set_effects(ir, &actors, focus, &mut suite, &mut refusals);
     notes.extend(partial);
     notes.extend(unseparated_notes);
-    invariants(ir, &actors, &mut suite, &mut refusals);
-    bindings(ir, &actors, &mut suite, &mut refusals);
-    aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+    invariants(ir, &actors, focus, &mut suite, &mut refusals);
+    if focus.is_whole() {
+        bindings(ir, &actors, &mut suite, &mut refusals);
+        aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+    }
     grant::denied(ir, &mut suite, &mut refusals, &mut notes);
     preconditions(ir, &mut suite);
     for (id, reason) in crate::fixtures::install(ir, &mut suite) {
@@ -2851,10 +2958,14 @@ fn run_state_refusal(
 fn state_refusals(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         let refusing: Vec<&ResolvedOutcome> = command
             .outcomes
             .iter()
@@ -7826,6 +7937,7 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
 fn lifecycle(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
     notes: &mut Vec<Note>,
@@ -7838,6 +7950,7 @@ fn lifecycle(
             for driver in drivers
                 .iter()
                 .filter(|driver| driver.takes(&transition.name))
+                .filter(|driver| focus.takes(&driver.command.name))
             {
                 let id = ScenarioId::Transition {
                     transition: TransitionRef::new(entity.clone(), &transition.name)
@@ -7890,7 +8003,7 @@ fn lifecycle(
             .collect();
         for state in &states.states {
             for (command, wrong) in &movers {
-                if !wrong.contains(state) {
+                if !wrong.contains(state) || !focus.takes(command) {
                     continue;
                 }
                 // Whether the id reads `refuses` or `accepts` is the command's own claim, read
@@ -8200,11 +8313,15 @@ fn names_existing(outcome: &ResolvedOutcome) -> Option<&str> {
 fn unknown_instances(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
     notes: &mut Vec<Note>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         let acting: Vec<&ResolvedOutcome> = command
             .outcomes
             .iter()
@@ -8835,6 +8952,10 @@ pub(super) fn unguided(command: &ResolvedCommand, field: &str) -> RefusalCause {
 /// Where that witness would change the branch `input` takes — a guard reads the identity — the
 /// first value inside the guards that no arrangement sends is taken instead
 /// ([`guided_identity`]), and the scenario is refused where there is none (beyond10x/ess#275).
+///
+/// An identity whose type has one value is that value, unchecked against the arrangements: the one
+/// row of a singleton entity is unknown in a scenario that arranged none (beyond10x/ess#287,
+/// [`singleton`]).
 fn fresh_identity(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -8872,6 +8993,11 @@ fn fresh_identity(
             return guided_identity(ir, command, field, input, 0)
                 .ok_or_else(|| unguided(command, field));
         }
+    }
+    // The one row of a singleton entity is unknown wherever the scenario arranged none
+    // (beyond10x/ess#287): its isolation, not a value apart from every other scenario's, keeps it so.
+    if singleton::names_the_one_row(ir, command, field) {
+        return Ok(fresh);
     }
     for nth in 0..=MAX_CANDIDATES {
         if at(Distinction::further(nth))?.as_ref() == Some(&fresh) {
@@ -9765,6 +9891,137 @@ pub enum OverlapGap {
     Unsent,
 }
 
+/// Every scenario of `suite` with a step that requires a branch for an input an input-guarded
+/// refusal answers first, one [`RefusalCause::PrecedenceContradicted`] each, naming the first such
+/// step (beyond10x/ess#280).
+///
+/// Read off the finished suite, as `unwitnessed_overlaps` is, so every family that sends a command
+/// is held to it whichever generator chose the input. Under the precedence order
+/// (`docs/design/cross-record-and-stored-field-guards.md`) an input-guarded refusal is taken before
+/// every accepting branch and every refusal declared after it (`sibling_refusals`); a step
+/// requiring one of those for an input such a refusal's guard decidedly holds of fails every target
+/// that honours the specification. #280's `set` scenario sent `{scope: Budget, provider:
+/// "provider"}`, which `provider-not-allowed: {scope: Budget, provider: {exists: true}}` claims.
+///
+/// Only what the step sends literally is read. A guard reading a field sent as a reference to an
+/// arranged row is not decided — the identity is opaque, and its absence from the literal facts
+/// says nothing about its presence — and a guard the literals leave undecided claims nothing. On a
+/// command guarded by a related row, `existing_instance:` and the `exists: false` branch answer
+/// before any input refusal, so a step requiring either is not checked.
+pub fn precedence_contradictions(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Refusal> {
+    suite
+        .scenarios
+        .iter()
+        .filter_map(|(id, scenario)| {
+            contradicted(ir, &scenario.steps).map(|cause| Refusal::about(id, cause))
+        })
+        .collect()
+}
+
+/// The first step of `steps` [`precedence_contradictions`] refuses, where one is.
+fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
+    let mut steps = steps.iter().peekable();
+    while let Some(step) = steps.next() {
+        let ScenarioStep::ExecuteCommand {
+            command: invoked,
+            input,
+            ..
+        } = step
+        else {
+            continue;
+        };
+        let Some(ScenarioStep::ExpectOutcome { outcome: required }) = steps.peek() else {
+            continue;
+        };
+        let Some(command) = ir
+            .commands()
+            .values()
+            .find(|command| &command.name == invoked.name())
+        else {
+            continue;
+        };
+        let Some(outcome) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name == required.outcome)
+        else {
+            continue;
+        };
+        if related_guard::uses(command)
+            && matches!(
+                outcome.condition,
+                ResolvedCondition::ExistingInstance
+                    | ResolvedCondition::Related {
+                        test: ess_compiler::ir::ResolvedRelatedTest::Absent,
+                        ..
+                    }
+            )
+        {
+            continue;
+        }
+        let opaque: BTreeSet<&str> = input
+            .iter()
+            .filter(|(_, value)| value.as_literal().is_none())
+            .map(|(field, _)| field.as_str())
+            .collect();
+        let Ok(facts) = crate::input::replay_facts(ir, command, input) else {
+            continue;
+        };
+        // What the literals decide of `guard`; nothing where it reads an opaque field or anything
+        // but the command's input — a caller attribute, a binder — which `defined()` would read
+        // as absent.
+        let decided = |guard: &Predicate| {
+            let input_only = guard.fact_paths().iter().all(|path| {
+                path.segments().first().is_some_and(|root| {
+                    !opaque.contains(root.as_str())
+                        && command.input.iter().any(|field| field.name == *root)
+                })
+            });
+            input_only.then(|| facts.decide(guard))
+        };
+        let contradiction = |first: Option<&ResolvedOutcome>, guard: &Predicate| {
+            RefusalCause::PrecedenceContradicted {
+                required: outcome.name.clone(),
+                first: first.map(|first| first.name.clone()),
+                guard: guard.to_string(),
+                input: sent_as_text(input),
+            }
+        };
+        // Every branch answered before it: the input-guarded refusals, then the accepting `when:`
+        // branches declared before an accepting `when:` or external one (beyond10x/ess#217).
+        let before =
+            sibling_refusals(command, outcome).chain(earlier_accepting_branches(command, outcome));
+        for first in before {
+            let Some(guard) = when(first) else {
+                continue;
+            };
+            if matches!(decided(guard), Some(Decision::Satisfied)) {
+                return Some(contradiction(Some(first), guard));
+            }
+        }
+        // The branch's own `when:` over the input, where that alone selects it.
+        if let ResolvedCondition::When { predicate } = &outcome.condition {
+            if matches!(decided(predicate), Some(Decision::Refuted(_))) {
+                return Some(contradiction(None, predicate));
+            }
+        }
+    }
+    None
+}
+
+/// `input` as it reads in a refusal: each field and its literal, or `<reference>` for a value
+/// that names an arranged row.
+fn sent_as_text(input: &BTreeMap<String, ScenarioValue>) -> String {
+    let fields: Vec<String> = input
+        .iter()
+        .map(|(field, value)| match value.as_literal() {
+            Some(literal) => format!("{field}: {literal}"),
+            None => format!("{field}: <reference>"),
+        })
+        .collect();
+    format!("{{{}}}", fields.join(", "))
+}
+
 /// A [`Note::UnwitnessedOverlap`] for every [`Overlap`] whose `first` has a scenario that sends no
 /// input in it, unless the candidates show the overlap empty (beyond10x/ess#217).
 ///
@@ -9941,6 +10198,12 @@ fn boundaries(
                 supplied.insert(field.clone(), ScenarioValue::literal(value.clone()));
             }
         }
+        // A field the row leaves out is an absent optional the row was decided with, so the
+        // primary's value is not carried over: `defined(provider)` refuted by the row would hold
+        // again of what is sent (beyond10x/ess#280).
+        for field in primary.keys().filter(|field| !row.contains_key(*field)) {
+            supplied.remove(field);
+        }
         if let Some(subject) = outcome
             .subject
             .as_ref()
@@ -10003,11 +10266,15 @@ fn clipped(text: &str) -> ScenarioPurpose {
 fn invariants(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     let projections = row_projections(ir);
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         for outcome in &command.outcomes {
             let Some(subject) = &outcome.subject else {
                 continue;
@@ -10027,7 +10294,9 @@ fn invariants(
             insert(suite, id, scenario, refusals);
         }
     }
-    value_object_invariants(ir, actors, suite, refusals);
+    if focus.is_whole() {
+        value_object_invariants(ir, actors, suite, refusals);
+    }
 }
 
 /// The scenario that runs one branch and then reads the entity's invariants off a view.

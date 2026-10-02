@@ -23,7 +23,7 @@ use super::{
     clipped, created, insert, is_input_guarded_refusal, not_emitted, outcome_scenario, reach, run,
     shows, subject_fact, supply, ActorRef, AssertionStyle, BTreeMap, BTreeSet, CommandRef,
     ConformanceScenario, ConformanceSuite, Distinction, EntityRef, ErrorRef, EssIr, EssSemanticRef,
-    InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
+    Focus, InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
     ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedSubject,
     ResolvedView, Run, ScenarioId, ScenarioStep, ScenarioValue, Setup, ViewRef, FRESH_WITNESSES,
 };
@@ -125,6 +125,9 @@ fn creates_beside_existing(command: &ResolvedCommand, outcome: &ResolvedOutcome)
 /// slot's own value inside the guards is taken instead ([`super::guided_identity`]), after the one
 /// the unknown-identity scenario takes, and the scenario is refused where the guards leave none
 /// (beyond10x/ess#275).
+///
+/// An identity whose type has one value is that value wherever the scenario creates one row, and
+/// refused for [`Fresh::CreatedAgain`], a second row in the same run (beyond10x/ess#287).
 fn identity_at(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -160,6 +163,14 @@ fn identity_at(
     if !super::keeps_branch(ir, command, input, field, &mine) {
         return super::guided_identity(ir, command, field, input, 1 + fresh.slot())
             .ok_or_else(|| super::unguided(command, field));
+    }
+    // The one row of a singleton entity is new in the scenario that creates it first, and a second
+    // creation in the same run has no identity of its own (beyond10x/ess#287).
+    if super::singleton::names_the_one_row(ir, command, field) {
+        return match fresh {
+            Fresh::CreatedAgain => Err(super::singleton::second_row(command, field)),
+            Fresh::Created | Fresh::Stored(_) => Ok(mine),
+        };
     }
     let taken = (0..=MAX_CANDIDATES)
         .map(Distinction::further)
@@ -207,10 +218,14 @@ pub(super) fn fresh_created(
 pub(super) fn existence(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         for creating in command
             .outcomes
             .iter()
@@ -915,6 +930,13 @@ fn existing_instance(
         return Err(RefusalCause::StrategyWithoutGuard {
             strategy: declared.test_strategy,
         });
+    }
+    // Every creating path stores its own row in this one run, which the one row of a singleton
+    // entity cannot be twice (beyond10x/ess#287).
+    if let [_, (_, field), ..] = creating.as_slice() {
+        if super::singleton::names_the_one_row(ir, command, field) {
+            return Err(super::singleton::second_row(command, field));
+        }
     }
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();

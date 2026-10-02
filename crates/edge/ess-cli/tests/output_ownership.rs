@@ -4,6 +4,8 @@
 mod ownership;
 mod ownership_admission;
 mod ownership_protocol;
+mod ownership_relocation;
+mod ownership_relocation_adversary;
 mod ownership_routes;
 use std::{
     collections::BTreeMap,
@@ -22,6 +24,28 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
     static TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
     TEST.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+impl Drop for Fixture {
+    /// Some cases leave read-only directories behind; restore owner access, then remove the tree.
+    fn drop(&mut self) {
+        fn writable(path: &Path) {
+            use std::os::unix::fs::PermissionsExt;
+            let Ok(meta) = fs::symlink_metadata(path) else {
+                return;
+            };
+            if meta.is_dir() {
+                let _ = fs::set_permissions(
+                    path,
+                    fs::Permissions::from_mode(meta.permissions().mode() | 0o700),
+                );
+                for entry in fs::read_dir(path).into_iter().flatten().flatten() {
+                    writable(&entry.path());
+                }
+            }
+        }
+        writable(&self.0);
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 impl Fixture {
     fn new() -> Self {

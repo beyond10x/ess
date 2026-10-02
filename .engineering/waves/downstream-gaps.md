@@ -64,4 +64,4 @@ Release on merge (operator, 2026-10-01: release often). Units edit disjoint file
 |---|---|---|---|---|
 | feature-request-272 | impl/gaps-272 | gaps-272 | b10x-target/gaps-272 | merged |
 | feature-request-287 | impl/gaps-287 | gaps-287 | b10x-target/gaps-287 | dispatched |
-| feature-request-306 | impl/gaps-306 | gaps-306 | b10x-target/gaps-306 | dispatched |
+| feature-request-306 | impl/gaps-306 | gaps-306 | b10x-target/gaps-306 | merged |

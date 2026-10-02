@@ -134,7 +134,6 @@ fn emitted(
 ) -> Result<(Layout, Vec<Artifact>), crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
-    crate::existence::refuse(ir, plan, crate::Target::Rust)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
     crate::paging::refuse(ir, plan, crate::Target::Rust)?;
     crate::failure::retry_bound(ir, plan, crate::Target::Rust)?;

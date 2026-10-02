@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.51.0] — 2026-10-01
+
 ### Added
 
 - `ess_ui::binding`: the route table between an `ess-ui/1` document and the HTTP surface ESS
@@ -25,6 +27,41 @@
   stdin; `index.html` moves to `www/`. Aliases written as paths and aliases with encoded segments
   route as before, and the image primitive type-checks against `@types/react` 19.3
   (beyond10x/ess#315).
+- **Breaking for a Rust realization that implemented such a command's `…Behavior` obligation**:
+  generated Rust servers select an `existing_instance:` refusal beside a creation, and a creating
+  `unknown_instance:` branch beside an update, by looking the input identity up in the storage
+  port before dispatch. `Generated<P>` now runs that command's behaviour and no longer forwards it
+  to `P`. A command whose lookup would not match its creations stays an obligation. Go, Web and
+  Clap still refuse both forms by name (beyond10x/ess#310).
+
+### Fixed
+
+- Generated output committed with its `.ess-output` regenerates in another checkout (a clone, a
+  second worktree, CI, any umask) when its owned files still have their recorded bytes. A
+  regeneration that changes nothing leaves `state.json` byte-identical, and the first one that
+  writes records the new root. A state carried without matching files refuses, lists them, and
+  prints the steps to re-enroll with `ess generate output adopt`. A root replaced by a copy
+  mid-transaction refuses recovery there (beyond10x/ess#306).
+- Synthesis is no longer slowed by commands that read the caller: each such command cost two whole
+  syntheses, and now costs one focused run; witness searches are answered once per model. One
+  downstream specification goes from 151 s to 6 s with byte-identical suites (beyond10x/ess#301).
+- An entity whose identity type has one value (a one-variant enum, or a newtype whose invariants
+  admit one value) synthesizes as a singleton: existence scenarios use the one row, a second
+  create is witnessed as `existing_instance`, decoys are left out, rows that reference it share it,
+  and a command acting on it is sent by a second caller (beyond10x/ess#287).
+- Synthesis no longer sends an optional input a boundary row leaves out, so a scenario can no
+  longer require an accepting branch for an input that an enum-and-presence refusal claims; a step
+  whose input an earlier branch takes is withdrawn and refused as ESS-SYNTH-019
+  (beyond10x/ess#280).
+- A suite is admitted with every number it was written with: a value just below 2^53 (an
+  invariant bound such as 9007199254740991) was read back one lower, so the scenario at that bound
+  failed a correct target (beyond10x/ess#251).
+- Inside nested quantifiers, a binder on the right of a comparison is the binder, not a text
+  literal; a quoted or shorthand word naming a binder is refused (beyond10x/ess#289).
+- `ess-cli/1` callables may declare `invalid_input: <code>`, naming one of their declared errors:
+  a typed shape failure, or an unparsable, empty or rejected dynamic payload, then answers that
+  code with `{}` data and exit 2. A dynamic payload repeating a key is refused before the
+  validator runs (beyond10x/ess#274).
 
 ## [0.50.0] — 2026-10-01
 
@@ -1809,7 +1846,6 @@ retries and absence of physical writes remain adopter-owned acceptance.
 - `0.17.0` is the one minor with no `changes/*.yaml` entry, named in `WITHOUT_FRAGMENT` with the
   reason. Its two features are recorded under 0.18.0, which is where they shipped.
 
-
 ## [0.27.0] — 2026-09-20
 
 ### Added
@@ -1918,7 +1954,6 @@ retries and absence of physical writes remain adopter-owned acceptance.
   Rust runner, the Rust admitter and the browser admitter all check membership; only the runner an
   adopter executes does not. Measured at 72 of 591 leaves in one adopter's suite. Same shape of bug
   one type along, and it has its own change.
-
 
 ### Added
 
@@ -2044,7 +2079,6 @@ retries and absence of physical writes remain adopter-owned acceptance.
   pass against an implementation that ignored the branch. The rule now lives in one `absorb`
   function called at all three sites, because it had to hold at all three and was written at one.
 
-
 ## [0.26.0] — 2026-09-16
 
 ### Added
@@ -2127,7 +2161,6 @@ retries and absence of physical writes remain adopter-owned acceptance.
   be wrong. An unfiltered run is unchanged — verified on the same consumer: `inconclusive`, 99 total,
   59 not passed.
   with no room for it.
-
 
 ## [0.25.0] — 2026-09-16
 

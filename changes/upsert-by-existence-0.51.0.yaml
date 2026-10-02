@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/upsert-by-existence-0.51.0
+repository: ess
+publishedAt: 2026-10-01T23:30:00Z
+title: Generated Rust servers select a branch by whether the record exists
+summary: >-
+  A generated Rust server looks the input identity up in the storage port before dispatch, so an `existing_instance:` refusal beside a creation and a creating `unknown_instance:` branch beside an update are generated instead of owed; a command whose lookup would not match its creations stays an obligation, and Go, Web and Clap still refuse both forms by name.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.51.0
+  version: 0.51.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -230,7 +230,7 @@ fn generated_package_compiles_offline_and_executes_process_fixtures() {
         output.status
     );
     assert!(
-        log.contains("12 passed; 0 failed"),
+        log.contains("13 passed; 0 failed"),
         "fixture test count must select the authored cases"
     );
     let binary = nested_target().join("debug/demo");
