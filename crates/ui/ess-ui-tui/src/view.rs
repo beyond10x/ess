@@ -26,7 +26,7 @@ use crate::app::{
     aggregate, bar_items, board_rows, columns_of, form_fields, graph_collection, group_names,
     references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
 };
-use crate::expr::{display, truthy};
+use crate::expr::{display, field_path, truthy};
 
 const NAV_WIDTH: u16 = 26;
 const SPARKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -1365,7 +1365,11 @@ fn browser_label(action: &ess_ui::Action) -> String {
 
 /// One cell of a row, drawn by the field's `as`.
 fn cell(field: &Field, row: &Value) -> String {
-    let value = &row[field.field.as_str()];
+    cell_value(field, &field_path(row, &field.field))
+}
+
+/// A field's value, drawn by the field's `as`.
+fn cell_value(field: &Field, value: &Value) -> String {
     match field.field_as.as_deref() {
         _ if value.is_null() => String::new(),
         Some("badge") => format!("[{}]", display(value)),
@@ -1468,14 +1472,7 @@ impl App {
                     format!("‹{}› of {}", display(&value), options.join("/"))
                 }
                 Some("file") => format!("path: {}", display(&value)),
-                _ => cell(
-                    field,
-                    &Value::Mapping(
-                        [(field.field.clone().into(), value.clone())]
-                            .into_iter()
-                            .collect(),
-                    ),
-                ),
+                _ => cell_value(field, &value),
             };
             let current = place.focused && index == state.item;
             let editing = current && state.editing;

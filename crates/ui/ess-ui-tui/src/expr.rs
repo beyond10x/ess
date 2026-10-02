@@ -117,6 +117,11 @@ pub(crate) fn walk(value: &Value, segments: &[&str]) -> Value {
     at.clone()
 }
 
+/// A row's field: `budget.limit_cents` is the `limit_cents` member of the row's `budget`.
+pub(crate) fn field_path(row: &Value, field: &str) -> Value {
+    walk(row, &field.split('.').collect::<Vec<_>>())
+}
+
 /// Whether a value counts as true in a condition.
 pub(crate) fn truthy(value: &Value) -> bool {
     match value {
