@@ -893,3 +893,396 @@ fn typescript_direct_depth_allowance_never_escapes_its_finite_envelope_path() {
         expected_depth_suite(false, 128).replace("ess-conformance/28", "ess-conformance/26");
     refused_depth_document(&older, "old-deep-direct");
 }
+
+#[test]
+fn typescript_one_time_dto_matches_all_immutable_native_admission_vectors() {
+    let fixture_root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-response");
+    let mut files: Vec<_> = std::fs::read_dir(fixture_root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 25, "original23 plus two eventual-read vectors");
+    check_one_time_documents(&files, "immutable");
+}
+
+fn check_one_time_documents(files: &[PathBuf], label: &str) {
+    let package = runtime_package();
+    let driver = package.join(format!("one-time-contract-{label}.mjs"));
+    std::fs::write(
+        &driver,
+        r"
+import {readFileSync} from 'node:fs';
+import {strictJSON, admittedSuiteVersions, goMarshal} from './dist/runtime.js';
+let port;
+try { port = await import('./dist/one_time_response.js'); } catch {}
+const authorities = [];
+const results = process.argv.slice(2).map(file => {
+  try {
+    const document = strictJSON(readFileSync(file, 'utf8'));
+    const policies = [];
+    for (const scenario of Object.values(document.scenarios))
+      policies.push(port.admitOneTimeTrace(scenario.one_time_response, scenario).authority);
+    authorities.push(policies);
+    return true;
+  } catch { authorities.push(null); return false; }
+});
+process.stdout.write(goMarshal({results, authorities, versions:admittedSuiteVersions()}));
+",
+    )
+    .unwrap();
+    let output = Command::new("node")
+        .arg(driver)
+        .args(files)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let actual: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut disagreements = Vec::new();
+    for (index, file) in files.iter().enumerate() {
+        let raw = std::fs::read_to_string(file).unwrap();
+        let admitted = AdmittedSuite::from_json(&raw);
+        if actual["results"][index] != admitted.is_ok() {
+            disagreements.push(file.file_name().unwrap().to_string_lossy().to_string());
+        }
+        if let Ok(admitted) = admitted {
+            let policies = admitted
+                .suite()
+                .scenarios
+                .values()
+                .map(|scenario| scenario.one_time_response.as_ref())
+                .collect::<Vec<_>>();
+            // Compare serialized spelling too: Value equality coalesces -0.0 and 0.0.
+            let observed_policy = actual["authorities"][index].to_string();
+            let native_policy = serde_json::to_value(policies).unwrap().to_string();
+            assert!(
+                observed_policy == native_policy,
+                "canonical authority {}",
+                file.display()
+            );
+        }
+    }
+    assert!(
+        disagreements.is_empty(),
+        "native/TypeScript DTO admission disagrees: {disagreements:?}"
+    );
+    assert!(
+        !actual["versions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|version| version == "ess-conformance/34" || version == "ess-conformance/35"),
+        "DTO preparation must not advertise unimplemented observer execution"
+    );
+}
+
+#[test]
+fn typescript_one_time_identifiers_match_native_grammar_and_authority() {
+    let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let grammar = fixture_root.join("one-time-response-identifier-grammar.json");
+    let mut files: Vec<_> = std::fs::read_dir(fixture_root.join("one-time-response-identifiers"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 11);
+    let package = runtime_package();
+    let driver = package.join("one-time-identifiers.mjs");
+    std::fs::write(&driver, r"
+import {readFileSync} from 'node:fs';
+import {strictJSON, goMarshal} from './dist/runtime.js';
+import * as port from './dist/one_time_response.js';
+const grammar = strictJSON(readFileSync(process.argv[2], 'utf8'));
+const parsed = grammar.map(([, id]) => { try { port.parseDisclosureId(id); return true; } catch { return false; } });
+const admitted = process.argv.slice(3).map(file => {
+  try {
+    const document = strictJSON(readFileSync(file, 'utf8'));
+    for (const [id, scenario] of Object.entries(document.scenarios)) {
+      const trace = port.admitOneTimeTrace(scenario.one_time_response, scenario);
+      port.admitDisclosureId(id, scenario, trace, document.provenance.suite_version);
+    }
+    return true;
+  } catch { return false; }
+});
+process.stdout.write(goMarshal({parsed, admitted}));
+").unwrap();
+    let output = Command::new("node")
+        .arg(driver)
+        .arg(&grammar)
+        .args(&files)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let observed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let vectors: Vec<(bool, String)> =
+        serde_json::from_str(&std::fs::read_to_string(grammar).unwrap()).unwrap();
+    let mut mismatches = Vec::new();
+    for (index, (expected, id)) in vectors.iter().enumerate() {
+        assert_eq!(ess_conformance::ScenarioId::parse(id).is_ok(), *expected);
+        if observed["parsed"][index] != *expected {
+            mismatches.push(id.clone());
+        }
+    }
+    for (index, file) in files.iter().enumerate() {
+        let expected = AdmittedSuite::from_json(&std::fs::read_to_string(file).unwrap()).is_ok();
+        if observed["admitted"][index] != expected {
+            mismatches.push(file.file_name().unwrap().to_string_lossy().to_string());
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "native/TypeScript disclosure identity disagreement: {mismatches:?}"
+    );
+}
+
+#[test]
+fn typescript_one_time_string_constraint_grammar_and_bounds_match_native() {
+    let base: Value = serde_json::from_str(include_str!(
+        "fixtures/one-time-response/valid-constrained-string.json"
+    ))
+    .unwrap();
+    let mut variations = vec![
+        ("compact-count", json!("value.count >= 4")),
+        (
+            "compact-leading-zero-count",
+            json!(format!("value.count >= {}4", "0".repeat(600))),
+        ),
+        (
+            "compact-underflow-count",
+            json!("value.count >= 1e-2147483648"),
+        ),
+        ("compact-fact-count", json!("value.count == value.count")),
+        ("compact-text", json!("value == abcd")),
+        ("compact-quoted-numeric", json!("value == \"1234\"")),
+        ("compact-true", json!("true")),
+        ("compact-false", json!("false")),
+        ("compact-defined", json!("defined(value)")),
+        ("compact-exists", json!("exists(value)")),
+        ("compact-missing", json!("missing(value)")),
+        ("compact-negated", json!("not not value")),
+        ("compact-spaced-defined", json!("defined ( value )")),
+        (
+            "compact-large-count",
+            json!("value.count >= 9007199254740993"),
+        ),
+        (
+            "structured-large-count",
+            json!({"value.count":{"gte":9_007_199_254_740_993_u64}}),
+        ),
+        (
+            "structured-count-membership",
+            json!({"value.count":{"in":[1e2,1e-7]}}),
+        ),
+        ("compact-null", json!("value == null")),
+        ("compact-conjunction", json!("value == a && b")),
+        ("scalar-count", json!({"value.count":4})),
+        (
+            "negative-zero-membership",
+            json!({"value.count":{"in":[-0.0,0.0]}}),
+        ),
+        ("scalar-text", json!({"value":"abcd"})),
+        ("compound-count", json!({"value.count":{"gte":4,"lt":8}})),
+        ("all-alias", json!({"all_of":["value", "value.count >= 4"]})),
+        ("none-alias", json!({"none_of_these":["value.count < 4"]})),
+        ("none-with-not", json!({"none":[false],"not":false})),
+        ("empty-all", json!({"all":null})),
+        ("empty-any", json!({"any":null})),
+        ("empty-not", json!({"not":null})),
+        ("list-shorthand", json!({"value":["abcd", "abce"]})),
+        ("list-alias", json!({"value":{"in":["abcd", "abce"]}})),
+        ("none-alias-literals", json!({"value":{"not_in":"abdd"}})),
+        ("defined-operator", json!({"value":{"defined":true}})),
+        ("truthy-operator", json!({"value":{"truthy":true}})),
+        ("starts-with", json!({"value":{"starts_with":"ab"}})),
+        (
+            "starts-with-numeric-text",
+            json!({"value":{"starts_with":"123"}}),
+        ),
+        ("in-fold-empty", json!({"value":{"in_ignore_case":[]}})),
+        ("empty-starts-with", json!({"value":{"starts_with":""}})),
+        (
+            "equals-fold",
+            json!({"value":{"equals_ignore_case":"ABCD"}}),
+        ),
+        (
+            "in-fold",
+            json!({"value":{"in_ignore_case":["ABCD","ABCE"]}}),
+        ),
+        ("invalid-count-operand", json!("value.count >= abcd")),
+        ("invalid-field-literal", json!("value == value")),
+        ("invalid-path", json!("value.missing == abcd")),
+        ("invalid-list-operand", json!({"value":{"any_of":[1]}})),
+        (
+            "invalid-quantified-string",
+            json!({"forall":{"in":"value","as":"item","that":true}}),
+        ),
+        (
+            "invalid-unknown-operator",
+            json!({"value":{"invented":true}}),
+        ),
+    ];
+    variations.push((
+        "depth32",
+        (0..32).fold(json!("value"), |inner, _| json!({"not":inner})),
+    ));
+    variations.push((
+        "depth33",
+        (0..33).fold(json!("value"), |inner, _| json!({"not":inner})),
+    ));
+    let directory = runtime_package().join("constraint-vectors");
+    std::fs::create_dir_all(&directory).unwrap();
+    let mut files = Vec::new();
+    for (label, predicate) in variations {
+        let mut document = base.clone();
+        for scenario in document["scenarios"].as_object_mut().unwrap().values_mut() {
+            scenario["one_time_response"]["origins"][0]["response"]["constraints"]
+                ["credentials.api.Secret"]["invariants"] = json!([predicate]);
+        }
+        let file = directory.join(format!("{label}.json"));
+        std::fs::write(&file, document.to_string()).unwrap();
+        files.push(file);
+    }
+    let signed_zero = directory.join("negative-zero-token.json");
+    let raw = std::fs::read_to_string(directory.join("negative-zero-membership.json")).unwrap();
+    assert!(raw.contains("[-0.0,0.0]"));
+    std::fs::write(&signed_zero, raw.replace("[-0.0,0.0]", "[-0,0.0]")).unwrap();
+    files.push(signed_zero);
+    check_one_time_documents(&files, "grammar");
+}
+
+#[test]
+fn typescript_one_time_authority_uses_canonical_metadata_byte_bound() {
+    let mut base: Value = serde_json::from_str(include_str!(
+        "fixtures/one-time-response/valid-constrained-string.json"
+    ))
+    .unwrap();
+    for scenario in base["scenarios"].as_object_mut().unwrap().values_mut() {
+        let response = &mut scenario["one_time_response"]["origins"][0]["response"];
+        response["fields"][0]["naming"] = json!({"summary":"", "display":null});
+        response["fields"][0]["wire"] = Value::Null;
+        response["fields"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"metadata","type":" Optional< Map<String, Json> > "}));
+        response["declarations"]["credentials.api.Secret"]["of"] = json!(" String ");
+        response["constraints"]["credentials.api.Secret"]
+            .as_object_mut()
+            .unwrap()
+            .remove("alphabet");
+        response["constraints"]["credentials.api.Secret"]
+            .as_object_mut()
+            .unwrap()
+            .remove("prefix");
+    }
+    let admitted = AdmittedSuite::from_json(&base.to_string()).unwrap();
+    let trace = admitted
+        .suite()
+        .scenarios
+        .values()
+        .next()
+        .unwrap()
+        .one_time_response
+        .as_ref()
+        .unwrap();
+    let minimal_size = serde_json::to_vec(trace).unwrap().len();
+    let directory = runtime_package().join("authority-byte-vectors");
+    std::fs::create_dir_all(&directory).unwrap();
+    let mut files = Vec::new();
+    for (pattern_index, pattern) in ["x", "\u{2028}", r"\u2028"].into_iter().enumerate() {
+        let pattern_bytes = serde_json::to_string(pattern).unwrap().len() - 2;
+        for size in [1024, 1_048_576, 1_048_577] {
+            let mut document = base.clone();
+            for scenario in document["scenarios"].as_object_mut().unwrap().values_mut() {
+                scenario["one_time_response"]["origins"][0]["response"]["fields"][0]["naming"]
+                    ["summary"] = json!(format!(
+                    "{}{}",
+                    pattern.repeat((size - minimal_size) / pattern_bytes),
+                    "x".repeat((size - minimal_size) % pattern_bytes)
+                ));
+            }
+            let raw = document.to_string();
+            assert_eq!(AdmittedSuite::from_json(&raw).is_ok(), size <= 1_048_576);
+            let file = directory.join(format!("bytes-{size}-{pattern_index}.json"));
+            std::fs::write(&file, raw).unwrap();
+            files.push(file);
+        }
+    }
+    check_one_time_documents(&files, "bytes");
+}
+
+#[test]
+fn typescript_both_explorers_refuse_private_models_before_callbacks_or_recording() {
+    let ir = model("format: ess/21\nsystem: credentials\nversion: v1\ndomain: credentials.api\ncommands:\n  - name: credentials.api.Issue\n    response: [{name: secret, type: String}]\n    outcomes: [{name: issued, returns: true, one_time_response: [secret]}]\n");
+    // The independently supplied model is the authority even if the suite contains only
+    // older executable steps. This exercises both actual explorer entry points.
+    let suite = ess_conformance::synthesize(&ir).suite;
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../target/backlog-input/ts-one-time-explorer");
+    for artifact in ess_conformance::ts::emit_with_model(&suite, &ir).unwrap() {
+        let path = directory.join(artifact.path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, artifact.contents).unwrap();
+    }
+    let package = directory.join("essconform");
+    let mut compile = Command::new("tsc");
+    if let Some(modules) = std::env::var_os("ESS_TYPES_NODE") {
+        compile
+            .arg("--typeRoots")
+            .arg(Path::new(&modules).join("@types"));
+    }
+    let output = compile
+        .args(["--project", "tsconfig.json", "--noCheck"])
+        .current_dir(&package)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let driver = package.join("private-explorer.mjs");
+    std::fs::write(
+        &driver,
+        r"
+import {existsSync} from 'node:fs';
+import {loadModel, explore, exploreConcurrent} from './dist/explore.js';
+const out = process.argv[2];
+let callbacks = 0;
+const factory = () => { callbacks++; throw new Error('target must never be opened'); };
+const refusals = [];
+for (const operation of [() => loadModel(), () => explore(factory, {seeds:1, steps:1}),
+    () => exploreConcurrent(factory, {seed:1, calls:1, path:'contract.yaml', out})]) {
+  try { await operation(); refusals.push(false); }
+  catch(error) { refusals.push(error.message === 'UnsupportedOneTimeDisclosure'); }
+}
+process.stdout.write(JSON.stringify({refusals, callbacks, written:existsSync(out)}));
+",
+    )
+    .unwrap();
+    let out = package.join(format!("must-not-record-{}", std::process::id()));
+    assert!(!out.exists());
+    let output = Command::new("node").arg(driver).arg(&out).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        result,
+        json!({"refusals":[true,true,true],"callbacks":0,"written":false})
+    );
+}

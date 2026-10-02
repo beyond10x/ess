@@ -39,9 +39,10 @@ function bytes(value: Node): number {
   }
   return encoder.encode(JSON.stringify(value)).length;
 }
+export { bytes as nativeJSONBytes };
 const own = (value: object, key: string): boolean => Object.hasOwn(value, key);
 
-function field(raw: Node): Field {
+export function admitDirectResponseField(raw: Node): Field {
   const value = closed(raw, 'name type', 'wire display summary code naming presence');
   const label = text(value.name);
   if (!/^_*[A-Za-z][A-Za-z0-9_]*$/.test(label)) throw new Error('invalid response field');
@@ -72,7 +73,7 @@ export function admitDirectResponse(raw: Node): DirectResponse {
     admitOutcome(value.outcome);
     if (value.outcome.command !== value.command) throw new Error('direct response outcome command');
   }
-  const fields = array(value.fields).map(field);
+  const fields = array(value.fields).map(admitDirectResponseField);
   if (!isObject(value.declarations) || !isObject(value.expected))
     throw new Error('response mappings');
   const declarations: Record<string, SelectionDeclaration> = Object.create(null);
@@ -88,7 +89,9 @@ export function admitDirectResponse(raw: Node): DirectResponse {
     if (!own(keys, body.kind)) throw new Error('response declaration kind');
     closed(body, `kind ${keys[body.kind]}`, '');
     const normalized =
-      body.kind === 'struct' ? { ...body, fields: array(body.fields).map(field) } : body;
+      body.kind === 'struct'
+        ? { ...body, fields: array(body.fields).map(admitDirectResponseField) }
+        : body;
     // Existing decoding intentionally drops naming; this profile retains field presence.
     declarations[key] = decodeDeclaration({
       ...normalized,
