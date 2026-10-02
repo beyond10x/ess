@@ -556,12 +556,8 @@ fn pure_return_coverage_and_report_retain_exact_admitted_bytes() {
     assert_eq!(report.counts().unsupported, 0);
     assert_eq!(report.counts().skipped, 0);
     assert_eq!(report.counts().error, 0);
-    for error in [
-        ess_conformance::go::emit_input(&input).unwrap_err(),
-        ess_conformance::ts::emit_input(&input).unwrap_err(),
-    ] {
-        assert_eq!(error.issues[0].reason, "UnsupportedTarget");
-    }
+    ess_conformance::go::emit_input(&input).expect("Go executes direct return coverage");
+    ess_conformance::ts::emit_input(&input).expect("TypeScript executes direct return coverage");
     assert!(report
         .to_canonical_json()
         .unwrap()

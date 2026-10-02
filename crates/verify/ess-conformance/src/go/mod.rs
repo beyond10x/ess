@@ -386,7 +386,7 @@ pub(crate) fn refuse_unadmitted(
             format!(
                 "the generated {target} runner admits suite versions up to \
                  `ess-conformance/{NEWEST_ADMITTED_SUITE_MAJOR}` and would refuse `{version}`; \
-                 use the Rust runner"
+                 regenerate using a supported suite version"
             ),
         ));
     }

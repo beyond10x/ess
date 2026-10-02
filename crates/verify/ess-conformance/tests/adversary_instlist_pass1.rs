@@ -444,12 +444,12 @@ mod probes {
                 ])
             )])
         );
-        // Every entry point of both generators refuses.
-        assert!(ess_conformance::go::emit(&suite).is_err());
-        assert!(ess_conformance::ts::emit(&suite).is_err());
+        // Each entry point preserves the structured references for its executing runtime.
+        ess_conformance::go::emit(&suite).expect("Go structured references");
+        ess_conformance::ts::emit(&suite).expect("TypeScript structured references");
         let ir = model();
-        assert!(ess_conformance::go::emit_with_model(&suite, &ir).is_err());
-        assert!(ess_conformance::ts::emit_with_model(&suite, &ir).is_err());
+        ess_conformance::go::emit_with_model(&suite, &ir).expect("Go model and references");
+        ess_conformance::ts::emit_with_model(&suite, &ir).expect("TypeScript model and references");
     }
 
     /// A reference to an instance the timeline has not captured yet at that step.
@@ -583,7 +583,8 @@ mod probes {
             error.to_string().contains("UnsupportedScenarioValue"),
             "{error}"
         );
-        assert!(ess_conformance::go::emit_input_with_model(&input, &ir).is_err());
-        assert!(ess_conformance::ts::emit_input_with_model(&input, &ir).is_err());
+        ess_conformance::go::emit_input_with_model(&input, &ir).expect("Go coverage references");
+        ess_conformance::ts::emit_input_with_model(&input, &ir)
+            .expect("TypeScript coverage references");
     }
 }

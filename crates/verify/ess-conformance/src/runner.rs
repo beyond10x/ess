@@ -980,6 +980,9 @@ impl<C: Clock> Runner<C> {
                 }
             };
             run.remember(&observed);
+            if run.disclosure_stopped {
+                return Flow::Stop;
+            }
             let carried = observed
                 .iter()
                 .find(|seen| &seen.event == event && matches(&seen.payload, payload))
@@ -1448,7 +1451,7 @@ fn log_count<T: ConformanceTarget>(
         Ok(observed) => {
             let count = observed.iter().filter(|seen| &seen.event == event).count();
             run.remember(&observed);
-            Some(count)
+            (!run.disclosure_stopped).then_some(count)
         }
         Err(error) => {
             run.record(target_failure(

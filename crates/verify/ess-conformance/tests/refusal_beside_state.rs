@@ -582,7 +582,7 @@ fn beside_a_stored_field_guard_the_refusal_is_sent_for_an_arranged_row() {
 
 mod interpreter {
     use super::*;
-    use ess_conformance::interpret::execute::{execute, Externals, Store, Undetermined};
+    use ess_conformance::interpret::execute::{execute, Externals, Store};
     use ess_conformance::interpret::Interpreted;
 
     const TENANT: &str = "00000000-0000-4000-8000-000000000001";
@@ -678,19 +678,48 @@ mod interpreter {
     #[test]
     fn an_input_the_refusal_does_not_claim_still_reads_the_held_state_and_is_not_guessed() {
         let ir = ir(ROTATE);
-        let (store, tenant) = stored(&ir, &["demo.secrets.Configure"]);
-        let why = execute(
-            &ir,
-            &store,
-            &"demo.secrets.RotateSecret".parse().unwrap(),
-            &rotate("long-enough-secret", &tenant),
-            &Externals::Withheld,
-        )
-        .expect_err("the held-state guard is not interpreted");
-        assert!(
-            matches!(&why, Undetermined::NotInterpreted { construct } if construct.contains("held state")),
-            "{why}"
-        );
+        for (moves, outcome) in [
+            (&[][..], "not-configured"),
+            (&["demo.secrets.Configure"][..], "rotated"),
+            (
+                &["demo.secrets.Configure", "demo.secrets.Revoke"][..],
+                "not-configured",
+            ),
+        ] {
+            let (store, tenant) = stored(&ir, moves);
+            let steps = execute(
+                &ir,
+                &store,
+                &"demo.secrets.RotateSecret".parse().unwrap(),
+                &rotate("long-enough-secret", &tenant),
+                &Externals::Withheld,
+            )
+            .expect("the actual held state decides the branch");
+            assert_eq!(steps.len(), 1);
+            let step = &steps[0];
+            assert_eq!(
+                step.outcome.as_ref().unwrap().to_string(),
+                format!("demo.secrets.RotateSecret/{outcome}")
+            );
+            if outcome == "rotated" {
+                assert_eq!(step.events.len(), 1);
+                let instance = step
+                    .next
+                    .instance(&"demo.secrets.Configuration".parse().unwrap(), &tenant)
+                    .unwrap();
+                assert_eq!(
+                    instance.fields["secret"],
+                    Node::Text("long-enough-secret".to_owned())
+                );
+            } else {
+                assert_eq!(step.next, store);
+                assert!(step.events.is_empty());
+                assert_eq!(
+                    step.error.as_ref().unwrap().error.to_string(),
+                    "demo.secrets.NotConfigured"
+                );
+            }
+        }
     }
 
     /// The interpreter reads no view yet, so the scenario stops at its first view read, which is the

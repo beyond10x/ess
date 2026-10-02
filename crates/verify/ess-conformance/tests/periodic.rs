@@ -463,6 +463,7 @@ fn run_go(case: &str, code: &str) {
                 "-count=1",
                 "-v",
             ])
+            .env("ESS_PERIODIC_REPORT_CASE", "unsupported")
             .env("ESS_CONFORMANCE_STRICT", "1")
             .current_dir(&directory)
             .output()
@@ -482,7 +483,7 @@ fn run_go(case: &str, code: &str) {
             &std::fs::read_to_string(directory.join("essconform/suite.json")).unwrap(),
         )
         .unwrap();
-        for (file, passed, skipped) in [
+        for (file, passed, unsupported) in [
             ("report-ready.json", 4, 0),
             ("report-unsupported.json", 0, 4),
         ] {
@@ -492,7 +493,8 @@ fn run_go(case: &str, code: &str) {
             )
             .unwrap();
             assert_eq!(report.counts().passed, passed);
-            assert_eq!(report.counts().skipped, skipped);
+            assert_eq!(report.counts().unsupported, unsupported);
+            assert_eq!(report.counts().skipped, 0);
             assert_ne!(
                 report.conformance_status(),
                 ess_conformance::CountStatus::Passed,

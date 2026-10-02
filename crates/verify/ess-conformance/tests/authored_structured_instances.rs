@@ -542,10 +542,8 @@ fn a_coverage_suite_carrying_structured_references_is_33_and_runs() {
         "ess-conformance/33"
     );
     AdmittedSuite::from_json(admitted.original_json()).unwrap_or_else(|error| panic!("{error}"));
-    let go = ess_conformance::go::emit_input(&input).expect_err("Go refuses");
-    assert!(go.to_string().contains("Rust runner"), "{go}");
-    let ts = ess_conformance::ts::emit_input(&input).expect_err("TypeScript refuses");
-    assert!(ts.to_string().contains("Rust runner"), "{ts}");
+    ess_conformance::go::emit_input(&input).expect("Go executes structured references");
+    ess_conformance::ts::emit_input(&input).expect("TypeScript executes structured references");
     let target = Recording {
         inner: Interpreted::for_model(ir),
         sent: RefCell::default(),
