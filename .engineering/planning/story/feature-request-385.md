@@ -19,7 +19,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/declared_behaviour.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:37:08Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:37:08Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -53,3 +53,7 @@ Accept as proposed, using the binding design's actual conditional order. This do
 ## Scope
 
 Cited: crates/generate/ess-synth/src/plan.rs; src/rust/behaviour.rs; src/go/behaviour.rs; tests/declared_behaviour.rs and Go behavior tests. Existing design is the authority, not a duplicated new definition.
+
+## Verification 2026-10-02
+
+Committed259b49a0efe5f312f41218853594222ca2d496a9 after independent source/test review against the binding precedence design. Meaningful red16cases:12pass/4fail; treatment16passed. Strict all-target Clippy/fmt/diff checks passed. Four frozen hashes verified and bot author/committer confirmed. Full server-group package and projection verification now running for316/379/385 together; no remote publication of these fixes yet. Evidence: managed tree ess-backlog-servers-20261002, target/backlog-input/385-report.md and review-result:consumer-precedence-385-pass1-20261002.
