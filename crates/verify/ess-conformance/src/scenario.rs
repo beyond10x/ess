@@ -608,7 +608,7 @@ pub enum ScenarioId {
     /// A generated finite disclosure obligation, admitted only with suite/34 or /35 authority.
     Disclosure {
         /// Source origin, marked field, follow-up and actual caller identity.
-        cell: crate::one_time_response::Cell,
+        cell: Box<crate::one_time_response::Cell>,
     },
     /// One declared outcome of one command: `billing.invoice.CreateInvoice/outcome/rejected`.
     ///
@@ -807,8 +807,8 @@ impl ScenarioId {
 
         match parts.as_slice() {
             [_, "disclosure", ..] => crate::one_time_response::Cell::parse(value)
-                .map(|cell| Self::Disclosure { cell })
-                .map_err(|reason| reject(reason)),
+                .map(|cell| Self::Disclosure { cell: Box::new(cell) })
+                .map_err(reject),
             [command, Self::OUTCOME, outcome] => Ok(Self::Outcome {
                 outcome: OutcomeRef::new(
                     CommandRef::new(name(command)?),
