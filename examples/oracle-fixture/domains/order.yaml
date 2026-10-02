@@ -99,6 +99,7 @@ commands:
         emits:
           - oracle.order.OrderPlaced
         sets:
+          contact: input.contact
           weight_grams: input.weight_grams
         summary: The order is recorded, in Placed.
 

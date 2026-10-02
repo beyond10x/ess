@@ -235,7 +235,13 @@ fn create_input(amount: i64) -> BTreeMap<String, Node> {
 }
 
 fn invoice_input(id: &str) -> BTreeMap<String, Node> {
-    BTreeMap::from([("invoice_id".to_owned(), Node::Text(id.to_owned()))])
+    BTreeMap::from([
+        ("invoice_id".to_owned(), Node::Text(id.to_owned())),
+        (
+            "issued_at".to_owned(),
+            Node::Text("2026-01-05T09:00:01Z".to_owned()),
+        ),
+    ])
 }
 
 /// Creates one invoice and returns the store after it and the identity it was given.

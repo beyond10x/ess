@@ -304,19 +304,6 @@ impl State {
         format!("00000000-0000-4000-8000-{:012}", self.tick())
     }
 
-    /// The instant a write happened at, of the shape the model's `Timestamp` primitive takes.
-    ///
-    /// Counted, not read off a clock. §37 puts every source of variation on the runner's side, and a
-    /// reference target that reached for the wall clock would make the declared order of its own
-    /// view depend on how fast the machine ran the commands that filled it.
-    fn instant(&mut self) -> String {
-        format!(
-            "2020-01-01T00:{:02}:{:02}Z",
-            self.sequence / 60,
-            self.tick() % 60
-        )
-    }
-
     /// The token a read may demand a view no older than.
     ///
     /// # Panics
@@ -445,7 +432,13 @@ impl ConformanceTarget for Billing {
                     .values()
                     .filter(|invoice| invoice.state == Lifecycle::Issued)
                     .collect();
-                outstanding.sort_by(|left, right| right.issued_at.cmp(&left.issued_at));
+                let instant = |invoice: &Invoice| {
+                    invoice
+                        .issued_at
+                        .as_deref()
+                        .and_then(ess_primitives::time::Rfc3339Instant::parse_rfc3339)
+                };
+                outstanding.sort_by_key(|invoice| std::cmp::Reverse(instant(invoice)));
                 Ok(SemanticViewResult::of(outstanding.into_iter().map(row)))
             }
             // `eventual`. A read demanding `AtLeast(token)` is the one case where the target waits
@@ -573,10 +566,12 @@ fn issue_invoice(
     if current != Lifecycle::Draft {
         return wrong_state(ISSUE_INVOICE, current);
     }
-    let issued_at = state.instant();
+    let Some(Node::Text(issued_at)) = request.input.get("issued_at") else {
+        return SemanticCommandResult::undeclared();
+    };
     if let Some(invoice) = state.invoices.get_mut(&id) {
         invoice.state = Lifecycle::Issued;
-        invoice.issued_at = Some(issued_at);
+        invoice.issued_at = Some(issued_at.clone());
     }
     state.touch(&id, lag);
 

@@ -192,7 +192,8 @@ fn complete_real_fixture_inventory_keeps_versions_slots_events_effects_and_fulfi
         matches!(issue.effect, entity_core::OutcomeEffect::Moves { ref to, .. } if to == "Issued")
     );
     assert_eq!(issue.emits.len(), 1);
-    assert!(issue.fulfills.contains_key("issued_at"));
+    assert_eq!(issue.set["issued_at"], json!("$args.input.issued_at"));
+    assert!(issue.fulfills.contains_key("note"));
     let pay = &invoice.operations["billing.invoice.PayInvoice"].outcomes[0];
     assert!(matches!(pay.effect, entity_core::OutcomeEffect::Moves { ref to, .. } if to == "Paid"));
     assert_eq!(pay.emits.len(), 1);
@@ -207,11 +208,11 @@ fn complete_real_fixture_inventory_keeps_versions_slots_events_effects_and_fulfi
     assert!(
         matches!(issue_binding.instance, InstanceBinding::Supplied { ref input_field } if input_field == "invoice_id")
     );
-    let issued_at = &issue_binding.operation_fields[&OperationFieldCoordinate {
+    let note = &issue_binding.operation_fields[&OperationFieldCoordinate {
         outcome: ess_domain::command::OutcomeName::new("issued").expect("outcome"),
-        field: "issued_at".to_owned(),
+        field: "note".to_owned(),
     }];
-    assert_eq!(issued_at.actions, OperationFieldActions::Optional);
+    assert_eq!(note.actions, OperationFieldActions::Optional);
     assert!(lowered
         .bindings()
         .requirements()
@@ -219,7 +220,7 @@ fn complete_real_fixture_inventory_keeps_versions_slots_events_effects_and_fulfi
         .any(|requirement| matches!(
             requirement,
             BindingRequirement::OperationFieldPolicySupplied { command, target, .. }
-                if command == &name("billing.invoice.IssueInvoice") && target.field == "issued_at"
+                if command == &name("billing.invoice.IssueInvoice") && target.field == "note"
         )));
 
     let gatepass = compile_directory(&example("gatepass"));
@@ -425,8 +426,8 @@ fn operation_identity_and_optional_output_boundaries_are_explicit() {
         &billing_path,
         "domains/invoice.yaml",
         &[(
-            "        payload:\n          billing.invoice.InvoiceIssued:\n            invoice_id: input.invoice_id\n        summary:",
-            "        payload:\n          billing.invoice.InvoiceIssued:\n            invoice_id: input.invoice_id\n        sets:\n          invoice_id: input.invoice_id\n        summary:",
+            "          issued_at: input.issued_at\n",
+            "          issued_at: input.issued_at\n          invoice_id: input.invoice_id\n",
         )],
     );
     let plan = SynthesisPlan::of(&identity);
@@ -442,12 +443,12 @@ fn operation_identity_and_optional_output_boundaries_are_explicit() {
         "domains/invoice.yaml",
         &[
             (
-                "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n\n    outcomes:\n      - name: issued",
-                "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n      - name: supplied_issued_at\n        type: Optional<Timestamp>\n\n    outcomes:\n      - name: issued",
+                "      - name: issued_at\n        type: Timestamp\n",
+                "      - name: supplied_issued_at\n        type: Optional<Timestamp>\n",
             ),
             (
-                "        payload:\n          billing.invoice.InvoiceIssued:\n            invoice_id: input.invoice_id\n        summary:",
-                "        payload:\n          billing.invoice.InvoiceIssued:\n            invoice_id: input.invoice_id\n        sets:\n          issued_at: input.supplied_issued_at\n        summary:",
+                "          issued_at: input.issued_at\n",
+                "          issued_at: input.supplied_issued_at\n",
             ),
         ],
     );
@@ -880,7 +881,13 @@ fn preserves(
 
 #[test]
 fn accepted_operation_action_algebra_is_enforced_after_branch_selection() {
-    let ir = compile_directory(&example("billing"));
+    // This boundary test deliberately leaves the optional timestamp to fulfillment, so all
+    // three optional actions remain exercised even though the real example now stores input.
+    let ir = compile_replacing(
+        &example("billing"),
+        "domains/invoice.yaml",
+        &[("        sets:\n          issued_at: input.issued_at\n", "")],
+    );
     let plan = SynthesisPlan::of(&ir);
     let lowered = lower(
         &selected(&ir, &plan, "invoice-service"),
@@ -899,7 +906,7 @@ fn accepted_operation_action_algebra_is_enforced_after_branch_selection() {
         fields: invoice_fields(),
     };
     let operation = "billing.invoice.IssueInvoice";
-    let input = json!({"invoice_id": logical_id});
+    let input = json!({"invoice_id": logical_id, "issued_at": "2026-01-05T09:00:01Z"});
 
     assert!(selected_fulfillment(&runtime, &instance, operation, &input)
         .complete(BTreeMap::new())
@@ -1234,8 +1241,8 @@ fn an_operation_that_clears_a_field_is_refused_rather_than_left_to_the_host() {
         &example("billing"),
         "domains/invoice.yaml",
         &[(
-            "            invoice_id: input.invoice_id\n        summary: The invoice leaves Draft and is now Issued.\n",
-            "            invoice_id: input.invoice_id\n        sets:\n          note: {cleared: true}\n        summary: The invoice leaves Draft and is now Issued.\n",
+            "          issued_at: input.issued_at\n",
+            "          issued_at: input.issued_at\n          note: {cleared: true}\n",
         )],
     );
     let diagnostics = lower_billing_changes(&ir)
@@ -1429,7 +1436,7 @@ fn state_change_selection_partitions_the_held_state_exactly() {
 
     let registry = registry(&lowered);
     let runtime = Runtime::new(&registry);
-    let input = json!({"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225"});
+    let input = json!({"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225", "issued_at": "2026-01-05T09:00:01Z"});
     for (state, expected) in [("Draft", "issued"), ("Issued", "reissued")] {
         let instance = invoice_instance(state, "Email");
         let prepared =
@@ -2100,8 +2107,12 @@ fn taken_in(
     let registry = registry(lowered);
     let runtime = Runtime::new(&registry);
     let binding = &lowered.bindings().commands()[&name(operation)];
+    let mut input = json!({"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225"});
+    if operation == "billing.invoice.IssueInvoice" {
+        input["issued_at"] = json!("2026-01-05T09:00:01Z");
+    }
     let arguments = json!({
-        "input": {"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225"},
+        "input": input,
         "bound": bound_for(binding, |_| None)
     });
     let row = invoice_instance(state, channel);

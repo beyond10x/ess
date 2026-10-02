@@ -327,10 +327,8 @@ fn money(amount: f64) -> Node {
 
 /// Creating one invoice and issuing it, bound under `instance`.
 ///
-/// Written by hand because synthesis will not write one: nothing in the model relates a command's
-/// input to the field a view ranks by, so no generator knows which of two invoices the
-/// implementation will put first. An adapter that *does* know writes exactly this.
-fn create_and_issue(instance: &str, amount: f64) -> Vec<ScenarioStep> {
+/// Explicit issuance timestamps make each hand-written ordering assertion deterministic.
+fn create_and_issue(instance: &str, amount: f64, issued_at: &str) -> Vec<ScenarioStep> {
     let create: CommandRef = "billing.invoice.CreateInvoice".parse().expect("a command");
     let issue: CommandRef = "billing.invoice.IssueInvoice".parse().expect("a command");
     let created: EventRef = "billing.invoice.InvoiceCreated".parse().expect("an event");
@@ -367,7 +365,13 @@ fn create_and_issue(instance: &str, amount: f64) -> Vec<ScenarioStep> {
             command: issue.clone(),
             actor: None,
             caller: std::collections::BTreeMap::new(),
-            input: BTreeMap::from([("invoice_id".to_owned(), ScenarioValue::instance(bound))]),
+            input: BTreeMap::from([
+                ("invoice_id".to_owned(), ScenarioValue::instance(bound)),
+                (
+                    "issued_at".to_owned(),
+                    ScenarioValue::literal(Node::Text(issued_at.to_owned())),
+                ),
+            ]),
         },
         ScenarioStep::ExpectOutcome {
             outcome: OutcomeRef::new(issue, "issued".parse().expect("an outcome name")),
@@ -426,10 +430,9 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
     )
     .expect("the emitted suite parses");
 
-    // `issued_at desc`, and the fixture issues in scenario order — so the invoice issued second is
-    // the one the view puts first, and the one issued first is the one it puts last.
-    let mut steps = create_and_issue("earlier", 1.0);
-    steps.extend(create_and_issue("later", 2.0));
+    // `issued_at desc`: the explicit later timestamp sorts first, independent of command order.
+    let mut steps = create_and_issue("earlier", 1.0, "2026-01-05T09:00:01Z");
+    steps.extend(create_and_issue("later", 2.0, "2026-01-05T09:00:02Z"));
     steps.push(ScenarioStep::QueryView {
         view: "billing.invoice.OutstandingInvoices"
             .parse()
@@ -514,7 +517,7 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
 fn held_window() -> Vec<ScenarioStep> {
     let created: EventRef = "billing.invoice.InvoiceCreated".parse().expect("an event");
     let bridged: InstantName = "created".parse().expect("an instant name");
-    let mut steps = create_and_issue("held", 5.0);
+    let mut steps = create_and_issue("held", 5.0, "2026-01-05T09:00:01Z");
     steps.push(ScenarioStep::MarkInstant {
         instant: bridged.clone(),
     });
@@ -616,9 +619,9 @@ fn the_emitted_runner_holds_a_window_and_fails_a_target_whose_clock_never_moves(
 /// unrelated test is pinning. Three rather than two, because the claim is only worth making where
 /// there is a third row a producer could have gone on to build.
 fn stopped_scan() -> Vec<ScenarioStep> {
-    let mut steps = create_and_issue("first", 1.0);
-    steps.extend(create_and_issue("second", 2.0));
-    steps.extend(create_and_issue("third", 3.0));
+    let mut steps = create_and_issue("first", 1.0, "2026-01-05T09:00:01Z");
+    steps.extend(create_and_issue("second", 2.0, "2026-01-05T09:00:02Z"));
+    steps.extend(create_and_issue("third", 3.0, "2026-01-05T09:00:03Z"));
     steps.push(ScenarioStep::ExpectHalt {
         view: "billing.invoice.OutstandingInvoices"
             .parse()
