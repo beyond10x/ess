@@ -1345,7 +1345,7 @@ impl App {
                 Some("choice") => {
                     let options = match field.choice.as_ref().map(|node| &node.body) {
                         Some(Body::Composite(Composite::Choice(choice))) => self
-                            .choice_options(choice, &place.ctx)
+                            .choice_options(choice, Some(&field.field), &place.ctx)
                             .into_iter()
                             .map(|(_, label)| label)
                             .collect::<Vec<_>>(),
@@ -1416,7 +1416,7 @@ impl App {
             Value::Null => Vec::new(),
             other => vec![display(other)],
         };
-        let options = self.choice_options(choice, &place.ctx);
+        let options = self.choice_options(choice, None, &place.ctx);
         let count = options.len().max(1);
         options
             .into_iter()
