@@ -496,6 +496,18 @@ impl App {
         self.regions.borrow().clone()
     }
 
+    /// Every read the app holds whose answer was a failure, as `(view, error)` in request-key
+    /// order.
+    pub fn failed_reads(&self) -> Vec<(String, String)> {
+        self.cache
+            .values()
+            .filter_map(|entry| match &entry.state {
+                ReadState::Failed(error) => Some((entry.request.view.clone(), error.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The lifecycle state of a section of the page shown.
     pub fn section_state(&self, section: &str) -> Lifecycle {
         self.section_by_name(section)

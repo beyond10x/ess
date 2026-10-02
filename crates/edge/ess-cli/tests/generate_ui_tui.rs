@@ -350,7 +350,7 @@ fn generation_is_deterministic() {
 #[test]
 fn the_built_crate_reads_a_view_from_a_synthesized_gatepass_server() {
     let binary = built_desk();
-    let (_server, base) = serve();
+    let (server, base) = serve();
     register(&base, "Ada", "North");
     let state = scratch("state");
     let output = Command::new(binary)
@@ -371,4 +371,21 @@ fn the_built_crate_reads_a_view_from_a_synthesized_gatepass_server() {
         row.contains("North"),
         "the row shows its building:\n{screen}"
     );
+    assert!(output.stderr.is_empty(), "{}", text(&output.stderr));
+
+    // With the server gone the frame is still printed, and the run exits 3 with one stderr line
+    // naming the read that failed.
+    drop(server);
+    let output = Command::new(binary)
+        .args(["--base-url", &base, "--screen-once", "120x40"])
+        .env("ESS_UI_AUTHORIZATION", RECEPTIONIST)
+        .env("XDG_STATE_HOME", &state)
+        .stdin(Stdio::null())
+        .output()
+        .expect("the generated binary runs");
+    assert_eq!(output.status.code(), Some(3), "{}", text(&output.stderr));
+    assert_eq!(text(&output.stdout).lines().count(), 40);
+    let stderr = text(&output.stderr);
+    assert_eq!(stderr.lines().count(), 1, "{stderr}");
+    assert!(stderr.contains("visit.ExpectedVisits: "), "{stderr}");
 }

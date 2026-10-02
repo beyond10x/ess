@@ -11,11 +11,14 @@
 //! - `src/binding.rs`: the route table the caller computed, as JSON.
 //!
 //! Each file opens with a [`MARK`] line, and a file already at one of these paths is replaced only
-//! when it opens with that line too: an `--out` holding anything else is refused, writing nothing.
+//! when it opens with that line too, and every path under `--out` the crate goes to is a plain
+//! directory or file, never a symbolic link: an `--out` holding anything else is refused before
+//! the first write, writing nothing.
 //!
-//! Nothing of the document reaches Rust source raw: a comment carries [`comment_text`] of it and
-//! a string literal [`rust_string`] of it. The same document and binding generate the same bytes
-//! wherever they are written.
+//! Nothing of the document reaches Rust source raw: no comment carries its text, and a string
+//! literal holds a [`rust_string`] of it. A document that opens with the mark line (the crate's
+//! own `src/ui.yaml`) is embedded without it, so generating from it again writes the same bytes;
+//! so does the same document and binding wherever they are written.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -41,6 +44,7 @@ const RESERVED: [&str; 4] = ["build", "deps", "examples", "incremental"];
 /// crate root. The document is refused here, before anything is written, when it does not load
 /// or the terminal cannot draw it.
 pub fn render(document: &str, binding: &Binding) -> Result<BTreeMap<String, String>, TuiError> {
+    let document = unmarked(document);
     let loaded = ess_ui::load_str(document).map_err(TuiError::Load)?;
     profile::check(&loaded, &TUI).map_err(TuiError::Refused)?;
     let name = crate_name(&loaded.app);
@@ -48,7 +52,7 @@ pub fn render(document: &str, binding: &Binding) -> Result<BTreeMap<String, Stri
         .map_err(|error| TuiError::Binding(format!("the binding does not serialise: {error}")))?;
     let mut files = BTreeMap::new();
     files.insert("Cargo.toml".to_owned(), manifest(&name));
-    files.insert("src/main.rs".to_owned(), main_rs(&name, &loaded.app));
+    files.insert("src/main.rs".to_owned(), main_rs(&name));
     files.insert("src/binding.rs".to_owned(), binding_rs(&json));
     files.insert("src/ui.yaml".to_owned(), format!("# {MARK}\n{document}"));
     Ok(files)
@@ -61,21 +65,14 @@ pub fn generate(path: &Path, binding: &Binding, out: &Path) -> Result<String, Tu
     let document = std::fs::read_to_string(path)
         .map_err(|error| TuiError::Io(format!("cannot read {}: {error}", path.display())))?;
     let files = render(&document, binding)?;
+    if out.exists() && !out.is_dir() {
+        return Err(TuiError::Io(format!(
+            "--out {} is not a directory; nothing was written",
+            out.display()
+        )));
+    }
     for (relative, text) in &files {
-        let target = out.join(relative);
-        if !target.exists() && target.symlink_metadata().is_err() {
-            continue;
-        }
-        let first = text.lines().next().unwrap_or_default();
-        let ours = std::fs::read_to_string(&target)
-            .is_ok_and(|existing| existing.lines().next() == Some(first));
-        if !ours {
-            return Err(TuiError::Io(format!(
-                "--out {}: {relative} is already there and was not written by `ess generate ui \
-                 --target tui` (its first line is not `{first}`); nothing was written",
-                out.display()
-            )));
-        }
+        admit(out, relative, text)?;
     }
     for (relative, text) in &files {
         let target = out.join(relative);
@@ -92,6 +89,60 @@ pub fn generate(path: &Path, binding: &Binding, out: &Path) -> Result<String, Tu
         files.len(),
         out.display()
     ))
+}
+
+/// `document` without a leading `# <MARK>` line: the crate's own `src/ui.yaml` is the document it
+/// was generated from.
+fn unmarked(document: &str) -> &str {
+    document
+        .strip_prefix("# ")
+        .and_then(|rest| rest.strip_prefix(MARK))
+        .and_then(|rest| {
+            rest.strip_prefix("\r\n")
+                .or_else(|| rest.strip_prefix('\n'))
+        })
+        .unwrap_or(document)
+}
+
+/// Whether `relative` (a `/`-separated path) may be written under `out` with `text`: each
+/// directory on the way is absent or a directory, and the file absent or a file opening with the
+/// first line of `text`; none of them a symbolic link. Nothing is read through a link.
+fn admit(out: &Path, relative: &str, text: &str) -> Result<(), TuiError> {
+    let refused = |why: String| {
+        TuiError::Io(format!(
+            "--out {}: {why}; nothing was written",
+            out.display()
+        ))
+    };
+    let parts: Vec<&str> = relative.split('/').collect();
+    let mut path = out.to_path_buf();
+    for (at, part) in parts.iter().enumerate() {
+        path.push(part);
+        let shown = parts[..=at].join("/");
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            return Ok(());
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(refused(format!("{shown} is a symbolic link")));
+        }
+        if at + 1 < parts.len() {
+            if !metadata.is_dir() {
+                return Err(refused(format!("{shown} is not a directory")));
+            }
+            continue;
+        }
+        let first = text.lines().next().unwrap_or_default();
+        let ours = metadata.is_file()
+            && std::fs::read_to_string(&path)
+                .is_ok_and(|existing| existing.lines().next() == Some(first));
+        if !ours {
+            return Err(refused(format!(
+                "{shown} is already there and was not written by `ess generate ui --target tui` \
+                 (its first line is not `{first}`)"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// The package and binary name for the document's `app`: lowercase ASCII letters, digits, `-`
@@ -113,17 +164,6 @@ fn crate_name(app: &str) -> String {
     } else {
         name
     }
-}
-
-/// `text` as one line of a Rust comment: control characters and the codepoints that change the
-/// visible direction of text (which rustc refuses in a comment) removed.
-fn comment_text(text: &str) -> String {
-    text.chars()
-        .filter(|character| {
-            !character.is_control()
-                && !matches!(character, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
-        })
-        .collect()
 }
 
 /// `text` as a Rust string literal, quotes included: `\`, `"` and every character that is not
@@ -166,12 +206,14 @@ fn manifest(name: &str) -> String {
     )
 }
 
-fn main_rs(name: &str, app: &str) -> String {
-    let app = comment_text(app);
-    let name = rust_string(name);
+/// `src/main.rs`. The document's own text reaches no comment: the doc comments name the crate by
+/// [`crate_name`], whose characters Markdown and rustc take literally, and the command line's
+/// name is a [`rust_string`].
+fn main_rs(name: &str) -> String {
+    let literal = rust_string(name);
     format!(
         r#"// {MARK}
-//! The `{app}` terminal application, generated by `ess generate ui --target tui` (ESS
+//! The `{name}` terminal application, generated by `ess generate ui --target tui` (ESS
 //! {VERSION}) from its `ess-ui/1` document. Generate it again rather than editing it.
 
 mod binding;
@@ -180,18 +222,19 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-/// Runs the `{app}` ess-ui/1 document in the terminal against the HTTP surface it is bound to;
+/// Runs the `{name}` ess-ui/1 document in the terminal against the HTTP surface it is bound to;
 /// the Authorization header of every request is read from {AUTHORIZATION_VAR}, never from the
 /// command line.
 #[derive(Debug, Parser)]
-#[command(name = {name}, version)]
+#[command(name = {literal}, version)]
 struct Cli {{
     /// Where a served component is reached, http:// only: <url> when the document binds one
     /// component, else <component>=<url>, once per component.
     #[arg(long = "base-url", value_name = "URL")]
     base_url: Vec<String>,
     /// Print one rendered frame of this size, such as 120x40 (at most 1000x1000), after the home
-    /// page has read once, and exit without touching the terminal.
+    /// page has read once, and exit without touching the terminal: 3 when a read of the page
+    /// failed, the frame printed all the same.
     #[arg(long = "screen-once", value_name = "WIDTHxHEIGHT")]
     screen_once: Option<ess_ui_tui::ScreenSize>,
 }}
@@ -207,7 +250,7 @@ fn main() -> ExitCode {{
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {{
             eprintln!("{{error}}");
-            ExitCode::from(1)
+            ExitCode::from(error.exit_code())
         }}
     }}
 }}
@@ -237,7 +280,23 @@ mod tests {
             super::rust_string("\r\t\u{202E}é"),
             r#""\u{d}\u{9}\u{202e}\u{e9}""#
         );
-        assert_eq!(super::comment_text("front\ndesk\u{2066}\r"), "frontdesk");
+    }
+
+    #[test]
+    fn only_a_leading_mark_line_is_taken_off_the_document() {
+        let mark = format!("# {}", super::MARK);
+        assert_eq!(
+            super::unmarked(&format!("{mark}\nformat: x\n")),
+            "format: x\n"
+        );
+        assert_eq!(
+            super::unmarked(&format!("{mark}\r\nformat: x\n")),
+            "format: x\n"
+        );
+        let inner = format!("format: x\n{mark}\n");
+        assert_eq!(super::unmarked(&inner), inner);
+        let longer = format!("{mark} again\nformat: x\n");
+        assert_eq!(super::unmarked(&longer), longer);
     }
 
     #[test]

@@ -67,6 +67,24 @@ pub enum TuiError {
     Io(String),
     /// A bound run is not set up: a base URL, the credential, or a `--model` without a binding.
     Binding(String),
+    /// A `--screen-once` frame was printed, but a read of the page it shows failed: each failed
+    /// read as `(view, error)`.
+    ReadFailed(Vec<(String, String)>),
+}
+
+/// The exit status of a generated app whose `--screen-once` frame was printed while a read of
+/// its page failed ([`TuiError::ReadFailed`]); every other refusal exits `1`, a usage error `2`.
+pub const READ_FAILED_EXIT: u8 = 3;
+
+impl TuiError {
+    /// The exit status a generated app ends with on this error: [`READ_FAILED_EXIT`] for
+    /// [`TuiError::ReadFailed`], else `1`.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            Self::ReadFailed(_) => READ_FAILED_EXIT,
+            _ => 1,
+        }
+    }
 }
 
 impl fmt::Display for TuiError {
@@ -76,6 +94,26 @@ impl fmt::Display for TuiError {
             Self::Refused(refusal) => write!(formatter, "{refusal}"),
             Self::Fixture(message) => write!(formatter, "fixtures: {message}"),
             Self::Io(message) | Self::Binding(message) => formatter.write_str(message),
+            Self::ReadFailed(reads) => {
+                formatter.write_str("--screen-once: the page's read failed: ")?;
+                for (at, (view, error)) in reads.iter().enumerate() {
+                    if at > 0 {
+                        formatter.write_str("; ")?;
+                    }
+                    let error: String = error
+                        .chars()
+                        .map(|character| {
+                            if character.is_control() {
+                                ' '
+                            } else {
+                                character
+                            }
+                        })
+                        .collect();
+                    write!(formatter, "{view}: {error}")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -198,7 +236,9 @@ impl std::str::FromStr for ScreenSize {
 ///
 /// With `screen_once`, no terminal is touched: the app opens its home page, reads it once, and
 /// prints one rendered frame of that size to stdout, one line per row with trailing blanks
-/// trimmed. Otherwise it runs in the terminal until the user quits, as [`run`] does.
+/// trimmed. When a read of that page failed, the frame is still printed and the run ends with
+/// [`TuiError::ReadFailed`] naming each failed read ([`READ_FAILED_EXIT`]). Otherwise it runs in
+/// the terminal until the user quits, as [`run`] does.
 pub fn run_embedded(
     embedded: &Embedded,
     base_url: &[String],
@@ -219,7 +259,13 @@ pub fn run_embedded(
     let mut stdout = io::stdout().lock();
     io::Write::write_all(&mut stdout, frame.as_bytes())
         .and_then(|()| io::Write::flush(&mut stdout))
-        .map_err(|error| TuiError::Io(error.to_string()))
+        .map_err(|error| TuiError::Io(error.to_string()))?;
+    let failed = app.failed_reads();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(TuiError::ReadFailed(failed))
+    }
 }
 
 /// The `Authorization` header of a bound run, from [`AUTHORIZATION_VAR`]: none when unset or
