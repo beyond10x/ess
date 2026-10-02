@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.52.0](#generated-go-behavior-served-view-parameters-and-consumer-fixes) | Generated Go behavior, served view parameters and consumer fixes | capability | notable |
 | [0.51.0](#committed-generated-output-regenerates-in-another-checkout) | Committed generated output regenerates in another checkout | capability | notable |
 | [0.51.0](#generated-rust-servers-select-a-branch-by-whether-the-record-exists) | Generated Rust servers select a branch by whether the record exists | capability | notable |
 | [0.50.0](#synthesis-witnesses-an-aggregate-over-rows-a-whenrelated-guarded-command-creates) | Synthesis witnesses an aggregate over rows a when_related-guarded command creates | capability | notable |
@@ -52,6 +53,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.52.0 — 2026-10-03
+
+### Generated Go behavior, served view parameters and consumer fixes
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.52.0)
+
+ESS generates Go command behavior and view queries, passes typed view parameters through Go and Rust servers, and filters UI reads in React and terminal renderers. Fixes cover creation identities, conformance synthesis and browser startup. Generated behavior and view interfaces have breaking changes documented in the release notes.
 
 ## 0.51.0 — 2026-10-01
 

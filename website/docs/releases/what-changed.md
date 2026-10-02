@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.52.0 — 2026-10-03
+
+### Generated Go behavior, served view parameters and consumer fixes
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.52.0)
+
+ESS generates Go command behavior and view queries, passes typed view parameters through Go and Rust servers, and filters UI reads in React and terminal renderers. Fixes cover creation identities, conformance synthesis and browser startup. Generated behavior and view interfaces have breaking changes documented in the release notes.
+
 ## 0.51.0 — 2026-10-01
 
 ### Committed generated output regenerates in another checkout
