@@ -7,7 +7,8 @@
 //!    `expands_to` templates where the expansion is a template;
 //! 2. every page is merged over its page kind (built-in kinds come from the schema), and every
 //!    `same_as` overlay over the overlay it names;
-//! 3. every widget instance receives its widget's body with the arguments substituted;
+//! 3. every widget instance receives its widget's body with the arguments substituted, and then
+//!    every `tone_by.tones` is resolved to the `tone_maps` entry it names;
 //! 4. the result is read into [`Document`], whose structs refuse any key they do not declare.
 //!
 //! [`Document::nodes`] then yields every node with its canonical path.
@@ -23,6 +24,7 @@ mod locate;
 mod model;
 mod path;
 mod schema;
+mod style;
 
 use std::fmt;
 use std::path::Path;
