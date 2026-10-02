@@ -21,6 +21,12 @@ callables:
     input: demo.Dynamic
     result: demo.Stored
     errors: {store_failed: demo.Failure}
+  checked:
+    target: {kind: dynamic, owner: demo.cli, operation_field: operation, schema_field: schema, payload_field: payload}
+    input: demo.Dynamic
+    result: demo.Stored
+    errors: {invalid_request: demo.Invalid}
+    invalid_input: invalid_request
 commands:
   - path: [credential, store]
     aliases: [[credential, set]]
@@ -46,6 +52,13 @@ commands:
   - path: [invoke]
     callable: invoke
     about: Dynamic schema selection
+    arguments:
+      - {field: operation, source: {kind: option, long: operation}}
+      - {field: schema, source: {kind: option, long: schema}}
+      - {field: payload, source: {kind: document, inline: input-json, file: input-file, stdin: input-stdin}}
+  - path: [checked]
+    callable: checked
+    about: Dynamic schema selection with a declared invalid-input answer
     arguments:
       - {field: operation, source: {kind: option, long: operation}}
       - {field: schema, source: {kind: option, long: schema}}

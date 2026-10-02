@@ -360,8 +360,22 @@ impl Operand {
     /// A bare word containing a dot is a fact path; everything else is a literal. Quote a
     /// literal that contains dots.
     fn parse(raw: &str) -> Self {
+        Self::parse_in(raw, &[])
+    }
+
+    /// [`Self::parse`] inside quantifier bodies whose binders are `binders`, innermost last.
+    ///
+    /// An unquoted word that is exactly the name of a binder in scope reads that binder
+    /// (beyond10x/ess#289): `a != b` under `forall b` compares two elements, not `a` with the text
+    /// `"b"`. Quoted, it is the text, which validation refuses as it refuses a field's name.
+    fn parse_in(raw: &str, binders: &[String]) -> Self {
         let trimmed = raw.trim();
         let quoted = trimmed.starts_with('"') || trimmed.starts_with('\'');
+        if !quoted && binders.iter().any(|binder| binder == trimmed) {
+            if let Ok(path) = FactPath::new(trimmed) {
+                return Self::Fact(path);
+            }
+        }
         if !quoted && trimmed.contains('.') && trimmed.parse::<f64>().is_err() {
             if let Ok(path) = FactPath::new(trimmed) {
                 return Self::Fact(path);
@@ -1136,11 +1150,11 @@ impl Predicate {
     /// not a.b"}}` is four levels of one predicate written two ways, and two counters would let a
     /// document alternate between them to buy twice the depth.
     pub fn from_node(node: &Node) -> Result<Self, ParseError> {
-        Self::from_node_nested(node, 0)
+        Self::from_node_nested(node, 0, &[])
     }
 
     /// [`Self::from_node`], counting how deep it already is.
-    fn from_node_nested(node: &Node, depth: usize) -> Result<Self, ParseError> {
+    fn from_node_nested(node: &Node, depth: usize, binders: &[String]) -> Result<Self, ParseError> {
         if depth > MAX_PREDICATE_DEPTH {
             return Err(ParseError::too_deep(
                 "predicate",
@@ -1151,18 +1165,18 @@ impl Predicate {
         match node {
             Node::Bool(true) => Ok(Self::Always),
             Node::Bool(false) => Ok(Self::Never),
-            Node::Text(expression) => Self::parse_expression_nested(expression, depth),
+            Node::Text(expression) => Self::parse_expression_nested(expression, depth, binders),
             Node::Seq(items) => {
                 let children = items
                     .iter()
-                    .map(|item| Self::from_node_nested(item, depth + 1))
+                    .map(|item| Self::from_node_nested(item, depth + 1, binders))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::all(children))
             }
             Node::Map(entries) => {
                 let mut children = Vec::new();
                 for (key, value) in entries {
-                    children.push(Self::from_entry(key, value, depth)?);
+                    children.push(Self::from_entry(key, value, depth, binders)?);
                 }
                 Ok(Self::all(children))
             }
@@ -1180,8 +1194,13 @@ impl Predicate {
     }
 
     /// Parses one `key: value` entry of a predicate mapping.
-    fn from_entry(key: &str, value: &Node, depth: usize) -> Result<Self, ParseError> {
-        let nested = |node: &Node| Self::from_node_nested(node, depth + 1);
+    fn from_entry(
+        key: &str,
+        value: &Node,
+        depth: usize,
+        binders: &[String],
+    ) -> Result<Self, ParseError> {
+        let nested = |node: &Node| Self::from_node_nested(node, depth + 1, binders);
         match key {
             "all" | "and" | "all_of" => {
                 let children = value
@@ -1200,8 +1219,12 @@ impl Predicate {
                 Ok(Self::any(children))
             }
             "not" => Ok(Self::not(nested(value)?)),
-            "forall" => Ok(Self::Forall(Box::new(Self::quantifier(value, depth)?))),
-            "exists" => Ok(Self::Exists(Box::new(Self::quantifier(value, depth)?))),
+            "forall" => Ok(Self::Forall(Box::new(Self::quantifier(
+                value, depth, binders,
+            )?))),
+            "exists" => Ok(Self::Exists(Box::new(Self::quantifier(
+                value, depth, binders,
+            )?))),
             "none" | "none_of_these" => {
                 let children = value
                     .as_seq_or_single()
@@ -1220,13 +1243,17 @@ impl Predicate {
                         ),
                     )
                 })?;
-                Self::from_constraint(path, value)
+                Self::from_constraint(path, value, binders)
             }
         }
     }
 
     /// Parses the body of a `forall:` or `exists:` entry.
-    fn quantifier(value: &Node, depth: usize) -> Result<Quantified, ParseError> {
+    fn quantifier(
+        value: &Node,
+        depth: usize,
+        binders: &[String],
+    ) -> Result<Quantified, ParseError> {
         let Node::Map(entries) = value else {
             return Err(ParseError::shape(
                 "quantifier",
@@ -1235,6 +1262,17 @@ impl Predicate {
             ));
         };
 
+        // The body is read with this binder in scope wherever `as` is written, so a bare word on
+        // the right of a comparison naming it — or an outer binder — reads the binder rather than
+        // the text (beyond10x/ess#289). A malformed `as` is refused below, in document order.
+        let mut scope = binders.to_vec();
+        if let Some(name) = entries
+            .iter()
+            .find(|(key, _)| key.as_str() == "as")
+            .and_then(|(_, node)| Self::quantifier_binder(node).ok())
+        {
+            scope.push(name);
+        }
         let mut over = None;
         let mut bind = None;
         let mut body = None;
@@ -1242,7 +1280,7 @@ impl Predicate {
             match key.as_str() {
                 "in" => over = Some(Self::quantifier_collection(node)?),
                 "as" => bind = Some(Self::quantifier_binder(node)?),
-                "that" => body = Some(Self::from_node_nested(node, depth + 1)?),
+                "that" => body = Some(Self::from_node_nested(node, depth + 1, &scope)?),
                 other => {
                     return Err(ParseError::predicate(
                         other,
@@ -1295,7 +1333,11 @@ impl Predicate {
     }
 
     /// Parses the constraint attached to a fact path in mapping form.
-    fn from_constraint(path: FactPath, value: &Node) -> Result<Self, ParseError> {
+    fn from_constraint(
+        path: FactPath,
+        value: &Node,
+        binders: &[String],
+    ) -> Result<Self, ParseError> {
         match value {
             Node::Bool(expected) => Ok(Self::Compare {
                 left: Operand::Fact(path),
@@ -1319,7 +1361,12 @@ impl Predicate {
             Node::Map(entries) => {
                 let mut children = Vec::new();
                 for (operator, operand) in entries {
-                    children.push(Self::from_operator(path.clone(), operator, operand)?);
+                    children.push(Self::from_operator(
+                        path.clone(),
+                        operator,
+                        operand,
+                        binders,
+                    )?);
                 }
                 Ok(Self::all(children))
             }
@@ -1334,10 +1381,15 @@ impl Predicate {
     }
 
     /// Parses one operator constraint, such as `any_of` or `gte`.
-    fn from_operator(path: FactPath, operator: &str, operand: &Node) -> Result<Self, ParseError> {
+    fn from_operator(
+        path: FactPath,
+        operator: &str,
+        operand: &Node,
+        binders: &[String],
+    ) -> Result<Self, ParseError> {
         if let Some(op) = CompareOp::from_keyword(operator) {
             let right = match operand {
-                Node::Text(text) => Operand::parse(text),
+                Node::Text(text) => Operand::parse_in(text, binders),
                 Node::Bool(value) => Operand::Literal(FactValue::Bool(*value)),
                 Node::Number(number) => Operand::Literal(FactValue::Number(*number)),
                 Node::Null => {
@@ -1464,11 +1516,15 @@ impl Predicate {
     /// [`ParseError::TooDeep`]. This is the string half of the same budget
     /// [`Self::from_node`] spends.
     pub fn parse_expression(expression: &str) -> Result<Self, ParseError> {
-        Self::parse_expression_nested(expression, 0)
+        Self::parse_expression_nested(expression, 0, &[])
     }
 
     /// [`Self::parse_expression`], counting how deep it already is.
-    fn parse_expression_nested(expression: &str, depth: usize) -> Result<Self, ParseError> {
+    fn parse_expression_nested(
+        expression: &str,
+        depth: usize,
+        binders: &[String],
+    ) -> Result<Self, ParseError> {
         let trimmed = expression.trim();
         if depth > MAX_PREDICATE_DEPTH {
             return Err(ParseError::too_deep(
@@ -1486,7 +1542,11 @@ impl Predicate {
             _ => {}
         }
         if let Some(rest) = trimmed.strip_prefix("not ") {
-            return Ok(Self::not(Self::parse_expression_nested(rest, depth + 1)?));
+            return Ok(Self::not(Self::parse_expression_nested(
+                rest,
+                depth + 1,
+                binders,
+            )?));
         }
         for (function, negate) in [("defined", false), ("exists", false), ("missing", true)] {
             if let Some(inner) = call_argument(trimmed, function) {
@@ -1547,7 +1607,7 @@ impl Predicate {
             return Ok(Self::Compare {
                 left: Operand::Fact(left_path),
                 op,
-                right: Operand::parse(right),
+                right: Operand::parse_in(right, binders),
             });
         }
 

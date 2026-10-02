@@ -787,8 +787,9 @@ pub(super) fn prepare_at(
 /// Whether `outcome`'s own scenario ([`prepare`]) copies a field from the row its guard reads and
 /// arranges no second row the guard accepts holding another value there ([`companion`],
 /// beyond10x/ess#270): a target copying from "a row the guard accepts" rather than the row named
-/// is then not failed by it. The fields copied, where it is; none for a branch copying nothing
-/// from that row, without arranging anything.
+/// is then not failed by it. The fields copied, where it is; else the copied fields whose type has
+/// one value, which no second row can hold otherwise (beyond10x/ess#287); none for a branch copying
+/// nothing from that row, without arranging anything.
 pub(super) fn unaccompanied(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -805,10 +806,23 @@ pub(super) fn unaccompanied(
     let lonely = arranged_at(ir, command, outcome, actors, Distinction::PLAIN, None)
         .is_ok_and(|(_, _, lonely)| lonely);
     if lonely {
-        copied.into_iter().map(str::to_owned).collect()
-    } else {
-        Vec::new()
+        return copied.into_iter().map(str::to_owned).collect();
     }
+    // A field whose type has one value — the one row of a singleton entity a row references — is
+    // held alike by every row, so no companion holds another value there (beyond10x/ess#287).
+    let related = ir.entity(entity);
+    copied
+        .into_iter()
+        .filter(|copied| {
+            related
+                .fields
+                .iter()
+                .chain([&related.identity])
+                .find(|field| field.name == *copied)
+                .is_some_and(|field| super::singleton::has_one_value(ir, &field.type_ref))
+        })
+        .map(str::to_owned)
+        .collect()
 }
 
 /// [`prepare_at`], and whether the scenario is [`unaccompanied`].
@@ -839,9 +853,15 @@ fn arranged_at(
     let input = if is_absent(outcome) {
         let mut each = without_row_each(ir, command, entity, field, distinction)?.into_iter();
         let input = each.next().ok_or_else(unarranged)?;
-        // Rows of the entity exist, each carrying an identity other than the one sent.
+        // Rows of the entity exist, each carrying an identity other than the one sent — but for a
+        // singleton entity, which has no identity but the one (beyond10x/ess#287).
         let first = block_start(OWN, distinction);
-        for at in [first - 1, first + 1] {
+        let decoys = if super::singleton::is_singleton(ir, entity) {
+            Vec::new()
+        } else {
+            vec![first - 1, first + 1]
+        };
+        for at in decoys {
             if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
                 steps.extend(decoy.steps);
                 setup.source.extend(decoy.source);
@@ -997,6 +1017,12 @@ fn surround(
         &mut BTreeSet<crate::scenario::EssSemanticRef>,
     ),
 ) -> bool {
+    // A singleton entity has no row beside the named one, so it is alone (beyond10x/ess#287).
+    if super::singleton::is_singleton(ir, entity) {
+        steps.extend(row.steps.iter().cloned());
+        source.extend(row.source.iter().cloned());
+        return false;
+    }
     // The companions' witnesses lie in a block of their own, one either side of its start: no
     // other row's, and one away from a multiple of `BLOCK`, so an enum reads another variant there.
     let base = first + BLOCK * (COMPANION - OWN);

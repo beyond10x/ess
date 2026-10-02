@@ -220,7 +220,8 @@ express, and the plan names the first one it found. They are:
 | the command | a typed `response:`; `when_subject_state:` beside `external:`; more than one default branch |
 | subject guards | a subject guard with no supplied subject to read, or beside a branch addressing another subject; a subject predicate choosing between a move and an update |
 | unknown identity | a supplied subject with neither `unknown_instance:` nor `wrong_state:` to answer an identity no record carries; a `wrong_state:` refusal with fields describing the rows of more than one subject |
-| branches | `when_related:`, `input_absent:`, `existing_instance:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits |
+| branches | `when_related:`, `input_absent:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits, except the creation of create-or-update |
+| selection by existence | a creation that `existing_instance:` or a creating `unknown_instance:` decides, whose identity is not read from the input (for create-or-update, a required input field; beside `existing_instance:`, the same input field on every creation) |
 | effects | `creates:` leaving a required field unset; a creation whose identity the caller supplies; a move, update or delete whose identity is observed; `sets:` without a subject |
 | values | a declared conversion; a value of another type; `{subject:}` on a branch that holds no row; `{increment:}` with no previous value or on a field that is not an `Integer`; a struct source leaving a required member unset; `{related:}`; `{count: changed}`; a response field; `{cleared}` on an event or error |
 | errors | an error field with no `payload:` source that the held row does not determine |

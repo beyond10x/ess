@@ -362,11 +362,24 @@ the format its other steps select (no round-3 suite pair).
 
 - `OpenAPI` and the generated docs describe `existing_instance:` in their condition sentences; the
   served surface answers it with `409` (`http::CONFLICT`), a conflict with the record that exists.
-- Every generated code target (`ess-synth` Rust, Go, Web and Clap, through `synthesize_for` and
-  each target's own `workspace`): refused by name with `MissingRepresentation` at
-  `commands.<command>.outcomes.<branch>.unknown_instance` / `.existing_instance`. The seams and
-  explorers select a branch from the decoded input and the model's state machine, neither of which
-  holds whether a record carries the identity.
+- The Rust target (`ess-synth`, beyond10x/ess#310) generates both forms as behaviour over the
+  storage port its generated behaviour already reads. After the input-guarded refusals and before
+  any branch is taken, the generated `existing_instance:` lookup reads the identity the creation
+  would take from the input, and a stored record selects the refusal. On create-or-update, the
+  updating branch reads the addressed row as it always has, and an identity no record carries
+  takes the creation, whose identity is that input rather than one the context assigns. The plan
+  generates such a command only where every creation the lookup decides reads its identity from
+  the input: from one required field for create-or-update, and from one field (required, or
+  optional with a generated fallback) for create-or-refuse. Otherwise the command stays an
+  obligation and the implementor's behaviour selects the branch, as with any owed command.
+  `tests/upsert_by_existence.rs` builds the generated server and runs the synthesized suite's four
+  scenarios through its HTTP surface. The same server with either lookup taken out fails the
+  matching scenario (`already-booked` or `updated`).
+- The Go, Web and Clap targets (through `synthesize_for` and each target's own `workspace`):
+  refused by name with `MissingRepresentation` at
+  `commands.<command>.outcomes.<branch>.unknown_instance` / `.existing_instance`. They carry no
+  storage port. Their seams and explorers select a branch from the decoded input and the model's
+  state machine, and neither holds whether a record carries the identity.
 - Entity Runtime lowering: refused with `ExistenceSelectionUnsupported` — create-or-update at the
   command, before the mixed-entrypoint refusal it would otherwise meet; `existing_instance:` at the
   branch. entity-core answers a missing row itself and selects no branch by it.
