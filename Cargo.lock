@@ -937,9 +937,12 @@ dependencies = [
 name = "gatepass-server"
 version = "1.0.0"
 dependencies = [
+ "clap",
  "gatepass-system",
  "gatepass-types",
  "pass-service",
+ "time",
+ "uuid",
 ]
 
 [[package]]

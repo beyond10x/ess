@@ -13,3 +13,6 @@ edition = "2021"
 gatepass-system = { path = "../gatepass-system" }
 gatepass-types = { path = "../gatepass-types" }
 pass-service = { path = "../pass-service" }
+clap = { version = "4.6.7", features = ["derive"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+time = { version = "0.3.55", features = ["formatting"] }

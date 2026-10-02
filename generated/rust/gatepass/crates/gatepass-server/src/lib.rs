@@ -23,3 +23,5 @@ pub mod http;
 pub mod json;
 pub mod wire;
 pub mod pass_service;
+pub mod memory;
+mod static_assets;
