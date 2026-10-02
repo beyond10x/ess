@@ -957,7 +957,14 @@ fn complete_committed_valid_artifact_maps_are_unchanged_and_compile() {
             let mut observed = std::collections::BTreeSet::new();
             while let Some(dir) = pending.pop() {
                 for entry in std::fs::read_dir(dir).unwrap() {
-                    let path = entry.unwrap().path();
+                    let entry = entry.unwrap();
+                    let path = entry.path();
+                    // The CLI's settled ownership ledger is local operational state, not a
+                    // synthesis artifact. Every other path still participates in exact equality.
+                    if path == committed.join(".ess-output") && entry.file_type().unwrap().is_dir()
+                    {
+                        continue;
+                    }
                     if path.is_dir() {
                         pending.push(path);
                     } else {

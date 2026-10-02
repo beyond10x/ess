@@ -1,12 +1,12 @@
-//! Bounded closed-enum truth tables shared by validation and concrete witnesses.
-use crate::expression::{check_predicate, resolve_path, TypeEnvironment};
+//! Bounded closed enum/Boolean truth tables shared by validation and concrete witnesses.
+use crate::expression::{check_predicate, resolve_path, ScalarKind, TypeEnvironment};
 use ess_primitives::{
     facts::{FactPath, FactStore, FactValue},
     predicate::{CompareOp, Operand, Predicate, Truth},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Maximum joint enum assignments admitted as a complete domain.
+/// Maximum joint assignments admitted as a complete domain.
 pub const MAX_ASSIGNMENTS: usize = 64;
 /// Maximum AST nodes in all guards, independently of their nesting or domain size.
 pub const MAX_PREDICATE_NODES: usize = 128;
@@ -15,17 +15,21 @@ pub const MAX_PREDICATE_NODES: usize = 128;
 #[derive(Debug, Clone)]
 pub struct Case {
     /// Values for every fact read by the guards, in declared path order.
-    pub values: BTreeMap<FactPath, String>,
+    pub values: BTreeMap<FactPath, FactValue>,
     /// Guard positions that evaluate true. Unknown never enters a complete table.
     pub selected: Vec<usize>,
 }
 
 /// Syntactic admission only; callers still need typed analysis to prove coverage.
 pub fn paths(guards: &[&Predicate]) -> Option<BTreeSet<FactPath>> {
-    input_paths(guards, false)
+    input_paths(guards, false, true)
 }
 
-fn input_paths(guards: &[&Predicate], allow_empty: bool) -> Option<BTreeSet<FactPath>> {
+fn input_paths(
+    guards: &[&Predicate],
+    allow_empty: bool,
+    booleans: bool,
+) -> Option<BTreeSet<FactPath>> {
     if guards.len() > MAX_PREDICATE_NODES {
         return None;
     }
@@ -46,6 +50,9 @@ fn input_paths(guards: &[&Predicate], allow_empty: bool) -> Option<BTreeSet<Fact
                 pending.extend(children);
             }
             Predicate::Not(child) => pending.push(child),
+            Predicate::Truthy(path) if booleans => {
+                paths.insert(path.clone());
+            }
             Predicate::Compare {
                 left,
                 op: CompareOp::Eq | CompareOp::Ne,
@@ -55,11 +62,20 @@ fn input_paths(guards: &[&Predicate], allow_empty: bool) -> Option<BTreeSet<Fact
                 | (Operand::Literal(FactValue::Text(_)), Operand::Fact(path)) => {
                     paths.insert(path.clone());
                 }
+                (Operand::Fact(path), Operand::Literal(FactValue::Bool(_)))
+                | (Operand::Literal(FactValue::Bool(_)), Operand::Fact(path))
+                    if booleans =>
+                {
+                    paths.insert(path.clone());
+                }
                 _ => return None,
             },
             Predicate::AnyOf { path, values } | Predicate::NoneOf { path, values } => {
                 if values.len() > MAX_PREDICATE_NODES
-                    || values.iter().any(|v| !matches!(v, FactValue::Text(_)))
+                    || values.iter().any(|v| {
+                        !(matches!(v, FactValue::Text(_))
+                            || booleans && matches!(v, FactValue::Bool(_)))
+                    })
                 {
                     return None;
                 }
@@ -80,15 +96,34 @@ fn input_paths(guards: &[&Predicate], allow_empty: bool) -> Option<BTreeSet<Fact
 /// Optional paths and open domains are deliberately unsupported. Every guard is checked
 /// against the same existing type authority that admits ordinary predicates.
 pub fn analyze<E: TypeEnvironment>(environment: &E, guards: &[&Predicate]) -> Option<Vec<Case>> {
-    analyze_inputs(environment, guards, false)
+    analyze_inputs(environment, guards, false, true)
 }
 
 fn analyze_inputs<E: TypeEnvironment>(
     environment: &E,
     guards: &[&Predicate],
     allow_empty: bool,
+    booleans: bool,
 ) -> Option<Vec<Case>> {
-    let paths = input_paths(guards, allow_empty)?;
+    let paths = input_paths(guards, allow_empty, booleans)?;
+    // Truthiness is newly admitted only for Boolean facts. The ordinary evaluator also has
+    // text/number truthiness; teaching the finite proof those fragments is separate work.
+    let mut pending = guards.to_vec();
+    while let Some(guard) = pending.pop() {
+        match guard {
+            Predicate::All(children) | Predicate::Any(children) => pending.extend(children),
+            Predicate::Not(child) => pending.push(child),
+            Predicate::Truthy(path)
+                if resolve_path(environment, path, "finite outcome coverage")
+                    .ok()?
+                    .scalar
+                    != Some(ScalarKind::Bool) =>
+            {
+                return None;
+            }
+            _ => {}
+        }
+    }
     for guard in guards {
         if !check_predicate(environment, guard, "finite outcome coverage")
             .errors
@@ -103,7 +138,15 @@ fn analyze_inputs<E: TypeEnvironment>(
         if resolved.optional || resolved.access.collection {
             return None;
         }
-        let variants = resolved.variants?;
+        let variants = if booleans && resolved.scalar == Some(ScalarKind::Bool) {
+            vec![FactValue::Bool(false), FactValue::Bool(true)]
+        } else {
+            resolved
+                .variants?
+                .into_iter()
+                .map(FactValue::Text)
+                .collect()
+        };
         if variants.is_empty() || assignments.len().checked_mul(variants.len())? > MAX_ASSIGNMENTS {
             return None;
         }
@@ -121,7 +164,7 @@ fn analyze_inputs<E: TypeEnvironment>(
     for values in assignments {
         let mut facts = FactStore::new();
         for (path, value) in &values {
-            facts.set(path.clone(), value.as_str());
+            facts.set(path.clone(), value.clone());
         }
         let mut selected = Vec::new();
         for (index, guard) in guards.iter().enumerate() {
@@ -168,6 +211,24 @@ pub fn analyze_with_states<E: TypeEnvironment>(
     guards: &[StateGuard<'_>],
     states: &BTreeSet<crate::entity::StateName>,
 ) -> Option<Vec<StateCase>> {
+    state_inputs(environment, guards, states, true)
+}
+
+/// Preserve the existing default-bearing state validator's enum-only proof policy.
+pub(super) fn analyze_enum_states<E: TypeEnvironment>(
+    environment: &E,
+    guards: &[StateGuard<'_>],
+    states: &BTreeSet<crate::entity::StateName>,
+) -> Option<Vec<StateCase>> {
+    state_inputs(environment, guards, states, false)
+}
+
+fn state_inputs<E: TypeEnvironment>(
+    environment: &E,
+    guards: &[StateGuard<'_>],
+    states: &BTreeSet<crate::entity::StateName>,
+    booleans: bool,
+) -> Option<Vec<StateCase>> {
     if states.is_empty() || states.len() > MAX_ASSIGNMENTS {
         return None;
     }
@@ -176,7 +237,7 @@ pub fn analyze_with_states<E: TypeEnvironment>(
         .iter()
         .map(|guard| guard.predicate.unwrap_or(&always))
         .collect();
-    let cases = analyze_inputs(environment, &inputs, true)?;
+    let cases = analyze_inputs(environment, &inputs, true, booleans)?;
     if cases.len().checked_mul(states.len())? > MAX_ASSIGNMENTS {
         return None;
     }
@@ -217,9 +278,9 @@ pub struct FieldGuard<'a> {
 #[derive(Debug, Clone)]
 pub struct FieldCase {
     /// Values for every stored field the guards read.
-    pub fields: BTreeMap<FactPath, String>,
+    pub fields: BTreeMap<FactPath, FactValue>,
     /// Values for every input field the guards read.
-    pub input: BTreeMap<FactPath, String>,
+    pub input: BTreeMap<FactPath, FactValue>,
     /// Guard positions whose stored and input sides both evaluate true.
     pub selected: Vec<usize>,
 }
@@ -234,6 +295,24 @@ pub fn analyze_with_fields<F: TypeEnvironment, I: TypeEnvironment>(
     input: &I,
     guards: &[FieldGuard<'_>],
 ) -> Option<Vec<FieldCase>> {
+    field_inputs(fields, input, guards, true)
+}
+
+/// Preserve the existing default-bearing stored/related validator's enum-only proof policy.
+pub(super) fn analyze_enum_fields<F: TypeEnvironment, I: TypeEnvironment>(
+    fields: &F,
+    input: &I,
+    guards: &[FieldGuard<'_>],
+) -> Option<Vec<FieldCase>> {
+    field_inputs(fields, input, guards, false)
+}
+
+fn field_inputs<F: TypeEnvironment, I: TypeEnvironment>(
+    fields: &F,
+    input: &I,
+    guards: &[FieldGuard<'_>],
+    booleans: bool,
+) -> Option<Vec<FieldCase>> {
     let always = Predicate::Always;
     let stored: Vec<_> = guards
         .iter()
@@ -243,8 +322,8 @@ pub fn analyze_with_fields<F: TypeEnvironment, I: TypeEnvironment>(
         .iter()
         .map(|guard| guard.input.unwrap_or(&always))
         .collect();
-    let stored = analyze_inputs(fields, &stored, true)?;
-    let supplied = analyze_inputs(input, &supplied, true)?;
+    let stored = analyze_inputs(fields, &stored, true, booleans)?;
+    let supplied = analyze_inputs(input, &supplied, true, booleans)?;
     if stored.len().checked_mul(supplied.len())? > MAX_ASSIGNMENTS {
         return None;
     }

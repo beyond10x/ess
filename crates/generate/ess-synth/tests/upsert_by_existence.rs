@@ -10,7 +10,7 @@
 //!
 //! The Go target generates the same lookup over its own storage port (`story:go-generated-behaviour`),
 //! and its server passes the same suite through `tests/fixtures/upsert-by-existence-go-harness/`.
-//! The Web and Clap targets carry no storage port, so they still refuse both forms by name.
+//! Web links the Rust behavior; Clap projects explicit handler obligations.
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
@@ -25,13 +25,10 @@ use ess_conformance::report::Status;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_primitives::node::Node;
-use ess_synth::{synthesize_for, CapabilityKind, SynthesisDisposition, Target, TargetFailureCode};
+use ess_synth::{synthesize_for, CapabilityKind, SynthesisDisposition, Target};
 
 const MODEL: &str =
     include_str!("../../../specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml");
-
-const CREATED: &str = "demo.items.PutItem.outcomes.created.unknown_instance";
-const TAKEN: &str = "demo.items.BookSlot.outcomes.already-booked.existing_instance";
 
 /// The model, served by one component.
 const COMPONENT: &str = "components:
@@ -54,20 +51,114 @@ fn served_ir() -> EssIr {
 }
 
 #[test]
-fn every_target_without_a_storage_port_refuses_both_forms_by_name() {
-    let ir = ir(MODEL);
-    let failure = synthesize_for(&ir, Target::Web)
-        .err()
-        .expect("Web refuses selection by existence");
-    let text = format!("{failure:?}");
-    for named in [CREATED, TAKEN] {
-        assert!(text.contains(named), "Web names {named}: {text}");
+fn web_existence_branches_reach_linked_rust_behavior() {
+    let ir = served_ir();
+    let root = scratch("web");
+    for (target, folder) in [(Target::Rust, "rust"), (Target::Web, "web")] {
+        let synthesis = synthesize_for(&ir, target).expect("existence branches project");
+        write_artifacts(
+            &synthesis,
+            &root.join("generated").join(folder).join("demo"),
+        );
     }
+    let harness = root.join("harness");
+    std::fs::create_dir_all(harness.join("src")).unwrap();
+    std::fs::write(harness.join("Cargo.toml"), "[package]\nname = \"web-existence-host\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[lib]\ncrate-type = [\"cdylib\"]\n[workspace]\n[dependencies]\ndemo-web = { path = \"../generated/web/demo/crates/demo-web\" }\ndemo-types = { path = \"../generated/rust/demo/crates/demo-types\" }\ndemo-system = { path = \"../generated/rust/demo/crates/demo-system\" }\nitems-service = { path = \"../generated/rust/demo/crates/items-service\" }\n").unwrap();
+    let storage = include_str!("fixtures/upsert-by-existence-harness/main.rs");
+    let storage = storage
+        .split_once("/// One scenario's rows.")
+        .unwrap()
+        .1
+        .split_once("type System =")
+        .unwrap()
+        .0;
+    let host = format!("use std::{{cell::RefCell, collections::BTreeMap, rc::Rc}};\nuse demo_types::{{behaviour::{{Generated, ItemStorage, SlotStorage}}, items}};\n{storage}\n#[no_mangle]\npub extern \"C\" fn existence_proof() -> u32 {{\nlet system = demo_system::System::new(items_service::ItemsService::new(Generated::new(Ports::default())));\ndemo_web::install(Box::new(system));\n");
+    let mut host = host;
+    for (command, identity, label, expected) in [
+        ("BookSlot", "slot_id", "first", "booked"),
+        ("BookSlot", "slot_id", "second", "already-booked"),
+        ("PutItem", "item_id", "first", "created"),
+        ("PutItem", "item_id", "second", "updated"),
+    ] {
+        let request = serde_json::json!({"request": "command", "command": format!("demo.items.{command}"), "input": {identity: "chosen", "label": label}}).to_string();
+        writeln!(host, "let answer = demo_web::serve({request:?});\nlet parsed = demo_web::json::parse(&answer).unwrap();\nassert_eq!(parsed.member(\"ok\"), Some(&demo_web::json::Value::Bool(true)), \"{{answer}}\");\nassert_eq!(parsed.member(\"outcome\").and_then(|value| value.member(\"outcome\")), Some(&demo_web::json::Value::Text({expected:?}.into())), \"{{answer}}\");").unwrap();
+    }
+    host.push_str("4\n}\n");
+    std::fs::write(harness.join("src/lib.rs"), host).unwrap();
+    let target = root.join("target");
+    let build = Command::new(std::env::var_os("CARGO").unwrap())
+        .args([
+            "build",
+            "--offline",
+            "--quiet",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--target-dir",
+        ])
+        .arg(&target)
+        .current_dir(&harness)
+        .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("RUSTC_WRAPPER")
+        .env("RUSTFLAGS", "-D warnings")
+        .output()
+        .unwrap();
     assert!(
-        text.contains(&format!("{:?}", TargetFailureCode::MissingRepresentation)),
-        "{text}"
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
     );
-    assert!(text.contains("the Rust target selects it"), "{text}");
+    // The same Node bootstrap as feasibility.rs; every behavior assertion is in the Rust export.
+    let output = Command::new("node")
+        .args(["-e", "WebAssembly.instantiate(require('node:fs').readFileSync(process.argv[1]),{}).then(({instance})=>{if(instance.exports.existence_proof()!==4)process.exit(1)}).catch(e=>{console.error(e);process.exit(1)})"])
+        .arg(target.join("wasm32-unknown-unknown/debug/web_existence_host.wasm"))
+        .output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
+
+fn write_artifacts(synthesis: &ess_synth::Synthesis, root: &Path) {
+    for (relative, artifact) in &synthesis.artifacts {
+        let destination = root.join(relative);
+        std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        std::fs::write(destination, &artifact.contents).unwrap();
+    }
+}
+
+#[test]
+fn clap_existence_branches_emit_named_handler_obligations() {
+    let component = COMPONENT.replace("    reached_by: network\n", "    reached_by: command_line\n    cli:\n      binary: items\n      commands: [demo.items.PutItem, demo.items.BookSlot]\n      views: [demo.items.ItemDetails, demo.items.SlotDetails]\n");
+    let ir = ir(&format!("{MODEL}{component}"));
+    let synthesis = synthesize_for(&ir, Target::Clap).expect("Clap projects explicit handlers");
+    let root = scratch("clap");
+    write_artifacts(&synthesis, &root);
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/demo-cli\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let manifest = synthesis
+        .artifacts
+        .keys()
+        .find(|path| path.ends_with("Cargo.toml"))
+        .unwrap();
+    let crate_root = root.join(manifest).parent().unwrap().to_path_buf();
+    let target = root.join("target");
+    assert!(cargo(&crate_root, &target).status.success());
+    for (word, flag, qualified) in [
+        ("BookSlot", "--slot_id", "demo.items.BookSlot"),
+        ("PutItem", "--item_id", "demo.items.PutItem"),
+    ] {
+        let output = Command::new(target.join("debug/items"))
+            .args([word, flag, "chosen", "--label", "first"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            error.contains(qualified) && error.contains("is an obligation nothing has implemented"),
+            "{error}"
+        );
+    }
 }
 
 /// Each target's own `workspace` answers as `synthesize_for` does, so a caller that skips it gets
@@ -84,17 +175,30 @@ fn every_direct_workspace_entry_answers_as_synthesis_does() {
         panic!("go carries both forms: {}", failure.to_canonical_json());
     }
     synthesize_for(&ir, Target::Go).expect("go synthesizes both forms");
-    let failures = [
-        ("web", ess_synth::web::workspace(&ir, &plan).err()),
-        ("clap", ess_synth::clap::workspace(&ir, &plan).err()),
+    let emissions = [
+        (
+            Target::Web,
+            ess_synth::web::workspace(&ir, &plan)
+                .expect("Web projects")
+                .artifacts,
+        ),
+        (
+            Target::Clap,
+            ess_synth::clap::workspace(&ir, &plan)
+                .expect("Clap projects")
+                .artifacts,
+        ),
     ];
-    for (target, failure) in failures {
-        let failure = failure.unwrap_or_else(|| panic!("{target} refuses selection by existence"));
-        for named in [CREATED, TAKEN] {
-            assert!(
-                failure.to_canonical_json().contains(named),
-                "{target} names {named}: {}",
-                failure.to_canonical_json()
+    let rust = synthesize_for(&ir, Target::Rust).unwrap();
+    for (target, artifacts) in emissions {
+        let public = synthesize_for(&ir, target).unwrap();
+        for artifact in artifacts {
+            assert_eq!(public.artifacts[&artifact.path].contents, artifact.contents);
+        }
+        for path in ["PLAN.md", "plan.json"] {
+            assert_eq!(
+                public.artifacts[path].contents,
+                rust.artifacts[path].contents
             );
         }
     }

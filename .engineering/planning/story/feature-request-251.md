@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-251
 kind: story
-status: active
+status: implemented
 title: A when_subject branch at an invariant upper bound is synthesized again
 tags:
 - feature-request
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T19:35:45Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-01T19:35:45Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-02T11:41:30Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
@@ -78,3 +79,9 @@ Read tree `gaps-270` HEAD `e3bc9a2ff` (contains 0.48.0). Runs: `ess` 0.44.0. Not
   - No `story:feature-request-251` exists in the store yet.
 
 - Coordinator (2026-10-01): adopted as proposed above. Priority 1: a regression.
+
+## Reconciled released implementation, 2026-10-02
+
+Released integration482bc33c251859d81d52b52d547c7fc04001ec98 is an ancestor of tag0.51.0 (peeled0347ffa222939e3791e574d2dbe42d4b4b02d979) and current mainb4da64e38b770fe74103409fe1fef7ae6ca214f4. The accepted seven-scenario/zero-refusal and exhausted-at-bound checks are explicit in crates/verify/ess-conformance/tests/invariant_bound_held_state.rs:312-345, with honest target and stale-first/never-exhausted mutants and an earlier-branch precedence control. Retained current-session runner log target/backlog-input/309-full-package/test-invariant_bound_held_state.log reports4 passed/0 failed/0 ignored; source unchanged from release. GitHub251 closed2026-10-02T02:59:02Z.
+
+The actual released fix also includes exact number readback near2^53 (a2c031c2d; CHANGELOG lines114-118). The older fit-review hypothesis and inferred-not-fixed statement above are superseded by release/test evidence. This audit did not establish the historical bisect occurred and does not claim it did. Accepted observable behavior is implemented and released.

@@ -283,16 +283,93 @@ fn existing_instance_beside_creations_of_two_entities_refuses_on_every_creating_
 
 // ---- 2. a plain creation ignores the identity its payload takes from the input -------------------
 
-/// `BookSlot` without `existing_instance:`: an ordinary creation whose event publishes
-/// `slot_id: input.slot_id`. The generated behaviour assigns a new identity from `Context` instead.
-#[test]
-#[ignore = "pre-existing: filed separately (coordinator)"]
-fn a_plain_creation_stores_and_publishes_the_identity_its_payload_takes_from_the_input() {
+fn plain_creation() -> String {
     let book_slot = BOOK_SLOT.replace(
         "      - {name: already-booked, existing_instance: true, error: demo.items.SlotTaken}\n",
         "",
     );
-    let model = served_model(&book_slot, "");
+    served_model(&book_slot, "")
+}
+
+/// The existing Go storage/HTTP harness, with only an optional identity-generating context added.
+/// All command behavior still comes from the projection under test.
+fn plain_go(label: &str, model: &str, context: bool) -> PathBuf {
+    let synthesis = synthesize_for(&ir(model), Target::Go).expect("Go synthesizes");
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("plain-creation-go-{label}-{}", std::process::id()));
+    for (relative, artifact) in &synthesis.artifacts {
+        let destination = root.join("demo").join(relative);
+        std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        std::fs::write(destination, &artifact.contents).unwrap();
+    }
+    let harness = root.join("harness");
+    std::fs::create_dir_all(&harness).unwrap();
+    std::fs::write(
+        harness.join("go.mod"),
+        "module existenceharness\n\ngo 1.21\n\nrequire example.invalid/demo v0.0.0\n\n\
+         replace example.invalid/demo => ../demo\n",
+    )
+    .unwrap();
+    let mut source = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/upsert-by-existence-go-harness/main.go"),
+    )
+    .unwrap();
+    if context {
+        source = source.replace(
+            "behaviour.Ports{",
+            "behaviour.Ports{Context: &identityContext{},",
+        );
+        source.push_str(
+            "\ntype identityContext struct { minted int }\n\
+             func (c *identityContext) GenerateDemoItemsItemId() items.ItemId {\n\
+             c.minted++\nreturn items.NewItemId(fmt.Sprintf(\"minted-%d\", c.minted))\n}\n",
+        );
+    }
+    std::fs::write(harness.join("main.go"), source).unwrap();
+    let binary = root.join("served");
+    let output = Command::new("go")
+        .args(["build", "-o"])
+        .arg(&binary)
+        .arg(".")
+        .current_dir(&harness)
+        .env("GOPROXY", "off")
+        .env("GOWORK", "off")
+        .output()
+        .expect("the Go toolchain runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    binary
+}
+
+fn assert_created_identity(target: &Served, input: &serde_json::Value, expected: &str) {
+    let answer = target.ask(&serde_json::json!({
+        "op": "command", "command": "demo.items.BookSlot", "actor": "demo.items.Admin",
+        "body": input.to_string(),
+    }));
+    assert_eq!(answer["answer"]["outcome"], "booked", "{answer}");
+    assert_eq!(
+        answer["answer"]["published"][0]["payload"]["slot_id"], expected,
+        "{answer}"
+    );
+    let rows = target.ask(&serde_json::json!({"op": "view", "view": "demo.items.SlotDetails"}));
+    assert!(
+        rows["answer"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["slot_id"] == expected),
+        "{rows}"
+    );
+}
+
+/// Required caller-selected identities need no context at all; both emitted servers execute it.
+#[test]
+fn a_plain_creation_stores_and_publishes_the_identity_its_payload_takes_from_the_input() {
+    let model = plain_creation();
     let synthesis = synthesize_for(&ir(&model), Target::Rust).expect("Rust synthesizes");
     assert_eq!(
         synthesis
@@ -301,29 +378,41 @@ fn a_plain_creation_stores_and_publishes_the_identity_its_payload_takes_from_the
         Some(&SynthesisDisposition::Generated),
         "the plan claims the creation is fully determined"
     );
-    let workspace = Workspace::new("plain-creation", &model, &["context"]);
+    let workspace = Workspace::new("plain-creation", &model, &[]);
     let served = workspace.build("served", str::to_owned);
-    let ir = ir(&model);
-    let target = Served::start(&served, &ir, &[]);
-    assert_eq!(target.ask(&serde_json::json!({"op": "reset"}))["ok"], true);
-    let answer = target.ask(&serde_json::json!({
-        "op": "command",
-        "command": "demo.items.BookSlot",
-        "actor": "demo.items.Admin",
-        "body": serde_json::json!({"slot_id": "slot-chosen", "label": "first"}).to_string(),
-    }));
-    assert_eq!(answer["answer"]["outcome"], "booked", "{answer}");
-    let published = &answer["answer"]["published"][0]["payload"]["slot_id"];
-    let rows = target.ask(&serde_json::json!({"op": "view", "view": "demo.items.SlotDetails"}));
-    let stored = &rows["answer"]["rows"][0]["slot_id"];
-    assert_eq!(
-        (published, stored),
-        (
-            &serde_json::json!("slot-chosen"),
-            &serde_json::json!("slot-chosen")
-        ),
-        "the event and the row carry `input.slot_id`, as the payload declares: {answer} {rows}"
-    );
+    for binary in [served, plain_go("required", &model, false)] {
+        let target = Served::start(&binary, &ir(&model), &[]);
+        assert_created_identity(
+            &target,
+            &serde_json::json!({"slot_id": "slot-chosen", "label": "first"}),
+            "slot-chosen",
+        );
+    }
+}
+
+#[test]
+fn a_plain_creation_optional_identity_uses_input_then_generated_fallback() {
+    let model = plain_creation()
+        .replace("  - name: demo.items.BookSlot\n    input:\n      - {name: slot_id, type: demo.items.ItemId}", "  - name: demo.items.BookSlot\n    input:\n      - {name: slot_id, type: Optional<demo.items.ItemId>}")
+        .replace("{slot_id: input.slot_id, label: input.label}", "{slot_id: {input: slot_id, else: {generated: true}}, label: input.label}");
+    let workspace = Workspace::new("plain-optional", &model, &["context"]);
+    for binary in [
+        plain_go("optional", &model, true),
+        workspace.build("served", str::to_owned),
+    ] {
+        let target = Served::start(&binary, &ir(&model), &[]);
+        assert_created_identity(
+            &target,
+            &serde_json::json!({"slot_id": "slot-chosen", "label": "first"}),
+            "slot-chosen",
+        );
+        // minted-1 also proves the supplied case did not consume a generated identity.
+        assert_created_identity(
+            &target,
+            &serde_json::json!({"label": "fallback"}),
+            "minted-1",
+        );
+    }
 }
 
 // ---- 3. mutants the suite must kill --------------------------------------------------------------

@@ -1173,7 +1173,7 @@ fn scenario(
         tuples: Vec::new(),
         delta,
     };
-    assign_tuples(&mut plan);
+    assign_tuples(&mut plan, &mapped);
     let rows = rows(&plan, &inputs, m);
     plan.related_owners = related_owners(&plan, &rows, actors)?;
     plan.guard_owners = guard_owners(&plan, &rows, actors)?;
@@ -1181,15 +1181,37 @@ fn scenario(
 }
 
 /// Group tuples in the order A, B, C, B₂, …, each differing from every tuple before it.
-fn assign_tuples(plan: &mut Plan<'_>) {
+fn assign_tuples(plan: &mut Plan<'_>, mapped: &BTreeMap<&str, &str>) {
     if plan.aggregation.is_ungrouped() {
         plan.tuples.push(("A".to_owned(), Vec::new()));
         return;
     }
+    // Two keys filled by the same creating input cannot vary independently (#309). Keep the
+    // first key as their representative, including its ladder and its absent-value witness.
+    let representatives: Vec<usize> = plan
+        .keys
+        .iter()
+        .enumerate()
+        .map(|(index, (name, _))| {
+            mapped.get(name.as_str()).map_or(index, |input| {
+                plan.keys[..index]
+                    .iter()
+                    .position(|(other, _)| mapped.get(other.as_str()) == Some(input))
+                    .unwrap_or(index)
+            })
+        })
+        .collect();
+    let set = |tuple: &mut [Node], index: usize, value: Node| {
+        for (position, representative) in representatives.iter().enumerate() {
+            if *representative == representatives[index] {
+                tuple[position] = value.clone();
+            }
+        }
+    };
     let start = |plan: &Plan<'_>, label: &str, n: usize| -> Vec<Node> {
-        plan.keys
+        representatives
             .iter()
-            .map(|(_, key)| match key {
+            .map(|index| match &plan.keys[*index].1 {
                 Key::Scoped(kind) => plan.scoped(*kind, label),
                 other => other.sequence(n).unwrap_or(Node::Null),
             })
@@ -1210,12 +1232,15 @@ fn assign_tuples(plan: &mut Plan<'_>) {
     // all of them at once and no value of a later key repeats, so a target grouping by the later
     // keys alone forms the same groups. B₁ repeats B's later keys under another first key
     // (beyond10x/ess#193, `group_by: [account_id, memo]`).
-    let all_scoped = plan.keys.len() > 1
+    let all_scoped = representatives.iter().any(|index| *index != 0)
         && plan
             .keys
             .iter()
             .all(|(_, key)| matches!(key, Key::Scoped(_)));
-    for index in 0..plan.keys.len() {
+    for (index, representative) in representatives.iter().enumerate() {
+        if *representative != index {
+            continue;
+        }
         let label = format!("B{}", index + 1);
         // A key read from the owner the link key names holds one value per owner, so no tuple
         // keeps B's owner under another value of it. Bₖ keeps B's value under an owner of its
@@ -1224,7 +1249,7 @@ fn assign_tuples(plan: &mut Plan<'_>) {
         if let Some(link) = plan.follows_owner.get(&plan.keys[index].0).copied() {
             if let Key::Scoped(kind) = plan.keys[link].1 {
                 let mut tuple = b.clone();
-                tuple[link] = plan.scoped(kind, &label);
+                set(&mut tuple, link, plan.scoped(kind, &label));
                 if !plan.tuples.iter().any(|(_, held)| *held == tuple) {
                     plan.tuples.push((label, tuple));
                 }
@@ -1241,7 +1266,7 @@ fn assign_tuples(plan: &mut Plan<'_>) {
         };
         let found = candidates.into_iter().find_map(|value| {
             let mut tuple = b.clone();
-            tuple[index] = value;
+            set(&mut tuple, index, value);
             (!plan.tuples.iter().any(|(_, held)| *held == tuple)).then_some(tuple)
         });
         if let Some(tuple) = found {
@@ -1252,14 +1277,17 @@ fn assign_tuples(plan: &mut Plan<'_>) {
     // is, because no other tuple holds an absent value.
     // A key read from the owner the link key names is absent under an owner of its own.
     for index in plan.absent_keys.clone() {
+        if representatives[index] != index {
+            continue;
+        }
         let label = format!("N{}", index + 1);
         let mut tuple = b.clone();
-        tuple[index] = Node::Null;
+        set(&mut tuple, index, Node::Null);
         if let Some(link) = plan.follows_owner.get(&plan.keys[index].0).copied() {
             let Key::Scoped(kind) = plan.keys[link].1 else {
                 continue;
             };
-            tuple[link] = plan.scoped(kind, &label);
+            set(&mut tuple, link, plan.scoped(kind, &label));
         }
         plan.tuples.push((label, tuple));
     }

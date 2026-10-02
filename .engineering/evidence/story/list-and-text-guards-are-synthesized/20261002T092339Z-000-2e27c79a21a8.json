@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:23:39Z",
+  "actor": "human:timo",
+  "artifact": "story:list-and-text-guards-are-synthesized",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical red-first list/text synthesis and Rust ordering failures, final2.log and cli2.log EXIT=0; cross-language ordering assertions and retained locale mutation evidence; current complete package synthesis/primitive-corpus cases pass",
+    "reference": "local-evidence:ess-wave-20260925/a1-scratch/"
+  }
+}

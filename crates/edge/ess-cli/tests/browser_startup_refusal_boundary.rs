@@ -5,9 +5,8 @@
 //! Every way `Browser` can fail to obtain a started Firefox produces a fixture
 //! environment refusal carrying the stage, the measured startup time and
 //! `firefox.stderr`; `STARTUP_DEADLINE` bounds how long that can take; and the
-//! deliberate exception is a browser that answered, which stays a defect signal
-//! because a browser that answered is a browser that started. These cases arrived
-//! from the adversary that falsified all three.
+//! deliberate exception is a malformed upgrade or protocol answer. A boot-time
+//! HTTP 404 does not establish readiness, even when it repeats until the deadline.
 // The fixture module is shared by five test binaries; this one drives the
 // startup path and reaches none of the page-level helpers.
 #[allow(dead_code)]
@@ -92,7 +91,7 @@ fn a_browser_that_closes_the_socket_mid_handshake_refuses_like_every_other_lost_
         }
     });
     let program = announcing_stand_in(&evidence, port);
-    match startup_outcome(evidence, program, browser::STARTUP_DEADLINE) {
+    match startup_outcome(evidence, program, Duration::from_secs(1)) {
         Err(panic) => panic!(
             "a start lost at the WebSocket upgrade must be a fixture environment refusal \
              carrying a stage, the measured startup time and firefox.stderr; the fixture \
@@ -147,12 +146,10 @@ fn a_handshake_this_runner_never_answers_is_refused_at_the_deadline_it_was_given
     }
 }
 
-/// A browser that is running, listening and answering HTTP on the port it
-/// announced has started. If it then answers the `BiDi` upgrade with anything
-/// other than `101` forever, that is the `BiDi` defect the unit says it kept a
-/// panic for — not a statement about the machine.
+/// A booting browser can answer HTTP 404 before registering `/session`. Repeated
+/// 404s never establish readiness and must retain the measured startup evidence.
 #[test]
-fn a_handshake_answered_404_forever_stays_a_bidi_defect_and_is_not_blamed_on_the_runner() {
+fn a_handshake_answered_404_forever_refuses_with_the_last_response_and_stderr() {
     let evidence = evidence_dir("permanent-404");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -170,13 +167,98 @@ fn a_handshake_answered_404_forever_stays_a_bidi_defect_and_is_not_blamed_on_the
         }
     });
     let program = announcing_stand_in(&evidence, port);
-    match startup_outcome(evidence, program, Duration::from_secs(2)) {
-        // A panic is the signal the unit says it deliberately kept for this class.
-        Err(_) => (),
+    match startup_outcome(evidence.clone(), program, Duration::from_secs(2)) {
+        Err(panic) => panic!("a pre-upgrade 404 is not readiness: {panic}"),
         Ok(Ok(())) => panic!("a /session endpoint answering 404 admitted a session"),
-        Ok(Err(refusal)) => panic!(
-            "a browser that started, listened and answered HTTP 404 on /session was reported \
-             as the runner's fault, in a message that denies being a BiDi defect:\n{refusal}"
-        ),
+        Ok(Err(refusal)) => {
+            assert!(
+                refusal.starts_with("fixture environment refusal:"),
+                "{refusal}"
+            );
+            assert!(refusal.contains("measured startup:"), "{refusal}");
+            assert!(refusal.contains("2.000s (expired)"), "{refusal}");
+            assert!(refusal.contains("HTTP/1.1 404 Not Found"), "{refusal}");
+            let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
+            assert!(refusal.contains(log.trim()), "{refusal}");
+        }
     }
+}
+
+/// Completed non-404 responses are protocol evidence, not a missing startup.
+#[test]
+fn malformed_upgrade_responses_remain_protocol_defects() {
+    for (name, response) in [
+        ("http-200", "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+        (
+            "wrong-accept",
+            "HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: wrong\r\n\r\n",
+        ),
+    ] {
+        let evidence = evidence_dir(name);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        let program = announcing_stand_in(&evidence, port);
+        let outcome = startup_outcome(evidence, program, Duration::from_secs(2));
+        server.join().unwrap();
+        let Err(panic) = outcome else {
+            panic!("a malformed upgrade was not a protocol defect: {outcome:?}")
+        };
+        assert!(panic.contains(response.trim()), "{panic}");
+        assert!(!panic.contains("fixture environment refusal:"), "{panic}");
+    }
+}
+
+/// Receiving partial bytes must not restart the absolute upgrade deadline.
+#[test]
+fn a_trickling_upgrade_header_cannot_extend_the_startup_deadline() {
+    let evidence = evidence_dir("trickling-header");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (began, accepted_at) = std::sync::mpsc::channel();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        began.send(Instant::now()).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            request.push(byte[0]);
+        }
+        for _ in 0..8 {
+            if stream.write_all(b"H").is_err() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    });
+    let program = announcing_stand_in(&evidence, port);
+    let deadline = Duration::from_millis(500);
+    let outcome = startup_outcome(evidence, program, deadline);
+    // Waiting for another test's startup lock is outside this start's deadline.
+    let elapsed = accepted_at.recv().unwrap().elapsed();
+    server.join().unwrap();
+    let Ok(Err(refusal)) = outcome else {
+        panic!("an incomplete header did not refuse: {outcome:?}")
+    };
+    assert!(refusal.contains("0.500s (expired)"), "{refusal}");
+    assert!(
+        elapsed < deadline + Duration::from_secs(1),
+        "partial bytes extended a 0.500s startup to {elapsed:?}: {refusal}"
+    );
 }

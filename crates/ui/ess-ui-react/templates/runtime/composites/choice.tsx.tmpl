@@ -1,7 +1,7 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useUiPath } from "../core";
 import { useScope } from "../core";
-import { useRead, type ReadSpec } from "../data";
+import { filterRead, useRead, type ReadSpec } from "../data";
 import { evaluate } from "../expr";
 import { isObject, type Json } from "../json";
 
@@ -26,7 +26,8 @@ export function ChoiceView(props: {
   label?: string;
 }): ReactNode {
   const scope = useScope();
-  const read = useRead(props.reads, scope.values, props.reads !== undefined);
+  const raw = useRead(props.reads, scope.values, props.reads !== undefined);
+  const read = props.reads?.filter === undefined ? raw : filterRead(raw, props.reads.filter, scope.values);
   const options: ChoiceOption[] = props.reads
     ? read.rows.map((row) => {
         const value = isObject(row)

@@ -749,7 +749,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by `creates:` leaving the required field `payee` of `billing.invoice.Invoice` undetermined, in `accepted`.
     ///
-    /// Contract: given `billing.invoice.CreateInvoice` input, decide and enact exactly one outcome — `accepted` when `amount.amount > 0`, creates `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCreated`; `rejected` otherwise, error `billing.invoice.InvalidAmount`.
+    /// Contract: given `billing.invoice.CreateInvoice` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `accepted` when `amount.amount > 0`, creates `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCreated`; `rejected` otherwise, error `billing.invoice.InvalidAmount`.
     pub trait CreateInvoiceBehavior {
         /// Decides and enacts exactly one declared outcome of `billing.invoice.CreateInvoice`.
         ///
@@ -773,7 +773,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by the fields of error `billing.invoice.InvalidAmount`, which the specification gives no source, in `rejected`.
     ///
-    /// Contract: given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome — `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
+    /// Contract: given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait PayInvoiceBehavior {
         /// Decides and enacts exactly one declared outcome of `billing.invoice.PayInvoice`.
         ///

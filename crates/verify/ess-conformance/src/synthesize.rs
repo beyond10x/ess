@@ -7510,6 +7510,32 @@ fn arrange_toward_owned(
     owner: Option<&InstanceName>,
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
+    arrange_toward_bound(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        owner,
+        &BTreeMap::new(),
+        accept,
+    )
+}
+
+/// The same bounded arrangement search with fields populated from already captured instances.
+/// Only a direct, unconverted `sets: field: input.field` proves which creator input to bind.
+/// The identities stay symbolic throughout: a generated ID is never replaced by a sample value.
+#[allow(clippy::too_many_arguments)]
+fn arrange_toward_bound(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    owner: Option<&InstanceName>,
+    fields: &BTreeMap<String, InstanceName>,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     let states = &ir.entity(entity).lifecycle.states;
@@ -7529,6 +7555,9 @@ fn arrange_toward_owned(
                 _ => None,
             })
             .collect();
+        let Some(bound) = creator_bindings(creator, &mapped, fields) else {
+            continue;
+        };
         let onto = |path: &FactPath| match path.segments().split_first() {
             Some((head, tail)) => mapped.get(head.as_str()).map_or_else(
                 || path.clone(),
@@ -7553,20 +7582,19 @@ fn arrange_toward_owned(
             if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true) {
                 continue;
             }
+            let owner =
+                owner.or_else(|| ir.owner_of(entity).and_then(|owned| fields.get(owned.via)));
             let under = owner.and_then(|owner| under_owner(ir, entity, creator, owner));
-            let start = match &under {
-                Some(under) => created_owned(
-                    ir,
-                    entity,
-                    creator,
-                    actors,
-                    distinction,
-                    &[],
-                    Some(under),
-                    Some(&input),
-                ),
-                None => created(ir, entity, creator, actors, distinction, &[], Some(&input)),
-            };
+            let start = created_bound(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                under,
+                &bound,
+                &input,
+            );
             let Ok(start) = start else {
                 continue;
             };
@@ -7601,6 +7629,92 @@ fn arrange_toward_owned(
         }
     }
     None
+}
+
+/// Map the requested fields onto creator inputs only where the capture does not invalidate a
+/// guard proved from literal inputs. Symbolic guard solving is outside this arrangement seam.
+fn creator_bindings(
+    creator: &Driver<'_>,
+    mapped: &BTreeMap<&str, &str>,
+    fields: &BTreeMap<String, InstanceName>,
+) -> Option<BTreeMap<String, InstanceName>> {
+    let bound = fields
+        .iter()
+        .try_fold(BTreeMap::new(), |mut bound, (field, instance)| {
+            let input = mapped.get(field.as_str())?;
+            if bound
+                .insert((*input).to_owned(), instance.clone())
+                .is_some_and(|held| held != *instance)
+            {
+                return None;
+            }
+            Some(bound)
+        })?;
+    if !bound.is_empty()
+        && (related_guard::routes(creator.command, creator.outcome)
+            || creator
+                .command
+                .outcomes
+                .iter()
+                .filter_map(|outcome| when(outcome).or_else(|| accepting_input_half(outcome)))
+                .any(|guard| {
+                    guard
+                        .fact_paths()
+                        .iter()
+                        .any(|path| bound.contains_key(path.namespace()))
+                }))
+    {
+        return None;
+    }
+    Some(bound)
+}
+
+/// Create one row with explicit captured inputs, preserving any declared owner arrangement.
+#[allow(clippy::too_many_arguments)]
+fn created_bound(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    owner: Option<(String, Arrangement)>,
+    bound: &BTreeMap<String, InstanceName>,
+    input: &BTreeMap<String, Node>,
+) -> Result<Arrangement, Unreachable> {
+    if bound.is_empty() {
+        return match owner.as_ref() {
+            Some(under) => created_owned(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                &[],
+                Some(under),
+                Some(input),
+            ),
+            None => created(ir, entity, creator, actors, distinction, &[], Some(input)),
+        };
+    }
+    let arranged_owner =
+        owner.or_else(|| arrange_owner(ir, creator.outcome, entity, actors, distinction, &[]));
+    created_by(
+        ir,
+        entity,
+        creator,
+        distinction,
+        arranged_owner.as_ref(),
+        |owner_bound, _| {
+            let mut sent = owner_bound.clone();
+            for (field, instance) in bound {
+                if sent.get(field).is_some_and(|held| held != instance) {
+                    return Err(Unreachable::NothingCreates);
+                }
+                sent.insert(field.clone(), instance.clone());
+            }
+            Ok(invoke_with(ir, creator, None, actors, &sent, input))
+        },
+    )
 }
 
 /// The field match that names the instance this scenario is about, where the model publishes one.

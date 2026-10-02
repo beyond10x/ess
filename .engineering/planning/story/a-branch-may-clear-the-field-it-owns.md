@@ -2,14 +2,18 @@
 format: aep.planning-md/3
 id: story:a-branch-may-clear-the-field-it-owns
 kind: story
-status: draft
+status: implemented
 title: A branch may clear the field it owns
 relations:
 - serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/guides/write-a-specification.md
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T12:32:43Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T12:32:43Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T12:32:44Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 # Story: a branch may clear the field it owns
 
@@ -77,3 +81,11 @@ Derived 2026-09-28 by `story-scoper` on `46e367ab2`. Each line **cited** or **in
 - **Files:** `website/docs/guides/write-a-specification.md` — cited
 - **Confidence:** high
 - **Routing:** the documentation item is handed to the public-docs overhaul (branch `docs/public-docs-overhaul`), which is editing the same guide; not a wave unit — decision by the coordinator, 2026-09-28
+
+## Current acceptance and released documentation verified
+
+The former documentation gap is closed in release0.51.0: website/docs/guides/specify/values-and-views.md:43 documents {cleared: true}, Optional-only admission and the asserted empty view field. fields-and-invariants.md:74 explains why a literal is not a substitute, and the split authoring guide links both sections. These passages exist in tag0.51.0; no new documentation implementation is needed.
+
+Retained full package execution at f863ee records all four ess-domain/tests/cleared_set.rs tests passing (group-packages-f863ee.log:4814-4823), including explicit-source round trip and required-field/payload refusals. The same run passes ess-conformance/tests/synthesis.rs::a_cleared_field_is_asserted_empty_rather_than_left_unsaid (log:3620); its two-act fixture fills then clears the field and requires Node::Null in nonempty view assertions. Log completion2026-10-02T11:46:44Z. Current source retains those exact test bytes.
+
+Independent source/evidence audit by server_corrections agrees all acceptance is satisfied; its own new test/build execution count was zero. This reconciles a stale draft with delivered behavior and actual current execution, rather than claiming new implementation work.

@@ -2,14 +2,21 @@
 format: aep.planning-md/3
 id: story:the-startup-lock-does-not-cover-the-first-round-trip
 kind: story
-status: draft
+status: active
 title: The startup lock does not cover the first round trip
+relations:
+- serves: vision:O2
 scope:
+- confidence: cited
+  path: crates/edge/ess-cli/tests/browser_startup_slow_serve_boundary.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/coverage_browser.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T11:44:59Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T11:44:59Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 # The startup lock does not cover the first round trip
 
@@ -47,3 +54,7 @@ Named fix from the adversary, not applied: move `drop(starting)` below `:346`.
 
 - `crates/edge/ess-cli/tests/support/browser.rs` — `cited`
 - `crates/edge/ess-cli/tests/coverage_browser.rs` — `cited`
+
+## Fresh red evidence 2026-10-02
+
+The named three-fixture stand-in remains ignored and fails on current482609 when executed: observed3simultaneous session.new calls, expected1. The entire ignored startup lane is0passed4failed in server target/backlog-input/browser-startup-existing-defects-red.log. Preserve full session-start serialization rather than merely the announced-port phase; coordinate with answered-HTTP and lost-startup-socket-retry repairs. No successful production browser startup count is substituted for this concurrency regression.

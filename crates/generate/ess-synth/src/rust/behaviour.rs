@@ -836,7 +836,7 @@ impl Writer<'_> {
                 let answer = self.variant(outcome, Held::None, None);
                 let _ = writeln!(
                     out,
-                    "        // `{}`: an input-guarded refusal, before anything else is read.\n        \
+                    "        // `{}`: an input-guarded refusal, before the addressed subject is loaded.\n        \
                      if {guard} {{\n            return Ok({answer});\n        }}",
                     outcome.name
                 );
@@ -1112,8 +1112,8 @@ impl Writer<'_> {
 
     /// The statements of a creation, at the indentation of a branch block, ending in its `return`.
     ///
-    /// The new identity is assigned by the context, except on a creation selected by existence,
-    /// whose identity is the input the lookup read (beyond10x/ess#310).
+    /// The new identity follows its declared event payload source, or the context where the
+    /// specification leaves it undetermined.
     fn create(&mut self, outcome: &ResolvedOutcome, held: Held) -> String {
         let mut out = String::new();
         let subject = outcome
@@ -1129,9 +1129,7 @@ impl Writer<'_> {
             self.layout.type_name(&entity.name)
         );
         let identity_type = &entity.identity.type_ref;
-        let by_existence = determined::creates_unknown(outcome)
-            || determined::existing_instance(self.command).is_some();
-        let assigned = match determined::identity_source(outcome).filter(|_| by_existence) {
+        let assigned = match determined::identity_source(outcome) {
             Some(source) => self.value(source, None),
             None => self.generate(identity_type),
         };

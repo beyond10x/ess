@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:09:23Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-309",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "All 300 ess-conformance package lanes exit zero: 2145 passed, zero failed, 11 existing ignored. Five new regressions measured 0 passed/5 failed before and 5 passed/0 failed after. Strict Clippy and repository formatting passed; complete baseline count unavailable after disk-pressure interruption.",
+    "reference": "local-evidence:ess-backlog-synthesis-20261002/target/backlog-input/309-report.md"
+  }
+}

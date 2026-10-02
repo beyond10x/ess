@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { useNavigate, useParams, useSearchParams } from "./router";
-import { useActor, useRead, type ReadSpec, type ReadState } from "./data";
+import { useActor, useRead, filterRead, type ReadSpec, type ReadState } from "./data";
 import { assignable, evaluate, truthy } from "./expr";
 import { getPath, setPath, stableKey, type Json } from "./json";
 //+bound
@@ -356,7 +356,7 @@ export function useData(reads: ReadSpec | undefined): ReadState | undefined {
   const scope = useScope();
   const own = useRead(reads, scope.values, reads !== undefined);
   const section = useContext(DataContext);
-  return reads !== undefined ? own : section;
+  return reads !== undefined ? filterRead(own, reads.filter, scope.values) : section;
 }
 
 function Skeleton(props: { style: "skeleton" | "spinner" | "none" }): ReactNode {

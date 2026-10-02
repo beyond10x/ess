@@ -2801,7 +2801,11 @@ impl CommandSpec {
                 paths.iter().all(|path| {
                     self.input.iter().any(|field| {
                         field.name == path.namespace()
-                            && matches!(field.type_ref, crate::TypeRef::Named(_))
+                            && matches!(
+                                field.type_ref,
+                                crate::TypeRef::Named(_)
+                                    | crate::TypeRef::Primitive(crate::Primitive::Boolean)
+                            )
                     })
                 })
             });

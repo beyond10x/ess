@@ -5,7 +5,7 @@ import { Link } from "./router";
 import { hrefFor } from "../routes";
 import { useScope } from "./core";
 import { useRead } from "./data";
-import { evaluate, truthy } from "./expr";
+import { evaluate, keeps, truthy } from "./expr";
 import { isObject } from "./json";
 
 /** A link to one page. */
@@ -93,7 +93,7 @@ export function NavSection(props: {
   const dynamic = props.dynamic;
   if (dynamic) {
     links = read.rows
-      .filter((row) => dynamic.filter === undefined || truthy(evaluate(dynamic.filter, { ...scope.values, row })))
+      .filter((row) => dynamic.filter === undefined || keeps(dynamic.filter, { ...scope.values, row }))
       .map((row) => ({
         page: dynamic.page,
         label: String(dynamic.label ? evaluate(dynamic.label, { ...scope.values, row }) : isObject(row) ? row.id : row),

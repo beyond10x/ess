@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:41:00Z",
+  "actor": "human:timo",
+  "artifact": "story:stored-field-guards",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Inspected actual c-scratch red-conformance EXIT101 (1passed7failed), conf-new EXIT0 (13passed), schema generation/current receipts; acceptance mapped to parcel, mutant, Optional, string and old-shape tests",
+    "reference": "local-evidence:ess-wave-20260925/c-scratch/logs/"
+  }
+}

@@ -13,6 +13,8 @@ relations:
 - depends_on: story:ui-tui-live-binding
 scope:
 - confidence: cited
+  path: .github/workflows/ci.yml
+- confidence: cited
   path: crates/edge/ess-cli/src/ui.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/generate_ui_tui.rs

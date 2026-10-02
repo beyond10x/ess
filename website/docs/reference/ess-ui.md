@@ -499,7 +499,7 @@ Use when the menu depends on data, such as one entry per saved view.
 | `param` | `name` | yes |   | page param filled from the row id |
 | `label` | `expr` |   | `row.label` | entry text |
 | `synonyms` | list of `string` |   |   | extra search words |
-| `filter` | `expr` |   |   | rows to skip |
+| `filter` | `expr` |   |   | rows kept when the predicate is true |
 
 **Example**
 
@@ -1927,6 +1927,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `fixture` | `string` |   |   | fixture file answering the placeholder |
 | `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
+| `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
 | `refresh` | one of: `duration` \| `expr` |   |   | poll interval |
@@ -1949,6 +1950,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 ```yaml
 - {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
 - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
+- {when: {filter: present}, requires: {paging: {one_of: [client, none]}}, else: refuse}
 ```
 
 **Example**
@@ -1964,6 +1966,12 @@ fixture: fixtures/forecast.yaml
 |---|---|---|---|
 | `unbound_placeholder` | `**.reads.placeholder` | `{must: bind_to_view}` | warning |
 | `fixture_per_view` | `**.reads.view` | `{must_be_in: [fixtures.views, fixtures.derived]}` | warning |
+| `filter_expr` | `reads.filter and dynamic menu filter` | `{must: parse_as_boolean_predicate}` | error |
+| `filter_roots` | `reads.filter and dynamic menu filter` | `{must: read_only_row_params_state_shell_args_without_calls}` | error |
+| `filter_paths` | `reads.filter and dynamic menu filter` | `{must: resolve_declared_paths}` | error |
+| `filter_place` | `reads.filter` | `{must: belong_to_listing_or_choice}` | error |
+| `filter_paging` | `reads.filter` | `{must: use_client_or_none_paging}` | error |
+| `filter_over_param` | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
 
 ### Action
 
@@ -2032,6 +2040,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 |---|---|---|---|
 | `opens_resolves` | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `filter_export` | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
 
 ### FixtureIndex
 
@@ -2681,6 +2690,13 @@ What a validator checks in a document, and the construct each check applies to. 
 | `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
 | `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
 | `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+| `filter_expr` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: parse_as_boolean_predicate}` | error |
+| `filter_roots` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: read_only_row_params_state_shell_args_without_calls}` | error |
+| `filter_paths` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: resolve_declared_paths}` | error |
+| `filter_place` | [Reads](#reads) | `reads.filter` | `{must: belong_to_listing_or_choice}` | error |
+| `filter_paging` | [Reads](#reads) | `reads.filter` | `{must: use_client_or_none_paging}` | error |
+| `filter_over_param` | [Reads](#reads) | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
+| `filter_export` | [Action](#action) | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
 
 ## Retrofits and lowering
 

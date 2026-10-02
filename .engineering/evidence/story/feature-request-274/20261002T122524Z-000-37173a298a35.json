@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T12:25:24Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-274",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Full ess-cli-project and ess-cli-contract packages at ba5d657: 183 passes, 0 failures, 0 ignored; exact package trees match release0.51.0 and main",
+    "reference": "target/backlog-input/274-full-contract.log"
+  }
+}

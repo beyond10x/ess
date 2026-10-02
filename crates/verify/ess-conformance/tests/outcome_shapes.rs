@@ -28,6 +28,242 @@ const PRECONDITION: &str = "preconditions:
     input: {user_id: 00000000-0000-4000-8000-000000000152}
 ";
 
+const CART: &str = r"
+format: ess/20
+system: repro
+version: v1
+domain: repro.cart
+entities:
+  - name: repro.cart.Cart
+    identity: {name: cart_id, type: String}
+    fields: [{name: rev, type: Integer}]
+    invariants: ['rev >= 1']
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - name: repro.cart.Shopper
+    may: [repro.cart.OpenCart, repro.cart.CloseCart]
+errors:
+  - name: repro.cart.CartNotFound
+  - name: repro.cart.StaleRev
+commands:
+  - name: repro.cart.OpenCart
+    input: [{name: cart_id, type: String}]
+    outcomes:
+      - name: opened
+        creates: repro.cart.Cart
+        instance: cart_id
+        emits: [repro.cart.CartOpened]
+        payload: {repro.cart.CartOpened: {cart_id: input.cart_id}}
+        sets: {rev: '1'}
+  - name: repro.cart.CloseCart
+    input: [{name: cart_id, type: String}, {name: rev, type: Integer}]
+    outcomes:
+      - name: missing
+        unknown_instance: true
+        error: repro.cart.CartNotFound
+      - name: stale
+        when_subject: {predicate: 'rev != input.rev'}
+        error: repro.cart.StaleRev
+      - name: closed
+        deletes: repro.cart.Cart
+        instance: cart_id
+        emits: [repro.cart.CartClosed]
+        payload: {repro.cart.CartClosed: {cart_id: input.cart_id}}
+events:
+  - name: repro.cart.CartOpened
+    fields: [{name: cart_id, type: String}]
+  - name: repro.cart.CartClosed
+    fields: [{name: cart_id, type: String}]
+views:
+  - name: repro.cart.CartById
+    source: repro.cart.Cart
+    consistency: read_your_writes
+    fields:
+      - {name: cart_id, type: String}
+      - {name: state, type: repro.cart.Cart.State}
+      - {name: rev, type: Integer}
+";
+
+const STALE_CART: &str = "      - name: stale\n        when_subject: {predicate: 'rev != input.rev'}\n        error: repro.cart.StaleRev\n";
+
+/// A cart stores its revision until deletion. The mutant changes only deletion's row removal.
+struct Carts {
+    rows: RefCell<BTreeMap<String, Node>>,
+    guarded: bool,
+    keep_deleted: bool,
+}
+
+impl ConformanceTarget for Carts {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new("cart", "1"))
+    }
+    fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        self.rows.borrow_mut().clear();
+        Ok(())
+    }
+    fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        Ok(())
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let id = request.input["cart_id"].as_text().unwrap();
+        let mut rows = self.rows.borrow_mut();
+        let (outcome, event, error) = match request.command.to_string().as_str() {
+            "repro.cart.OpenCart" => {
+                rows.insert(id.to_owned(), Node::Number(1_i64.into()));
+                ("opened", Some("repro.cart.CartOpened"), None)
+            }
+            "repro.cart.CloseCart" => match rows.get(id) {
+                None => ("missing", None, Some("repro.cart.CartNotFound")),
+                Some(rev) if self.guarded && request.input.get("rev") != Some(rev) => {
+                    ("stale", None, Some("repro.cart.StaleRev"))
+                }
+                Some(_) => {
+                    if !self.keep_deleted {
+                        rows.remove(id);
+                    }
+                    ("closed", Some("repro.cart.CartClosed"), None)
+                }
+            },
+            other => panic!("unexpected cart command: {other}"),
+        };
+        let mut result = took(&request.command, outcome);
+        if let Some(event) = event {
+            emitted(&mut result, event, "cart_id", id);
+        }
+        result.error = error.map(|name| DeclaredErrorValue::new(name.parse().unwrap()));
+        Ok(result)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        assert_eq!(request.view.to_string(), "repro.cart.CartById");
+        Ok(SemanticViewResult {
+            rows: self
+                .rows
+                .borrow()
+                .iter()
+                .map(|(id, rev)| {
+                    BTreeMap::from([
+                        ("cart_id".into(), Node::Text(id.clone())),
+                        ("rev".into(), rev.clone()),
+                        ("state".into(), Node::Text("Open".into())),
+                    ])
+                })
+                .collect(),
+            total: None,
+        })
+    }
+    fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+        Err(TargetError::unsupported("external", "unused"))
+    }
+    fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported("redelivery", "unused"))
+    }
+    fn observe_events(
+        &self,
+        _: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Err(TargetError::unsupported("events", "unused"))
+    }
+    fn observe_invocations(
+        &self,
+        _: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        Err(TargetError::unsupported("invocations", "unused"))
+    }
+}
+
+fn cart_report(model: &str, keep_deleted: bool) -> ess_conformance::report::ConformanceReport {
+    let synthesis = synthesis_of(model);
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &Carts {
+                rows: RefCell::default(),
+                guarded: model.contains(STALE_CART),
+                keep_deleted,
+            },
+        )
+        .into_report()
+}
+
+#[test]
+fn issue_342_guarded_delete_passes_an_honest_cart_target() {
+    let report = cart_report(CART, false);
+    assert!(
+        report
+            .scenarios
+            .iter()
+            .all(|result| result.status == Status::Passed),
+        "{report:#?}"
+    );
+    assert!(report
+        .scenarios
+        .iter()
+        .any(|result| result.scenario.to_string() == "repro.cart.CloseCart/outcome/stale"));
+}
+
+#[test]
+fn issue_342_guarded_delete_never_asserts_the_removed_subject() {
+    let synthesis = synthesis_of(CART);
+    let closed = scenario(&synthesis.suite, "repro.cart.CloseCart/outcome/closed");
+    let absent = closed
+        .steps
+        .iter()
+        .position(|step| matches!(step, ScenarioStep::ExpectSubjectAbsent { .. }))
+        .unwrap();
+    assert!(
+        !closed.steps[absent + 1..]
+            .iter()
+            .any(|step| matches!(step, ScenarioStep::ExpectView { .. })),
+        "{}",
+        text(closed)
+    );
+    assert!(!synthesis
+        .suite
+        .scenarios
+        .keys()
+        .any(|id| id.to_string() == "repro.cart.Cart/invariant/after/repro.cart.CloseCart/closed"));
+    assert!(closed.steps[absent + 1..].iter().any(|step| matches!(step, ScenarioStep::ExpectOutcome { outcome } if outcome.to_string() == "repro.cart.CloseCart/missing")));
+    assert!(closed
+        .steps
+        .iter()
+        .any(|step| matches!(step, ScenarioStep::ExpectEvent { .. })));
+}
+
+#[test]
+fn issue_342_unguarded_control_passes_and_retaining_rows_fails_absence() {
+    let control = CART.replace(STALE_CART, "");
+    for model in [CART, control.as_str()] {
+        let report = cart_report(model, false);
+        assert!(
+            report
+                .scenarios
+                .iter()
+                .all(|result| result.status == Status::Passed),
+            "{report:#?}"
+        );
+        let mutant = cart_report(model, true);
+        let closed = mutant
+            .scenarios
+            .iter()
+            .find(|result| result.scenario.to_string() == "repro.cart.CloseCart/outcome/closed")
+            .unwrap();
+        assert_eq!(closed.status, Status::Failed, "{closed:#?}");
+        assert!(
+            closed
+                .checks
+                .iter()
+                .any(|check| check.status == Status::Failed
+                    && check.about == "the removed subject is absent from repro.cart.CartById"),
+            "{closed:#?}"
+        );
+    }
+}
+
 fn ir_of(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).expect("the model parses");
     let spec = Specification::assemble([(Source::new("outcome-shapes.yaml"), raw)])

@@ -83,10 +83,12 @@ select exactly one outcome for every value of a required, closed enum. For examp
 if `status` has the declared variants `Ready` and `Stopped`, the two guards
 `status == Ready` and `status == Stopped` cover that input. Synthesis uses the same
 declared domain to construct a witness for each reachable branch. An omitted value
-or overlapping guards produce a concrete failing assignment.
+or overlapping guards produce a concrete failing assignment. Required `Boolean`
+inputs also form a closed domain: `pause == true` and `pause == false` cover every
+value without a default. Their witnesses carry Boolean values, not text.
 
 This proof is bounded to 64 joint assignments and 128 predicate nodes. Required
-enum fields, transparent wrappers, equality, membership and supported Boolean
+enum and Boolean fields, transparent wrappers, equality, membership, Boolean truthiness and supported Boolean
 combinations participate. Every referenced input must fit that finite domain;
 Optional paths, open types, unsupported expressions and unknown results retain the
 requirement for a default. Existing defaults and external outcomes keep their behavior.

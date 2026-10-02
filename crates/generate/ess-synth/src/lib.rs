@@ -47,7 +47,6 @@ mod accessor_output;
 mod alias;
 pub mod clap;
 pub(crate) mod determined;
-pub(crate) mod existence;
 mod failure;
 pub mod go;
 pub(crate) mod paging;
@@ -415,11 +414,6 @@ fn emit(ir: &EssIr, target: Target, layout: OutputLayout) -> Result<Synthesis, T
     }
     failure::binary64(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
-    // The Go target selects by existence over its storage port, as the Rust target does
-    // (`story:go-generated-behaviour`); `existence::refuse` answers for the targets that cannot.
-    if target != Target::Go {
-        existence::refuse(ir, &plan, target)?;
-    }
     set_effects::refuse(ir, &plan, target)?;
     paging::refuse(ir, &plan, target)?;
     failure::retry_bound(ir, &plan, target)?;

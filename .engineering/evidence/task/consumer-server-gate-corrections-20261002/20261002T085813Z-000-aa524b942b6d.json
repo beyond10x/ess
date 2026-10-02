@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T08:58:13Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-server-gate-corrections-20261002",
+  "kind": "task",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Affected package tests: 453 passed; task test-xtask: 362 passed; nextest view-params: 8 passed; strict Clippy and package formatting passed",
+    "reference": "commit:51b3d92ff; tree ess-backlog-servers-20261002, target/backlog-input/implementation-report.md"
+  }
+}

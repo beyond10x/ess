@@ -3533,11 +3533,7 @@ fn search_from<T>(
     (arranging, under): (&[&EntityHandle], Under<'_>),
     goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
-    let follow = Follow::new(ir, entity, hints);
-    // Whether some row held a followed counter beyond [`COUNTER_REACH`] of every literal: such rows
-    // are one node, so a limit farther off is not reached, and the refusal names the bound.
-    let mut beyond = false;
-    let mut level = creations(
+    let level = creations(
         ir,
         entity,
         creator,
@@ -3546,6 +3542,27 @@ fn search_from<T>(
         distinction,
         (arranging, under),
     )?;
+    search_rows(
+        ir, entity, drivers, actors, hints, field, arranging, level, goal,
+    )
+}
+
+/// The bounded search shared by fresh creations and an already observed row.
+#[allow(clippy::too_many_arguments)]
+fn search_rows<T>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'_>],
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    field: &str,
+    arranging: &[&EntityHandle],
+    mut level: Vec<Arrangement>,
+    goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
+) -> Result<(Arrangement, T), RefusalCause> {
+    let follow = Follow::new(ir, entity, hints);
+    // Rows beyond the followed counter bound share a node, as on the creation search.
+    let mut beyond = false;
     let mut nested = false;
     let mut seen = BTreeSet::new();
     let mut first: Option<RefusalCause> = None;
@@ -3643,6 +3660,62 @@ fn search_from<T>(
             seen.len(),
         )
     }))
+}
+
+/// Delete the actual row a create-or-refuse segment already stored. No creation or deletion is
+/// traversed: the former would replace the row being tested, and the latter leaves no row to
+/// advance. The goal invokes a declared deletion through the ordinary guarded successor builder.
+pub(super) fn delete_existing(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    mut arrangement: Arrangement,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Option<Arrangement>, RefusalCause> {
+    let all = ir.drivers();
+    let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
+    let deleting: Vec<_> = drivers
+        .iter()
+        .filter(|driver| *driver.effect == ResolvedEffect::Deletes)
+        .copied()
+        .collect();
+    if deleting.is_empty() {
+        return Ok(None);
+    }
+    let moving: Vec<_> = drivers
+        .iter()
+        .filter(|driver| {
+            !matches!(
+                driver.effect,
+                ResolvedEffect::Creates | ResolvedEffect::Deletes
+            )
+        })
+        .copied()
+        .collect();
+    let hints: Vec<_> = drivers
+        .iter()
+        .flat_map(|driver| hints(driver.command))
+        .collect();
+    let follow = Follow::new(ir, entity, &hints);
+    // The creation and the duplicate refusal have already run in the enclosing segment.
+    arrangement.steps.clear();
+    search_rows(
+        ir,
+        entity,
+        &moving,
+        actors,
+        &hints,
+        "deletion after duplicate creation",
+        &[],
+        vec![arrangement],
+        &mut |row| {
+            Ok(deleting.iter().find_map(|driver| {
+                successors(ir, entity, driver, row, actors, &hints, &[], &follow)
+                    .into_iter()
+                    .next()
+            }))
+        },
+    )
+    .map(|(_, deleted)| Some(deleted))
 }
 
 /// What a search says where a move toward the goal read a related row of the searched entity
@@ -4069,21 +4142,21 @@ pub(super) fn prepare(
         found == Found::BeforeRow,
         &mut arrangement,
     )?;
-    let after = outcome
-        .subject
-        .as_ref()
-        .and_then(|own| own.effect.transition())
-        .map_or_else(
+    // A stored-field guard changes how the row is arranged, not whether deletion leaves one.
+    let after = match outcome.subject.as_ref().map(|own| &own.effect) {
+        Some(ResolvedEffect::Deletes) => None,
+        effect => Some(effect.and_then(ResolvedEffect::transition).map_or_else(
             || arrangement.state.clone(),
             |transition| transition.to.clone(),
-        );
+        )),
+    };
     Ok((
         Setup {
             steps: arrangement.steps,
             instance: Some(arrangement.instance),
             bound,
             source: arrangement.source,
-            after: Some(after),
+            after,
             before: Some(arrangement.state),
             settled: arrangement.settled,
         },

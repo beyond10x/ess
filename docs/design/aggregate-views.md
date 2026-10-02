@@ -601,6 +601,12 @@ Which rows exist:
 
 #### Group tuples
 
+Keys that the creating branch fills from the same input are one independent dimension: their
+values must be equal. The tuple pattern varies them together, using the first key's value sequence,
+and an optional input's absent witness omits all its keys together. No Bₖ row tries to separate
+these equal copies; ignoring one copy is unobservable. Other independent keys still receive their
+distinguishing tuples.
+
 Each group has a **tuple** of group-key values. Tuples are assigned in the order A, B, C, B₁, B₂, …
 and each one **must differ from every tuple assigned before it**:
 

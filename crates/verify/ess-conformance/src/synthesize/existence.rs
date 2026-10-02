@@ -851,6 +851,13 @@ fn segment(
             },
             reason,
         })?;
+    // Only the existence refusal carries recreation; an input refusal using this same helper
+    // keeps its ordinary two-call precedence check.
+    let recreation = if declared.condition == ResolvedCondition::ExistingInstance {
+        recreation(ir, command, creating, &arrangement, actors)?
+    } else {
+        None
+    };
     let setup = Setup {
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
@@ -865,7 +872,7 @@ fn segment(
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
     let mut steps = setup.steps.clone();
-    steps.extend(preservation.before);
+    steps.extend(preservation.before.iter().cloned());
     let supplied = supply(command, &second, None, None, &BTreeMap::new());
     let expected = super::expect_error(ir, declared, error, &supplied, &setup.settled);
     steps.push(ScenarioStep::ExecuteCommand {
@@ -896,7 +903,107 @@ fn segment(
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
     steps.extend(preservation.after);
+    if let Some((deleted, again)) = recreation {
+        let part = recreated(ir, command, creating, deleted, again, preservation.before);
+        steps.extend(part.steps);
+        source.extend(part.source);
+    }
     Ok(Segment { steps, source })
+}
+
+fn recreated(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    creating: &ResolvedOutcome,
+    deleted: super::Arrangement,
+    again: ScenarioStep,
+    observed: Vec<ScenarioStep>,
+) -> Segment {
+    let mut steps = deleted.steps;
+    let mut source = deleted.source;
+    // The same immediate projections that saw the original row must now hold none of it.
+    for step in &observed {
+        steps.push(match step {
+            ScenarioStep::SnapshotSubject { view, subject }
+            | ScenarioStep::SnapshotCompleteSubject { view, subject, .. } => {
+                ScenarioStep::ExpectSubjectAbsent {
+                    view: view.clone(),
+                    subject: subject.clone(),
+                }
+            }
+            query => query.clone(),
+        });
+    }
+    let ScenarioStep::ExecuteCommand { input, .. } = &again else {
+        unreachable!("the original creating invocation")
+    };
+    let events: Vec<_> = creating
+        .emits
+        .iter()
+        .map(|event| {
+            let event = super::EventRef::from(event);
+            source.insert(event.clone().into());
+            ScenarioStep::ExpectEvent {
+                payload: super::determined_payload(ir, creating, &event, input, &BTreeMap::new()),
+                shape: crate::response::event_shape(ir, &event, creating),
+                event,
+            }
+        })
+        .collect();
+    let outcome = OutcomeRef::new(CommandRef::new(command.name.clone()), creating.name.clone());
+    // The first invocation consumed its external control. Recreating through that same branch
+    // requires a new one immediately before the repeated invocation, as invoke_with supplies.
+    if creating.test_strategy == ess_domain::command::TestStrategy::InjectFault {
+        steps.push(ScenarioStep::ConfigureExternalOutcome {
+            force: outcome.clone(),
+            times: None,
+        });
+    }
+    steps.push(again);
+    steps.push(ScenarioStep::ExpectOutcome { outcome });
+    steps.push(ScenarioStep::ExpectNoError);
+    steps.extend(events);
+    // Exactly one recreated row, without comparing generated fields to its former incarnation.
+    steps.extend(observed.into_iter().map(|step| match step {
+        ScenarioStep::SnapshotCompleteSubject { view, subject, .. } => {
+            ScenarioStep::SnapshotSubject { view, subject }
+        }
+        other => other,
+    }));
+    Segment { steps, source }
+}
+
+fn recreation(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    creating: &ResolvedOutcome,
+    arrangement: &super::Arrangement,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Option<(super::Arrangement, ScenarioStep)>, RefusalCause> {
+    let entity = &creating.subject.as_ref().expect("creating branch").entity;
+    let Some(deleted) = subject_fact::delete_existing(ir, entity, arrangement.clone(), actors)?
+    else {
+        return Ok(None);
+    };
+    if super::related_guard::uses(command) {
+        return Err(RefusalCause::NoWitness(WitnessGap {
+            path: command.name.to_string(),
+            type_ref: entity.to_string(),
+            reason: "recreation has not proved that the creating command's related-row guards still hold after deletion",
+        }));
+    }
+    let again = arrangement
+        .steps
+        .iter()
+        .rev()
+        .find(|step| {
+            matches!(step,
+                ScenarioStep::ExecuteCommand { command: sent, .. } if sent.name() == &command.name
+            )
+        })
+        .expect("the arrangement invoked its creator")
+        .clone();
+    Ok(Some((deleted, again)))
 }
 
 /// The input a creating branch is sent with: the one that reaches it, or — for a command reading a

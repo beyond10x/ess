@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T12:42:44Z",
+  "actor": "human:timo",
+  "artifact": "story:a-browser-that-answered-http-once-is-still-a-slow-start",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Full ess-cli at2220bce9b9:904 passed,0 failed,0 ignored; exact frozen three-file browser patch independently reviewed",
+    "reference": "target/backlog-input/browser-full-cli.log"
+  }
+}

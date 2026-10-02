@@ -26,18 +26,19 @@
 use ess_compiler::ir::{ResolvedAffect, ResolvedSetSubject};
 use ess_domain::view::Consistency;
 use ess_primitives::facts::{FactPath, FactValue, Number};
-use ess_primitives::predicate::{Operand, Predicate, Truth};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
 use crate::witness::{Distinction, WitnessGap};
 
 use super::{
-    arrange_toward_filter, determined_payload, fact_value, has_subject_guards, insert,
-    instance_name, lifecycle_state, not_emitted, prepare_in, reach, reach_in_state, require,
-    settled, shown, subject_fact, supply, ActorRef, Arrangement, AssertionStyle, BTreeMap,
-    BTreeSet, CommandRef, ConformanceScenario, ConformanceSuite, Determined, EntityHandle,
-    EntityRef, EssIr, EssSemanticRef, EventRef, Focus, InstanceName, Node, OutcomeRef,
-    QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedEffect, ResolvedOutcome,
-    ResolvedView, ScenarioId, ScenarioStep, ScenarioValue, StateName, ViewExpectation, ViewRef,
+    arrange_toward_bound, arrange_toward_filter, determined_payload, fact_value,
+    has_subject_guards, insert, instance_name, lifecycle_state, not_emitted, prepare_in, reach,
+    reach_in_state, require, settled, shown, subject_fact, supply, ActorRef, Arrangement,
+    AssertionStyle, BTreeMap, BTreeSet, CommandRef, ConformanceScenario, ConformanceSuite,
+    Determined, EntityHandle, EntityRef, EssIr, EssSemanticRef, EventRef, Focus, InstanceName,
+    Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedEffect,
+    ResolvedOutcome, ResolvedView, ScenarioId, ScenarioStep, ScenarioValue, StateName,
+    ViewExpectation, ViewRef,
 };
 
 /// How many rows the filter must select, so a target that changes one of them is caught.
@@ -249,15 +250,6 @@ fn written_in(filter: &Predicate, read: &dyn Fn(&FactPath) -> Option<FactValue>)
     }
 }
 
-/// Whether `filter` still reads the subject after [`written_in`] wrote in what it could.
-fn reads_subject(filter: &Predicate) -> Option<String> {
-    filter
-        .fact_paths()
-        .into_iter()
-        .find(|path| path.namespace() == ess_domain::command::set_effects::SUBJECT_NAMESPACE)
-        .map(ToString::to_string)
-}
-
 /// What a set effect leaves in one row: what the row held, with what `sets:` writes over it.
 fn after(
     ir: &EssIr,
@@ -300,10 +292,49 @@ struct Selection<'a> {
     supplied: &'a BTreeMap<String, ScenarioValue>,
     /// An outcome carrying the `sets:` the selected rows take.
     sets: &'a ResolvedOutcome,
+    /// Subject identity operands keep the captured name, never a guessed identity literal.
+    symbols: BTreeMap<FactPath, InstanceName>,
+    /// A second real instance of the subject, for the identity conjunct's nonmatching witness.
+    other: Option<InstanceName>,
 }
 
 impl Selection<'_> {
     fn truth_of(&self, predicate: &Predicate, row: &Arrangement) -> Truth {
+        match predicate {
+            Predicate::All(children) => {
+                return children.iter().fold(Truth::True, |truth, child| {
+                    truth.and(self.truth_of(child, row))
+                })
+            }
+            Predicate::Any(children) => {
+                return children.iter().fold(Truth::False, |truth, child| {
+                    truth.or(self.truth_of(child, row))
+                })
+            }
+            Predicate::Not(inner) => return self.truth_of(inner, row).not(),
+            Predicate::Compare { left, op, right } if self.symbolic(predicate) => {
+                let instance = |operand: &Operand| {
+                    let Operand::Fact(path) = operand else {
+                        return None;
+                    };
+                    self.symbols.get(path).or_else(|| {
+                        if path.segments().len() != 1 {
+                            return None;
+                        }
+                        match &row.settled.get(path.namespace())?.value {
+                            ScenarioValue::Instance { instance } => Some(instance),
+                            _ => None,
+                        }
+                    })
+                };
+                return match (instance(left), instance(right), op) {
+                    (Some(left), Some(right), CompareOp::Eq) => Truth::from_bool(left == right),
+                    (Some(left), Some(right), CompareOp::Ne) => Truth::from_bool(left != right),
+                    _ => Truth::Unknown,
+                };
+            }
+            _ => {}
+        }
         subject_fact::row_truth_with(
             self.ir,
             self.entity,
@@ -313,6 +344,88 @@ impl Selection<'_> {
             predicate,
             Some((self.command, self.input)),
         )
+    }
+
+    fn symbolic(&self, predicate: &Predicate) -> bool {
+        predicate
+            .fact_paths()
+            .iter()
+            .any(|path| self.symbols.contains_key(*path))
+    }
+
+    /// Discharge each symbolic equality with an actual captured instance. Ordinary conjuncts
+    /// remain for the existing typed witness search. Unsupported symbolic expressions refuse
+    /// through the caller's usual no-witness diagnostic rather than fabricating an ID.
+    fn bindings(
+        &self,
+        predicate: &Predicate,
+        positive: bool,
+    ) -> Option<BTreeMap<String, InstanceName>> {
+        if !self.symbolic(predicate) {
+            return Some(BTreeMap::new());
+        }
+        match predicate {
+            Predicate::All(children) if positive => {
+                let mut out = BTreeMap::new();
+                for child in children {
+                    for (field, instance) in self.bindings(child, true)? {
+                        if out
+                            .insert(field, instance.clone())
+                            .is_some_and(|held| held != instance)
+                        {
+                            return None;
+                        }
+                    }
+                }
+                Some(out)
+            }
+            Predicate::Not(inner) => self.bindings(inner, !positive),
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                op,
+                right: Operand::Fact(right),
+            } if matches!(op, CompareOp::Eq | CompareOp::Ne) => {
+                let (instance, field) = self
+                    .symbols
+                    .get(left)
+                    .map(|instance| (instance, right))
+                    .or_else(|| self.symbols.get(right).map(|instance| (instance, left)))?;
+                if field.segments().len() != 1 {
+                    return None;
+                }
+                let instance = if (*op == CompareOp::Eq) == positive {
+                    instance
+                } else {
+                    self.other.as_ref()?
+                };
+                Some(
+                    [(field.to_string(), instance.clone())]
+                        .into_iter()
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    }
+
+    /// Erase only discharged symbolic leaves from the steering predicate. This is not the
+    /// acceptance test: `truth_of` still evaluates the complete predicate on the resulting row.
+    fn steering(&self, predicate: &Predicate) -> Option<Predicate> {
+        if !self.symbolic(predicate) {
+            return Some(predicate.clone());
+        }
+        match predicate {
+            Predicate::All(children) => Some(Predicate::All(
+                children
+                    .iter()
+                    .filter_map(|child| self.steering(child))
+                    .collect(),
+            )),
+            Predicate::Not(inner) => self
+                .steering(inner)
+                .map(|inner| Predicate::Not(Box::new(inner))),
+            _ => None,
+        }
     }
 
     /// One further row the filter selects, resting in a state `rests` admits, and whose `sets:`
@@ -344,6 +457,20 @@ impl Selection<'_> {
                 && (!visible || visibly_changed(self.ir, self.sets, self.supplied, &row.settled))
         };
         let distinction = next(self.ir, self.entity, taken);
+        if self.symbolic(goal) {
+            let bound = self.bindings(goal, true)?;
+            let steering = self.steering(steer).unwrap_or(Predicate::Always);
+            return arrange_toward_bound(
+                self.ir,
+                self.entity,
+                &steering,
+                actors,
+                distinction,
+                None,
+                &bound,
+                &accept,
+            );
+        }
         arrange_toward_filter(self.ir, self.entity, steer, actors, distinction, &accept).or_else(
             || {
                 // A filter over the state alone steers no creating input; the plain search over
@@ -633,6 +760,8 @@ fn set_scenario(
         input: &input,
         supplied: &supplied,
         sets: outcome,
+        symbols: BTreeMap::new(),
+        other: None,
     };
     let (arranged, to) = set_rows(&selection, actors, set)
         .map_err(|reason| gap(at(), entity.to_string(), reason))?;
@@ -712,11 +841,15 @@ fn subject_filters<'o>(
     outcome: &'o ResolvedOutcome,
     subject: &EntityHandle,
     before: &BTreeMap<String, Determined>,
+    symbols: &BTreeMap<FactPath, InstanceName>,
 ) -> Result<Vec<(&'o ResolvedAffect, Predicate)>, RefusalCause> {
     let mut out = Vec::new();
     for (index, affect) in outcome.affects.iter().enumerate() {
         let filter = written_in(&affect.filter, &|path| subject_value(path, before));
-        if let Some(path) = reads_subject(&filter) {
+        if let Some(path) = filter.fact_paths().into_iter().find(|path| {
+            path.namespace() == ess_domain::command::set_effects::SUBJECT_NAMESPACE
+                && !symbols.contains_key(*path)
+        }) {
             return Err(gap(
                 format!("{}.affects[{index}]: {path}", outcome.name),
                 subject.to_string(),
@@ -755,6 +888,70 @@ fn subject_reads(
         source.insert(name.into());
     }
     reads
+}
+
+struct AffectInputs {
+    symbols: BTreeMap<FactPath, InstanceName>,
+    other: Option<Arrangement>,
+    literals: BTreeMap<String, Node>,
+}
+
+/// Bind identity operands and arrange a real alternative identity. These names are references
+/// to captures, not surrogate literal IDs; ordinary inputs retain the existing typed search.
+fn affect_inputs(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    instance: &InstanceName,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+) -> Result<AffectInputs, RefusalCause> {
+    let subject = &outcome
+        .subject
+        .as_ref()
+        .expect("affects requires a subject")
+        .entity;
+    let identity = &ir.entity(subject).identity.name;
+    let mut symbols = BTreeMap::new();
+    symbols.insert(
+        FactPath::from_segments(["subject".to_owned(), identity.clone()]),
+        instance.clone(),
+    );
+    for (field, value) in supplied {
+        if matches!(value, ScenarioValue::Instance { instance: held } if held == instance) {
+            symbols.insert(
+                FactPath::from_segments(["input".to_owned(), field.clone()]),
+                instance.clone(),
+            );
+        }
+    }
+    symbols.retain(|path, _| {
+        outcome
+            .affects
+            .iter()
+            .any(|affect| affect.filter.fact_paths().contains(&path))
+    });
+    let other = if symbols.is_empty() {
+        None
+    } else {
+        let distinction = next(ir, subject, taken);
+        let initial = &ir.entity(subject).lifecycle.initial;
+        Some(super::arrange(ir, subject, initial, actors, distinction, &[])
+            .map_err(|_| gap(format!("{}.affects", outcome.name), subject.to_string(), "cannot arrange a second subject to witness the identity filter's excluded rows"))?)
+    };
+    let literals = supplied
+        .iter()
+        .filter_map(|(field, value)| {
+            value
+                .as_literal()
+                .map(|value| (field.clone(), value.clone()))
+        })
+        .collect();
+    Ok(AffectInputs {
+        symbols,
+        other,
+        literals,
+    })
 }
 
 /// The `affects:` segment appended to the branch's own scenario.
@@ -806,21 +1003,27 @@ fn affects_segment(
         &mut source,
     );
     let mut entries = Vec::new();
-    for (index, (affect, filter)) in subject_filters(outcome, &subject.entity, &setup.settled)?
-        .into_iter()
-        .enumerate()
-    {
+    let operands = affect_inputs(ir, outcome, &instance, &supplied, actors, taken)?;
+    let other = operands.other.as_ref().map(|row| row.instance.clone());
+    if let Some(other) = operands.other {
+        steps.extend(other.steps);
+        source.extend(other.source);
+    }
+    let filters = subject_filters(outcome, &subject.entity, &setup.settled, &operands.symbols)?;
+    for (index, (affect, filter)) in filters.into_iter().enumerate() {
         let sets = with_sets(outcome, affect);
         let views = observed(ir, &affect.entity, at(index), (false, &affect.sets))?;
         let selection = Selection {
             ir,
             command,
             entity: &affect.entity,
-            closed: written_in(&filter, &|path| input_value(path, &input)),
+            closed: written_in(&filter, &|path| input_value(path, &operands.literals)),
             filter,
             input: &input,
             supplied: &supplied,
             sets: &sets,
+            symbols: operands.symbols.clone(),
+            other: other.clone(),
         };
         let rows = rows(&selection, actors, taken, &|_| true, None, true)
             .map_err(|reason| gap(at(index), affect.entity.to_string(), reason))?;

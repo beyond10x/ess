@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, type ActionSpec } from "../actions";
 import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useScope } from "../core";
-import { useRead, type ReadSpec } from "../data";
+import { filterRead, useRead, type ReadSpec } from "../data";
 import { isObject, type Json } from "../json";
 
 /**
@@ -22,7 +22,8 @@ export function GraphEditorView(props: {
   const scope = useScope();
   const data = useData(props.reads);
   const edgeReads = props.edges?.reads;
-  const edgeData = useRead(edgeReads, scope.values, edgeReads !== undefined);
+  const rawEdges = useRead(edgeReads, scope.values, edgeReads !== undefined);
+  const edgeData = edgeReads?.filter === undefined ? rawEdges : filterRead(rawEdges, edgeReads.filter, scope.values);
   const rows = data?.rows ?? [];
   const edgeSpec = props.edges;
   const isEdge = (row: Json) =>

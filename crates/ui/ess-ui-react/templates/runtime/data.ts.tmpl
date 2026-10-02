@@ -9,18 +9,18 @@
 // reads and commands the paths the served surface answers, from `src/binding.ts`.
 //-bound
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fixtures, type FixtureView } from "../fixtures";
-import { evaluate } from "./expr";
+import { evaluate, keeps } from "./expr";
 import { getPath, isObject, stableKey, type Json, type JsonObject } from "./json";
 //+bound
-import { useRef } from "react";
 import { classify, type Answer } from "./answer";
 //-bound
 
 /** A read as a section or composite declares it. */
 export interface ReadSpec {
   view: string;
+  filter?: string;
   params?: Record<string, string>;
   paging?: string;
   debounce?: number;
@@ -269,7 +269,10 @@ let authorization: string | undefined;
  * server authenticates it is the realization's. `undefined` sends none.
  */
 export function setAuthorization(value: string | undefined): void {
+  if (authorization === value) return;
   authorization = value;
+  sourceVersion++;
+  invalidate();
 }
 
 /**
@@ -395,11 +398,14 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
 
 let current: DataAdapter = fixtureAdapter;
 let version = 0;
+// Changing the source or actor also hides rows from the previous authority immediately.
+let sourceVersion = 0;
 const listeners = new Set<() => void>();
 
 /** Replaces the adapter every read and command uses. */
 export function setDataAdapter(adapter: DataAdapter): void {
   current = adapter;
+  sourceVersion++;
   invalidate();
 }
 
@@ -434,13 +440,63 @@ export type ReadStatus = "idle" | "loading" | "refreshing" | "ready" | "failed" 
 /** A read's state as a section renders it. */
 export interface ReadState {
   status: ReadStatus;
+  /** Adapter/authority generation; live effects must not retain rows across a source change. */
+  source?: number;
+  /** This consumer's rows have a client predicate; selection follows its kept keys. */
+  filtered?: boolean;
   rows: Json[];
   total?: number;
   error?: string;
   params: Record<string, unknown>;
   stale?: boolean;
   newCount?: number;
-  refetch(): void;
+  /** `restart` gives up this subscriber's stalled request without aborting other subscribers. */
+  refetch(restart?: boolean): void;
+}
+
+/** Per-consumer visibility over raw shared rows, after live effects and before local paging. */
+export function filterRead(read: ReadState, filter: string | undefined, values: Record<string, unknown>): ReadState {
+  if (filter === undefined) return read;
+  const rows = read.rows.filter((row) => keeps(filter, { ...values, row }));
+  return { ...read, rows, total: rows.length, filtered: true };
+}
+
+interface SharedRead {
+  promise: Promise<ReadResult>;
+  users: number;
+  settled: boolean;
+//+bound
+  controller: AbortController;
+//-bound
+}
+const sharedReads = new Map<string, SharedRead>();
+
+/** A raw request is shared while any consumer holds it; filters never enter its key. */
+function acquireRead(key: string, request: ReadRequest, refresh: boolean, restart: boolean): { promise: Promise<ReadResult>; release(): void } {
+  let entry = sharedReads.get(key);
+  if (!entry || restart || (refresh && entry.settled)) {
+//+plain
+    entry = { users: 0, settled: false, promise: current.read(request) };
+//-plain
+//+bound
+    const controller = new AbortController();
+    entry = { users: 0, settled: false, controller, promise: current.read({ ...request, signal: controller.signal }) };
+//-bound
+    sharedReads.set(key, entry);
+    const created = entry;
+    void created.promise.then(() => { created.settled = true; }, () => { created.settled = true; });
+  }
+  const held = entry;
+  held.users++;
+  return { promise: held.promise, release() {
+    held.users--;
+    if (held.users === 0) {
+      if (sharedReads.get(key) === held) sharedReads.delete(key);
+//+bound
+      held.controller.abort();
+//-bound
+    }
+  }};
 }
 
 /** Evaluates a read's params against the scope. */
@@ -462,56 +518,59 @@ export function useRead(
   enabled = true,
 ): ReadState {
   const params = evaluateParams(spec, values);
-  const key = spec ? `${spec.view}|${stableKey(params)}` : "";
+  const key = spec ? `${spec.view}|${stableKey(params)}|${spec.paging ?? ""}` : "";
   const seen = useVersion();
+  const source = sourceVersion;
   const [nonce, setNonce] = useState(0);
-  const [state, setState] = useState<Omit<ReadState, "refetch" | "params">>({
+  const startedNonce = useRef(0);
+  const restartNext = useRef(false);
+  const [state, setState] = useState<Omit<ReadState, "refetch" | "params"> & {source: number}>({
     status: spec && enabled ? "loading" : "idle",
     rows: [],
+    source,
   });
   useEffect(() => {
     if (!spec || !enabled) {
       return;
     }
     let live = true;
+    const refresh = startedNonce.current !== nonce;
+    startedNonce.current = nonce;
+    const restart = restartNext.current;
+    restartNext.current = false;
     setState((previous) => ({
-      ...previous,
-      status: previous.status === "ready" ? "refreshing" : "loading",
+      ...(previous.source === source ? previous : { rows: [], source }),
+      status: previous.source === source && previous.status === "ready" ? "refreshing" : "loading",
     }));
-//+plain
-    const start = () =>
-      current
-        .read({ view: spec.view, params, paging: spec.paging })
-//-plain
-//+bound
-    // A read dropped before it answers (params changed, a refetch, unmounted) is aborted.
-    const controller = new AbortController();
-    const start = () =>
-      current
-        .read({ view: spec.view, params, paging: spec.paging, signal: controller.signal })
-//-bound
+    let acquired: ReturnType<typeof acquireRead> | undefined;
+    const start = () => {
+      acquired = acquireRead(`${seen}|${source}|${key}`, { view: spec.view, params, paging: spec.paging }, refresh, restart);
+      return acquired.promise
         .then((result) => {
-          if (live) {
-            setState({ status: "ready", rows: result.rows, total: result.total ?? result.rows.length });
+          if (live && source === sourceVersion) {
+            setState({ status: "ready", rows: result.rows, total: result.total ?? result.rows.length, source });
           }
         })
         .catch((error: unknown) => {
-          if (live) {
+          if (live && source === sourceVersion) {
             const status = error instanceof DataError && error.status === 403 ? "forbidden" : "failed";
-            setState({ status, rows: [], error: error instanceof Error ? error.message : String(error) });
+            setState({ status, rows: [], error: error instanceof Error ? error.message : String(error), source });
           }
         });
+    };
     const timer = setTimeout(start, spec.debounce ?? 0);
     return () => {
       live = false;
       clearTimeout(timer);
-//+bound
-      controller.abort();
-//-bound
+      acquired?.release();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, enabled, seen, nonce]);
-  return { ...state, params, refetch: () => setNonce((value) => value + 1) };
+  }, [key, enabled, seen, nonce, source]);
+  const visible = state.source === source ? state : { status: "loading" as const, rows: [], source };
+  return { ...visible, params, refetch: (restart = false) => {
+    restartNext.current ||= restart;
+    setNonce((value) => value + 1);
+  }};
 }
 //+bound
 
@@ -539,7 +598,7 @@ export function usePoll(read: ReadState, every: number): ReadState {
       const now = Date.now();
       if (!busy(status.current) || now - since.current >= every * STALLED) {
         since.current = now;
-        refetch();
+        refetch(busy(status.current));
       }
     }, every);
     // Outside a browser (node), a poll alone never keeps the process running.

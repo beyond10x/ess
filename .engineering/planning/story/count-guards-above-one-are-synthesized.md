@@ -2,11 +2,20 @@
 format: aep.planning-md/3
 id: story:count-guards-above-one-are-synthesized
 kind: story
-status: draft
+status: implemented
 title: A count guard above one gets synthesized scenarios
 relations:
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/stored_field_guards_adversary.rs
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T12:40:19Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T12:40:20Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T12:40:21Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
@@ -28,3 +37,9 @@ pin today's refusal.
   `N`, bounded, for input and stored lists.
 - The re-pinned adversary cases flip to asserting both scenarios.
 - The misleading "drop it from the command's input" hint is not printed for a count guard.
+
+## Released acceptance verified
+
+Independent source/evidence audit by server_corrections finds all three acceptance items satisfied in release0.51.0. witness.rs:1906-1982 builds a bounded count ladder. stored_field_guards_adversary.rs:282 and :432 require both input/stored branches and two-element witnesses; :476 requires ESS-SYNTH-018 without the misleading drop-input hint. These relevant source/test files are unchanged from0.51.0.
+
+The retained f863ee full package execution passed all14 cases in this adversary binary (target/backlog-input/group-packages-f863ee.log:3456-3474, completed2026-10-02T11:46:44Z). Audit own new execution count0; evidence comes from that actual earlier run. This closes stale draft state. Separate upper-count boundary requests are not part of this story's three acceptance items.

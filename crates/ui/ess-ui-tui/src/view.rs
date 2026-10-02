@@ -461,8 +461,11 @@ impl App {
             .sections
             .iter()
             .find(|candidate| candidate.name == section)?;
-        let request = self.section_request(section)?;
-        let result = self.rows_of(&request)?;
+        let ctx = Ctx {
+            section: Some(&section.name),
+            ..Ctx::default()
+        };
+        let result = self.read_rows(crate::app::body_reads(&section.body)?, &ctx)?;
         Some(result.total.unwrap_or(result.rows.len() as u64))
     }
 
@@ -710,6 +713,10 @@ impl App {
         };
         let inner = Place {
             path: &path,
+            ctx: Ctx {
+                owner: Some(&path),
+                ..place.ctx
+            },
             record: false,
             ..*place
         };
@@ -837,7 +844,7 @@ impl App {
             Composite::Metric(metric) => vec![Line::from(self.metric_spans(metric, place))],
             Composite::Chart(chart) => self.chart_lines(chart, place),
             Composite::Board(board) => {
-                let rows = board_rows(self, board, place.ctx.section);
+                let rows = board_rows(self, board, &place.ctx);
                 let by = board.widget_by.as_deref().unwrap_or("type");
                 let cursor = self.ui(place.ui).cursor;
                 let mut lines = Vec::new();
@@ -1037,7 +1044,10 @@ impl App {
         };
         let request = self.request(reads, &place.ctx);
         let all = match self.read_state(&request) {
-            Some(ReadState::Ready(result)) => result.rows.clone(),
+            Some(ReadState::Ready(_)) => self
+                .read_rows(reads, &place.ctx)
+                .map(|result| result.rows.clone())
+                .unwrap_or_default(),
             Some(ReadState::Failed(error)) => return vec![Line::from(format!("failed: {error}"))],
             _ => return vec![Line::styled("loading…", dim())],
         };
@@ -1173,7 +1183,10 @@ impl App {
                     group = Some(current);
                 }
             }
-            let selected = state.selected.contains(&display(&row["id"]));
+            let selected =
+                state
+                    .selected
+                    .contains(&self.selection_key(row, Some(reads), place.ctx.section));
             let mark = if selected { "✓ " } else { "  " };
             let text = if cards {
                 let mut parts: Vec<String> = columns
@@ -1777,7 +1790,7 @@ impl App {
         let Some(reads) = &edges.reads else {
             return Vec::new();
         };
-        let Some(result) = self.rows_of(&self.request(reads, &place.ctx)) else {
+        let Some(result) = self.read_rows(reads, &place.ctx) else {
             return vec![Line::styled("edges loading…", dim())];
         };
         let spec = editor.nodes.as_ref();
@@ -1786,7 +1799,7 @@ impl App {
         let node_rows = nodes
             .reads
             .as_ref()
-            .and_then(|reads| self.rows_of(&self.request(reads, &place.ctx)))
+            .and_then(|reads| self.read_rows(reads, &place.ctx))
             .map(|result| result.rows.clone())
             .unwrap_or_default();
         let end = |row: &Value, field: &str| {
@@ -1811,8 +1824,7 @@ impl App {
 
     #[allow(clippy::too_many_lines)] // sparkline, table and metric forms
     fn chart_lines(&self, chart: &ess_ui::Chart, place: &Place<'_>) -> Vec<Line<'static>> {
-        let request = self.request(&chart.reads, &place.ctx);
-        let Some(result) = self.rows_of(&request) else {
+        let Some(result) = self.read_rows(&chart.reads, &place.ctx) else {
             return vec![Line::styled("loading…", dim())];
         };
         let kind = match &chart.chart {

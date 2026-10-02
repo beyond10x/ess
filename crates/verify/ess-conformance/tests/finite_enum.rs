@@ -1,4 +1,5 @@
 //! Closed input coverage must use the producer's six real values.
+mod support_go;
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{flatten, when, Decision, ScenarioStep, ScenarioValue};
 use ess_domain::{
@@ -391,6 +392,484 @@ fn invariant_filter_with_no_admitted_candidate_reports_zero_guard_trials() {
                     ess_conformance::synthesize::RefusalCause::GuardUnsatisfiable { tried: 0, .. }
                 ),
                 "{refusal:?}"
+            );
+        }
+    }
+}
+
+mod issue_298 {
+    use super::*;
+    use ess_conformance::{interpret::Interpreted, report::Status, AdmittedSuite, Runner};
+    use ess_domain::command::finite::{self, FieldGuard, StateGuard};
+    use ess_primitives::{facts::FactValue, predicate::Predicate};
+
+    fn boolean_model() -> String {
+        "format: ess/1\nsystem: reporting\nversion: v1\ndomain: reporting.core\ntypes:\n  - name: reporting.core.Flag\n    kind: newtype\n    of: Boolean\n  - name: reporting.core.WrappedFlag\n    kind: newtype\n    of: reporting.core.Flag\n  - name: reporting.core.Envelope\n    kind: struct\n    fields:\n      - {name: value, type: reporting.core.WrappedFlag}\nevents:\n  - name: reporting.core.Observed\n    fields: []\ncommands:\n  - name: reporting.core.Report\n    input:\n      - {name: pause, type: Boolean}\n    outcomes:\n      - name: paused\n        when: pause == true\n        emits: [reporting.core.Observed]\n      - name: resumed\n        when: pause == false\n        emits: [reporting.core.Observed]\n".into()
+    }
+
+    fn assert_executable(text: &str, expected: usize) -> EssIr {
+        let ir = assemble(text).unwrap();
+        let result = ess_conformance::synthesize::synthesize(&ir);
+        assert!(result.refusals.is_empty(), "{:?}", result.refusals);
+        assert_eq!(result.suite.scenarios.len(), expected);
+        let admitted = AdmittedSuite::from_suite(&result.suite).unwrap();
+        let report = Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, &Interpreted::for_model(ir.clone()));
+        assert_eq!(report.scenarios.len(), expected);
+        assert!(
+            report.scenarios.iter().all(|s| s.status == Status::Passed),
+            "{report:?}"
+        );
+        ir
+    }
+
+    #[test]
+    fn boolean_no_default_partition_has_two_typed_witnesses() {
+        let ir = assert_executable(&boolean_model(), 2);
+        let command = ir.commands().values().next().unwrap();
+        let guards: Vec<_> = command.outcomes.iter().filter_map(when).collect();
+        let cases = finite::analyze(
+            &ess_compiler::expression::Environment::new(&ir, &command.input),
+            &guards,
+        )
+        .unwrap();
+        assert_eq!(cases.len(), 2);
+        assert_eq!(
+            serde_json::to_string(&cases[0].values).unwrap(),
+            r#"{"pause":false}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&cases[1].values).unwrap(),
+            r#"{"pause":true}"#
+        );
+        let inputs = ess_conformance::witness::candidates(
+            &ir,
+            command,
+            &guards,
+            ess_conformance::witness::Distinction::PLAIN,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&inputs).unwrap(),
+            r#"[{"pause":false},{"pause":true}]"#
+        );
+    }
+
+    #[test]
+    fn boolean_transparent_wrapper_preserves_closed_domain() {
+        assert_executable(
+            &boolean_model().replace(
+                "name: pause, type: Boolean",
+                "name: pause, type: reporting.core.WrappedFlag",
+            ),
+            2,
+        );
+    }
+
+    #[test]
+    fn boolean_struct_path_preserves_closed_domain() {
+        let text = boolean_model()
+            .replace(
+                "name: pause, type: Boolean",
+                "name: pause, type: reporting.core.Envelope",
+            )
+            .replace("when: pause ==", "when: pause.value ==");
+        assert_executable(&text, 2);
+        for optional in [
+            text.replace(
+                "name: pause, type: reporting.core.Envelope",
+                "name: pause, type: Optional<reporting.core.Envelope>",
+            ),
+            text.replace(
+                "name: value, type: reporting.core.WrappedFlag",
+                "name: value, type: Optional<reporting.core.WrappedFlag>",
+            ),
+            boolean_model().replace(
+                "name: pause, type: Boolean",
+                "name: pause, type: Optional<Boolean>",
+            ),
+        ] {
+            assert!(assemble(&optional).is_err());
+        }
+    }
+
+    #[test]
+    fn mixed_enum_boolean_partition_covers_the_product() {
+        let text = model("      - name: pause\n        type: Boolean\n");
+        let mut joint = text.clone();
+        for (index, value) in VALUES.iter().enumerate() {
+            let original = format!("      - name: state-{index}\n        when: status == {value}\n        emits: [reporting.core.Observed]\n");
+            let mut branches = String::new();
+            for flag in [false, true] {
+                write!(branches, "      - name: state-{index}-{flag}\n        when:\n          all: [status == {value}, pause == {flag}]\n        emits: [reporting.core.Observed]\n").unwrap();
+            }
+            joint = joint.replace(&original, &branches);
+        }
+        assert_executable(&joint, 24);
+        let missing = joint.replace("      - name: state-0-false\n        when:\n          all: [status == Offline, pause == false]\n        emits: [reporting.core.Observed]\n", "");
+        let error = assemble(&missing).unwrap_err();
+        assert!(
+            error.contains("uncovered")
+                && error.contains("pause = false")
+                && error.contains("status = Offline"),
+            "{error}"
+        );
+        let overlap = joint.replace(
+            "all: [status == Offline, pause == true]",
+            "all: [status == Offline, pause == false]",
+        );
+        let error = assemble(&overlap).unwrap_err();
+        assert!(
+            error.contains("overlap") && error.contains("pause = false"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn boolean_membership_negation_and_truthiness_are_typed() {
+        for (yes, no) in [
+            ("pause != false", "pause != true"),
+            ("{pause: {any_of: [true]}}", "{pause: {none_of: [true]}}"),
+            ("pause", "{not: pause}"),
+            (
+                "{any: [pause == true, false]}",
+                "{all: [pause == false, true]}",
+            ),
+        ] {
+            assert_executable(
+                &boolean_model()
+                    .replace("pause == true", yes)
+                    .replace("pause == false", no),
+                2,
+            );
+        }
+        let ir = assemble(&boolean_model().replace("        when: pause == false\n", "")).unwrap();
+        let command = ir.commands().values().next().unwrap();
+        let reversed = Predicate::Compare {
+            left: ess_primitives::predicate::Operand::Literal(FactValue::Bool(true)),
+            op: ess_primitives::predicate::CompareOp::Eq,
+            right: ess_primitives::predicate::Operand::Fact("pause".parse().unwrap()),
+        };
+        let cases = finite::analyze(
+            &ess_compiler::expression::Environment::new(&ir, &command.input),
+            &[&reversed],
+        )
+        .unwrap();
+        assert!(cases[0].selected.is_empty());
+        assert_eq!(cases[1].selected, [0]);
+    }
+
+    #[test]
+    fn mixed_domain_bounds_remain_64_assignments_and_128_nodes() {
+        let mut fields = String::new();
+        for i in 0..7 {
+            writeln!(fields, "      - {{name: b{i}, type: Boolean}}").unwrap();
+        }
+        let text = boolean_model()
+            .replace("      - {name: pause, type: Boolean}", &fields)
+            .replace("pause == true", "b0 == true")
+            .replace("        when: pause == false\n", "");
+        let ir = assemble(&text).unwrap();
+        let command = ir.commands().values().next().unwrap();
+        let environment = ess_compiler::expression::Environment::new(&ir, &command.input);
+        let tautologies = (0..7)
+            .map(|i| Predicate::parse_expression(&format!("b{i} == true")).unwrap())
+            .collect::<Vec<_>>();
+        let six = Predicate::All(tautologies[..6].to_vec());
+        let seven = Predicate::All(tautologies.clone());
+        assert_eq!(finite::analyze(&environment, &[&six]).unwrap().len(), 64);
+        assert!(finite::analyze(&environment, &[&seven]).is_none());
+        let nodes = Predicate::All(vec![tautologies[0].clone(); 127]);
+        assert_eq!(finite::analyze(&environment, &[&nodes]).unwrap().len(), 2);
+        let too_many = Predicate::All(vec![tautologies[0].clone(); 128]);
+        assert!(finite::analyze(&environment, &[&too_many]).is_none());
+        let states = ["One".parse().unwrap(), "Two".parse().unwrap()].into();
+        let five = Predicate::All(tautologies[..5].to_vec());
+        assert_eq!(
+            finite::analyze_with_states(
+                &environment,
+                &[StateGuard {
+                    states: None,
+                    predicate: Some(&five)
+                }],
+                &states
+            )
+            .unwrap()
+            .len(),
+            64
+        );
+        assert!(finite::analyze_with_states(
+            &environment,
+            &[StateGuard {
+                states: None,
+                predicate: Some(&six)
+            }],
+            &states
+        )
+        .is_none());
+        assert_eq!(
+            finite::analyze_with_fields(
+                &environment,
+                &environment,
+                &[FieldGuard {
+                    fields: Some(&tautologies[0]),
+                    input: Some(&five)
+                }]
+            )
+            .unwrap()
+            .len(),
+            64
+        );
+        assert!(finite::analyze_with_fields(
+            &environment,
+            &environment,
+            &[FieldGuard {
+                fields: Some(&tautologies[0]),
+                input: Some(&six)
+            }]
+        )
+        .is_none());
+        for variants in [32, 33] {
+            let text = boolean_model().replace("types:\n", &format!("types:\n  - name: reporting.core.Mode\n    kind: enum\n    variants: [{}]\n", (0..variants).map(|i| format!("V{i}")).collect::<Vec<_>>().join(", ")))
+                .replace("    input:\n", "    input:\n      - {name: mode, type: reporting.core.Mode}\n")
+                .replace("        when: pause == false\n", "");
+            let ir = assemble(&text).unwrap();
+            let command = ir.commands().values().next().unwrap();
+            let guard = Predicate::All(vec![
+                Predicate::parse_expression("mode == V0").unwrap(),
+                Predicate::parse_expression("pause == true").unwrap(),
+            ]);
+            let cases = finite::analyze(
+                &ess_compiler::expression::Environment::new(&ir, &command.input),
+                &[&guard],
+            );
+            if variants == 32 {
+                assert_eq!(cases.unwrap().len(), 64);
+            } else {
+                assert!(cases.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn boolean_finite_witness_respects_wrapper_invariants() {
+        let text = boolean_model()
+            .replace(
+                "of: Boolean\n",
+                "of: Boolean\n    invariants: [value == true]\n",
+            )
+            .replace(
+                "name: pause, type: Boolean",
+                "name: pause, type: reporting.core.WrappedFlag",
+            );
+        let ir = assemble(&text).unwrap();
+        let result = ess_conformance::synthesize::synthesize(&ir);
+        assert_eq!(result.suite.scenarios.len(), 1);
+        let refusals: Vec<_> = result
+            .refusals
+            .iter()
+            .filter(|refusal| refusal.scenario.is_some())
+            .collect();
+        assert_eq!(refusals.len(), 1, "{:?}", result.refusals);
+        assert!(refusals[0]
+            .scenario
+            .as_ref()
+            .unwrap()
+            .to_string()
+            .ends_with("/resumed"));
+        assert!(matches!(
+            refusals[0].cause,
+            ess_conformance::synthesize::RefusalCause::GuardUnsatisfiable { tried: 1, .. }
+        ));
+        for step in &result.suite.scenarios.values().next().unwrap().steps {
+            if let ScenarioStep::ExecuteCommand { input, .. } = step {
+                assert_eq!(
+                    input["pause"],
+                    ScenarioValue::Literal {
+                        value: Node::Bool(true)
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn boolean_shared_proof_callers_preserve_default_semantics() {
+        let stored = include_str!("fixtures/stored-field-guards.yaml")
+            .replace("          predicate:\n            all:\n              - service == Express\n              - weight_kg > 20", "          predicate: service == Express")
+            .replace("      - name: dispatched", "      - name: duplicate-refusal\n        when_subject: {predicate: service == Express}\n        error: shipping.parcel.ExpressOverweight\n      - name: dispatched");
+        let related = include_str!("fixtures/related-guard-sign-in.yaml")
+            .replace("{name: demo.signin.ClientId, kind: newtype, of: String}", "{name: demo.signin.ClientId, kind: enum, variants: [Standard, Express]}")
+            .replace("redirect_client != input.client", "redirect_client == Express")
+            .replace("      - name: initiated", "      - name: duplicate-refusal\n        when_related: {via: input.tenant, predicate: redirect_client == Express}\n        error: demo.signin.NoRedirectEntry\n      - name: initiated");
+        let state = include_str!("fixtures/subject-state.yaml")
+            .replace("      - name: enriched", "      - name: duplicate-preserved\n        when_subject_state: Bridged\n        when: incoming == Ringing\n        updates: calls.core.Call\n        instance: call_id\n        emits: [calls.core.Observed]\n        sets: {note: input.note}\n      - name: enriched");
+        for (enumerated, boolean) in [
+            (
+                stored.clone(),
+                stored
+                    .replace(
+                        "kind: enum\n    variants: [Standard, Express]",
+                        "kind: newtype\n    of: Boolean",
+                    )
+                    .replace("service == Express", "service == true"),
+            ),
+            (
+                related.clone(),
+                related
+                    .replace(
+                        "kind: enum, variants: [Standard, Express]",
+                        "kind: newtype, of: Boolean",
+                    )
+                    .replace("redirect_client == Express", "redirect_client == true"),
+            ),
+            (
+                state.clone(),
+                state
+                    .replace(
+                        "kind: enum\n    variants: [Ringing, Unspecified]",
+                        "kind: newtype\n    of: Boolean",
+                    )
+                    .replace("incoming == Ringing", "incoming == true"),
+            ),
+        ] {
+            let error = assemble(&enumerated).unwrap_err();
+            assert!(error.contains("select 2 branches"), "{error}");
+            assemble(&boolean)
+                .unwrap_or_else(|error| panic!("existing Boolean/default policy changed: {error}"));
+        }
+    }
+
+    #[test]
+    fn boolean_shared_no_default_partitions_use_typed_values() {
+        let stored = include_str!("fixtures/stored-field-guards.yaml")
+            .replace("kind: enum\n    variants: [Standard, Express]", "kind: newtype\n    of: Boolean")
+            .replace("          predicate:\n            all:\n              - service == Express\n              - weight_kg > 20", "          predicate: service == true")
+            .replace("      - name: dispatched\n", "      - name: dispatched\n        when_subject: {predicate: service == false}\n");
+        let related = include_str!("fixtures/related-guard-sign-in.yaml")
+            .replace("{name: demo.signin.ClientId, kind: newtype, of: String}", "{name: demo.signin.ClientId, kind: newtype, of: Boolean}")
+            .replace("redirect_client != input.client", "redirect_client == true")
+            .replace("      - name: initiated\n", "      - name: initiated\n        when_related: {via: input.tenant, predicate: redirect_client == false}\n");
+        let state = include_str!("fixtures/subject-state.yaml")
+            .replace(
+                "kind: enum\n    variants: [Ringing, Unspecified]",
+                "kind: newtype\n    of: Boolean",
+            )
+            .replace("incoming == Ringing", "incoming == true")
+            .replace(
+                "      - name: enriched\n",
+                "      - name: enriched\n        when: incoming == false\n",
+            );
+        for text in [stored, related, state] {
+            assemble(&text).unwrap_or_else(|error| panic!("{error}"));
+        }
+    }
+
+    #[test]
+    fn boolean_extension_keeps_other_predicate_fragments_outside_the_proof() {
+        let ir = assemble(&model("")).unwrap();
+        let command = ir.commands().values().next().unwrap();
+        let env = ess_compiler::expression::Environment::new(&ir, &command.input);
+        for guard in [
+            Predicate::Truthy("status".parse().unwrap()),
+            Predicate::Defined("status".parse().unwrap()),
+        ] {
+            assert!(finite::analyze(&env, &[&guard]).is_none());
+        }
+        for replacement in ["String", "Integer", "Optional<Boolean>"] {
+            assert!(assemble(&boolean_model().replace(
+                "name: pause, type: Boolean",
+                &format!("name: pause, type: {replacement}")
+            ))
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn generated_go_runner_executes_boolean_partition() {
+        let ir = assemble(&boolean_model()).unwrap();
+        let result = ess_conformance::synthesize::synthesize(&ir);
+        assert!(result.refusals.is_empty());
+        let (rust, go) =
+            support_go::compare("finite-boolean", &result.suite, Interpreted::for_model(ir));
+        eprintln!("{}", go.go.log);
+        assert!(go.go.success, "{}", go.go.log);
+        let outcomes = support_go::assert_compared("finite-boolean", (rust, go));
+        assert_eq!(outcomes.len(), 2);
+        assert!(support_go::not_passed(&outcomes).is_empty());
+    }
+
+    #[test]
+    fn generated_typescript_runner_executes_boolean_partition_and_rejects_ignored_flag() {
+        use std::process::Command;
+        let ir = assemble(&boolean_model()).unwrap();
+        let result = ess_conformance::synthesize::synthesize(&ir);
+        assert!(result.refusals.is_empty());
+        let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("finite-boolean-ts-{}", std::process::id()));
+        for artifact in ess_conformance::ts::emit(&result.suite).unwrap() {
+            let path = root.join(artifact.path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, artifact.contents).unwrap();
+        }
+        let directory = root.join(ess_conformance::ts::PACKAGE);
+        // Match the existing runtime parity harness: transpilation runs executable semantics;
+        // TypeScript declaration checking is a separate repository lane.
+        std::fs::write(
+            directory.join("runtime-test.tsconfig.json"),
+            r#"{"extends":"./tsconfig.json","compilerOptions":{"types":[],"noCheck":true}}"#,
+        )
+        .unwrap();
+        let built = Command::new("tsc")
+            .args(["--project", "runtime-test.tsconfig.json"])
+            .current_dir(&directory)
+            .output()
+            .unwrap();
+        assert!(
+            built.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&built.stdout),
+            String::from_utf8_lossy(&built.stderr)
+        );
+        // Only a boundary adapter: branch selection is deliberately independent of the proof.
+        let driver = r"
+import test from 'node:test';
+import {run} from './dist/runtime.js';
+await test('boolean partition', t => run(t, () => ({
+ identity() { return {name:'boolean-fixture', version:'1'}; },
+ beginScenario() {}, endScenario() {},
+ executeCommand({input}) {
+   if (typeof input.pause !== 'boolean') throw new Error('Boolean witness required');
+   return {outcome: process.env.ESS_BOOLEAN_MUTANT === 'yes' || input.pause ? 'paused' : 'resumed', directEvents:[{event:'reporting.core.Observed', payload:{}}]};
+ }
+})));
+";
+        std::fs::write(directory.join("partition.test.mjs"), driver).unwrap();
+        for mutant in [false, true] {
+            let report = directory.join(format!("report-{mutant}.json"));
+            let output = Command::new("node")
+                .args(["--test", "partition.test.mjs"])
+                .env("ESS_BOOLEAN_MUTANT", if mutant { "yes" } else { "no" })
+                .env("ESS_REPORT_FORMAT", "2")
+                .env("ESS_REPORT_OUT", &report)
+                .current_dir(&directory)
+                .output()
+                .unwrap();
+            let log = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            eprintln!("TypeScript mutant={mutant}: {log}");
+            assert_eq!(output.status.success(), !mutant, "{log}");
+            let report: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(report).unwrap()).unwrap();
+            let passed = report["outcomes"]["passed"].as_array().map_or(0, Vec::len);
+            let failed = report["outcomes"]["failed"].as_array().map_or(0, Vec::len);
+            assert_eq!(
+                (passed, failed),
+                if mutant { (1, 1) } else { (2, 0) },
+                "{report}"
             );
         }
     }
