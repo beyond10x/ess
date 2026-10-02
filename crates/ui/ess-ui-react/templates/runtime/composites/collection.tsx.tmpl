@@ -46,8 +46,16 @@ export function Collection(props: {
   const data = useData(props.reads);
   const labelled = useLabelled(props.columns ?? []);
   const section = useSectionName();
-  const [selected, setSelected] = useState<Json[]>([]);
-  const [focused, setFocused] = useState<Json | undefined>(undefined);
+  const [heldSelection, setSelected] = useState<Json[]>([]);
+  const [heldFocus, setFocused] = useState<Json | undefined>(undefined);
+  const kept = new Map((data?.rows ?? []).map(row => [rowKey(row, props.rowKey), row]));
+  const selected = data?.filtered ? heldSelection.map(row => kept.get(rowKey(row, props.rowKey))).filter((row): row is Json => row !== undefined) : heldSelection;
+  const focused = data?.filtered && heldFocus !== undefined ? kept.get(rowKey(heldFocus, props.rowKey)) : heldFocus;
+  useEffect(() => {
+    if (heldSelection.length !== selected.length) setSelected(selected);
+    if (heldFocus !== undefined && focused === undefined) setFocused(undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stableKey(selected), focused === undefined]);
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [clientSort, setClientSort] = useState<{ by: string; dir: "asc" | "desc" } | undefined>(
     props.sort ? { by: props.sort.by, dir: props.sort.dir ?? "asc" } : undefined,

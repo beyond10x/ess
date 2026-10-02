@@ -428,20 +428,28 @@ function apply(rows: Json[], event: ChannelEvent, spec: LiveSpec): Json[] {
 }
 
 /** A read with a channel's events applied, and stale while the channel is not live. */
-export function useLive(read: ReadState, spec: LiveSpec, session?: unknown): ReadState {
+export function useLive(read: ReadState, spec: LiveSpec, session?: unknown, keep?: (row: Json) => boolean): ReadState {
   const [rows, setRows] = useState<Json[] | null>(null);
   const [newCount, setNewCount] = useState(0);
   const channelValues = useChannels([spec.channel], { [spec.channel]: session });
   const sessionKey = stableKey(session ?? null);
   const lifecycle = channelValues[spec.channel]?.lifecycle as Lifecycle | undefined;
   const base = useRef(read.rows);
+  const source = useRef(read.source);
+  const sameSource = source.current === read.source;
   const pending = useRef<ChannelEvent[]>([]);
+  const away = useRef<Json[]>([]);
+  const keepRef = useRef(keep);
+  keepRef.current = keep;
   const readKey = stableKey(read.rows);
   useEffect(() => {
     base.current = read.rows;
+    if (source.current !== read.source) pending.current = [];
+    source.current = read.source;
     setRows(null);
     setNewCount(0);
-  }, [readKey]);
+    away.current = [];
+  }, [readKey, read.source]);
   const paramsRef = useRef(read.params);
   paramsRef.current = read.params;
   const refetch = useRef(read.refetch);
@@ -459,6 +467,33 @@ export function useLive(read: ReadState, spec: LiveSpec, session?: unknown): Rea
       const events = pending.current;
       pending.current = [];
       const pagedAway = Number(paramsRef.current.page ?? 1) > 1;
+      if (keepRef.current) {
+        if (spec.effect === "refetch") { refetch.current(); return; }
+        setRows((current) => {
+          let next = current ?? base.current;
+          const key = spec.match ?? "id";
+          for (const event of events) {
+            const payload = event.payload;
+            const identity = isObject(payload) ? payload[key] : undefined;
+            const same = (row: Json) => identity !== undefined && isObject(row) && row[key] === identity;
+            const held = next.find(same) ?? away.current.find(same);
+            const candidate = isObject(held) && isObject(payload) ? { ...held, ...payload } : payload;
+            if (spec.onlyIf && !truthy(evaluate(spec.onlyIf, { row: candidate, params: paramsRef.current, matches: () => matches(candidate, paramsRef.current) }))) continue;
+            const inserts = held === undefined && (spec.effect === "insert_top" || spec.effect === "insert_or_patch");
+            if (inserts && !keepRef.current?.(candidate)) continue;
+            if (away.current.some(same)) {
+              away.current = spec.effect === "remove_row" ? away.current.filter(row => !same(row)) : away.current.map(row => same(row) ? candidate : row);
+            } else if (inserts && pagedAway && spec.whenPagedAway !== "insert") {
+              if (spec.whenPagedAway !== "ignore") away.current.push(candidate);
+            } else {
+              next = apply(next, event, spec);
+            }
+          }
+          setNewCount(away.current.filter(row => keepRef.current?.(row)).length);
+          return next;
+        });
+        return;
+      }
       if (pagedAway && spec.whenPagedAway === "count_new") {
         setNewCount((count) => count + events.length);
         return;
@@ -477,7 +512,7 @@ export function useLive(read: ReadState, spec: LiveSpec, session?: unknown): Rea
         return;
       }
       if (
-        spec.onlyIf &&
+        (!keepRef.current || spec.effect === "refetch") && spec.onlyIf &&
         !truthy(
           evaluate(spec.onlyIf, {
             row: event.payload,
@@ -513,5 +548,5 @@ export function useLive(read: ReadState, spec: LiveSpec, session?: unknown): Rea
     lifecycle === "stale" ||
     lifecycle === "closed" ||
     (lifecycle === "reconnecting" && channels[spec.channel]?.staleAfter === undefined);
-  return { ...read, rows: rows ?? read.rows, stale, newCount };
+  return { ...read, rows: sameSource ? rows ?? read.rows : read.rows, stale, newCount: sameSource ? (keep ? away.current.filter(keep).length : newCount) : 0 };
 }

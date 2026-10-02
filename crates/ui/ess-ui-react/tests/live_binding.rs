@@ -116,19 +116,19 @@ fn fnv(text: &str) -> u64 {
     hash
 }
 
-/// The unbound desk after the consolidated UI fixes: confirm openers return their result and
-/// run once, while the remaining live-binding template projections retain their plain bytes.
-/// The whole-project digest also covers the shared expression, row and field fixes.
+/// The unbound desk retains the consolidated confirm behavior. Read predicates add shared raw
+/// requests with fresh refetches and source isolation; the whole-project digest additionally
+/// covers filtering, live candidate admission, menus and hidden-selection pruning.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
     ("src/runtime/actions.tsx", 0x1440_0f25_3b4c_8e3b),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0x752b_3696_9db6_fbcc),
-    ("src/runtime/data.ts", 0x27ef_3e5b_6f5b_b68c),
+    ("src/runtime/data.ts", 0x6e29_be89_c0e8_5da2),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x6dae_633a_08fe_4f60;
+const PLAIN_PROJECT: u64 = 0x248f_5b40_a796_0d09;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

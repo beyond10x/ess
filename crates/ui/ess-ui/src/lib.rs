@@ -20,6 +20,7 @@
 
 pub mod binding;
 mod expand;
+pub mod filter;
 mod locate;
 mod model;
 mod path;

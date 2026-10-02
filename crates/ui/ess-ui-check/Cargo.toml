@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 ess-ui = { path = "../ess-ui" }
 ess-domain.workspace = true
+ess-primitives.workspace = true
 ess-compiler.workspace = true
 ess-gen.workspace = true
 clap.workspace = true

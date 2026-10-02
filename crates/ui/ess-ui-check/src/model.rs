@@ -69,6 +69,7 @@ pub(crate) struct View {
     params: Vec<Param>,
     /// Its row fields, by name and by wire name: the variants each holds when it is an enum.
     pub(crate) fields: Fields,
+    pub(crate) filter: Option<ess_primitives::predicate::Predicate>,
 }
 
 /// One declared view parameter: its name, and whether a read must bind it — every parameter but
@@ -211,6 +212,7 @@ impl Model {
                             domain: view.domain.clone(),
                             params,
                             fields: fields_of(ir, &view.fields),
+                            filter: view.filter.clone(),
                         },
                     )
                 })

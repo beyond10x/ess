@@ -361,7 +361,7 @@ constructs:
       param:     {type: name, required: true, note: page param filled from the row id}
       label:     {type: expr, default: row.label, note: entry text}
       synonyms:  {type: {list: string}, note: extra search words}
-      filter:    {type: expr, note: rows to skip}
+      filter:    {type: expr, note: rows kept when the predicate is true}
     example: {from_view: saved_views.Mine, page: deals.saved, param: view_id, label: row.label, synonyms: [filter, view]}
 
   NavEntry:
@@ -1178,12 +1178,14 @@ constructs:
     constraints:
       - {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
       - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
+      - {when: {filter: present}, requires: {paging: {one_of: [client, none]}}, else: refuse}
     fields:
       view:        {type: {ref: view}, note: ESS view name}
       placeholder: {type: name, note: a view name not yet bound to the model}
       fixture:     {type: string, note: fixture file answering the placeholder}
       key:         {type: name, note: "the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id`"}
       params:      {type: {map: {key: name, value: expr}}, note: view params bound to state}
+      filter:      {type: expr, note: "Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging."}
       paging:      {type: {enum: [server, client, cursor, append, none]}, default: none, note: who pages}
       debounce:    {type: duration, note: coalesce param changes before reading}
       refresh:     {type: {one_of: [duration, expr]}, note: poll interval}
@@ -1656,3 +1658,10 @@ checks:
     - {id: theme_choice,        subject: theme, must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes], severity: error}
     - {id: tone_map_refs,       subject: "**.tone_by.tones", must_resolve: {ref: tone_map}, severity: error}
     - {id: tone_map_unused,     subject: "tone_maps.*", must: be_named_by_a_tone_by, severity: warning}
+    - {id: filter_expr, subject: "reads.filter and dynamic menu filter", must: parse_as_boolean_predicate, severity: error}
+    - {id: filter_roots, subject: "reads.filter and dynamic menu filter", must: read_only_row_params_state_shell_args_without_calls, severity: error}
+    - {id: filter_paths, subject: "reads.filter and dynamic menu filter", must: resolve_declared_paths, severity: error}
+    - {id: filter_place, subject: "reads.filter", must: belong_to_listing_or_choice, severity: error}
+    - {id: filter_paging, subject: "reads.filter", must: use_client_or_none_paging, severity: error}
+    - {id: filter_over_param, subject: "reads.filter", must: prefer_existing_server_parameter, severity: warning}
+    - {id: filter_export, subject: "export.params", must: not_claim_to_copy_client_filter, severity: warning}

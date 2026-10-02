@@ -1549,3 +1549,150 @@ fn group_order() {
     );
     assert_eq!(tripped(&report, "group_order").len(), 2, "{report:#?}");
 }
+
+fn filtered_page(filter: &str, extra: &str) -> String {
+    page(&format!("{{kind: detail_page, title: P, params: {{id: string}}, sections: [{{name: list, component: collection, reads: {{view: t.All, filter: {filter}, {extra}}}}}]}}"))
+}
+
+#[test]
+fn filter_expr() {
+    for expression in ["row.enabled", "'row.id =='", "'row.id in params.id'"] {
+        trips(
+            &filtered_page(expression, ""),
+            "filter_expr",
+            "pages/p/sections/list/reads/filter",
+        );
+    }
+    let valid = report(&filtered_page(
+        "'not (row.id != params.id) and row.stage in [open, active]'",
+        "",
+    ));
+    assert!(tripped(&valid, "filter_expr").is_empty(), "{valid:?}");
+}
+
+#[test]
+fn filter_roots() {
+    for expression in [
+        "'actor.id == row.owner'",
+        "'section.list.selection != null'",
+        "'matches(params)'",
+    ] {
+        trips(
+            &filtered_page(expression, ""),
+            "filter_roots",
+            "pages/p/sections/list/reads/filter",
+        );
+    }
+}
+
+#[test]
+fn filter_paths() {
+    for expression in [
+        "'row.id == params.missing'",
+        "'row.id == state.missing'",
+        "'row.id == shell.missing'",
+    ] {
+        trips(
+            &filtered_page(expression, ""),
+            "filter_paths",
+            "pages/p/sections/list/reads/filter",
+        );
+    }
+}
+
+#[test]
+fn filter_place() {
+    let text = filtered_page("'row.id == params.id'", "")
+        .replace("component: collection", "component: record");
+    trips(&text, "filter_place", "pages/p/sections/list/reads/filter");
+}
+
+#[test]
+fn filter_paging() {
+    for mode in ["server", "cursor", "append"] {
+        trips(
+            &filtered_page("'row.id == params.id'", &format!("paging: {mode}")),
+            "filter_paging",
+            "pages/p/sections/list/reads/filter",
+        );
+    }
+    for mode in ["client", "none"] {
+        assert!(tripped(
+            &report(&filtered_page(
+                "'row.id == params.id'",
+                &format!("paging: {mode}")
+            )),
+            "filter_paging"
+        )
+        .is_empty());
+    }
+}
+
+#[test]
+fn filter_export() {
+    let text = filtered_page("'row.id == params.id'", "").replace("title: P,", "title: P, header: {actions: [{name: download, export: {reads: t.All, as: csv, params: same_as(list)}}]},");
+    trips(
+        &text,
+        "filter_export",
+        "pages/p/header/actions/download/export/params",
+    );
+}
+
+#[test]
+fn filter_over_param() {
+    let root = crate_dir().join("tests/fixtures/model");
+    let read = |file: &str| std::fs::read_to_string(root.join(file)).unwrap();
+    let mut stock = read("domains/stock.yaml");
+    stock.push_str("\n  - name: shop.stock.Filterable\n    source: shop.stock.Item\n    consistency: read_your_writes\n    params: [{name: wanted, type: Optional<String>}]\n    filter: label == param.wanted\n    fields: [{name: label, type: String}]\n");
+    let sources = [
+        ("system.yaml", read("system.yaml")),
+        ("components.yaml", read("components.yaml")),
+        ("domains/stock.yaml", stock),
+        ("domains/audit.yaml", read("domains/audit.yaml")),
+    ]
+    .map(|(label, text)| (label.to_owned(), text));
+    let model = model_from_sources(&sources, Path::new("shop")).unwrap();
+    let text = filtered_page("'row.label == params.id'", "").replace("t.All", "stock.Filterable");
+    let report = report_with(&text, Some(&model), &Options::default());
+    let finding = trips_in(
+        &report,
+        "filter_over_param",
+        "pages/p/sections/list/reads/filter",
+    );
+    assert!(finding.message.contains("wanted"), "{finding:?}");
+}
+
+#[test]
+fn filters_check_model_rows_menu_scope_and_all_unsupported_loads() {
+    let source = filtered_page("'row.missing == yes'", "").replace("t.All", "stock.Items");
+    trips_in(
+        &report_with(&source, Some(&model()), &Options::default()),
+        "filter_paths",
+        "pages/p/sections/list/reads/filter",
+    );
+    for kind in ["record", "metric"] {
+        trips(
+            &filtered_page("'row.id != null'", "")
+                .replace("component: collection", &format!("component: {kind}")),
+            "filter_place",
+            "pages/p/sections/list/reads/filter",
+        );
+    }
+    let form = filtered_page("'row.id != null'", "")
+        .replace("component: collection", "component: form, does: t.Save")
+        .replace("reads:", "loads:");
+    trips(&form, "filter_place", "pages/p/sections/list/loads/filter");
+    let action = page("{kind: detail_page, title: P, header: {actions: [{name: edit, loads: {view: t.All, filter: row.id != null}, opens: edit}]}, sections: []}");
+    trips(
+        &action,
+        "filter_place",
+        "pages/p/header/actions/edit/loads/filter",
+    );
+    let menu = doc(&[("navigation", "{home: p, sections: [{name: all, pages: {from_view: t.All, page: p, param: id, filter: row.id == params.id}}]}")]);
+    trips(
+        &menu,
+        "filter_paths",
+        "navigation/sections/all/from_view/filter",
+    );
+    assert!(ess_ui::load_str(&doc(&[("shells", "{app: {regions: {main: {kind: page_outlet}}, preload: {policy: before_first_page, views: [{view: t.All, filter: row.id != null}]}}}")])).is_err());
+}

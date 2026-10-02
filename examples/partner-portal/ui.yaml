@@ -204,7 +204,7 @@ pages:
       - name: pipeline
         component: chart
         chart: bar
-        reads: {view: deals.StageTotals, params: {window: state.window}}
+        reads: {view: deals.StageTotals, params: {window: state.window}, filter: row.count != 0}
         x: stage
         series: [count, value]
         degrades: {no_charts: table}
