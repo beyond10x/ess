@@ -192,9 +192,43 @@ fn view_path() -> String {
         .path
 }
 
-/// Where this test binary builds, under Cargo's own scratch directory rather than `/tmp`.
+/// Where this process builds. Nextest runs each case in a separate process, so its build tree
+/// and copied executable must not be overwritten or removed by another case.
 fn scratch(label: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("view-params-served-{label}"))
+    Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("view-params-served-{}-{label}", std::process::id()))
+}
+
+#[test]
+fn rebuilding_in_another_process_preserves_this_process_scratch() {
+    const CHILD: &str = "ESS_VIEW_PARAMS_SCRATCH_CHILD";
+    let root = scratch("process-isolation");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("scratch directory");
+    let marker = root.join("marker");
+    if std::env::var_os(CHILD).is_some() {
+        std::fs::write(&marker, "child").expect("child marker");
+        std::fs::remove_dir_all(&root).expect("remove child probe scratch");
+        return;
+    }
+    std::fs::write(&marker, "parent").expect("parent marker");
+    let output = Command::new(std::env::current_exe().expect("test executable"))
+        .args([
+            "--exact",
+            "rebuilding_in_another_process_preserves_this_process_scratch",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .output()
+        .expect("child test runs");
+    reported("scratch isolation child", &output);
+    assert!(output.status.success(), "child prepares its scratch");
+    assert_eq!(
+        std::fs::read_to_string(&marker).expect("parent marker survives"),
+        "parent",
+        "a nextest subprocess must not replace another process's build tree"
+    );
+    std::fs::remove_dir_all(root).expect("remove probe scratch");
 }
 
 fn write(synthesis: &Synthesis, directory: &Path) {

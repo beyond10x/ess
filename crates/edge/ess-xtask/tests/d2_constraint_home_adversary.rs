@@ -421,34 +421,57 @@ fn the_home_page_carries_no_completeness_claim_about_copies_of_d2() {
     );
 }
 
-/// The Go realization names a test that does not exist, and that is pinned until somebody fixes it.
-///
-/// `examples/gatepass-go-realization/linker.go:14` tells its reader that
-/// `TestTheLinkersObligationListIsExactlyThePlans` holds the obligation list equal to
-/// `generated/go/gatepass/plan.json`. No such identifier is defined anywhere in this repository,
-/// and `git show 1a2effd6` has the comment byte-identical at the wave base — so this is a
-/// pre-existing defect, filed as its own story rather than fixed under a documentation unit.
-/// Asserting today's state keeps it visible: the case goes red the moment the test is written or
-/// the comment is removed, and that is exactly when the story should close.
+/// The Go realization's obligation claim names a real test and matches the generated plan.
 #[test]
-fn the_go_realizations_named_test_is_still_missing_and_is_filed_as_its_own_story() {
-    const NAMED: &str = "TestTheLinkersObligationListIsExactlyThePlans";
-
+fn the_go_realizations_named_test_exists_and_its_obligations_match_the_plan() {
+    const NAMED: &str = "the_go_linker_owes_exactly_the_plans_obligations";
+    const TEST: &str = "examples/gatepass-realization/tests/conformance.rs";
     let root = workspace_root();
-    let listed = git_listed_files(&root);
-
-    let comment_still_names_it = read(&root, "examples/gatepass-go-realization/linker.go")
-        .is_some_and(|text| text.contains(NAMED));
-    let definition = format!("func {NAMED}(");
-    let defined_somewhere = listed.iter().any(|candidate| {
-        candidate.ends_with(".go")
-            && read(&root, candidate).is_some_and(|text| text.contains(&definition))
-    });
-
+    let linker = read(&root, "examples/gatepass-go-realization/linker.go").expect("Go linker");
     assert!(
-        comment_still_names_it && !defined_somewhere,
-        "state changed: linker.go names the test = {comment_still_names_it}, it is defined = \
-         {defined_somewhere}. Both halves were true when this was pinned on 2026-09-11. Close the \
-         story for the missing Go test lane and delete this case."
+        linker.contains(NAMED) && linker.contains(TEST),
+        "the linker's obligation claim must point to its executable test"
+    );
+    assert!(read(&root, TEST)
+        .expect("named test file")
+        .contains(&format!("#[test]\nfn {NAMED}()")));
+    let plan: serde_json::Value = serde_json::from_str(
+        &read(&root, "generated/go/gatepass/plan.json").expect("generated Go plan"),
+    )
+    .expect("plan JSON");
+    let mut owed: Vec<_> = plan["capabilities"]
+        .as_array()
+        .expect("capabilities")
+        .iter()
+        .filter(|capability| capability["disposition"]["disposition"] == "obligation")
+        .map(|capability| {
+            (
+                capability["kind"]
+                    .as_str()
+                    .expect("kind")
+                    .replace('_', " ")
+                    .replace("behavior", "behaviour"),
+                capability["source"].as_str().expect("source").to_owned(),
+            )
+        })
+        .collect();
+    let list = linker
+        .split_once("var Obligations = [][2]string{\n")
+        .and_then(|(_, rest)| rest.split_once("\n}"))
+        .expect("linker obligation list")
+        .0;
+    let mut declared: Vec<_> = list
+        .lines()
+        .map(|line| {
+            let quoted: Vec<_> = line.split('"').skip(1).step_by(2).collect();
+            assert_eq!(quoted.len(), 2, "each obligation names a kind and source");
+            (quoted[0].to_owned(), quoted[1].to_owned())
+        })
+        .collect();
+    owed.sort();
+    declared.sort();
+    assert_eq!(
+        declared, owed,
+        "the linker resolves exactly the owed capabilities"
     );
 }
