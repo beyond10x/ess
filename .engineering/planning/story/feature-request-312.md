@@ -30,6 +30,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/admission.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/count_json.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/evidence.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go
@@ -42,7 +44,13 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize
 - confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/singleton.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts
 - confidence: cited
@@ -50,10 +58,12 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/support_versions/mod.rs
+- confidence: cited
   path: crates/verify/ess-diff/src/impact.rs
 - confidence: inferred
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 29
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T21:59:23Z", actor: "human:timo", revision: 16, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T21:59:24Z", actor: "human:timo", revision: 17, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -126,3 +136,73 @@ Owner bot commit c3556bf49ed0a5372536c210c3e24a5d35833a7d is integrated as 13e40
 First review caused actual source correction for attribute-free and attributed caller-insensitive same-command arrangements. Caller-sensitive upsert remains unfinished, so no claim that the full finding or story is resolved. Root owns canonical producer regeneration, format expectation migration and integrated checks. Full story stays active through remaining acceptance.
 
 Owner read-only continuation brief target/backlog-input/312-hybrid-continuation-brief.md SHA45c153c7cc6f7ed127a3ba03dc263dc25f606463f6f56384ad2d805de32bc85b identifies a narrow caller-valued hybrid when all rewritten First/Second conditions compare equal. General caller-sensitive guards require separate arrangement and acting command interpretations per invocation: evaluate First creation eligibility with First input/absent-or-related facts, then Second acting eligibility against the actual typed First-created row. Changing actor bytes after selecting an outcome is not acceptable. Root requests concrete full-remaining design/scoping before authorizing further production edits; this is continuation of existing story acceptance, not a reduced acceptance set.
+
+# #312 continuation: caller-sensitive same-command arrangements
+
+Read-only design, 2026-10-03. Based on committed c3556bf49 (integrated by root as 13e40c33f9). No production edits or new runtime results are claimed. The earlier hybrid brief remains retained at initial-state tree target/backlog-input/312-hybrid-continuation-brief.md; this general design supersedes its guard-equality restriction.
+
+## Decision
+
+Use two complete typed interpretations of the same source model, one for arranging invocations and one for acting invocations. Do not splice First creation writes into a Second command. The full First command, including all competing guards, inputs, related-row requirements and writes, must select each arrangement outcome. The full Second command must select the acting outcome against the row actually left by First. Both interpretations retain identical command names and model structure; caller rewriting changes only typed value sources and predicate operands.
+
+The current planner already separates most of these concerns. Its input `ir` supplies arrangement drivers; its separate `command` and `outcome` arguments supply the branch under test. This permits reuse of its guarded searches rather than introducing an interpreter or guessing new assertions.
+
+## Concrete seam and typed scope
+
+Add a private invocation-planning context near `synthesize::caller` with explicit arrangement and acting model references, plus a typed role/credential assignment. Illustrative names: `InvocationModels { arrangement, acting }` and `InvocationPhase::{Arrange, Act}`. An ordinary synthesis delegates through a context with both references equal. A mixed run uses First's complete rewritten IR for arrangement and Second's complete rewritten IR for acting. No serialized scenario member, format bump, runtime capability or interpreter change is required.
+
+Separate scenario-family enumeration from arrangement lookup: the focused family enumerates the acting model's commands/outcomes while its searches receive the arrangement model and the explicit acting command/outcome. Keep original source provenance and unchanged type/entity/view definitions. Make this distinction visible in the helper/API; do not silently pass differently interpreted references into a parameter still described as one model.
+
+1. `src/synthesize/caller.rs`: reuse `Callers`, `written`, `mark`, `append_independent`, and identity drawing. Replace the caller-sensitive blanket note in `cross_single_command` with focused per-invocation synthesis. Independently plan First->Second and Second->First. Do not derive the reverse run by changing credentials on an existing run. Enumerate all source acting outcomes, including outcomes absent from the all-First suite, and retain each under the outcome actually selected. Never relabel a source refusal as a successful update.
+2. `src/synthesize.rs`: expose the model split at `synthesize_plain`/focused family dispatch, `outcome_scenario`, `exercise_as`, `run_as`, `exercise_run`, lifecycle/state-refusal/invariant entry points. The structural `Run { setup, invoke, before_settled, settled }` is the main role boundary. `prepare_subject`, `arrange_first`, `arrange`, `advance`, `created`, `created_owned`, and `invoke` continue searching First's drivers. `reach`, `selected_in_state`, `arranged_as`, and assertion construction receive Second's explicit command/outcome. `settled` computes Second's writes from First's actual settled facts.
+3. `src/synthesize/subject_fact.rs`: preserve the existing split. `search_under` obtains creators/drivers from `ir.drivers()`; `arranged_row`/`prepare` close over the explicit acting command; `reach_linked`/`selects` evaluate that command against each actual First arrangement. `creations` already validates alternate candidate inputs with `input_selects` on the creator command before accepting them. Keep that check on First's creator. `boundaries`, `send_for_row`, refusal witnesses and absent-row helpers emit additional acting invocations and must carry the explicit Act role when they assemble those steps.
+4. `src/synthesize/related_guard.rs`: likewise `prepare`/`prepare_at`/`arranged_at` search related and subject rows through First IR, while `selects` examines the explicit Second command and its input predicates. Creator `drive`/`drive_on` must continue using First's full Driver, including First's competing input/related predicates. The helper near `search_rows` that emits direct command steps needs an explicit role for whichever phase called it.
+5. `src/synthesize/existence.rs`: this is the genuine exception requiring an API correction, not merely passing a different IR. `segment` currently takes one command for both its `creating_input`/Driver and its later refused invocation. Split it into a First creator reference and a Second acting reference. `creations`, `creating_input`, `identity_at`, `created`, and any reconstruction of the original creating invocation use First. Select the refusal/input against Second, then bind the exact same identity. `existing_instance`, `refusals_on_a_stored_row`, `arranged_refusal`, and `held_state_refusals` must preserve this distinction. `recreation`/`recreated` contains a later replay of the creation: that invocation is First again, not automatically Second because it is third in the vector.
+
+Credentials must be attached while these boundaries are still known. Mark arrangement blocks as Arrange and acting blocks as Act before flattening `Run::steps`; also do so for the direct emitters in subject_fact, related_guard and existence. Additional view-neighbor setup belongs to Arrange; an actual repeated command whose post-state behavior is under test belongs to Act; recreation belongs to its explicit creator role. A small typed helper can stamp the existing `actor`/`caller` fields, so no private phase markers need to escape into the public suite. Do not recover phase from command name or ordinal after flattening. Thread the context only to family/block composition and direct invocation emitters; the bounded row-search engine can continue taking the arrangement IR without a new generic planner abstraction.
+
+Audit supplementary paths `view_expectations`, `deletion_witness`, `run_state_refusal`, `run_replay`, `subject_fact::boundaries` and related boundaries before declaring this general: their extra calls must have the interpretation that generated their inputs/assertions. This is an implementation checklist, not permission to suppress those features on mixed scenarios.
+
+## Why guarded upserts are sound under this split
+
+Example: add `bad-principal` input refusal `input.label != caller.principal` before PutItem's existing updated/unknown-instance-created pair; store `{caller: principal}` in label. First creates with label equal to First.principal. Second acts on that exact item_id with label equal to Second.principal. First creation cannot borrow Second's truth: its `reach`/creation candidate check sees First's full command. Second's selection cannot borrow First's truth: its explicit command is rewritten with Second's principal. The captured identity links the two invocations while the settled label initially remains First.principal. The resulting payload/state expectation is Second.principal only after Second's successful write.
+
+A stored-owner variant may instead select a source refusal for Second (`when_subject: ... != caller.principal`). The planner must retain the First row and select that refusal, then assert no events and preservation of First's row. If Second can reach the update only after changing an admitted input, the existing candidate search may choose that input. It must never change a previously stored First fact merely to make the desired update reachable.
+
+For related guards, First's creator arranges and validates its own related prerequisites. The Second acting search sees the actual arranged related facts, including owner bindings. Unknown facts stay unknown and produce the existing bounded-search explanation. A guarded source form must compile first; do not claim unsupported combinations of condition syntax as admitted test cases.
+
+Witness cache safety is already present: `src/witness_memo.rs::held` requires pointer identity with the command stored in that IR. A Second explicit command searched against First IR cannot hit First's memoized answer. Preserve this predicate and add a regression which would fail if First and Second input guard witnesses were confused. Optimizing the Second cache is unnecessary for the first implementation.
+
+## Red-capable fixtures and actual execution matrix
+
+Keep the measured core tests/evidence unchanged as history. Add focused Rust regression tests (or extend `tests/adversary_287_pass1.rs` and the existing paired fixture harness) which first compile the admitted source and then fail on the current blanket same-command gap. New executable test code is Rust; generated Go/TS fixture text follows the existing repository template convention.
+
+Required source cases:
+
+- Minimal caller-valued PutItem from the existing `caller_valued_upsert_records_the_remaining_per_invocation_witness_gap`: same item_id, First value at creation, Second value at update, independently reversed roles.
+- Input-guarded PutItem as above: require different First/Second principal-matching input labels, including a competing input refusal before existence. Assert every invocation's supplied label agrees with its own credential; run against a target that evaluates the actual source guard.
+- Stored-field caller-sensitive upsert: create under First ownership; source-selected Second refusal, row unchanged; and an admitted branch/input allowing a successful cross-caller update, where source permits it. These are separate source behaviors, not a requirement to force update through an ownership refusal.
+- Related-row guarded upsert: First creator prerequisites plus Second acting selection, with a negative related predicate/input boundary. Reuse an admitted existing related-guard fixture and add the caller-valued source/input guard; compile acceptance before claiming coverage.
+- Create-or-refuse BookSlot: First's guarded creation, Second's existing_instance refusal, input-refusal precedence on a stored row, and recreation using the correct creator credentials.
+- Optional/default input and a further stored/related boundary: prove supplementary runs retain phase assignments rather than only the main two calls. Existing attribute-free/caller-insensitive same-command cases remain green.
+
+For the same serialized synthesized suites, run native Rust Runner, generated Go runner, generated TypeScript runner and actual WASM/browser bridge. Healthy target must pass every selected scenario with zero skipped/refused runtime outcomes. Fault modes should include: partitions rows by caller (Second incorrectly creates/loses the row); permits only one hard-coded caller; writes a hard-coded principal; ignores the source stored-owner refusal; evaluates a creator's guard using the later caller; and cannot honor the empty logical namespace. Compare exact outcome/status counts and diagnostic code sets symmetrically, as the core paired test now does. Inspect exact identity equality, source outcome references, credential payloads and First/Second stored values, not only log membership.
+
+The existing actual CLI/Firefox initial-state-display checks need rerunning only if their output/fixture changes. Metadata format stays34/35. Required release Go toolchain remains a gate obligation; local Go1.27 results must not be presented as Go1.25.10 validation.
+
+## Restrictions: semantic facts versus implementation gaps
+
+- No two distinguishable eligible credentials under the declared types/grants: a semantic absence of the requested pair, with precise actor/type evidence. Attribute presence alone is never this reason.
+- Source ownership guards intentionally refuse the second caller: an executable mixed refusal witness, not missing coverage or permission to fabricate success.
+- Singleton identity or exhausted finite identities: can forbid appending a second independent arrangement in the same scenario. It does not forbid the first mixed shared-row witness. Keep the existing distinct unswapped explanation when reversal cannot compose.
+- Aggregate/count/rank assertions, retained replay, fixture prelude and periodic checks currently block `append` because the second run cannot safely reuse absolute observations/state. This is an existing composition limitation, not proof that mixed invocation synthesis is semantically impossible. Preserve a correct mixed first run and precise unswapped note; do not call these unsupported caller semantics.
+- Search-budget exhaustion, unknown stored values, cyclic/unavailable arrangement routes and missing phase plumbing are implementation/witness limitations. Name the actual cause and bounds; do not assert mathematical unreachability. Full #312 cannot be closed merely by replacing the blanket caller-sensitive note with another implementation-gap note for these now-scoped admitted cases.
+- Browser step admission and current source-format admission remain closed. This change adds no blind browser step enablement and no interpreter edits.
+
+## Completion boundary for this continuation
+
+Root records this design and authorizes production work before edits. Implement and obtain actual red/green for the admitted cases above, preserve previous evidence, freeze source for independent review, run focused strict lint and actual paired runtimes, and bot-commit. Parent remains sole AEP/integration/release writer. The core commit is valid and integrated; #312 remains nonterminal until this scoped caller-sensitive gap and its review findings are resolved.
+
+## Coordinator acceptance
+
+Accepted continuation of existing active story under the full-backlog mandate. Owner recover_312 resumes its managed initial-state tree from c3556bf49; root is migrating fixtures in the integration tree, so owner must not edit canonical fixtures or unrelated format-only tests. Implementation scope is the five synthesis modules above, existing adversary_287_pass1 and support_initial_state runtime tests, and the binding initial-state design page. Root records any additional cited helper scope before source expansion. Phase distinction must remain explicit through auxiliary invocations and must not be recovered from command name/ordinal. Retain a real compiler-admitted red for every source family before production edits, then the actual four-runtime matrix and independent review. Existing semantic composition restrictions remain precise notes, not an excuse to omit the requested mixed first witness. No new PR, remote gate or release in this unit; root owns AEP, integration and publication. All committed executable source Rust; existing generated-runtime templates remain in their established languages. Existing bounded build/cache lease and 8GiB floor rules apply.
