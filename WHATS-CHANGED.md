@@ -6,6 +6,8 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.51.0](#committed-generated-output-regenerates-in-another-checkout) | Committed generated output regenerates in another checkout | capability | notable |
+| [0.51.0](#generated-rust-servers-select-a-branch-by-whether-the-record-exists) | Generated Rust servers select a branch by whether the record exists | capability | notable |
 | [0.50.0](#synthesis-witnesses-an-aggregate-over-rows-a-whenrelated-guarded-command-creates) | Synthesis witnesses an aggregate over rows a when_related-guarded command creates | capability | notable |
 | [0.49.0](#generated-servers-enforce-actor-grants) | Generated servers enforce actor grants | breaking | significant |
 | [0.49.0](#a-whenrelated-guard-reads-the-related-rows-lifecycle-state) | A when_related guard reads the related row's lifecycle state | capability | notable |
@@ -50,6 +52,20 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.51.0 — 2026-10-01
+
+### Committed generated output regenerates in another checkout
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.51.0)
+
+Generated output committed with its `.ess-output` regenerates in a clone, a second worktree or CI when its owned files still have their recorded bytes, and an unchanged regeneration leaves `state.json` byte-identical; a state carried without matching files refuses, lists them and prints the steps to re-enroll with `ess generate output adopt`.
+
+### Generated Rust servers select a branch by whether the record exists
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.51.0)
+
+A generated Rust server looks the input identity up in the storage port before dispatch, so an `existing_instance:` refusal beside a creation and a creating `unknown_instance:` branch beside an update are generated instead of owed; a command whose lookup would not match its creations stays an obligation, and Go, Web and Clap still refuse both forms by name.
 
 ## 0.50.0 — 2026-10-01
 
