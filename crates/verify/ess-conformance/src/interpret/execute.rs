@@ -41,11 +41,12 @@
 //! how a checker replays what a history recorded, under the rules that variant states — and a
 //! `sets:` write nobody observes always draws from a counter the [`Store`] carries. The counter is
 //! part of the state, so a step is a function: the same store, command and values give the same
-//! steps. A created identity is assigned once, the event field `instance:` names publishes that
-//! value whatever payload source it declares, and an identity the store already holds is never
-//! created again.
+//! steps. A created identity follows its declared payload source; only generated sources use
+//! this supply. The event field `instance:` names publishes that same value, and an identity
+//! the store already holds is never replaced by creation.
 
 pub(super) mod caller;
+mod existence;
 mod related;
 mod set_effects;
 mod subject;
@@ -431,11 +432,23 @@ pub(super) fn in_context(
         .commands()
         .get(command)
         .ok_or_else(|| Undetermined::UnknownCommand(command.to_string()))?;
+    if spec
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
+    {
+        if let Some(step) = existence::existing(ir, spec, store, input, externals)? {
+            return Ok(vec![step]);
+        }
+    }
     if let Some(steps) = related_absent(ir, spec, store, input, generated)? {
         return Ok(steps);
     }
     if let Some(steps) = refused_by_input(ir, spec, store, input)? {
         return Ok(steps);
+    }
+    if let Some(step) = existence::existing(ir, spec, store, input, externals)? {
+        return Ok(vec![step]);
     }
     interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
     let facts = input::flatten(ir, spec, input)
@@ -471,7 +484,7 @@ pub(super) fn in_context(
         })?;
         let key = identity.clone();
         let Some(held) = store.instance_typed(entity, &key) else {
-            return Ok(vec![unknown_instance(ir, spec, store, input)?]);
+            return Ok(vec![unknown_instance(ir, spec, store, input, generated)?]);
         };
         held_subjects.insert(
             outcome.name.clone(),
@@ -638,8 +651,7 @@ fn select<'s>(
 /// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
 /// order"). `None` on a command with no related guard, or where the row is stored.
 ///
-/// `existing_instance:` answers before it on such a command, and this module does not decide the
-/// command's own existence, so a command declaring one is declined here. A related row named
+/// `existing_instance:` is resolved before this helper on such a command. A related row named
 /// through a stored field of the subject, or through an input the request does not carry,
 /// is declined too: nothing here reads it.
 fn related_absent(
@@ -658,16 +670,6 @@ fn related_absent(
         return Ok(None);
     };
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    if let Some(existing) = spec
-        .outcomes
-        .iter()
-        .find(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
-    {
-        return gap(format!(
-            "the existing-instance branch of `{}`, which answers before its related row is read",
-            branch(spec, existing)
-        ));
-    }
     let ResolvedCondition::Related { via, entity, .. } = &first.condition else {
         unreachable!("filtered to related guards above")
     };
@@ -797,6 +799,7 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
             | ResolvedCondition::ExternalWhen { .. }
             | ResolvedCondition::WrongState
             | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::ExistingInstance
             | ResolvedCondition::InputAbsent
             | ResolvedCondition::SubjectState { .. }
             | ResolvedCondition::StateChange { .. } => {}
@@ -817,9 +820,6 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
                 {
                     return gap(format!("the current-time guard of `{at}`"));
                 }
-            }
-            ResolvedCondition::ExistingInstance => {
-                return gap(format!("the existing-instance branch of `{at}`"));
             }
         }
         if !recorded && (outcome.replays.is_some() || outcome.retains_result) {
@@ -952,13 +952,25 @@ fn create(
     let ResolvedInstance::Observed { event, field } = &subject.instance else {
         unreachable!("`creates:` publishes its identity; `take` routes nothing else here")
     };
-    let (identity, key) = or_no_step!(creation_identity(
-        ir,
-        &entity.name,
-        event.name(),
-        field,
-        work
-    ));
+    let source = existence::identity_source(outcome);
+    let (identity, key) = if existence::generated(source, input) {
+        or_no_step!(creation_identity(
+            ir,
+            &entity.name,
+            event.name(),
+            field,
+            work
+        ))
+    } else {
+        let identity = existence::identity(ir, source.expect("determined identity"), input, work)?;
+        if work.next.instance_typed(&entity.name, &identity).is_some() {
+            return Ok(Err(format!(
+                "a supplied identity is already held by `{}`, and creation never replaces it",
+                entity.name
+            )));
+        }
+        (identity.clone(), identity)
+    };
     let state = subject
         .into
         .clone()
@@ -1060,7 +1072,7 @@ fn take(
                 })?;
                 let key = identity.clone();
                 let Some(held) = store.instance_typed(&entity.name, &key) else {
-                    return Ok(Ok(unknown_instance(ir, spec, store, input)?));
+                    return Ok(Ok(unknown_instance(ir, spec, store, input, generated)?));
                 };
                 before = Some(held.clone());
                 let after = match act(ir, &outcome.sets, effect, held, input, &mut work)? {
@@ -1159,6 +1171,7 @@ fn unknown_instance(
     spec: &ResolvedCommand,
     store: &Store,
     input: &Invocation<'_>,
+    generated: &Generated,
 ) -> Result<Step, Undetermined> {
     match spec
         .outcomes
@@ -1166,6 +1179,14 @@ fn unknown_instance(
         .find(|outcome| matches!(outcome.condition, ResolvedCondition::UnknownInstance))
         .or_else(|| crate::synthesize::declared_not_found(ir, spec))
     {
+        Some(outcome)
+            if outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.effect == ResolvedEffect::Creates) =>
+        {
+            take(ir, spec, outcome, store, input, generated)?.map_err(Undetermined::Request)
+        }
         Some(outcome) => refusal(ir, spec, outcome, store, input, None),
         None => wrong_state(ir, spec, store, input, None),
     }
