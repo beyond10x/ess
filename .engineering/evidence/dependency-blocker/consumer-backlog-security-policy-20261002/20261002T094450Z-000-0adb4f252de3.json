@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:44:50Z",
+  "actor": "human:timo",
+  "artifact": "dependency-blocker:consumer-backlog-security-policy-20261002",
+  "kind": "dependency-blocker",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Operator-authorized B10X_GATES_POLICY update succeeded after value-preserving JSON compaction; bot failed-jobs rerun36987213274 accepted. Remote security result pending.",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36987213274"
+  }
+}

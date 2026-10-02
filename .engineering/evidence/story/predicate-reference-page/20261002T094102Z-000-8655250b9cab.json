@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:41:02Z",
+  "actor": "human:timo",
+  "artifact": "story:predicate-reference-page",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Retained a2 r2-after.log records two page validation/grammar suites,5passed each; r2-before.log demonstrates stale-example failure",
+    "reference": "local-evidence:ess-wave-20260925/a2-scratch/r2-after.log"
+  }
+}

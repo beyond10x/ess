@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: task:consumer-server-gate-corrections-20261002
 kind: task
-status: active
+status: implemented
 title: Correct the queued generated-server batch correctness failures
 relations:
 - decomposes: story:go-generated-behaviour
 - informed_by: story:served-view-params
 - serves: vision:O2
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:43:00Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:43:00Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T09:49:31Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":2,"verification":4}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
@@ -42,3 +43,7 @@ Remote correctness run 36987215656 remains pending at observation. Common securi
 ## Remote correctness result
 
 At candidate f0b220099119090795c93cae07c14e6209918f67 all four test shards, Checks, both test archives, both macOS ownership checks and the final ESS Gate completed SUCCESS in CI run36987215656. Documentation source/build and planning checks also completed SUCCESS. Required common Security and privacy remains FAILURE with the separately recorded candidate-exceeds-scan-limit refusal. No unchanged rerun or integration occurred.
+
+## Integration
+
+PR386 merged by b10x-bot[bot] as fa08de5bd816b3cc46694ec4d19d20d13e128764 after every required check completed SUCCESS, including the security-only retry after authorized secret refresh. Exact merge tree equals tested f0b220099 tree2105a56fd3b86a78d8db839ee04bc8826f663a38. No source release is claimed: the0.52 release remains outstanding with its own exact-commit checks/assets. Issue314 remains open for its separate store/entry requirement; newly accepted server defects316/379/385 stay separate local follow-on work.

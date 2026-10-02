@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/upsert_by_existence.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:12:16Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:12:17Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -58,3 +58,7 @@ Confidence: medium; execute red before implementation and report any missing des
 ## Implementation refinement
 
 The existing deletion witness chooses one creator; merely appending a retry there would miss the accepted multiple-creation-branch requirement. Reuse subject_fact's bounded search_from with a specific creator and a declared reachable deletion goal, through a small wrapper in subject_fact.rs. This preserves stored guards and lifecycle routing without adding another graph search. Existence-family scenarios then append recreation using the same captured identity. Search failures remain explicit refusals rather than invented sequences. This scope refinement was reviewed before implementation; #342's current diff remains frozen until independent review ends.
+
+## Independent review correction 2026-10-02
+
+Independent reviewer scope_aggregate found an introduced counterexample before commit: recreation copies ExecuteCommand but omits the original creator's ConfigureExternalOutcome. For an external booked-vip creation with default booked sibling, the next-invocation control is consumed by first creation; an honest recreation chooses booked while the scenario demands booked-vip. References: existence.rs:953/988, synthesize.rs:4182, scenario.rs:2000, interpret.rs:172. Reviewer own executions zero; finding is source-derived. Implementation returned for measured regression and restoration of the external control immediately before recreation. Initial green focused results do not resolve this finding.

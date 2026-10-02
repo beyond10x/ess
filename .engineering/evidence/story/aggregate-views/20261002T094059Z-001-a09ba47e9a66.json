@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:40:59Z",
+  "actor": "human:timo",
+  "artifact": "story:aggregate-views",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Final design explicitly uses Optional<Decimal>; design precedes implementation d95b4581f, verified ancestor of public0.51.0",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.51.0"
+  }
+}
