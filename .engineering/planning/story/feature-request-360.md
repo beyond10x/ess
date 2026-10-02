@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-360
 kind: story
-status: draft
+status: active
 title: A parameterized view witnesses fields copied from a related row
 tags:
 - feature-request
@@ -21,7 +21,14 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
-revision: 3
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/related_copied_view_parameter.rs
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T12:22:57Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T12:22:57Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
@@ -52,3 +59,11 @@ Accept as proposed for existing related sources and view parameters, coordinated
 ## Scope
 
 Cited at b05007e49: crates/verify/ess-conformance/src/synthesize.rs (prepare_subject/related arrangement, bound), src/synthesize/related.rs (arrange, key, settle), src/synthesize/subject_fact.rs (bounded goal search). Inferred: focused regression fixture/tests in crates/verify/ess-conformance/tests. Inspect exact shared seam before editing; serialize with307 and current298 work on synthesize.rs.
+
+## Next grouped verification and repair
+
+Read-only assessment by scope_boolean performed zero builds or test executions. Implement sequentially in one worktree after the frozen PR387 source: first complete issue307 evidence for both copied Optional Boolean policies (auto_promote and automatic_rollback), explicitly named transitions, true/false/absent and input-result conjunct controls. Assert the actual captured related source identity. Unsupported target answers do not satisfy acceptance. Keep production unchanged unless fresh tests establish a defect.
+
+Then reproduce issue360 separately for direct creation and later subject arrangement. Current prepare_in arranges related rows whereas invoke_with settles against an empty map; this is a hypothesis, not a reproduction. Require a matching and nonmatching subject even when the copied foreign field is not an ownership link. Exercise copied ordinary values and generated identities, source decoys before and after the selected source, and first-source/last-source/ignored-parameter mutants. Compose stored guards and view selection in the same reduction.
+
+Keep changes within existing bounded related arrangement, settled values and view binding. Preserve cycle/search bounds: do not blindly recurse from invoke_with because arrange_except currently starts nested arrangement with an empty chain. No new syntax, format, ownership edge, arbitrary identity literal, general join or runner semantics are accepted. One group package validation and eventual grouped PR; no separate #307 remote gate.

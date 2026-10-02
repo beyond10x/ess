@@ -35,6 +35,8 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/store.rs
 - confidence: cited
+  path: crates/generate/ess-synth/src/go/store/identity.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/context.rs
@@ -51,6 +53,8 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/store.rs
 - confidence: cited
+  path: crates/generate/ess-synth/src/rust/store/identity.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/served.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/fixtures/served-notes
@@ -62,7 +66,7 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -226,3 +230,11 @@ Preserve those contracts in the new store: Integer numeric order; Decimal and te
 The generated MemoryPorts identity contract is equality of decoded wire values, preserving Decimal rendering and Json numeric spelling and object-member order. It does not promise universal Go native == preservation: pointer-bearing Optional values and collections already make that promise incoherent across targets. Existing primitive types, constructors and equality remain unchanged.
 
 In particular Go Json retains raw constructor document text, whereas Rust Json parses a tree. Direct Go constructors for [1] and [ 1 ], or zero Json{} and NewJson("null"), can differ under native equality but normalize to the same MemoryPorts key. Generated HTTP cannot produce the whitespace distinction after decoding. Document and test this direct-port boundary explicitly, alongside HTTP numeric/member-order controls; do not silently claim the representations are identical. This narrows the revision 13 preservation statement for the new store only. Preparatory reviewer server_corrections performed source inspection, zero test/build executions; frozen implementation still needs independent review.
+
+## Preserve the no-panic guarantee for generated context
+
+The model-global Context port requires infallible methods even for context used only by unrelated components. MemoryPorts cannot truthfully implement unsupported answers, and a panic or fabricated neutral value violates the existing generated-stub contract. The initial local prototype is not accepted for publication on that basis.
+
+Accept an additive fallible companion seam: Rust retains the existing Context and supplies a blanket adapter into TryContext; existing realizations continue to compile unchanged. MemoryPorts implements the fallible seam with named UnmetObligation errors. Go retains its existing Context surface and adds a fallible companion path with explicit precedence; legacy implementations continue to work. Generated behavior propagates the existing typed obligation error rather than panicking. Do not replace existing method signatures or weaken the no-panic tests. Delegate unsupported command/view obligations to existing generated stubs instead of duplicating them.
+
+Regression controls must establish legacy Context source compatibility, direct MemoryPorts refusal for unsupported caller/assignment/external answers, unchanged component-specific startup refusal/reachability, and error propagation without partial storage mutation or emitted success events. Audit each context call relative to writes before choosing placement: a fallible value must be obtained before committing effects that would otherwise survive its error. No new syntax or format is authorized. New generated names must use existing collision allocation, with a collision fixture. Record exact touched files and changes before the independent frozen review.
