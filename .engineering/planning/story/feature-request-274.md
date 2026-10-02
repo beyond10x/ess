@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T19:35:48Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-01T19:35:49Z", actor: "human:timo", revision: 5}
@@ -82,3 +82,7 @@ There is no `story:feature-request-274` in the read tree's store (`aep plan arti
   Not fixed: same code at 0.44.0, 0.48.0 and the read tree (`runtime.rs:666,669`). No duplicate or overlap among open or closed ESS issues (searched "cli_dynamic_input", "dynamic input", "DynamicValidator"). No story artifact exists yet.
 
 - Coordinator (2026-10-01): adopted as proposed above.
+
+## Released redesign located; reconcile acceptance before closure
+
+Release0.51.0 CHANGELOG and current source contain the adopted invalid_input declared-error mapping. crates/generate/ess-cli-project/tests/invalid_input.rs covers unparsable/empty/duplicate/rejected dynamic input, typed shape failures, unchanged legacy codes, duplicate keys at every depth and generated reference text. crates/specify/ess-cli-contract/tests/binding.rs:311 tests declared-error admission, required-field refusal and unchanged no-key plans. The existing Acceptance text still says malformed data reaches DynamicValidator, which the explicit Decisions reject; it must be reconciled to the accepted callable-level declared-error behavior rather than used to demand the rejected API design. This audit locates source/tests but claims no fresh CLI-project test execution or final artifact closure.

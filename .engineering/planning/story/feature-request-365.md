@@ -31,7 +31,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:09:54Z", actor: "human:timo", revision: 10, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:09:54Z", actor: "human:timo", revision: 11, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -65,3 +65,17 @@ ess-ui model/schema; ess-ui-check rules/expression/model; React read emission/co
 ## Numeric parity scope refinement
 
 The shared filter requires React/TUI parity even for admitted mixed scalar comparisons. Rust f64 display and JavaScript String(number) differ at small/large exponent thresholds. The correction uses ryu-js ECMAScript number formatting, adding workspace Cargo.toml and crates/ui/ess-ui/Cargo.toml with the existing Cargo.lock scope. These manifest paths are cited from the implementation dependency seam. Regression controls cover scalar and canonical array/object comparisons and negative zero. This changes only UI filter comparison, not ESS numeric semantics.
+
+## Corrected filter composition and closing source review
+
+Frozen revision contains32paths, patch01b3f527918966d0d6c1393dc4439e102c3f118f21afaa09115703cba3bc0130. Reviewer verified every hash, read the owner-produced baseline/treatment logs and found no further concrete counterexample; reviewer execution count0. Final full six-package run58 reports531 passed/0 failed/0 ignored (69 UI,119 checker,49 docs,121 React,69 UI test,104 TUI). Final strict lint/ci-lint/site checks remain owner work before publication.
+
+The filtered refetch now admits events through only_if first. UI numeric comparisons use ryu-js ECMAScript formatting without changing the comparison grammar or other ESS numeric semantics. Final numeric test bytes fail the old formatter (log54), and the14-case focused suite passes with arbitrary_precision (55). Earlier feature-on numeric failures50/51 were fixture construction failures, not formatter defects.
+
+The source-switch/live composition is measured for setDataAdapter in an unbound generated app (47 red0/1,49 green13/0); direct setAuthorization plus useLive is not an emitted combination because bound apps poll. The correction resets/hides local live rows and totals when the source epoch changes. The first correction also discarded queued coalesced events on ordinary raw-read completion; log53 reproduces that newly introduced ordering failure. Queue clearing is now restricted to actual source changes and55's14/0 includes the regression. Retain both the unreachable direct-auth fixture observation and the reachable adapter result rather than claiming an unexecuted authorization case.
+
+Earlier stale refresh, authorization-aware read cache and stalled-poll corrections remain covered. Immutable reviews pass1/pass2/pass3 and the closing pass4 retain distinct findings and evidence provenance; no source changes are attributed to the reviewer.
+
+## Local committed delivery candidate
+
+Botaabc378c8 commits all32 reviewed source paths after final six-package531/0/0, strictClippy, exactci-lint and tasksite-build passed. It merges without source conflicts into combinedfba30d2af. All32 implementation hashes matched after integration; the three conformance/domain/synthesis crate trees were unchanged by this merge. Final combined lint/projection/site checks are running. Publication will reusePR387 after its single service-contract expectation correction, preserving the UI source commit and saving a separate full remote gate.
