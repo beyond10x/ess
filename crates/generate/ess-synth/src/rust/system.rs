@@ -377,6 +377,22 @@ fn transformations(
         if !generated {
             function.push_str("_from_prepared");
         }
+        let inputs: Vec<_> = ir
+            .command(&binding.command)
+            .input
+            .iter()
+            .map(|field| {
+                let determined = crate::plan::determined_prepared_input(ir, binding, field)
+                    .unwrap_or_else(|| {
+                        panic!(
+                        "the plan generated the transformation of `{source}` with an undetermined \
+                     mapping for `{}`; that is a defect in ess-synth",
+                        field.name
+                    )
+                    });
+                (field, determined)
+            })
+            .collect();
         if let Some(selection) = &binding.selection {
             let mut parameters = String::new();
             for (index, input) in selection
@@ -402,26 +418,20 @@ fn transformations(
             );
             let _ = writeln!(out, "Ok({input} {{");
         } else {
+            let reads_event = inputs.iter().any(|(_, input)| input_reads_event(input));
+            let parameter = if reads_event { "event" } else { "_event" };
             let _ = writeln!(
             out,
             "\n/// The binding `{source}`: `{}`, read as `{}` input.\n///\n/// Fully determined \
              by the specification: every input is filled from an event field — through the\n/// \
              declared crossing where one is named — from a literal the target admits, or left \
              absent\n/// where the input is optional and the binding says nothing.\npub fn \
-             {function}(event: &{event}) -> {input} {{\n    {input} {{",
+             {function}({parameter}: &{event}) -> {input} {{\n    {input} {{",
             binding.cause.event().expect("generated event capability"),
             binding.command
         );
         }
-        for field in &ir.command(&binding.command).input {
-            let determined = crate::plan::determined_prepared_input(ir, binding, field)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "the plan generated the transformation of `{source}` with an undetermined \
-                     mapping for `{}`; that is a defect in ess-synth",
-                        field.name
-                    )
-                });
+        for (field, determined) in inputs {
             let expression = mapping_expression(determined, ir, layout, types);
             let _ = writeln!(
                 out,
@@ -434,6 +444,19 @@ fn transformations(
         } else {
             "    }\n}\n"
         });
+    }
+}
+
+/// Constant and absent assignments do not read the event that caused this binding.
+fn input_reads_event(input: &DeterminedInput<'_>) -> bool {
+    match input {
+        DeterminedInput::Copy { .. }
+        | DeterminedInput::Convert { .. }
+        | DeterminedInput::Accessor { .. }
+        | DeterminedInput::Selection { .. } => true,
+        DeterminedInput::Literal { .. }
+        | DeterminedInput::Variant { .. }
+        | DeterminedInput::Omitted => false,
     }
 }
 
