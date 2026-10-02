@@ -32,6 +32,7 @@ fn is_coverage_version(version: &str) -> bool {
             | "ess-conformance/29"
             | "ess-conformance/31"
             | "ess-conformance/33"
+            | "ess-conformance/35"
     )
 }
 /// Carrier retaining exact selected and parent documents.

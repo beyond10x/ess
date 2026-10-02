@@ -155,7 +155,9 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::structured_values::used_by(self) {
+        self.provenance.suite_version = if crate::one_time_response::used_by(self) {
+            SuiteFormat::parse("ess-conformance/34").expect("constant suite version")
+        } else if crate::structured_values::used_by(self) {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
                 crate::structured_values::ORDINARY
@@ -438,7 +440,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33,
+    27, 28, 29, 30, 31, 32, 33, 34, 35,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -1094,6 +1096,9 @@ impl<'de> serde::Deserialize<'de> for BindingAspect {
 /// One check, as a sequence of steps over an isolated execution context.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConformanceScenario {
+    /// Scenario-wide one-time observation authority; absent on every legacy suite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_time_response: Option<crate::one_time_response::Trace>,
     /// What this scenario proves, in one line, for the person reading a report.
     pub purpose: ScenarioPurpose,
     /// What to do, in order.
@@ -1126,6 +1131,7 @@ impl ConformanceScenario {
     ) -> Self {
         Self {
             purpose,
+            one_time_response: None,
             steps: steps.into_iter().collect(),
             source: source.into_iter().collect(),
         }
@@ -3095,12 +3101,14 @@ mod tests {
             "ess-conformance/31",
             "ess-conformance/32",
             "ess-conformance/33",
+            "ess-conformance/34",
+            "ess-conformance/35",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/34").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/36").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"
