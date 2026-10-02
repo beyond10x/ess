@@ -19,7 +19,9 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/declared_behaviour.rs
-revision: 8
+- confidence: cited
+  path: crates/specify/ess-service-contract/tests/service_contract.rs
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:37:08Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:37:08Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -57,3 +59,11 @@ Cited: crates/generate/ess-synth/src/plan.rs; src/rust/behaviour.rs; src/go/beha
 ## Verification 2026-10-02
 
 Committed259b49a0efe5f312f41218853594222ca2d496a9 after independent source/test review against the binding precedence design. Meaningful red16cases:12pass/4fail; treatment16passed. Strict all-target Clippy/fmt/diff checks passed. Four frozen hashes verified and bot author/committer confirmed. Full server-group package and projection verification now running for316/379/385 together; no remote publication of these fixes yet. Evidence: managed tree ess-backlog-servers-20261002, target/backlog-input/385-report.md and review-result:consumer-precedence-385-pass1-20261002.
+
+## Remote consumer expectation correction
+
+PR387 run37001422985 failed exactly one workspace test: ess-service-contract::service_contract::selected_obligations_and_refusals_retain_their_complete_plan_values at line593. Shard2 ran1723:1722 passed/1 failed; its feature-off679 all passed. The left value carries the corrected declaration-order wording introduced by385; the right literal still carries the old phrase. All other required lanes passed. Add the service-contract assertion as cited scope, preserve its complete literal equality check and update only the intended contract prose, then run the affected service-contract package. This is a source/test correction, not an unchanged rerun or security failure.
+
+## Consumer correction validated
+
+Bot commitc23165a8f updates only the complete service-contract expected prose to the intentionally clarified declaration-order contract; no assertion was removed or weakened. A full repository search found no other live old phrase. Full ess-service-contract package passed7 tests/0 failures/0 ignores, followed by strict all-target Clippy and formatting. Evidence: server target/backlog-input/pr387-service-contract-correction.log, pr387-service-contract-clippy.log, pr387-service-contract-fmt.log. The corrected commit will be preserved as an ancestor of the combinedPR387 candidate; the failed remote gate is not treated as passing.

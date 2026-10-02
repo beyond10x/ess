@@ -62,7 +62,7 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -210,3 +210,13 @@ Toolchains are present locally, so required Go evidence must execute rather than
 - **Generated claims also need amendment.** Storage trait prose currently says ESS never emits an implementation (`rust/behaviour.rs:250`), beyond the website lines named in the story. Update only claims the accepted network-served exception changes. Keep durability, authentication and unresolved behavior responsibility explicit.
 
 No caller policy, durable persistence, CORS policy, broader related-guard generation or general symbolic/context solver is added by this story.
+
+## Identity ordering implementation refinement
+
+The compiler does not restrict entity identity to scalar types. The generated store must not silently fall back to debug/text sorting for admitted structural identities or round numeric identities through binary floats. The worker is implementing typed structural keys with matching Rust/Go meaning and scalar/structural regressions, preserving port signatures and existing semantic equality. Map/set keys must be canonical independently of insertion order. Exact numeric exponent/value comparison uses existing locked num-bigint0.4.8 in generated Rust (optional with the single-crate server feature) and an ess-synth dev-dependency edge; Go uses math/big. No new dependency version is authorized. End-to-end HTTP tests must cover value-equivalent numeric spellings, negative zero and exponents; document bounded parsing and ordering. This is an explicit store scope refinement, not new planning/proof or authored language support.
+
+## Identity contract correction after source inspection
+
+The earlier proposed numeric-key canonicalization was an unverified coordinator inference and is withdrawn. Existing generated Rust explicitly defines Decimal equality AND order over rendering (rust/mod.rs:395-399) and Json number spelling/object order as representation identity (rust/json.rs:793-798); Go preserves the same comparability (go/mod.rs:694-703, go/json.rs:5-15). Existing store harnesses use typed equality, with no overriding canonical identity rule found.
+
+Preserve those contracts in the new store: Integer numeric order; Decimal and textual scalar rendering order; transparent wrappers; records by declared field structure; ordered lists; map/set canonical ordering only where existing generated equality ignores insertion order; Json number spelling and object member order retained. Numeric-equivalent Decimal spellings such as1 and1.0 remain distinct identities as the generated type documents. No num-bigint dependency is needed for this design; remove only newly added direct edges from the abandoned proposal. Add exact representation-distinction and lookup/order controls through the real HTTP path. This corrects the earlier assumption before publication rather than silently changing row-address equality.
