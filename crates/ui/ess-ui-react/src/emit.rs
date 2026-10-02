@@ -86,6 +86,8 @@ struct Opts {
     framed: bool,
     /// The field keying rows: the section's `reads.key`, else its `live.match` (#320).
     row_key: Option<String>,
+    /// The row key a choice takes each option's value from (the form field it picks for).
+    choice_value: Option<String>,
 }
 
 impl Opts {
@@ -98,6 +100,7 @@ impl Opts {
             degrades: BTreeMap::new(),
             framed: false,
             row_key: None,
+            choice_value: None,
         }
     }
 }
@@ -723,6 +726,7 @@ impl<'d> Gen<'d> {
             if !in_form && field.binds.is_none() {
                 opts.binds = None;
             }
+            opts.choice_value = Some(field.field.clone());
             self.node(&at.child("choice"), node, &opts)
         });
         ts::object([
@@ -1085,6 +1089,10 @@ impl<'d> Gen<'d> {
                     .opt("reads", c.reads.as_ref().and_then(Self::reads))
                     .opt("options", options)
                     .opt("binds", binds.map(|b| ts::string(&b)))
+                    .opt(
+                        "valueKey",
+                        opts.choice_value.as_ref().map(|key| ts::string(key)),
+                    )
                     .opt("multiple", c.multiple.then(|| "true".to_owned()))
                     .opt(
                         "style",
@@ -1801,6 +1809,7 @@ impl<'d> Gen<'d> {
             degrades: section.common.degrades.clone(),
             framed: true,
             row_key: section.row_key().map(str::to_owned),
+            choice_value: None,
         };
         if let Body::Composite(Composite::Form(form)) = &section.body {
             let (local, setter) = self.draft_hook(&mut lines, at, form.draft.as_ref());
