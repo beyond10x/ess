@@ -122,6 +122,9 @@ pub(crate) struct Refused {
     pub text: String,
     /// The declared error's fields, when it has any.
     pub payload: Option<Value>,
+    /// The effect stands though the answer is a failure (`501` with `committed: true`): the
+    /// command is done and must not be sent again.
+    pub committed: bool,
 }
 
 impl Refused {
@@ -2419,9 +2422,12 @@ impl App {
         }
         let ui = self.target_ui(target);
         self.ui_mut(&ui).editing = false;
-        // A refused submit stays on the form that sent it, with its draft.
-        if let Some(refused) = self.run_command(&form.does, &input) {
-            self.ui_mut(&ui).refusal = Some(refused.by("form"));
+        // A refused submit stays on the form that sent it, with its draft. One whose effect was
+        // committed is submitted, as an accepted one is, so its draft is never sent again; its
+        // failure is still shown, on the form when it stays open.
+        let refused = self.run_command(&form.does, &input);
+        if let Some(refused) = refused.as_ref().filter(|refused| !refused.committed) {
+            self.ui_mut(&ui).refusal = Some(refused.clone().by("form"));
             return;
         }
         self.ui_mut(&ui).refusal = None;
@@ -2431,8 +2437,16 @@ impl App {
             .as_ref()
             .and_then(|submit| submit.closes)
             .unwrap_or(true);
-        if target == Target::Overlay && closes {
+        let shut = target == Target::Overlay && closes;
+        if shut {
             self.overlay = None;
+        }
+        if let Some(committed) = refused {
+            if shut {
+                self.notify(format!("{}: {}", form.does, committed.text));
+            } else {
+                self.ui_mut(&ui).refusal = Some(committed.by("form"));
+            }
         }
     }
 
@@ -2508,7 +2522,7 @@ impl App {
         if let Some(does) = confirm.does.as_ref().filter(|_| !open.confirmed) {
             refused = self.run_command(does, &open.params);
             // Accepted: a retry after the action is refused sends only the action again.
-            open.confirmed = refused.is_none();
+            open.confirmed = refused.as_ref().is_none_or(|refused| refused.committed);
         }
         if refused.is_none() {
             if let Some((action, row)) = open.then.clone() {
@@ -2557,6 +2571,7 @@ impl App {
                 by: String::new(),
                 text: crate::http::shown(self.bound.as_ref(), command, &answer),
                 payload,
+                committed: answer == Answer::Unfinished { committed: true },
             });
         }
         let message = if self.bound.is_some() {

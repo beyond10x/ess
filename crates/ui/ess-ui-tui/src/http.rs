@@ -70,9 +70,53 @@ impl Base {
     }
 }
 
+/// Why `host`, as written in a base URL, names no host that can be connected to as written (sent
+/// verbatim as `Host` and to the resolver): a bracketed one is an IPv6 address
+/// (`std::net::Ipv6Addr`, so no zone), a bare one an IPv4 address or a DNS name of letters,
+/// digits, `-` and `.` in labels of 1 to 63 characters, neither starting nor ending with `-`.
+fn host_of(host: &str) -> Result<(), String> {
+    let refused = || {
+        Err(format!(
+            "`{host}` names no host: an IPv4 address, a DNS name of letters, digits, `-` and \
+             `.`, or an IPv6 address in brackets"
+        ))
+    };
+    if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        return match inner.parse::<std::net::Ipv6Addr>() {
+            Ok(_) => Ok(()),
+            Err(_) => refused(),
+        };
+    }
+    if host
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    {
+        return match host.parse::<std::net::Ipv4Addr>() {
+            Ok(_) => Ok(()),
+            Err(_) => refused(),
+        };
+    }
+    let name = host.strip_suffix('.').unwrap_or(host);
+    let labels_hold = !name.is_empty()
+        && name.len() <= 253
+        && name.split('.').all(|label| {
+            (1..=63).contains(&label.len())
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        });
+    if labels_hold {
+        Ok(())
+    } else {
+        refused()
+    }
+}
+
 /// `host[:port]` or `[v6][:port]` as `host:port` (port 80 when absent), or why it cannot be
-/// connected to: no host, an unclosed `[`, a bare IPv6 address, or a port that is empty, not a
-/// number, or outside 1 to 65535.
+/// connected to: a host [`host_of`] refuses, an unclosed `[`, a bare IPv6 address, or a port
+/// that is empty, not a number, or outside 1 to 65535.
 fn authority_of(authority: &str) -> Result<String, String> {
     let (host, port) = if let Some(inner) = authority.strip_prefix('[') {
         let (address, after) = inner
@@ -101,9 +145,7 @@ fn authority_of(authority: &str) -> Result<String, String> {
             Some((host, port)) => (host, Some(port)),
         }
     };
-    if host.is_empty() {
-        return Err("a base URL names a host".to_owned());
-    }
+    host_of(host)?;
     let port = match port {
         None => 80,
         Some(port) => Some(port)
@@ -519,7 +561,17 @@ fn parse_answer(mut answer: &[u8], eof: bool) -> Result<Option<(u16, String)>, S
         };
         let (name, value) = (name.trim(), value.trim());
         if name.eq_ignore_ascii_case("content-length") {
-            length = Some(value.parse::<usize>().map_err(|_| "a bad Content-Length")?);
+            let declared = Some(value)
+                .filter(|value| {
+                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+                })
+                .and_then(|value| value.parse::<usize>().ok())
+                .ok_or("a bad Content-Length")?;
+            // Two that differ leave the framing undecidable (RFC 9112, section 6.3): no answer.
+            if length.is_some_and(|length| length != declared) {
+                return Err("two Content-Length fields differ".to_owned());
+            }
+            length = Some(declared);
         } else if name.eq_ignore_ascii_case("transfer-encoding") {
             chunked = value.to_ascii_lowercase().contains("chunked");
         }
@@ -558,7 +610,12 @@ fn unchunk(mut rest: &[u8]) -> Result<Option<Vec<u8>>, String> {
         if size == 0 {
             return Ok(Some(body));
         }
-        let (Some(chunk), Some(next)) = (rest.get(..size), rest.get(size + 2..)) else {
+        // A size no answer this reader takes can hold is no answer, not an overflow.
+        let end = size
+            .checked_add(2)
+            .filter(|_| body.len().saturating_add(size) <= MAX_ANSWER)
+            .ok_or("a chunk is larger than any answer read")?;
+        let (Some(chunk), Some(next)) = (rest.get(..size), rest.get(end..)) else {
             return Ok(None);
         };
         body.extend_from_slice(chunk);
@@ -669,8 +726,22 @@ mod tests {
             "http://[]:80",
             "http://::1:80",
             "http://[::1]80",
+            "http://[zz]:80",
+            "http://[fe80::1%25eth0]:80",
+            "http://%31%32%37.0.0.1:80",
+            "http://999.0.0.1",
+            "http://-desk",
+            "http://desk..local",
+            "http://desk_1",
         ] {
             assert!(Base::parse(refused).is_err(), "{refused}");
+        }
+        for accepted in [
+            "http://desk.local.",
+            "http://a-1.example:8080",
+            "http://10.0.0.1",
+        ] {
+            assert!(Base::parse(accepted).is_ok(), "{accepted}");
         }
         assert_eq!(
             Base::parse("http://[::1]:8080").map(|base| base.authority),
@@ -686,6 +757,16 @@ mod tests {
     fn an_answer_is_framed_by_its_length_or_its_chunks() {
         let plain = b"HTTP/1.1 422 Unprocessable\r\nContent-Length: 2\r\n\r\n{}trailing";
         let whole = Ok(Some((422, "{}".to_owned())));
+        // Repeated equal lengths frame it; differing ones, or a signed one, are no answer.
+        let twice = b"HTTP/1.1 422 X\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\n{}";
+        assert_eq!(parse_answer(twice, false), whole);
+        for bad in [
+            &b"HTTP/1.1 422 X\r\nContent-Length: 2\r\nContent-Length: 3\r\n\r\n{} "[..],
+            &b"HTTP/1.1 422 X\r\nContent-Length: +2\r\n\r\n{}"[..],
+            &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFFFFFFFFFFF\r\n{"[..],
+        ] {
+            assert!(parse_answer(bad, false).is_err(), "{bad:?}");
+        }
         assert_eq!(parse_answer(plain, false), whole, "whole before the close");
         assert_eq!(parse_answer(plain, true), whole);
         let chunked =
