@@ -112,8 +112,9 @@ the field holds.
 
 ### choose
 
-Picks an option of a choice, by its value or its label. In a multiple choice a second pick of the
-same option removes it.
+Picks an option of a choice, by its value or its label: a filter bar's choice, or a form field drawn
+`as: choice` (at the field or at its `choice` node). In a multiple choice a second pick of the same
+option removes it.
 
 ```yaml
 - choose: {at: pages/tickets.list/sections/filters/choices/priority, option: urgent}
@@ -274,7 +275,7 @@ Every step goes through what a reader of the terminal has: key presses and the d
 | `select` a row | focus the section, move the cursor (`j`, `k`, `n`, `p`) until the highlighted line is the row |
 | `page` | back to the first page (`p`), then `n` to the page |
 | `type` | `/` and the text in a filter bar or collection; `enter`, the text, `enter` on a form field |
-| `choose` | move to the choice (`h`, `l`), to the option (`j`), `space` |
+| `choose` | in a filter bar, move to the choice (`h`, `l`), to the option (`j`), `space`; in a form, move to the field (`k`, `j`), then `space` until it shows the option |
 | `act` | the key the hint line offers for the action; the palette (`:`) for a header action; `y` or `ctrl-s` on an overlay |
 | `expect` | the cells the renderer drew the node on: the screen, the section's box, the overlay, the row's line, the cell |
 
@@ -300,6 +301,8 @@ refuses:
 | any step inside the rows of a references list | the generated app does not address its rows |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
+| `choose` at a form choice field with `multiple: true` | the terminal sets one value in a form's choice field |
+| `choose` at a field `as: choice` without a `choice` node | it offers no options in either renderer |
 | `advance` or `play` past the end of the clock | the move does not fit |
 | `advance` or `play` over more than `MAX_CYCLES_PER_ADVANCE` cycles of a looping script | every cycle's events are delivered one by one |
 
@@ -365,7 +368,7 @@ the document, the React project as `data-ui-path`. What it removes:
   virtual, so live updates, staleness and loading are tested without a server or real waiting.
 
 **Limits.** The terminal runner addresses rows of a section's collection, types into filter bars,
-collection filters and form fields, and chooses in filter-bar choices; other targets fail naming the
+collection filters and form fields, and chooses in filter-bar choices and form choice fields; other targets fail naming the
 step. `expect text` at a node the terminal does not draw on cells of its own fails naming the path.
 The browser
 spec is generated and not run by `ess ui test`; its fixture and command routes assume the HTTP

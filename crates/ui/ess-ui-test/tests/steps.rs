@@ -60,6 +60,27 @@ fn a_choice_field_is_chosen_not_typed() {
 }
 
 #[test]
+fn a_form_choice_field_is_chosen_by_value_or_label() {
+    // PartnerTier offers registered, silver, gold, platinum; the field and its choice node both
+    // address the field, and a second choice moves from the first.
+    passed(&run("- name: tier\n  steps:\n\
+         \x20 - open: partners.list\n\
+         \x20 - act: pages/partners.list/header/actions/create\n\
+         \x20 - type: {at: pages/partners.list/overlays/create/fields/name, text: Gum Tree Ltd}\n\
+         \x20 - choose: {at: pages/partners.list/overlays/create/fields/tier, option: platinum}\n\
+         \x20 - choose: {at: pages/partners.list/overlays/create/fields/tier/choice, option: silver}\n\
+         \x20 - act: pages/partners.list/overlays/create\n\
+         \x20 - expect_command: {command: partners.CreatePartner, input: {name: Gum Tree Ltd, tier: silver}}\n"));
+    let outcome = run("- name: no such tier\n  steps:\n\
+         \x20 - open: partners.list\n\
+         \x20 - act: pages/partners.list/header/actions/create\n\
+         \x20 - choose: {at: pages/partners.list/overlays/create/fields/tier, option: copper}\n");
+    assert_eq!(outcome.step, Some(3), "{outcome:?}");
+    let message = outcome.message.unwrap_or_default();
+    assert!(message.contains("no option \"copper\""), "{message}");
+}
+
+#[test]
 fn latency_shows_loading_until_the_clock_passes_it() {
     passed(&run(
         "- name: loading\n  latency: 1s\n  steps:\n\

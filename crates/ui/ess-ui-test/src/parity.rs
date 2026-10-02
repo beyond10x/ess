@@ -173,6 +173,46 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
     }
 }
 
+/// The form field a `choose` at `target` picks in: the target is a field drawn `as: choice`, or
+/// that field's `choice` node.
+pub(crate) fn choice_field(document: &Document, target: &Target) -> Option<ess_ui::Field> {
+    let field_path = target.node.strip_suffix("/choice").unwrap_or(&target.node);
+    let segments: Vec<&str> = field_path.split('/').collect();
+    if segments.len() < 2 || segments[segments.len() - 2] != "fields" {
+        return None;
+    }
+    document
+        .nodes()
+        .into_iter()
+        .find_map(|located| match located.node {
+            NodeRef::Field(field)
+                if located.path.to_string() == field_path
+                    && field.field_as.as_deref() == Some("choice") =>
+            {
+                Some(field.clone())
+            }
+            _ => None,
+        })
+}
+
+/// Why a `choose` at `target` is refused, if it is: a form choice field the two renderers cannot
+/// drive alike. The terminal steps a form choice field through single values, and the generated
+/// app renders a field without a `choice` node as a text input.
+pub(crate) fn choose(document: &Document, target: &Target) -> Option<String> {
+    let field = choice_field(document, target)?;
+    let path = &target.written;
+    match field.choice.as_ref().map(|node| &node.body) {
+        Some(Body::Composite(Composite::Choice(choice))) if choice.multiple => Some(format!(
+            "{path}: the terminal sets one value in a form's choice field, so a multiple choice \
+             there cannot be chosen alike in both renderers"
+        )),
+        Some(Body::Composite(Composite::Choice(_))) => None,
+        _ => Some(format!(
+            "{path}: a choice field without a `choice` node offers no options in either renderer"
+        )),
+    }
+}
+
 /// Why an action's text is refused: an icon, or an action drawn as a choice, shows no label.
 fn labelless(action: &ess_ui::Action, path: &str) -> Option<String> {
     match action.action_as {

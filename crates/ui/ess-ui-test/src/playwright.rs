@@ -256,6 +256,9 @@ fn refusal(step: &Step, document: &Document) -> Option<String> {
     if let Some(reason) = crate::parity::unrendered(document, &target) {
         return Some(reason);
     }
+    if matches!(step, Step::Choose { .. }) {
+        return crate::parity::choose(document, &target);
+    }
     checks?
         .iter()
         .filter(|check| matches!(check, Check::Text(_) | Check::NotText(_)))
@@ -577,6 +580,13 @@ fn choice(document: &Document, at: &str, option: &str) -> (String, bool) {
                 Body::Composite(Composite::Choice(choice)) => Some(choice.clone()),
                 _ => None,
             },
+            // A form's choice field: its `choice` node draws the control inside the field.
+            NodeRef::Field(field) if located.path.to_string() == at => {
+                match field.choice.as_ref().map(|node| &node.body) {
+                    Some(Body::Composite(Composite::Choice(choice))) => Some(choice.clone()),
+                    _ => None,
+                }
+            }
             _ => None,
         });
     let Some(choice) = found else {

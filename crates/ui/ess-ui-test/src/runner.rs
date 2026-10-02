@@ -250,10 +250,16 @@ impl<'d> Runner<'d> {
     fn choose(&mut self, target: &Target, option: &str) -> Result<(), String> {
         let unsupported = || {
             format!(
-                "{}: the terminal chooses in a filter bar's choices",
+                "{}: the terminal chooses in a filter bar's choices and a form's choice fields",
                 target.written
             )
         };
+        if let Some(reason) = crate::parity::choose(self.doc, target) {
+            return Err(reason);
+        }
+        if let Some(field) = crate::parity::choice_field(self.doc, target) {
+            return self.choose_field(target, &field, option);
+        }
         let segments: Vec<&str> = target.node.split('/').collect();
         let ["pages", _, "sections", section, "choices", choice] = segments.as_slice() else {
             return Err(unsupported());
@@ -294,6 +300,73 @@ impl<'d> Runner<'d> {
         self.app.keys(&"j".repeat(index));
         self.app.keys("<space>");
         Ok(())
+    }
+
+    /// Chooses `option` in a form's choice field: move to the field, then `space` steps through
+    /// the options until the field shows the one wanted.
+    fn choose_field(
+        &mut self,
+        target: &Target,
+        field: &ess_ui::Field,
+        option: &str,
+    ) -> Result<(), String> {
+        let Some(Body::Composite(Composite::Choice(choice))) =
+            field.choice.as_ref().map(|node| &node.body)
+        else {
+            return Err(format!("{}: the field offers no options", target.written));
+        };
+        let options = self.choice_options(choice);
+        let (value, _) = options
+            .iter()
+            .find(|(value, label)| scalar(value) == option || label == option)
+            .ok_or_else(|| {
+                format!(
+                    "{} has no option {option:?}; it offers [{}]",
+                    target.written,
+                    options
+                        .iter()
+                        .map(|(_, label)| label.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+        let (form, in_overlay) = self.form_of(target)?;
+        let fields = form_fields(&form);
+        let index = fields
+            .iter()
+            .position(|known| known.name == field.name)
+            .ok_or_else(|| {
+                format!(
+                    "{}: the terminal moves through a form's own fields, groups and first tab",
+                    target.written
+                )
+            })?;
+        if !in_overlay {
+            self.require_no_overlay(target)?;
+            self.app
+                .focus_section(&target.section().unwrap_or_default());
+        }
+        self.app.keys(&"k".repeat(fields.len()));
+        self.app.keys(&"j".repeat(index));
+        let label = field.label.clone().unwrap_or_else(|| field.field.clone());
+        let wanted = format!("[‹{}› of ", scalar(value));
+        let shows = |runner: &Self| {
+            runner
+                .screen()
+                .text()
+                .lines()
+                .any(|line| line.contains(&label) && line.contains(&wanted))
+        };
+        for _ in 0..=options.len() {
+            if shows(self) {
+                return Ok(());
+            }
+            self.app.keys("<space>");
+        }
+        Err(format!(
+            "{}: the field does not show {option:?} after stepping through its options",
+            target.written
+        ))
     }
 
     fn act(&mut self, target: &Target) -> Result<(), String> {
