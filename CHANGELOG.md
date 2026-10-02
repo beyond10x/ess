@@ -13,6 +13,15 @@
   Go servers in `crates/ui/ess-ui/tests/vectors/answers.json`. `ess ui check --model` reports
   `read_params`: a read binding a parameter the view does not declare, and a required parameter
   left unbound (beyond10x/ess#311).
+- `ess generate ui --target react --model <spec>`: the generated React app reads and commands the
+  synthesized server through the binding. It emits `src/binding.ts` and a binding-driven
+  `httpAdapter`; the base URL per component comes from
+  `<meta name="ess-base-url:<component>">` (same origin when absent) and `setAuthorization`
+  sets the caller. Command answers go through `runtime/answer.ts`, a port of `classify` held to
+  the same vectors. A refusal shows on the form, confirm, action or account-menu entry that sent
+  it and keeps the draft. A bound app plays no fixture channel: live sections poll at `refresh:`
+  (5 s by default; outside 1 s to 24 h is refused). Without `--model` the project is unchanged.
+  `ess ui check --model` also binds a shell region's `does:` (beyond10x/ess#311).
 
 ### Changed
 

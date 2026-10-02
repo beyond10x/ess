@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-react-live-binding
 kind: story
-status: active
+status: implemented
 title: The generated React app reads and commands a synthesized server; refusals show where the user acted
 refs:
 - provider: github
@@ -23,10 +23,11 @@ scope:
   path: crates/ui/ess-ui-test/src/playwright.rs
 - confidence: cited
   path: crates/ui/ess-ui-test/tests/playwright.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-02T00:36:47Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":19}}}
 ---
 ## Outcome
 
