@@ -426,13 +426,15 @@ pub(crate) fn report_format_requirement(
 
 fn runtime() -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("runtime.go"),
         include_str!("reading.go"),
         include_str!("response.go"),
         include_str!("replay.go"),
         include_str!("fixtures.go"),
         include_str!("prerequisites.go"),
+        include_str!("one_time.go"),
+        include_str!("one_time_identity.go"),
         include_str!("../../../../specify/ess-domain/src/reading/coordinate.go")
     )
 }

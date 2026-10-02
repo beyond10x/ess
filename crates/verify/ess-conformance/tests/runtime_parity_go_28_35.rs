@@ -112,7 +112,7 @@ fn structured(covered: bool) -> Input {
 }
 
 const DRIVER: &str = r#"package essconform
-import("encoding/json"; "fmt"; "os"; "testing"; "net")
+import("encoding/json"; "fmt"; "os"; "testing"; "reflect"; "net")
 type parityTarget struct{}
 func call(method string,args any,result any)error{
  socket,err:=net.Dial("tcp",os.Getenv("PARITY_ADDRESS"));if err!=nil{return err};defer socket.Close()
@@ -132,6 +132,24 @@ func(parityTarget) RedeliverEvent(value RedeliveryRequest)error{return call("red
 func(parityTarget) ConfigureExternalOutcome(value ExternalOutcomeControl)error{return call("configure",value,nil)}
 func(parityTarget) DeliverEvent(value EventDeliveryRequest)error{return call("deliver",value,nil)}
 func TestParity(t *testing.T){if path:=os.Getenv("PARITY_DOCUMENT");path!=""{raw,err:=os.ReadFile(path);if err!=nil{t.Fatal(err)};suiteJSON=string(raw)};Run(t,func()Target{return parityTarget{}})}
+func TestOneTimeAdmission(t *testing.T){
+ root:=os.Getenv("PARITY_ADMISSION_VECTORS");entries,err:=os.ReadDir(root);if err!=nil{t.Fatal(err)}
+ if len(entries)==0{t.Fatal("missing admission vectors")}
+ for _,entry:=range entries{t.Run(entry.Name(),func(t *testing.T){
+  raw,err:=os.ReadFile(root+"/"+entry.Name());if err!=nil{t.Fatal(err)};value,err:=strictSuiteJSON(string(raw));if err!=nil{t.Fatal(err)}
+  document:=value.(map[string]any);admitted:=true
+  for id,rawScenario:=range document["scenarios"].(map[string]any){scenario:=rawScenario.(map[string]any);major:=0;if _,err:=fmt.Sscanf(document["provenance"].(map[string]any)["suite_version"].(string),"ess-conformance/%d",&major);err!=nil{t.Fatal(err)};policy,err:=admitOneTimeTrace(scenario,major);if err!=nil{t.Log(err);admitted=false;continue}
+   if os.Getenv("PARITY_IDENTIFIERS")!=""{if err:=admitOneTimeCell(id,scenario,policy,major);err!=nil{t.Log(err);admitted=false;continue}}
+   if canonicalRoot:=os.Getenv("PARITY_CANONICAL_VECTORS");canonicalRoot!=""{expectedRaw,err:=os.ReadFile(canonicalRoot+"/"+entry.Name());if err==nil{expected,err:=strictSuiteJSON(string(expectedRaw));if err!=nil{t.Fatal(err)};wanted:=expected.(map[string]any)["scenarios"].(map[string]any)[id].(map[string]any)["one_time_response"];actualWire,err:=directWire(policy);if err!=nil{t.Fatal(err)};actual,err:=strictJSON(string(actualWire));if err!=nil{t.Fatal(err)};if !reflect.DeepEqual(actual,wanted){t.Fatalf("canonical policy differs:\nGo %s\nnative %v",actualWire,wanted)}}}
+  }
+  expected:=len(entry.Name())>=6&&entry.Name()[:6]=="valid-";if admitted!=expected{t.Fatalf("native admission=%v, Go policy admission=%v",expected,admitted)}
+ })}
+}
+func TestOneTimeIdentifierGrammar(t *testing.T){
+ raw,err:=os.ReadFile(os.Getenv("PARITY_IDENTIFIER_GRAMMAR"));if err!=nil{t.Fatal(err)}
+ var vectors [][]any;if err=json.Unmarshal(raw,&vectors);err!=nil{t.Fatal(err)};if len(vectors)!=13{t.Fatal("identifier vectors changed")}
+ for _,vector:=range vectors{expected:=vector[0].(bool);written:=vector[1].(string);_,err:=oneTimeCellIdentity(written);if (err==nil)!=expected{t.Errorf("%s: admission=%v expected=%v",written,err==nil,expected)}}
+}
 func TestProducerBoundaries(t *testing.T){
  suite,err:=admitRunInput(suiteJSON);if err!=nil{t.Fatal(err)}
  results:=[]scenarioResult{};for id:=range suite.Scenarios{results=append(results,scenarioResult{id:id,status:statusSkipped})}
@@ -693,4 +711,331 @@ fn unresolved_structured_instances_are_execution_errors_before_the_command() {
     );
     assert_eq!(trace, *target.trace.lock().unwrap());
     assert!(!trace.iter().any(|entry| entry["method"] == "execute"));
+}
+
+#[test]
+fn go_prepares_one_time_policy_admission_from_the_25_immutable_contract_vectors() {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-response");
+    let entries = std::fs::read_dir(&root)
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(entries.len(), 25);
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let raw = std::fs::read_to_string(entry.path()).unwrap();
+        assert_eq!(
+            AdmittedSuite::from_json(&raw).is_ok(),
+            name.starts_with("valid-"),
+            "{name}"
+        );
+    }
+    let directory = direct(false).package("one-time-admission", &[("parity_test.go", &driver())]);
+    let result = support_go::go_test(
+        &directory,
+        "TestOneTimeAdmission",
+        &[("PARITY_ADMISSION_VECTORS", root.to_str().unwrap())],
+    );
+    eprintln!("{}", result.log);
+    assert!(result.success, "{}", result.log);
+    assert!(
+        result.outcomes.is_empty(),
+        "policy preparation must not publish an execution report"
+    );
+}
+
+fn one_time_constraint_cases() -> [(bool, Value); 47] {
+    [
+        (true, json!(true)),
+        (true, json!(false)),
+        (true, json!("value")),
+        (true, json!("defined(value)")),
+        (true, json!("value.count >= 4")),
+        (true, json!("value.count <= value.count")),
+        (true, json!("value == 'abc'")),
+        (true, json!("value != 'abc'")),
+        (true, json!("value >= 'abc'")),
+        (true, json!("not value.count < 4")),
+        (true, json!({"all":[]})),
+        (true, json!({"none":[]})),
+        (true, json!({"value":{"starts_with":"ab"}})),
+        (true, json!({"value":{"ends_with":"ab"}})),
+        (true, json!({"value":{"contains":"ab"}})),
+        (true, json!({"value":{"equals_ignore_case":""}})),
+        (true, json!({"value":{"in_ignore_case":["ab"]}})),
+        (true, json!({"value":{"in":["ab","ac"]}})),
+        (true, json!({"none":[false],"not":false})),
+        (true, json!({"all_of":null})),
+        (true, json!({"not":{"not":"value.count >= 4"}})),
+        (true, json!({"value":{"in":null}})),
+        (false, json!({"value":{"equals":"true"}})),
+        (true, json!({"value":{"equals":"\"true\""}})),
+        (true, json!({"value":{"eq":"\"a.b\""}})),
+        (true, json!({"value":{"eq":"\"a and b\""}})),
+        (true, json!("true")),
+        (true, json!("false")),
+        (true, json!("exists(value)")),
+        (true, json!("missing(value)")),
+        (true, json!("defined ( value )")),
+        (true, json!("value.count >= 9007199254740993")),
+        (
+            true,
+            json!({"value.count":{"gte":9_007_199_254_740_993_u64}}),
+        ),
+        (true, json!({"value.count":{"gte":1e2}})),
+        (true, json!({"value.count":{"in":[1e2, 1e-7]}})),
+        (true, json!({"value.count":{"in":[-0.0]}})),
+        (true, json!(format!("value.count >= {}1", "0".repeat(600)))),
+        (true, json!("value.count >= 1e-2147483648")),
+        (
+            true,
+            json!({"value.count":{"in":[1, 2, 9_007_199_254_740_993_u64]}}),
+        ),
+        (
+            true,
+            json!({"value.count":{"in":[1e-6, 1e-5, 1e15, 1e16, 1e20, -0.0]}}),
+        ),
+        (false, json!("value == null")),
+        (false, json!("value == a && b")),
+        (false, json!("value.bad == 1")),
+        (false, json!("missing.count >= 4")),
+        (false, json!("value.count == 'abc'")),
+        (false, json!({"value":{"starts_with":""}})),
+        (
+            false,
+            json!({"forall":{"in":"value","as":"item","that":true}}),
+        ),
+    ]
+}
+
+#[test]
+fn go_one_time_string_constraint_grammar_matches_native_admission() {
+    let original: Value = serde_json::from_str(include_str!(
+        "fixtures/one-time-response/valid-constrained-string.json"
+    ))
+    .unwrap();
+    let cases = one_time_constraint_cases();
+    assert_eq!(cases.len(), 47);
+    let directory =
+        direct(false).package("one-time-string-grammar", &[("parity_test.go", &driver())]);
+    let vectors = directory.join("admission-vectors");
+    std::fs::create_dir(&vectors).unwrap();
+    let canonical = directory.join("canonical-vectors");
+    std::fs::create_dir(&canonical).unwrap();
+    for (index, (expected, predicate)) in cases.into_iter().enumerate() {
+        let mut wire = original.clone();
+        for scenario in wire["scenarios"].as_object_mut().unwrap().values_mut() {
+            scenario["one_time_response"]["origins"][0]["response"]["constraints"]
+                ["credentials.api.Secret"]["invariants"] = json!([predicate]);
+        }
+        // Preserve the JSON token -0 as well as -0.0; Value serialization normalizes it.
+        let raw = wire.to_string().replace("[-0.0]", "[-0]");
+        assert_eq!(
+            AdmittedSuite::from_json(&raw).is_ok(),
+            expected,
+            "constraint {index}: {raw}"
+        );
+        let prefix = if expected { "valid" } else { "invalid" };
+        let name = format!("{prefix}-{index:02}.json");
+        if expected {
+            let admitted = AdmittedSuite::from_json(&raw).unwrap();
+            std::fs::write(
+                canonical.join(&name),
+                serde_json::to_vec(admitted.suite()).unwrap(),
+            )
+            .unwrap();
+        }
+        std::fs::write(vectors.join(name), raw).unwrap();
+    }
+    let result = support_go::go_test(
+        &directory,
+        "TestOneTimeAdmission",
+        &[
+            ("PARITY_ADMISSION_VECTORS", vectors.to_str().unwrap()),
+            ("PARITY_CANONICAL_VECTORS", canonical.to_str().unwrap()),
+        ],
+    );
+    eprintln!("{}", result.log);
+    assert!(result.success, "{}", result.log);
+    assert!(result.outcomes.is_empty());
+}
+
+#[test]
+fn go_prepares_the_frozen_disclosure_identity_grammar_and_bindings() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let grammar = root.join("one-time-response-identifier-grammar.json");
+    let vectors: Vec<(bool, String)> =
+        serde_json::from_str(&std::fs::read_to_string(&grammar).unwrap()).unwrap();
+    assert_eq!(vectors.len(), 13);
+    for (expected, written) in vectors {
+        assert_eq!(
+            ess_conformance::ScenarioId::parse(&written).is_ok(),
+            expected,
+            "{written}"
+        );
+    }
+    let suites = root.join("one-time-response-identifiers");
+    let entries = std::fs::read_dir(&suites)
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(entries.len(), 11);
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let raw = std::fs::read_to_string(entry.path()).unwrap();
+        assert_eq!(
+            AdmittedSuite::from_json(&raw).is_ok(),
+            name.starts_with("valid-"),
+            "{name}"
+        );
+    }
+    let directory = direct(false).package("one-time-identifiers", &[("parity_test.go", &driver())]);
+    for name in ["TestOneTimeIdentifierGrammar", "TestOneTimeAdmission"] {
+        let result = support_go::go_test(
+            &directory,
+            name,
+            &[
+                ("PARITY_IDENTIFIER_GRAMMAR", grammar.to_str().unwrap()),
+                ("PARITY_ADMISSION_VECTORS", suites.to_str().unwrap()),
+                ("PARITY_IDENTIFIERS", "1"),
+            ],
+        );
+        eprintln!("{}", result.log);
+        assert!(result.success, "{}", result.log);
+    }
+}
+
+#[test]
+fn go_one_time_authority_counts_canonical_metadata_bytes() {
+    let original: Value = serde_json::from_str(include_str!(
+        "fixtures/one-time-response/valid-constrained-string.json"
+    ))
+    .unwrap();
+    let directory = direct(false).package(
+        "one-time-canonical-authority",
+        &[("parity_test.go", &driver())],
+    );
+    let vectors = directory.join("admission-vectors");
+    let canonical = directory.join("canonical-vectors");
+    std::fs::create_dir(&vectors).unwrap();
+    std::fs::create_dir(&canonical).unwrap();
+    for (index, size) in [1024_usize, 1_048_576, 1_048_577].into_iter().enumerate() {
+        let mut wire = original.clone();
+        let scenario = wire["scenarios"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap();
+        let policy = &mut scenario["one_time_response"];
+        let response = &mut policy["origins"][0]["response"];
+        let summary_prefix = "é\u{2028}\u{2029}\\u2028";
+        response["fields"][0]["naming"] = json!({"summary":summary_prefix, "code":"Secret"});
+        response["fields"][0]["wire"] = Value::Null;
+        response["fields"].as_array_mut().unwrap().push(json!({
+            "name":"extra", "type":"Optional<Map<String, Json>>",
+            "naming":{"display":"Other"}, "presence":"omitted_when_absent"
+        }));
+        response["declarations"]["credentials.api.Secret"]["of"] = json!(" String ");
+        let constraints = response["constraints"]["credentials.api.Secret"]
+            .as_object_mut()
+            .unwrap();
+        constraints.remove("alphabet");
+        constraints.remove("prefix");
+        constraints.insert("invariants".into(), json!([{"all_of":[true]}]));
+        let typed: ess_conformance::one_time_response::Trace =
+            serde_json::from_value(policy.clone()).unwrap();
+        let base_size = serde_json::to_vec(&typed).unwrap().len();
+        assert!(base_size <= size);
+        policy["origins"][0]["response"]["fields"][0]["naming"]["summary"] =
+            json!(format!("{summary_prefix}{}", "x".repeat(size - base_size)));
+        let typed: ess_conformance::one_time_response::Trace =
+            serde_json::from_value(policy.clone()).unwrap();
+        assert_eq!(serde_json::to_vec(&typed).unwrap().len(), size);
+        let raw = wire.to_string();
+        let admitted = AdmittedSuite::from_json(&raw);
+        let expected = size <= 1_048_576;
+        assert_eq!(
+            admitted.is_ok(),
+            expected,
+            "canonical size {size}: {admitted:?}"
+        );
+        let prefix = if expected { "valid" } else { "invalid" };
+        let name = format!("{prefix}-{index}.json");
+        if let Ok(admitted) = admitted {
+            std::fs::write(
+                canonical.join(&name),
+                serde_json::to_vec(admitted.suite()).unwrap(),
+            )
+            .unwrap();
+        }
+        std::fs::write(vectors.join(name), raw).unwrap();
+    }
+    let result = support_go::go_test(
+        &directory,
+        "TestOneTimeAdmission",
+        &[
+            ("PARITY_ADMISSION_VECTORS", vectors.to_str().unwrap()),
+            ("PARITY_CANONICAL_VECTORS", canonical.to_str().unwrap()),
+        ],
+    );
+    eprintln!("{}", result.log);
+    assert!(result.success, "{}", result.log);
+}
+
+#[test]
+fn go_exploration_refuses_marked_source_before_callbacks_or_recording() {
+    let source="format: ess/21\nsystem: credentials\nversion: v1\ndomain: credentials.api\ncommands:\n  - name: credentials.api.Issue\n    response: [{name: secret, type: String}]\n    outcomes: [{name: issued, returns: true, one_time_response: [secret]}]\n";
+    for marked in [true, false] {
+        let source = if marked {
+            source.to_owned()
+        } else {
+            source.replace(", one_time_response: [secret]", "")
+        };
+        let ir = model(&source);
+        // Explorer generation accepts a selected empty suite, so the authoritative source IR
+        // must govern this preflight independently of scenario selection.
+        let suite = ConformanceSuite::new(ess_conformance::SuiteProvenance::of(&ir));
+        let directory = support_go::directory("one-time-explorer-preflight");
+        for artifact in ess_conformance::go::emit_with_model(&suite, &ir).unwrap() {
+            std::fs::write(directory.join(artifact.path), artifact.contents).unwrap();
+        }
+        std::fs::write(
+            directory.join("go.mod"),
+            "module example.invalid/goparity\n\ngo 1.21\n",
+        )
+        .unwrap();
+        std::fs::write(directory.join("essconform/parity_test.go"), driver()).unwrap();
+        std::fs::write(directory.join("essconform/preflight_test.go"),r#"package essconform
+import("testing";"os";"strings")
+func TestMarkedExplorer(t *testing.T){
+ marked:=os.Getenv("PARITY_MARKED")=="yes"
+ _,err:=exploreLoad(exploreIR,exploreSuite)
+ if !marked{if err!=nil{t.Fatal(err)};return}
+ if err==nil||!strings.Contains(err.Error(),"UnsupportedOneTimeDisclosure"){t.Errorf("marked source was not refused by model loading: %v",err)}
+ calls:=0;factory:=func()Target{calls++;return parityTarget{}}
+ _,err=Explore(factory,ExploreOptions{Seeds:1,Steps:1})
+ if err==nil||!strings.Contains(err.Error(),"UnsupportedOneTimeDisclosure"){t.Errorf("serial explorer did not refuse marked source: %v",err)}
+ out:=os.Getenv("PARITY_HISTORY_OUT")
+ _,err=ExploreConcurrent(factory,ConcurrentOptions{Path:"source.yaml",Out:out,Seeds:1,Clients:2,Calls:1})
+ if err==nil||!strings.Contains(err.Error(),"UnsupportedOneTimeDisclosure"){t.Errorf("concurrent explorer did not refuse marked source: %v",err)}
+ if calls!=0{t.Errorf("marked source constructed %d targets",calls)}
+ if _,err:=os.Stat(out);!os.IsNotExist(err){t.Errorf("marked source created a history directory")}
+}
+"#).unwrap();
+        std::fs::write(directory.join("source.yaml"), source).unwrap();
+        let history = directory.join("history-must-not-exist");
+        let result = support_go::go_test(
+            &directory,
+            "TestMarkedExplorer",
+            &[
+                ("PARITY_MARKED", if marked { "yes" } else { "no" }),
+                ("PARITY_HISTORY_OUT", history.to_str().unwrap()),
+            ],
+        );
+        eprintln!("{}", result.log);
+        assert!(result.success, "{}", result.log);
+        assert!(result.outcomes.is_empty());
+    }
 }
