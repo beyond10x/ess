@@ -88,16 +88,16 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
     saves.current.held ??= before;
     const input = isObject(next) ? next : {};
     void runCommand(scope, command, { ...params, ...input }, true, (refused) => {
-      if (save !== saves.current.sent) {
-        return;
-      }
-      setRefusal(refused);
-      if (refused) {
-        scope.set("draft", saves.current.held);
+      if (save === saves.current.sent) {
+        setRefusal(refused);
       }
     }).then((ok) => {
+      // Done (accepted, or committed though unfinished): the server holds it. Otherwise it holds
+      // nothing new, and the latest save puts back what it does hold.
       if (ok) {
         saves.current.held = input;
+      } else if (save === saves.current.sent) {
+        scope.set("draft", saves.current.held);
       }
     });
   };

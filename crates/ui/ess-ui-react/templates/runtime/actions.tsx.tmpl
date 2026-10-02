@@ -102,6 +102,14 @@ export async function runCommand(
     return true;
   } catch (error) {
 //+bound
+    if (error instanceof CommandRefused && error.answer.answer === "unfinished" && error.answer.committed) {
+      // The effect stands (`Unfinished { committed: true }`): the command is done and must never
+      // be sent again. Read again, show what failed after the effect, and finish as accepted.
+      invalidate();
+      refused?.({ answer: "unfinished", text: error.display });
+      scope.notify(`${command}: ${error.display}`, "danger");
+      return true;
+    }
     if (error instanceof CommandRefused) {
       // A conflict says what was read is out of date: read it again.
       if (error.answer.answer === "refused" && error.status === 409) {
