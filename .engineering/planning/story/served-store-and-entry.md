@@ -66,7 +66,7 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -238,3 +238,7 @@ The model-global Context port requires infallible methods even for context used 
 Accept an additive fallible companion seam: Rust retains the existing Context and supplies a blanket adapter into TryContext; existing realizations continue to compile unchanged. MemoryPorts implements the fallible seam with named UnmetObligation errors. Go retains its existing Context surface and adds a fallible companion path with explicit precedence; legacy implementations continue to work. Generated behavior propagates the existing typed obligation error rather than panicking. Do not replace existing method signatures or weaken the no-panic tests. Delegate unsupported command/view obligations to existing generated stubs instead of duplicating them.
 
 Regression controls must establish legacy Context source compatibility, direct MemoryPorts refusal for unsupported caller/assignment/external answers, unchanged component-specific startup refusal/reachability, and error propagation without partial storage mutation or emitted success events. Audit each context call relative to writes before choosing placement: a fallible value must be obtained before committing effects that would otherwise survive its error. No new syntax or format is authorized. New generated names must use existing collision allocation, with a collision fixture. Record exact touched files and changes before the independent frozen review.
+
+## Total identity for direct invalid Go Json constructors
+
+Go NewJson can retain malformed document text even though generated HTTP rejects it. Storage ports have no error return, so a generated identity helper must remain total without panicking. Accept a separate InvalidRaw identity variant, ordered deterministically by original text and distinct from every valid decoded Json key. Use it when decoding or internal decoded-value conversion cannot produce a supported valid key. It must never silently become null, an empty key or a Debug/map rendering. Identical invalid raw text compares equal; different raw text remains distinct. Existing Json constructors, native equality and HTTP validation stay unchanged. Add direct-store controls for replacement, distinction and no-panic behavior; decoded-wire identity rules still govern valid inputs.

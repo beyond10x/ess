@@ -21,7 +21,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/subject-guard-copied-field.yaml
 - confidence: cited
   path: crates/verify/ess-conformance/tests/subject_guard_copied_field.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T12:22:56Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T12:22:57Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -59,3 +59,9 @@ Read-only assessment by scope_boolean performed zero builds or test executions. 
 Then reproduce issue360 separately for direct creation and later subject arrangement. Current prepare_in arranges related rows whereas invoke_with settles against an empty map; this is a hypothesis, not a reproduction. Require a matching and nonmatching subject even when the copied foreign field is not an ownership link. Exercise copied ordinary values and generated identities, source decoys before and after the selected source, and first-source/last-source/ignored-parameter mutants. Compose stored guards and view selection in the same reduction.
 
 Keep changes within existing bounded related arrangement, settled values and view binding. Preserve cycle/search bounds: do not blindly recurse from invoke_with because arrange_except currently starts nested arrangement with an empty chain. No new syntax, format, ownership edge, arbitrary identity literal, general join or runner semantics are accepted. One group package validation and eventual grouped PR; no separate #307 remote gate.
+
+## Fresh missing-policy witness and bounded refinement
+
+The expanded two-policy regression demonstrated that IgnoresRollbackPolicy survives the old suite. Binding ordinary command input during boundary evaluation made seven copy/branch/state mutants decisive, while an explicit absence-coverage assertion remained red: isolating defined(flag) also demanded flag == true, which cannot hold when that Optional field is absent (307-controls-2.log).
+
+Accept the bounded subject_fact.rs refinement: for the absent side of a defined Optional stored-field conjunct, retain independent conjuncts (including the ordinary result input), and remove only comparisons that require the same field to be present. Identify dependent reads through resolved typed paths, not broad textual substitution. Run the existing search and verify the entire selected branch afterward; omitting a dependent comparison from an arrangement goal must never omit it from actual outcome verification. Retain MAX_BOUNDARIES=8, deterministic ordering and explicit unsupported/cycle limits. Include true/false/absent controls and keep the named interpreter RelatedField refusal separate from honest-target acceptance evidence.
