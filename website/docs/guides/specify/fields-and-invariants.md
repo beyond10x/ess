@@ -76,7 +76,7 @@ field's type and synthesis drops it, and `lane_id: ""` is an empty string, which
 apart from an absent value and which a struct cannot hold at all. To empty a field, write
 `{cleared: true}`; see [value expressions](values-and-views.md#value-expressions).
 
-### Cover every declared enum or Boolean value {#cover-every-declared-enum-value}
+### Cover every declared enum value
 
 Since 0.23.0 a command may omit its default when its input guards
 select exactly one outcome for every value of a required, closed enum. For example,
