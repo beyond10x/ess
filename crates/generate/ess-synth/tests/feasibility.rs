@@ -564,6 +564,156 @@ fn optional_identity_and_omission_bindings_compile() {
     }
 }
 
+fn strict_binding_model(input: &str, mapping: &str) -> EssIr {
+    let model = format!(
+        "format: ess/4
+system: demo
+version: v1
+domain: demo.core
+events:
+  - name: demo.core.Fired
+    fields:
+      - {{name: value, type: String}}
+  - name: demo.core.Handled
+commands:
+  - name: demo.core.Handle
+    input: {input}
+    outcomes:
+      - name: done
+        emits: [demo.core.Handled]
+components:
+  - component: worker
+    owns: {{domains: [demo.core]}}
+    accepts: {{commands: [demo.core.Handle]}}
+    publishes: {{events: [demo.core.Fired, demo.core.Handled]}}
+bindings:
+  - id: handle-fired
+    when: {{event: demo.core.Fired}}
+    invoke: {{command: demo.core.Handle}}
+    mapping: {mapping}
+    delivery: at_least_once
+    on_failure: drop
+"
+    );
+    fixture(&[("binding.yaml", &model)])
+}
+
+/// Compile untouched emitted sources under strict warnings, then actually deliver a binding.
+/// Each case and layout gets a fresh generated target, so equal package names cannot reuse a
+/// different model's executable.
+fn strict_binding(input: &str, mapping: &str, expected: &str) {
+    let ir = strict_binding_model(input, mapping);
+    for layout in [
+        ess_synth::OutputLayout::Workspace,
+        ess_synth::OutputLayout::Crate,
+    ] {
+        let synthesis = ess_synth::synthesize_laid_out(&ir, Target::Rust, layout)
+            .expect("the binding is fully determined");
+        let directory = scratch("strict-binding");
+        write_emission(&directory, &synthesis);
+        let (test_directory, imports) = match layout {
+            ess_synth::OutputLayout::Workspace => (
+                directory.join("crates/demo-system/tests"),
+                "use demo_system as system; use demo_types::{core, behaviour::Generated}; use worker::Worker;",
+            ),
+            ess_synth::OutputLayout::Crate => (
+                directory.join("tests"),
+                "use demo::{system, core, behaviour::Generated, ports::worker::Worker};",
+            ),
+        };
+        std::fs::create_dir_all(&test_directory).unwrap();
+        let harness = format!(
+            r#"{imports}
+#[test]
+fn binding_invokes_with_declared_input() {{
+    let mut system = system::System::new(Worker::new(Generated::new(())));
+    for value in ["first", "second"] {{
+        let event = core::Fired {{ value: value.to_owned() }};
+        let expected = core::Handle {{ {expected} }};
+        assert_eq!(system::handle_fired(&event), expected);
+        system.redeliver(&system::SystemEvent::Fired(event)).expect("binding delivers");
+        assert_eq!(system.invocations().last(), Some(&system::BindingInvocation::HandleFired(expected)));
+    }}
+    assert_eq!(system.invocations().len(), 2);
+    assert_eq!(system.published().len(), 2);
+    assert!(system.published().iter().all(|event| matches!(event, system::SystemEvent::Handled(_))));
+}}
+"#
+        );
+        std::fs::write(test_directory.join("binding.rs"), harness).unwrap();
+        let before = generated_bytes(&directory);
+        let output = Command::new(std::env::var_os("CARGO").expect("Cargo executable"))
+            .current_dir(&directory)
+            .args([
+                "test",
+                "--offline",
+                "--workspace",
+                "--test",
+                "binding",
+                "--",
+                "--nocapture",
+            ])
+            .env_remove("CARGO_TARGET_DIR")
+            .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env("RUSTFLAGS", "-D warnings")
+            .env("CARGO_INCREMENTAL", "0")
+            .output()
+            .expect("strict generated test executes");
+        std::fs::write(directory.join("strict.stdout"), &output.stdout).unwrap();
+        std::fs::write(directory.join("strict.stderr"), &output.stderr).unwrap();
+        std::fs::write(directory.join("strict.exit"), output.status.to_string()).unwrap();
+        eprintln!(
+            "strict generated fixture {}\n{}\n{}",
+            directory.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            output.status.success(),
+            "strict generated binding failed: {}",
+            directory.display()
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+        assert_eq!(
+            before,
+            generated_bytes(&directory),
+            "generated source is unchanged"
+        );
+    }
+}
+
+#[test]
+fn strict_rust_binding_inputless_compiles_and_invokes() {
+    strict_binding("[]", "{}", "");
+}
+
+#[test]
+fn strict_rust_binding_literal_only_compiles_and_invokes() {
+    strict_binding(
+        "[{name: value, type: String}]",
+        "{value: fixed}",
+        "value: \"fixed\".to_owned()",
+    );
+}
+
+#[test]
+fn strict_rust_binding_optional_only_compiles_and_invokes() {
+    strict_binding(
+        "[{name: value, type: Optional<String>}]",
+        "{}",
+        "value: None",
+    );
+}
+
+#[test]
+fn strict_rust_binding_event_mapping_still_reads_payload() {
+    strict_binding(
+        "[{name: value, type: String}]",
+        "{value: event.value}",
+        "value: value.to_owned()",
+    );
+}
+
 #[test]
 fn optional_self_recursion_is_a_size_cycle() {
     refusal(&core("types:\n  - name: demo.core.Link\n    kind: struct\n    fields:\n      - name: next\n        type: Optional<demo.core.Link>\n", ""), "recursive-layout", "self-recursion");
