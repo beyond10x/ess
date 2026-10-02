@@ -28,7 +28,7 @@
 //! refusal the model does not declare is not available, so it is never answered as a declared one.
 //!
 //! Where the model uses a construct this module does not execute yet — a guard over the subject's
-//! stored fields, a retained replay, a value expression other
+//! related rows, a retained replay, a value expression other
 //! than an input field or a literal — the answer is [`Undetermined::NotInterpreted`], never a
 //! guess. A guard that evaluates to `Unknown` is [`Undetermined::Undecidable`] for the same reason.
 //!
@@ -44,6 +44,8 @@
 //! steps. A created identity is assigned once, the event field `instance:` names publishes that
 //! value whatever payload source it declares, and an identity the store already holds is never
 //! created again.
+
+mod subject;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -351,11 +353,14 @@ pub fn execute_generating(
     interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
-    let mut held_states = BTreeMap::new();
+    let mut held_subjects = BTreeMap::new();
     for outcome in &spec.outcomes {
         if !matches!(
             outcome.condition,
-            ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. }
+            ResolvedCondition::SubjectState { .. }
+                | ResolvedCondition::StateChange { .. }
+                | ResolvedCondition::SubjectField { .. }
+                | ResolvedCondition::SubjectPredicate { .. }
         ) {
             continue;
         }
@@ -377,9 +382,12 @@ pub fn execute_generating(
         let Some(held) = store.instance(entity, &key) else {
             return Ok(vec![unknown_instance(ir, spec, store, input)?]);
         };
-        held_states.insert(outcome.name.clone(), held.state.clone());
+        held_subjects.insert(
+            outcome.name.clone(),
+            subject::Held::new(ir, ir.entity(&subject.entity), held)?,
+        );
     }
-    let selected = select(spec, &facts, command, externals, &held_states)?;
+    let selected = select(spec, &facts, command, externals, &held_subjects)?;
 
     if selected.is_empty() {
         return Ok(vec![undeclared(store)]);
@@ -420,7 +428,7 @@ fn select<'s>(
     facts: &input::InputFacts<'_>,
     command: &QualifiedName,
     externals: &Externals,
-    held_states: &BTreeMap<OutcomeName, StateName>,
+    held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
     let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(facts) {
         Truth::True => Ok(true),
@@ -471,11 +479,12 @@ fn select<'s>(
     if selected.is_empty() {
         let mut answered = false;
         for outcome in &spec.outcomes {
-            if let Some(takes) = state_guard(
-                &outcome.condition,
-                held_states.get(&outcome.name),
-                |guard| holds(outcome, guard),
-            )? {
+            if let Some(takes) = held_subjects
+                .get(&outcome.name)
+                .map(|held| held.selects(&outcome.condition, facts, branch(spec, outcome)))
+                .transpose()?
+                .flatten()
+            {
                 if takes {
                     selected.push(outcome);
                     answered = true;
@@ -689,11 +698,17 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
             | ResolvedCondition::UnknownInstance
             | ResolvedCondition::SubjectState { .. }
             | ResolvedCondition::StateChange { .. } => {}
-            ResolvedCondition::SubjectField { .. } | ResolvedCondition::SubjectPredicate { .. } => {
-                return gap(format!(
-                    "the guard over the subject's stored fields of `{at}`"
-                ));
+            ResolvedCondition::SubjectField { predicate, .. } => {
+                if predicate.as_ref().is_some_and(reads_now) {
+                    return gap(format!("the current-time guard of `{at}`"));
+                }
             }
+            ResolvedCondition::SubjectPredicate { predicate, input } => {
+                if reads_now(predicate) || input.as_ref().is_some_and(reads_now) {
+                    return gap(format!("the current-time guard of `{at}`"));
+                }
+            }
+
             ResolvedCondition::Related { .. } => {
                 return gap(format!("the guard over a related row of `{at}`"));
             }
@@ -1330,23 +1345,4 @@ fn at_rest(
         }
     }
     Ok(())
-}
-
-fn state_guard(
-    condition: &ResolvedCondition,
-    held: Option<&StateName>,
-    holds: impl Fn(&Predicate) -> Result<bool, Undetermined>,
-) -> Result<Option<bool>, Undetermined> {
-    let (admitted, predicate) = match condition {
-        ResolvedCondition::SubjectState { state, predicate } => {
-            (held.is_some_and(|held| state.contains(held)), predicate)
-        }
-        ResolvedCondition::StateChange {
-            states, predicate, ..
-        } => (held.is_some_and(|held| states.contains(held)), predicate),
-        _ => return Ok(None),
-    };
-    Ok(Some(
-        admitted && predicate.as_ref().map_or(Ok(true), holds)?,
-    ))
 }
