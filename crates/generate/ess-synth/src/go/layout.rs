@@ -38,7 +38,7 @@ pub const MODULE_HOST: &str = "example.invalid";
 /// `sort` and the standard `sort` would be one name twice in any file importing both.
 const STANDARD_IMPORTS: &[&str] = &[
     "base64", "big", "bytes", "embed", "fmt", "http", "io", "json", "net", "reflect", "sort",
-    "strconv", "strings", "sync", "time", "utf8",
+    "strconv", "strings", "sync", "time", "utf8", "flag", "os", "filepath", "rand",
 ];
 
 /// One Go package of the generated module.

@@ -10,8 +10,9 @@ Synthesis follows one rule: **what the specification fully determines is generat
 determine is an obligation.** It generates the part of an implementation that was never yours to
 write — types, typestate lifecycles, component ports, one transport, and the behaviour of every
 command and the query of every view whose outcome the specification spells out — and hands back
-everything it cannot determine as a **named obligation**. Storage is not generated: a generated
-behaviour reads and writes through ports you provide.
+everything it cannot determine as a **named obligation**. Generated behaviour reads and writes
+through storage ports. Network-served components also get an ephemeral in-memory implementation
+and an executable; durable storage remains yours to provide.
 
 ```shell-session
 $ ess generate synthesize --path examples/billing --target rust --out out/
@@ -199,8 +200,26 @@ Everything the specification leaves open is a port, and the ports are yours to p
 | storage, one trait per entity a generated behaviour or query reads or writes (`InvoiceStorage`) | `get`, `put` and `delete` of a snapshot by identity, and `list` of every stored snapshot |
 | `Context`, where a generated behaviour asks it anything | the caller's attributes, every identity and value the specification says the implementation assigns (a created identity, `{generated: true}`), and whether each `external:` branch is taken |
 
-ESS generates each port's trait and never an implementation of it: where instances live stays
-yours. `P` also supplies every behaviour and query the plan still owes, and `Generated<P>` forwards
+ESS preserves these ports for your implementations. For network-served components it also
+generates in-memory stores whose `list` answers in identity order. These stores lose all data
+when the process exits. Integer identities sort numerically; text and the text-backed primitives
+sort by their stored rendering. Decimal `1` and `1.0` remain distinct identities, as do JSON
+numbers with different spellings. Newtypes preserve the underlying comparison. Records compare
+fields in declaration order, enum variants by their declared names, unions by tag then payload,
+and lists lexicographically. Booleans sort false before true, bytes lexicographically, and each
+optional layer absent before present. Maps compare sorted key/value pairs, independently of insertion
+order. JSON objects retain their member order; they are not maps in the generated value model.
+These comparisons govern lookup, replacement and deletion as well as listing. No numeric
+normalization is added, and the existing HTTP decoder bounds and refusals still apply.
+Memory-store identity compares decoded model values, rather than native Go pointer identity.
+In particular, direct Go `Json` values that differ only in whitespace address the same row;
+the zero `Json` value and explicit `null` also address the same row. This is the new store's
+key contract; it does not change `Json` constructors or native type equality.
+Malformed JSON supplied directly through a Go constructor retains a separate raw-text key,
+ordered after valid decoded keys. It neither panics nor aliases a valid JSON value; HTTP still
+refuses malformed JSON before it reaches the store.
+
+`P` also supplies every behaviour and query the plan still owes, and `Generated<P>` forwards
 them, so it is a complete bundle. To replace one generated behaviour, write a bundle that
 implements that trait and delegates the rest to a `Generated`. `PLAN.md` names the same ports in
 its **Ports — yours to provide** section.
@@ -273,6 +292,34 @@ another type than it computes. The Go target generates the same queries on its `
 the storage interface's `List`, with exact decimal sums and means. See the
 [view query tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/generated_view_queries.rs).
 
+## Run a generated network component
+
+A `reached_by: network` component gets `cmd/<component>-server/main.go` in Go and
+`crates/<system>-server/src/bin/<component>-server.rs` in the Rust workspace. The Rust single-crate
+layout puts the executable under `src/bin/` and requires `--features server`. Rust entries use
+clap derive; their runtime dependencies are clap, uuid and time. Go entries use the standard
+library.
+
+Each entry accepts `--listen <addr>` (default `127.0.0.1:8080`), `--callers <mode>` (default
+`none`) and `--static <dir>`. Port `0` chooses an available port; the ready record reports the
+bound address. With `--static`, paths outside the API route table serve files from the selected
+directory, including `index.html` at `/`. Filesystem aliases and encoded paths cannot escape
+that directory. API routes keep their own method, authorization and error responses. This lets
+a generated web app share the server's origin without CORS configuration.
+
+The memory context supplies random v4 UUIDs and timestamps from the system clock. Before opening
+the listener, an entry refuses startup if its reachable commands, views or bindings still owe
+behavior, caller attributes, external decisions or assigned values of another type. Diagnostics
+name the missing answers. Unrelated components' context requirements do not prevent startup.
+To supply those answers, link a realization through the existing storage, context and `serve`
+callback ports. The generated executable is for ephemeral use: restarting it clears its stores.
+Rust's additive `TryContext` returns typed context errors and adapts existing `Context`
+implementations automatically. Go's additive `NewWithContext(Ports, FallibleContext)` explicitly
+selects the fallible companion ahead of `Ports.Context`. The existing `Ports` fields and
+`New(Ports)` constructor remain unchanged. Missing context answers return a named
+`UnmetObligation`. Generated commands prepare their outcome and event payloads before committing
+storage changes, so an unavailable late context answer leaves stored rows unchanged.
+
 ## Actor grants are generated as data, and a served surface enforces them
 
 Which actors exist and which commands each may invoke is fully determined, so the Rust target
@@ -283,7 +330,12 @@ was authenticated as. The module is emitted only for a model that declares an ac
 Where the specification serves a component (`reached_by: network`), the generated server enforces
 the grant. Its `dispatch` and `handle` (Rust) and `dispatch` (Go) take the caller your realization
 authenticated the request as, or none, and `serve` takes the function that authenticates one. How a
-request proves who sent it is yours; the server reads no actor from the request itself. Before the
+request proves who sent it is yours; the `serve` callback remains available to your realization.
+The generated executable defaults to `--callers none`, which authenticates nobody even if a
+request carries an actor header. Explicitly selecting `--callers actor-header` enables a
+demonstration mode: `Authorization: Actor <name>` names a declared actor by its qualified name
+or an unambiguous short name. Startup identifies this demonstration mode. It is not production
+authentication. Before the
 command runs, a caller that is none, or is an actor without the grant, gets one standard refusal,
 the same for every command: `403` with `{"refused": "not granted", "actor": <name or null>}`. The
 contract declares it on every command. A `403` a caller-decided branch answers carries `outcome` and
@@ -321,7 +373,8 @@ instead and fails the denied scenarios. See the
 
 * **What the specification cannot determine is not generated.** A decision or an algorithm the
   specification does not spell out is an obligation, and a command with one such outcome is an
-  obligation as a whole. Storage is a port you provide; ESS never generates a store.
+  obligation as a whole. Storage remains a port; network-served components also get ephemeral
+  generated stores, while durable storage stays with the realization.
 * **Obligations are plan entries, not records** a task can own and evidence can close. Nothing
   blocks that extension; it is listed on the [roadmap](../status/roadmap.md#not-scheduled) as not
   scheduled.

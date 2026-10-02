@@ -53,6 +53,7 @@ pub(crate) mod paging;
 pub mod plan;
 pub mod rust;
 mod selection;
+mod served;
 pub(crate) mod set_effects;
 pub(crate) mod view_query;
 pub mod web;

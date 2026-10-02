@@ -7,7 +7,7 @@
 //! signature of the seam its bounded context already declares, so every component port that takes
 //! a behaviour bundle takes a `*Generated` unchanged. Everything the specification leaves to the
 //! implementor is a port in `behaviour.Ports`: one storage interface per entity (get, put, delete
-//! and, where a query reads it, list — ess generates the interface and never a store), one context
+//! and, where a query reads it, list — network entries supply ephemeral stores), one context
 //! interface (the caller's attributes, the values the model says the implementation assigns, and
 //! the answer to an `external:` branch), and `Owed`, every behaviour and query the plan still owes,
 //! which `Generated` forwards to.
@@ -146,14 +146,14 @@ impl Seams {
         seams
     }
 
-    fn generates(&self, kind: CapabilityKind, source: &str) -> bool {
+    pub(super) fn generates(&self, kind: CapabilityKind, source: &str) -> bool {
         self.generated.contains(&Capability {
             kind,
             source: source.to_owned(),
         })
     }
 
-    fn forwards(&self, kind: CapabilityKind, source: &str) -> bool {
+    pub(super) fn forwards(&self, kind: CapabilityKind, source: &str) -> bool {
         self.forwarded.contains(&Capability {
             kind,
             source: source.to_owned(),
@@ -163,19 +163,49 @@ impl Seams {
 
 /// What the generated methods asked of the ports and of the helpers, collected while rendering.
 #[derive(Default)]
-struct Uses {
+pub(super) struct Uses {
     /// Entities whose storage interface some method uses.
-    storages: BTreeSet<QualifiedName>,
+    pub(super) storages: BTreeSet<QualifiedName>,
     /// Entities whose rows some generated query lists: their storage interface carries `List`.
-    listed: BTreeSet<QualifiedName>,
+    pub(super) listed: BTreeSet<QualifiedName>,
     /// Caller attribute methods: name → (returned type, attribute).
-    callers: BTreeMap<String, (String, String)>,
+    pub(super) callers: BTreeMap<String, (String, String)>,
+    pub(super) attributes: BTreeMap<String, ResolvedTypeRef>,
     /// Assigned-value methods: name → (returned type, the type as the model spells it).
-    generates: BTreeMap<String, (String, String)>,
+    pub(super) generates: BTreeMap<String, (String, String)>,
+    pub(super) assigned: BTreeMap<String, ResolvedTypeRef>,
     /// Some method asks the context about an `external:` branch.
-    external: bool,
+    pub(super) external: bool,
+    pub(super) externals: BTreeSet<String>,
     /// Helpers used, by name.
     helpers: BTreeSet<&'static str>,
+}
+
+/// Collect exactly the port reads of the existing behavior/query emitters.
+pub(super) fn requirements(
+    emit: &Emit<'_>,
+    seams: &Seams,
+    selected: Option<&crate::served::Reachable>,
+) -> Uses {
+    let storages = storage_names(emit.ir, emit.layout);
+    let reserved = emit.layout.package_names();
+    let receiver = fresh(&reserved, "b");
+    let mut uses = Uses::default();
+    for command in emit.ir.commands().values() {
+        if seams.generates(CapabilityKind::CommandBehavior, &command.name.to_string())
+            && selected.is_none_or(|selected| selected.commands.contains(&command.name))
+        {
+            let _ = Writer::new(emit, command, &storages, &mut uses, &reserved, &receiver).method();
+        }
+    }
+    for view in emit.ir.views().values() {
+        if seams.generates(CapabilityKind::ViewQuery, &view.name.to_string())
+            && selected.is_none_or(|selected| selected.views.contains(&view.name))
+        {
+            let _ = query::method(emit, view, &storages, &mut uses, &reserved, &receiver);
+        }
+    }
+    uses
 }
 
 /// The `behaviour` package, or `None` where this target generates no behaviour and no query.
@@ -235,18 +265,34 @@ pub(super) fn package(
         );
     }
     let context = context_interface(&mut body, &uses);
+    if context {
+        body.push_str(&fallible_context(&emit, &uses));
+    }
     let owed = owed_interface(&mut body, &emit, ir, seams);
     ports_struct(&mut body, &storages, &uses, context, owed);
+    let context_field = if context {
+        "\tcontext FallibleContext\n"
+    } else {
+        ""
+    };
+    let ports_field = if context {
+        "ports   Ports"
+    } else {
+        "ports Ports"
+    };
     let _ = write!(
         body,
         "\n// Generated is every generated behaviour and query of this module, over the ports.\n//\n// \
          It has the method of every seam a component's behaviour bundle names, generated or owed, \
          so\n// a `*Generated` is a complete bundle for every component port. To replace one \
          generated\n// behaviour, write a bundle of your own with that method that delegates the \
-         rest to a\n// `*Generated`.\ntype Generated struct {{\n\tports Ports\n}}\n\n// New is the \
+         rest to a\n// `*Generated`.\ntype Generated struct {{\n\t{ports_field}\n{context_field}}}\n\n// New is the \
          generated behaviours and queries, over ports.\nfunc New(ports Ports) *Generated \
          {{\n\treturn &Generated{{ports: ports}}\n}}\n"
     );
+    if context {
+        body.push_str("\n// NewWithContext explicitly supplies the fallible companion; it takes precedence over Ports.Context.\nfunc NewWithContext(ports Ports, context FallibleContext) *Generated {\n\treturn &Generated{ports: ports, context: context}\n}\n");
+    }
     body.push_str(&methods);
     helpers(&mut body, &emit, &uses);
 
@@ -258,14 +304,14 @@ pub(super) fn package(
                generated, written against\n// ports the implementor supplies.\n//\n// Storage is \
                a port: one interface per entity, get, put and delete of a snapshot by\n// \
                identity, and list where a generated query reads every row. ess generates the \
-               interface\n// and never a store. Context is the other port: the caller's \
+               interface. Network entries supply ephemeral stores. Context carries the caller's \
                attributes, every identity and\n// value the model says the implementation \
                assigns, and the answer to each `external:` branch.\n// Owed is every behaviour \
                and query the plan still owes, which [Generated] forwards to.\n//\n// A refusal \
                from a generated method is the typed refusal naming the command: the model\n// \
                declares no outcome for the request (a guard is undecidable over it, or no \
                declared\n// branch answers it), or — as `entity invariant` — the declared outcome \
-               would leave an\n// entity breaking an invariant.\n//\n// Every port a generated method reads must be set: a nil field of [Ports] is a nil-pointer\n// panic at the first call that reads it.\n";
+               would leave an\n// entity breaking an invariant.\n//\n// Every storage and owed port a generated method reads must be set. Context uses the\n// fallible companion when supplied, otherwise the legacy port; absence is a typed refusal.\n";
     let body = rename_helpers(&body, &reserved);
     Some(emit.file(provenance, doc, &body))
 }
@@ -382,7 +428,7 @@ fn rename_helpers(body: &str, reserved: &BTreeSet<String>) -> String {
 
 /// The storage interface name of each entity: `<Type>Storage`, or — where two entities of
 /// different domains share a type name — every one spelled from its full name.
-fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
+pub(super) fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
     let short: BTreeMap<QualifiedName, String> = ir
         .entities()
         .keys()
@@ -430,8 +476,7 @@ fn storage_interface(
     let _ = writeln!(
         out,
         "\n// {} is where `{entity}` is stored — a port the implementor provides.\n//\n// Keyed by \
-         the identity `{}`. ess generates this interface and never an implementation of \
-         it.\ntype {} interface {{\n\t// Get is the instance with this identity and true, or \
+         the identity `{}`. Network entries supply ephemeral stores; durable storage stays a port.\ntype {} interface {{\n\t// Get is the instance with this identity and true, or \
          false where none is stored.\n\tGet(identity {identity}) ({snapshot}, bool)\n\n\t// Put \
          stores this instance under its identity, replacing what was held.\n\tPut(snapshot \
          {snapshot})\n\n\t// Delete removes the instance with this identity.\n\tDelete(identity \
@@ -487,6 +532,52 @@ fn context_interface(out: &mut String, uses: &Uses) -> bool {
     }
     out.push_str("}\n");
     true
+}
+
+/// An additive context path; old Ports{Context: ...} callers continue to work.
+fn fallible_context(emit: &Emit<'_>, uses: &Uses) -> String {
+    let unmet = emit.unmet();
+    let receiver = fresh(&emit.layout.package_names(), "contextPorts");
+    let mut out = String::from("\n// FallibleContext reports unavailable context answers explicitly.\ntype FallibleContext interface {\n");
+    let mut helpers = String::new();
+    for (method, (ty, attribute)) in &uses.callers {
+        let _ = writeln!(out, "\tTry{method}() ({ty}, bool, {unmet})");
+        let _ = writeln!(helpers, "\n// read{method} prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) read{method}() ({ty}, bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.Try{method}()\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\tvar zero {ty}\n\t\treturn zero, false, UnmetContext({:?})\n\t}}\n\tvalue, present := {receiver}.ports.Context.{method}()\n\treturn value, present, nil\n}}", format!("caller attribute: {attribute}"));
+    }
+    for (method, (ty, of)) in &uses.generates {
+        let _ = writeln!(out, "\tTry{method}() ({ty}, {unmet})");
+        let _ = writeln!(helpers, "\n// read{method} prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) read{method}() ({ty}, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.Try{method}()\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\tvar zero {ty}\n\t\treturn zero, UnmetContext({:?})\n\t}}\n\treturn {receiver}.ports.Context.{method}(), nil\n}}", format!("assigned value: {of}"));
+    }
+    if uses.external {
+        let _ = writeln!(
+            out,
+            "\tTryExternal(command string, outcome string) (bool, {unmet})"
+        );
+        let _ = writeln!(helpers, "\n// readExternal prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) readExternal(command string, outcome string) (bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.TryExternal(command, outcome)\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\treturn false, UnmetContext(\"external branch answer\")\n\t}}\n\treturn {receiver}.ports.Context.External(command, outcome), nil\n}}");
+    }
+    out.push_str("}\n");
+    out.push_str(&helpers);
+    let error = emit.qualify(emit.layout.obligation(), "UnmetObligation");
+    let _ = writeln!(out, "\n// UnmetContext names an unavailable runtime answer, not a new planned capability.\nfunc UnmetContext(source string) {unmet} {{\n\treturn &{error}{{Capability: \"context answer\", Source: source}}\n}}");
+    out
+}
+
+/// Read context before committing an effect; every caller already returns the typed error channel.
+fn context_read(
+    lines: &mut Lines,
+    receiver: &str,
+    method: &str,
+    arguments: &str,
+    values: &[&str],
+    error: &str,
+) {
+    lines.push(&format!(
+        "{}, {error} := {receiver}.read{method}({arguments})",
+        values.join(", ")
+    ));
+    lines.open(&format!("if {error} != nil {{"));
+    lines.push(&format!("return nil, {error}"));
+    lines.close("}");
 }
 
 /// The interface bundling every seam `Generated` forwards. `true` where there is one.
@@ -1583,12 +1674,25 @@ impl<'a> Writer<'a> {
     /// Asks the context whether an external branch is taken.
     fn external(&mut self, outcome: &ResolvedOutcome) -> String {
         self.uses.external = true;
-        format!(
-            "{}.ports.Context.External({}, {})",
-            self.receiver,
+        self.uses
+            .externals
+            .insert(format!("{}/{}", self.command.name, outcome.name));
+        let value = self.temp("external");
+        let error = self.temp("contextErr");
+        let arguments = format!(
+            "{}, {}",
             go_string(&self.command.name.to_string()),
             go_string(outcome.name.as_str())
-        )
+        );
+        context_read(
+            &mut self.lines,
+            self.receiver,
+            "External",
+            &arguments,
+            &[&value],
+            &error,
+        );
+        value
     }
 
     /// The reading of a branch that selects by the addressed row.
@@ -1760,12 +1864,14 @@ impl<'a> Writer<'a> {
                     .reference_variant(entity.state_type.name(), state.as_str())
             )
         };
+        let answer = self.variant(outcome, held, Some(&identity));
+        let prepared = self.temp("answer");
+        self.lines.push(&format!("{prepared} := {answer}"));
         self.lines.push(&format!(
             "{}.ports.{storage}.Put({snapshot})",
             self.receiver
         ));
-        let answer = self.variant(outcome, held, Some(&identity));
-        self.lines.push(&format!("return {answer}, nil"));
+        self.lines.push(&format!("return {prepared}, nil"));
     }
 
     /// The answer for a move from a state it does not start in, as the `return`'s two results.
@@ -1809,6 +1915,7 @@ impl<'a> Writer<'a> {
                 let receiver = self.receiver;
                 let reads_before = outcome_reads_before(outcome);
                 let before = self.locals.before.clone();
+                let mut commit = None;
                 match effect {
                     ResolvedEffect::Moves { transition } => {
                         let wrong_reads = self.wrong_state_reads(entity);
@@ -1852,8 +1959,7 @@ impl<'a> Writer<'a> {
                         self.lines.close("}");
                         self.write_sets(outcome, &format!("{moved}.Snapshot()"), entity);
                         let next = self.locals.next.clone();
-                        self.lines
-                            .push(&format!("{receiver}.ports.{storage}.Put({next})"));
+                        commit = Some(format!("{receiver}.ports.{storage}.Put({next})"));
                     }
                     ResolvedEffect::Updates | ResolvedEffect::Preserves => {
                         if reads_before {
@@ -1864,23 +1970,26 @@ impl<'a> Writer<'a> {
                         if writes {
                             self.write_sets(outcome, &held_row, entity);
                             let next = self.locals.next.clone();
-                            self.lines
-                                .push(&format!("{receiver}.ports.{storage}.Put({next})"));
+                            commit = Some(format!("{receiver}.ports.{storage}.Put({next})"));
                         }
                     }
                     ResolvedEffect::Deletes => {
                         if reads_before {
                             self.lines.push(&format!("{before} := {held_row}.Data"));
                         }
-                        self.lines
-                            .push(&format!("{receiver}.ports.{storage}.Delete({identity})"));
+                        commit = Some(format!("{receiver}.ports.{storage}.Delete({identity})"));
                     }
                     ResolvedEffect::Creates => {
                         unreachable!("a creation whose identity is supplied is an obligation")
                     }
                 }
                 let answer = self.variant(outcome, held, None);
-                self.lines.push(&format!("return {answer}, nil"));
+                let prepared = self.temp("answer");
+                self.lines.push(&format!("{prepared} := {answer}"));
+                if let Some(commit) = commit {
+                    self.lines.push(&commit);
+                }
+                self.lines.push(&format!("return {prepared}, nil"));
             }
             (_, ResolvedInstance::Observed { .. }) => {
                 unreachable!("an observed identity outside `creates:` is an obligation")
@@ -2095,15 +2204,21 @@ impl<'a> Writer<'a> {
     /// `<receiver>.ports.Context.Generate<Type>()`, recorded on the context, as a temporary.
     fn generate(&mut self, target: &ResolvedTypeRef) -> String {
         let method = format!("Generate{}", name::type_fragment(&target.to_string()));
+        self.uses.assigned.insert(method.clone(), target.clone());
         self.uses.generates.insert(
             method.clone(),
             (self.emit.go_type(target), target.to_string()),
         );
         let minted = self.temp("m");
-        self.lines.push(&format!(
-            "{minted} := {}.ports.Context.{method}()",
-            self.receiver
-        ));
+        let error = self.temp("contextErr");
+        context_read(
+            &mut self.lines,
+            self.receiver,
+            &method,
+            "",
+            &[&minted],
+            &error,
+        );
         minted
     }
 
@@ -2157,9 +2272,15 @@ impl<'a> Writer<'a> {
                 if type_ref == target {
                     self.uses.helpers.insert("undeclared");
                     let (value, ok) = (self.temp("c"), self.temp("ok"));
-                    self.lines.push(&format!(
-                        "{value}, {ok} := {receiver}.ports.Context.{method}()"
-                    ));
+                    let error = self.temp("contextErr");
+                    context_read(
+                        &mut self.lines,
+                        receiver,
+                        &method,
+                        "",
+                        &[&value, &ok],
+                        &error,
+                    );
                     self.lines.open(&format!("if !{ok} {{"));
                     self.lines.push(&format!(
                         "return nil, undeclared({})",
@@ -2170,10 +2291,17 @@ impl<'a> Writer<'a> {
                 } else {
                     self.uses.helpers.insert("present");
                     let value = self.temp("c");
-                    self.lines.push(&format!(
-                        "{value} := present({receiver}.ports.Context.{method}())"
-                    ));
-                    value
+                    let ok = self.temp("ok");
+                    let error = self.temp("contextErr");
+                    context_read(
+                        &mut self.lines,
+                        receiver,
+                        &method,
+                        "",
+                        &[&value, &ok],
+                        &error,
+                    );
+                    format!("present({value}, {ok})")
                 }
             }
             ResolvedPayloadValue::Literal { value } => self.literal(target, value),
@@ -2358,6 +2486,7 @@ fn caller_method(
     type_ref: &ResolvedTypeRef,
 ) -> String {
     let method = name::exported(&format!("caller_{attribute}"));
+    uses.attributes.insert(method.clone(), type_ref.clone());
     uses.callers.insert(
         method.clone(),
         (emit.go_type(type_ref), attribute.to_owned()),
@@ -2579,10 +2708,15 @@ impl Guards<'_, '_> {
             Root::Caller(attribute) => {
                 let method = caller_method(self.emit, self.uses, attribute, &resolved.root_type);
                 let (value, ok) = (self.temp("c"), self.temp("ok"));
-                self.lines.push(&format!(
-                    "{value}, {ok} := {}.ports.Context.{method}()",
-                    self.receiver
-                ));
+                let error = self.temp("contextErr");
+                context_read(
+                    self.lines,
+                    self.receiver,
+                    &method,
+                    "",
+                    &[&value, &ok],
+                    &error,
+                );
                 let bind = self.temp("v");
                 guards.push(Guard {
                     condition: ok,
