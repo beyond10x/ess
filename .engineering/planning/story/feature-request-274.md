@@ -2,8 +2,8 @@
 format: aep.planning-md/3
 id: story:feature-request-274
 kind: story
-status: active
-title: A generated CLI hands unparsable dynamic input to the adopter validator
+status: implemented
+title: A generated CLI maps invalid input to a declared callable error
 tags:
 - feature-request
 refs:
@@ -12,19 +12,32 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 6
+scope:
+- confidence: cited
+  path: crates/generate/ess-cli-project
+- confidence: cited
+  path: crates/specify/ess-cli-contract
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T19:35:48Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-01T19:35:49Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-02T12:27:43Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
-A generated CLI hands unparsable and empty dynamic input to the adopter's validator, so the adopter answers its contracted code.
+A generated CLI lets a callable declare invalid_input: <code>, naming one of its declared errors. Invalid typed input and malformed, empty, duplicate-keyed or validator-rejected dynamic input answer that code with empty data and exit 2, without exposing the input text. The DynamicValidator API remains unchanged.
 
 ## Acceptance
 
-- `--input-json 'not json'` and an empty `--input-stdin` reach the adopter's `DynamicValidator`.
-- Generated output never contains the input text.
+- Admission accepts a declared error whose type accepts {}; it refuses undeclared codes, incompatible error types, inputless callables and cli_parse.
+- With invalid_input configured, unparsable or empty dynamic input, including empty stdin, and duplicate JSON keys answer the declared code, {} data and exit 2. Neither validator nor handler runs.
+- Valid JSON rejected by DynamicValidator with Input-phase InvalidValue receives the same answer; the handler does not run.
+- Typed input parsing or shape failures receive the same declared-error answer.
+- Failure output contains no input text; human output names only the code. Valid dynamic input still reaches validation and handling.
+- Without the key, cli_input and cli_dynamic_input remain unchanged. Duplicate keys are rejected at every nesting depth; equal keys in separate objects remain valid.
+- The compiled plan preserves the mapping, omits an absent mapping, and generated reference documentation names it.
+
+These criteria reconcile the obsolete initial text with the already-adopted Decisions; they do not adopt a new DynamicValidator API. Existing named cases live in ess-cli-project/tests/invalid_input.rs, ess-cli-contract/tests/binding.rs::invalid_input_names_a_declared_error_that_needs_no_field, and the generated-package process fixture selected by projection.rs. Seven focused tests passed in independent review; full package verification is running before lifecycle closure.
 
 ## Origin
 
@@ -86,3 +99,9 @@ There is no `story:feature-request-274` in the read tree's store (`aep plan arti
 ## Released redesign located; reconcile acceptance before closure
 
 Release0.51.0 CHANGELOG and current source contain the adopted invalid_input declared-error mapping. crates/generate/ess-cli-project/tests/invalid_input.rs covers unparsable/empty/duplicate/rejected dynamic input, typed shape failures, unchanged legacy codes, duplicate keys at every depth and generated reference text. crates/specify/ess-cli-contract/tests/binding.rs:311 tests declared-error admission, required-field refusal and unchanged no-key plans. The existing Acceptance text still says malformed data reaches DynamicValidator, which the explicit Decisions reject; it must be reconciled to the accepted callable-level declared-error behavior rather than used to demand the rejected API design. This audit locates source/tests but claims no fresh CLI-project test execution or final artifact closure.
+
+## Released behavior fully verified
+
+Independent reviewer server_corrections ran both full affected packages at ba5d657b72913b29ecc19e9a6d2c2a111f083793: ess-cli-project 155 outer passes plus 13 actual generated-package process cases, ess-cli-contract 15 passes; 183 total, zero failures and zero ignored, both commands exit zero. The generated process case declared_invalid_input_answers_unparsable_empty_and_duplicate_payloads executed. Logs retained as target/backlog-input/274-full-project.log and 274-full-contract.log in the combined synthesis worktree, with matching .exit files. The last command completed 2026-10-02T12:25:24Z.
+
+Both package trees are byte-identical to release0.51.0 at0347ffa222939e3791e574d2dbe42d4b4b02d979 and main b4da64e38b770fe74103409fe1fef7ae6ca214f4. The public design and existing tests establish the adopted declared-error redesign; the obsolete outcome/acceptance/title have been reconciled to that recorded decision. This closes stale planning state; no new production implementation is claimed.

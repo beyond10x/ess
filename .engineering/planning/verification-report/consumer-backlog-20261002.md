@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 11
+revision: 12
 ---
 ## Intake
 
@@ -105,8 +105,8 @@ Source audit covers all 87 stories initially lacking structured issue references
 
 | Artifact | Current status | Disposition | Evidence / next verification |
 |---|---|---|---|
-| story:a-branch-may-clear-the-field-it-owns | draft | stale-state candidate; acceptance remains to verify | Story body:75 records grammar/validation/synthesis shipped in 0.26.0; public-guide acceptance remains open at :76-79. |
-| story:a-browser-that-answered-http-once-is-still-a-slow-start | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:a-branch-may-clear-the-field-it-owns | implemented | verified delivered | Release0.51.0 guide now covers clearing and literal distinction; four domain cases and two-act synthesis assertion passed in retained f863ee run. Independent acceptance audit agrees complete. |
+| story:a-browser-that-answered-http-once-is-still-a-slow-start | active | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:a-killed-childs-outcome-says-which-signal-ended-it | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:a-macro-invoked-twice-in-one-module-refuses-the-consumer-gate | active | parked by AGENTS consumer-accounting decision | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:a-marked-region-is-not-a-scan-of-what-runs | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -116,7 +116,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:a-skip-says-why-the-target-could-not-answer | active | stale-state candidate; acceptance remains to verify | CHANGELOG.md:2128-2141 records log reasons shipped but persisted report reasons absent; parent acceptance requires explicit split. |
 | story:acceptance-runs-as-toolchain-scenarios | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:adopter-reviewed-delta | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:aggregate-views | active | stale-state candidate | Body cites #96; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:aggregate-views | implemented | stale-state candidate | Body cites #96; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:binding-delivery-at-most-once | proposed | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:browser-fixture-startup-deadline | active | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:change-fragment-upgrade-obligation | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -124,7 +124,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:collections-reach-their-upper-count-boundary | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#196 |
 | story:concurrent-history-records-inputs | draft | consumer gap with compatibility/design work | crates/verify/ess-conformance/src/history.rs:195 Operation lacks input; story body:85 leaves wire compatibility unresolved. |
 | story:consumer-accounting-baseline-never-extended | active | parked by AGENTS consumer-accounting decision | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:count-guards-above-one-are-synthesized | draft | stale-state candidate; acceptance remains to verify | crates/verify/ess-conformance/tests/stored_field_guards_adversary.rs:282,432,476 exercise threshold witnesses and bounds; witness.rs:1904 cites this story. |
+| story:count-guards-above-one-are-synthesized | implemented | verified delivered | All three acceptance items met in0.51.0; fourteen stored-field adversary cases passed at f863ee, including bounded input/stored count witnesses and diagnostic. |
 | story:create-only-command-cannot-refuse | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:cross-runtime-verdict-equivalence | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:cross-system-relation-target | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -132,7 +132,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:deleting-a-scratch-tmpdir-breaks-sccache-for-every-other-agent | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:delivery-trust-fixture-race | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:diff-classifies-error-payload-sources | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#253 |
-| story:empty-projection-is-refused-or-explained | active | stale-state candidate | Body cites #102; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:empty-projection-is-refused-or-explained | active | delivered; historical evidence qualification | Released explanation/strict-refusal design meets issue102. Four current CLI tests passed in browser-full-cli.log; original red-first chronology remains unlocated. |
 | story:ess-ui-type-grammar-aligns | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:external-requests-are-assessed-before-adoption | active | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:feature-request-194 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#194 |
@@ -150,7 +150,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:feature-request-236 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#236 |
 | story:feature-request-237 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#237 |
 | story:feature-request-244 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#244 |
-| story:feature-request-251 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#251 |
+| story:feature-request-251 | implemented | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#251 |
 | story:feature-request-257 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#257 |
 | story:feature-request-265 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#265 |
 | story:feature-request-266 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#266 |
@@ -161,7 +161,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:feature-request-271 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#271 |
 | story:feature-request-272 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#272 |
 | story:feature-request-273 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#273 |
-| story:feature-request-274 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#274 |
+| story:feature-request-274 | implemented | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#274 |
 | story:feature-request-275 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#275 |
 | story:feature-request-276 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#276 |
 | story:feature-request-278 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#278 |
@@ -174,7 +174,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:feature-request-285 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#285 |
 | story:feature-request-286 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#286 |
 | story:feature-request-287 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#287 |
-| story:feature-request-288 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#288 |
+| story:feature-request-288 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#288 |
 | story:feature-request-289 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#289 |
 | story:feature-request-290 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#290 |
 | story:feature-request-291 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#291 |
@@ -184,15 +184,15 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:feature-request-295 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#295 |
 | story:feature-request-296 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#296 |
 | story:feature-request-297 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#297 |
-| story:feature-request-298 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#298 |
+| story:feature-request-298 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#298 |
 | story:feature-request-299 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#299 |
 | story:feature-request-300 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#300 |
 | story:feature-request-301 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#301 |
 | story:feature-request-303 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#303 |
 | story:feature-request-305 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#305 |
-| story:feature-request-306 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#306 |
-| story:feature-request-307 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#307 |
-| story:feature-request-308 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#308 |
+| story:feature-request-306 | implemented | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#306 |
+| story:feature-request-307 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#307 |
+| story:feature-request-308 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#308 |
 | story:feature-request-309 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#309 |
 | story:feature-request-310 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#310 |
 | story:feature-request-312 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#312 |
@@ -201,7 +201,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:go-and-typescript-read-current-suites | draft | source-corroborated consumer defect/gap | crates/verify/ess-conformance/src/go/mod.rs:362 caps generated Go and TypeScript suite admission at /27. |
 | story:go-generated-behaviour | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#314 |
 | story:go-normalization-pattern-semantics | active | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:go-numbers-compare-by-value | active | stale-state candidate | Body cites #101; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:go-numbers-compare-by-value | active | delivered; historical evidence qualification | Nine primitive corpus tests passed at f863ee, including actual Go event/view number-carrier comparison. Files unchanged from0.51.0; historical red-first unlocated. |
 | story:held-state-has-one-operand | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:host-context-has-one-shape | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:integrate-source-driven-realizations | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -210,16 +210,16 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:interpreted-scenario-supplied-facts | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:interpreted-trust-gate | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:java-conformance-target | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:list-and-text-guards-are-synthesized | active | stale-state candidate | Body cites #94; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:list-and-text-guards-are-synthesized | implemented | stale-state candidate | Body cites #94; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:mutation-audit-and-model-runner | active | stale-state candidate | Body cites #114; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:native-realization-ci | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:normalization-equality-eligibility | draft | product feature/design backlog; assess before scheduling | Story body:63-75 freezes formats 5/6; body:118-128 is design-only. Do not silently change current persisted equality. |
-| story:optional-guards-mean-what-they-say | active | stale-state candidate | Body cites #93; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:optional-guards-mean-what-they-say | implemented | stale-state candidate | Body cites #93; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:outcome-decided-by-environment | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:outcome-groups | active | stale-state candidate | Body cites #105; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:outcome-groups | active | delivered; documentation/evidence qualification | Released expansion design matches105, with29 domain passes and exact-suite equivalence at f863ee. Compiler IR test exists; design header still says proposed, original red-first chronology unlocated. |
 | story:payload-fields-have-one-filling-rule | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:planning-store-carries-workstation-paths | active | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:predicate-reference-page | active | stale-state candidate | Body cites #92; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:predicate-reference-page | implemented | stale-state candidate | Body cites #92; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:primitive-canonical-serialization | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:reader-conformance-over-refusals | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#191 |
 | story:reader-true-refused-for-closed-readers | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -228,7 +228,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:related-record-effects | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#229 |
 | story:related-via-optional-input | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#304 |
 | story:related-via-stored-reference | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#304 |
-| story:release-status-publication-state | draft | stale-state candidate; acceptance remains to verify | crates/edge/ess-xtask/src/main.rs:491,530,1497 requests isDraft, excludes drafts and tests malformed/missing/draft cases. |
+| story:release-status-publication-state | implemented | stale-state candidate; acceptance remains to verify | crates/edge/ess-xtask/src/main.rs:491,530,1497 requests isDraft, excludes drafts and tests malformed/missing/draft cases. |
 | story:report-carries-passed-failed-skipped | active | stale-state candidate | Body cites #110; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:review-stale-lines-corrected | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:rust-recorder-does-not-lose-a-creation | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -240,11 +240,11 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:source-pinned-data-normalization | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:specification-declares-its-ess-release | active | stale-state candidate | Body cites #106; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:specify-upgrade-command | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:stored-field-guards | active | stale-state candidate | Body cites #75; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
-| story:string-length-guards | active | stale-state candidate | Body cites #104; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
-| story:string-newtype-declares-its-alphabet | active | stale-state candidate | Body cites #103; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
-| story:string-prefix-suffix-substring-operators | active | stale-state candidate | Body cites #95; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
-| story:suite-pins-transitions-updates-and-boundaries | active | stale-state candidate | Body cites #111; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:stored-field-guards | implemented | stale-state candidate | Body cites #75; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:string-length-guards | active | delivered; documentation/evidence qualification | Chosen Unicode-scalar .count semantics:25 domain and11 conformance tests plus Go Unicode corpus passed at f863ee. Design header still proposed; historical red-first unlocated. |
+| story:string-newtype-declares-its-alphabet | active | delivered; documentation/evidence qualification | Alphabet/example admission and sendable constrained witnesses passed25 domain/11 conformance cases at f863ee. Released explicit code/runtime limits retained; stale design header and historical red-first unlocated. |
+| story:string-prefix-suffix-substring-operators | active | delivered; acceptance/documentation qualification | Rust/Go/TypeScript and Entity Runtime implementation located; actual text-match/invariant executions passed at f863ee. Manifest uses entity-core tag0.24.1 with exact lock4746bd7 rather than literal rev acceptance; design incorrectly defers TypeScript. Historical red-first unlocated. |
+| story:suite-pins-transitions-updates-and-boundaries | active | delivered; acceptance/evidence reconciliation | Thirteen declared-behavior tests passed at f863ee including faulty-target kills. Every source is exercised on distinct instances inside one scenario, unlike literal111 cardinality wording; delivery commit283b8dcad4 records choice. Historical red-first unlocated. |
 | story:the-browser-fixture-abandons-a-profile-per-start | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:the-design-page-is-held-to-the-fixture-it-describes | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:the-generated-go-runtime-is-gofmt-clean | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -252,10 +252,10 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:the-lane-does-not-pin-a-count-that-its-own-bookkeeping-moves | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:the-metadata-guard-rejects-every-build-but-one | draft | parked by AGENTS consumer-accounting decision | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:the-published-schema-admits-the-name-aliases-the-parser-reads | draft | source-corroborated consumer defect/gap | crates/specify/ess-domain/tests/adversary_charset_pass1.rs:186 explicitly asserts schema rejection of an accepted binding id alias. |
-| story:the-startup-clamp-does-not-outlive-the-startup | draft | stale-state candidate; acceptance remains to verify | crates/edge/ess-cli/tests/support/browser.rs:469 restores SESSION_TIMEOUT after upgrade. |
-| story:the-startup-lock-does-not-cover-the-first-round-trip | draft | internal tooling/test-quality report; verify current impact | crates/edge/ess-cli/tests/support/browser.rs:372 drops startup guard before session.new at :381; acceptance allows either lock correction or accurately documented bound. |
+| story:the-startup-clamp-does-not-outlive-the-startup | implemented | stale-state candidate; acceptance remains to verify | crates/edge/ess-cli/tests/support/browser.rs:469 restores SESSION_TIMEOUT after upgrade. |
+| story:the-startup-lock-does-not-cover-the-first-round-trip | active | internal tooling/test-quality report; verify current impact | crates/edge/ess-cli/tests/support/browser.rs:372 drops startup guard before session.new at :381; acceptance allows either lock correction or accurately documented bound. |
 | story:the-unread-tree-bullet-is-read-whole | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:typed-literals-in-sets-and-unknown-instances | active | stale-state candidate | Body cites #113; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:typed-literals-in-sets-and-unknown-instances | active | delivered; documentation/evidence qualification | Fourteen literal and three unknown-instance cases passed at f863ee; chosen not-found policy documented. Old Decimal-never-admitted design text is stale after later support; historical red-first unlocated. |
 | story:types-only-realizations | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:typescript-conformance-target | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:ui-react-live-binding | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |

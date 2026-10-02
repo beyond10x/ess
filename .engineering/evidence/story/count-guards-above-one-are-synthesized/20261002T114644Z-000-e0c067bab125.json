@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T11:46:44Z",
+  "actor": "human:timo",
+  "artifact": "story:count-guards-above-one-are-synthesized",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Fourteen stored-field adversary cases pass at f863ee, including input/stored count ladders and bounded refusal; relevant bytes match released0.51.0",
+    "reference": "target/backlog-input/group-packages-f863ee.log"
+  }
+}
