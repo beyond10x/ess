@@ -161,3 +161,25 @@ fn choose_at_a_form_choice_field_picks_in_its_choice_control() {
     }
     assert!(!spec.contains("test.fixme"), "{spec}");
 }
+
+/// A number of four or more digits in expected text matches the browser's grouped spelling too,
+/// as it does in the terminal; text without such a number stays a plain string.
+#[test]
+fn expected_text_matches_numbers_with_or_without_grouping() {
+    let document = ess_ui::load_path(&example_dir().join("ui.yaml")).expect("the example loads");
+    let text = "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: n\n  steps:\n\
+                \x20 - open: partners.list\n\
+                \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, text: '150,000 EUR (x)'}\n\
+                \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, not_text: '1840'}\n\
+                \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, text: 'Cedar 12'}\n";
+    let file = ess_ui_test::parse_str(text, &example_dir().join("inline.yaml")).expect("parses");
+    let spec = ess_ui_test::playwright(&[file], &document);
+    let row = "page.locator('[data-ui-path=\"pages/partners.list/sections/list/rows/pt-003\"]')";
+    for wanted in [
+        format!("await expect({row}).toContainText(new RegExp(\"150[,\\\\u00a0\\\\u202f]?000 EUR \\\\(x\\\\)\"));"),
+        format!("await expect({row}).not.toContainText(new RegExp(\"1[,\\\\u00a0\\\\u202f]?840\"));"),
+        format!("await expect({row}).toContainText(\"Cedar 12\");"),
+    ] {
+        assert!(spec.contains(&wanted), "{wanted}\n\n{spec}");
+    }
+}

@@ -81,6 +81,24 @@ fn a_form_choice_field_is_chosen_by_value_or_label() {
 }
 
 #[test]
+fn a_number_in_expected_text_matches_with_or_without_digit_grouping() {
+    // The terminal shows 150000; the browser groups it (150,000). Either spelling holds.
+    passed(&run(
+        "- name: grouped\n  steps:\n\
+         \x20 - open: partners.list\n\
+         \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, text: '150,000 EUR'}\n\
+         \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, text: '150000'}\n\
+         \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, not_text: '420,000'}\n",
+    ));
+    let outcome = run(
+        "- name: not grouped away\n  steps:\n\
+         \x20 - open: partners.list\n\
+         \x20 - expect: {at: pages/partners.list/sections/list/rows/pt-003, not_text: '150,000'}\n",
+    );
+    assert_eq!(outcome.step, Some(2), "{outcome:?}");
+}
+
+#[test]
 fn latency_shows_loading_until_the_clock_passes_it() {
     passed(&run(
         "- name: loading\n  latency: 1s\n  steps:\n\

@@ -159,6 +159,11 @@ path, rather than being satisfied by what a neighbour shows. A row, a cell, a co
 action are read whole, as the browser shows them, even where the terminal's screen cuts the value
 at the column's width.
 
+A number of four or more digits in `text` or `not_text` compares by value, not by spelling: the
+terminal prints `1840`, the browser groups it by its locale (`1,840`), and either spelling in the
+test matches either on the screen. A comma, a no-break space or a narrow no-break space between
+groups of three digits is grouping; a full stop is not, since it is also a decimal point.
+
 `stale` is the badge a section carries while a channel feeding it is stale; it outranks `ready` and
 `empty`. `ready` means shown and fresh.
 
@@ -325,7 +330,7 @@ its path, so the spec's `baseURL` is the generated project served by `npm run de
 | `type` | `pressSequentially` into the search input or the field's input |
 | `choose` | the option's button, or `selectOption` for a dropdown |
 | `act` | `click`; on an overlay, its primary button |
-| `expect` | `toContainText`, `toHaveCount` and `data-ui-path` of each `.ui-row`, `data-status`, `.ui-stale-badge` |
+| `expect` | `toContainText`, a `RegExp` that allows digit grouping where the text holds a number of four or more digits, `toHaveCount` and `data-ui-path` of each `.ui-row`, `data-status`, `.ui-stale-badge` |
 | `expect_command` | commands captured by routing `/commands/…` |
 
 `select` does not click the row with the pointer: a click lands on the row's centre, which may be a

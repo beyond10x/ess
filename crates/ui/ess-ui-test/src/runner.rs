@@ -570,7 +570,11 @@ impl<'d> Runner<'d> {
                 }
                 let region = self.region(target)?;
                 let wanted = matches!(check, Check::Text(_));
-                if region.contains(text.as_str()) == wanted {
+                // Numbers compare by value: `1840` and `1,840` are one text
+                // ([`crate::numbers`]).
+                let shows = crate::numbers::ungrouped(&region)
+                    .contains(crate::numbers::ungrouped(text).as_str());
+                if shows == wanted {
                     return Ok(());
                 }
                 Err(format!(

@@ -14,6 +14,7 @@
 //! The language is documented in `website/docs/reference/ess-ui-test.md`.
 
 mod clock;
+mod numbers;
 mod parity;
 mod playwright;
 mod runner;

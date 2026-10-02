@@ -446,16 +446,23 @@ fn emit_check(at: &str, check: &Check) -> Vec<String> {
             string(status)
         )
     };
+    // A number of four or more digits matches with or without grouping, as in the terminal.
+    let expected = |text: &str| {
+        crate::numbers::pattern(text).map_or_else(
+            || string(text),
+            |pattern| format!("new RegExp({})", string(&pattern)),
+        )
+    };
     match check {
         Check::Text(text) => vec![format!(
             "await expect({}).toContainText({});",
             locator(at),
-            string(text)
+            expected(text)
         )],
         Check::NotText(text) => vec![format!(
             "await expect({}).not.toContainText({});",
             locator(at),
-            string(text)
+            expected(text)
         )],
         Check::RowCount(count) => vec![format!("await expect({rows}).toHaveCount({count});")],
         Check::RowKeys(keys) => {
