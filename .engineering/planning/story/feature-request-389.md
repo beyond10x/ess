@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -147,3 +147,15 @@ Independent bounded decision review by scope_aggregate: coherent, no contradicti
 ## Shared profile reader verification
 
 Shared producer-profile reader committed as30e9e84e7891f793c0c89d4695acf2fac88bf28e. New-profile regression tests against the prior reader:0passed2failed0ignored, exit101. Final unchanged tests plus existing count-report controls:11passed0failed0ignored, exit0. Scoped strict Clippy across conformance/CLI libraries, ess binary and count_reports target passed; task fmt-check and git diff --check passed. Logs and exit files are generated-profile-v2-{red,final,clippy,fmt} in ess-backlog-next-20261002/target/backlog-input. Independent source review by scope_boolean approved with no findings and own executions0. Generated Go/TypeScript actual producer parity is still the port workers' dependent acceptance, not established by these reader tests alone.
+
+## Runtime review corrections
+
+Independent coordinator review, 2026-10-02. Own build/test executions for these review findings: 0; findings are source inspections, with deciding controls assigned to implementors.
+
+The Go prerequisite port incorrectly used aggregate scenario Failed status to decide whether an assertion should continue. A preceding contradiction can leave the aggregate Failed after a later ordinary target error; native execution stops at that error. The worker accepted the finding and is adding an actual callback trace covering contradiction, later observation error, and a subsequent delivery which must not run. Flow and joined status must remain separate.
+
+Go unresolved structured-instance values were also classified as Failed by resolveAll, where native reports Error before the invocation. The worker accepted the finding and is adding a live native-versus-Go control. The TypeScript worker independently found and corrected the same resolution category and an older clock-reading callback-error classification. Final commits and independent review remain pending.
+
+The initial one-time contract admission fixture manifest lacked constrained-newtype authority vectors and source regressions for nested forbidden flow, retained replay, opaque reading and null input. The coordinator requested these before contract freeze; the worker reports focused source10/0 and admission6/0 after adding them. These counts are implementation evidence, not coordinator executions, and do not establish disclosure execution or full runtime parity.
+
+Coordinator shared test migration now preserves precise report/2 Error and Unsupported categories rather than comparing normalized Failed/Skipped values. CLI live-producer fixture expectations and projection policy work are uncommitted and awaiting integrated validation. No new PR, tag or release is published from this unfinished group.
