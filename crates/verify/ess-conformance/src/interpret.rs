@@ -36,7 +36,8 @@
 //! [`SemanticCommandResult::undeclared`], never as a declared branch. An `external:` branch is taken
 //! only when a scenario forced it with
 //! [`configure_external_outcome`](ConformanceTarget::configure_external_outcome), and it lapses after
-//! the next invocation of that command, which is what the step says.
+//! the next invocation of that command. The repeated control instead lasts for its explicit count
+//! of matching invocations, including binding retries; unrelated commands do not consume it.
 //!
 //! # Where the identifiers come from
 //!
@@ -93,7 +94,7 @@ struct Scenario {
     store: Store,
     published: Vec<ObservedEvent>,
     sequence: u64,
-    forced: Option<OutcomeRef>,
+    forced: Option<(OutcomeRef, std::num::NonZeroU32)>,
     issued: protected::Issued,
     projection_reads: u64,
     projection_versions: Vec<(u64, Store)>,
@@ -204,7 +205,10 @@ impl ConformanceTarget for Interpreted {
         }
         let mut scenario = self.scenario.borrow_mut();
         let externals = match scenario.forced.take() {
-            Some(forced) if forced.command == request.command => {
+            Some((forced, remaining)) if forced.command == request.command => {
+                if let Some(remaining) = std::num::NonZeroU32::new(remaining.get() - 1) {
+                    scenario.forced = Some((forced.clone(), remaining));
+                }
                 Externals::Forced(forced.outcome.clone())
             }
             other => {
@@ -341,6 +345,14 @@ impl ConformanceTarget for Interpreted {
         &self,
         request: ExternalOutcomeControl,
     ) -> Result<(), TargetError> {
+        self.configure_external_outcome_repeatedly(request, std::num::NonZeroU32::MIN)
+    }
+
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
         let observation = format!("forcing `{}`", request.force);
         let model = self.model(observation.clone())?;
         let external = model
@@ -367,7 +379,7 @@ impl ConformanceTarget for Interpreted {
                 ),
             ));
         }
-        self.scenario.borrow_mut().forced = Some(request.force);
+        self.scenario.borrow_mut().forced = Some((request.force, times));
         Ok(())
     }
 
