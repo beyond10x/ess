@@ -7,7 +7,7 @@ title: A browser that answered HTTP once is still a slow start
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 2
+revision: 3
 ---
 # A browser that answered HTTP once is still a slow start
 
@@ -69,3 +69,7 @@ it to the non-refusal side. It declined to pick a side. It was right; the instru
 - `crates/edge/ess-cli/tests/support/browser.rs` — `cited`
 - `crates/edge/ess-cli/tests/browser_startup_slow_serve_boundary.rs` — `cited`, untracked, holds the
   red cases on `impl/browser-fixture-startup-deadline`
+
+## Fresh red evidence 2026-10-02
+
+The two named cases remain explicitly ignored on current source482609 and both fail when executed. The entire ignored startup lane is0passed4failed; browser-startup-existing-defects-red.log retains exact output. support/browser.rs::connect_give_up still panics after an earlier404 and omits the stderr it promises. This is actionable existing harness work, not fixed by the successful late-ready socket-timeout regression. Coordinate the repair with startup-lock and lost-startup-socket-retry; no ignored case is counted as a pass.

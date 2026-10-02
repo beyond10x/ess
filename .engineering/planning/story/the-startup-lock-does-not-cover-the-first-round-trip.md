@@ -9,7 +9,7 @@ scope:
   path: crates/edge/ess-cli/tests/coverage_browser.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 3
+revision: 4
 ---
 # The startup lock does not cover the first round trip
 
@@ -47,3 +47,7 @@ Named fix from the adversary, not applied: move `drop(starting)` below `:346`.
 
 - `crates/edge/ess-cli/tests/support/browser.rs` — `cited`
 - `crates/edge/ess-cli/tests/coverage_browser.rs` — `cited`
+
+## Fresh red evidence 2026-10-02
+
+The named three-fixture stand-in remains ignored and fails on current482609 when executed: observed3simultaneous session.new calls, expected1. The entire ignored startup lane is0passed4failed in server target/backlog-input/browser-startup-existing-defects-red.log. Preserve full session-start serialization rather than merely the announced-port phase; coordinate with answered-HTTP and lost-startup-socket-retry repairs. No successful production browser startup count is substituted for this concurrency regression.

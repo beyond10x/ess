@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T11:18:00Z",
+  "actor": "human:timo",
+  "artifact": "story:the-startup-clamp-does-not-outlive-the-startup",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "browser_startup_slow_serve_boundary at482609: late-ready regression and early-ready control2passed0failed;4neighboringcasesignored",
+    "reference": "server target/backlog-input/browser-startup-reconciliation.log"
+  }
+}

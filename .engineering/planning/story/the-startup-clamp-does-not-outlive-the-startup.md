@@ -2,12 +2,18 @@
 format: aep.planning-md/3
 id: story:the-startup-clamp-does-not-outlive-the-startup
 kind: story
-status: draft
+status: implemented
 title: The startup clamp does not outlive the startup
+relations:
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 2
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T11:18:00Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T11:18:00Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T11:18:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 # The startup clamp does not outlive the startup
 
@@ -49,3 +55,7 @@ rather than leaving the startup clamp on the session.
 - `crates/edge/ess-cli/tests/support/browser.rs` — `cited`
 - `crates/edge/ess-cli/tests/browser_startup_slow_serve_boundary.rs` — `cited`, untracked, holds the
   red case and its green control, on `impl/browser-fixture-startup-deadline`
+
+## Verified reconciliation 2026-10-02
+
+Already fixed by5c8fc4ecd, contained in released0.51.0. Current support/browser.rs:464-478 restores SESSION_TIMEOUT for both read and write after successful upgrade; the startup clamp is not left on the session socket. Fresh execution at482609 of browser_startup_slow_serve_boundary passed the late-ready regression and same-speed early-ready control:2passed0failed4ignored, captured in server target/backlog-input/browser-startup-reconciliation.log. This matches the story's specific acceptance. The four ignored neighboring cases concern separate outstanding startup classification/retry/serialization defects and do not qualify as passing coverage; they are not closed by this move.

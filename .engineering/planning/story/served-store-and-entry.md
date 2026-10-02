@@ -15,7 +15,13 @@ relations:
 - depends_on: story:served-view-params
 scope:
 - confidence: cited
+  path: Cargo.lock
+- confidence: cited
+  path: crates/generate/ess-synth/Cargo.toml
+- confidence: cited
   path: crates/generate/ess-synth/src/feasibility.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/go/context.rs
 - confidence: cited
@@ -45,6 +51,8 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/store.rs
 - confidence: cited
+  path: crates/generate/ess-synth/src/served.rs
+- confidence: cited
   path: crates/generate/ess-synth/tests/fixtures/served-notes
 - confidence: cited
   path: crates/generate/ess-synth/tests/served_entry.rs
@@ -54,7 +62,7 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
