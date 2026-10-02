@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.52.0] — 2026-10-03
+
 ### Added
 
 - `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
@@ -37,6 +39,15 @@
   standard-library package a generated file imports gets a renamed package. A store and a server
   entry point are not generated yet (beyond10x/ess#314).
 - The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
+
+### Fixed
+
+- Synthesized server creation identities and Web/Clap existence handling agree with the
+  declared command behavior; generated contract guidance describes the actual seams.
+- Conformance synthesis handles the corrected optional inputs, copied-field guards,
+  Boolean outcomes, bindings and response expectations from the consumer defect batch.
+- Browser runner startup reports failures, isolates concurrent invocations and cleans up its
+  process resources consistently.
 
 ## [0.51.0] — 2026-10-01
 

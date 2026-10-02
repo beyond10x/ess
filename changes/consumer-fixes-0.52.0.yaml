@@ -1,0 +1,18 @@
+schema: b10x-change/v1
+id: ess/consumer-fixes-0.52.0
+repository: ess
+publishedAt: 2026-10-03T00:00:00Z
+title: Generated Go behavior, served view parameters and consumer fixes
+summary: >-
+  ESS generates determined Go command behavior and view queries, passes typed query
+  parameters through generated Go and Rust servers, and filters UI reads consistently
+  in React and terminal renderers. Consumer fixes cover creation identities,
+  conformance synthesis and browser runner startup. Generated behavior and served
+  view interfaces include breaking changes described in the release notes.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.52.0
+  version: 0.52.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
