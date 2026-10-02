@@ -103,7 +103,14 @@ fn create() -> Call {
 }
 
 fn issue(prefix: usize) -> Call {
-    Call::new(ISSUE, BTreeMap::new(), Subject::Created(prefix))
+    Call::new(
+        ISSUE,
+        BTreeMap::from([(
+            "issued_at".to_owned(),
+            Node::Text(format!("2026-01-05T09:00:{:02}Z", prefix + 1)),
+        )]),
+        Subject::Created(prefix),
+    )
 }
 
 /// A payment of nothing: `rejected` from every state, so it changes nothing and commutes with

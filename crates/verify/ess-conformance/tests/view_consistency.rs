@@ -119,7 +119,10 @@ fn create() -> Call {
 fn issue(prefix: usize) -> Call {
     Call::new(
         "billing.invoice.IssueInvoice",
-        BTreeMap::new(),
+        BTreeMap::from([(
+            "issued_at".to_owned(),
+            Node::Text(format!("2026-01-05T09:00:{:02}Z", prefix + 1)),
+        )]),
         Subject::Created(prefix),
     )
 }

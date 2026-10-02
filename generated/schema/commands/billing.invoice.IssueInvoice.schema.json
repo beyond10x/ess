@@ -7,17 +7,22 @@
   "properties": {
     "invoice_id": {
       "$ref": "#/$defs/billing.invoice.InvoiceId"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
     }
   },
   "required": [
-    "invoice_id"
+    "invoice_id",
+    "issued_at"
   ],
   "additionalProperties": false,
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
-    "source_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
-    "contract_digest": "slice-sha256/2:4855a14e5e8154dda511af65d226de0cb1e81bd8d432a340b354cbadcae8e4b5",
+    "source_digest": "096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648",
+    "contract_digest": "slice-sha256/2:a98e0138ae4d081c7c6a1092fa4b53b4b5b2fc5766b1e3505760dd6122214e29",
     "regenerate": "ess generate"
   },
   "$defs": {

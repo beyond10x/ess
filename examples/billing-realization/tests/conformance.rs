@@ -372,6 +372,7 @@ fn issue_invoice(
         .invoice_service
         .issue_invoice(IssueInvoice {
             invoice_id: invoice_id.clone(),
+            issued_at: Timestamp(text_input(request, "issued_at")?),
         })
         .map_err(|refusal| unmet(&refusal))?;
     Ok(match outcome {

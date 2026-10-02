@@ -1,6 +1,6 @@
 # generated from billing v3
-# model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
-# contract digest slice-sha256/2:64e7105b7e93a0ab9b65959baf9e6c05993197426973f2df23bea308ccd9bd64
+# model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
+# contract digest slice-sha256/2:62844a99484b1ca122933899d4b6a26aac5221ea03aa037fb91c8cf6a01ca1ba
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
 info:
@@ -14,8 +14,8 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
-    contract_digest: slice-sha256/2:64e7105b7e93a0ab9b65959baf9e6c05993197426973f2df23bea308ccd9bd64
+    source_digest: 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
+    contract_digest: slice-sha256/2:62844a99484b1ca122933899d4b6a26aac5221ea03aa037fb91c8cf6a01ca1ba
 tags:
 - name: invoices
   description: Issuing invoices and tracking whether they are paid.
@@ -450,8 +450,12 @@ components:
       properties:
         invoice_id:
           $ref: '#/components/schemas/billing.invoice.InvoiceId'
+        issued_at:
+          type: string
+          format: date-time
       required:
       - invoice_id
+      - issued_at
       additionalProperties: false
     billing.invoice.IssueInvoice.issued.Response:
       additionalProperties: false
