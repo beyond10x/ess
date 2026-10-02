@@ -47,6 +47,7 @@
 //! same ones, and the runner never compares one against an expected value.
 
 mod bindings;
+mod command;
 pub mod execute;
 mod facts;
 mod protected;
@@ -56,7 +57,6 @@ mod views;
 use std::cell::RefCell;
 
 use ess_compiler::ir::{EssIr, ResolvedCondition};
-use ess_primitives::consistency::ConsistencyToken;
 
 use crate::scenario::OutcomeRef;
 use crate::target::{
@@ -200,17 +200,7 @@ impl ConformanceTarget for Interpreted {
         // The standard refusal for an actor no grant admits, before the command runs
         // (beyond10x/ess#265). A command sent as no actor is sent as the interpreter's own
         // authority: the suite sends a command no actor is granted that way.
-        if let Some(actor) = &request.actor {
-            let granted = model.actors().get(actor.name()).is_some_and(|declared| {
-                declared
-                    .may
-                    .iter()
-                    .any(|command| command.name() == request.command.name())
-            });
-            if !granted {
-                return Err(TargetError::not_granted(Some(actor.to_string())));
-            }
-        }
+        self.command_grant(&request.command, request.actor.as_ref())?;
         let mut scenario = self.scenario.borrow_mut();
         let externals = match scenario.forced.take() {
             Some((forced, remaining)) if forced.command == request.command => {
@@ -251,56 +241,21 @@ impl ConformanceTarget for Interpreted {
             ));
         }
         let step = steps.remove(0);
-        let response = protected::response(
-            model,
-            &request.command,
-            step.outcome.as_ref(),
-            &mut scenario.issued,
-        )?;
-        if scenario.store != step.next {
-            let visible_after = scenario.projection_reads.saturating_add(2);
-            scenario
-                .projection_versions
-                .push((visible_after, step.next.clone()));
-        }
-        scenario.store = step.next;
-        let mut direct_events = Vec::with_capacity(step.events.len());
-        for event in step.events {
-            let sequence = scenario.tick();
-            let event = event.in_activity(request.correlation.clone()).at(sequence);
-            scenario.published.push(event.clone());
-            direct_events.push(event);
-        }
-        // Every completed command observes the held state, including an undeclared result.
-        // Its token lets the runner verify unchanged state without weakening reads to Current.
-        let sequence = scenario.tick();
-        let consistency = Some(
-            ConsistencyToken::new(format!("seq:{sequence}")).map_err(|error| {
-                TargetError::unavailable(observation.clone(), error.to_string())
-            })?,
-        );
-        let result = SemanticCommandResult {
-            outcome: step.outcome,
-            error: step.error,
-            consistency,
-            direct_events,
-            response,
-        };
         drop(scenario);
-        for event in &result.direct_events {
-            self.dispatch(event, None)?;
-        }
-        Ok(result)
+        self.complete_command(&request.command, &request.correlation, step)
     }
 
     fn execute_command_without_input(
         &self,
         request: crate::target::AbsentInputRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
-        Err(TargetError::unsupported(
-            format!("invoking `{}` with no input", request.command),
-            NOTHING_DERIVED,
-        ))
+        let observation = format!("invoking `{}` with no input", request.command);
+        let model = self.model(&observation)?;
+        self.command_grant(&request.command, request.actor.as_ref())?;
+        let step =
+            execute::without_input(model, &self.scenario.borrow().store, request.command.name())
+                .map_err(|why| refusal(observation, &why))?;
+        self.complete_command(&request.command, &request.correlation, step)
     }
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {

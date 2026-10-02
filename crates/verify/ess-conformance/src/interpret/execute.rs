@@ -339,6 +339,35 @@ pub fn execute(
     execute_generating(ir, store, command, input, externals, &Generated::Counter)
 }
 
+/// A missing document is its own request, never an empty map sent through input selection.
+pub(super) fn without_input(
+    ir: &EssIr,
+    store: &Store,
+    command: &QualifiedName,
+) -> Result<Step, Undetermined> {
+    let spec = ir
+        .commands()
+        .get(command)
+        .ok_or_else(|| Undetermined::UnknownCommand(command.to_string()))?;
+    let Some(outcome) = spec
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.condition == ResolvedCondition::InputAbsent)
+    else {
+        return Ok(undeclared(store));
+    };
+    // Admission restricts this marker to a refusal with no effects or input-dependent payload.
+    take(
+        ir,
+        spec,
+        outcome,
+        store,
+        &BTreeMap::new(),
+        &Generated::Counter,
+    )?
+    .map_err(Undetermined::Request)
+}
+
 /// Executes `command` with `input` against `store`, returning every distinct step the model allows.
 ///
 /// Never empty: a request no declared branch covers is one step with no outcome. More than one
@@ -713,6 +742,7 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
             | ResolvedCondition::ExternalWhen { .. }
             | ResolvedCondition::WrongState
             | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::InputAbsent
             | ResolvedCondition::SubjectState { .. }
             | ResolvedCondition::StateChange { .. } => {}
             ResolvedCondition::SubjectField { predicate, .. } => {
@@ -728,9 +758,6 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
 
             ResolvedCondition::Related { .. } => {
                 return gap(format!("the guard over a related row of `{at}`"));
-            }
-            ResolvedCondition::InputAbsent => {
-                return gap(format!("the absent-input branch of `{at}`"));
             }
             ResolvedCondition::ExistingInstance => {
                 return gap(format!("the existing-instance branch of `{at}`"));
