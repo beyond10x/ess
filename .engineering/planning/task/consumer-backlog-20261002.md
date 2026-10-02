@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -28,10 +28,17 @@ The initial source set is 82 open GitHub issues and 161 nonterminal stories in a
 
 ## Current evidence
 
-- PR 381 at 28aeddddfc86c4a92c48aba98d5d70091ba4219d carries 21 fixes. Its ESS Gate passed; common security failed with `candidate exceeds scan limit` in Actions run 36961709429. The B10X_GATES_POLICY secret owner must refresh its approved baseline. No bypass or repeated unchanged rerun.
-- Generated-server corrections are published in combined PR 386 at f0b220099119090795c93cae07c14e6209918f67. PRs 383 and 384 are closed as superseded after verifying both exact heads are ancestors of this candidate. Local affected packages: 453 passed, two existing ignored; exact task test-xtask: 362 passed, three existing ignored; concurrent served-view nextest: eight passed. Strict Clippy and formatting passed. Correctness CI run 36987215656 is pending; common security run 36987213274 failed with the same scan-limit refusal. No integration or release claimed.
-- Story feature-request-309 has five measured failing regressions before the shared-input aggregate-key fix and five passing after it. All 300 package lanes completed successfully: 2145 passed, zero failed, 11 existing ignored. Independent review is in progress. The full-package baseline was interrupted for disk pressure and its total is unknown.
-- The 0.51.0 GitHub Release is public with four archives and SHA256SUMS. No 0.52.0 tag exists at intake.
+PR386 merged as fa08de5bd816b3cc46694ec4d19d20d13e128764 and consolidated UI PR381 merged as b4da64e38b770fe74103409fe1fef7ae6ca214f4 after required green gates and exact tree checks. The approved policy secret refresh cleared the scan-limit blocker. The one-time personal gh secret exception is consumed; all subsequent GitHub writes use the bot App.
+
+All nine original PRs are resolved: the two carriers merged and seven absorbed PRs closed with preservation proof. No source branches/worktrees were deleted. The open GitHub issue inventory is58, down from82; a fresh refresh found no new or changed open issue bodies. This count does not imply completion of all related AEP acceptance.
+
+Server follow-up PR387 publishes exact4826099161bec53d2da65996958b97cb0c96165a, grouping316/379/385 and fixture/347 documentation. Site, security, planning and preliminary lanes passed; full Gate is running. The npm11 direct-root Git dependency admission problem is resolved using official npm12.2 with allow-git=root unchanged; no exception was taken.
+
+Conformance batch locally commits309,342,317,288,308,298. Headf863ee87b5fd6295e086c6134d104025983441d9 includes current main and the canonical planning reconciliation through56b48d26c. Full affected packages domain/conformance/synth are running on those bytes; no remote PR yet. Boolean final paired tests execute138 on both sides, with11 baseline failures and zero treatment failures.
+
+UI365 has passed six affected package checks, lint, browser lab and site validation on its prior frozen snapshot. Review found additional live-event/filter, numeric-parity and source-switch/live composition defects, now under measured correction before publication. Full store/entry318 remains active implementation and is not represented by the earlier behavior-only fixes.
+
+Release0.51.0 remains the latest verified public release with four archives and SHA256SUMS. No0.52release is claimed. Historical execution sections below retain earlier observations; this section is the current checkpoint.
 
 ## Completion boundary
 
