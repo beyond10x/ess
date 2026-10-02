@@ -340,16 +340,22 @@ fn a_command_outcome_keeps_the_refusal_beside_the_success() {
 fn an_obligation_is_an_interface_and_a_stub_that_returns_a_value_never_a_panic() {
     let synthesis = go();
     let email = artifact(&synthesis, "types/email/email.go");
+    let invoice = artifact(&synthesis, "types/invoice/invoice.go");
     assert!(
-        email.contains("type SendEmailBehavior interface {"),
+        invoice.contains("type CreateInvoiceBehavior interface {"),
         "an owed behaviour is a seam, not a hole"
     );
     assert!(
-        email.contains(
-            "func (Unimplemented) SendEmail(input SendEmail) (SendEmailOutcome, \
+        invoice.contains(
+            "func (Unimplemented) CreateInvoice(input CreateInvoice) (CreateInvoiceOutcome, \
              *obligation.UnmetObligation) {"
         ),
         "and the shared stub satisfies it"
+    );
+    assert!(
+        email.contains("type SendEmailBehavior interface {")
+            && !email.contains("func (Unimplemented) SendEmail("),
+        "a generated behaviour keeps its seam and has no stub: nothing about it is owed"
     );
     for emitted in synthesis.artifacts.values() {
         if !is_go(&emitted.path) {
@@ -379,6 +385,12 @@ fn the_plans_obligations_and_the_modules_stubs_are_the_same_list() {
         while let Some(position) = text[from..].find(marker) {
             let at = from + position + marker.len();
             let capability_end = text[at..].find('"').expect("the capability closes") + at;
+            // A stub names its plan entry in a literal; the generated behaviours' refusals of a
+            // request the model declares no outcome for name a source held in a variable.
+            if !text[capability_end..].starts_with("\", Source: \"") {
+                from = capability_end;
+                continue;
+            }
             let source_at = text[capability_end..]
                 .find("Source: \"")
                 .expect("the source follows")
@@ -394,19 +406,12 @@ fn the_plans_obligations_and_the_modules_stubs_are_the_same_list() {
     }
     stubs.sort();
 
-    // A command behaviour or view query the plan marks generated is one this target does not
-    // generate yet: it is owed here, stubbed like an obligation, and `TARGET.md` names the
-    // weakening.
+    // A command behaviour or view query the plan marks generated is generated here too
+    // (`story:go-generated-behaviour`): only what the plan owes is stubbed.
     let mut owed: Vec<(String, String)> = synthesis
         .plan
         .obligations()
         .map(|(capability, _)| capability)
-        .chain(synthesis.plan.generated().filter(|capability| {
-            matches!(
-                capability.kind,
-                CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
-            )
-        }))
         .map(|capability| {
             (
                 capability.kind.describes().to_owned(),

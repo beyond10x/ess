@@ -365,10 +365,17 @@ fn run_suite(
         "the harness builds against the generated ports:\n{log}"
     );
 
+    assert_suite_passes(ir, &target.join("debug/harness"), &[]);
+    drop(scratch);
+}
+
+/// Runs the suite the specification synthesizes against one harness process, which every scenario
+/// must pass, and which must read every view.
+fn assert_suite_passes(ir: &EssIr, binary: &Path, arguments: &[String]) {
     let synthesized = ess_conformance::synthesize(ir);
     let suite = synthesized.suite;
     let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
-    let target = Harnessed::start(&target.join("debug/harness"), ir);
+    let target = Harnessed::start(binary, arguments, ir);
     let report = Runner::for_suite(&suite)
         .run_admitted(&admitted, &target)
         .into_report();
@@ -405,7 +412,119 @@ fn run_suite(
     );
     assert_eq!(report.scenarios.len(), suite.scenarios.len());
     drop(target);
+}
+
+/// `story:go-generated-behaviour`: the generated Go queries — projections, filters, an order and
+/// every aggregate — over an in-memory storage port that holds no query
+/// (`tests/fixtures/generated-views-go-harness/main.go`), are gofmt-clean, vet clean and build, and
+/// pass the suite the specification synthesizes through the generated HTTP surface over a real
+/// socket.
+#[test]
+fn the_go_queries_build_and_pass_their_own_suite() {
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
+        return;
+    };
+    let ir = compile_text(&fixture());
+    let synthesis = synthesize_for(&ir, Target::Go).expect("the fixture synthesizes to Go");
+    for view in VIEWS {
+        assert_eq!(
+            synthesis
+                .plan
+                .disposition_of(CapabilityKind::ViewQuery, view),
+            Some(&SynthesisDisposition::Generated),
+            "`{view}`"
+        );
+    }
+    let behaviour = &synthesis.artifacts["types/behaviour/behaviour.go"].contents;
+    for view in VIEWS {
+        let method = view.rsplit('.').next().unwrap_or_default();
+        let signature = format!(
+            "func (b *Generated) {method}() ([]work.{method}, *obligation.UnmetObligation) {{"
+        );
+        assert!(
+            behaviour.contains(&signature),
+            "`{signature}` missing:\n{behaviour}"
+        );
+    }
+    let scratch = Scratch(
+        Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("generated-views-go-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&scratch.0);
+    let tree = scratch.0.join("ledger");
+    write_tree(&tree, &synthesis);
+    let harness = scratch.0.join("harness");
+    std::fs::create_dir_all(&harness).expect("mkdir");
+    std::fs::write(
+        harness.join("go.mod"),
+        "module ledgerharness\n\ngo 1.21\n\nrequire example.invalid/ledger v0.0.0\n\nreplace \
+         example.invalid/ledger => ../ledger\n",
+    )
+    .expect("write");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/generated-views-go-harness/main.go"),
+        harness.join("main.go"),
+    )
+    .expect("the harness copies");
+
+    let (formatted, unformatted) = go_tool(&tree, "gofmt", &["-d", "."]);
+    assert!(
+        formatted && unformatted.trim().is_empty(),
+        "the generated Go is gofmt-clean:\n{unformatted}"
+    );
+    let (vetted, log) = go_tool(&tree, &go, &["vet", "./..."]);
+    assert!(vetted, "the generated Go is vet clean:\n{log}");
+    let binary = scratch.0.join("harness-bin");
+    let (built, log) = go_tool(
+        &harness,
+        &go,
+        &["build", "-o", binary.to_str().expect("a UTF-8 path"), "."],
+    );
+    assert!(
+        built,
+        "the harness builds against the generated ports:\n{log}"
+    );
+
+    let mut routes = Vec::new();
+    for component in ir.components().values() {
+        for route in ess_gen::http::routes(&ir, component) {
+            let name = match route.serves {
+                ess_gen::http::Served::Command(handle) => ir.command(handle).name.to_string(),
+                ess_gen::http::Served::View(handle) => ir.view(handle).name.to_string(),
+            };
+            routes.extend([name, route.method.as_str().to_owned(), route.path]);
+        }
+    }
+    assert_suite_passes(&ir, &binary, &routes);
     drop(scratch);
+}
+
+/// Where Go is, or `None` when this machine has none — said out loud, never passed silently.
+fn go() -> Option<String> {
+    let output = Command::new("go").arg("version").output().ok()?;
+    output.status.success().then(|| "go".to_owned())
+}
+
+/// Runs a Go tool in `directory` with nothing fetched from a network, returning its output.
+fn go_tool(directory: &Path, tool: &str, arguments: &[&str]) -> (bool, String) {
+    let output = Command::new(tool)
+        .args(arguments)
+        .current_dir(directory)
+        .env("GOFLAGS", "-mod=mod")
+        .env("GOPROXY", "off")
+        .env("GOWORK", "off")
+        .output()
+        .expect("the Go tool runs");
+    (
+        output.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    )
 }
 
 /// Every view some step of a serialized suite names.
@@ -458,8 +577,9 @@ fn decimals(fields: &[ess_compiler::ir::ResolvedField]) -> Vec<String> {
 }
 
 impl Harnessed {
-    fn start(binary: &Path, ir: &EssIr) -> Self {
+    fn start(binary: &Path, arguments: &[String], ir: &EssIr) -> Self {
         let mut child = Command::new(binary)
+            .args(arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()

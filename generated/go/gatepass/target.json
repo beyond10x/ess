@@ -56,20 +56,6 @@
       "affects": [
         "component_transport"
       ]
-    },
-    {
-      "guarantee": "a command behaviour the specification fully determines is generated, over storage and context ports",
-      "instead": "this target does not generate command behaviour yet: each one the plan marks generated keeps its behaviour seam here, owed, with the same contract and a stub refusing it, exactly as an obligation",
-      "affects": [
-        "command_behavior"
-      ]
-    },
-    {
-      "guarantee": "a view query the specification fully determines is generated, over a storage port that lists an entity's rows",
-      "instead": "this target does not generate view queries yet: each one the plan marks generated keeps its query seam here, owed, with the same contract and a stub refusing it, exactly as an obligation",
-      "affects": [
-        "view_query"
-      ]
     }
   ],
   "refusals": []

@@ -38,8 +38,10 @@
 //! plan's two renderings are byte-identical in both trees, which is the seam proving itself.
 
 mod accessor;
+mod behaviour;
 mod entity;
 mod http;
+mod invariant;
 mod items;
 mod json;
 mod layout;
@@ -289,7 +291,6 @@ impl<'a> Emit<'a> {
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
     crate::failure::input_absent(ir, plan, crate::Target::Go)?;
-    crate::existence::refuse(ir, plan, crate::Target::Go)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Go)?;
     crate::paging::refuse(ir, plan, crate::Target::Go)?;
     crate::failure::retry_bound(ir, plan, crate::Target::Go)?;
@@ -297,6 +298,8 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     let refusals = TargetRefusals::of(ir, plan);
     let layout = Layout::of(ir, plan, &refusals);
     accessor::preflight(ir, plan, &layout)?;
+    let seams = behaviour::Seams::of(ir, plan, &layout, &refusals);
+    invariant::preflight(ir, plan, &layout)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -309,6 +312,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     if let Some(helper) = reading::helper(ir, &layout, provenance) {
         artifacts.push(helper);
     }
+    artifacts.extend(invariant::package(ir, &layout, provenance));
     if wants_obligations(ir, plan) {
         artifacts.push(obligation::refusal_package(&layout, provenance));
     }
@@ -329,12 +333,19 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
             ir,
             plan,
             &layout,
-            &refusals,
+            (&refusals, &seams),
             domain,
             &mut covered,
             &mut stubbed,
         ));
     }
+    artifacts.extend(behaviour::package(
+        ir,
+        &layout,
+        &seams,
+        provenance,
+        &mut covered,
+    ));
     for component in ir.components().values() {
         artifacts.extend(port::component_package(
             ir,
@@ -361,14 +372,14 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         &mut covered,
     ));
 
-    assert_bijection(plan, &refusals, &covered, &stubbed);
+    assert_bijection(plan, &refusals, &seams, &covered, &stubbed);
 
     Ok(Emission {
         artifacts,
         report: TargetReport {
             provenance: provenance.clone(),
             target: TARGET,
-            weakenings: weakenings(ir, &refusals),
+            weakenings: weakenings(ir, &refusals, &seams),
             refusals: refusals
                 .iter()
                 .map(|(capability, detail)| TargetRefusal {
@@ -422,6 +433,7 @@ fn type_owners(ir: &EssIr, plan: &SynthesisPlan) -> Result<(), crate::TargetFail
 fn assert_bijection(
     plan: &SynthesisPlan,
     refusals: &TargetRefusals,
+    seams: &behaviour::Seams,
     covered: &BTreeSet<Capability>,
     stubbed: &BTreeSet<Capability>,
 ) {
@@ -429,19 +441,10 @@ fn assert_bijection(
         .iter()
         .map(|(capability, _)| capability.clone())
         .collect();
-    // A command behaviour or view query the plan marks generated is one this target owes as a
-    // seam: it is stubbed rather than covered, and `TARGET.md` names the weakening.
-    let weakened: BTreeSet<Capability> = plan
-        .generated()
-        .filter(|capability| {
-            matches!(
-                capability.kind,
-                CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
-            )
-        })
-        .filter(|capability| !refused.contains(capability))
-        .cloned()
-        .collect();
+    // A command behaviour or view query the plan marks generated whose Go method name another
+    // seam derives too is one this target owes as a seam: it is stubbed rather than covered, and
+    // `TARGET.md` names the weakening.
+    let weakened = seams.weakened.clone();
     let planned: BTreeSet<Capability> = plan
         .generated()
         .filter(|capability| !refused.contains(capability) && !weakened.contains(capability))
@@ -490,7 +493,11 @@ fn wants_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
 /// discard. Everything else here is a fact about Go and holds whatever the specification says.
 // One row per weakening, stated where a reader compares them.
 #[allow(clippy::too_many_lines)]
-fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
+fn weakenings(
+    ir: &EssIr,
+    refusals: &TargetRefusals,
+    seams: &behaviour::Seams,
+) -> Vec<TargetWeakening> {
     let serves = !http::served(ir, refusals).is_empty();
     let mut exhaustive_affects = vec![
         CapabilityKind::DomainType,
@@ -584,31 +591,40 @@ fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
     if !serves {
         out.extend(grant_table_weakening(ir));
     }
-    if crate::determined::any_generated(ir) {
-        out.push(TargetWeakening {
-            guarantee: "a command behaviour the specification fully determines is generated, \
-                        over storage and context ports"
-                .to_owned(),
-            instead: "this target does not generate command behaviour yet: each one the plan \
-                      marks generated keeps its behaviour seam here, owed, with the same contract \
-                      and a stub refusing it, exactly as an obligation"
-                .to_owned(),
-            affects: vec![CapabilityKind::CommandBehavior],
-        });
-    }
-    if crate::view_query::any_generated(ir) {
-        out.push(TargetWeakening {
-            guarantee: "a view query the specification fully determines is generated, over a \
-                        storage port that lists an entity's rows"
-                .to_owned(),
-            instead: "this target does not generate view queries yet: each one the plan marks \
-                      generated keeps its query seam here, owed, with the same contract and a \
-                      stub refusing it, exactly as an obligation"
-                .to_owned(),
-            affects: vec![CapabilityKind::ViewQuery],
-        });
+    if !seams.weakened.is_empty() {
+        out.push(one_method_set(seams));
     }
     out
+}
+
+/// Seams the plan marks generated that this target keeps owed, because their Go method name is
+/// another seam's too and `behaviour.Generated` can carry only one of them.
+fn one_method_set(seams: &behaviour::Seams) -> TargetWeakening {
+    let groups: Vec<String> = seams
+        .collisions
+        .iter()
+        .map(|(method, sources)| format!("`{method}` ({})", sources.join(", ")))
+        .collect();
+    let mut affects: Vec<CapabilityKind> = seams
+        .weakened
+        .iter()
+        .map(|capability| capability.kind)
+        .collect();
+    affects.sort();
+    affects.dedup();
+    TargetWeakening {
+        guarantee: "a command behaviour or view query the specification fully determines is \
+                    generated, over storage and context ports"
+            .to_owned(),
+        instead: format!(
+            "Go gives a type one method set, and `behaviour.Generated` is one type: seams whose \
+             Go method names coincide cannot all be its methods, so none of them is, and each \
+             one the plan marks generated keeps its seam here, owed, with the same contract and \
+             a stub refusing it, exactly as an obligation. The colliding names: {}",
+            groups.join("; ")
+        ),
+        affects,
+    }
 }
 
 /// The first target's types crate carries every actor's grants as data; this one does not, where it
@@ -714,7 +730,8 @@ fn domain_package(
     ir: &EssIr,
     plan: &SynthesisPlan,
     layout: &Layout,
-    refusals: &TargetRefusals,
+    // What this target refuses, and what it does with each behaviour and query.
+    (refusals, seams): (&TargetRefusals, &behaviour::Seams),
     domain: &QualifiedName,
     covered: &mut BTreeSet<Capability>,
     stubbed: &mut BTreeSet<Capability>,
@@ -743,7 +760,7 @@ fn domain_package(
     let mut body = String::new();
     items::declarations(&mut body, &emit, plan, refusals, covered);
     items::conversions(&mut body, &emit, plan, refusals, covered);
-    obligation::domain_obligations(&mut body, &emit, plan, refusals, stubbed);
+    obligation::domain_obligations(&mut body, &emit, plan, refusals, seams, stubbed);
     emit.file(&plan.provenance, &doc, &body)
 }
 
