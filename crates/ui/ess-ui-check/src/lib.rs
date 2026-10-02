@@ -20,6 +20,7 @@
 mod classify;
 mod enums;
 mod expr;
+mod filter;
 mod model;
 mod names;
 mod raw;
@@ -137,6 +138,13 @@ pub const CHECKS: &[Check] = &[
     schema_check("theme_choice", Severity::Error),
     schema_check("tone_map_refs", Severity::Error),
     schema_check("tone_map_unused", Severity::Warning),
+    schema_check("filter_expr", Severity::Error),
+    schema_check("filter_roots", Severity::Error),
+    schema_check("filter_paths", Severity::Error),
+    schema_check("filter_place", Severity::Error),
+    schema_check("filter_paging", Severity::Error),
+    schema_check("filter_over_param", Severity::Warning),
+    schema_check("filter_export", Severity::Warning),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.
@@ -380,6 +388,7 @@ pub fn check_source(
         Err(error) => classify::refusal(text, &error, &mut sink),
         Ok(document) => {
             rules::run(&document, base, options, &mut sink);
+            filter::run(&document, model, &mut sink);
             style::run(&document, &mut sink);
             raw::run(text, &document, &mut sink);
             if let Some(model) = model {

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
+  and terminal semantics after live effects and before local paging. Filters never reach the
+  server, share raw requests, and are not authorization. Seven `filter_*` checks reject invalid
+  expressions, scopes, placements and server paging, and warn about parameter and export
+  alternatives. Dynamic menu filters now follow the same fail-closed semantics in both renderers
+  (beyond10x/ess#365). Older readers refuse the new read key.
+
 ### Changed
 
 - **Breaking for a realization of a view with parameters, and for hand-written server code**:

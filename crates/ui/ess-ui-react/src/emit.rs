@@ -621,6 +621,7 @@ impl<'d> Gen<'d> {
         let view = reads.view.as_ref().or(reads.placeholder.as_ref())?;
         Some(ts::object([
             ("view", Some(ts::string(view))),
+            ("filter", expr(reads.filter.as_ref())),
             (
                 "params",
                 (!reads.params.is_empty()).then(|| exprs(&reads.params)),
@@ -1814,18 +1815,50 @@ impl<'d> Gen<'d> {
             return "__data";
         }
         let use_live = self.import("runtime/live", "useLive");
-        let session = match self.session_expr(at, Some(page), &live.channel) {
+        let mut session = match self.session_expr(at, Some(page), &live.channel) {
             Some(session) => {
                 let evaluate = self.import("runtime/expr", "evaluate");
                 format!(", {evaluate}({}, __scope.values)", ts::string(&session))
             }
             None => String::new(),
         };
+        if let Some(filter) =
+            Self::section_reads(&section.body).and_then(|reads| reads.filter.as_ref())
+        {
+            if session.is_empty() {
+                session.push_str(", undefined");
+            }
+            let keeps = self.import("runtime/expr", "keeps");
+            let _ = write!(
+                session,
+                ", row => {keeps}({}, {{ ...__scope.values, row }})",
+                ts::string(&filter.0)
+            );
+        }
         lines.push(format!(
             "const __data = {use_live}(__read, {}{session});",
             Self::live_literal(live)
         ));
         "__data"
+    }
+
+    fn filtered_data(
+        &mut self,
+        lines: &mut Vec<String>,
+        data: &'static str,
+        section: &Section,
+    ) -> &'static str {
+        let Some(filter) =
+            Self::section_reads(&section.body).and_then(|reads| reads.filter.as_ref())
+        else {
+            return data;
+        };
+        let filter_read = self.import("runtime/data", "filterRead");
+        lines.push(format!(
+            "const __filtered = {filter_read}({data}, {}, __scope.values);",
+            ts::string(&filter.0)
+        ));
+        "__filtered"
     }
 
     /// `frame` with the section's `states:`, and the action its empty state offers.
@@ -1883,6 +1916,7 @@ impl<'d> Gen<'d> {
                 "const __read = {use_read}({reads}, __scope.values, {enabled});"
             ));
             let data = self.live_data(&mut lines, page, at, section);
+            let data = self.filtered_data(&mut lines, data, section);
             frame = frame
                 .expr("data", data)
                 .expr("active", "__active")

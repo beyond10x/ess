@@ -269,6 +269,7 @@ pub(crate) struct NavGroup {
 /// What evaluation can see besides the page: a row, the section, the overlay and a draft.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Ctx<'a> {
+    pub owner: Option<&'a NodePath>,
     pub row: Option<&'a Value>,
     pub section: Option<&'a str>,
     pub overlay: bool,
@@ -467,11 +468,16 @@ impl App {
     /// The rows a section of the page shown holds now, live changes applied.
     pub fn rows(&self, section: &str) -> Vec<Value> {
         self.section_by_name(section)
-            .and_then(|section| self.section_request(section))
-            .and_then(|request| match self.read_state(&request) {
-                Some(ReadState::Ready(result)) => Some(result.rows.clone()),
-                _ => None,
+            .and_then(|section| {
+                self.read_rows(
+                    body_reads(&section.body)?,
+                    &Ctx {
+                        section: Some(&section.name),
+                        ..Ctx::default()
+                    },
+                )
             })
+            .map(|result| result.rows.clone())
             .unwrap_or_default()
     }
 
@@ -649,6 +655,26 @@ impl App {
                                 row: Some(row),
                                 ..Ctx::default()
                             };
+                            let shown = dynamic.filter.as_ref().is_none_or(|filter| {
+                                ess_ui::filter::keeps(&filter.0, &|path| {
+                                    let segments: Vec<_> =
+                                        path[1..].iter().map(String::as_str).collect();
+                                    match path[0].as_str() {
+                                        "row" => ess_ui::filter::path(row, &segments),
+                                        "shell" | "state" => {
+                                            let value = self.store.get(
+                                                &self.shell_state_path(segments[0]),
+                                                self.adapter.as_ref(),
+                                            );
+                                            ess_ui::filter::path(&value, &segments[1..])
+                                        }
+                                        _ => Value::Null,
+                                    }
+                                })
+                            });
+                            if !shown {
+                                continue;
+                            }
                             let label = dynamic
                                 .label
                                 .as_ref()
@@ -683,6 +709,19 @@ impl App {
         expr::eval(text, &Scope { app: self, ctx })
     }
 
+    /// A client predicate fails closed, unlike a display or visibility expression.
+    fn keeps(&self, filter: Option<&ess_ui::Expr>, ctx: &Ctx<'_>) -> bool {
+        filter.is_none_or(|filter| {
+            ess_ui::filter::keeps(&filter.0, &|path| {
+                let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
+                match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
+                    Resolved::Whole(value) => ess_ui::filter::path(&value, &segments[1..]),
+                    Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
+                }
+            })
+        })
+    }
+
     /// A `visible` condition: absent or outside the fixture grammar means shown.
     pub(crate) fn visible(&self, condition: Option<&str>, ctx: &Ctx<'_>) -> bool {
         condition
@@ -692,6 +731,14 @@ impl App {
 
     fn state_path(&self, name: &str, ctx: &Ctx<'_>) -> String {
         let mut candidates = Vec::new();
+        if let Some(owner) = ctx.owner {
+            for length in (2..=owner.segments().len()).rev() {
+                let path = owner.segments()[..length]
+                    .iter()
+                    .fold(NodePath::root(), |path, segment| path.child(segment));
+                candidates.push(path.child("state").child(name));
+            }
+        }
         if ctx.overlay {
             if let Some(open) = &self.overlay {
                 candidates.push(open.path.child("state").child(name));
@@ -789,6 +836,36 @@ impl App {
         }
     }
 
+    /// Keep raw cache entries shared; apply each read's predicate in its own scope.
+    pub(crate) fn read_rows(
+        &self,
+        reads: &Reads,
+        ctx: &Ctx<'_>,
+    ) -> Option<std::borrow::Cow<'_, ReadResult>> {
+        let result = self.rows_of(&self.request(reads, ctx))?;
+        if reads.filter.is_none() {
+            return Some(std::borrow::Cow::Borrowed(result));
+        }
+        let rows: Vec<_> = result
+            .rows
+            .iter()
+            .filter(|row| {
+                self.keeps(
+                    reads.filter.as_ref(),
+                    &Ctx {
+                        row: Some(row),
+                        ..*ctx
+                    },
+                )
+            })
+            .cloned()
+            .collect();
+        Some(std::borrow::Cow::Owned(ReadResult {
+            total: Some(rows.len() as u64),
+            rows,
+        }))
+    }
+
     pub(crate) fn section_request(&self, section: &Section) -> Option<ReadRequest> {
         let ctx = Ctx {
             section: Some(&section.name),
@@ -818,7 +895,7 @@ impl App {
                             | Composite::GraphEditor(_)
                     )
                 );
-                if listed && result.rows.is_empty() {
+                if listed && (result.rows.is_empty() || self.rows(&section.name).is_empty()) {
                     Lifecycle::Empty
                 } else {
                     Lifecycle::Ready
@@ -871,6 +948,7 @@ impl App {
         if !self.deferred.is_empty() {
             self.apply_deferred();
         }
+        self.prune_filtered_selections();
     }
 
     /// Reads each shown bound `live:` section again once its interval has passed since its read
@@ -1212,8 +1290,7 @@ impl App {
         let Some(reads) = &collection.reads else {
             return (Vec::new(), 0);
         };
-        let request = self.request(reads, ctx);
-        let Some(result) = self.rows_of(&request) else {
+        let Some(result) = self.read_rows(reads, ctx) else {
             return (Vec::new(), 0);
         };
         let rows = self.arranged_rows(ui, collection, &result.rows);
@@ -1454,6 +1531,10 @@ impl App {
 
     /// Applies one live event to a section of the page shown.
     fn apply_live(&mut self, section: &str, live: &Live, payload: &Value) {
+        let filter = self
+            .section_by_name(section)
+            .and_then(|section| body_reads(&section.body))
+            .and_then(|reads| reads.filter.clone());
         let Some(request) = self
             .section_by_name(section)
             .and_then(|section| self.section_request(section))
@@ -1470,12 +1551,24 @@ impl App {
         if paged_away {
             if let Some(identity) = &identity {
                 if let Some(held) = self
-                    .ui_mut(&ui)
+                    .ui(&ui)
                     .pending
-                    .iter_mut()
+                    .iter()
                     .find(|(held, _)| held == identity)
                 {
-                    merge(&mut held.1, payload);
+                    let mut candidate = held.1.clone();
+                    merge(&mut candidate, payload);
+                    if self.passes(live, &request, &candidate) {
+                        if let Some(held) = self
+                            .ui_mut(&ui)
+                            .pending
+                            .iter_mut()
+                            .find(|(held, _)| held == identity)
+                        {
+                            held.1 = candidate;
+                        }
+                        self.update_pending_count(&ui, section, filter.as_ref());
+                    }
                     return;
                 }
             }
@@ -1507,6 +1600,18 @@ impl App {
         }
         let inserts =
             existing.is_none() && matches!(live.effect, Effect::InsertOrPatch | Effect::InsertTop);
+        if inserts
+            && !self.keeps(
+                filter.as_ref(),
+                &Ctx {
+                    section: Some(section),
+                    row: Some(&candidate),
+                    ..Ctx::default()
+                },
+            )
+        {
+            return;
+        }
         if inserts && paged_away {
             match live.when_paged_away {
                 Some(PagedAway::Insert) => {}
@@ -1575,7 +1680,19 @@ impl App {
                     .find(|(_, state)| state.class == ess_ui::StateClass::Selection)
                     .map(|(key, _)| self.section_path(&section.name).child("state").child(key))
             });
-        let path = in_section.or_else(|| {
+        let in_overlay = section
+            .is_none()
+            .then_some(self.overlay.as_ref())
+            .flatten()
+            .and_then(|open| {
+                open.overlay
+                    .common
+                    .state
+                    .iter()
+                    .find(|(_, state)| state.class == ess_ui::StateClass::Selection)
+                    .map(|(name, _)| open.path.child("state").child(name))
+            });
+        let path = in_overlay.or(in_section).or_else(|| {
             page.state
                 .iter()
                 .find(|(_, state)| state.class == ess_ui::StateClass::Selection)
@@ -1585,6 +1702,92 @@ impl App {
             let value = Value::Sequence(ids.iter().cloned().map(Value::String).collect());
             self.store
                 .set(&path.to_string(), value, self.adapter.as_mut());
+        }
+    }
+
+    fn update_pending_count(&mut self, ui: &str, section: &str, filter: Option<&ess_ui::Expr>) {
+        let count = self
+            .ui(ui)
+            .pending
+            .iter()
+            .filter(|(_, row)| {
+                self.keeps(
+                    filter,
+                    &Ctx {
+                        section: Some(section),
+                        row: Some(row),
+                        ..Ctx::default()
+                    },
+                )
+            })
+            .count();
+        self.ui_mut(ui).new_rows = count;
+    }
+
+    /// State and live changes can hide selected rows without changing a request key.
+    fn prune_filtered_selections(&mut self) {
+        let sections = self.page_def().sections.clone();
+        for section in sections {
+            let Some(reads) = body_reads(&section.body).filter(|reads| reads.filter.is_some())
+            else {
+                continue;
+            };
+            let ui = format!("s:{}", section.name);
+            let ctx = Ctx {
+                section: Some(&section.name),
+                ..Ctx::default()
+            };
+            self.prune_selection(&ui, reads, &ctx);
+            self.update_pending_count(&ui, &section.name, reads.filter.as_ref());
+        }
+        if let Some(open) = self.overlay.clone() {
+            if let Some(reads) =
+                body_reads(&open.overlay.body).filter(|reads| reads.filter.is_some())
+            {
+                self.prune_selection(
+                    &format!("o:{}", open.name),
+                    reads,
+                    &Ctx {
+                        overlay: true,
+                        ..Ctx::default()
+                    },
+                );
+            }
+        }
+    }
+
+    pub(crate) fn selection_key(
+        &self,
+        row: &Value,
+        reads: Option<&Reads>,
+        section: Option<&str>,
+    ) -> String {
+        let key = reads
+            .and_then(|reads| reads.key.as_deref())
+            .or_else(|| {
+                section
+                    .and_then(|name| self.section_by_name(name))
+                    .and_then(Section::row_key)
+            })
+            .unwrap_or("id");
+        row.get(key)
+            .filter(|value| !value.is_null())
+            .map_or_else(|| display(row), display)
+    }
+
+    fn prune_selection(&mut self, ui: &str, reads: &Reads, ctx: &Ctx<'_>) {
+        let Some(result) = self.read_rows(reads, ctx) else {
+            return;
+        };
+        let kept: BTreeSet<_> = result
+            .rows
+            .iter()
+            .map(|row| self.selection_key(row, Some(reads), ctx.section))
+            .collect();
+        let selected: BTreeSet<_> = self.ui(ui).selected.intersection(&kept).cloned().collect();
+        if selected != self.ui(ui).selected {
+            self.ui_mut(ui).selected.clone_from(&selected);
+            self.write_selection(ctx.section, &selected);
         }
     }
 
@@ -1964,7 +2167,15 @@ impl App {
                 }
             }
             Composite::Board(board) => {
-                let rows = board_rows(self, &board, section.as_deref());
+                let rows = board_rows(
+                    self,
+                    &board,
+                    &Ctx {
+                        section: section.as_deref(),
+                        overlay,
+                        ..Ctx::default()
+                    },
+                );
                 match key.code {
                     KeyCode::Char('j') | KeyCode::Down => {
                         let state = self.ui_mut(&ui);
@@ -2087,7 +2298,10 @@ impl App {
                 state.expanded = !state.expanded;
             }
             KeyCode::Char(' ') => {
-                if let Some(id) = row.as_ref().map(|row| display(&row["id"])) {
+                if let Some(id) = row
+                    .as_ref()
+                    .map(|row| self.selection_key(row, collection.reads.as_ref(), section))
+                {
                     let state = self.ui_mut(ui);
                     if !state.selected.remove(&id) {
                         state.selected.insert(id);
@@ -2277,8 +2491,7 @@ impl App {
         let Some(reads) = &choice.reads else {
             return Vec::new();
         };
-        let request = self.request(reads, ctx);
-        self.rows_of(&request)
+        self.read_rows(reads, ctx)
             .map(|result| {
                 result
                     .rows
@@ -3722,14 +3935,9 @@ pub(crate) fn references_collection(references: &ess_ui::References) -> ess_ui::
 }
 
 /// The rows a board places, in layout order (top to bottom, then left to right).
-pub(crate) fn board_rows(app: &App, board: &ess_ui::Board, section: Option<&str>) -> Vec<Value> {
-    let ctx = Ctx {
-        section,
-        ..Ctx::default()
-    };
-    let request = app.request(&board.reads, &ctx);
+pub(crate) fn board_rows(app: &App, board: &ess_ui::Board, ctx: &Ctx<'_>) -> Vec<Value> {
     let mut rows = app
-        .rows_of(&request)
+        .read_rows(&board.reads, ctx)
         .map(|result| result.rows.clone())
         .unwrap_or_default();
     rows.sort_by(|left, right| {

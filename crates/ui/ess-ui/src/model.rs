@@ -517,7 +517,7 @@ pub struct DynamicNavEntries {
     /// Extra search words.
     #[serde(default)]
     pub synonyms: Vec<String>,
-    /// Rows to skip.
+    /// Rows kept when the predicate is true.
     pub filter: Option<Expr>,
 }
 
@@ -2184,6 +2184,8 @@ pub struct FormGroup {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Reads {
+    /// Client row predicate, applied after live effects and before local paging. Never authorization.
+    pub filter: Option<Expr>,
     /// ESS view name.
     pub view: Option<String>,
     /// A view name not yet bound to the model.
