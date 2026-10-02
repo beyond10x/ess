@@ -571,6 +571,269 @@ fn unmapped_reported() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
+// ── style: tokens, themes, the theme choice, tone maps ──────────────────────────────────────
+
+/// No finding of `id` at `path`.
+fn clean_at(report: &Report, id: &str, path: &str) {
+    let found: Vec<&Finding> = tripped(report, id)
+        .into_iter()
+        .filter(|finding| finding.path == path)
+        .collect();
+    assert!(
+        found.is_empty(),
+        "unexpected `{id}` at `{path}`: {found:#?}"
+    );
+}
+
+/// The base page with a badge whose tone is picked by `tone_by`.
+fn badge_page(tone_by: &str) -> String {
+    format!(
+        "{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: t.ById, \
+         children: [{{name: state, primitive: badge, field: state, tone_by: {tone_by}}}]}}]}}}}"
+    )
+}
+
+/// A shell whose `theme` state is `state`.
+fn theme_shell(state: &str) -> String {
+    format!("{{app: {{regions: {{main: {{kind: page_outlet}}}}, state: {{theme: {state}}}}}}}")
+}
+
+const THEME_STATE: &str =
+    "{type: {enum: [light, dark]}, class: preference, store: local_storage, pinned: true, default: light}";
+
+#[test]
+fn token_values() {
+    let text = doc(&[(
+        "tokens",
+        "{color: {surface: 'hsl(0 0% 100%)', ink: red, short: '#12345', four: '#abcd', \
+         bright: 'rgb(256 0 0 / 1)', opaque: 'rgb(0 0 0)', ok: '#a1b2c3', veil: 'rgb(0 0 0 / 0.3)', \
+         hex8: '#a1b2c3d4', tiny: '#fff'}, \
+         space: {md: 1rem, big: 2, wide: 3vw, none: 0, half: 0.5em}, \
+         radius: {sm: 4px, odd: 4, neg: -4px}, \
+         type: {heading: {size: large, weight: 650}, body: {weight: 1000}, caption: {weight: 300, size: 0.8rem}}}",
+    )]);
+    let written = report(&text);
+    for path in [
+        "tokens/color/surface",
+        "tokens/color/ink",
+        "tokens/color/short",
+        "tokens/color/four",
+        "tokens/color/bright",
+        "tokens/color/opaque",
+        "tokens/space/big",
+        "tokens/space/wide",
+        "tokens/radius/odd",
+        "tokens/radius/neg",
+        "tokens/type/heading/size",
+        "tokens/type/heading/weight",
+        "tokens/type/body/weight",
+    ] {
+        trips_in(&written, "token_values", path);
+    }
+    for path in [
+        "tokens/color/ok",
+        "tokens/color/veil",
+        "tokens/color/hex8",
+        "tokens/color/tiny",
+        "tokens/space/md",
+        "tokens/space/none",
+        "tokens/space/half",
+        "tokens/radius/sm",
+        "tokens/type/caption/weight",
+        "tokens/type/caption/size",
+    ] {
+        clean_at(&written, "token_values", path);
+    }
+
+    // The built-in table, restated as a document's `tokens:`, is in its own grammar.
+    let schema: serde_yaml::Value = serde_yaml::from_str(ess_ui::SCHEMA).expect("schema");
+    let builtins = serde_yaml::to_string(&schema["constructs"]["Tokens"]["builtins"])
+        .expect("the built-in table writes");
+    let mut restated = doc(&[]);
+    restated.push_str("tokens:\n");
+    for line in builtins.lines() {
+        let _ = writeln!(restated, "  {line}");
+    }
+    let restated = report(&restated);
+    assert!(errors(&restated).is_empty(), "{:#?}", restated.findings);
+}
+
+#[test]
+fn token_names() {
+    let text = doc(&[(
+        "tokens",
+        "{type: {subtitle: {size: 1rem}, heading: {size: 1.2rem}}, \
+         tone: {critical: {text: danger, fill: danger_fill}, danger: {text: danger, fill: danger_fill}}}",
+    )]);
+    let report = report(&text);
+    trips_in(&report, "token_names", "tokens/type/subtitle");
+    trips_in(&report, "token_names", "tokens/tone/critical");
+    clean_at(&report, "token_names", "tokens/type/heading");
+    clean_at(&report, "token_names", "tokens/tone/danger");
+}
+
+#[test]
+fn token_refs() {
+    let text = doc(&[(
+        "tokens",
+        "{color: {alarm: '#ff0000'}, \
+         tone: {danger: {text: alarm, fill: blood}, info: {text: info, fill: line}}}",
+    )]);
+    let report = report(&text);
+    let finding = trips_in(&report, "token_refs", "tokens/tone/danger/fill");
+    assert!(finding.message.contains("blood"), "{finding:?}");
+    clean_at(&report, "token_refs", "tokens/tone/danger/text");
+    clean_at(&report, "token_refs", "tokens/tone/info/text");
+    clean_at(&report, "token_refs", "tokens/tone/info/fill");
+}
+
+#[test]
+fn theme_tokens() {
+    let text = doc(&[
+        ("tokens", "{color: {brand: '#123456'}}"),
+        (
+            "themes",
+            "{light: {}, dark: {color: {surface: '#1f2024', brand: '#654321', glow: '#ffffff', \
+             text: crimson}, space: {huge: 3rem, md: 1}, radius: {sm: 2px}, \
+             type: {subtitle: {size: 1rem}, heading: {weight: 50}}, \
+             tone: {danger: {text: danger, fill: abyss}, info: {text: brand, fill: line}}}}",
+        ),
+    ]);
+    let report = report(&text);
+    for path in [
+        "themes/dark/color/glow",
+        "themes/dark/color/text",
+        "themes/dark/space/huge",
+        "themes/dark/space/md",
+        "themes/dark/type/subtitle",
+        "themes/dark/type/heading/weight",
+        "themes/dark/tone/danger/fill",
+    ] {
+        trips_in(&report, "theme_tokens", path);
+    }
+    for path in [
+        "themes/dark/color/surface",
+        "themes/dark/color/brand",
+        "themes/dark/radius/sm",
+        "themes/dark/tone/info/text",
+    ] {
+        clean_at(&report, "theme_tokens", path);
+    }
+    assert!(
+        tripped(&report, "token_values").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+}
+
+#[test]
+fn theme_choice() {
+    let themes = ("themes", "{light: {}, dark: {color: {surface: '#1f2024'}}}");
+    let fine = doc(&[
+        ("shells", &theme_shell(THEME_STATE)),
+        themes,
+        ("theme", "{default: light, chosen_by: shell.theme}"),
+    ]);
+    let report_fine = report(&fine);
+    assert!(
+        tripped(&report_fine, "theme_choice").is_empty(),
+        "{:#?}",
+        report_fine.findings
+    );
+    let named = doc(&[
+        ("types", "{Look: {enum: [light, dark]}}"),
+        (
+            "shells",
+            &theme_shell("{type: Look, class: preference, default: dark}"),
+        ),
+        themes,
+        ("theme", "{default: light, chosen_by: shell.theme}"),
+    ]);
+    assert!(tripped(&report(&named), "theme_choice").is_empty());
+
+    trips(
+        &doc(&[("theme", "{default: light}")]),
+        "theme_choice",
+        "theme",
+    );
+    trips(
+        &doc(&[themes, ("theme", "{default: sepia}")]),
+        "theme_choice",
+        "theme/default",
+    );
+    for chosen_by in ["state.theme", "shell.theme.mode", "shell.palette"] {
+        let text = doc(&[
+            ("shells", &theme_shell(THEME_STATE)),
+            themes,
+            (
+                "theme",
+                &format!("{{default: light, chosen_by: {chosen_by}}}"),
+            ),
+        ]);
+        trips(&text, "theme_choice", "theme/chosen_by");
+    }
+    for (state, path) in [
+        (
+            "{type: {enum: [light, dark]}, class: component_state}",
+            "shells/app/state/theme",
+        ),
+        (
+            "{type: boolean, class: preference}",
+            "shells/app/state/theme/type",
+        ),
+        (
+            "{type: {enum: [light, sepia]}, class: preference}",
+            "shells/app/state/theme/type",
+        ),
+        (
+            "{type: {enum: [light, dark]}, class: preference, default: sepia}",
+            "shells/app/state/theme/default",
+        ),
+    ] {
+        let text = doc(&[
+            ("shells", &theme_shell(state)),
+            themes,
+            ("theme", "{default: light, chosen_by: shell.theme}"),
+        ]);
+        trips(&text, "theme_choice", path);
+    }
+}
+
+#[test]
+fn tone_map_refs() {
+    let text = doc(&[
+        ("tone_maps", "{job_state: {Done: success}}"),
+        ("pages", &badge_page("{value: row.state, tones: ghost}")),
+    ]);
+    let finding = trips(
+        &text,
+        "tone_map_refs",
+        "pages/p/sections/summary/children/state/tone_by/tones",
+    );
+    assert!(finding.message.contains("ghost"), "{finding:?}");
+    let fine = doc(&[
+        ("tone_maps", "{job_state: {Done: success}}"),
+        ("pages", &badge_page("{value: row.state, tones: job_state}")),
+    ]);
+    let report = report(&fine);
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
+#[test]
+fn tone_map_unused() {
+    let text = doc(&[
+        (
+            "tone_maps",
+            "{job_state: {Done: success}, deal_stage: {won: success}}",
+        ),
+        ("pages", &badge_page("{value: row.state, tones: job_state}")),
+    ]);
+    let report = report(&text);
+    trips_in(&report, "tone_map_unused", "tone_maps/deal_stage");
+    clean_at(&report, "tone_map_unused", "tone_maps/job_state");
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
 // ── rules the schema states outside `checks.list` ───────────────────────────────────────────
 
 #[test]

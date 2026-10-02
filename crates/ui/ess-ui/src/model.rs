@@ -220,6 +220,17 @@ pub struct Document {
     /// Document-level gaps found by a retrofit.
     #[serde(default)]
     pub unmapped: Vec<String>,
+    /// Design tokens, merged over the built-in table ([`Document::base_tokens`]).
+    #[serde(default)]
+    pub tokens: Tokens,
+    /// Named looks, each the tokens it overrides ([`Document::theme_tokens`]).
+    #[serde(default)]
+    pub themes: BTreeMap<String, Tokens>,
+    /// Which theme is shown, and the shell state that chooses it.
+    pub theme: Option<ThemeChoice>,
+    /// Value-to-tone maps, named by `tone_by.tones`.
+    #[serde(default)]
+    pub tone_maps: BTreeMap<String, ToneMap>,
 }
 
 /// Whose grants decide what is visible.
@@ -1951,8 +1962,12 @@ pub struct Badge {
 pub struct ToneBy {
     /// The value.
     pub value: Expr,
-    /// Value to tone; an expression inside a widget declaration, a map once expanded.
+    /// Value to tone: written as `map:`, or the `tone_maps` entry the loader resolved `tones:`
+    /// to; an expression inside a widget declaration, a map once expanded.
     pub map: Value,
+    /// The `tone_maps` entry `map` was resolved from, when it was written as `tones:` (the
+    /// unbound `args.<param>` inside a widget declaration). No renderer needs to read it.
+    pub tones: Option<String>,
 }
 
 /// A semantic icon.
@@ -1963,6 +1978,8 @@ pub struct Icon {
     pub icon: String,
     /// Colour role.
     pub tone: Option<Tone>,
+    /// Tone per value, as on a badge.
+    pub tone_by: Option<ToneBy>,
     /// Accessible text.
     pub label: String,
 }
@@ -2632,6 +2649,87 @@ pub enum Store {
     #[serde(untagged)]
     Unmapped(UnmappedMarker),
 }
+
+// ── style ────────────────────────────────────────────────────────────────────────────────────
+
+/// One token value as written: a color, a length or a weight. It is read as its text, so that a
+/// value outside its group's grammar is a finding of `ess ui check` (`token_values`,
+/// `theme_tokens`) rather than a load error. A bare number (`0`, `600`) is read as its text, and
+/// an empty value as the empty string: an unquoted `#` starts a YAML comment, so `surface: #fff`
+/// is empty.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TokenValue(pub String);
+
+impl<'de> Deserialize<'de> for TokenValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match Value::deserialize(deserializer)? {
+            Value::String(text) => Ok(Self(text)),
+            Value::Number(number) => Ok(Self(number.to_string())),
+            Value::Bool(flag) => Ok(Self(flag.to_string())),
+            Value::Null => Ok(Self(String::new())),
+            other => Err(D::Error::custom(format!(
+                "a token value is a scalar, not {other:?}"
+            ))),
+        }
+    }
+}
+
+/// Design tokens in five groups, each a map of name to value: a document's `tokens:`, a theme's
+/// overrides, and the built-in table ([`Tokens::builtin`]) both are merged over.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Tokens {
+    /// Color literals by name.
+    #[serde(default)]
+    pub color: BTreeMap<String, TokenValue>,
+    /// Lengths by name.
+    #[serde(default)]
+    pub space: BTreeMap<String, TokenValue>,
+    /// Lengths by name.
+    #[serde(default)]
+    pub radius: BTreeMap<String, TokenValue>,
+    /// `type`: family, size and weight per text style.
+    #[serde(default, rename = "type")]
+    pub typography: BTreeMap<String, TypeToken>,
+    /// The text and fill color names per tone.
+    #[serde(default)]
+    pub tone: BTreeMap<String, ToneToken>,
+}
+
+/// The type of one text style.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeToken {
+    /// Font family list.
+    pub family: Option<String>,
+    /// A length.
+    pub size: Option<TokenValue>,
+    /// 100 to 900 in steps of 100.
+    pub weight: Option<TokenValue>,
+}
+
+/// The colors one tone is drawn with, each the name of a color token.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToneToken {
+    /// Text color.
+    pub text: String,
+    /// Fill color.
+    pub fill: String,
+}
+
+/// Which theme is shown.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeChoice {
+    /// The theme shown where no state chooses one.
+    pub default: String,
+    /// The shell state (`shell.<name>`) whose value names the theme shown.
+    pub chosen_by: Option<Expr>,
+}
+
+/// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`.
+pub type ToneMap = BTreeMap<String, Tone>;
 
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 

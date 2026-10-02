@@ -112,6 +112,8 @@ pub(crate) fn expand(raw: Value, schema: &Schema) -> Result<Value> {
         }
     }
     expand_widgets(&mut document)?;
+    // `tone_by.tones`, once every argument it may come from is substituted
+    resolve_tones(&mut document)?;
 
     // 3. local shorthands
     let local = Local {
@@ -1317,6 +1319,110 @@ fn instance_body(
         Err(_) if budget.exceeded && stack.is_empty() => Err(exceeded(widget, at)),
         Err(error) => Err(error),
         Ok(()) => Ok(body),
+    }
+}
+
+// ── tone maps ────────────────────────────────────────────────────────────────────────────────
+
+/// Resolves every `tone_by` written with `tones: <name>` in the shells, pages and widget
+/// declarations to the `tone_maps` entry it names.
+fn resolve_tones(document: &mut Mapping) -> Result<()> {
+    let maps = document
+        .get("tone_maps")
+        .and_then(Value::as_mapping)
+        .cloned()
+        .unwrap_or_default();
+    for key in ["shells", "pages", "widgets"] {
+        if let Some(value) = document.get_mut(key) {
+            let tones = Tones {
+                maps: &maps,
+                declaration: key == "widgets",
+            };
+            tones.value(value, &NodePath::root().child(key))?;
+        }
+    }
+    Ok(())
+}
+
+/// Resolves a `tone_by` written with `tones: <name>` to the `tone_maps` entry it names, so
+/// that after loading `ToneBy.map` is always the map and no reader looks a name up.
+struct Tones<'a> {
+    maps: &'a Mapping,
+    /// Walking widget declarations, where `tones: args.<param>` is still unbound.
+    declaration: bool,
+}
+
+impl Tones<'_> {
+    fn value(&self, value: &mut Value, at: &NodePath) -> Result<()> {
+        match value {
+            Value::Mapping(mapping) => {
+                for (key, child) in mapping.iter_mut() {
+                    let key = key_text(key);
+                    let here = at.child(&key);
+                    if key == "tone_by" {
+                        self.tone_by(child, &here)?;
+                    } else if !OPAQUE.contains(&key.as_str()) {
+                        self.value(child, &here)?;
+                    }
+                }
+                Ok(())
+            }
+            Value::Sequence(entries) => {
+                for entry in entries {
+                    let here = at.child(&entry_segment(entry));
+                    self.value(entry, &here)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn tone_by(&self, tone_by: &mut Value, at: &NodePath) -> Result<()> {
+        let Value::Mapping(tone_by) = tone_by else {
+            return Ok(()); // the reader refuses a `tone_by` that is not a map
+        };
+        let has_map = tone_by.contains_key("map");
+        let Some(tones) = tone_by.get("tones").cloned() else {
+            if has_map {
+                return Ok(());
+            }
+            return Err(LoadError::new(
+                at.clone(),
+                "a `tone_by` has exactly one of `map` and `tones`; this one has neither",
+            ));
+        };
+        if has_map {
+            return Err(LoadError::new(
+                at.clone(),
+                "a `tone_by` has exactly one of `map` and `tones`; this one has both",
+            ));
+        }
+        let Value::String(name) = tones else {
+            return Err(LoadError::new(
+                at.child("tones"),
+                format!("`tones` is the name of a tone map, not {tones:?}"),
+            ));
+        };
+        let map = if self.declaration && name.starts_with("args.") {
+            Value::String(name)
+        } else if let Some(map) = self.maps.get(name.as_str()) {
+            map.clone()
+        } else {
+            let declared: Vec<String> = self.maps.keys().map(key_text).collect();
+            let hint = if declared.is_empty() {
+                "the document declares no `tone_maps`".to_owned()
+            } else {
+                format!("the tone maps are {}", declared.join(", "))
+            };
+            return Err(LoadError::new(
+                at.child("tones"),
+                format!("`{name}` names no entry of `tone_maps`"),
+            )
+            .with_hint(&hint));
+        };
+        tone_by.insert(Value::from("map"), map);
+        Ok(())
     }
 }
 

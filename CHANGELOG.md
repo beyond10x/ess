@@ -38,6 +38,16 @@
   `--base-url`, `ESS_UI_AUTHORIZATION`, and `--screen-once <WxH>`, which prints one frame without
   a terminal and exits 3 when a read on the page failed. Generation refuses to overwrite files it
   did not write, and writes nothing when it refuses (beyond10x/ess#311).
+- `ess-ui/1`, additive: style tokens and themes (`docs/design/ui-style-tokens.md`). A document
+  may write `tokens:` (`color`, `space`, `radius`, `type`, `tone`), merged over a built-in table
+  equal to today's React stylesheet; `themes:`, each the tokens it overrides; `theme:`
+  (`default`, `chosen_by: shell.<name>`); and `tone_maps:`, named by `tone_by.tones` beside
+  `tone_by.map` on a badge and by the new `tone_by` on an icon. The loader resolves `tones` to
+  its map, and a widget parameter carrying a map name is typed `{ref: tone_map}`.
+  `ess_ui::Document::base_tokens` and `theme_tokens` return a theme's full table. `ess ui check`
+  adds `token_values`, `token_names`, `token_refs`, `theme_tokens`, `theme_choice`,
+  `tone_map_refs` and `tone_map_unused`. A reader older than this release refuses a document
+  using any of these keys rather than ignoring them. No renderer reads tokens yet.
 
 ### Changed
 
