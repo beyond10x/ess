@@ -3,8 +3,9 @@
 //! The checks are the schema's `checks.list` (`schemas/ui/ess-ui.schema.yaml`), the rules the
 //! schema states elsewhere that the loader does not refuse (placement refusals, the type rule, a
 //! widget containing itself, the `degrades` capabilities, a primitive's `exactly_one_of`, the
-//! values of a closed enum), and —
-//! given an ESS model — that every view, command and event the document names exists in it and
+//! values of a closed enum, an overlay's params read inside it), and — given an ESS model — that
+//! every view, command, event and page parameter type the document names exists in it, that form
+//! fields, `bind` keys, columns and `row.<field>` paths name inputs and fields that exist, and
 //! that every section's read is readable by some actor — an approximation, since ESS grants
 //! commands and not views (documented on [`Model`]). [`CHECKS`] lists them all.
 //!
@@ -20,6 +21,7 @@ mod classify;
 mod enums;
 mod expr;
 mod model;
+mod names;
 mod raw;
 mod rules;
 mod schema;
@@ -137,6 +139,8 @@ pub const CHECKS: &[Check] = &[
     rule("degrades_cover"),
     // A value written where the schema declares a closed enum is one of its values.
     rule("enum_values"),
+    // Every key of an overlay's `params` is read inside it as `params.<key>`.
+    rule("overlay_params"),
     // With `--model`: the names the document resolves in the ESS model.
     rule("view_in_model"),
     rule("command_in_model"),
@@ -145,6 +149,12 @@ pub const CHECKS: &[Check] = &[
     // With `--model`: a read binds a parameter its view does not declare, or leaves a required
     // one unbound.
     rule("read_params"),
+    // With `--model`: a page parameter's named type resolves in the document, the schema or
+    // the model.
+    rule("type_in_model"),
+    // With `--model`: form fields and `bind` keys are inputs of their command; columns, record
+    // fields and `row.<field>` paths are fields of the view read.
+    rule("field_in_model"),
 ];
 
 fn severity_of(id: &str) -> Severity {
@@ -354,6 +364,7 @@ pub fn check_source(
             raw::run(text, &document, &mut sink);
             if let Some(model) = model {
                 model.check(&document, &mut sink);
+                names::run(model, &document, &mut sink);
             }
         }
     }

@@ -751,6 +751,80 @@ fn event_in_model() {
 }
 
 #[test]
+fn type_in_model() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, \
+          params: {item: ItemId, full: shop.stock.ItemId, text: String, other: NoSuchTypeId, \
+                   many: {list: NoSuchRow}}, \
+          sections: [{name: summary, reads: stock.Items}]}}",
+        QUIET,
+    );
+    let other = trips_in(&report, "type_in_model", "pages/p/params/other");
+    assert!(other.message.contains("NoSuchTypeId"), "{other:?}");
+    trips_in(&report, "type_in_model", "pages/p/params/many");
+    assert_eq!(tripped(&report, "type_in_model").len(), 2, "{report:#?}");
+    let declared = doc(&[
+        ("model", "shop"),
+        ("types", "{Window: {enum: [day, week]}}"),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, params: {window: Window}, \
+              sections: [{name: summary, reads: stock.Items}]}}",
+        ),
+    ]);
+    let report = report_with(&declared, Some(&model()), &Options::default());
+    assert!(tripped(&report, "type_in_model").is_empty(), "{report:#?}");
+}
+
+#[test]
+fn field_in_model() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, sections: [\
+          {name: summary, component: collection, reads: stock.Items, \
+           columns: [label, item_id, sandbox_bogus], \
+           row_actions: [{name: add, does: stock.AddItem, bind: {label: row.label, lable: row.label}}, \
+                         {name: peek, opens: nowhere_needed, visible: row.labelX == x}]}, \
+          {name: entry, component: form, does: stock.AddItem, fields: [label, resolutoin]}, \
+          {name: one, component: record, reads: stock.Items, fields: [label, labl]}]}}",
+        QUIET,
+    );
+    let at = |suffix: &str| format!("pages/p/sections/{suffix}");
+    let column = trips_in(
+        &report,
+        "field_in_model",
+        &at("summary/columns/sandbox_bogus"),
+    );
+    assert!(column.message.contains("shop.stock.Items"), "{column:?}");
+    let bind = trips_in(&report, "field_in_model", &at("summary/row_actions/add"));
+    assert!(bind.message.contains("`lable`"), "{bind:?}");
+    let visible = trips_in(&report, "field_in_model", &at("summary/row_actions/peek"));
+    assert!(visible.message.contains("labelX"), "{visible:?}");
+    let input = trips_in(&report, "field_in_model", &at("entry/fields/resolutoin"));
+    assert!(input.message.contains("shop.stock.AddItem"), "{input:?}");
+    trips_in(&report, "field_in_model", &at("one/fields/labl"));
+    assert_eq!(
+        tripped(&report, "field_in_model").len(),
+        5,
+        "{:#?}",
+        tripped(&report, "field_in_model")
+    );
+}
+
+#[test]
+fn overlay_params() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}], \
+         overlays: {edit: {kind: drawer, component: record, \
+           reads: {view: t.ById, params: {id: params.item_id}}, \
+           params: {item_id: row.id, iten_id: row.id}}}}",
+    );
+    let report = report(&text);
+    let finding = trips_in(&report, "overlay_params", "pages/p/overlays/edit");
+    assert!(finding.message.contains("`params.iten_id`"), "{finding:?}");
+    assert_eq!(tripped(&report, "overlay_params").len(), 1, "{report:#?}");
+}
+
+#[test]
 fn section_readable() {
     let report = model_report(
         "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: stock.Items}, \

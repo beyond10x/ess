@@ -33,6 +33,7 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     }
     degrades_cover(&located, options, sink);
     crate::enums::run(document, &located, sink);
+    crate::names::overlay_params(&located, sink);
 }
 
 /// Every view and channel the document's fixtures answer.

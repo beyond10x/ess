@@ -201,6 +201,12 @@ pub(crate) fn marker_accepted_by() -> &'static MarkerAccepted {
     })
 }
 
+/// The names of the schema's constructs (`Page`, `Reads`, `State`, …), which a type may name.
+pub(crate) fn construct_names() -> &'static BTreeSet<String> {
+    static NAMES: OnceLock<BTreeSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| keys(&schema()["constructs"]))
+}
+
 /// Every closed enum the schema's constructs declare, by `<Construct>.<field>` — a record field
 /// inside a field's type is `<field>.<key>`, a map value `<field>.*` — with the values it lists.
 /// An enum reached through `optional`, `list` or `one_of` is the same field.

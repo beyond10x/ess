@@ -52,13 +52,19 @@ pub struct Model {
     commands: BTreeSet<String>,
     events: BTreeSet<String>,
     readable: BTreeSet<DomainHandle>,
+    /// Each command's input fields, by qualified name.
+    pub(crate) inputs: BTreeMap<String, BTreeSet<String>>,
+    /// The qualified names a document type can name: the model's types, entities and views.
+    pub(crate) type_names: BTreeSet<String>,
 }
 
 /// One view of the model: the bounded context that owns it and the parameters it declares.
 #[derive(Debug)]
-struct View {
+pub(crate) struct View {
     domain: DomainHandle,
     params: Vec<Param>,
+    /// The fields of a row.
+    pub(crate) fields: BTreeSet<String>,
 }
 
 /// One declared view parameter: its name, and whether a read must bind it — every parameter but
@@ -200,6 +206,7 @@ impl Model {
                         View {
                             domain: view.domain.clone(),
                             params,
+                            fields: view.fields.iter().map(|field| field.name.clone()).collect(),
                         },
                     )
                 })
@@ -207,6 +214,25 @@ impl Model {
             commands: ir.commands().keys().map(ToString::to_string).collect(),
             events: ir.events().keys().map(ToString::to_string).collect(),
             readable,
+            inputs: ir
+                .commands()
+                .iter()
+                .map(|(name, command)| {
+                    let fields = command
+                        .input
+                        .iter()
+                        .map(|field| field.name.clone())
+                        .collect();
+                    (name.to_string(), fields)
+                })
+                .collect(),
+            type_names: ir
+                .types()
+                .keys()
+                .chain(ir.entities().keys())
+                .chain(ir.views().keys())
+                .map(ToString::to_string)
+                .collect(),
         }
     }
 
@@ -218,14 +244,26 @@ impl Model {
             .find(|candidate| known(candidate))
     }
 
-    fn view(&self, name: &str) -> Option<(String, &View)> {
+    pub(crate) fn view(&self, name: &str) -> Option<(String, &View)> {
         let qualified = self.qualify(name, |candidate| self.views.contains_key(candidate))?;
         let view = &self.views[&qualified];
         Some((qualified, view))
     }
 
-    fn command(&self, name: &str) -> Option<String> {
+    pub(crate) fn command(&self, name: &str) -> Option<String> {
         self.qualify(name, |candidate| self.commands.contains(candidate))
+    }
+
+    /// Whether `name` names a type, entity or view of the model: qualified, qualified but for the
+    /// system, or by the trailing segments of some qualified name.
+    pub(crate) fn has_type(&self, name: &str) -> bool {
+        let suffix = format!(".{name}");
+        self.qualify(name, |candidate| self.type_names.contains(candidate))
+            .is_some()
+            || self
+                .type_names
+                .iter()
+                .any(|candidate| candidate.ends_with(&suffix))
     }
 
     fn has_event(&self, name: &str) -> bool {
