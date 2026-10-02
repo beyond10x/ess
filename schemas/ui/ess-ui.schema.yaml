@@ -742,7 +742,7 @@ constructs:
     doc: Use before destructive commands, inside an overlay whose `title` is the question. `references` shows what still uses the record; `input` asks the user to type a value; `alternatives` offers a softer action.
     fields:
       body:          {type: string, note: explanation}
-      does:          {type: {ref: command}, note: command run on confirm}
+      does:          {type: {ref: command}, note: "command run on confirm, unless the action that opened the confirm runs the same command"}
       references:    {type: {ref: view}, note: the used-by view shown first}
       consequences:  {type: {list: string}, note: what the command will do}
       confirm_label: {type: string, default: Delete, note: confirm button text}
@@ -1181,7 +1181,7 @@ constructs:
       as:         {type: {enum: [button, icon, toggle, choice, menu_item, link]}, default: button, note: presentation hint}
       choice:     {type: Node, note: options for as choice}
       loads:      {type: Reads, note: current value for a header toggle or choice}
-      confirm:    {type: {one_of: [{ref: overlay}, {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}]}, note: confirm first}
+      confirm:    {type: {one_of: [{ref: overlay}, {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}]}, note: "confirm first; confirming runs this action, whether or not the confirm declares `does`"}
       optimistic: {type: boolean, default: false, requires: {does.outcome: unique_for_input}, note: apply the expected outcome at once and revert on refusal}
       bulk:       {type: boolean, default: false, note: applies to the collection's selection}
       visible:    {type: expr, note: UI condition beyond grants}

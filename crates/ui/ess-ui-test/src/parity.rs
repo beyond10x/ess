@@ -67,6 +67,18 @@ fn is_column(rest: &[&str]) -> bool {
 /// it, if it is. Holds for every step, not only `text`.
 pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String> {
     let path = &target.written;
+    // A row action's inline confirm is drawn where its action is: under the row that opened it.
+    if let (None, Some((_, overlay))) = (&target.row, target.overlay()) {
+        if let Some((container, _)) = overlay.split_once("/row_actions/") {
+            if matches!(body_at(document, container), Some((Held::Collection(_), _))) {
+                return Some(format!(
+                    "{path}: a row action's confirm is drawn under the row that opened it; \
+                     address it under its row, as {container}/rows/<key>/{}",
+                    &target.node[container.len() + 1..]
+                ));
+            }
+        }
+    }
     if let Some(row) = &target.row {
         let rest = relative(&target.node, &row.container)?;
         return match body_at(document, &row.container)?.0 {
@@ -116,6 +128,12 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
         )
     };
     let segments: Vec<&str> = target.node.split('/').collect();
+    // An overlay's own pane, a row action's inline confirm under its row included.
+    if let Some((_, overlay)) = target.overlay() {
+        if overlay == target.node && target.in_overlay() {
+            return None;
+        }
+    }
     if let Some(row) = &target.row {
         let Some(rest) = relative(&target.node, &row.container) else {
             return Some(own_cells());

@@ -74,7 +74,13 @@ field the section's `live.match` names, else `id`. A node inside a row is addres
 | `pages/partners.list/sections/list/rows/pt-003` | the row whose key is `pt-003` |
 | `pages/partners.list/sections/list/rows/pt-003/row_actions/delete` | that row's `delete` action |
 | `pages/partners.list/header/actions/create` | a header action |
+| `pages/invoices.list/sections/list/rows/in-03/row_actions/remind/confirm/overlay` | the inline confirm `remind` opened on row `in-03` |
 | `pages/partners.list/overlays/create/fields/name` | a form field in an overlay |
+
+An inline confirm (`confirm: {title: …}`) is the overlay at its action's path and
+`confirm/overlay`; a row action's is addressed under the row that opened it. Confirming runs
+the action that opened the confirm, inline or `confirm: <overlay>`, whether or not the confirm
+declares `does`.
 
 A path that names no node fails its step with `no node at <path>`; a row key the collection does
 not hold fails with `no row <key> in <collection>`. A path on a page other than the one shown fails
@@ -304,6 +310,7 @@ refuses:
 | any step at a column cell of a cards, list or tree collection with an `item` | the generated app renders the item there, not the cells |
 | any step at a column header of a collection that is not a table | the generated app draws no header for it |
 | any step inside the rows of a references list | the generated app does not address its rows |
+| any step at a row action's inline confirm not under a row | the generated app draws it under the row that opened it |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
 | `choose` at a form choice field with `multiple: true` | the terminal sets one value in a form's choice field |

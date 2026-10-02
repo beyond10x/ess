@@ -74,6 +74,21 @@ impl Target {
         let action = segments.get(at.checked_sub(1)?)?;
         Some(((*action).to_owned(), segments[..at + 2].join("/")))
     }
+
+    /// For a node in the inline confirm of a row's action, the overlay's path as written, under
+    /// the row that opened it: `<collection>/rows/<key>/row_actions/<action>/confirm/overlay`.
+    pub fn row_overlay(&self) -> Option<String> {
+        let row = self.row.as_ref()?;
+        let (_, path) = self.overlay()?;
+        let rest = path.strip_prefix(&format!("{}/", row.container))?;
+        Some(format!("{}/rows/{}/{rest}", row.container, row.key))
+    }
+
+    /// Whether the node is an overlay, or inside one, that is not inside a row: a page's or a
+    /// shell's overlay, an inline confirm, or a row action's inline confirm under its row.
+    pub fn in_overlay(&self) -> bool {
+        self.overlay().is_some() && (self.row.is_none() || self.row_overlay().is_some())
+    }
 }
 
 /// Resolves `written` against `document`, or says which path names no node.

@@ -625,7 +625,14 @@ impl App {
         for mark in &mut marks {
             mark.line += 2;
         }
-        self.region(open.path.to_string(), None, area, None);
+        self.region(
+            open.drawn_at
+                .clone()
+                .unwrap_or_else(|| open.path.to_string()),
+            None,
+            area,
+            None,
+        );
         self.place_marks(marks, inner(area));
         frame.render_widget(Clear, area);
         frame.render_widget(

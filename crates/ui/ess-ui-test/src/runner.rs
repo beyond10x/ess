@@ -178,8 +178,8 @@ impl<'d> Runner<'d> {
             }
             return Ok(());
         }
-        if let Some((name, _)) = target.overlay() {
-            return self.require_overlay(&name);
+        if target.overlay().is_some() {
+            return self.require_overlay(target);
         }
         self.require_no_overlay(target)?;
         if let Some(row) = &target.row {
@@ -370,7 +370,12 @@ impl<'d> Runner<'d> {
     }
 
     fn act(&mut self, target: &Target) -> Result<(), String> {
-        if let Some(row) = &target.row {
+        // A row action's inline confirm is an overlay, though its path is under the row.
+        if let Some(row) = target
+            .row
+            .as_ref()
+            .filter(|_| target.row_overlay().is_none())
+        {
             self.select_row(target, row)?;
             if target.node == row.container {
                 self.app.keys("<enter>");
@@ -390,8 +395,8 @@ impl<'d> Runner<'d> {
             self.app.keys(&key_spec(key));
             return Ok(());
         }
-        if let Some((name, path)) = target.overlay() {
-            self.require_overlay(&name)?;
+        if let Some((_, path)) = target.overlay() {
+            self.require_overlay(target)?;
             let overlay_body = self.overlay_body(&path)?;
             if target.node == path {
                 return match overlay_body {
@@ -647,8 +652,8 @@ impl<'d> Runner<'d> {
         if target.is_page() {
             return Ok(self.screen().text());
         }
-        if let Some((name, path)) = target.overlay() {
-            self.require_overlay(&name)?;
+        if let Some((_, path)) = target.overlay() {
+            self.require_overlay(target)?;
             if target.node == path && target.row.is_none() {
                 let screen = self.screen();
                 return Ok(screen
@@ -795,8 +800,8 @@ impl<'d> Runner<'d> {
                 target.written
             )
         };
-        if let Some((name, path)) = target.overlay() {
-            self.require_overlay(&name)?;
+        if let Some((_, path)) = target.overlay() {
+            self.require_overlay(target)?;
             return match self.overlay_body(&path)? {
                 Body::Composite(Composite::Form(form)) => Ok((form, true)),
                 _ => Err(unsupported()),
@@ -849,19 +854,43 @@ impl<'d> Runner<'d> {
             .unwrap_or_default()
     }
 
-    fn require_overlay(&self, name: &str) -> Result<(), String> {
+    /// The overlay `target` is in is the one open. A row action's inline confirm must be open
+    /// at its path under the row the target names.
+    fn require_overlay(&self, target: &Target) -> Result<(), String> {
+        let Some((name, path)) = target.overlay() else {
+            return Err(format!("{}: not an overlay", target.written));
+        };
         let screen = self.screen();
-        let title = self.overlay_title(name).unwrap_or_else(|| name.to_owned());
+        if let Some(written) = target.row_overlay() {
+            if screen.overlay_open() && screen.region(&written).is_some() {
+                return Ok(());
+            }
+            return Err(format!("overlay {written} is not open"));
+        }
+        let title = self
+            .overlay_title(&name)
+            .or_else(|| self.overlay_at(&path).and_then(|overlay| overlay.title))
+            .unwrap_or_else(|| name.clone());
         // The terminal records the open overlay by its path: a page's or shell's
         // `overlays/<name>`, or an action's inline `<name>/confirm/overlay`.
-        let open = screen.region_where(|path| {
-            path.ends_with(&format!("/overlays/{name}"))
-                || path.ends_with(&format!("/{name}/confirm/overlay"))
-        });
+        let open = screen
+            .region_where(|drawn| drawn.ends_with(&format!("/overlays/{name}")) || drawn == path);
         if screen.overlay_open() && open && screen.text().contains(&title) {
             return Ok(());
         }
         Err(format!("overlay {name} is not open"))
+    }
+
+    fn overlay_at(&self, path: &str) -> Option<ess_ui::Overlay> {
+        self.doc
+            .nodes()
+            .into_iter()
+            .find_map(|located| match located.node {
+                NodeRef::Overlay(overlay) if located.path.to_string() == path => {
+                    Some(overlay.clone())
+                }
+                _ => None,
+            })
     }
 
     fn require_no_overlay(&self, target: &Target) -> Result<(), String> {
