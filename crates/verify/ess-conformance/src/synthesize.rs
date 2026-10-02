@@ -11633,6 +11633,7 @@ fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
 /// The construct a scenario id is about.
 fn subject_of(id: &ScenarioId) -> EssSemanticRef {
     match id {
+        ScenarioId::Disclosure { cell } => cell.origin.clone().into(),
         ScenarioId::Outcome { outcome } => outcome.clone().into(),
         ScenarioId::Transition { transition, .. } => transition.clone().into(),
         ScenarioId::Refusal { entity, .. } | ScenarioId::Invariant { entity, .. } => {

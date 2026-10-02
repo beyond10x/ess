@@ -605,6 +605,11 @@ impl<'de> serde::Deserialize<'de> for SuiteFormat {
 /// reproduces the file byte for byte instead of producing a diff.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScenarioId {
+    /// A generated finite disclosure obligation, admitted only with suite/34 or /35 authority.
+    Disclosure {
+        /// Source origin, marked field, follow-up and actual caller identity.
+        cell: crate::one_time_response::Cell,
+    },
     /// One declared outcome of one command: `billing.invoice.CreateInvoice/outcome/rejected`.
     ///
     /// The primary unit (§10). An `external` outcome needs no separate spelling — it is still that
@@ -801,6 +806,9 @@ impl ScenarioId {
         let name = |raw: &str| QualifiedName::new(raw).map_err(|_| reject("has a malformed name"));
 
         match parts.as_slice() {
+            [_, "disclosure", ..] => crate::one_time_response::Cell::parse(value)
+                .map(|cell| Self::Disclosure { cell })
+                .map_err(|reason| reject(reason)),
             [command, Self::OUTCOME, outcome] => Ok(Self::Outcome {
                 outcome: OutcomeRef::new(
                     CommandRef::new(name(command)?),
@@ -889,6 +897,7 @@ impl ScenarioId {
 impl fmt::Display for ScenarioId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Disclosure { cell } => cell.fmt(f),
             Self::Outcome { outcome } => write!(
                 f,
                 "{}/{}/{}",

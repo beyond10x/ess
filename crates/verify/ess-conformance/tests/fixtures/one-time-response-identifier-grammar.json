@@ -1,0 +1,15 @@
+[
+  [true, "credentials.api.Issue/disclosure/issued/secret/origin/as/anonymous"],
+  [true, "credentials.api.Issue/disclosure/issued/secret/origin/as/actor/anonymous"],
+  [true, "credentials.api.Issue/disclosure/issued/secret/retry/as/actor/credentials.api.Alice"],
+  [true, "credentials.api.Issue/disclosure/issued/secret/rotation/as/actor/credentials.api.Bob"],
+  [true, "credentials.api.Issue/disclosure/issued/secret/read/credentials.api.Credentials/as/anonymous"],
+  [true, "credentials.api.Issue/disclosure/issued/secret/command/credentials.api.Read/accepted/as/actor/credentials.api.Alice"],
+  [true, "credentials.api.Issue/disclosure/issued/secret/denied/credentials.api.Read/as/actor/credentials.api.Bob"],
+  [false, "credentials.api.Issue/disclosure/issued/secret/origin/as/credentials.api.Alice"],
+  [false, "credentials.api.Issue/disclosure/issued/secret/origin/as/actor/"],
+  [false, "credentials.api.Issue/disclosure/issued/secret/value/origin/as/anonymous"],
+  [false, "credentials.api.Issue/disclosure/issued/secret-value/origin/as/anonymous"],
+  [false, "credentials.api.Issue/disclosure/issued/123/origin/as/anonymous"],
+  [false, "credentials.api.Issue/disclosure/issued/secret/unknown/as/anonymous"]
+]
