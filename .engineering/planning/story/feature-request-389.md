@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -137,3 +137,13 @@ Before any port integration, the unchanged-runtime controls are red: runtime_sui
 The full runtime mandate exposed generic Interpreted target gaps already owned by existing stories: interpreted-eventual-views, interpreted-bindings-and-unmet-obligations, interpreted-scenario-supplied-facts and interpreted-trust-gate (all draftrev3 at audit). Do not duplicate their work in new intake or mark them delivered from a native Runner test using another target. Their retained acceptance compares actual billing/oracle scenarios and the fault matrix, including eventual lag and unsupplied external obligations.
 
 Issue389's accepted native stage must exercise its actual interpreted issuance/rotation/read/event path and account for these dependencies. The existing product target's missing implementation is not an intrinsic model impossibility or a consumer adapter limitation. These stories remain unfinished until their named acceptance executes; the parity audit is not passing evidence. Exploratory model-subset gaps remain separately owned by accepted221/223 and the recorded explorer inventory, not silently counted as conformance support.
+
+## Versioned generated report status semantics
+
+The existing go-scenario-status/1 producer profile explicitly forbids error and unsupported categories; TypeScript also emits that profile. Correcting terminal classifications under the same profile would silently change persisted meaning. Allocate go-scenario-status/2 for both generated runtimes, carrying all five existing report/2 categories: passed, failed, error, unsupported and skipped. Keep /1 parsing and its three-category restriction unchanged; unknown profiles refuse. The report/2 envelope already carries these five categories and an explicit versioned producer_profile, so its envelope stays /2. Native rust-scenario-status/1 remains unchanged. Skipped is never substituted for an unsupported observation, and target execution errors never become assertion failures.
+
+Independent bounded decision review by scope_aggregate: coherent, no contradiction; older readers must refuse the new profile. Root owns shared counts.rs, count reader regression tests and documentation/CLI producer expectations. Go/TypeScript workers emit the new profile and execute actual status parity controls. Test new-profile round trips, legacy profile restrictions and bytes, exact counts/outcomes, unknown profile rejection and inconclusive/failing execution status. This is a dependent acceptance contract within389, not a claim that runtime ports are complete.
+
+## Shared profile reader verification
+
+Shared producer-profile reader committed as30e9e84e7891f793c0c89d4695acf2fac88bf28e. New-profile regression tests against the prior reader:0passed2failed0ignored, exit101. Final unchanged tests plus existing count-report controls:11passed0failed0ignored, exit0. Scoped strict Clippy across conformance/CLI libraries, ess binary and count_reports target passed; task fmt-check and git diff --check passed. Logs and exit files are generated-profile-v2-{red,final,clippy,fmt} in ess-backlog-next-20261002/target/backlog-input. Independent source review by scope_boolean approved with no findings and own executions0. Generated Go/TypeScript actual producer parity is still the port workers' dependent acceptance, not established by these reader tests alone.

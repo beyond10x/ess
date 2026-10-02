@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T14:32:50Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-389",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Shared profile reader regression0/2 red then11/0 green, strict scoped Clippy and fmt pass; actual runtime ports remain pending",
+    "reference": "30e9e84e7891f793c0c89d4695acf2fac88bf28e"
+  }
+}
