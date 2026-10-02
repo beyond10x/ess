@@ -1221,6 +1221,10 @@ impl App {
         }
         let result = match self.read_state(&request) {
             Some(ReadState::Ready(result)) => result,
+            // A refetch arriving while a read is outstanding is answered by that read: it is
+            // answered when it completes, after the event. So a burst, or a coalesced batch
+            // applied one payload at a time, is one re-read.
+            None | Some(ReadState::Loading { .. }) if live.effect == Effect::Refetch => return,
             // A read outstanding (a resume refetch, a new filter): apply once it has answered.
             None | Some(ReadState::Loading { .. }) => {
                 self.deferred.push((section.to_owned(), payload.clone()));
