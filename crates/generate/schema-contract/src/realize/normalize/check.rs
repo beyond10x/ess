@@ -484,7 +484,7 @@ fn from_node(plan: &Types, node: &Node, depth: usize, format: &str) -> Result<Ty
         Shape::String => Kind::String,
         Shape::Number if plan.binary64.contains(&node.pointer) => Kind::Binary64,
         Shape::Number => Kind::Number,
-        Shape::Integer => Kind::Integer,
+        Shape::Integer | Shape::SizedInteger(_) => Kind::Integer,
         Shape::Literal(value) => Kind::Literal(value.clone()),
         Shape::Object { fields, additional } => {
             let fields = fields.iter().map(|(name, field)| {

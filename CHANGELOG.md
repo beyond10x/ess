@@ -6,6 +6,10 @@
 
 ### Added
 
+- Integer field bounds declared by supported invariants are projected into JSON Schema.
+  Model-based Go and Rust type generation selects native integer widths for complete ranges;
+  incomplete ranges retain exact-number types (beyond10x/ess#394).
+
 - `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
   and terminal semantics after live effects and before local paging. Filters never reach the
   server, share raw requests, and are not authorization. Seven `filter_*` checks reject invalid
