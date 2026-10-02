@@ -882,7 +882,7 @@ Use for any list, table or card grid. Columns are fields of the rows; `as` picks
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | the rows |
 | `columns` | one of: list of [Field](#field) \| record \{ `binds`: `expr`, `all`: list of [Field](#field) \} \| `string` |   |   | fixed columns, user-selectable columns, or an UNMAPPED string |
-| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
+| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: optional list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
 | `style` | one of: `table` \| `cards` \| `list` \| `tree` |   | `table` | presentation hint |
 | `selection` | one of: `none` \| `single` \| `multiple` \| record \{ `mode`: (one of: `single` \| `multiple`), `enabled`: `expr` \} |   | `none` | row selection, optionally only in a mode |
 | `row_actions` | list of [Action](#action) |   |   | actions per row |
@@ -1096,6 +1096,8 @@ Overlays hold forms, confirms and detail views opened by actions. They belong to
 | `title` | `string` |   |   | overlay title; a confirm shows it as its question |
 | `params` | map of `name` → `expr` |   |   | values passed by the opener |
 | `state` | map of `name` → [State](#state) |   |   | overlay-local state |
+| `visible` | `expr` |   |   | shows the overlay only when true |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 | `same_as` | name of an [overlay](#overlay) |   |   | reuse another overlay; local props override |
 | `unmapped` | list of `string` |   |   | gaps found by a retrofit |
 
@@ -1610,6 +1612,8 @@ Composites are the normal level of a spec. Primitives exist for the small pieces
 | `primitive` | one of: `text` \| `badge` \| `icon` \| `button` \| `link` \| `input` \| `toggle` \| `image` \| `divider` | yes |   | kind of primitive |
 | `name` | `name` |   |   | node name, required inside lists |
 | `visible` | `expr` |   |   | shows the primitive only when true |
+| `state` | map of `name` → [State](#state) |   |   | state local to the primitive |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 
 **Tone**
 

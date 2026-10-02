@@ -31,6 +31,7 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
         checker.node(node, sink);
     }
     degrades_cover(&located, options, sink);
+    crate::enums::run(document, &located, sink);
 }
 
 /// Every view and channel the document's fixtures answer.

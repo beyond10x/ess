@@ -2,7 +2,8 @@
 //!
 //! The checks are the schema's `checks.list` (`schemas/ui/ess-ui.schema.yaml`), the rules the
 //! schema states elsewhere that the loader does not refuse (placement refusals, the type rule, a
-//! widget containing itself, the `degrades` capabilities, a primitive's `exactly_one_of`), and —
+//! widget containing itself, the `degrades` capabilities, a primitive's `exactly_one_of`, the
+//! values of a closed enum), and —
 //! given an ESS model — that every view, command and event the document names exists in it and
 //! that every section's read is readable by some actor — an approximation, since ESS grants
 //! commands and not views (documented on [`Model`]). [`CHECKS`] lists them all.
@@ -16,6 +17,7 @@
 //! text or JSON (`ess-ui-check/1`) and exiting 1 when any finding is an error.
 
 mod classify;
+mod enums;
 mod expr;
 mod model;
 mod raw;
@@ -130,6 +132,8 @@ pub const CHECKS: &[Check] = &[
     rule("degrades_known"),
     // `Degrades.rule`: a renderer lacking a capability finds a fallback that is not `refuse`.
     rule("degrades_cover"),
+    // A value written where the schema declares a closed enum is one of its values.
+    rule("enum_values"),
     // With `--model`: the names the document resolves in the ESS model.
     rule("view_in_model"),
     rule("command_in_model"),

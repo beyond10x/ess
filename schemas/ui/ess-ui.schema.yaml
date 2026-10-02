@@ -584,7 +584,7 @@ constructs:
     fields:
       reads:        {type: Reads, note: the rows}
       columns:      {type: {one_of: [{list: Field}, {record: {binds: expr, all: {list: Field}}}, string]}, note: "fixed columns, user-selectable columns, or an UNMAPPED string"}
-      sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {list: name}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
+      sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {optional: {list: name}}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
       style:        {type: {enum: [table, cards, list, tree]}, default: table, note: presentation hint}
       selection:    {type: {one_of: [{enum: [none, single, multiple]}, {record: {mode: {enum: [single, multiple]}, enabled: expr}}]}, default: none, note: "row selection, optionally only in a mode"}
       row_actions:  {type: {list: Action}, note: actions per row}
@@ -725,6 +725,8 @@ constructs:
       title:     {type: string, note: "overlay title; a confirm shows it as its question"}
       params:    {type: {map: {key: name, value: expr}}, note: values passed by the opener}
       state:     {type: {map: {key: name, value: State}}, note: overlay-local state}
+      visible:   {type: expr, note: shows the overlay only when true}
+      degrades:  {type: Degrades, note: fallbacks for renderers lacking a capability}
       same_as:   {type: {ref: overlay}, note: reuse another overlay; local props override}
       unmapped:  {type: {list: string}, note: gaps found by a retrofit}
     example:
@@ -1016,6 +1018,8 @@ constructs:
       primitive: {type: {enum: [text, badge, icon, button, link, input, toggle, image, divider]}, required: true, note: kind of primitive}
       name:      {type: name, note: "node name, required inside lists"}
       visible:   {type: expr, note: shows the primitive only when true}
+      state:     {type: {map: {key: name, value: State}}, note: state local to the primitive}
+      degrades:  {type: Degrades, note: fallbacks for renderers lacking a capability}
     tone: {enum: [neutral, info, success, warning, danger]}
     example: {name: hint, primitive: text, text: "Tip: drop a CSV here to import partners", style: caption}
 

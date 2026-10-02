@@ -539,6 +539,42 @@ fn layer_rules() {
 }
 
 #[test]
+fn enum_values() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+         {name: rows, component: collection, reads: t.Rows, \
+          columns: [{field: state, as: tag}, {field: stage, as: badge}, {field: owner, as: 'UNMAPPED: unknown'}]}, \
+         {name: totals, component: chart, chart: donut, reads: t.Totals}, \
+         {name: bars, component: chart, chart: bar, reads: t.Totals}, \
+         {name: logo, component: record, reads: t.ById, \
+          children: [{name: pic, primitive: image, src: row.logo, alt: Logo, fit: stretch}, \
+                     {name: rule, primitive: divider, orientation: diagonal}]}]}",
+    );
+    let report = report(&text);
+    let finding = trips_in(
+        &report,
+        "enum_values",
+        "pages/p/sections/rows/columns/state",
+    );
+    assert!(
+        finding.message.contains("`tag`") && finding.message.contains("badge"),
+        "{finding:?}"
+    );
+    trips_in(&report, "enum_values", "pages/p/sections/totals");
+    trips_in(&report, "enum_values", "pages/p/sections/logo/children/pic");
+    trips_in(
+        &report,
+        "enum_values",
+        "pages/p/sections/logo/children/rule",
+    );
+    let reported: Vec<&str> = tripped(&report, "enum_values")
+        .iter()
+        .map(|finding| finding.path.as_str())
+        .collect();
+    assert_eq!(reported.len(), 4, "{reported:?}");
+}
+
+#[test]
 fn degrades_known() {
     let text = page(
         "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById, \
