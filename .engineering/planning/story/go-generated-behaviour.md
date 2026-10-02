@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:go-generated-behaviour
 kind: story
-status: active
+status: implemented
 title: The Go target generates determined behaviours, view queries and invariant checks at parity with Rust
 refs:
 - provider: github
@@ -32,10 +32,11 @@ scope:
   path: generated/go
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:52Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:52Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-02T04:46:41Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":14}}}
 ---
 ## Outcome
 

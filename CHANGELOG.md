@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking for a Go realization**: `ess generate synthesize --target go` generates every command
+  behaviour and view query the plan marks generated, at parity with the Rust target, in a new
+  package `types/behaviour`: `<Entity>Storage` (`Get`, `Put`, `Delete`, `List` in a stable
+  order), `Context`, `Ports` (one field per storage port) and `New(ports) *Generated`, evaluated in
+  Rust's order, existence selection included. Entities check their invariants
+  (`BrokenInvariant()`). `<ctx>.Unimplemented` now covers owed seams only, so code that passed it
+  as the whole behaviour bundle no longer compiles; pass `behaviour.New(ports)` and implement the
+  owed seams. Package names `behaviour` and `invariant` are reserved, and a domain named like a
+  standard-library package a generated file imports gets a renamed package. A store and a server
+  entry point are not generated yet (beyond10x/ess#314).
+- The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
+
 ## [0.51.0] — 2026-10-01
 
 ### Added
