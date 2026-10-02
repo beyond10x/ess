@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:served-view-params
 kind: story
-status: active
+status: implemented
 title: Synthesized servers pass declared view parameters from the query string to the view port
 refs:
 - provider: github
@@ -25,10 +25,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/port.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/view_query.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:51Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:52Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-02T06:11:46Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":15}}}
 ---
 ## Outcome
 
