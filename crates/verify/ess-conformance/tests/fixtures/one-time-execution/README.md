@@ -27,3 +27,9 @@ interpreted-target execution, coverage/35, multi-field/actor-switch controls and
 the full runtime package gates remain separate required evidence. Additive
 controls must preserve these pinned bytes and expectations unless independently
 reviewed evidence establishes a contract correction.
+
+The twentieth additive control, `identity-success`, returns the first issued plaintext in both
+successful identity name and version. The callback still executes, but every protected-suite report
+uses the fixed identity `{name: "one-time-protected-target", version: ""}`. Neither successful nor
+failed identity text may persist; unmarked suite identity behavior is unchanged. All original
+nineteen case documents and manifest entries retain their exact bytes/values.

@@ -644,5 +644,25 @@
     "required_code": "ESS-CF-DISCLOSURE",
     "status": "passed",
     "suite": "window-healthy.json"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "execute_command",
+      "end_scenario"
+    ],
+    "case": "identity-success",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "unsupported": 0
+    },
+    "required_code": "ESS-CF-DISCLOSURE",
+    "status": "passed",
+    "suite": "identity-success.json"
   }
 ]
