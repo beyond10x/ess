@@ -3253,6 +3253,15 @@ fn import_history(path: &Path, log: &Path, adapter: &Path, output: Option<&Path>
             return ExitCode::from(REFUSED);
         }
     };
+    if loaded.commands().values().any(|command| {
+        command
+            .outcomes
+            .iter()
+            .any(|outcome| !outcome.one_time_response.is_empty())
+    }) {
+        eprintln!("UnsupportedOneTimeDisclosure: history import cannot preserve one_time_response policy");
+        return ExitCode::from(REFUSED);
+    }
     if output.is_some_and(|output| import_output_clashes(output, path, log, adapter)) {
         return ExitCode::from(REFUSED);
     }
