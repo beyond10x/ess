@@ -1,8 +1,18 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+//+bound
+import { binding } from "./binding";
+import { httpAdapter, setDataAdapter } from "./runtime/data";
+//-bound
 import "./runtime/styles.css";
 
+//+bound
+// Reads and commands go to the served surface the binding describes, at the base URL each
+// component's `<meta name="ess-base-url:<component>">` in `www/index.html` gives.
+setDataAdapter(httpAdapter(binding));
+
+//-bound
 const container = document.getElementById("root");
 if (container) {
   createRoot(container).render(

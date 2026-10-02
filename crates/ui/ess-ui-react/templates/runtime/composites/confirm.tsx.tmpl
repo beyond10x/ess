@@ -1,6 +1,10 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, runCommand, type ActionSpec } from "../actions";
+//+bound
+import { useRef } from "react";
+import { RefusalNote, type Refusal } from "../actions";
+//-bound
 import { useScope } from "../core";
 import { useRead } from "../data";
 import { evaluate } from "../expr";
@@ -20,6 +24,11 @@ export function ConfirmView(props: {
 }): ReactNode {
   const scope = useScope();
   const [typed, setTyped] = useState("");
+//+bound
+  // A refused command is shown here, and the confirm stays open over it.
+  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
+  const sending = useRef(false);
+//-bound
   const params = isObject(scope.values.params) ? scope.values.params : {};
   const references = useRead(
     props.references ? { view: props.references, params: { id: "params.id" } } : undefined,
@@ -54,6 +63,9 @@ export function ConfirmView(props: {
           <input value={typed} onChange={(event: ChangeEvent<HTMLInputElement>) => setTyped(event.target.value)} />
         </label>
       ) : null}
+//+bound
+      <RefusalNote refusal={refusal} />
+//-bound
       <div className="ui-form-actions">
         {(props.alternatives ?? []).map((action) => (
           <ActionControl key={action.name} action={action} />
@@ -71,7 +83,20 @@ export function ConfirmView(props: {
               return;
             }
             const row = scope.values.row;
+//+plain
             void runCommand(scope, props.does, { ...params, ...(isObject(row) ? { id: row.id } : {}) }).then((ok) => {
+//-plain
+//+bound
+            // One command per confirmation: a second click before the answer sends nothing.
+            if (sending.current) {
+              return;
+            }
+            sending.current = true;
+            const input = { ...params, ...(isObject(row) ? { id: row.id } : {}) };
+            // `runCommand` settles every outcome as `ok`, so the guard is always released.
+            void runCommand(scope, props.does, input, false, setRefusal).then((ok) => {
+              sending.current = false;
+//-bound
               if (ok) {
                 scope.close();
               }

@@ -7,6 +7,10 @@ import { ScopeLayer, useScope, type Scope } from "./core";
 import { dataAdapter, invalidate } from "./data";
 import { evaluate, truthy } from "./expr";
 import { isObject } from "./json";
+//+bound
+import { CommandRefused } from "./data";
+import type { Json } from "./json";
+//-bound
 
 /** An action as the document declares it, with its node path. */
 export interface ActionSpec {
@@ -37,17 +41,59 @@ function label(action: ActionSpec): string {
   return action.label ?? action.name.replace(/_/g, " ");
 }
 
+//+bound
+/** Why a command was not done, as the form, confirm or action that sent it shows it. */
+export interface Refusal {
+  /** `refused`, `not_granted`, `malformed`, `unfinished` or `transport`. */
+  answer: string;
+  /** The declared error's display text, or what the other answers mean to the user. */
+  text: string;
+  /** The declared error's fields, when it has any. */
+  payload?: Json;
+}
+
+/** A refusal, where the user acted. */
+export function RefusalNote(props: { refusal: Refusal | undefined; by?: string }): ReactNode {
+  const { refusal } = props;
+  if (refusal === undefined) {
+    return null;
+  }
+  const payload = isObject(refusal.payload) ? Object.entries(refusal.payload) : [];
+  return (
+    <div className="ui-refusal" role="alert" data-ui-refusal={refusal.answer} data-ui-refused-by={props.by}>
+      <strong>{refusal.text}</strong>
+      {payload.length > 0 ? (
+        <dl>
+          {payload.map(([name, value]) => (
+            <span key={name}>
+              <dt>{name}</dt>
+              <dd>{typeof value === "object" ? JSON.stringify(value) : String(value)}</dd>
+            </span>
+          ))}
+        </dl>
+      ) : null}
+    </div>
+  );
+}
+
+//-bound
 /** Runs an action's `does` with its bound inputs; shared by forms and confirms. */
 export async function runCommand(
   scope: Scope,
   command: string,
   input: Record<string, unknown>,
   optimistic = false,
+//+bound
+  refused?: (refusal: Refusal | undefined) => void,
+//-bound
 ): Promise<boolean> {
   try {
     if (optimistic) {
       scope.notify(`${command} sent`);
     }
+//+bound
+    refused?.(undefined);
+//-bound
     await dataAdapter().send(command, input);
     invalidate();
     if (!optimistic) {
@@ -55,6 +101,30 @@ export async function runCommand(
     }
     return true;
   } catch (error) {
+//+bound
+    if (error instanceof CommandRefused && error.answer.answer === "unfinished" && error.answer.committed) {
+      // The effect stands (`Unfinished { committed: true }`): the command is done and must never
+      // be sent again. Read again, show what failed after the effect, and finish as accepted.
+      invalidate();
+      refused?.({ answer: "unfinished", text: error.display });
+      scope.notify(`${command}: ${error.display}`, "danger");
+      return true;
+    }
+    if (error instanceof CommandRefused) {
+      // A conflict says what was read is out of date: read it again.
+      if (error.answer.answer === "refused" && error.status === 409) {
+        invalidate();
+      }
+      if (refused) {
+        refused({
+          answer: error.answer.answer,
+          text: error.display,
+          payload: error.answer.answer === "refused" ? error.answer.payload : undefined,
+        });
+        return false;
+      }
+    }
+//-bound
     scope.notify(`${command} failed: ${error instanceof Error ? error.message : String(error)}`, "danger");
     return false;
   }
@@ -77,14 +147,29 @@ function download(name: string, text: string, type: string): void {
   URL.revokeObjectURL(url);
 }
 
+//+plain
 async function runAction(action: ActionSpec, scope: Scope, extra?: Record<string, unknown>): Promise<void> {
+//-plain
+//+bound
+async function runAction(
+  action: ActionSpec,
+  scope: Scope,
+  extra?: Record<string, unknown>,
+  refused?: (refusal: Refusal | undefined) => void,
+): Promise<void> {
+//-bound
   const values = scope.values;
   if (action.does) {
     const row = values.row;
     // Without `bind`, a command run beside a form sends its draft, and one run on a row its id.
     const draft = !action.bind && isObject(values.draft) ? values.draft : {};
     const input = { ...draft, ...(isObject(row) && !action.bind ? { id: row.id } : {}), ...bound(action, values), ...extra };
+//+plain
     await runCommand(scope, action.does, input, action.optimistic);
+//-plain
+//+bound
+    await runCommand(scope, action.does, input, action.optimistic, refused);
+//-bound
   } else if (action.opens) {
     const row = values.row;
     scope.open(action.opens, isObject(row) ? { ...row } : undefined);
@@ -128,6 +213,9 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
   const { action } = props;
   const scope = useScope();
   const [pending, setPending] = useState(false);
+//+bound
+  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
+//-bound
   if (action.visible !== undefined && !truthy(evaluate(action.visible, scope.values))) {
     return null;
   }
@@ -140,7 +228,12 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
       setPending(true);
       return;
     }
+//+plain
     void runAction(action, scope, extra);
+//-plain
+//+bound
+    void runAction(action, scope, extra, setRefusal);
+//-bound
   };
   const path = action["data-ui-path"];
   let control: ReactNode;
@@ -155,7 +248,14 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
           onChange={(event: ChangeEvent<HTMLInputElement>) => {
             const file = event.target.files?.[0];
             if (file) {
+//+plain
               void file.text().then((text) => runCommand(scope, upload.does, { name: file.name, content: text }));
+//-plain
+//+bound
+              void file
+                .text()
+                .then((text) => runCommand(scope, upload.does, { name: file.name, content: text }, false, setRefusal));
+//-bound
             }
           }}
         />
@@ -206,6 +306,9 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
   return (
     <>
       {control}
+//+bound
+      <RefusalNote refusal={refusal} by={path} />
+//-bound
       {pending && action.confirm ? (
         <ScopeLayer actions={{ close: () => setPending(false) }}>{action.confirm}</ScopeLayer>
       ) : null}

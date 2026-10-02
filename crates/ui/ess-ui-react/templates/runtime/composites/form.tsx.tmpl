@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, runCommand, type ActionSpec } from "../actions";
+//+bound
+import { RefusalNote, type Refusal } from "../actions";
+//-bound
 import { ScopeLayer, useScope } from "../core";
 import { useRead, type ReadSpec } from "../data";
 import { FieldInput, Tabs, type FieldSpec, type TabSpec } from "../fields";
@@ -54,6 +57,10 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
   const scope = useScope();
   const loaded = useRead(props.loads, scope.values, props.loads !== undefined);
   const [sent, setSent] = useState(false);
+//+bound
+  // A refused command is shown here and keeps the draft.
+  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
+//-bound
   const draft = isObject(scope.values.draft) ? scope.values.draft : {};
   const prefilled = useRef(false);
   useEffect(() => {
@@ -65,8 +72,53 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded.status]);
   const params = isObject(scope.values.params) ? scope.values.params : {};
+//+bound
+  // Whether a submit is waiting for its answer.
+  const sending = useRef(false);
+  // Saves on change, numbered as they are sent, and the last draft the server holds: the last
+  // accepted save, else the draft before the first save.
+  const saves = useRef<{ sent: number; held?: Record<string, unknown> }>({ sent: 0 });
+  // Shown at once. Only the latest save decides what the form shows: when it is refused, the
+  // draft goes back to what the server holds, whatever earlier saves answered meanwhile.
+  const saveOnChange = (command: string, next: unknown) => {
+    const before = draft;
+    scope.set("draft", next);
+    saves.current.sent += 1;
+    const save = saves.current.sent;
+    saves.current.held ??= before;
+    const input = isObject(next) ? next : {};
+    void runCommand(scope, command, { ...params, ...input }, true, (refused) => {
+      if (save === saves.current.sent) {
+        setRefusal(refused);
+      }
+    }).then((ok) => {
+      // Done (accepted, or committed though unfinished): the server holds it. Otherwise it holds
+      // nothing new, and the latest save puts back what it does hold.
+      if (ok) {
+        saves.current.held = input;
+      } else if (save === saves.current.sent) {
+        scope.set("draft", saves.current.held);
+      }
+    });
+  };
+//-bound
   const submit = async (command: string) => {
+//+plain
     const ok = await runCommand(scope, command, { ...params, ...draft });
+//-plain
+//+bound
+    // One command per submit: a second submit before the answer sends nothing.
+    if (sending.current) {
+      return;
+    }
+    sending.current = true;
+    let ok = false;
+    try {
+      ok = await runCommand(scope, command, { ...params, ...draft }, false, setRefusal);
+    } finally {
+      sending.current = false;
+    }
+//-bound
     if (ok) {
       setSent(true);
       if (props.submit?.closes !== false) {
@@ -97,8 +149,13 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
               group.save === "on_change"
                 ? {
                     draft: (next: unknown) => {
+//+plain
                       scope.set("draft", next);
                       void runCommand(scope, group.does ?? props.does, { ...params, ...(isObject(next) ? next : {}) }, true);
+//-plain
+//+bound
+                      saveOnChange(group.does ?? props.does, next);
+//-bound
                     },
                   }
                 : {}
@@ -138,6 +195,9 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
           </button>
         )}
       </div>
+//+bound
+      <RefusalNote refusal={refusal} />
+//-bound
       {sent && props.result ? <div className="ui-form-result">{props.result}</div> : null}
       {props.record}
     </form>

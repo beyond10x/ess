@@ -57,7 +57,8 @@ pub(crate) struct Generate {
 /// The applications `ess generate ui` generates.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Target {
-    /// A React + TypeScript project: react and react-dom only, generated routing, built with esbuild.
+    /// A React + TypeScript project: react and react-dom only, generated routing, built with esbuild;
+    /// with `--model`, bound to the HTTP surface the specification serves.
     React,
 }
 
@@ -99,11 +100,28 @@ pub(crate) fn run(command: &Command) -> ExitCode {
 /// Runs `ess generate ui`.
 pub(crate) fn generate(arguments: &Generate) -> ExitCode {
     match arguments.target {
-        Target::React => match ess_ui_react::run(&arguments.react) {
-            Ok(summary) => success(&summary),
-            Err(error) => refusal(&error.to_string()),
-        },
+        Target::React => {
+            let react = &arguments.react;
+            let binding = match react.model.as_deref().map(|model| bind(&react.path, model)) {
+                None => None,
+                Some(Ok(binding)) => Some(binding),
+                Some(Err(error)) => return refusal(&format!("{error:#}")),
+            };
+            match ess_ui_react::run(react, binding.as_ref()) {
+                Ok(summary) => success(&summary),
+                Err(error) => refusal(&error.to_string()),
+            }
+        }
     }
+}
+
+/// The route table the document at `document` binds to on the surface the specification at
+/// `model` serves, through `ess_ui_check::binding`.
+fn bind(document: &Path, model: &Path) -> anyhow::Result<ess_ui::binding::Binding> {
+    let loaded = ess_ui::load_path(document)
+        .map_err(|error| anyhow::anyhow!("{}: {error}", document.display()))?;
+    let (sources, _) = sources(model)?;
+    Ok(ess_ui_check::binding(&loaded, &sources)?)
 }
 
 fn success(summary: &str) -> ExitCode {
@@ -120,6 +138,13 @@ fn refusal(message: &str) -> ExitCode {
 /// specification: a directory through its `ess-inputs.yaml` when it has one, and a path naming
 /// that manifest as its directory (beyond10x/ess#262).
 fn model(path: &Path) -> anyhow::Result<ess_ui_check::Model> {
+    let (sources, path) = sources(path)?;
+    Ok(ess_ui_check::model_from_sources(&sources, path)?)
+}
+
+/// The `(label, text)` sources of a `--model`, resolved as [`model`] says, and the path a refusal
+/// names it by.
+fn sources(path: &Path) -> anyhow::Result<(Vec<(String, String)>, &Path)> {
     let path = if path
         .file_name()
         .is_some_and(|name| name == "ess-inputs.yaml")
@@ -146,5 +171,5 @@ fn model(path: &Path) -> anyhow::Result<ess_ui_check::Model> {
                 (label, input.text)
             })
             .collect();
-    Ok(ess_ui_check::model_from_sources(&sources, path)?)
+    Ok((sources, path))
 }
