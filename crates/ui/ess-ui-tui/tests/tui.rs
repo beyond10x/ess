@@ -607,3 +607,81 @@ fn storage_is_rekeyed_when_the_actor_switches_organization() {
     );
     assert!(!screen(&mut app).contains("before-switch"));
 }
+
+/// A record page that narrows its read by a single-value page param shows the row it names,
+/// as the React output does (`matchesParams`), not the first row of the view.
+#[test]
+fn a_record_page_shows_the_row_its_single_value_param_names() {
+    let dir = state_dir("record-by-param").join("doc");
+    std::fs::create_dir_all(&dir).expect("the document dir exists");
+    std::fs::write(
+        dir.join("things.yaml"),
+        "views:\n  things.Page:\n    rows:\n      - {id: th-1, name: Anvil}\n      \
+         - {id: th-2, name: Bolt}\n",
+    )
+    .expect("the fixture is written");
+    std::fs::write(
+        dir.join("ui.yaml"),
+        r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {things.Page: things.yaml}}
+shells:
+  app:
+    regions:
+      nav:     {kind: navigation}
+      main:    {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: things.list
+  sections: [{name: all, pages: [things.list]}]
+pages:
+  things.list:
+    kind: list_page
+    title: Things
+    sections:
+      - name: list
+        component: collection
+        reads: {view: things.Page}
+        columns: [name]
+        row_actions:
+          - {name: open, navigate: {to: things.record, params: {id: row.id}}, label: Open}
+  things.record:
+    kind: detail_page
+    title: Thing
+    params: {id: string}
+    sections:
+      - name: summary
+        component: record
+        reads: {view: things.Page, params: {id: params.id}}
+        fields: [id, name]
+",
+    )
+    .expect("the document is written");
+    let mut app = App::from_path(
+        &dir.join("ui.yaml"),
+        Options::new(state_dir("record-by-param-state")),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    app.open_page("things.list", &[]);
+    assert_eq!(app.rows("list").len(), 2, "the list shows both rows");
+    app.focus_section("list");
+    app.keys("j<enter>");
+    assert_eq!(app.page(), "things.record");
+    let record = screen(&mut app);
+    assert!(
+        record.contains("Bolt"),
+        "the record of th-2 shows th-2:\n{record}"
+    );
+    assert!(
+        !record.contains("Anvil"),
+        "the record of th-2 does not show th-1:\n{record}"
+    );
+    let rows = app.rows("summary");
+    assert_eq!(
+        rows.iter().map(|row| field(row, "id")).collect::<Vec<_>>(),
+        ["th-2"],
+        "the read is narrowed to the row its param names"
+    );
+}
