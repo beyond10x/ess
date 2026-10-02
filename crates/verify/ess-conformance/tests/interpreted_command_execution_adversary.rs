@@ -132,7 +132,7 @@ fn adversary_a_created_identity_published_as_generated_is_the_identity_the_insta
         .to_owned();
     let held: Vec<String> = opened[0]
         .next
-        .instances()
+        .text_instances()
         .map(|(_, identity, _)| identity.to_owned())
         .collect();
     assert_eq!(
@@ -498,7 +498,7 @@ fn adversary_a_step_that_leaves_an_instance_violating_its_invariant_is_not_answe
         )
     };
     let ok = start(1).expect("a non-negative value rests");
-    let (_, _, held) = ok[0].next.instances().next().expect("created");
+    let (_, _, held) = ok[0].next.text_instances().next().expect("created");
     assert_eq!(
         held.state.as_str(),
         "Running",

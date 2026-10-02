@@ -61,7 +61,7 @@ pub(super) fn query(
             continue;
         }
         let mut fields = instance.fields.clone();
-        fields.insert(entity.identity.name.clone(), Node::Text(identity.into()));
+        fields.insert(entity.identity.name.clone(), identity.clone());
         fields.insert("state".into(), Node::Text(instance.state.to_string()));
         if let Some(filter) = &view.filter {
             let row = crate::input::TypedFacts::new(
