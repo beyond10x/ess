@@ -16,9 +16,13 @@ pub enum ResourceMode {
     MembersOver,
     DepthExact,
     DepthOver,
+    IntegralExact,
+    IntegralOver,
+    FractionalExact,
+    FractionalOver,
 }
 impl ResourceMode {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 13] = [
         Self::BytesExact,
         Self::BytesOver,
         Self::EscapesExact,
@@ -28,18 +32,46 @@ impl ResourceMode {
         Self::MembersOver,
         Self::DepthExact,
         Self::DepthOver,
+        Self::IntegralExact,
+        Self::IntegralOver,
+        Self::FractionalExact,
+        Self::FractionalOver,
     ];
     pub fn expected(self) -> Status {
         match self {
-            Self::BytesExact | Self::EscapesExact | Self::MembersExact | Self::DepthExact => {
-                Status::Passed
-            }
+            Self::BytesExact
+            | Self::EscapesExact
+            | Self::MembersExact
+            | Self::DepthExact
+            | Self::IntegralExact
+            | Self::FractionalExact => Status::Passed,
             _ => Status::Unsupported,
         }
     }
     pub fn rows(self) -> Vec<ViewRow> {
         let overhead = 13; // [{"data":""}]
         let value = match self {
+            Self::IntegralExact
+            | Self::IntegralOver
+            | Self::FractionalExact
+            | Self::FractionalOver => {
+                let fractional = matches!(self, Self::FractionalExact | Self::FractionalOver);
+                let number = if fractional { 0.125 } else { 1.0 };
+                let mut row = BTreeMap::from([
+                    (
+                        "number".into(),
+                        Node::Number(ess_primitives::facts::Number::new(number).unwrap()),
+                    ),
+                    ("padding".into(), Node::Text(String::new())),
+                ]);
+                let framing = serde_json::to_vec(&[&row]).unwrap().len();
+                let extra = usize::from(matches!(self, Self::IntegralOver | Self::FractionalOver));
+                row.insert(
+                    "padding".into(),
+                    Node::Text("x".repeat(1_048_576 - framing + extra)),
+                );
+                return vec![row];
+            }
             Self::BytesExact | Self::BytesOver => Node::Text(
                 "x".repeat(1_048_576 - overhead + usize::from(matches!(self, Self::BytesOver))),
             ),
