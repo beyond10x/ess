@@ -12,12 +12,17 @@
 //!   [`profile::TUI`] and resolved against each node's `degrades`, refusing the document with
 //!   the node's path when a needed fallback is missing ([`profile::check`]).
 //! - State lives where its placement says ([`placement`]).
+//! - Bound to a served surface ([`App::bound`], `--model`), reads and commands go to the paths
+//!   the binding names through [`HttpAdapter`], no fixture channel plays (a `live:` section polls
+//!   its read instead), and a refused command shows where the user acted: on the open form, on
+//!   the confirm, or beside the action row, keeping the draft.
 //!
 //! [`run`] is the entry point an `ess ui run --tui` command wraps.
 
 mod app;
 pub mod data;
 mod expr;
+pub mod http;
 pub mod keys;
 pub mod live;
 pub mod placement;
@@ -40,7 +45,12 @@ use ratatui::Terminal;
 
 pub use app::{App, Lifecycle, Options, Region};
 pub use data::{DataAdapter, FixtureAdapter, ReadRequest, ReadResult};
+pub use http::HttpAdapter;
 pub use profile::{Plan, Refusal, RendererProfile, TUI};
+
+/// The environment variable the `Authorization` header of a bound run is read from: an opaque
+/// value, as configured, never taken from the command line and never derived.
+pub const AUTHORIZATION_VAR: &str = "ESS_UI_AUTHORIZATION";
 
 /// Why a document does not run.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +63,8 @@ pub enum TuiError {
     Fixture(String),
     /// The terminal or a file failed.
     Io(String),
+    /// A bound run is not set up: a base URL, the credential, or a `--model` without a binding.
+    Binding(String),
 }
 
 impl fmt::Display for TuiError {
@@ -61,7 +73,7 @@ impl fmt::Display for TuiError {
             Self::Load(error) => write!(formatter, "{error}"),
             Self::Refused(refusal) => write!(formatter, "{refusal}"),
             Self::Fixture(message) => write!(formatter, "fixtures: {message}"),
-            Self::Io(message) => formatter.write_str(message),
+            Self::Io(message) | Self::Binding(message) => formatter.write_str(message),
         }
     }
 }
@@ -75,8 +87,18 @@ pub struct TuiArgs {
     #[arg(long)]
     pub path: PathBuf,
     /// A fixture directory replacing the one the document names.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "model")]
     pub fixtures: Option<PathBuf>,
+    /// The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`,
+    /// or one file): reads and commands go to the HTTP surface its `reached_by: network`
+    /// components serve instead of the fixtures, and no fixture channel plays. The
+    /// `Authorization` header is read from `ESS_UI_AUTHORIZATION`, never from the command line.
+    #[arg(long)]
+    pub model: Option<PathBuf>,
+    /// Where a served component is reached, `http://` only: `<url>` when the document binds one
+    /// component, else `<component>=<url>`, once per component.
+    #[arg(long = "base-url", value_name = "URL", requires = "model")]
+    pub base_url: Vec<String>,
 }
 
 /// Where file-placed state is kept: `$XDG_STATE_HOME/ess-ui-tui`, else
@@ -93,10 +115,42 @@ pub fn state_dir() -> PathBuf {
 }
 
 /// Runs a document in the terminal until the user quits (`q` or ctrl-c).
-pub fn run(args: &TuiArgs) -> Result<(), TuiError> {
+///
+/// `binding` is the route table `--model` resolves to (`ess_ui_check::binding`), which the caller
+/// computes: this crate reads a binding and never compiles a model. With one, the run is bound
+/// ([`App::bound`]) to the base URLs of `--base-url` ([`http::base_urls`]), the `Authorization`
+/// header from [`AUTHORIZATION_VAR`]. Every refusal comes before the terminal is touched.
+pub fn run(args: &TuiArgs, binding: Option<&ess_ui::binding::Binding>) -> Result<(), TuiError> {
     let mut options = Options::new(state_dir());
     options.fixtures.clone_from(&args.fixtures);
-    let mut app = App::from_path(&args.path, options)?;
+    let mut app = match (binding, &args.model) {
+        (None, Some(model)) => {
+            return Err(TuiError::Binding(format!(
+                "--model {}: no binding was computed for it",
+                model.display()
+            )))
+        }
+        (None, None) => App::from_path(&args.path, options)?,
+        (Some(binding), _) => {
+            let bases = http::base_urls(binding, &args.base_url)?;
+            let authorization = match std::env::var(AUTHORIZATION_VAR) {
+                Ok(value) if value.is_empty() => None,
+                Ok(value) => Some(value),
+                Err(std::env::VarError::NotPresent) => None,
+                Err(std::env::VarError::NotUnicode(_)) => {
+                    return Err(TuiError::Binding(format!(
+                        "{AUTHORIZATION_VAR} is not UTF-8"
+                    )))
+                }
+            };
+            let adapter = HttpAdapter::new(binding.clone(), &bases, authorization)?;
+            let text = std::fs::read_to_string(&args.path).map_err(|error| {
+                TuiError::Io(format!("cannot read {}: {error}", args.path.display()))
+            })?;
+            let document = ess_ui::load_str(&text).map_err(TuiError::Load)?;
+            App::bound(document, Box::new(adapter), binding.clone(), options)?
+        }
+    };
     let io = |error: io::Error| TuiError::Io(error.to_string());
     // Restores the terminal on every exit: a returned error, a normal quit (the guard's drop)
     // and a panic (the hook restores before the panic message prints, so it is readable).
@@ -153,7 +207,15 @@ fn drive(app: &mut App) -> Result<(), TuiError> {
         if event::poll(Duration::from_millis(100)).map_err(io)? {
             if let Event::Key(key) = event::read().map_err(io)? {
                 if key.kind == KeyEventKind::Press {
+                    let sent = app.commands_sent;
                     app.key(key);
+                    // One command in flight per place: what was typed while a command waited for
+                    // its answer is dropped, so a second submit, confirm or action is not sent.
+                    if app.commands_sent != sent {
+                        while event::poll(Duration::ZERO).map_err(io)? {
+                            event::read().map_err(io)?;
+                        }
+                    }
                 }
             }
         }

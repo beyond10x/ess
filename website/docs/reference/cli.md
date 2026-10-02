@@ -368,7 +368,9 @@ nodes it holds, or exits `1` naming the node that refuses it. `ess ui check` run
 schema declares and, with `--model`, checks the document's views, commands and events against an
 ESS specification; each finding names its node path, and any error exits `1`. `ess ui docs` renders the `ess-ui/1`
 reference from its schema, and `--check` fails when a written copy is stale. `ess ui run --tui`
-runs a document in the terminal against its fixtures. `ess generate ui --target react` writes a
+runs a document in the terminal against its fixtures, or with `--model` and `--base-url` against
+the HTTP surface that specification serves, showing a refusal where the user acted; the
+`Authorization` header comes from `ESS_UI_AUTHORIZATION`. `ess generate ui --target react` writes a
 React + TypeScript project from one whose only runtime dependencies are `react` and `react-dom`,
 with its routing generated into it and one esbuild step to build it; with `--model` the project
 is bound to the HTTP surface that specification serves, reading and commanding its paths and
@@ -1549,7 +1551,7 @@ ess ui docs [OPTIONS] --out <OUT>
 
 #### `ess ui run`
 
-Run an `ess-ui/1` document, answering reads from its fixtures
+Run an `ess-ui/1` document, answering reads from its fixtures, or with `--model` reading and commanding the HTTP surface the specification serves
 
 ```text
 ess ui run [OPTIONS] --tui --path <PATH>
@@ -1560,6 +1562,8 @@ ess ui run [OPTIONS] --tui --path <PATH>
 | `--tui` |  | yes |  | Run in the terminal; the only renderer this command offers so far, so it must be named |
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document to run |
 | `--fixtures` | `<FIXTURES>` | no |  | A fixture directory replacing the one the document names |
+| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): reads and commands go to the HTTP surface its `reached_by: network` components serve instead of the fixtures, and no fixture channel plays. The `Authorization` header is read from `ESS_UI_AUTHORIZATION`, never from the command line |
+| `--base-url` | `<URL>`… | no |  | Where a served component is reached, `http://` only: `<url>` when the document binds one component, else `<component>=<url>`, once per component |
 
 #### `ess ui test`
 

@@ -19,7 +19,8 @@ pub(crate) enum Command {
     Check(ess_ui_check::CheckArgs),
     /// Render the `ess-ui/1` reference from its schema, as HTML or Markdown.
     Docs(ess_ui_docs::DocsArgs),
-    /// Run an `ess-ui/1` document, answering reads from its fixtures.
+    /// Run an `ess-ui/1` document, answering reads from its fixtures, or with `--model` reading
+    /// and commanding the HTTP surface the specification serves.
     Run(Run),
     /// Run `ess-ui-test/1` tests headless against the terminal renderer, or with `--playwright`
     /// write them as a Playwright spec for the generated React project. Exits 1 when a test fails.
@@ -85,7 +86,17 @@ pub(crate) fn run(command: &Command) -> ExitCode {
         },
         Command::Run(run) => {
             debug_assert!(run.tui, "clap requires `--tui`");
-            match ess_ui_tui::run(&run.document) {
+            let document = &run.document;
+            let binding = match document
+                .model
+                .as_deref()
+                .map(|model| bind(&document.path, model))
+            {
+                None => None,
+                Some(Ok(binding)) => Some(binding),
+                Some(Err(error)) => return refusal(&format!("{error:#}")),
+            };
+            match ess_ui_tui::run(document, binding.as_ref()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => refusal(&error.to_string()),
             }

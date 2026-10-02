@@ -780,8 +780,10 @@ dependencies = [
  "clap",
  "crossterm",
  "ess-ui",
+ "ess-ui-check",
  "ratatui",
  "serde",
+ "serde_json",
  "serde_yaml",
  "unicode-width 0.2.0",
 ]

@@ -174,7 +174,7 @@ impl DataAdapter for Wide {
         }
         Ok(result)
     }
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
         self.0.run(command, input)
     }
     fn load_state(&self, path: &str) -> Option<Value> {
