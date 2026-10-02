@@ -535,6 +535,25 @@ fn about(id: &ScenarioId, command: &QualifiedName) -> bool {
     of.to_string() == command.to_string()
 }
 
+/// Compose an independent public arrangement, preserving the first run's observations and
+/// identities. Unlike the optional caller variant, a required disclosure cell must name any
+/// arrangement that cannot be appended, including globally incompatible view assertions.
+pub(super) fn append_independent(
+    ir: &EssIr,
+    scenario: &mut ConformanceScenario,
+    again: &ConformanceScenario,
+) -> Result<(), &'static str> {
+    let mut identities = Identities::of(ir, [&*scenario, again]);
+    let before = scenario.steps.len();
+    append(ir, scenario, again, &mut identities)
+        .map_err(|_| "the follow-up arrangement exhausted its fresh identity witnesses")?;
+    if scenario.steps.len() == before {
+        return Err("the follow-up assertions cannot compose with the retained origin state");
+    }
+    scenario.source.extend(again.source.iter().cloned());
+    Ok(())
+}
+
 /// `again`'s steps after `scenario`'s own, with every instance and instant it binds renamed apart
 /// from the first run's and every caller-supplied identity it sends drawn afresh, where both runs
 /// can share one scenario. A swapped run left out because no fresh identity could be drawn for it

@@ -35,6 +35,177 @@ fn generated_source_policy_installs_trace_and_rotation_obligations() {
     ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
 }
 
+fn stateful_model() -> String {
+    include_str!("fixtures/subject-state.yaml")
+        .replace("format: ess/3", "format: ess/21")
+        .replace("        emits: [calls.core.Opened]", "        emits: [calls.core.Opened]\n        payload: {calls.core.Opened: {call_id: {generated: true}}}")
+        .replace("  - name: calls.core.Bridge\n", "  - name: calls.core.Bridge\n    response: [{name: secret, type: String}]\n")
+        .replace("      - name: bridged\n", "      - name: bridged\n        returns: true\n        one_time_response: [secret]\n")
+}
+
+#[test]
+fn stateful_retry_uses_the_original_identity_and_the_post_state_branch() {
+    let source = stateful_model();
+    let ir = model(&source);
+    let mut synthesis = ess_conformance::synthesize(&ir);
+    let id = "calls.core.Bridge/disclosure/bridged/secret/retry/as/anonymous"
+        .parse()
+        .unwrap();
+    let scenario = synthesis
+        .suite
+        .scenario(&id)
+        .unwrap_or_else(|| panic!("missing stateful retry: {:?}", synthesis.refusals));
+    let invokes: Vec<_> = scenario.steps.iter().filter(|step| matches!(step, ScenarioStep::ExecuteCommand { command, .. } if command.to_string() == "calls.core.Bridge")).collect();
+    assert_eq!(invokes.len(), 2);
+    assert_eq!(invokes[0], invokes[1]);
+    let branches: Vec<_> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectOutcome { outcome }
+                if outcome.command.to_string() == "calls.core.Bridge" =>
+            {
+                Some(outcome.outcome.to_string())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(branches, ["bridged", "already-bridged"]);
+    ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    synthesis.suite.scenarios.retain(|key, _| key == &id);
+    let input = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let target = ess_conformance::interpret::Interpreted::for_model(ir);
+    let report = ess_conformance::Runner::for_suite(input.suite()).run_admitted(&input, &target);
+    assert_eq!(
+        report.scenarios[0].status,
+        ess_conformance::report::Status::Passed,
+        "{:?}",
+        report.scenarios[0].checks
+    );
+}
+
+#[test]
+fn stateful_rotation_arranges_a_fresh_reachable_origin_without_rebinding_the_first() {
+    let ir = model(&stateful_model());
+    let mut synthesis = ess_conformance::synthesize(&ir);
+    let id = "calls.core.Bridge/disclosure/bridged/secret/rotation/as/anonymous"
+        .parse()
+        .unwrap();
+    let scenario = synthesis
+        .suite
+        .scenario(&id)
+        .expect("fresh public arrangement reaches another origin");
+    let invokes: Vec<_> = scenario.steps.iter().filter(|step| matches!(step, ScenarioStep::ExecuteCommand { command, .. } if command.to_string() == "calls.core.Bridge")).collect();
+    assert_eq!(invokes.len(), 2);
+    assert_ne!(
+        invokes[0], invokes[1],
+        "the independent origin must bind a fresh subject"
+    );
+    ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    synthesis.suite.scenarios.retain(|key, _| key == &id);
+    let input = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let target = ess_conformance::interpret::Interpreted::for_model(ir);
+    let report = ess_conformance::Runner::for_suite(input.suite()).run_admitted(&input, &target);
+    assert_eq!(
+        report.scenarios[0].status,
+        ess_conformance::report::Status::Passed,
+        "{:?}",
+        report.scenarios[0].checks
+    );
+}
+
+#[test]
+fn stateful_origin_composes_declared_followups_and_reads_without_inventory_holes() {
+    let ir = model(&stateful_model());
+    let synthesis = ess_conformance::synthesize(&ir);
+    let missing: Vec<_> = synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            matches!(
+                refusal.scenario,
+                Some(ess_conformance::ScenarioId::Disclosure { .. })
+            )
+        })
+        .collect();
+    assert!(missing.is_empty(), "{missing:?}");
+    let input = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let target = ess_conformance::interpret::Interpreted::for_model(ir);
+    let report = ess_conformance::Runner::for_suite(input.suite()).run_admitted(&input, &target);
+    for scenario in report.scenarios.iter().filter(|scenario| {
+        matches!(
+            scenario.scenario,
+            ess_conformance::ScenarioId::Disclosure { .. }
+        )
+    }) {
+        assert_eq!(
+            scenario.status,
+            ess_conformance::report::Status::Passed,
+            "{}: {:?}; steps: {:?}",
+            scenario.scenario,
+            scenario.checks,
+            input.suite().scenario(&scenario.scenario).unwrap().steps
+        );
+    }
+}
+
+#[test]
+fn stateful_origin_keeps_capture_live_during_a_denied_actor_followup() {
+    let source = stateful_model() + "\nactors:\n  - {name: calls.core.Alice, may: [calls.core.Open, calls.core.Bridge, calls.core.Report]}\n  - {name: calls.core.Bob, may: [calls.core.Open]}\n";
+    let ir = model(&source);
+    let mut synthesis = ess_conformance::synthesize(&ir);
+    let id = "calls.core.Bridge/disclosure/bridged/secret/denied/calls.core.Bridge/as/actor/calls.core.Bob".parse().unwrap();
+    assert!(
+        synthesis.suite.scenario(&id).is_some(),
+        "missing stateful denied follow-up"
+    );
+    synthesis.suite.scenarios.retain(|key, _| key == &id);
+    let input = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let target = ess_conformance::interpret::Interpreted::for_model(ir);
+    let report = ess_conformance::Runner::for_suite(input.suite()).run_admitted(&input, &target);
+    assert_eq!(
+        report.scenarios[0].status,
+        ess_conformance::report::Status::Passed,
+        "{:?}",
+        report.scenarios[0].checks
+    );
+}
+
+#[test]
+fn creating_origin_retries_the_same_input_while_capturing_a_fresh_identity() {
+    let source = stateful_model()
+        .replace(
+            "  - name: calls.core.Open\n",
+            "  - name: calls.core.Open\n    response: [{name: secret, type: String}]\n",
+        )
+        .replace(
+            "      - name: opened\n",
+            "      - name: opened\n        returns: true\n        one_time_response: [secret]\n",
+        );
+    let ir = model(&source);
+    let mut synthesis = ess_conformance::synthesize(&ir);
+    let id = "calls.core.Open/disclosure/opened/secret/retry/as/anonymous"
+        .parse()
+        .unwrap();
+    let scenario = synthesis
+        .suite
+        .scenario(&id)
+        .expect("creation can repeat identical public input");
+    let invokes: Vec<_> = scenario.steps.iter().filter(|step| matches!(step, ScenarioStep::ExecuteCommand { command, .. } if command.to_string() == "calls.core.Open")).collect();
+    assert_eq!(invokes.len(), 2);
+    assert_eq!(invokes[0], invokes[1]);
+    synthesis.suite.scenarios.retain(|key, _| key == &id);
+    let input = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let target = ess_conformance::interpret::Interpreted::for_model(ir);
+    let report = ess_conformance::Runner::for_suite(input.suite()).run_admitted(&input, &target);
+    assert_eq!(
+        report.scenarios[0].status,
+        ess_conformance::report::Status::Passed,
+        "{:?}",
+        report.scenarios[0].checks
+    );
+}
+
 #[test]
 fn generated_constrained_string_policy_has_an_executable_witness() {
     let source = MODEL.replace("type: String", "type: credentials.api.Secret") + "\ntypes:\n  - name: credentials.api.Secret\n    kind: newtype\n    of: String\n    prefix: tok_\n    invariants: [value.count >= 8]\n";
@@ -128,6 +299,41 @@ fn actorless_read_cells_observe_after_origin_and_after_rotation() {
             .count(),
         2
     );
+}
+
+#[test]
+fn granted_actor_read_cells_execute_the_public_query_after_actual_actor_issuance() {
+    let source = format!("{MODEL}\nactors:\n  - {{name: credentials.api.Alice, may: [credentials.api.Issue]}}\n  - {{name: credentials.api.Bob, may: [credentials.api.Issue]}}\nentities:\n  - name: credentials.api.Record\n    identity: {{name: id, type: Uuid}}\n    lifecycle: {{initial: Open, states: [Open], terminal: [Open]}}\nviews:\n  - name: credentials.api.Records\n    source: credentials.api.Record\n    consistency: read_your_writes\n    fields: [{{name: id, type: Uuid}}]\n");
+    let ir = model(&source);
+    let synthesis = ess_conformance::synthesize(&ir);
+    for actor in ["credentials.api.Alice", "credentials.api.Bob"] {
+        let id = format!("credentials.api.Issue/disclosure/issued/secret/read/credentials.api.Records/as/actor/{actor}").parse().unwrap();
+        let scenario = synthesis.suite.scenario(&id).unwrap_or_else(|| {
+            panic!(
+                "missing public read after {actor}: {:?}",
+                synthesis.refusals
+            )
+        });
+        assert_eq!(
+            scenario
+                .steps
+                .iter()
+                .filter(|step| matches!(step, ScenarioStep::QueryView { .. }))
+                .count(),
+            2
+        );
+        assert!(scenario
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                ScenarioStep::ExecuteCommand { actor, .. } => Some(actor),
+                _ => None,
+            })
+            .all(|caller| caller
+                .as_ref()
+                .is_some_and(|caller| caller.to_string() == actor)));
+    }
+    ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
 }
 
 #[test]
