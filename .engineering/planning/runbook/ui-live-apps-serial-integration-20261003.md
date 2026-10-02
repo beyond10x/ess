@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 2
+revision: 4
 ---
 ## Authority and delivery
 
@@ -37,3 +37,15 @@ Recovered candidate committed as aee7c22561865469b09a297fd2881cdf03d941ac with b
 Independent read-only audit verified ESS 0.51.0 published 2026-10-02T03:20:46Z, annotated tag e86d26acc5b4dc680814d5fac34346c557540310 peeling to 0347ffa222939e3791e574d2dbe42d4b4b02d979. https://github.com/beyond10x/ess/actions/runs/36958141779 succeeded, including four native archives, SHA256SUMS, checksum and Linux binary smoke verification. Exact-tag Gate succeeded in run36958106188. Release-record audit37008746985 succeeded. Assets were verified via metadata and successful release checks, not independently downloaded. No remote0.52.0 tag or release exists. Current main is106 commits beyond0.51.0; merged PR381/386/387 work remains unreleased. Documentation publication was not audited.
 
 Predecessor refresh inspection proved all three retained heads ancestors of advertised main: ess-w4-ui-tui-app at88bd4f3aa, ess-w5-go-behaviour at896696ae7, ess-w6-view-params atd414cfc21. Ignored output is being preserved with managed archives before exact-id retirement; no raw tree deletion or blanket cleaning.
+
+## Cleanup outcome and first measured baseline
+
+The #318 implementor ran the recovered candidate's served_entry suite:25 passed,0 failed,0 ignored, exit0. This baseline precedes added reconciliation controls. Runtime metadata inspection found time0.3.55 requires Rust1.88 while the generated manifest claims1.85; the worker is adding a regression then selecting a compatible pinned version. Disk crossed the10GiB floor after baseline completion; no subsequent compiler children were launched until recovery.
+
+Managed archives preserved every ignored predecessor file. Exact-id GC removed ess-w5-go-behaviour and ess-w6-view-params. GC retained ess-w4-ui-tui-app with `worktree-dirty: tracked, untracked, or ignored files make cleanup unsafe`; its finished record and private archive remain, with ignored target output. Do not force removal. Raw inspection and cleanup evidence is retained in the session scratch.
+
+The exclusively reused predecessor build cache's tmp directory was compressed to `$HOME/.cache/uilab-todo/w7s-codex/predecessor-cache-tmp.tar.gz`, compared against the source with tar (exit0), and SHA256 recorded beside it. Only then was the exact original cache tmp directory removed; no managed tree was manually deleted. Free disk was22GiB on the next check and worker compilation resumed in its own unit target. Archives are retained recovery evidence, not a claim that all workspace state has been cleaned.
+
+## Confirmed merge boundary
+
+Operator answered on 2026-10-03: "Keep the existing ess/21 bundle; hold this PR until the remaining bundle work is ready". Implement the five approved units serially and accumulate them on batch/ui-live-apps-complete-20261003. The single PR remains held/unmergeable until the original full ess/21 bundle is ready. No omitted bundle member is implicitly deferred, and no partial-format release is authorized. This approval resolves the prior ownership-of-format question at the merge boundary; the coordinator owns shared format mechanics only as needed for the five units, preserving all other bundle obligations.
