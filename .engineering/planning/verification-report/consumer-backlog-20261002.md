@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 7
+revision: 8
 ---
 ## Intake
 
@@ -298,3 +298,9 @@ Full intake remains82 issues plus161 initially nonterminal stories. Counts are i
 - #347: actual seven-case runtime audit at55061600 passed, including Rust/Go/TypeScript late-refusal and event-log corruption cases. Existing expect_not_granted already uses ObserveEvents before and after refusal. Consumer answer-only checking does not implement that expectation; private consumer correctness is unverified. Full reconciliation recorded in story:feature-request-347.
 - #365: accepted existing read-filter design now has canonical active story and a dedicated managed worktree based on55061600. Complete model/checker/both-renderer/parity work is assigned as one future PR, separate from running381.
 - #328: legacy same-name form selection is delivered, but arbitrary value/label selection and model-derived default identity are still required. #330: inline/local-enum drift checking is delivered; direct model-enum lookup still requires a model-aware loading contract and remains open. #354: node live ownership and header record scope need a design; existing Header.live means channel lifecycle indicators. None of these partial behaviors closes the original request.
+
+## Integrated UI and refreshed intake
+
+PR381 merged as b4da64e38b770fe74103409fe1fef7ae6ca214f4 by the bot App; merge tree4ec76c386613762c7157d3908deb3addb136620d exactly matches tested55061600. Every reported check passed. Refreshed GitHub intake:58open issues, no new reports,24closed since82issue intake:364,358,357,356,355,353,352,351,348,346,329,327,326,325,324,323,322,320,305,303,300,291,281,279. GitHub closure is recorded separately from any remaining individual AEP acceptance reconciliation. No release beyond0.51.0 yet.
+
+Next server group316/379/385 plus347guidance now has full373pass package evidence, corrected generated fixtures and projection/site validation; synchronization with published UI main and one new remote gate remain. Synthesis288 committed63e64f6cd after measured red/treatment and independent review;308 now active, followed by accepted298.365complete read-filter work continues in its isolated tree.

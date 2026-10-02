@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-323
 kind: story
-status: active
+status: implemented
 title: TUI form overlays submit every overlay parameter
 refs:
 - provider: github
@@ -15,10 +15,11 @@ scope:
   path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/tests/tui.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:25:39Z", actor: "human:timo", revision: 4, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:25:39Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T10:36:58Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 

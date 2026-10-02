@@ -21,7 +21,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/set_effects.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:02:27Z", actor: "human:timo", revision: 8, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:02:27Z", actor: "human:timo", revision: 9, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -58,3 +58,7 @@ Accept as proposed, choosing synthesis support over new validation refusal. Pres
 ## Implementation scope refinement
 
 Worker traced a second coupled seam: Selection closes input predicates from raw witness values, while generated identities are supplied as captured ScenarioValue::Instance. Include synthesize.rs only for a bounded creator-input binding helper; foreign-key relationships need not be owns relations, so ownership-only bind_links is insufficient. Preserve existing arrangement search and scenario representation; escalate if a broader rewrite or format change becomes necessary. The equivalent input and subject filter regressions must use actual generated identities and detect an ignored-filter mutant.
+
+## Verification 2026-10-02
+
+Committed63e64f6cd38990f7bdeabf58ce4e24dc65abd359 after independent review without findings. Final measured baseline55cases:51pass/4fail; treatment55passed,zero failed/ignored. Honest target exercises actual generated IDs, three matching rows, a different-subject decoy and a stored-conjunct decoy; ignore-identity, ignore-stored-filter and single-row mutants fail. Both equality operand orders and equivalent input/subject forms covered. Strict all-target Clippy, task fmt-check and diff checks passed. Symbolic creator routes outside the proved direct unconverted mapping retain named refusal. Full grouped package verification/publication pending. Evidence: managed tree ess-backlog-synthesis-20261002, target/backlog-input/288-report.md and frozen hashes/logs.

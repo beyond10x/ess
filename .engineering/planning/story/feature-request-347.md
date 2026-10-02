@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-347
 kind: story
-status: draft
+status: active
 title: Reconcile grant refusal log observation with consumer runners
 refs:
 - provider: github
@@ -10,7 +10,15 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+scope:
+- confidence: cited
+  path: website/docs/guides/verify/author-scenarios.md
+- confidence: cited
+  path: website/docs/guides/verify/runners.md
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T10:18:55Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T10:18:55Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
@@ -37,3 +45,7 @@ Existing ESS expectation/port satisfies the requested independent observation ca
 ## Acceptance
 
 Retain exact runtime evidence and identify the documented target method, correlation scope, before/after ordering and duplicate-occurrence semantics. No answer-only or view-only substitute can discharge unpublished event checks. Private consumer correctness remains unverified without its adapter evidence.
+
+## Implementation decision
+
+Clarify the existing port contract in the runner and authored-scenario guides: custom runners must look ahead from ExecuteCommand to ExpectNotGranted, observe each unpublished event before sending and again after refusal in the same correlation context, count duplicate occurrences and skip/inconclusive when observation is unsupported. Current documentation describes the result but does not explicitly state the pre-send lookahead required of a custom runner. This is documentation of measured shipped behavior, not a new suite vocabulary or a claim to have fixed the private consumer adapter. Include in the next server group; site validation required.

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T10:36:57Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-323",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Overlay-form parameter regressions red1pass2fail then focused32pass; combinedGate succeeded and exact tree merged",
+    "reference": "https://github.com/beyond10x/ess/pull/381"
+  }
+}

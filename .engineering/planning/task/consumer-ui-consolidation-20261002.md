@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: task:consumer-ui-consolidation-20261002
 kind: task
-status: active
+status: implemented
 title: Consolidate existing UI PRs into one locally verified candidate
 relations:
 - decomposes: task:consumer-backlog-20261002
@@ -12,10 +12,11 @@ relations:
 - informed_by: story:ui-tui-live-binding
 - informed_by: story:ui-spec-style-tokens
 - informed_by: story:feature-request-323
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:20:40Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:20:40Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T10:36:57Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
@@ -64,3 +65,7 @@ Local candidate010e6c06b062411047b5fb2746f72d61958f5f70 has all seven recorded s
 Published exact candidate 55061600bd2be2d5be71daae40a637f8d00ddb74 to PR381 through bot signed-evidence delivery; remote head verified. Current main fa08de5bd is an ancestor. Common local scan passed over 52 commits; receipt published as check110793061923. Remote full Gate is running; not yet green or merged.
 
 Closed absorbed PR377,344,345,368,369 through bot API only after verifying each current remote head is an exact ancestor of the published candidate. Original PR bodies retained with consolidation notes. Earlier PR375/380 were similarly closed; PR386 is merged. PR381 is the remaining original open carrier. Its description now states final combined scope, measured validation and partial issue boundaries, without claiming a release. All source is retained; no branches/worktrees deleted.
+
+## Integration 2026-10-02
+
+PR381 merged by b10x-bot[bot] as b4da64e38b770fe74103409fe1fef7ae6ca214f4 after all15 reported checks passed, including full Gate, both ownership platforms, planning and docs. Merge tree4ec76c386613762c7157d3908deb3addb136620d exactly equals tested55061600; first parentfa08de5bd was already its ancestor. All absorbed heads remain preserved. GitHub now reports58open issues, down from82intake, with24closed through this PR and no newly opened issues observed. This is source integration, not a0.52release claim; partial311/328/330/350 requests remain open.
