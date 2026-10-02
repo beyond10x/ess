@@ -148,7 +148,11 @@ so the suite is written at `ess-conformance/26` or later.
 A refused command takes no branch and publishes nothing, so `no_events:` is the only claim it can
 carry. It is checked against the target's whole event log: the log may hold no more of each listed event
 after the send than just before it, counting repeats, and a refusal that hands back events fails.
-So a target that runs the command and only then refuses it fails. The act is refused:
+So a target that runs the command and only then refuses it fails. The generated runners perform
+these observations through `ObserveEvents` / `observeEvents`; a custom runner must also collect
+the pre-send count before executing the command, then compare it with the post-refusal count.
+See [the target interface](./runners.md) for the event-log and unsupported-observation contract.
+No extra authored step is needed. The act is refused:
 
 | When | Refusal |
 |---|---|

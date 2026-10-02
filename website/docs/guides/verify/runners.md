@@ -65,6 +65,18 @@ answers itself:
 | `RedeliverEvent` / `redeliverEvent` | deliver an event a second time, for `delivery: at_least_once` |
 | `ObserveInvocations` / `observeInvocations` | the commands one binding invoked and what it passed |
 
+`ObserveEvents` must read the implementation's event log for the requested event and correlation,
+including repeated occurrences; it cannot return only the last command's direct events. The runner
+uses it even when the command answers `not_granted`. Before sending a command whose next step is
+`expect_not_granted`, it counts every event named in that step's `unpublished` list. After the
+refusal, it observes those events again in the same correlation context and fails if any count grew.
+A command that publishes and then refuses therefore fails even when its answer contains no events.
+
+A custom suite runner must perform both observations; the pre-send observation is part of the
+`expect_not_granted` contract, not a separate suite step. Comparing views is insufficient for an
+event that changes no view. If the adapter cannot observe the log, report unsupported as described
+below; an answer-only check cannot establish that nothing was published.
+
 A refused command reports both the outcome name and the error, for example
 `{outcome: "rejected", error: "tasks.list.InvalidPriority"}`. A method the implementation cannot
 answer returns `ErrUnsupported` (Go) or throws it (TypeScript). The scenario is then reported as

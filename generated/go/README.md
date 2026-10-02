@@ -1,7 +1,8 @@
 # Synthesised Go modules
 
 **Do not edit these files.** They are synthesised from the specifications under
-[`examples/`](../../examples) by `cargo xtask synth`, and CI fails if they differ from what
+[`examples/`](../../examples) by `ess generate synthesize`
+([refresh procedure](../../docs/design/synthesis-fixture-maintenance.md)), and CI fails if they differ from what
 the specifications determine — or if a module stops being `gofmt`-clean, stops compiling, or
 stops passing `go vet`.
 
@@ -41,11 +42,9 @@ synthesised into, the address it bound and the port it took.
 | `surface.serving` | the served component, its declared reach, the transport, the number of routes, and every route as method, path, what it serves and the construct it serves |
 | `system.ready` | the system, and how many surfaces this process serves |
 
-The split is the whole comparison. Two applications synthesised from one specification must
-agree on every byte **outside** `runtime`, and `cargo xtask synth` starts both, reads their
-records, strips `runtime` and compares — so a member that moved into `runtime` to make a
-comparison pass would be a member that stopped being compared, and a member the record
-gains tomorrow is compared without anyone editing the comparison.
+Two applications synthesised from one specification must agree on every byte **outside**
+`runtime`. The HTTP projection test compares the static startup records embedded in generated
+Rust and Go source. It does not start the applications or compare their process output.
 
 The Go half of a served surface is `net/http` and `encoding/json`, both standard library, and
 generated codecs beside them: a generated type carries an unexported field, which
@@ -54,7 +53,9 @@ exists for. The hand-written realization that links into it is a module of its o
 [`examples/gatepass-go-realization`](../../examples/gatepass-go-realization) — reaching this
 tree through a filesystem `replace`, so nothing here resolves over a network either.
 
-| module | generated from | generated | obligations | refused | weakened | target-refused | plan | target notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [`billing/`](billing) | billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3, contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6) | 33 | 8 | 4 | 4 | 0 | [`billing/PLAN.md`](billing/PLAN.md) | [`billing/TARGET.md`](billing/TARGET.md) |
-| [`gatepass/`](gatepass) | gatepass v1 (model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c, contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed) | 22 | 5 | 2 | 5 | 0 | [`gatepass/PLAN.md`](gatepass/PLAN.md) | [`gatepass/TARGET.md`](gatepass/TARGET.md) |
+The generated plans and target notes record current digests, disposition counts and target gaps.
+
+| module | specification | plan | target notes |
+| --- | --- | --- | --- |
+| [`billing/`](billing) | [`examples/billing`](../../examples/billing) | [`billing/PLAN.md`](billing/PLAN.md) | [`billing/TARGET.md`](billing/TARGET.md) |
+| [`gatepass/`](gatepass) | [`examples/gatepass`](../../examples/gatepass) | [`gatepass/PLAN.md`](gatepass/PLAN.md) | [`gatepass/TARGET.md`](gatepass/TARGET.md) |
