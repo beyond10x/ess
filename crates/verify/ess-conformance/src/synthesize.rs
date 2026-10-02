@@ -3966,7 +3966,9 @@ fn created_owned(
             })
         } else {
             Ok(match input {
-                Some(input) => invoke_with(ir, creator, None, actors, bound, input),
+                Some(input) => {
+                    invoke_created_with(ir, creator, actors, distinction, bound, input, &chain)?
+                }
                 None => invoke(ir, creator, None, None, actors, distinction, bound, &chain)?,
             })
         }
@@ -4160,7 +4162,66 @@ fn invoke(
     .map_err(|_| Unreachable::Unwitnessable {
         outcome: outcome_ref.clone(),
     })?;
-    Ok(invoke_with(ir, driver, instance, actors, bound, &input))
+    if matches!(driver.effect, ResolvedEffect::Creates) {
+        invoke_created_with(ir, driver, actors, distinction, bound, &input, arranging)
+    } else {
+        Ok(invoke_with(ir, driver, instance, actors, bound, &input))
+    }
+}
+
+/// A creation used to arrange a later subject has the same related sources as its own outcome
+/// scenario. Preserve their captured identities and typed values, with the caller's cycle guard.
+fn invoke_created_with(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, InstanceName>,
+    input: &BTreeMap<String, Node>,
+    arranging: &[&EntityHandle],
+) -> Result<Invocation, Unreachable> {
+    // A payload-only source keeps its existing outer arrangement. This seam is for stored
+    // copies needed by a later subject/view; arranging payload-only reads here would duplicate
+    // the sources that the later branch already arranges (#166).
+    if !driver
+        .outcome
+        .sets
+        .iter()
+        .any(|set| matches!(set.value, ResolvedPayloadValue::RelatedField { .. }))
+    {
+        return Ok(invoke_with(ir, driver, None, actors, bound, input));
+    }
+    let mut setup = Setup::none();
+    setup.bound.clone_from(bound);
+    let setup = related::arrange_within(
+        ir,
+        driver.outcome,
+        actors,
+        distinction,
+        setup,
+        None,
+        arranging,
+    )
+    .map_err(|_| Unreachable::Unwitnessable {
+        outcome: OutcomeRef::new(
+            CommandRef::new(driver.command.name.clone()),
+            driver.outcome.name.clone(),
+        ),
+    })?;
+    let mut invoked = invoke_with(ir, driver, None, actors, &setup.bound, input);
+    let supplied = supply(
+        driver.command,
+        input,
+        driver.outcome.subject.as_ref(),
+        None,
+        &setup.bound,
+    );
+    invoked.settled = settled(ir, driver.outcome, &supplied, &setup.settled);
+    let mut steps = setup.steps;
+    steps.append(&mut invoked.steps);
+    invoked.steps = steps;
+    invoked.source.extend(setup.source);
+    Ok(invoked)
 }
 
 /// One arranging invocation with an input already chosen: its steps, and what its `sets:` leave.
@@ -6002,6 +6063,18 @@ fn arrange_matching(
         };
         let mut wanted: Vec<(Wanted<'_>, Option<&InstanceName>)> = Vec::new();
         let by_identity = identified && reads_root(view, identity_name);
+        let by_copy = identified
+            && !singleton::is_singleton(ir, beside.entity)
+            && ir.drivers().get(beside.entity).is_some_and(|drivers| {
+                drivers
+                    .iter()
+                    .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+                    .flat_map(|driver| &driver.outcome.sets)
+                    .any(|set| {
+                        matches!(set.value, ResolvedPayloadValue::RelatedField { .. })
+                            && reads_root(view, &set.target)
+                    })
+            });
         match &bytewise {
             Some(bytewise) if identified => wanted.push((
                 Box::new(move |row: &Arrangement| {
@@ -6040,6 +6113,10 @@ fn arrange_matching(
                     ));
                 }
             }
+            None if *admits_subject && by_copy => wanted.push((
+                Box::new(move |row: &Arrangement| held(row) == Ok(false)),
+                None,
+            )),
             None if !identified
                 || *admits_subject
                 || plain_row_shown(ir, beside.entity, view, beside.actors, params) =>

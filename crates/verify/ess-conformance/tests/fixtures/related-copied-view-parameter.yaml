@@ -1,0 +1,96 @@
+format: ess/20
+system: shipping
+version: v1
+domain: shipping.m
+summary: Shipments copy an order's depot and identity; views select those stored copies.
+types:
+  - {name: shipping.m.OrderId, kind: newtype, of: Uuid}
+  - {name: shipping.m.ShipmentId, kind: newtype, of: Uuid}
+entities:
+  - name: shipping.m.Order
+    identity: {name: order_id, type: shipping.m.OrderId}
+    fields:
+      - {name: depot, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: shipping.m.Shipment
+    identity: {name: shipment_id, type: shipping.m.ShipmentId}
+    fields:
+      - {name: source_order, type: shipping.m.OrderId}
+      - {name: depot, type: String}
+    lifecycle:
+      initial: Packed
+      states: [Packed, Delivered]
+      terminal: [Delivered]
+      transitions:
+        - {name: deliver, from: [Packed], to: Delivered}
+errors:
+  - {name: shipping.m.Conflict, fields: []}
+events:
+  - name: shipping.m.OrderOpened
+    fields: [{name: order_id, type: shipping.m.OrderId}]
+  - name: shipping.m.Packed
+    fields: [{name: shipment_id, type: shipping.m.ShipmentId}]
+  - name: shipping.m.Delivered
+    fields: [{name: shipment_id, type: shipping.m.ShipmentId}]
+commands:
+  - name: shipping.m.OpenOrder
+    input: [{name: depot, type: String}]
+    outcomes:
+      - name: opened
+        creates: shipping.m.Order
+        instance: order_id
+        emits: [shipping.m.OrderOpened]
+        payload:
+          shipping.m.OrderOpened: {order_id: {generated: true}}
+        sets: {depot: input.depot}
+  - name: shipping.m.Pack
+    input: [{name: order_id, type: shipping.m.OrderId}]
+    outcomes:
+      - name: packed
+        creates: shipping.m.Shipment
+        instance: shipment_id
+        emits: [shipping.m.Packed]
+        payload:
+          shipping.m.Packed: {shipment_id: {generated: true}}
+        sets:
+          source_order: {related: {via: input.order_id, field: order_id}}
+          depot: {related: {via: input.order_id, field: depot}}
+  - name: shipping.m.Deliver
+    input: [{name: shipment_id, type: shipping.m.ShipmentId}]
+    outcomes:
+      - name: delivered
+        moves: shipping.m.Shipment.deliver
+        instance: shipment_id
+        emits: [shipping.m.Delivered]
+        payload:
+          shipping.m.Delivered: {shipment_id: input.shipment_id}
+      - {name: conflict, wrong_state: true, error: shipping.m.Conflict}
+views:
+  - name: shipping.m.Shipments
+    source: shipping.m.Shipment
+    consistency: read_your_writes
+    fields:
+      - {name: shipment_id, type: shipping.m.ShipmentId}
+      - {name: source_order, type: shipping.m.OrderId}
+      - {name: depot, type: String}
+      - {name: state, type: shipping.m.Shipment.State}
+  - name: shipping.m.ByOrder
+    source: shipping.m.Shipment
+    consistency: read_your_writes
+    params: [{name: order, type: shipping.m.OrderId}]
+    filter: source_order == param.order
+    fields:
+      - {name: shipment_id, type: shipping.m.ShipmentId}
+      - {name: source_order, type: shipping.m.OrderId}
+      - {name: depot, type: String}
+      - {name: state, type: shipping.m.Shipment.State}
+  - name: shipping.m.ByDepot
+    source: shipping.m.Shipment
+    consistency: read_your_writes
+    params: [{name: depot, type: String}]
+    filter: depot == param.depot
+    fields:
+      - {name: shipment_id, type: shipping.m.ShipmentId}
+      - {name: source_order, type: shipping.m.OrderId}
+      - {name: depot, type: String}
+      - {name: state, type: shipping.m.Shipment.State}
