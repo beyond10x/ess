@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
-// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
+// model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c
+// contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -72,7 +72,8 @@ where
             crate::visit::AnyVisit::Expected(instance) => crate::visit::AnyVisit::OnSite(instance.arrive()),
             _ => return Ok(crate::visit::AdmitVisitorOutcome::WrongState { error: crate::visit::VisitStateConflict { state: held_state } }),
         };
-        let next = moved.snapshot();
+        let mut next = moved.snapshot();
+        next.data.badge = Some(input.badge.clone());
         if let Some(broken) = next.data.broken_invariant() {
             let capability = "entity invariant";
             return Err(UnmetObligation { capability, source: broken });

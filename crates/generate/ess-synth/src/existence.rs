@@ -3,10 +3,11 @@
 //!
 //! Both forms — a creating branch marked `unknown_instance: true` beside the branch that updates
 //! the record, and an `existing_instance:` refusal beside a creation — select a branch by a lookup
-//! of the store before the input is dispatched. The Rust target generates that lookup over the
-//! storage port its generated behaviour already reads (`rust::behaviour`, beyond10x/ess#310), and
-//! where the plan keeps such a command an obligation the implementor's behaviour selects it, as it
-//! decides every other branch of an owed command. The Go, Web and Clap targets carry no storage
+//! of the store before the input is dispatched. The Rust and Go targets generate that lookup over
+//! the storage port their generated behaviour already reads (`rust::behaviour`, beyond10x/ess#310;
+//! `go::behaviour`, beyond10x/ess#314), and where the plan keeps such a command an obligation the
+//! implementor's behaviour selects it, as it decides every other branch of an owed command. The Web
+//! and Clap targets carry no storage
 //! port: their seams and explorers select a branch from the decoded input and the model's own state
 //! machine, and neither holds the question "does a record carry this identity" as something a
 //! branch can be selected by. There each such branch is named rather than emitted with a selection

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T04:46:41Z",
+  "actor": "human:timo",
+  "artifact": "story:go-generated-behaviour",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-synth (354 passed, 0 failed, 2 pre-existing ignores) and gatepass conformance (both realizations) green with Go 1.27 running every Go harness; clippy, fmt, gofmt, go vet clean at d098dba05",
+    "reference": "d098dba05"
+  }
+}

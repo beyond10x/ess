@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
-// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
+// model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c
+// contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -94,7 +94,7 @@ pub fn decode_gatepass_visit_deposit(value: &json::Value, at: &str) -> Result<ga
         amount: {
             let at0 = json::nested(at, "amount");
             let member0 = json::member_at(value, at, "amount")?;
-            gatepass_types::primitives::Decimal(json::text_at(member0, &at0, "a decimal string")?.to_owned())
+            gatepass_types::primitives::Decimal(json::decimal_at(member0, &at0, "a decimal string")?.to_owned())
         },
         currency: {
             let at1 = json::nested(at, "currency");
@@ -211,7 +211,7 @@ pub fn encode_gatepass_visit_visit_id(value: &gatepass_types::visit::VisitId, ou
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_gatepass_visit_visit_id(value: &json::Value, at: &str) -> Result<gatepass_types::visit::VisitId, json::DecodeError> {
-    Ok(gatepass_types::visit::VisitId(gatepass_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
+    Ok(gatepass_types::visit::VisitId(gatepass_types::primitives::Uuid(json::uuid_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `gatepass.visit.VisitorName` as JSON.

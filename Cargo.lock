@@ -710,6 +710,8 @@ dependencies = [
  "ess-domain",
  "ess-gen",
  "ess-primitives",
+ "ess-ui",
+ "ess-ui-check",
  "jsonschema",
  "serde",
  "serde_json",

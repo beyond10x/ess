@@ -8,7 +8,9 @@
 //! suite the same specification synthesizes runs against it through the generated HTTP surface.
 //! The same server with the lookup taken out fails an existence scenario.
 //!
-//! The Go, Web and Clap targets carry no storage port, so they still refuse both forms by name.
+//! The Go target generates the same lookup over its own storage port (`story:go-generated-behaviour`),
+//! and its server passes the same suite through `tests/fixtures/upsert-by-existence-go-harness/`.
+//! The Web and Clap targets carry no storage port, so they still refuse both forms by name.
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
@@ -54,12 +56,12 @@ fn served_ir() -> EssIr {
 #[test]
 fn every_target_without_a_storage_port_refuses_both_forms_by_name() {
     let ir = ir(MODEL);
-    let failure = synthesize_for(&ir, Target::Go)
+    let failure = synthesize_for(&ir, Target::Web)
         .err()
-        .expect("Go refuses selection by existence");
+        .expect("Web refuses selection by existence");
     let text = format!("{failure:?}");
     for named in [CREATED, TAKEN] {
-        assert!(text.contains(named), "Go names {named}: {text}");
+        assert!(text.contains(named), "Web names {named}: {text}");
     }
     assert!(
         text.contains(&format!("{:?}", TargetFailureCode::MissingRepresentation)),
@@ -77,8 +79,12 @@ fn every_direct_workspace_entry_answers_as_synthesis_does() {
     if let Err(failure) = ess_synth::rust::workspace(&ir, &plan) {
         panic!("rust carries both forms: {}", failure.to_canonical_json());
     }
+    // `story:go-generated-behaviour`: the Go target selects by existence over its storage port too.
+    if let Err(failure) = ess_synth::go::workspace(&ir, &plan) {
+        panic!("go carries both forms: {}", failure.to_canonical_json());
+    }
+    synthesize_for(&ir, Target::Go).expect("go synthesizes both forms");
     let failures = [
-        ("go", ess_synth::go::workspace(&ir, &plan).err()),
         ("web", ess_synth::web::workspace(&ir, &plan).err()),
         ("clap", ess_synth::clap::workspace(&ir, &plan).err()),
     ];
@@ -310,6 +316,168 @@ fn a_server_that_skips_the_lookup_fails_an_existence_scenario() {
     for (binary, scenario) in [
         (&built().refuse_skipped, EXISTENCE[0]),
         (&built().update_skipped, EXISTENCE[1]),
+    ] {
+        let ran = run(binary);
+        assert!(
+            ran.iter()
+                .any(|(id, status)| id == scenario && *status == Status::Failed),
+            "{} fails `{scenario}`: {ran:?}",
+            binary.display()
+        );
+    }
+}
+
+// ---- the Go server (`story:go-generated-behaviour`) -----------------------------------------------
+
+/// The Go create-or-refuse lookup, as it is emitted.
+const GO_REFUSE_LOOKUP: &str = "if _, found := b.ports.SlotStorage.Get(input.SlotId); found {";
+/// The same lookup taken out: the creation runs whether or not the slot is booked.
+const GO_REFUSE_SKIPPED: &str =
+    "if _, found := b.ports.SlotStorage.Get(input.SlotId); found && false {";
+/// The Go create-or-update lookup, as it is emitted.
+const GO_UPDATE_LOOKUP: &str = "held, found := b.ports.ItemStorage.Get(input.ItemId)";
+/// The same lookup taken out: every call creates.
+const GO_UPDATE_SKIPPED: &str = "held, found := items.ItemSnapshot{}, false";
+
+/// Runs a Go tool in `directory` with nothing fetched from a network.
+fn go_tool(directory: &Path, arguments: &[&str]) -> Output {
+    let output = Command::new("go")
+        .args(arguments)
+        .current_dir(directory)
+        .env("GOFLAGS", "-mod=mod")
+        .env("GOPROXY", "off")
+        .env("GOWORK", "off")
+        .output()
+        .expect("go runs");
+    eprintln!(
+        "go {arguments:?} in {}\n{}{}",
+        directory.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+/// The Go harness built against the generated Go server, and against the same server with each
+/// lookup taken out; `None` where this machine has no Go toolchain.
+fn go_built() -> Option<&'static Built> {
+    static BUILT: std::sync::OnceLock<Option<Built>> = std::sync::OnceLock::new();
+    BUILT
+        .get_or_init(|| {
+            Command::new("go").arg("version").output().ok()?;
+            let synthesis =
+                synthesize_for(&served_ir(), Target::Go).expect("the model synthesizes to Go");
+            let root = scratch("go");
+            let _ = std::fs::remove_dir_all(&root);
+            let tree = root.join("demo");
+            for (relative, artifact) in &synthesis.artifacts {
+                let destination = tree.join(relative);
+                std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+                std::fs::write(&destination, &artifact.contents).unwrap();
+            }
+            assert!(
+                go_tool(&tree, &["vet", "./..."]).status.success(),
+                "the generated Go is vet clean"
+            );
+            let harness = root.join("harness");
+            std::fs::create_dir_all(&harness).unwrap();
+            std::fs::write(
+                harness.join("go.mod"),
+                "module existenceharness\n\ngo 1.21\n\nrequire example.invalid/demo v0.0.0\n\n\
+                 replace example.invalid/demo => ../demo\n",
+            )
+            .unwrap();
+            std::fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/upsert-by-existence-go-harness/main.go"),
+                harness.join("main.go"),
+            )
+            .unwrap();
+            let kept = root.join("kept");
+            std::fs::create_dir_all(&kept).unwrap();
+            let build = |name: &str| {
+                let binary = kept.join(name);
+                assert!(
+                    go_tool(
+                        &harness,
+                        &["build", "-o", binary.to_str().expect("a UTF-8 path"), "."]
+                    )
+                    .status
+                    .success(),
+                    "the Go harness builds"
+                );
+                binary
+            };
+            let served = build("served");
+            let behaviour = tree.join("types/behaviour/behaviour.go");
+            let source = std::fs::read_to_string(&behaviour).unwrap();
+            for lookup in [GO_REFUSE_LOOKUP, GO_UPDATE_LOOKUP] {
+                assert_eq!(
+                    source.matches(lookup).count(),
+                    1,
+                    "one `{lookup}`:\n{source}"
+                );
+            }
+            std::fs::write(
+                &behaviour,
+                source.replace(GO_REFUSE_LOOKUP, GO_REFUSE_SKIPPED),
+            )
+            .unwrap();
+            let refuse_skipped = build("refuse-skipped");
+            std::fs::write(
+                &behaviour,
+                source.replace(GO_UPDATE_LOOKUP, GO_UPDATE_SKIPPED),
+            )
+            .unwrap();
+            let update_skipped = build("update-skipped");
+            Some(Built {
+                served,
+                refuse_skipped,
+                update_skipped,
+            })
+        })
+        .as_ref()
+}
+
+#[test]
+fn the_generated_go_server_passes_every_scenario_of_its_suite() {
+    let Some(built) = go_built() else {
+        eprintln!("no Go toolchain on this machine; the Go existence lookup is unchecked here");
+        return;
+    };
+    let ran = run(&built.served);
+    let ids: Vec<&str> = ran.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            EXISTENCE[0],
+            "demo.items.BookSlot/outcome/booked",
+            "demo.items.PutItem/outcome/created",
+            EXISTENCE[1],
+        ],
+        "the suite witnesses both forms, each half once"
+    );
+    let failed: Vec<&(String, Status)> = ran
+        .iter()
+        .filter(|(_, status)| *status != Status::Passed)
+        .collect();
+    assert!(failed.is_empty(), "{failed:?} of {ids:?}");
+    eprintln!(
+        "{} of {} scenarios passed against the generated Go existence lookup",
+        ran.len(),
+        ids.len()
+    );
+}
+
+#[test]
+fn a_go_server_that_skips_the_lookup_fails_an_existence_scenario() {
+    let Some(built) = go_built() else {
+        eprintln!("no Go toolchain on this machine; the Go existence lookup is unchecked here");
+        return;
+    };
+    for (binary, scenario) in [
+        (&built.refuse_skipped, EXISTENCE[0]),
+        (&built.update_skipped, EXISTENCE[1]),
     ] {
         let ran = run(binary);
         assert!(

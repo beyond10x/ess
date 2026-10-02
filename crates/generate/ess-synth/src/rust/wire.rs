@@ -78,6 +78,9 @@ pub(crate) fn module(surface: &dyn Surface) -> String {
     for view in surface.ir().views().values() {
         if surface.presents_view(&view.name) {
             view_encoder(&mut out, surface, view);
+            if !view.params.is_empty() {
+                params_decoder(&mut out, surface, view);
+            }
         }
     }
     for command in surface.ir().commands().values() {
@@ -392,6 +395,31 @@ fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
             ),
         );
     }
+}
+
+/// One view's declared parameters, read from an object keyed by their wire names: the tuple its
+/// query takes, in declaration order (story:served-view-params). An `Optional` parameter that is
+/// absent is `None`; a required one that is absent is refused, never defaulted.
+fn params_decoder(out: &mut String, surface: &dyn Surface, view: &ResolvedView) {
+    let params = super::port::view_params(surface.layout(), surface.types(), view);
+    let tuple = params.iter().fold(String::new(), |mut tuple, (_, of)| {
+        let _ = write!(tuple, "{of}, ");
+        tuple
+    });
+    let _ = write!(
+        out,
+        "\n/// Reads the parameters of `{}` from an object keyed by their wire names.\n///\n/// \
+         # Errors\n///\n/// [`json::DecodeError`] naming the parameter and what the declaration \
+         says belongs there.\npub fn decode_params_{}(value: &json::Value, at: &str) -> \
+         Result<({}), json::DecodeError> {{\n    Ok((\n",
+        view.name,
+        ident(&view.name),
+        tuple.trim_end(),
+    );
+    for (position, param) in view.params.iter().enumerate() {
+        let _ = writeln!(out, "        {},", decode_member(surface, param, position));
+    }
+    out.push_str("    ))\n}\n");
 }
 
 /// One command outcome's encoder: which branch was taken, what it published, what it refused with.
@@ -764,7 +792,7 @@ fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at
             format!("json::bytes_at({value}, {at}, \"base64-encoded bytes\")?")
         }
         Primitive::Decimal => format!(
-            "{primitives}::Decimal(json::text_at({value}, {at}, \"a decimal string\")?.to_owned())"
+            "{primitives}::Decimal(json::decimal_at({value}, {at}, \"a decimal string\")?.to_owned())"
         ),
         Primitive::Timestamp => format!(
             "{primitives}::Timestamp(json::text_at({value}, {at}, \"an RFC 3339 \
@@ -775,7 +803,7 @@ fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at
              duration\")?.to_owned())"
         ),
         Primitive::Uuid => {
-            format!("{primitives}::Uuid(json::text_at({value}, {at}, \"a UUID\")?.to_owned())")
+            format!("{primitives}::Uuid(json::uuid_at({value}, {at}, \"a UUID\")?.to_owned())")
         }
     }
 }

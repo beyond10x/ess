@@ -33,6 +33,14 @@ use super::refusal::TargetRefusals;
 /// path, and a plausible-looking path would be the one thing they forget to change.
 pub const MODULE_HOST: &str = "example.invalid";
 
+/// The name of every standard-library package a generated file may import, which no domain or
+/// component package may take: Go spells an import by its last path element, so a domain package
+/// `sort` and the standard `sort` would be one name twice in any file importing both.
+const STANDARD_IMPORTS: &[&str] = &[
+    "base64", "big", "bytes", "embed", "fmt", "http", "io", "json", "net", "reflect", "sort",
+    "strconv", "strings", "sync", "time", "utf8",
+];
+
 /// One Go package of the generated module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Package {
@@ -78,6 +86,10 @@ pub(crate) struct Layout {
     system: Package,
     /// The HTTP surface of every component reached over a network.
     server: Package,
+    /// The generated behaviours and queries, over the storage and context ports.
+    behaviour: Package,
+    /// The three-valued evaluator every generated invariant check calls.
+    invariant: Package,
     /// The bounded context that owns each declaration.
     owners: BTreeMap<QualifiedName, QualifiedName>,
     /// Every identifier this emitter declares, allocated once, keyed by [`Key`].
@@ -163,6 +175,8 @@ impl Layout {
         let conversion = package("conversion", "types/conversion");
         let system = package("system", "system");
         let server = package("server", "server");
+        let behaviour = package("behaviour", "types/behaviour");
+        let invariant = package("invariant", "types/invariant");
 
         // One namespace for package names across the whole module: the system package imports
         // every other one, so two packages sharing a name is a file that cannot spell one of them.
@@ -172,8 +186,13 @@ impl Layout {
             conversion.name.clone(),
             system.name.clone(),
             server.name.clone(),
+            behaviour.name.clone(),
+            invariant.name.clone(),
         ]
         .into();
+        // And every standard-library package a generated file may import beside a domain or a
+        // component: a domain called `sort` would otherwise be a second `sort` in that file.
+        taken.extend(STANDARD_IMPORTS.iter().map(|name| (*name).to_owned()));
         let mut domains = BTreeMap::new();
         for (domain, ident) in domain_idents(ir) {
             let name = repair(&mut taken, ident, "domain");
@@ -224,6 +243,8 @@ impl Layout {
             conversion,
             system,
             server,
+            behaviour,
+            invariant,
             owners,
             names: BTreeMap::new(),
             system_events,
@@ -285,6 +306,39 @@ impl Layout {
     /// server package would have.
     pub fn server(&self) -> &Package {
         &self.server
+    }
+
+    /// The package of the generated behaviours and queries, and of the ports they read.
+    ///
+    /// Reserved whether or not it is emitted, as [`Self::server`] is.
+    pub fn behaviour(&self) -> &Package {
+        &self.behaviour
+    }
+
+    /// The package of the evaluator every generated invariant check calls.
+    ///
+    /// Reserved whether or not it is emitted, as [`Self::server`] is.
+    pub fn invariant(&self) -> &Package {
+        &self.invariant
+    }
+
+    /// The name of every package of the module, which no identifier a generated function declares
+    /// may shadow in a file that imports it.
+    pub fn package_names(&self) -> BTreeSet<String> {
+        [
+            &self.primitives,
+            &self.obligation,
+            &self.conversion,
+            &self.system,
+            &self.server,
+            &self.behaviour,
+            &self.invariant,
+        ]
+        .into_iter()
+        .chain(self.domains.values())
+        .chain(self.components.values())
+        .map(|package| package.name.clone())
+        .collect()
     }
 
     /// Every event the system's log can carry.

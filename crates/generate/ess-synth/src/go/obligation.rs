@@ -32,6 +32,12 @@ use super::name;
 use super::refusal::TargetRefusals;
 use super::{record, Emit};
 
+/// Why a seam the plan marks generated is owed in this target: its method name is another's.
+const GIVEN_ONE_METHOD_SET: &str =
+    "the Go target, which gives a type one method set: another seam \
+                                    of this module derives the same method name, so \
+                                    `behaviour.Generated` cannot carry both (see TARGET.md)";
+
 /// The package holding the typed refusal of an unmet obligation, and nothing else.
 pub(super) fn refusal_package(layout: &Layout, provenance: &Provenance) -> Artifact {
     let package = layout.obligation();
@@ -163,35 +169,46 @@ fn convert_method(conversion: &ess_compiler::ir::ResolvedConversion) -> String {
     )
 }
 
-/// One bounded context's obligations: an interface per owed behaviour and query, and the shared
-/// stub refusing them all.
+/// One bounded context's seams: an interface per behaviour and query — generated or owed — and
+/// the shared stub refusing every owed one.
 pub(super) fn domain_obligations(
     out: &mut String,
     emit: &Emit<'_>,
     plan: &SynthesisPlan,
     refusals: &TargetRefusals,
+    seams: &super::behaviour::Seams,
     stubbed: &mut std::collections::BTreeSet<Capability>,
 ) {
-    let seams = owed_by_domain(emit, plan, refusals);
+    let seams = seams_of_domain(emit, plan, refusals, &seams.weakened);
     if seams.is_empty() {
         return;
     }
     for seam in &seams {
-        let parameter = seam
-            .parameter
-            .as_ref()
-            .map(|(ident, of)| format!("{ident} {of}"))
-            .unwrap_or_default();
+        let parameter = super::port::signature(&seam.parameters);
+        let (why, refusal) = match &seam.obligation {
+            Some(obligation) => (
+                format!(
+                    "Why it is not generated: {}.\n//\n// Contract: {}.",
+                    obligation.reason.describes(),
+                    obligation.contract
+                ),
+                "an obligation nothing has satisfied; a\n\t// satisfying implementation never \
+                 returns one.",
+            ),
+            None => (
+                "The specification fully determines it: `behaviour.Generated` implements it over \
+                 the\n// storage and context ports. Implement it yourself to replace that \
+                 behaviour."
+                    .to_owned(),
+                "a request the model declares no outcome\n\t// for.",
+            ),
+        };
         let _ = writeln!(
             out,
-            "\n// {} is {}\n//\n// Why it is not generated: {}.\n//\n// Contract: {}.\ntype {} \
-             interface {{\n\t// {} {}\n\t//\n\t// The second result is the typed refusal of an \
-             obligation nothing has satisfied; a\n\t// satisfying implementation never returns \
-             one.\n\t{}({parameter}) ({}, {})\n}}",
+            "\n// {} is {}\n//\n// {why}\ntype {} interface {{\n\t// {} {}\n\t//\n\t// The second \
+             result is the typed refusal of {refusal}\n\t{}({parameter}) ({}, {})\n}}",
             seam.interface,
             seam.heading,
-            seam.obligation.reason.describes(),
-            seam.obligation.contract,
             seam.interface,
             seam.method,
             seam.method_doc,
@@ -201,6 +218,13 @@ pub(super) fn domain_obligations(
         );
     }
 
+    let owed: Vec<&Seam> = seams
+        .iter()
+        .filter(|seam| seam.obligation.is_some())
+        .collect();
+    if owed.is_empty() {
+        return;
+    }
     let unimplemented = emit.layout.unimplemented(emit.package);
     let _ = writeln!(
         out,
@@ -209,13 +233,9 @@ pub(super) fn domain_obligations(
          never a panic, never a\n// guessed value — so a module built on this stub compiles and \
          reports its own gaps.\ntype {unimplemented} struct{{}}"
     );
-    for seam in &seams {
+    for seam in owed {
         record(stubbed, seam.kind, &seam.source);
-        let parameter = seam
-            .parameter
-            .as_ref()
-            .map(|(ident, of)| format!("{ident} {of}"))
-            .unwrap_or_default();
+        let parameter = super::port::signature(&seam.parameters);
         let _ = writeln!(
             out,
             "\n// {} refuses: {}\nfunc ({unimplemented}) {}({parameter}) ({}, {}) {{\n\treturn \
@@ -231,8 +251,50 @@ pub(super) fn domain_obligations(
     }
 }
 
-/// The behaviours and queries one bounded context owes, in declaration order.
-fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan, refusals: &TargetRefusals) -> Vec<Seam> {
+/// What one seam is in this target: owed by the plan, kept owed here, or generated.
+fn standing(
+    plan: &SynthesisPlan,
+    weakened: &std::collections::BTreeSet<Capability>,
+    kind: CapabilityKind,
+    source: &str,
+    what: &str,
+    contract: impl FnOnce() -> String,
+) -> Option<(String, Option<ImplementationObligation>)> {
+    if let Some(obligation) = plan.obligation_of(kind, source) {
+        return Some((
+            format!("the {what} `{source}` — an implementation obligation."),
+            Some(obligation.clone()),
+        ));
+    }
+    if !plan.is_generated(kind, source) {
+        return None;
+    }
+    // A seam the plan marks generated whose method name another seam of the module derives too
+    // keeps its seam, owed here, and `TARGET.md` names the weakening.
+    if weakened.contains(&Capability {
+        kind,
+        source: source.to_owned(),
+    }) {
+        return Some((
+            format!("the {what} `{source}` — generated by the Rust target, owed by this one."),
+            Some(ImplementationObligation {
+                reason: crate::plan::ObligationReason::Undetermined {
+                    construct: GIVEN_ONE_METHOD_SET.to_owned(),
+                },
+                contract: contract(),
+            }),
+        ));
+    }
+    Some((format!("the {what} `{source}` — generated."), None))
+}
+
+/// The behaviours and queries one bounded context declares a seam for, in declaration order.
+fn seams_of_domain(
+    emit: &Emit<'_>,
+    plan: &SynthesisPlan,
+    refusals: &TargetRefusals,
+    weakened: &std::collections::BTreeSet<Capability>,
+) -> Vec<Seam> {
     let mut seams: Vec<Seam> = Vec::new();
     for command in emit.ir.commands().values() {
         let source = command.name.to_string();
@@ -241,30 +303,16 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan, refusals: &TargetRefusa
         {
             continue;
         }
-        // A behaviour the plan marks generated is one this target does not generate yet: it keeps
-        // the seam, owed here, and `TARGET.md` names the weakening.
-        let (heading, obligation) =
-            match plan.obligation_of(CapabilityKind::CommandBehavior, &source) {
-                Some(obligation) => (
-                    format!("the behaviour `{source}` — an implementation obligation."),
-                    obligation.clone(),
-                ),
-                None if plan.is_generated(CapabilityKind::CommandBehavior, &source) => (
-                    format!(
-                        "the behaviour `{source}` — generated by the Rust target, owed by this \
-                         one."
-                    ),
-                    ImplementationObligation {
-                        reason: crate::plan::ObligationReason::Undetermined {
-                            construct: "the Go target, which does not generate command \
-                                        behaviour (see TARGET.md)"
-                                .to_owned(),
-                        },
-                        contract: crate::plan::behavior_contract(emit.ir, command),
-                    },
-                ),
-                None => continue,
-            };
+        let Some((heading, obligation)) = standing(
+            plan,
+            weakened,
+            CapabilityKind::CommandBehavior,
+            &source,
+            "behaviour",
+            || crate::plan::behavior_contract(emit.ir, command),
+        ) else {
+            continue;
+        };
         seams.push(Seam {
             kind: CapabilityKind::CommandBehavior,
             source: source.clone(),
@@ -273,10 +321,10 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan, refusals: &TargetRefusa
             interface: emit.layout.behavior(&command.name).to_owned(),
             method: emit.layout.declared(&command.name).to_owned(),
             method_doc: format!("decides and enacts exactly one declared outcome of `{source}`."),
-            parameter: Some((
+            parameters: vec![(
                 "input".to_owned(),
                 emit.layout.declared(&command.name).to_owned(),
-            )),
+            )],
             answer: emit.layout.outcome(&command.name).to_owned(),
             zero: "nil".to_owned(),
         });
@@ -286,25 +334,15 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan, refusals: &TargetRefusa
         if !emit.owns(&view.name) || refusals.refuses_kind(CapabilityKind::ViewQuery, &source) {
             continue;
         }
-        // A query the plan marks generated is one this target does not generate yet: it keeps the
-        // seam, owed here, and `TARGET.md` names the weakening.
-        let (heading, obligation) = match plan.obligation_of(CapabilityKind::ViewQuery, &source) {
-            Some(obligation) => (
-                format!("the query `{source}` — an implementation obligation."),
-                obligation.clone(),
-            ),
-            None if plan.is_generated(CapabilityKind::ViewQuery, &source) => (
-                format!("the query `{source}` — generated by the Rust target, owed by this one."),
-                ImplementationObligation {
-                    reason: crate::plan::ObligationReason::Undetermined {
-                        construct: "the Go target, which does not generate view queries (see \
-                                    TARGET.md)"
-                            .to_owned(),
-                    },
-                    contract: crate::plan::view_contract(view),
-                },
-            ),
-            None => continue,
+        let Some((heading, obligation)) = standing(
+            plan,
+            weakened,
+            CapabilityKind::ViewQuery,
+            &source,
+            "query",
+            || crate::plan::view_contract(view),
+        ) else {
+            continue;
         };
         seams.push(Seam {
             kind: CapabilityKind::ViewQuery,
@@ -314,7 +352,12 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan, refusals: &TargetRefusa
             interface: emit.layout.query(&view.name).to_owned(),
             method: emit.layout.declared(&view.name).to_owned(),
             method_doc: format!("serves `{source}` rows at the view's declared consistency."),
-            parameter: None,
+            // The refusing stub's body names the obligation package, which no parameter may shadow.
+            parameters: super::port::view_params(
+                emit,
+                view,
+                &[emit.layout.obligation().name.as_str()],
+            ),
             answer: format!("[]{}", emit.layout.declared(&view.name)),
             zero: "nil".to_owned(),
         });
@@ -322,24 +365,24 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan, refusals: &TargetRefusa
     seams
 }
 
-/// Everything one owed seam and its stub need to agree on, carried once.
+/// Everything one seam and its stub need to agree on, carried once.
 struct Seam {
-    /// The plan capability the stub stands in for.
+    /// The plan capability the seam stands for.
     kind: CapabilityKind,
     /// Its source, in the specification's spelling.
     source: String,
     /// The seam's one-line heading, reused by the interface and by its refusal.
     heading: String,
-    /// The plan's own entry, quoted on the interface.
-    obligation: ImplementationObligation,
+    /// What is owed, quoted on the interface; `None` for a generated seam, which has no stub.
+    obligation: Option<ImplementationObligation>,
     /// The interface's name.
     interface: String,
     /// The method's name.
     method: String,
     /// The method's one-line doc.
     method_doc: String,
-    /// The parameter beyond the receiver, if the seam takes one.
-    parameter: Option<(String, String)>,
+    /// The parameters beyond the receiver: a behaviour's input, or a view's declared parameters.
+    parameters: Vec<(String, String)>,
     /// The first result type.
     answer: String,
     /// The first result's zero value, which the refusing stub returns beside the refusal.

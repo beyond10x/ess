@@ -87,7 +87,7 @@ pub(super) fn server_package(
             && !refusals.refuses_kind(CapabilityKind::BindingDelivery, &source)
     });
     let mut artifacts = vec![
-        helpers_file(ir, layout, package, provenance),
+        helpers_file(ir, layout, refusals, package, provenance),
         wire_file(ir, plan, layout, refusals, package, provenance),
     ];
 
@@ -132,6 +132,7 @@ pub(super) fn server_package(
 fn helpers_file(
     ir: &EssIr,
     layout: &Layout,
+    refusals: &TargetRefusals,
     package: &Package,
     provenance: &Provenance,
 ) -> Artifact {
@@ -150,6 +151,12 @@ fn helpers_file(
     };
     if http::checks_grants(ir) {
         helpers.push_str(&grant_helpers(ir));
+    }
+    if serves_params(ir, refusals) {
+        emit.import("net/url");
+        emit.import("strings");
+        emit.import("unicode/utf8");
+        helpers.push_str(QUERY_HELPERS);
     }
     emit.file(provenance, SERVER_DOC, &helpers)
 }
@@ -253,6 +260,7 @@ fn wire_file(
     emit.import("encoding/json");
     emit.import("fmt");
     emit.import("strconv");
+    emit.import("strings");
 
     let presents = |kind: CapabilityKind, declared: &QualifiedName| {
         plan.is_generated(kind, &declared.to_string())
@@ -290,6 +298,9 @@ fn wire_file(
     for view in ir.views().values() {
         if presents(CapabilityKind::ViewType, &view.name) {
             view_encoder(&mut body, &emit, view);
+            if !view.params.is_empty() {
+                params_decoder(&mut body, &emit, view);
+            }
         }
     }
     for command in ir.commands().values() {
@@ -840,19 +851,20 @@ fn decode_into(
     }
 }
 
-/// The helper that reads one primitive, and what a refusal says belongs there.
+/// The helper that reads one primitive, and what a refusal says belongs there — in the Rust
+/// target's words (`rust::wire::decode_primitive`), so the two servers refuse one value alike.
 fn decode_primitive(primitive: Primitive) -> (&'static str, &'static str) {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::Json => ("jsonAt", "any JSON value"),
         Primitive::String => ("textAt", "a string"),
-        Primitive::Boolean => ("boolAt", "true or false"),
-        Primitive::Integer => ("integerAt", "a whole number"),
+        Primitive::Boolean => ("boolAt", "a boolean"),
+        Primitive::Integer => ("integerAt", "an integer"),
         Primitive::Bytes => ("bytesAt", "base64-encoded bytes"),
-        Primitive::Decimal => ("textAt", "a decimal as a string, such as `10.50`"),
-        Primitive::Timestamp => ("textAt", "an RFC 3339 timestamp as a string"),
-        Primitive::Duration => ("textAt", "an ISO 8601 duration as a string, such as `P30D`"),
-        Primitive::Uuid => ("textAt", "a UUID as a string"),
+        Primitive::Decimal => ("decimalAt", "a decimal string"),
+        Primitive::Timestamp => ("textAt", "an RFC 3339 instant"),
+        Primitive::Duration => ("textAt", "an ISO 8601 duration"),
+        Primitive::Uuid => ("uuidAt", "a UUID"),
     }
 }
 
@@ -1047,7 +1059,7 @@ fn dispatch(
          method is a 405 naming the one it answers. Neither is a status\n// the contract declares, \
          and neither should be: both are facts about a transport rather than\n// about any \
          command.{grant_doc}\nfunc dispatch{exported}(system *{system}, {caller}request \
-         *http.Request) response {{\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
+         *http.Request) response {{\n\tif refused := tooManyHeaders(request); refused != nil {{\n\t\treturn *refused\n\t}}\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
          *refused\n\t}}\n\t// Held from the port call through Pump and TakePublished: the system \
          is shared by\n\t// every connection.\n\tserving.Lock()\n\tdefer \
          serving.Unlock()\n\tswitch request.URL.Path {{\n"
@@ -1092,10 +1104,16 @@ fn dispatch(
                     );
                 }
                 Served::View(handle) => {
+                    let view = ir.view(handle);
                     let _ = writeln!(
                         body,
-                        "\t\treturn serve{}(system)",
-                        ident(&ir.view(handle).name)
+                        "\t\treturn serve{}(system{})",
+                        ident(&view.name),
+                        if view.params.is_empty() {
+                            ""
+                        } else {
+                            ", request.URL.RawQuery"
+                        }
                     );
                 }
             }
@@ -1390,11 +1408,42 @@ fn view_handler(
     let function = ident(&view.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&view.name);
+    let (doc, parameter, decoded, arguments) = if view.params.is_empty() {
+        (
+            "every row the owed projection\n// holds.".to_owned(),
+            "",
+            String::new(),
+            String::new(),
+        )
+    } else {
+        (
+            "every row the owed projection\n// holds for the parameters the query string \
+             carries, read by their wire names. A key the\n// view does not declare is ignored."
+                .to_owned(),
+            ", query string",
+            format!(
+                "\tvalue, err := queryObject(query, {}, \"query\")\n\tif err != nil {{\n\t\treturn \
+                 refusal(400, err.Error())\n\t}}\n\tparams, err := decodeParams{function}(value, \
+                 \"query\")\n\tif err != nil {{\n\t\treturn refusal(400, err.Error())\n\t}}\n",
+                query_table(emit.ir, view)
+            ),
+            view.params
+                .iter()
+                .map(|param| {
+                    format!(
+                        "params.{}",
+                        super::items::member_ident(&view.params, &param.name)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
     let _ = write!(
         out,
-        "\n// serve{function} answers `GET` `{}` at `{}` consistency: every row the owed \
-         projection\n// holds.\nfunc serve{function}(system *{system}) response {{\n\trows, unmet \
-         := system.{field}.{method}()\n\tif unmet != nil {{\n\t\treturn \
+        "\n// serve{function} answers `GET` `{}` at `{}` consistency: {doc}\nfunc \
+         serve{function}(system *{system}{parameter}) response {{\n{decoded}\trows, unmet \
+         := system.{field}.{method}({arguments})\n\tif unmet != nil {{\n\t\treturn \
          unfinished(unmet.Error(), false)\n\t}}\n\tencoded := make([]any, 0, len(rows))\n\tfor _, row := range rows \
          {{\n\t\tencoded = append(encoded, encodeView{function}(row))\n\t}}\n\treturn \
          rendered(200, map[string]any{{\"rows\": encoded}})\n}}\n",
@@ -1402,6 +1451,188 @@ fn view_handler(
         view.consistency.as_str()
     );
 }
+
+/// A view's declared parameters as the `[]queryParam` literal `queryObject` reads.
+fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
+    let rows: Vec<String> = view
+        .params
+        .iter()
+        .map(|param| {
+            let scalar = match crate::view_query::query_scalar(ir, &param.type_ref) {
+                Some(crate::view_query::QueryScalar::Integer) => "queryInteger",
+                Some(crate::view_query::QueryScalar::Boolean) => "queryBoolean",
+                // `refuse_unqueryable` has refused every other parameter of a served view.
+                Some(crate::view_query::QueryScalar::Text) | None => "queryText",
+            };
+            format!(
+                "{{wire: {:?}, scalar: {scalar}}}",
+                ess_gen::schema::wire_field_name(param)
+            )
+        })
+        .collect();
+    format!("[]queryParam{{{}}}", rows.join(", "))
+}
+
+/// One view's declared parameters, decoded: the struct the route reads them into and its decoder,
+/// which reads an object keyed by their wire names exactly as a command input's decoder does.
+fn params_decoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
+    let function = ident(&view.name);
+    let _ = writeln!(
+        out,
+        "\n// params{function} is the declared parameters of `{}`, decoded.\ntype \
+         params{function} struct {{",
+        view.name
+    );
+    let fields: Vec<(String, String)> = view
+        .params
+        .iter()
+        .map(|param| {
+            (
+                super::items::member_ident(&view.params, &param.name),
+                emit.go_type(&param.type_ref),
+            )
+        })
+        .collect();
+    // Aligned as gofmt aligns a struct's fields, so the emitted file is gofmt-clean.
+    let width = fields
+        .iter()
+        .map(|(field, _)| field.len())
+        .max()
+        .unwrap_or(0);
+    for (field, of) in &fields {
+        let _ = writeln!(out, "\t{field:width$} {of}");
+    }
+    let _ = write!(
+        out,
+        "}}\n\n// decodeParams{function} reads the parameters of `{}` from an object keyed by their \
+         wire names.\nfunc decodeParams{function}(value any, at string) (params{function}, error) \
+         {{\n\tvar out params{function}\n\tif _, err := objectAt(value, at, \"an object\"); err != \
+         nil {{\n\t\treturn out, err\n\t}}\n",
+        view.name
+    );
+    let mut slot = 0;
+    for param in &view.params {
+        decode_member(
+            out,
+            emit,
+            "\t",
+            &format!(
+                "out.{}",
+                super::items::member_ident(&view.params, &param.name)
+            ),
+            param,
+            &mut slot,
+        );
+    }
+    out.push_str("\treturn out, nil\n}\n");
+}
+
+/// `true` where some served view declares parameters, and so where the package carries
+/// [`QUERY_HELPERS`]: a model without one keeps its bytes.
+fn serves_params(ir: &EssIr, refusals: &TargetRefusals) -> bool {
+    served(ir, refusals).into_iter().any(|component| {
+        http::routes(ir, component).iter().any(
+            |route| matches!(route.serves, Served::View(view) if !ir.view(view).params.is_empty()),
+        )
+    })
+}
+
+/// What the package adds where a served view declares parameters: the query string read as the
+/// object those parameters' decoder reads (story:served-view-params). The same reading the Rust
+/// surface's `http::query_object` makes, refusal for refusal.
+const QUERY_HELPERS: &str = r#"
+// queryScalar is how one declared parameter's query value is written as JSON before its decoder
+// reads it. A query value is text; the parameter's declared type says which JSON scalar the wire
+// writes it as, and the generated decoder then reads it exactly as it reads a command's input.
+type queryScalar int
+
+const (
+	// queryText is a JSON string: text, a decimal, an instant, a duration, a UUID, base64 bytes,
+	// an enum's wire spelling.
+	queryText queryScalar = iota
+	// queryInteger is a JSON number where the value spells a whole number, and a string otherwise,
+	// so the decoder names what arrived rather than a number that never did.
+	queryInteger
+	// queryBoolean is a JSON boolean where the value is true or false, and a string otherwise.
+	queryBoolean
+)
+
+// queryParam is one declared parameter: the key the query carries it under, and how its value is
+// written.
+type queryParam struct {
+	wire   string
+	scalar queryScalar
+}
+
+// queryObject is the parameters a query string carries, as the object their decoder reads: one
+// member per declared parameter the query names, keyed by its wire name.
+//
+// Keys and values are form-decoded (%XX and +). A key nothing declares is ignored, and a declared
+// key the query omits is absent from the object, for the decoder to refuse or to read as absent.
+// A declared key that arrives more than once, or whose value is not percent-encoded UTF-8, is
+// refused under at.
+func queryObject(query string, declared []queryParam, at string) (map[string]any, error) {
+	object := map[string]any{}
+	for _, param := range declared {
+		var found []string
+		for _, pair := range strings.Split(query, "&") {
+			if pair == "" {
+				continue
+			}
+			key, value, _ := strings.Cut(pair, "=")
+			if decoded, ok := formDecoded(key); ok && decoded == param.wire {
+				found = append(found, value)
+			}
+		}
+		place := nested(at, param.wire)
+		if len(found) == 0 {
+			continue
+		}
+		if len(found) > 1 {
+			return nil, fmt.Errorf("%s: expected one value, found %d", place, len(found))
+		}
+		text, ok := formDecoded(found[0])
+		if !ok {
+			return nil, fmt.Errorf("%s: expected percent-encoded UTF-8 text, found `%s`", place, found[0])
+		}
+		switch {
+		case param.scalar == queryInteger && whole(text):
+			object[param.wire] = json.Number(text)
+		case param.scalar == queryBoolean && text == "true":
+			object[param.wire] = true
+		case param.scalar == queryBoolean && text == "false":
+			object[param.wire] = false
+		default:
+			object[param.wire] = text
+		}
+	}
+	return object, nil
+}
+
+// formDecoded is one form-encoded key or value, decoded: + is a space and %XX a byte. Not ok where
+// an escape is not two hexadecimal digits or the bytes are not UTF-8.
+func formDecoded(text string) (string, bool) {
+	decoded, err := url.QueryUnescape(text)
+	if err != nil || !utf8.ValidString(decoded) {
+		return "", false
+	}
+	return decoded, true
+}
+
+// whole reports whether text spells a whole number: an optional -, then one or more digits.
+func whole(text string) bool {
+	digits := strings.TrimPrefix(text, "-")
+	if digits == "" {
+		return false
+	}
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
+}
+"#;
 
 /// What the emitted enum and union encoders answer for a value no branch names.
 ///
@@ -1566,9 +1797,59 @@ func integerAt(value any, at string, expected string) (int64, error) {
 	}
 	held, err := number.Int64()
 	if err != nil {
-		return 0, DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", number.String())}
+		return 0, DecodeError{At: at, Expected: expected, Found: "the number " + number.String()}
 	}
 	return held, nil
+}
+
+// decimalAt is the decimal string at this path, in the published pattern: an optional -, digits
+// without a leading zero, then an optional . and digits. Refused otherwise, as the contract refuses
+// it, rather than handed on as a decimal nobody can read.
+func decimalAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	whole, fraction, fractional := strings.Cut(strings.TrimPrefix(text, "-"), ".")
+	if !digitsOnly(whole) || (len(whole) > 1 && whole[0] == '0') || (fractional && !digitsOnly(fraction)) {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// uuidAt is the UUID at this path, in the published pattern: the canonical hyphenated form, in
+// either case.
+func uuidAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	valid := len(text) == 36
+	for index := 0; valid && index < len(text); index++ {
+		switch char := text[index]; {
+		case index == 8 || index == 13 || index == 18 || index == 23:
+			valid = char == '-'
+		default:
+			valid = (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')
+		}
+	}
+	if !valid {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// digitsOnly reports whether text is one or more ASCII digits.
+func digitsOnly(text string) bool {
+	if text == "" {
+		return false
+	}
+	for index := 0; index < len(text); index++ {
+		if text[index] < '0' || text[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // bytesAt is the base64-encoded bytes at this path.
@@ -1577,38 +1858,61 @@ func bytesAt(value any, at string, expected string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	held, decodeErr := base64.StdEncoding.DecodeString(text)
-	if decodeErr != nil {
-		return nil, DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	return base64Text(text, at, expected)
+}
+
+// base64Text is base64 text as bytes, in the published pattern only: whole groups of four characters
+// of the alphabet, the last of them padded with one or two = at most — nothing unpadded, nothing
+// after padding, no whitespace (which the standard decoder would skip). The same rule and the same
+// words as the Rust target's reader.
+func base64Text(text string, at string, expected string) ([]byte, error) {
+	refused := DecodeError{At: at, Expected: expected, Found: "a string that is not base64"}
+	if len(text)%4 != 0 {
+		return nil, refused
+	}
+	body := strings.TrimRight(text, "=")
+	if len(text)-len(body) > 2 {
+		return nil, refused
+	}
+	for index := 0; index < len(body); index++ {
+		char := body[index]
+		if !((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '+' || char == '/') {
+			return nil, refused
+		}
+	}
+	held, err := base64.StdEncoding.DecodeString(text)
+	if err != nil {
+		return nil, refused
 	}
 	return held, nil
 }
 
-// keyBool reads a boolean written as an object key.
+// keyBool reads a boolean written as an object key: `true` or `false`, and nothing else.
 func keyBool(key string, at string) (bool, error) {
-	held, err := strconv.ParseBool(key)
-	if err != nil {
-		return false, DecodeError{At: at, Expected: "a key spelling true or false", Found: fmt.Sprintf("`%s`", key)}
+	switch key {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
 	}
-	return held, nil
+	return false, DecodeError{At: at, Expected: "a key spelling `true` or `false`", Found: fmt.Sprintf("the key `%s`", key)}
 }
 
-// keyInteger reads a whole number written as an object key.
+// keyInteger reads an integer written as an object key, in the published pattern: no sign but -, no
+// leading zero, and within 64 bits.
 func keyInteger(key string, at string) (int64, error) {
-	held, err := strconv.ParseInt(key, 10, 64)
-	if err != nil {
-		return 0, DecodeError{At: at, Expected: "a key spelling a whole number", Found: fmt.Sprintf("`%s`", key)}
+	digits := strings.TrimPrefix(key, "-")
+	if digitsOnly(digits) && (digits == "0" || digits[0] != '0') {
+		if held, err := strconv.ParseInt(key, 10, 64); err == nil {
+			return held, nil
+		}
 	}
-	return held, nil
+	return 0, DecodeError{At: at, Expected: "a key spelling an integer", Found: fmt.Sprintf("the key `%s`", key)}
 }
 
 // keyBytes reads base64-encoded bytes written as an object key.
 func keyBytes(key string, at string) ([]byte, error) {
-	held, err := base64.StdEncoding.DecodeString(key)
-	if err != nil {
-		return nil, DecodeError{At: at, Expected: "a key spelling base64-encoded bytes", Found: fmt.Sprintf("`%s`", key)}
-	}
-	return held, nil
+	return base64Text(key, at, "a base64 key")
 }
 "#;
 
@@ -1700,6 +2004,27 @@ func rendered(status int, body any) response {
 		return response{status: 500, contentType: mediaJSON, body: `{"refused":"the answer could not be encoded"}`}
 	}
 	return response{status: status, contentType: mediaJSON, body: string(encoded)}
+}
+
+// maxHeaders is the most headers this surface keeps from one request, as the Rust target's
+// http::MAX_HEADERS: a hundred is far past what a client and a proxy add together.
+const maxHeaders = 100
+
+// tooManyHeaders is the 431 the Rust target answers for a request past maxHeaders, word for word,
+// or nil. net/http moves Host out of the header map; it counts as one header, as it does there.
+func tooManyHeaders(request *http.Request) *response {
+	count := 0
+	if request.Host != "" {
+		count = 1
+	}
+	for _, values := range request.Header {
+		count += len(values)
+	}
+	if count <= maxHeaders {
+		return nil
+	}
+	answer := refusal(431, fmt.Sprintf("the request carries more than %d headers, which is all this surface keeps", maxHeaders))
+	return &answer
 }
 
 // readBody reads at most maxBody bytes of a request, or the refusal that says why it could not.

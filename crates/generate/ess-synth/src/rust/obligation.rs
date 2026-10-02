@@ -216,10 +216,10 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan) -> Vec<TraitStub> {
             method_doc: format!("Decides and enacts exactly one declared outcome of `{source}`."),
             method: name::value_ident(&type_name),
             receiver: "&mut self",
-            argument: Some((
+            arguments: vec![(
                 "input".to_owned(),
                 scoped(&emit.reference_name(&command.name)),
-            )),
+            )],
             answer: scoped(&format!("{type_name}Outcome")),
         });
     }
@@ -246,7 +246,7 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan) -> Vec<TraitStub> {
             method_doc: format!("Serves `{source}` rows at the view's declared consistency."),
             method: name::value_ident(&type_name),
             receiver: "&self",
-            argument: None,
+            arguments: super::port::view_params(emit.layout, "crate", view),
             answer: format!("Vec<{}>", scoped(&emit.reference_name(&view.name))),
         });
     }
@@ -257,11 +257,7 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan) -> Vec<TraitStub> {
 /// each generated behaviour, which `crate::behaviour::Generated` implements.
 fn render_traits(out: &mut String, traits: &[TraitStub]) {
     for spec in traits {
-        let argument = spec
-            .argument
-            .as_ref()
-            .map(|(ident, of)| format!(", {ident}: {of}"))
-            .unwrap_or_default();
+        let argument = super::port::signature(&spec.arguments, "");
         let (why, refusal) = match &spec.obligation {
             Some(obligation) => (
                 format!(
@@ -316,11 +312,7 @@ fn render_stubs(
     );
     for spec in traits.iter().filter(|spec| spec.obligation.is_some()) {
         record(stubbed, spec.kind, &spec.source);
-        let argument = spec
-            .argument
-            .as_ref()
-            .map(|(ident, of)| format!(", _{ident}: {of}"))
-            .unwrap_or_default();
+        let argument = super::port::signature(&spec.arguments, "_");
         let _ = writeln!(
             out,
             "\n    impl {} for Unimplemented {{\n        fn {}({}{argument}) -> Result<{}, \
@@ -354,8 +346,8 @@ struct TraitStub {
     method: String,
     /// The receiver — `&mut self` for a behaviour, `&self` for a query.
     receiver: &'static str,
-    /// The argument beyond the receiver, if the seam takes one.
-    argument: Option<(String, String)>,
+    /// The arguments beyond the receiver: a behaviour's input, or a view's declared parameters.
+    arguments: Vec<(String, String)>,
     /// The `Ok` type.
     answer: String,
 }

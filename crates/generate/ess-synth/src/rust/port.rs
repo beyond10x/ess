@@ -311,18 +311,64 @@ fn handler(
     out.push_str("        }\n        Ok(outcome)\n    }\n");
 }
 
-/// One declared view as a query, delegating to the owed projection.
+/// One declared view as a query, delegating to the owed projection with the parameters the view
+/// declares, typed (story:served-view-params). A view without parameters keeps its bytes.
 fn query(out: &mut String, layout: &Layout, types: &str, view: &ess_compiler::ir::ResolvedView) {
     let row = types_path(layout, types, &view.name);
     let method = name::value_ident(&layout.type_name(&view.name));
+    let params = view_params(layout, types, view);
     let _ = writeln!(
         out,
         "    /// Serves `{}` at `{}` consistency, from the owed projection.\n    pub fn \
-         {method}(&self) -> Result<Vec<{row}>, {types}::obligation::UnmetObligation> {{\n        \
-         self.behaviors.{method}()\n    }}",
+         {method}(&self{}) -> Result<Vec<{row}>, {types}::obligation::UnmetObligation> {{\n        \
+         self.behaviors.{method}({})\n    }}",
         view.name,
         view.consistency.as_str(),
+        signature(&params, ""),
+        arguments(&params),
     );
+}
+
+/// A view's declared parameters as `(identifier, Rust type)`, in declaration order, spelled from
+/// a crate that names the types crate `types` — `crate` from inside it.
+pub(crate) fn view_params(
+    layout: &Layout,
+    types: &str,
+    view: &ess_compiler::ir::ResolvedView,
+) -> Vec<(String, String)> {
+    view.params
+        .iter()
+        .map(|param| {
+            (
+                name::value_ident(&param.name),
+                layout
+                    .absolute_type(&param.type_ref)
+                    .replace("crate::", &format!("{types}::")),
+            )
+        })
+        .collect()
+}
+
+/// The parameters after a receiver — `, owner: String, …` — each identifier prefixed by `prefix`,
+/// which a stub that ignores them passes as `_`. Empty for a view without parameters.
+pub(crate) fn signature(params: &[(String, String)], prefix: &str) -> String {
+    params.iter().fold(String::new(), |mut out, (ident, of)| {
+        if prefix.is_empty() {
+            let _ = write!(out, ", {ident}: {of}");
+        } else {
+            let _ = write!(out, ", {prefix}{}: {of}", ident.trim_start_matches("r#"));
+        }
+        out
+    })
+}
+
+/// The same parameters, passed on: `owner, min_hours`.
+pub(crate) fn arguments(params: &[(String, String)]) -> String {
+    params
+        .iter()
+        .map(|(ident, _)| ident.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A declaration's absolute path from inside a component or system crate.

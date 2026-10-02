@@ -548,18 +548,199 @@ fn the_fixture_suite_compares_the_declared_error_fields() {
     assert!(keys("desk.ticket.Throttled").is_empty(), "{compared:#?}");
 }
 
+/// `story:go-generated-behaviour`: the Go target generates every behaviour and query the plan marks
+/// generated, over the same storage and context ports, and owes nothing the plan does not.
 #[test]
-fn the_go_target_emits_a_generated_behaviour_as_a_seam_and_says_so() {
+fn the_go_target_generates_every_behaviour_the_plan_marks_generated() {
     let ir = compile_directory(&fixture_root());
     let synthesis = synthesize_for(&ir, Target::Go).expect("the fixture synthesizes to Go");
-    let report = synthesis.target.expect("Go reports what it weakens");
-    assert!(
-        report.weakenings.iter().any(|weakening| weakening
-            .affects
-            .contains(&CapabilityKind::CommandBehavior)
-            && weakening.instead.contains("seam")),
-        "{report:#?}"
+    let rust = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes to Rust");
+    assert_eq!(
+        synthesis.artifacts["PLAN.md"].contents, rust.artifacts["PLAN.md"].contents,
+        "the plan is one document in both targets"
     );
+    let report = synthesis
+        .target
+        .as_ref()
+        .expect("Go reports what it weakens");
+    assert!(
+        report
+            .weakenings
+            .iter()
+            .all(|weakening| !weakening.affects.iter().any(|kind| matches!(
+                kind,
+                CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
+            ))),
+        "no behaviour or query is weakened: {report:#?}"
+    );
+    let behaviour = &synthesis
+        .artifacts
+        .get("types/behaviour/behaviour.go")
+        .expect("the module carries the generated behaviours")
+        .contents;
+    for port in [
+        "package behaviour",
+        "type TicketStorage interface {",
+        "\tGet(identity ticket.TicketId) (ticket.TicketSnapshot, bool)",
+        "\tPut(snapshot ticket.TicketSnapshot)",
+        "\tDelete(identity ticket.TicketId)",
+        "\tList() []ticket.TicketSnapshot",
+        "type Context interface {",
+        "\tCallerAgentId() (ticket.AgentId, bool)",
+        "\tGenerateDeskTicketTicketId() ticket.TicketId",
+        "\tExternal(command string, outcome string) bool",
+        "type Ports struct {",
+        "func New(ports Ports) *Generated {",
+    ] {
+        assert!(behaviour.contains(port), "`{port}` missing:\n{behaviour}");
+    }
+    for command in ir.commands().values() {
+        assert_eq!(
+            synthesis
+                .plan
+                .disposition_of(CapabilityKind::CommandBehavior, &command.name.to_string()),
+            Some(&SynthesisDisposition::Generated)
+        );
+        let qualified = command.name.to_string();
+        let method = qualified.rsplit('.').next().unwrap_or_default();
+        let signature = format!("func (b *Generated) {method}(input ticket.{method}) (ticket.{method}Outcome, *obligation.UnmetObligation) {{");
+        assert!(
+            behaviour.contains(&signature),
+            "`{signature}` missing:\n{behaviour}"
+        );
+    }
+    assert!(
+        behaviour.contains(
+            "func (b *Generated) Tickets() ([]ticket.Tickets, *obligation.UnmetObligation) {"
+        ),
+        "the view query is generated:\n{behaviour}"
+    );
+    assert!(
+        !behaviour.contains("type Owed interface") && !behaviour.contains("ports.Owed."),
+        "nothing is owed, so nothing is forwarded:\n{behaviour}"
+    );
+    assert!(
+        !synthesis.artifacts.values().any(|artifact| artifact
+            .contents
+            .contains("TicketStorage = ")
+            || artifact
+                .contents
+                .contains(") Put(snapshot ticket.TicketSnapshot) {")),
+        "ess generates the storage interface, never a store"
+    );
+    let domain = &synthesis.artifacts["types/ticket/ticket.go"].contents;
+    assert!(
+        !domain.contains("func (Unimplemented) OpenTicket(")
+            && !domain.contains("type Unimplemented struct"),
+        "a generated behaviour is not stubbed as owed, and nothing else is owed:\n{domain}"
+    );
+    assert!(
+        domain.contains("type OpenTicketBehavior interface {"),
+        "{domain}"
+    );
+    let target = &synthesis.artifacts["TARGET.md"].contents;
+    assert!(
+        !target.contains("does not generate command behaviour")
+            && !target.contains("does not generate view queries"),
+        "{target}"
+    );
+}
+
+/// `story:go-generated-behaviour`: the generated Go behaviours, over in-memory ports that hold no
+/// behaviour (`tests/fixtures/declared-behaviour-go-harness/main.go`), are gofmt-clean, vet clean
+/// and build, and pass the suite the specification synthesizes — through the component's port, and
+/// through the generated HTTP surface over a real socket.
+#[test]
+fn the_go_behaviours_build_vet_clean_and_pass_their_own_suite() {
+    let Some(go) = go() else {
+        eprintln!(
+            "no Go toolchain on this machine; the generated Go behaviours are unchecked here"
+        );
+        return;
+    };
+    let ir = compile_directory(&fixture_root());
+    let synthesis = synthesize_for(&ir, Target::Go).expect("the fixture synthesizes to Go");
+    let scratch = Scratch(
+        Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("declared-behaviour-go-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&scratch.0);
+    let tree = scratch.0.join("desk");
+    write_tree(&tree, &synthesis);
+    let harness = scratch.0.join("harness");
+    std::fs::create_dir_all(&harness).expect("mkdir");
+    std::fs::write(
+        harness.join("go.mod"),
+        "module deskharness\n\ngo 1.21\n\nrequire example.invalid/desk v0.0.0\n\nreplace \
+         example.invalid/desk => ../desk\n",
+    )
+    .expect("write");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/declared-behaviour-go-harness/main.go"),
+        harness.join("main.go"),
+    )
+    .expect("the harness copies");
+
+    let (formatted, unformatted) = go_tool(&tree, "gofmt", &["-d", "."]);
+    assert!(
+        formatted && unformatted.trim().is_empty(),
+        "the generated Go is gofmt-clean:\n{unformatted}"
+    );
+    let (vetted, log) = go_tool(&tree, &go, &["vet", "./..."]);
+    assert!(vetted, "the generated Go is vet clean:\n{log}");
+    let binary = scratch.0.join("harness-bin");
+    let (built, log) = go_tool(
+        &harness,
+        &go,
+        &["build", "-o", binary.to_str().expect("a UTF-8 path"), "."],
+    );
+    assert!(
+        built,
+        "the harness builds against the generated ports:\n{log}"
+    );
+    let (vetted, log) = go_tool(&harness, &go, &["vet", "."]);
+    assert!(vetted, "the harness is vet clean:\n{log}");
+
+    let through_port = run_through(
+        &ir,
+        &binary,
+        &["port".to_owned()],
+        "the Go component's port",
+    );
+    assert_every_event_named_and_encoded(&ir, &through_port);
+    drop(through_port);
+    let mut served = vec!["served".to_owned()];
+    served.extend(route_table(&ir));
+    let through_server = run_through(&ir, &binary, &served, "the generated Go HTTP surface");
+    drop(through_server);
+    drop(scratch);
+}
+
+/// Where Go is, or `None` when this machine has none — said out loud, never passed silently.
+fn go() -> Option<String> {
+    let output = Command::new("go").arg("version").output().ok()?;
+    output.status.success().then(|| "go".to_owned())
+}
+
+/// Runs a Go tool in `directory` with nothing fetched from a network, returning its output.
+fn go_tool(directory: &Path, tool: &str, arguments: &[&str]) -> (bool, String) {
+    let output = Command::new(tool)
+        .args(arguments)
+        .current_dir(directory)
+        .env("GOFLAGS", "-mod=mod")
+        .env("GOPROXY", "off")
+        .env("GOWORK", "off")
+        .output()
+        .expect("the Go tool runs");
+    (
+        output.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    )
 }
 
 /// A model whose plan generates no command behaviour and no view query: it declares neither.

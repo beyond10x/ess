@@ -227,8 +227,16 @@ express, and the plan names the first one it found. They are:
 | errors | an error field with no `payload:` source that the held row does not determine |
 | guards | a path that does not resolve; a read into a union or a collection element (`.count` is read); an ordering over text; a truthiness test of a value that is not a `Boolean`; a comparison of two kinds of value or two literals; the current time |
 
-The Go target keeps each generated behaviour as an owed seam and lists this as a weakening in its
-`TARGET.md`. See the
+The Go target generates the same behaviours, with the same order of evaluation, in a
+`types/behaviour` package: one storage interface per entity (`InvoiceStorage`, with `Get`, `Put`,
+`Delete` and, where a generated query reads it, `List` in an order the store keeps stable), a
+`Context` interface asking only what the model asks (`Caller<Attribute>()`, `Generate<Type>()`,
+`External(command, outcome)`), and `Owed`, every behaviour and query the plan still owes. You hand
+them to `behaviour.New(behaviour.Ports{…})`, and the `*Generated` it returns has the method of
+every seam a component's bundle names, generated or forwarded to `Owed`, so it is a complete bundle
+for every component port. Each package's `Unimplemented` stub covers only what the plan owes. Two
+seams of one module whose Go method names coincide cannot both be methods of one type: none of
+them is, each generated one keeps its seam owed, and `TARGET.md` names the weakening. See the
 [generated behaviour tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/declared_behaviour.rs).
 
 ## Entity invariants are checked
@@ -239,7 +247,10 @@ the value breaks, as the specification spells it, or `None`. A behaviour asks it
 value. An invariant is broken only when it is false. One that reads something absent, such as an
 empty `Optional`, a list position past the end, or `state`, which the data type does not hold,
 decides nothing, as the conformance interpreter reads it. An invariant the target cannot evaluate
-is refused at synthesis by name. See the
+is refused at synthesis by name. The Go target generates the same check as `BrokenInvariant()`,
+answering the invariant's text and `true`, or `""` and `false`, over an evaluator in its own
+`types/invariant` package; a generated behaviour refuses a write that would break one with the
+typed refusal `entity invariant`. See the
 [invariant check tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/invariant_check.rs).
 
 ## View queries are generated where the rows are determined
@@ -258,8 +269,8 @@ reads a parameter or pages; when its `filter:` uses a guard a command's behaviou
 field is not one its source holds at that type; when it orders by an optional field, a `Timestamp`,
 an enum whose wire spellings are not its variant names, or a value with no order; or when a group
 key or an aggregate reads a value the query does not compare, or an aggregate is declared at
-another type than it computes. The Go target keeps each generated query as an owed seam and lists
-this as a weakening. See the
+another type than it computes. The Go target generates the same queries on its `Generated`, over
+the storage interface's `List`, with exact decimal sums and means. See the
 [view query tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/generated_view_queries.rs).
 
 ## Actor grants are generated as data, and a served surface enforces them
