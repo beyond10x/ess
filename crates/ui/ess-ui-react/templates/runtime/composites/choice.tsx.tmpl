@@ -17,6 +17,8 @@ export function ChoiceView(props: {
   reads?: ReadSpec;
   options?: ChoiceOption[];
   binds?: string;
+  /** The row key an option's value is read from before `id` (the form field the choice picks for). */
+  valueKey?: string;
   multiple?: boolean;
   style?: "dropdown" | "tags" | "tree" | "grouped" | "radio" | "segmented" | "checklist";
   creatable?: { does: string };
@@ -26,10 +28,12 @@ export function ChoiceView(props: {
   const scope = useScope();
   const read = useRead(props.reads, scope.values, props.reads !== undefined);
   const options: ChoiceOption[] = props.reads
-    ? read.rows.map((row) => ({
-        value: isObject(row) ? (row.id ?? row.value ?? null) : row,
-        label: String(isObject(row) ? (row.label ?? row.name ?? row.id) : row),
-      }))
+    ? read.rows.map((row) => {
+        const value = isObject(row)
+          ? ((props.valueKey === undefined ? undefined : row[props.valueKey]) ?? row.id ?? row.value ?? null)
+          : row;
+        return { value, label: String(isObject(row) ? (row.label ?? row.name ?? value) : row) };
+      })
     : props.options ?? [];
   const current = props.binds ? evaluate(props.binds, scope.values) : undefined;
   const selected = (Array.isArray(current) ? current : current === undefined || current === null ? [] : [current]).map(String);
