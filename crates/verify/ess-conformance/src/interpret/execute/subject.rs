@@ -1,6 +1,6 @@
 //! Typed facts from the actual pre-command subject; missing values remain unknown.
 use super::{input, Completeness, EssIr, Instance, ResolvedCondition, TypedFacts, Undetermined};
-use ess_compiler::ir::ResolvedEntity;
+use ess_compiler::ir::{ResolvedEntity, ResolvedRelatedTest};
 use ess_domain::entity::StateName;
 use ess_primitives::facts::{FactPath, FactSource, FactValue, Scales};
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
@@ -56,6 +56,11 @@ impl<'a> Held<'a> {
             ResolvedCondition::SubjectPredicate {
                 predicate,
                 input: additional,
+            }
+            | ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { predicate },
+                input: additional,
+                ..
             } => (
                 predicate.evaluate(&RowAndInput {
                     row: &self.row,
@@ -63,6 +68,10 @@ impl<'a> Held<'a> {
                 }),
                 additional.as_ref(),
             ),
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                ..
+            } => (Truth::False, None),
             ResolvedCondition::SubjectField {
                 field,
                 equals,
