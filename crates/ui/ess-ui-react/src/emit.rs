@@ -84,7 +84,7 @@ struct Opts {
     degrades: BTreeMap<String, String>,
     /// The enclosing section or overlay frame already carries this path.
     framed: bool,
-    /// The field keying rows (`live.match` of the section).
+    /// The field keying rows: the section's `reads.key`, else its `live.match` (#320).
     row_key: Option<String>,
 }
 
@@ -971,7 +971,14 @@ impl<'d> Gen<'d> {
                     .opt("item", item)
                     .opt("reorder", reorder)
                     .opt("groupBy", quoted(c.group_by.as_ref()))
-                    .opt("rowKey", opts.row_key.as_ref().map(|key| ts::string(key)))
+                    .opt(
+                        "rowKey",
+                        c.reads
+                            .as_ref()
+                            .and_then(|reads| reads.key.as_ref())
+                            .or(opts.row_key.as_ref())
+                            .map(|key| ts::string(key)),
+                    )
                     .opt("degrades", Self::degrades(opts))
                     .render()
             }
@@ -1792,10 +1799,7 @@ impl<'d> Gen<'d> {
             selection_state: Self::selection_state(page, section),
             degrades: section.common.degrades.clone(),
             framed: true,
-            row_key: section
-                .live
-                .as_ref()
-                .and_then(|live| live.match_field.clone()),
+            row_key: section.row_key().map(str::to_owned),
         };
         if let Body::Composite(Composite::Form(form)) = &section.body {
             let (local, setter) = self.draft_hook(&mut lines, at, form.draft.as_ref());

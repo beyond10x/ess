@@ -1873,7 +1873,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `endpoint` and `derived` are traceability for retrofits.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits.
 
 **Properties**
 
@@ -1882,6 +1882,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `view` | name of an ESS `view` |   |   | ESS view name |
 | `placeholder` | `name` |   |   | a view name not yet bound to the model |
 | `fixture` | `string` |   |   | fixture file answering the placeholder |
+| `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
@@ -2120,7 +2121,7 @@ How a section applies a channel's events to its rows.
 | `channel` | name of a [Channel](#channel) | yes |   | channel to consume |
 | `on` | list of name of an ESS `event` |   |   | subset of the channel's events |
 | `effect` | one of: `patch_row` \| `insert_or_patch` \| `insert_top` \| `remove_row` \| `replace` \| `refetch` | yes |   | what an event does to the rows |
-| `match` | `name` |   | `id` | row identity field |
+| `match` | `name` |   |   | row identity field; absent, the read's `key`, else `id` |
 | `only_if` | `expr` |   |   | drop events that fail the condition |
 | `coalesce` | `duration` |   |   | batch bursts into one render |
 | `when_paged_away` | one of: `count_new` \| `ignore` \| `insert` |   | `count_new` | behaviour when the reader is not on page one |

@@ -752,6 +752,13 @@ impl<'de> Deserialize<'de> for Section {
         let (frame, rest) = split(mapping, SECTION_FRAME_KEYS);
         let frame: SectionFrame = from_mapping(frame).map_err(D::Error::custom)?;
         let body = Body::from_mapping(rest, false).map_err(D::Error::custom)?;
+        // A `live` block without `match` matches events by the read's `key` (#320).
+        let mut live = frame.live;
+        if let Some(live) = live.as_mut() {
+            if live.match_field.is_none() {
+                live.match_field = body.reads().and_then(|reads| reads.key.clone());
+            }
+        }
         Ok(Self {
             name: frame.name,
             common: NodeCommon {
@@ -761,7 +768,7 @@ impl<'de> Deserialize<'de> for Section {
                 degrades: frame.degrades,
                 unmapped: frame.unmapped,
             },
-            live: frame.live,
+            live,
             load: frame.load,
             depends_on: frame.depends_on,
             states: frame.states,
@@ -769,6 +776,17 @@ impl<'de> Deserialize<'de> for Section {
             profile: frame.profile,
             body,
         })
+    }
+}
+
+impl Section {
+    /// The field this section's rows are keyed by, where the document names one: its read's
+    /// `key`, else its `live.match`. A renderer keys by `id` when this is `None`.
+    pub fn row_key(&self) -> Option<&str> {
+        self.body
+            .reads()
+            .and_then(|reads| reads.key.as_deref())
+            .or_else(|| self.live.as_ref()?.match_field.as_deref())
     }
 }
 
@@ -917,6 +935,14 @@ pub enum Body {
 }
 
 impl Body {
+    /// The read of a composite body, where it has one; a widget's reads are in its expanded body.
+    pub fn reads(&self) -> Option<&Reads> {
+        match self {
+            Self::Composite(composite) => composite.reads(),
+            Self::Widget(_) | Self::Primitive(_) => None,
+        }
+    }
+
     fn from_mapping(rest: Mapping, allow_primitive: bool) -> Result<Self, String> {
         let component = rest.get("component").cloned();
         let has_primitive = rest.contains_key("primitive");
@@ -970,6 +996,26 @@ pub enum Composite {
     RichText(RichText),
     /// The "used by" list of a record.
     References(References),
+}
+
+impl Composite {
+    /// The view this composite reads, where it reads one.
+    pub fn reads(&self) -> Option<&Reads> {
+        match self {
+            Self::Collection(c) => c.reads.as_ref(),
+            Self::Record(c) => c.reads.as_ref(),
+            Self::Metric(c) => c.reads.as_ref(),
+            Self::Chart(c) => Some(&c.reads),
+            Self::Board(c) => Some(&c.reads),
+            Self::GraphEditor(c) => Some(&c.reads),
+            Self::References(c) => Some(&c.reads),
+            Self::Form(_)
+            | Self::Choice(_)
+            | Self::FilterBar(_)
+            | Self::Confirm(_)
+            | Self::RichText(_) => None,
+        }
+    }
 }
 
 /// Rows of a view with columns, sorting, paging, selection and row actions.
@@ -2056,6 +2102,10 @@ pub struct Reads {
     pub placeholder: Option<String>,
     /// Fixture file answering the placeholder.
     pub fixture: Option<String>,
+    /// The field that identifies a row: rows, row paths and row actions are keyed by it, and a
+    /// `live` block without `match` matches events by it. Absent: the section's `live.match`,
+    /// else `id` (beyond10x/ess#320).
+    pub key: Option<String>,
     /// View params bound to state.
     #[serde(default)]
     pub params: BTreeMap<String, Expr>,
@@ -2371,7 +2421,7 @@ pub struct Live {
     pub on: Vec<String>,
     /// What an event does to the rows.
     pub effect: Effect,
-    /// Row identity field.
+    /// Row identity field; the loader fills it from the read's `key` when absent.
     #[serde(rename = "match")]
     pub match_field: Option<String>,
     /// Drop events that fail the condition.

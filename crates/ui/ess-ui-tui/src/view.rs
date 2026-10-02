@@ -1013,17 +1013,24 @@ impl App {
             Some(ess_ui::Columns::Selectable(_)) => Some(format!("columns/all/{}", field.name)),
             _ => None,
         };
-        let key_field = place
-            .ctx
-            .section
-            .and_then(|name| {
-                self.page_def()
-                    .sections
-                    .iter()
-                    .find(|section| section.name == name)
+        // The collection's own read names its key first (an overlay or a widget holds one), then
+        // the section it is placed in (#320).
+        let key_field = collection
+            .reads
+            .as_ref()
+            .and_then(|reads| reads.key.clone())
+            .or_else(|| {
+                place
+                    .ctx
+                    .section
+                    .and_then(|name| {
+                        self.page_def()
+                            .sections
+                            .iter()
+                            .find(|section| section.name == name)
+                    })
+                    .and_then(|section| section.row_key().map(str::to_owned))
             })
-            .and_then(|section| section.live.as_ref())
-            .and_then(|live| live.match_field.clone())
             .unwrap_or_else(|| "id".to_owned());
         // Where each column starts in a table line: after the two-cell selection mark, columns
         // are padded to their width and separated by two cells.

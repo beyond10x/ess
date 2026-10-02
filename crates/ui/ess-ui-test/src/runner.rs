@@ -482,8 +482,7 @@ impl<'d> Runner<'d> {
     fn key_field(&self, section: &str) -> String {
         self.section_def(section)
             .ok()
-            .and_then(|section| section.live.as_ref())
-            .and_then(|live| live.match_field.clone())
+            .and_then(|section| section.row_key().map(str::to_owned))
             .unwrap_or_else(|| "id".to_owned())
     }
 
