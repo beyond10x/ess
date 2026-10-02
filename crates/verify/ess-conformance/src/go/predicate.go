@@ -205,6 +205,12 @@ func parsePredicate(raw json.RawMessage) (predicate, error) {
 }
 
 func fromNode(node any) (predicate, error) {
+	return fromNodeIn(node, nil)
+}
+
+// fromNodeIn reads a predicate inside quantifier bodies whose binders are `binders`, innermost last
+// (beyond10x/ess#289), as Rust's `from_node_nested` does.
+func fromNodeIn(node any, binders []string) (predicate, error) {
 	switch node := node.(type) {
 	case bool:
 		if node {
@@ -212,9 +218,9 @@ func fromNode(node any) (predicate, error) {
 		}
 		return predicate{kind: "never"}, nil
 	case string:
-		return parseLeaf(node)
+		return parseLeafIn(node, binders)
 	case []any:
-		children, err := fromNodes(node)
+		children, err := fromNodes(node, binders)
 		if err != nil {
 			return predicate{}, err
 		}
@@ -231,7 +237,7 @@ func fromNode(node any) (predicate, error) {
 
 		children := make([]predicate, 0, len(keys))
 		for _, key := range keys {
-			child, err := fromEntry(key, node[key])
+			child, err := fromEntry(key, node[key], binders)
 			if err != nil {
 				return predicate{}, err
 			}
@@ -246,10 +252,10 @@ func fromNode(node any) (predicate, error) {
 	}
 }
 
-func fromNodes(nodes []any) ([]predicate, error) {
+func fromNodes(nodes []any, binders []string) ([]predicate, error) {
 	parsed := make([]predicate, 0, len(nodes))
 	for _, node := range nodes {
-		child, err := fromNode(node)
+		child, err := fromNodeIn(node, binders)
 		if err != nil {
 			return nil, err
 		}
@@ -258,14 +264,14 @@ func fromNodes(nodes []any) ([]predicate, error) {
 	return parsed, nil
 }
 
-func fromEntry(key string, value any) (predicate, error) {
+func fromEntry(key string, value any, binders []string) (predicate, error) {
 	switch key {
 	case "all", "and", "all_of", "any", "or":
 		items, ok := value.([]any)
 		if !ok {
 			items = []any{value}
 		}
-		children, err := fromNodes(items)
+		children, err := fromNodes(items, binders)
 		if err != nil {
 			return predicate{}, err
 		}
@@ -275,19 +281,19 @@ func fromEntry(key string, value any) (predicate, error) {
 		}
 		return predicate{kind: kind, children: children}, nil
 	case "not":
-		inner, err := fromNode(value)
+		inner, err := fromNodeIn(value, binders)
 		if err != nil {
 			return predicate{}, err
 		}
 		return predicate{kind: "not", body: &inner}, nil
 	case "forall", "exists":
-		return parseQuantifier(key, value)
+		return parseQuantifier(key, value, binders)
 	default:
-		return parseConstraint(key, value)
+		return parseConstraint(key, value, binders)
 	}
 }
 
-func parseQuantifier(kind string, value any) (predicate, error) {
+func parseQuantifier(kind string, value any, binders []string) (predicate, error) {
 	mapping, ok := value.(map[string]any)
 	if !ok {
 		return predicate{}, fmt.Errorf("a quantifier is a mapping with `in`, `as` and `that`")
@@ -297,14 +303,14 @@ func parseQuantifier(kind string, value any) (predicate, error) {
 	if over == "" || bind == "" {
 		return predicate{}, fmt.Errorf("a quantifier needs both `in` and `as`")
 	}
-	body, err := fromNode(mapping["that"])
+	body, err := fromNodeIn(mapping["that"], append(append([]string(nil), binders...), bind))
 	if err != nil {
 		return predicate{}, err
 	}
 	return predicate{kind: kind, over: over, bind: bind, body: &body}, nil
 }
 
-func parseConstraint(path string, value any) (predicate, error) {
+func parseConstraint(path string, value any, binders []string) (predicate, error) {
 	mapping, ok := value.(map[string]any)
 	if !ok {
 		return predicate{
@@ -323,7 +329,7 @@ func parseConstraint(path string, value any) (predicate, error) {
 	sort.Strings(keys)
 	children := make([]predicate, 0, len(keys))
 	for _, key := range keys {
-		child, err := parseOperator(path, key, mapping[key])
+		child, err := parseOperator(path, key, mapping[key], binders)
 		if err != nil {
 			return predicate{}, err
 		}
@@ -349,11 +355,11 @@ var compareSpellings = map[string]string{
 }
 
 // parseOperator reads one operator of a constraint mapping, as Rust's `from_operator` does.
-func parseOperator(path, key string, raw any) (predicate, error) {
+func parseOperator(path, key string, raw any, binders []string) (predicate, error) {
 	if op, ok := compareSpellings[key]; ok {
 		right := operand{literal: raw}
 		if text, ok := raw.(string); ok {
-			right = parseOperand(text)
+			right = parseOperandIn(text, binders)
 		}
 		return predicate{kind: "compare", left: operand{path: path, isFact: true}, op: op, right: right}, nil
 	}
@@ -419,12 +425,17 @@ func parseOperator(path, key string, raw any) (predicate, error) {
 
 // parseLeaf reads compact expressions. Unrepresentable literal data uses structured comparisons.
 func parseLeaf(expression string) (predicate, error) {
+	return parseLeafIn(expression, nil)
+}
+
+// parseLeafIn reads a compact expression inside quantifier bodies whose binders are `binders`.
+func parseLeafIn(expression string, binders []string) (predicate, error) {
 	if err := admitPredicateExpression(expression, 0); err != nil {
 		return predicate{}, err
 	}
 	trimmed := strings.TrimSpace(expression)
 	if rest, ok := strings.CutPrefix(trimmed, "not "); ok {
-		inner, err := parseLeaf(rest)
+		inner, err := parseLeafIn(rest, binders)
 		if err != nil {
 			return predicate{}, err
 		}
@@ -454,7 +465,7 @@ func parseLeaf(expression string) (predicate, error) {
 			// under the `not` an implication is written with.
 			left:  operand{path: strings.TrimSpace(left), isFact: true},
 			op:    op,
-			right: parseOperand(right),
+			right: parseOperandIn(right, binders),
 		}, nil
 	}
 	if strings.ContainsAny(trimmed, " ()[]") {
@@ -468,8 +479,22 @@ func parseLeaf(expression string) (predicate, error) {
 // A bare word containing a dot is a fact path and anything else is a literal, which is the model's
 // own rule; a literal containing dots is quoted.
 func parseOperand(raw string) operand {
+	return parseOperandIn(raw, nil)
+}
+
+// parseOperandIn is parseOperand inside quantifier bodies: an unquoted word that is exactly the
+// name of a binder in scope reads that binder (beyond10x/ess#289), as Rust's `Operand::parse_in`
+// does. Quoted, it is the text.
+func parseOperandIn(raw string, binders []string) operand {
 	trimmed := strings.TrimSpace(raw)
 	quoted := strings.HasPrefix(trimmed, "\"") || strings.HasPrefix(trimmed, "'")
+	if !quoted && factPath.MatchString(trimmed) {
+		for _, binder := range binders {
+			if binder == trimmed {
+				return operand{path: trimmed, isFact: true}
+			}
+		}
+	}
 	if !quoted && strings.Contains(trimmed, ".") {
 		if _, numeric := parseDecimalLiteral(trimmed); !numeric && factPath.MatchString(trimmed) {
 			return operand{path: trimmed, isFact: true}

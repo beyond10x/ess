@@ -554,6 +554,56 @@ fn dynamic_input_result_and_errors_require_the_native_validator() {
     assert_eq!(validator.phases.last().unwrap(), "store_failed");
 }
 
+#[test]
+fn declared_invalid_input_answers_unparsable_empty_and_duplicate_payloads() {
+    struct EmptyStdin;
+    impl Sources for EmptyStdin {
+        fn acquire(&mut self, source: ProtectedSource) -> Result<String, AcquireError> {
+            assert_eq!(source, ProtectedSource::DocumentStdin);
+            Ok(String::new())
+        }
+    }
+    let base = [
+        "demo",
+        "checked",
+        "--operation",
+        "lookup",
+        "--schema",
+        "lookup/v1",
+        "--output=json",
+    ];
+    for payload in [
+        Some("not json payload-canary"),
+        None,
+        Some(r#"{"id":"payload-canary","id":7}"#),
+        Some(r#"{"id":"payload-canary"}"#),
+    ] {
+        let mut args = base.to_vec();
+        match payload {
+            Some(text) => args.extend(["--input-json", text]),
+            None => args.push("--input-stdin"),
+        }
+        let mut handler = Recorder::default();
+        let mut validator = NativeValidator::default();
+        let output = run(
+            args.into_iter().map(OsString::from).collect(),
+            &mut EmptyStdin,
+            &mut handler,
+            Some(&mut validator),
+        );
+        assert_eq!(output.exit_code, 2, "{payload:?}");
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            serde_json::from_str::<Value>(&output.stderr).unwrap(),
+            json!({"ok":false,"error":{"code":"invalid_request","data":{}}}),
+        );
+        assert!(!output.stderr.contains("payload-canary"));
+        assert!(handler.calls.is_empty());
+        let validated = usize::from(payload == Some(r#"{"id":"payload-canary"}"#));
+        assert_eq!(validator.phases.len(), validated, "{payload:?}");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn native_file_acquisition_checks_permissions_symlinks_size_and_utf8() {

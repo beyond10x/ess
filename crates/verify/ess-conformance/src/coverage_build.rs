@@ -408,6 +408,7 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::DuplicateScenario
         | RefusalCause::StrategyWithoutGuard { .. }
         | RefusalCause::WitnessRejected(_)
+        | RefusalCause::PrecedenceContradicted { .. }
         | RefusalCause::BindingUnobservable { .. }
         | RefusalCause::ValueInvariantUnwitnessed { .. } => Effect::CandidateNotEmitted,
     }

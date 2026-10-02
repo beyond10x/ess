@@ -9,6 +9,20 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.51.0 — 2026-10-01
+
+### Committed generated output regenerates in another checkout
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/existence-lookup-and-portable-output) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.51.0)
+
+Generated output committed with its `.ess-output` regenerates in a clone, a second worktree or CI when its owned files still have their recorded bytes, and an unchanged regeneration leaves `state.json` byte-identical; a state carried without matching files refuses, lists them and prints the steps to re-enroll with `ess generate output adopt`.
+
+### Generated Rust servers select a branch by whether the record exists
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/existence-lookup-and-portable-output) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.51.0)
+
+A generated Rust server looks the input identity up in the storage port before dispatch, so an `existing_instance:` refusal beside a creation and a creating `unknown_instance:` branch beside an update are generated instead of owed; a command whose lookup would not match its creations stays an obligation, and Go, Web and Clap still refuse both forms by name.
+
 ## 0.50.0 — 2026-10-01
 
 ### Synthesis witnesses an aggregate over rows a when_related-guarded command creates

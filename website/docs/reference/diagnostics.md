@@ -197,6 +197,7 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 | `ESS-SYNTH-016` | An aggregate view whose rows this scenario cannot keep apart from every other scenario's. | Group by, or filter by a parameter over, a `String` or `Uuid` field the creating command sets from its input. |
 | `ESS-SYNTH-017` | An aggregate view the arrangement cannot produce rows for as the page's pattern requires. | Let the creating command set every field the view groups by or aggregates from its input, and read a parameter only as `field == param.name` at the top of the filter. |
 | `ESS-SYNTH-018` | A guard compares a `.count` with a number whose boundary lies past what this synthesizer builds. | The guard compares `.count` with a value above the 1024 this synthesizer builds; cover the branch with an authored scenario (ess-scenario/1), or lower the bound. |
+| `ESS-SYNTH-019` | A synthesized step requires a branch for an input its own guard refutes, or another branch answers first under the precedence order. | Nothing to change in the specification; this is a defect in ess to report, with the specification that produced it. |
 
 ## Mutation audit: `ESS-MUTATE`
 

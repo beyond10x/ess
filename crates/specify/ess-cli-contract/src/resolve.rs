@@ -361,6 +361,37 @@ fn validate_command(
     Ok(())
 }
 
+/// A callable's invalid-input answer names one of its declared errors, and that error's data is
+/// `{}`: the answer carries no field, so it can carry none of the refused input.
+fn invalid_input(
+    code: &str,
+    has_input: bool,
+    errors: &BTreeMap<String, ValueContract>,
+) -> Result<(), Error> {
+    if code == "cli_parse" {
+        return Err(refuse(
+            "invalid_input cannot name `cli_parse`: a parse failure fails before a callable is known",
+        ));
+    }
+    if !has_input {
+        return Err(refuse(
+            "invalid_input is meaningless on an inputless callable",
+        ));
+    }
+    let contract = errors
+        .get(code)
+        .ok_or_else(|| refuse(format!("invalid_input names undeclared error `{code}`")))?;
+    if !contract
+        .shape
+        .accepts(&serde_json::Value::Object(serde_json::Map::new()))
+    {
+        return Err(refuse(format!(
+            "invalid_input error `{code}` requires a field, and its answer carries none"
+        )));
+    }
+    Ok(())
+}
+
 /// Resolve all used ESS types and owners, then validate the supported CLI projection.
 pub fn compile(model: &EssIr, binding: &Binding) -> Result<CompiledBinding, Error> {
     if !token(&binding.binary) {
@@ -406,6 +437,9 @@ pub fn compile(model: &EssIr, binding: &Binding) -> Result<CompiledBinding, Erro
             }
             errors.insert(code.clone(), contract(model, reference)?);
         }
+        if let Some(code) = &declared.invalid_input {
+            invalid_input(code, declared.input.is_some(), &errors)?;
+        }
         obligations.push(format!("handler:{key}: implement the owner-qualified callable and its declared result/error contract"));
         if matches!(&declared.target, Target::Dynamic { .. }) {
             obligations.push(format!("dynamic-validator:{key}: resolve operation/schema identity and validate native input, result and errors; absent validator refuses"));
@@ -417,6 +451,7 @@ pub fn compile(model: &EssIr, binding: &Binding) -> Result<CompiledBinding, Erro
                 input,
                 result,
                 errors,
+                invalid_input: declared.invalid_input.clone(),
             },
         );
     }

@@ -78,6 +78,9 @@ fn reference(plan: &wire::Plan) -> String {
         for (code, contract) in &callable.errors {
             writeln!(text, "Error `{code}`: `{}`.\n", contract.type_ref).expect("String write");
         }
+        if let Some(code) = &callable.invalid_input {
+            writeln!(text, "Invalid input answers `{code}`.\n").expect("String write");
+        }
     }
     text.push_str("## Runtime obligations\n\n");
     for obligation in &plan.obligations {

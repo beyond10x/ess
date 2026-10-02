@@ -106,7 +106,20 @@ Targets are closed variants:
   refuses native input with exit 2 and result/error data with exit 1; `Unavailable`
   refuses unresolved, stale or unavailable schema authority with exit 1;
   `Interrupted` uses exit 130. These finite failures never include native values
-  or underlying resolver diagnostics.
+  or underlying resolver diagnostics. Payload text that repeats a key in any one
+  object is refused before the validator runs, because a last-key-wins reading
+  would validate a value other than the text the handler receives.
+
+A callable may declare `invalid_input: <code>`, naming one of its own declared
+`errors` as the answer for every invalid input: a typed value that fails its shape
+(otherwise `cli_input`), and an unparsable, empty or duplicate-keyed dynamic payload
+or one the validator refuses with `InvalidValue` (otherwise `cli_dynamic_input`).
+The answer is that code with `{}` data and exit 2, so it never carries input text.
+Admission refuses an undeclared code, an error type that does not accept `{}` (a
+struct with a required field), an inputless callable, and `cli_parse`, which fails
+before a callable is known. Acquisition failures (`cli_source`) and an unavailable
+or interrupted validator keep their own codes. The generated reference names the
+answer. Without the key, the adapter codes are unchanged.
 
 Each input field has exactly one argument mapping. `option` has `long` and consumes
 a value; Boolean values use explicit `true`/`false`. `positional` has a consecutive

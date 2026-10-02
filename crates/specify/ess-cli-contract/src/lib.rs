@@ -30,6 +30,8 @@ struct CallableDeclaration {
     result: String,
     #[serde(default)]
     errors: BTreeMap<String, String>,
+    #[serde(default)]
+    invalid_input: Option<String>,
 }
 
 fn required_input<'de, D: serde::Deserializer<'de>>(

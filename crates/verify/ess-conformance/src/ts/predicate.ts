@@ -472,33 +472,33 @@ export function parsePredicate(raw: Node | undefined): Predicate {
   return fromNode(raw);
 }
 
-export function fromNode(node: Node | undefined): Predicate {
+export function fromNode(node: Node | undefined, binders: readonly string[] = []): Predicate {
   if (typeof node === 'boolean') {
     return new Predicate({ kind: node ? 'always' : 'never' });
   }
   if (typeof node === 'string') {
-    return parseLeaf(node);
+    return parseLeaf(node, binders);
   }
   if (Array.isArray(node)) {
-    return new Predicate({ kind: 'all', children: fromNodes(node) });
+    return new Predicate({ kind: 'all', children: fromNodes(node, binders) });
   }
   if (node !== null && node !== undefined && typeof node === 'object') {
     // Sorted, so a mapping with more than one entry parses the same way twice. Go randomises
     // map iteration, and a predicate that reordered between runs would make a failure report
     // unreadable across two of them.
     const keys = sortStrings(Object.keys(node));
-    const children = keys.map((key) => fromEntry(key, node[key] ?? null));
+    const children = keys.map((key) => fromEntry(key, node[key] ?? null, binders));
     if (children.length === 1) return children[0]!;
     return new Predicate({ kind: 'all', children });
   }
   throw new Error(`a predicate is an expression, a list or a mapping, not ${goTypeName(node)}`);
 }
 
-export function fromNodes(nodes: Node[]): Predicate[] {
-  return nodes.map((node) => fromNode(node));
+export function fromNodes(nodes: Node[], binders: readonly string[] = []): Predicate[] {
+  return nodes.map((node) => fromNode(node, binders));
 }
 
-export function fromEntry(key: string, value: Node): Predicate {
+export function fromEntry(key: string, value: Node, binders: readonly string[] = []): Predicate {
   switch (key) {
     case 'all':
     case 'and':
@@ -506,21 +506,25 @@ export function fromEntry(key: string, value: Node): Predicate {
     case 'any':
     case 'or': {
       const items = Array.isArray(value) ? value : [value];
-      const children = fromNodes(items);
+      const children = fromNodes(items, binders);
       const kind = key === 'any' || key === 'or' ? 'any' : 'all';
       return new Predicate({ kind, children });
     }
     case 'not':
-      return new Predicate({ kind: 'not', body: fromNode(value) });
+      return new Predicate({ kind: 'not', body: fromNode(value, binders) });
     case 'forall':
     case 'exists':
-      return parseQuantifier(key, value);
+      return parseQuantifier(key, value, binders);
     default:
-      return parseConstraint(key, value);
+      return parseConstraint(key, value, binders);
   }
 }
 
-export function parseQuantifier(kind: string, value: Node): Predicate {
+export function parseQuantifier(
+  kind: string,
+  value: Node,
+  binders: readonly string[] = [],
+): Predicate {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('a quantifier is a mapping with `in`, `as` and `that`');
   }
@@ -529,7 +533,7 @@ export function parseQuantifier(kind: string, value: Node): Predicate {
   if (over === '' || bind === '') {
     throw new Error('a quantifier needs both `in` and `as`');
   }
-  return new Predicate({ kind, over, bind, body: fromNode(value['that']) });
+  return new Predicate({ kind, over, bind, body: fromNode(value['that'], [...binders, bind]) });
 }
 
 // Go ranges a map literal here, so which operator a constraint carrying two of them is read as is
@@ -558,7 +562,11 @@ const comparisonOperators: [string, string][] = [
   ['>=', '>='],
 ];
 
-export function parseConstraint(path: string, value: Node): Predicate {
+export function parseConstraint(
+  path: string,
+  value: Node,
+  binders: readonly string[] = [],
+): Predicate {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return new Predicate({
       kind: 'compare',
@@ -600,7 +608,9 @@ export function parseConstraint(path: string, value: Node): Predicate {
     if (Object.hasOwn(value, spelling)) {
       const compared = value[spelling] ?? null;
       const right =
-        typeof compared === 'string' ? parseOperand(compared) : new Operand({ literal: compared });
+        typeof compared === 'string'
+          ? parseOperand(compared, binders)
+          : new Operand({ literal: compared });
       return new Predicate({
         kind: 'compare',
         left: new Operand({ path, isFact: true }),
@@ -613,11 +623,11 @@ export function parseConstraint(path: string, value: Node): Predicate {
 }
 
 /** Reads compact expressions. Unrepresentable literal data uses structured comparisons. */
-export function parseLeaf(expression: string): Predicate {
+export function parseLeaf(expression: string, binders: readonly string[] = []): Predicate {
   admitPredicateExpression(expression, 0);
   const trimmed = goTrimSpace(expression);
   if (trimmed.startsWith('not ')) {
-    return new Predicate({ kind: 'not', body: parseLeaf(trimmed.slice('not '.length)) });
+    return new Predicate({ kind: 'not', body: parseLeaf(trimmed.slice('not '.length), binders) });
   }
   if (trimmed === 'always') return new Predicate({ kind: 'always' });
   if (trimmed === 'never') return new Predicate({ kind: 'never' });
@@ -640,7 +650,7 @@ export function parseLeaf(expression: string): Predicate {
       // under the `not` an implication is written with.
       left: new Operand({ path: goTrimSpace(left), isFact: true }),
       op,
-      right: parseOperand(right),
+      right: parseOperand(right, binders),
     });
   }
   if (/[ ()[\]]/.test(trimmed)) {
@@ -653,11 +663,16 @@ export function parseLeaf(expression: string): Predicate {
  * Reads the right-hand side of a comparison.
  *
  * A bare word containing a dot is a fact path and anything else is a literal, which is the model's
- * own rule; a literal containing dots is quoted.
+ * own rule; a literal containing dots is quoted. Inside a quantifier body, an unquoted word that is
+ * exactly the name of a binder in scope reads that binder (beyond10x/ess#289), as Rust's
+ * `Operand::parse_in` does; quoted, it is the text.
  */
-export function parseOperand(raw: string): Operand {
+export function parseOperand(raw: string, binders: readonly string[] = []): Operand {
   const trimmed = goTrimSpace(raw);
   const quoted = trimmed.startsWith('"') || trimmed.startsWith("'");
+  if (!quoted && factPath.test(trimmed) && binders.includes(trimmed)) {
+    return new Operand({ path: trimmed, isFact: true });
+  }
   if (!quoted && trimmed.includes('.')) {
     const [, numeric] = parseDecimalLiteral(trimmed);
     if (!numeric && factPath.test(trimmed)) {

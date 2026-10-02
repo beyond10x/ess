@@ -305,6 +305,51 @@ fn refuses_unresolved_types_fields_and_ambiguous_cli_sources() {
     }
 }
 
+/// beyond10x/ess#274: `invalid_input` names a declared error whose type admits `{}`, because the
+/// answer to invalid input carries no field and so no input text.
+#[test]
+fn invalid_input_names_a_declared_error_that_needs_no_field() {
+    let model = model(&format!(
+        "{MODEL}  - name: demo.Invalid\n    kind: struct\n    fields:\n      - {{name: detail, type: 'Optional<String>'}}\n"
+    ));
+    let declared = BINDING.replace(
+        "errors: {store_failed: demo.Failure}",
+        "errors: {store_failed: demo.Failure, invalid: demo.Invalid, listed: 'Map<String, String>'}\n    invalid_input: invalid",
+    );
+    let compiled = compile(&model, &Binding::from_yaml(&declared).unwrap()).unwrap();
+    assert_eq!(
+        compiled.plan().callables["store"].invalid_input.as_deref(),
+        Some("invalid")
+    );
+    assert!(compiled
+        .to_canonical_json()
+        .contains("\"invalid_input\": \"invalid\""));
+    let map = declared.replace("invalid_input: invalid", "invalid_input: listed");
+    assert!(compile(&model, &Binding::from_yaml(&map).unwrap()).is_ok());
+    // Absent, the plan bytes carry no key.
+    let plain = compile(&model, &Binding::from_yaml(BINDING).unwrap()).unwrap();
+    assert!(plain.plan().callables["store"].invalid_input.is_none());
+    assert!(!plain.to_canonical_json().contains("invalid_input"));
+    for (value, expected) in [
+        ("missing", "undeclared error `missing`"),
+        ("store_failed", "requires a field"),
+        ("cli_parse", "fails before a callable is known"),
+        ("cli_input", "undeclared error `cli_input`"),
+    ] {
+        let binding =
+            declared.replace("invalid_input: invalid", &format!("invalid_input: {value}"));
+        let error = compile(&model, &Binding::from_yaml(&binding).unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(expected), "{value}: {error}");
+    }
+    let inputless = "format: ess-cli/1\nbinary: demo\nabout: Inputless action\nglobals: {config: config, state: state-dir, output: output}\ncallables:\n  show:\n    target: {kind: local, owner: demo.cli, action: show}\n    input: null\n    result: demo.Stored\n    errors: {invalid: demo.Invalid}\n    invalid_input: invalid\ncommands:\n  - path: [show]\n    callable: show\n    about: Show\n    arguments: []\n";
+    let error = compile(&model, &Binding::from_yaml(inputless).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("inputless"), "{error}");
+}
+
 #[test]
 fn refuses_unsupported_constraints_and_primitive_promises() {
     let binding = Binding::from_yaml(BINDING).unwrap();

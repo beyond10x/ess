@@ -52,6 +52,13 @@ until cleanup finishes. An unpublished `state.next` is not recovery authority. P
 state and initialization entries for diagnosis. Older ESS versions have no reader or lock
 protocol for this format.
 
+The checkpoint records the root's absolute path and directory identity. A settled (idle)
+checkpoint found at another root, such as a committed output tree in a clone or a second
+worktree, is admitted there when every owned file present has its recorded length and digest,
+and refused otherwise. It is not rewritten for that: the next checkpoint an operation writes
+anyway records the current binding with the same owners, file inventory and producer. A
+checkpoint with a pending transaction refuses at any other root.
+
 `ess-output-state/2` (added in 0.34.0) is `/1` plus one required nonempty string, `producer`: the `ess`
 release that last published into the root, as `ess X.Y.Z`. Every publication writes `/2`; the
 reader accepts `/1` without `producer` and `/2` with it, and refuses either shape under the other

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-310
 kind: story
-status: draft
+status: active
 title: Generated code targets select a branch by whether the record exists
 tags:
 - feature-request
@@ -12,7 +12,10 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-01T18:53:28Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-01T18:53:29Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 

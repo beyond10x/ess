@@ -186,7 +186,9 @@ The right-hand side of a comparison is read in this order:
 1. A quoted value is text: `sku == "A.1"`.
 2. `true` and `false` are booleans. A number is a number.
 3. A bare word containing a dot is a fact path.
-4. Anything else is text: `channel == Web`.
+4. Inside a [quantifier](#quantifiers), a bare word that is exactly the name of a binder in scope is
+   that binder: `t != l`.
+5. Anything else is text: `channel == Web`.
 
 A right-hand side without a dot is therefore never a field. To compare two fields, put them in one
 struct and compare its members, for example `window.ends_at > window.starts_at`. See
@@ -488,6 +490,30 @@ invariants:
       in: labels
       as: label
       that: label != ""
+```
+
+A bare word on the right of a comparison that names a binder in scope, the quantifier's own or an
+outer one, reads that binder. Here no tag may equal any label value:
+
+```yaml ess-check="invariants" ess-expect="valid"
+invariants:
+  - forall:
+      in: tags
+      as: t
+      that:
+        forall: {in: labels, as: l, that: t != l}
+```
+
+The equality shorthand and a quoted word are always text, so either one naming a binder in scope is
+refused, as a literal naming a field is.
+
+```yaml ess-check="invariants" ess-expect="refused" ess-says="not the binder"
+invariants:
+  - forall:
+      in: tags
+      as: t
+      that:
+        forall: {in: labels, as: l, that: {t: l}}
 ```
 
 ## `.count` and ordinals

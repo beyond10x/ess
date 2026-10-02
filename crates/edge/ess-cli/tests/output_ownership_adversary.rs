@@ -12,6 +12,15 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+// A subprocess spawn may briefly inherit another thread's open flock descriptors before
+// CLOEXEC closes them, so a lock this thread just released can still read as busy. Serialize
+// fixtures and child lifetimes, as `output_ownership.rs` does.
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    TEST.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn fixture() -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let root = std::env::temp_dir().join(format!(
@@ -99,6 +108,7 @@ fn composition(root: &Path, outputs: &[&str]) -> Output {
 
 #[test]
 fn standalone_generation_refuses_directory_spelling_before_enrollment() {
+    let _serial = serial();
     let root = fixture();
     fs::create_dir(root.join("out")).unwrap();
     fs::write(
@@ -135,6 +145,7 @@ fn standalone_generation_refuses_directory_spelling_before_enrollment() {
 
 #[test]
 fn composition_replaces_its_owned_companion_with_a_client_directory() {
+    let _serial = serial();
     let root = fixture();
     fs::create_dir(root.join("anchor")).unwrap();
     fs::write(root.join("anchor/authored"), "keep").unwrap();
@@ -154,6 +165,7 @@ fn composition_replaces_its_owned_companion_with_a_client_directory() {
 
 #[test]
 fn unicode_companions_follow_actual_native_alias_behavior_before_any_write() {
+    let _serial = serial();
     let root = fixture();
     fs::create_dir(root.join("lookup")).unwrap();
     fs::write(root.join("lookup/É.json"), "native lookup witness").unwrap();
@@ -191,6 +203,7 @@ fn unicode_companions_follow_actual_native_alias_behavior_before_any_write() {
 
 #[test]
 fn rollback_preserves_an_unselected_owner_and_actual_readonly_file_modes() {
+    let _serial = serial();
     let root = fixture();
     let anchor = root.join("anchor");
     ownership::probe::publish(&anchor, &[("shared/a", "old")], &mut |_| Ok(())).unwrap();
@@ -243,6 +256,7 @@ fn pass2_fixture() -> PathBuf {
 
 #[test]
 fn interrupted_nested_admission_stays_opaque_through_cli_retirement() {
+    let _serial = serial();
     let root = pass2_fixture();
     let anchor = root.join("anchor");
     fs::create_dir(&anchor).unwrap();
@@ -321,6 +335,7 @@ fn interrupted_nested_admission_stays_opaque_through_cli_retirement() {
 
 #[test]
 fn native_alias_refusal_preserves_the_owned_file_before_a_shape_transition() {
+    let _serial = serial();
     for (first, second) in [("É.json", "é.json"), ("é.json", "e\u{301}.json")] {
         let root = pass2_fixture();
         fs::create_dir(root.join("lookup")).unwrap();
@@ -381,6 +396,7 @@ fn native_alias_refusal_preserves_the_owned_file_before_a_shape_transition() {
 
 #[test]
 fn exact_native_file_adoption_in_an_enrolled_readonly_root_needs_no_probe_write() {
+    let _serial = serial();
     let root = pass2_fixture();
     fs::create_dir(root.join("reference")).unwrap();
     fs::create_dir(root.join("anchor")).unwrap();
