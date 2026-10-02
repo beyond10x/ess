@@ -2326,6 +2326,36 @@ fn mapped(outcome: &ResolvedOutcome) -> BTreeMap<&str, &str> {
         .collect()
 }
 
+/// The inputs `creator` creates a row of `entity` with, chosen toward the stored-field guards of
+/// every command moving it: a row created with one of them is one such a move can be taken on
+/// without searching for another row (beyond10x/ess#279). Empty where no move reads stored fields,
+/// or the creating branch maps none of the fields they read.
+pub(super) fn toward_moves(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+) -> Vec<BTreeMap<String, Node>> {
+    let all = ir.drivers();
+    let mut read: Vec<Predicate> = Vec::new();
+    for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
+        if driver.effect.transition().is_none() || !uses(driver.command) {
+            continue;
+        }
+        for hint in hints(driver.command) {
+            if !read.contains(&hint) {
+                read.push(hint);
+            }
+        }
+    }
+    if read.is_empty() {
+        return Vec::new();
+    }
+    hinted(ir, entity, creator, &read)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
 /// The candidate inputs for one arranging branch, varied toward the stored-field goal.
 ///
 /// Every hint is translated through the branch's `sets:` mappings onto its own input, and the

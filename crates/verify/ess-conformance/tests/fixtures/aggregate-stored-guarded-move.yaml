@@ -1,0 +1,87 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.desk
+summary: Tickets counted per region and state, closed only where their stored fields allow it.
+types:
+  - {name: demo.desk.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.desk.Ticket
+    identity: {name: ticket_id, type: demo.desk.TicketId}
+    fields:
+      - {name: region, type: String}
+      - {name: priority, type: Integer}
+      - {name: urgent, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: demo.desk.TooLow, summary: The priority is too low to close., fields: []}
+  - {name: demo.desk.NotUrgent, summary: The ticket is not urgent., fields: []}
+  - {name: demo.desk.Conflict, summary: The ticket is closed., fields: []}
+events:
+  - name: demo.desk.Opened
+    fields:
+      - {name: ticket_id, type: demo.desk.TicketId}
+  - name: demo.desk.Closed
+    fields:
+      - {name: ticket_id, type: demo.desk.TicketId}
+actors:
+  - name: demo.desk.Agent
+    may: [demo.desk.Open, demo.desk.Close]
+commands:
+  - name: demo.desk.Open
+    input:
+      - {name: region, type: String}
+      - {name: priority, type: Integer}
+      - {name: urgent, type: Boolean}
+    outcomes:
+      - name: opened
+        creates: demo.desk.Ticket
+        instance: ticket_id
+        emits: [demo.desk.Opened]
+        payload:
+          demo.desk.Opened: {ticket_id: {generated: true}}
+        sets:
+          region: input.region
+          priority: input.priority
+          urgent: input.urgent
+  - name: demo.desk.Close
+    input:
+      - {name: ticket_id, type: demo.desk.TicketId}
+    outcomes:
+      - name: too-low
+        when_subject: {predicate: priority < 10}
+        error: demo.desk.TooLow
+      - name: not-urgent
+        when_subject: {predicate: urgent == false}
+        error: demo.desk.NotUrgent
+      - name: closed
+        moves: demo.desk.Ticket.close
+        instance: ticket_id
+        emits: [demo.desk.Closed]
+        payload:
+          demo.desk.Closed: {ticket_id: input.ticket_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.desk.Conflict
+views:
+  - name: demo.desk.Tickets
+    source: demo.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: demo.desk.TicketId}
+      - {name: state, type: demo.desk.Ticket.State}
+      - {name: region, type: String}
+      - {name: priority, type: Integer}
+      - {name: urgent, type: Boolean}
+  - name: demo.desk.PerRegion
+    source: demo.desk.Ticket
+    group_by: [region, state]
+    fields:
+      - {name: region, type: String}
+      - {name: state, type: demo.desk.Ticket.State}
+      - {name: tickets, type: Integer, aggregate: {count: {}}}
