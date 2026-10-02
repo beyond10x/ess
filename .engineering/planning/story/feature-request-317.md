@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/upsert_by_existence.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:12:16Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:12:17Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -62,3 +62,7 @@ The existing deletion witness chooses one creator; merely appending a retry ther
 ## Independent review correction 2026-10-02
 
 Independent reviewer scope_aggregate found an introduced counterexample before commit: recreation copies ExecuteCommand but omits the original creator's ConfigureExternalOutcome. For an external booked-vip creation with default booked sibling, the next-invocation control is consumed by first creation; an honest recreation chooses booked while the scenario demands booked-vip. References: existence.rs:953/988, synthesize.rs:4182, scenario.rs:2000, interpret.rs:172. Reviewer own executions zero; finding is source-derived. Implementation returned for measured regression and restoration of the external control immediately before recreation. Initial green focused results do not resolve this finding.
+
+## Verified correction 2026-10-02
+
+Committed3749a18f7f2341011252be709a3e79c5d6a6bcaa after measured external-control regression and two independent re-reviews without remaining findings. Final focused treatment98 passed, zero failed, six pre-existing ignored; strict Clippy/fmt passed. Reviewed source hashes matched before commit. Final grouped package verification and publication remain pending; story stays active. Evidence: managed tree ess-backlog-synthesis-20261002, target/backlog-input/317-external-report.md and review-result:consumer-recreation-317-pass2-20261002.

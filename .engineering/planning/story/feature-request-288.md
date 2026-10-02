@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-288
 kind: story
-status: draft
+status: active
 title: 'An affects: filter over subject identity is witnessed'
 tags:
 - feature-request
@@ -19,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/set_effects.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T10:02:27Z", actor: "human:timo", revision: 8, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T10:02:27Z", actor: "human:timo", revision: 9, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 

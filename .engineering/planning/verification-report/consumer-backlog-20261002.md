@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 5
+revision: 6
 ---
 ## Intake
 
@@ -276,3 +276,18 @@ Source audit covers all 87 stories initially lacking structured issue references
 - specification-declares-its-ess-release /106 is released with versioned manifests/output state and later exact-pin delegation. Original warning/refusal behavior is superseded where delegation applies; original red-first chronology unlocated.
 
 Each source-backed disposition is recorded on its owning story. The latter three remain active for their process-evidence qualification, not because their released behavior needs another implementation or gate run.
+
+## Current verified delivery 2026-10-02
+
+This section supersedes earlier intake-row snapshots where state changed.
+
+- Security policy blocker cleared by delivery of the unchanged approved gates-policy main to the ESS secret. Failed security jobs reran successfully. No policy rules or exceptions weakened.
+- PR386 merged as fa08de5bd816b3cc46694ec4d19d20d13e128764 by the bot App; merge tree exactly equals tested f0b220099. Behavior/query portion of #314 shipped to main, while #318 store/entry remains open.
+- PR381 published at 55061600bd2be2d5be71daae40a637f8d00ddb74, including current main and all absorbed UI heads. Common gate passed; full remote CI36992931851 is running. Local affected tests, exact ci-lint and site-build passed. #323 fixed red-to-green; #324/#329 and both #353 regression sets retained. PR377/344/345/368/369 closed only after their exact heads were verified in the published candidate; earlier375/380 closed with preservation proof. PR381 is the only remaining original open PR. No UI merge/release claim yet.
+- #316 identity-source correction committed936b119fcbfde45d7700bfc8915dcf267531784e after independent review;25 focused passes, required/Optional cases red-to-green in Rust and Go. Final server-group package/projection checks remain due.
+- #317 initial independent review found missing external control before recreation. Measured regression reproduced it; corrected source passes98 focused cases. Original reviewer and a second independent reviewer found no remaining concrete issue. Full synthesis-group package checks remain due.
+- #288 accepted and activated for the next synthesis fix. #308/#298 remain accepted scoped work waiting sequential implementation.
+- AEP stories aggregate-views (#96), stored-field-guards (#75), predicate-reference-page (#92) reconciled to implemented using recovered historical evidence and released-source verification; #92 cross-repository reference follow-up verified at exact agentplugins remote.
+- #101/#102/#105/#106/#110 delivered behavior is source/release corroborated, but historical red-first evidence is incomplete; explicit qualifications retained in each story. Do not reimplement these delivered behaviors merely to clear stale state.
+
+Full intake remains82 issues plus161 initially nonterminal stories. Counts are intake, not a completion total. Remaining unresolved rows require ongoing fit/design/implementation or evidence-backed disposition.
