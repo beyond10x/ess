@@ -12,7 +12,9 @@ use std::cell::RefCell;
 use ess_conformance::{AdmittedSuite, Runner};
 use serde_json::{json, Value};
 use support::{Mode, Service, FIRST};
+use support as support_one_time;
 use resources::{ResourceMode, ResourceService};
+use fields::{FieldMode, FieldService};
 
 thread_local! {
     static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -21,7 +23,19 @@ thread_local! {
 
 fn run(request: &str) -> String {
     let request: Value = serde_json::from_str(request).unwrap();
+    if let Some(input) = request.get("input") {
+        let input = ess_conformance::coverage::AdmittedInput::from_json(input.as_str().unwrap()).unwrap();
+        let mode: Mode = serde_json::from_value(request["mode"].clone()).unwrap();
+        let target = Service::new(mode);
+        return execute(input.selected(), &target, || (target.trace(), target.returned_plaintexts()));
+    }
     let suite = AdmittedSuite::from_json(request["suite"].as_str().unwrap()).unwrap();
+    if let Some(field) = request.get("field") {
+        let mode = FieldMode::ALL.into_iter()
+            .find(|mode| serde_json::to_value(mode).unwrap() == *field).unwrap();
+        let target = FieldService::new(mode);
+        return execute(&suite, &target, || (target.inner.trace(), target.returned_plaintexts()));
+    }
     if let Some(resource) = request.get("resource") {
         let mode = ResourceMode::ALL.into_iter()
             .find(|mode| serde_json::to_value(mode).unwrap() == *resource).unwrap();
@@ -98,7 +112,25 @@ const resourceAnswers = resources.map(item => ({
   case: item.case,
   answer: system.request({resource: item.case, suite: readFileSync(join(fixtures, 'view.json'), 'utf8')}),
 }));
-process.stdout.write(JSON.stringify({execution: answers, resources: resourceAnswers}));
+const fieldRoot = join(dirname(fixtures), 'one-time-fields');
+const fieldCases = JSON.parse(readFileSync(join(fieldRoot, 'manifest.json'), 'utf8'));
+const fieldAnswers = fieldCases.map(item => ({
+  case: item.case,
+  answer: system.request({field: item.case, suite: readFileSync(join(fieldRoot, 'suite.json'), 'utf8')}),
+}));
+const coverageRoot = join(dirname(fixtures), 'one-time-coverage');
+const coverageCases = JSON.parse(readFileSync(join(coverageRoot, 'manifest.json'), 'utf8'));
+const coverageAnswers = coverageCases.map(item => ({
+  case: item.case,
+  answer: system.request({mode: item.case, input: readFileSync(join(coverageRoot, 'input.json'), 'utf8')}),
+}));
+const windowRoot = join(dirname(fixtures), 'one-time-windows');
+const windowCases = JSON.parse(readFileSync(join(windowRoot, 'manifest.json'), 'utf8'));
+const windowAnswers = windowCases.map(item => ({
+  case: item.case,
+  answer: system.request({mode: item.case, suite: readFileSync(join(windowRoot, 'suite.json'), 'utf8')}),
+}));
+process.stdout.write(JSON.stringify({execution: answers, resources: resourceAnswers, fields: fieldAnswers, coverage: coverageAnswers, windows: windowAnswers}));
 ";
 
 fn run(command: &mut Command, label: &str) -> std::process::Output {
@@ -133,9 +165,11 @@ fn build_host(root: &Path, conformance: &Path) -> PathBuf {
     let support_path = serde_json::to_string(support.to_str().unwrap()).unwrap();
     let resources = conformance.join("tests/support_one_time/resources.rs");
     let resources_path = serde_json::to_string(resources.to_str().unwrap()).unwrap();
+    let fields = conformance.join("tests/support_one_time/fields.rs");
+    let fields_path = serde_json::to_string(fields.to_str().unwrap()).unwrap();
     std::fs::write(
         root.join("src/lib.rs"),
-        format!("#[allow(dead_code)]\n#[path = {support_path}]\nmod support;\n#[allow(dead_code)]\n#[path = {resources_path}]\nmod resources;\n{HOST}"),
+        format!("#[allow(dead_code)]\n#[path = {support_path}]\nmod support;\n#[allow(dead_code)]\n#[path = {resources_path}]\nmod resources;\n#[allow(dead_code)]\n#[path = {fields_path}]\nmod fields;\n{HOST}"),
     )
     .unwrap();
     let target = root.join("target");
@@ -201,7 +235,7 @@ fn shared_disclosure_controls_execute_inside_wasm_through_browser_bridge() {
     let answers = results["execution"].as_array().unwrap();
     let manifest: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(fixtures.join("manifest.json")).unwrap()).unwrap();
-    assert_eq!(answers.len(), 19);
+    assert_eq!(answers.len(), 20);
     assert_eq!(manifest.len(), answers.len());
     for (expected, actual) in manifest.iter().zip(answers) {
         let case = expected["case"].as_str().unwrap();
@@ -238,19 +272,55 @@ fn shared_disclosure_controls_execute_inside_wasm_through_browser_bridge() {
             "{case} identities"
         );
     }
-    resource_answers(&results["resources"], &fixtures);
+    additional_answers(&results, &fixtures);
 }
 
-fn resource_answers(answers: &serde_json::Value, fixtures: &Path) {
-    let manifest: Vec<serde_json::Value> = serde_json::from_slice(
-        &std::fs::read(fixtures.parent().unwrap().join("one-time-resources.json")).unwrap(),
-    )
-    .unwrap();
+fn additional_answers(results: &serde_json::Value, fixtures: &Path) {
+    let root = fixtures.parent().unwrap();
+    let window_suite = std::fs::read_to_string(root.join("one-time-windows/suite.json")).unwrap();
+    compare_additional(
+        &results["windows"],
+        &root.join("one-time-windows/manifest.json"),
+        &window_suite,
+        2,
+    );
+    let resource_suite = std::fs::read_to_string(fixtures.join("view.json")).unwrap();
+    compare_additional(
+        &results["resources"],
+        &root.join("one-time-resources.json"),
+        &resource_suite,
+        13,
+    );
+    let field_suite = std::fs::read_to_string(root.join("one-time-fields/suite.json")).unwrap();
+    compare_additional(
+        &results["fields"],
+        &root.join("one-time-fields/manifest.json"),
+        &field_suite,
+        4,
+    );
+    let carrier: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("one-time-coverage/input.json")).unwrap())
+            .unwrap();
+    compare_additional(
+        &results["coverage"],
+        &root.join("one-time-coverage/manifest.json"),
+        carrier["suite_json"].as_str().unwrap(),
+        4,
+    );
+}
+
+fn compare_additional(
+    answers: &serde_json::Value,
+    manifest_path: &Path,
+    suite: &str,
+    expected_len: usize,
+) {
+    let manifest: Vec<serde_json::Value> =
+        serde_json::from_slice(&std::fs::read(manifest_path).unwrap()).unwrap();
     let answers = answers.as_array().unwrap();
-    assert_eq!(manifest.len(), 9);
+    assert_eq!(manifest.len(), expected_len);
     assert_eq!(answers.len(), manifest.len());
-    let suite: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(fixtures.join("view.json")).unwrap()).unwrap();
+    let suite: serde_json::Value = serde_json::from_str(suite).unwrap();
     let ids: Vec<_> = suite["scenarios"]
         .as_object()
         .unwrap()
@@ -272,7 +342,9 @@ fn resource_answers(answers: &serde_json::Value, fixtures: &Path) {
                 "{case} {count}"
             );
         }
-        let code = if expected["status"] == "passed" {
+        let code = if let Some(code) = expected["required_code"].as_str() {
+            code
+        } else if expected["status"] == "passed" {
             "ESS-CF-DISCLOSURE"
         } else {
             "ESS-CF-TARGET"
