@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T12:42:44Z",
+  "actor": "human:timo",
+  "artifact": "story:lost-startup-socket-retry",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Full ess-cli at2220bce9b9:904 passed,0 failed,0 ignored; retry/refusal and trickling-header regressions green",
+    "reference": "target/backlog-input/browser-full-cli.log"
+  }
+}

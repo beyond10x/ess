@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T12:42:44Z",
+  "actor": "human:timo",
+  "artifact": "story:the-startup-lock-does-not-cover-the-first-round-trip",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Full ess-cli at2220bce9b9:904 passed,0 failed,0 ignored; separate startup lock and counter mutants failed",
+    "reference": "target/backlog-input/browser-full-cli.log"
+  }
+}
