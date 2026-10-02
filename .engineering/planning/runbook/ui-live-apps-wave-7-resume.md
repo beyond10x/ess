@@ -6,7 +6,7 @@ status: draft
 title: Resume ui-live-apps wave 7 after the Claude session limit
 relations:
 - informed_by: story:served-store-and-entry
-revision: 7
+revision: 8
 ---
 ## Continuation
 
@@ -82,3 +82,17 @@ Our candidate 43fb9a25a553c024a0ecf5580530c483802197c0 retains bot author and co
 The original ess-w7-store-entry checkout was archived with its original immutable private report, then finished and removed through exact-id managed GC after its archive proof was reviewed. Archive: `$HOME/.local/state/worktree/archives/ess/ess-w7-store-entry`. The active delivery checkout remains ess-w7-server-public under its coordinator lease. Source/test evidence and logs remain in `$HOME/.cache/uilab-todo/w7s-codex`.
 
 Next action: settle ownership of #318. If the concurrent implementation owns delivery, retain this candidate as recovery evidence and contribute only independently useful regression evidence after explicit coordination; do not publish a competing implementation. Reconcile current AEP dependencies before selecting downstream work: related-via-optional-input depends on feature-request-287 (still active in the store); related-via-stored-reference also depends on feature-request-282 (draft); related-guard-behaviour depends on those and this story. Git shipping facts alone do not close their artifacts.
+
+## Five potential waves for the 2026-10-02 overnight session
+
+Operator requested a five-wave preview before further implementation. This is a prioritized forecast for the existing ui-live-apps outcome, not a claim that five units are ready or will complete overnight. Source of truth inspected: remote main 1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036. Current implementation branch and concurrent commit remain preserved; no reconciliation source edits have begun.
+
+1. story:served-store-and-entry (#318): reconcile the two preserved implementations against current accepted decisions, retain useful regression coverage, complete independent review and publish through the required CI gates. Result: generated Go/Rust server, memory store, explicit caller mode and same-origin static files. This is the most advanced candidate; no clean-green conclusion is transferred from the earlier implementation onto the different candidate.
+2. story:feature-request-282: state and implement held-state-before-related-refusal precedence, so wrong_state and a related guard coexist. Body records accept/redesigned, but lifecycle is still draft and typed scope absent on main. Complete scope and lifecycle/evidence reconciliation before dispatch; this belongs to the existing ess/21 bundle and its ownership must be reconciled.
+3. story:related-via-optional-input (#304): absent Optional reference reads no row and skips related branches; present references retain declared missing/wrong-state behavior. Depends on feature-request-287: GitHub issue is CLOSED, while AEP remains active. Reconcile shipping evidence before treating that dependency as satisfied; preserve ess/21-only admission and older-format refusal.
+4. story:related-via-stored-reference (#304): read the related identity from the addressed subject's stored field, Optional included. Result: the specification can express the task's stored blocked_by rule. Depends on #282 and Optional-input work; retain interpreter and synthesized witness controls.
+5. story:related-guard-behaviour (#319): generate required, Optional and stored-reference guards in Go/Rust and prove conformance against real generated servers. Depends on the previous guard/server work plus shipped Go and existence-branch prerequisites. This unblocks the final UILab todo example; wiring and validating that showcase is subsequent work, not claimed complete by these five ESS waves.
+
+`aep plan artifact waves --kind story --status active --format json` returned no cycles and placed served-store-and-entry in global wave 4, related-via-optional-input in 5, related-via-stored-reference in 7, and related-guard-behaviour in 8. These are global packing indices, not this five-item priority forecast. Its collisions include Optional/stored-reference work on domain related_guard.rs, its tests, interpreter execute.rs and synthesis related_guard.rs; generated guard work overlaps #318 on both behavior emitters, generated output and synthesize.md, and stored-reference work on related_guard_obligation.rs. Run these candidates serially unless newly established scope proves an independent lane. The global active report also marks feature-request-287 and feature-request-310 unassessed; active status does not establish remaining implementation work. Raw active/draft wave outputs and story inventory are retained under `$HOME/.cache/uilab-todo/w7s-codex/tonight-{active-waves,draft-waves,stories}.json`.
+
+The existing `.engineering/waves/downstream-gaps.md:40-46` requires accepted syntax changes to land together in ess/21 and assigns other bundle members; do not silently release an isolated subset of that format. Five waves are a conditional queue, with later units dependent on the format bundle and earlier review/gate results.
