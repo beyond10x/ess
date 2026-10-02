@@ -33,7 +33,7 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 13, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 14, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -74,3 +74,7 @@ Accept as proposed: required Boolean domains within the existing finite proof, i
 ## Scope confirmation during implementation
 
 subject_state.rs::analyze_partition (lines264-294 at b05007e49) is another shared finite-proof caller and is added as cited scope. The implementor established that stored/related/state callers invoke the shared proof even with defaults; unrestricted Boolean admission there would introduce new overlap rejection. Preserve their existing enum-only proof for commands with defaults while admitting Boolean in their no-default proof. This preserves current rejection policy; demonstrate it with before/after default and enum regression controls. Existing top-level explicit Boolean partition support remains required.
+
+## Current-main integration for target validation
+
+The conformance batch now has bot merge3ee06ca31b099c59db703820f6d3b40dbc59392d, incorporating mainb4da64e into reviewed coreb05007e49. The worker stopped every build before integration; all ten owned uncommitted source hashes matched before and after. This corrects stale target sampling: the old batch base preceded the generated Go behavior implementation delivered inPR386. That old obligation is not a current limitation and must not be reported as the target verdict. Native Go validation resumes on the integrated generator. Actual Go and TypeScript conformance runtime samples already exercised both Boolean branches, and the TypeScript ignored-flag mutant failed as expected; final evidence remains pending the complete frozen baseline/treatment pair and independent review.
