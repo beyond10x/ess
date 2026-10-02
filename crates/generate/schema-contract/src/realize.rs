@@ -118,6 +118,8 @@ enum Shape {
     String,
     Number,
     Integer,
+    /// A model integer whose bounds fit a native width (beyond10x/ess#394).
+    SizedInteger(IntegerWidth),
     Literal(Value),
     Ref(String),
     Object {
@@ -135,6 +137,38 @@ enum Shape {
         variants: Vec<Node>,
     },
     Intersection(Vec<Node>),
+}
+
+/// The native width a bounded model integer is realized at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegerWidth {
+    /// Every value lies in `i32`.
+    I32,
+    /// Every value lies in `i64`.
+    I64,
+}
+
+impl IntegerWidth {
+    /// The narrowest width holding every integer from `minimum` to `maximum`.
+    fn of(minimum: i64, maximum: i64) -> Self {
+        if minimum >= i64::from(i32::MIN) && maximum <= i64::from(i32::MAX) {
+            Self::I32
+        } else {
+            Self::I64
+        }
+    }
+
+    /// The width a model integer node is realized at, from its `minimum` and `maximum`, or its
+    /// integer `const`. `None` when the node states no complete range, which keeps the exact
+    /// JSON-number representation: the model names no width, and none is invented.
+    fn of_node(object: &Map<String, Value>) -> Option<Self> {
+        if let Some(constant) = object.get("const").and_then(Value::as_i64) {
+            return Some(Self::of(constant, constant));
+        }
+        let minimum = object.get("minimum").and_then(Value::as_i64)?;
+        let maximum = object.get("maximum").and_then(Value::as_i64)?;
+        Some(Self::of(minimum, maximum))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -610,7 +644,19 @@ impl Builder {
                 }
             }
         }
-        if let Some(value) = object.get("const") {
+        // A model integer fixed by an invariant (`version == 2`) is realized as its sized integer,
+        // and the constant stays a runtime obligation: a literal term beside `integer` would make
+        // an intersection no native target maps.
+        let integer_constant = self.model
+            && object.get("type").and_then(Value::as_str) == Some("integer")
+            && object.get("const").is_some_and(Value::is_i64);
+        if integer_constant {
+            self.obligations.insert(finding(
+                &path(pointer, "const"),
+                "const",
+                "validate this constant against the source schema at runtime",
+            ));
+        } else if let Some(value) = object.get("const") {
             terms.push(Node {
                 pointer: path(pointer, "const"),
                 shape: Shape::Literal(value.clone()),
@@ -691,7 +737,10 @@ impl Builder {
             "boolean" => Shape::Boolean,
             "string" => Shape::String,
             "number" => Shape::Number,
-            "integer" => Shape::Integer,
+            "integer" => match IntegerWidth::of_node(object) {
+                Some(width) if self.model => Shape::SizedInteger(width),
+                _ => Shape::Integer,
+            },
             "object" => {
                 let additional = self.keyword_node(object, "additionalProperties", pointer);
                 let required = object
