@@ -868,7 +868,12 @@ impl App {
                             self.node_reads(&node.body, ui, ctx, out);
                         }
                     }
-                    Composite::GraphEditor(editor) => each(&editor.toolbar, ctx, out),
+                    Composite::GraphEditor(editor) => {
+                        if let Some(reads) = editor.edges.as_ref().and_then(|e| e.reads.as_ref()) {
+                            out.push(self.request(reads, ctx));
+                        }
+                        each(&editor.toolbar, ctx, out);
+                    }
                     Composite::RichText(text) => {
                         if let Some(view) = &text.completes {
                             out.push(ReadRequest {
@@ -1298,6 +1303,10 @@ impl App {
         }
         let result = match self.read_state(&request) {
             Some(ReadState::Ready(result)) => result,
+            // A refetch arriving while a read is outstanding is answered by that read: it is
+            // answered when it completes, after the event. So a burst, or a coalesced batch
+            // applied one payload at a time, is one re-read.
+            None | Some(ReadState::Loading { .. }) if live.effect == Effect::Refetch => return,
             // A read outstanding (a resume refetch, a new filter): apply once it has answered.
             None | Some(ReadState::Loading { .. }) => {
                 self.deferred.push((section.to_owned(), payload.clone()));
@@ -2749,9 +2758,47 @@ impl App {
         self.prompt = Some(prompt);
     }
 
+    /// The sibling pages the page shown offers as a switch (`header.switch`, then `switch_to`),
+    /// each with the current params the target declares, by name.
+    fn switch_targets(&self) -> Vec<(String, BTreeMap<String, Value>)> {
+        let page = self.page_def();
+        let header = page.header.iter().flat_map(|header| header.switch.iter());
+        let mut seen = BTreeSet::new();
+        header
+            .chain(page.switch_to.iter())
+            .filter(|target| **target != self.page && seen.insert((*target).clone()))
+            .filter_map(|target| {
+                let declared = &self.doc.pages.get(target)?.params;
+                let params = self
+                    .params
+                    .iter()
+                    .filter(|(name, _)| declared.contains_key(*name))
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect();
+                Some((target.clone(), params))
+            })
+            .collect()
+    }
+
     /// Palette entries matching `query`, best first.
     pub(crate) fn palette(&self, query: &str) -> Vec<PaletteItem> {
         let mut items = Vec::new();
+        for (page, params) in self.switch_targets() {
+            let def = &self.doc.pages[&page];
+            let label = def
+                .nav
+                .as_ref()
+                .and_then(|nav| nav.label.clone())
+                .or_else(|| def.title.clone())
+                .unwrap_or_else(|| page.clone());
+            items.push((
+                vec![label.clone()],
+                PaletteItem {
+                    label: format!("⇄ {label}"),
+                    target: PaletteTarget::Page(page, params),
+                },
+            ));
+        }
         for entry in self.nav().into_iter().flat_map(|group| group.entries) {
             let mut words = vec![entry.label.clone()];
             words.extend(entry.synonyms.clone());
@@ -3254,19 +3301,26 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
 
 /// A graph editor degraded to a collection of its nodes: label, kind, and its actions.
 pub(crate) fn graph_collection(editor: &ess_ui::GraphEditor) -> ess_ui::Collection {
-    let mut columns = vec![plain_field("id", None), plain_field("label", None)];
-    if let Some(nodes) = &editor.nodes {
-        columns.push(plain_field(&nodes.kind_by, Some("badge")));
+    let nodes = editor.nodes.as_ref();
+    let key = nodes.and_then(|nodes| nodes.key.as_deref()).unwrap_or("id");
+    let label = nodes
+        .and_then(|nodes| nodes.label.as_deref())
+        .unwrap_or("label");
+    let mut columns = vec![plain_field(key, None), plain_field(label, None)];
+    if let Some(kind) = nodes.and_then(|nodes| nodes.kind_by.as_ref()) {
+        columns.push(plain_field(kind, Some("badge")));
     }
-    if let Some(edges) = &editor.edges {
+    let mut row_actions = editor.node_actions.clone();
+    // Edges in the graph's own read are rows of this collection; edges with a read of their
+    // own are drawn after it (`graph_edges`).
+    if let Some(edges) = editor.edges.as_ref().filter(|edges| edges.reads.is_none()) {
         columns.push(plain_field(&edges.from, None));
         columns.push(plain_field(&edges.to, None));
         if let Some(kind) = &edges.kind_by {
             columns.push(plain_field(kind, Some("badge")));
         }
+        row_actions.extend(editor.edge_actions.clone());
     }
-    let mut row_actions = editor.node_actions.clone();
-    row_actions.extend(editor.edge_actions.clone());
     ess_ui::Collection {
         reads: Some(editor.reads.clone()),
         columns: Some(Columns::Fixed(columns)),

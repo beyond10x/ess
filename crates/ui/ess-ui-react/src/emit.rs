@@ -1271,7 +1271,9 @@ impl<'d> Gen<'d> {
                         "nodes",
                         g.nodes.as_ref().map(|nodes| {
                             ts::object([
-                                ("kindBy", Some(ts::string(&nodes.kind_by))),
+                                ("key", quoted(nodes.key.as_ref())),
+                                ("label", quoted(nodes.label.as_ref())),
+                                ("kindBy", quoted(nodes.kind_by.as_ref())),
                                 ("opens", quoted(nodes.opens.as_ref())),
                             ])
                         }),
@@ -1280,6 +1282,7 @@ impl<'d> Gen<'d> {
                         "edges",
                         g.edges.as_ref().map(|edges| {
                             ts::object([
+                                ("reads", edges.reads.as_ref().and_then(Self::reads)),
                                 ("from", Some(ts::string(&edges.from))),
                                 ("to", Some(ts::string(&edges.to))),
                                 ("kindBy", quoted(edges.kind_by.as_ref())),
@@ -1877,7 +1880,7 @@ impl<'d> Gen<'d> {
                             ),
                             (
                                 "href",
-                                Some(format!("{href}({}, {{}})", ts::string(target))),
+                                Some(format!("{href}({}, __params)", ts::string(target))),
                             ),
                         ])
                     }),

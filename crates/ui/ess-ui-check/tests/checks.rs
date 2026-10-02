@@ -705,6 +705,28 @@ fn model_report(pages: &str, channels: &str) -> Report {
 
 const QUIET: &str = "{}";
 
+/// A graph editor's `edges.reads` is a read like the graph's own: its view must be in the model
+/// and answered by a fixture.
+#[test]
+fn a_graph_edge_read_is_checked_like_the_graph_read() {
+    let pages =
+        "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: stock.Items}, \
+                 {name: graph, component: graph_editor, reads: stock.Items, \
+                 nodes: {key: item_id, label: label}, \
+                 edges: {reads: {view: stock.Missing}, from: from_id, to: to_id}}]}}";
+    let report = model_report(pages, QUIET);
+    trips_in(
+        &report,
+        "view_in_model",
+        "pages/p/sections/graph/edges/reads",
+    );
+    trips_in(
+        &report,
+        "fixture_per_view",
+        "pages/p/sections/graph/edges/reads",
+    );
+}
+
 #[test]
 fn view_in_model() {
     let report = model_report(

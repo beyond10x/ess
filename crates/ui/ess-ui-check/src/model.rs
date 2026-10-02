@@ -868,6 +868,20 @@ fn body_names<'a>(path: &NodePath, body: &'a Body, push: &mut impl FnMut(NodePat
             );
         }
     }
+    if let Composite::GraphEditor(editor) = composite {
+        if let Some(reads) = editor.edges.as_ref().and_then(|e| e.reads.as_ref()) {
+            if let Some(name) = &reads.view {
+                push(
+                    path.child("edges").child("reads"),
+                    Kind::View {
+                        name,
+                        bound: Bound::Read(Read::of(reads)),
+                        body: false,
+                    },
+                );
+            }
+        }
+    }
     let commands: Vec<&String> = match composite {
         Composite::Form(form) => vec![&form.does],
         Composite::Confirm(confirm) => confirm.does.iter().collect(),

@@ -649,6 +649,9 @@ impl Checker<'_> {
                     if let Some(opens) = editor.nodes.as_ref().and_then(|n| n.opens.as_ref()) {
                         self.opens(sink, &path.child("nodes"), opens);
                     }
+                    if let Some(reads) = editor.edges.as_ref().and_then(|e| e.reads.as_ref()) {
+                        self.reads(sink, &path.child("edges").child("reads"), reads);
+                    }
                 }
             }
             Body::Primitive(primitive) => self.primitive(sink, path, primitive),

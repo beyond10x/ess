@@ -381,7 +381,8 @@ constructs:
       A page owns the state a link should reproduce (filters, paging, selection) and composes
       sections, each loading on its own. Start from a page kind and declare only what differs.
       `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as
-      a view switch.
+      a view switch; switching keeps every current param the target page declares, by name, so
+      sibling views of one record stay on that record.
     inheritance:
       from: kind
       merge: shorthands.inheritance
@@ -816,11 +817,11 @@ constructs:
     group: composites
     order: 12
     summary: Nodes and edges of a model, editable on a canvas.
-    doc: For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. A renderer without a canvas falls back to a collection of nodes.
+    doc: For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. `reads` holds the nodes, and the edges too unless `edges.reads` names a view of their own; `nodes.key` is the field edge endpoints name and `nodes.label` the field a node shows. A renderer without a canvas falls back to a collection of nodes.
     fields:
-      reads:        {type: Reads, required: true, note: the graph}
-      nodes:        {type: {record: {kind_by: name, opens: {optional: {ref: overlay}}}}, note: node kind field and edit overlay}
-      edges:        {type: {record: {from: name, to: name, kind_by: {optional: name}}}, note: edge endpoints and kind}
+      reads:        {type: Reads, required: true, note: "the nodes, and the edges unless they have their own read"}
+      nodes:        {type: {record: {key: {optional: name}, label: {optional: name}, kind_by: {optional: name}, opens: {optional: {ref: overlay}}}}, note: "node key (default id), label and kind fields, and edit overlay"}
+      edges:        {type: {record: {reads: {optional: Reads}, from: name, to: name, kind_by: {optional: name}}}, note: "edge read, endpoint fields (node keys) and kind"}
       node_actions: {type: {list: Action}, note: context menu of a node}
       edge_actions: {type: {list: Action}, note: context menu of an edge}
       toolbar:      {type: {list: Node}, note: "named nodes above the canvas, left to right"}
