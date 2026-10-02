@@ -169,7 +169,7 @@ impl fmt::Display for Cell {
             Aspect::Rotation => f.write_str("rotation")?,
             Aspect::Read(view) => write!(f, "read/{view}")?,
             Aspect::Command(outcome) => {
-                write!(f, "command/{}/{}", outcome.command, outcome.outcome)?
+                write!(f, "command/{}/{}", outcome.command, outcome.outcome)?;
             }
             Aspect::Denied(command) => write!(f, "denied/{command}")?,
         }
