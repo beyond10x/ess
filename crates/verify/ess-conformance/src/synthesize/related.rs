@@ -141,28 +141,41 @@ pub(super) fn arrange_except(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    setup: Setup,
+    guarded: Option<Guarded<'_>>,
+) -> Result<Setup, RefusalCause> {
+    arrange_within(ir, outcome, actors, distinction, setup, guarded, &[])
+}
+
+/// Related sources inside an existing creation search retain its cycle guard (#360).
+pub(super) fn arrange_within(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
     mut setup: Setup,
     guarded: Option<Guarded<'_>>,
+    arranging: &[&EntityHandle],
 ) -> Result<Setup, RefusalCause> {
     let reads = reads(outcome)
         .into_iter()
         .filter(|read| !is_guarded(ir, outcome, read, guarded));
     for (nth, read) in reads.enumerate() {
+        check_chain(read.entity, arranging)?;
         let first = RELATED_WITNESS * (1 + distinction.get() + 8 * nth);
-        let initial = ir.entity(read.entity).lifecycle.initial.clone();
         let row = |at: usize| {
             arrange_first(
                 ir,
                 read.entity,
-                std::slice::from_ref(&initial),
+                std::slice::from_ref(&ir.entity(read.entity).lifecycle.initial),
                 actors,
                 Distinction::further(at),
-                &[],
+                arranging,
             )
             .ok()
         };
         let (referenced, arranged_here) =
-            if let Some(owner) = bound_owner(ir, outcome, actors, &setup, &read) {
+            if let Some(owner) = bound_owner(ir, outcome, actors, &setup, &read, arranging) {
                 (owner, false)
             } else {
                 let Some(referenced) = row(first) else {
@@ -251,6 +264,16 @@ pub(super) fn arrange_except(
         setup.steps = steps;
     }
     Ok(setup)
+}
+
+fn check_chain(entity: &EntityHandle, arranging: &[&EntityHandle]) -> Result<(), RefusalCause> {
+    if arranging.contains(&entity) {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: format!("cyclic related source arrangement through `{entity}`"),
+            tried: arranging.len(),
+        });
+    }
+    Ok(())
 }
 
 /// Whether `read` reads the row `guarded` names: through the same input, of the same entity.
@@ -488,6 +511,7 @@ fn bound_owner(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &Setup,
     read: &Read<'_>,
+    arranging: &[&EntityHandle],
 ) -> Option<Arrangement> {
     let field = input_read(ir, outcome, read.via)?;
     let bound = setup.bound.get(field)?;
@@ -501,7 +525,7 @@ fn bound_owner(
         &subject.entity,
         actors,
         Distinction::PLAIN,
-        &[],
+        arranging,
     )?;
     let names = ir.owner_of(&subject.entity)?.owner == *read.entity;
     (names && carried == field && owner.instance == *bound).then_some(owner)

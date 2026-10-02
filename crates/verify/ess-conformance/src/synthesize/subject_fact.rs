@@ -4935,6 +4935,47 @@ fn conjunct_goals(
                 witnessed,
                 witnessed_state,
             ));
+            // `defined(flag) && flag == true` cannot isolate absence while also holding the
+            // comparison true. Keep the independent conjuncts (including command input), omit
+            // only comparisons reading this Optional field, and let full branch selection check
+            // the resulting row. Present false and absent remain distinct witnesses (#307).
+            for child in conjuncts {
+                let Predicate::Defined(path) = child else {
+                    continue;
+                };
+                if path.segments().len() != 1
+                    || !ir
+                        .entity(entity)
+                        .fields
+                        .iter()
+                        .any(|field| field.name == path.namespace() && field.type_ref.is_optional())
+                    || row_truth(
+                        ir,
+                        entity,
+                        witnessed,
+                        &BTreeSet::new(),
+                        witnessed_state,
+                        child,
+                    ) == Truth::False
+                {
+                    continue;
+                }
+                let dependent = |predicate: &&Predicate| {
+                    matches!(predicate, Predicate::Compare { .. })
+                        && predicate
+                            .fact_paths()
+                            .iter()
+                            .any(|read| read.segments().starts_with(path.segments()))
+                };
+                if conjuncts.iter().any(|predicate| dependent(&predicate)) {
+                    let held = conjuncts
+                        .iter()
+                        .filter(|predicate| *predicate != child && !dependent(predicate))
+                        .cloned()
+                        .collect();
+                    goals.push((vec![child.clone()], held));
+                }
+            }
         }
     }
     goals
@@ -5104,9 +5145,11 @@ pub(super) fn boundaries(
     );
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
-    // A command comparing a link with an input decides every guard with the input bound: `selects`
-    // reads every branch, so a goal of its own reads the link through a sibling too.
-    let decided_with_input = !links(ir, command, entity).is_empty();
+    // A boundary may isolate a stored flag while holding an input conjunct true. Decide the
+    // complete goal with that input bound, including ordinary scalar inputs, not only links.
+    // `selects` reads every branch, so a goal can also read input through a sibling.
+    let decided_with_input = !links(ir, command, entity).is_empty()
+        || hints.iter().any(|hint| reads_input(ir, entity, hint));
     let mut rows = 0;
     for ((refuted, held), kind) in goals {
         if let Further::Past(why) = &kind {
