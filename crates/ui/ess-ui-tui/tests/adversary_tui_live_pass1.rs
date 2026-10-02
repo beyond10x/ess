@@ -293,6 +293,56 @@ fn retrying_a_refused_confirmed_action_does_not_resend_the_accepted_confirm_comm
 
 // ── what an answer does to the screen ─────────────────────────────────────────────────────────
 
+#[test]
+fn a_matching_confirm_command_retries_refusal_but_never_resends_a_committed_action() {
+    let (mut app, log, answers, _) = scripted(
+        desk(
+            "          - {name: admit, label: Admit, does: visit.AdmitVisitor, \
+             bind: {visit_id: row.visit_id}, confirm: admit}\n",
+            "      admit:
+        kind: dialog
+        title: Admit visitor
+        component: confirm
+        does: visit.AdmitVisitor
+        params: {visit_id: row.visit_id}
+        body: Admit this visitor?
+",
+        ),
+        "matching-confirm-retry",
+    );
+    answers
+        .borrow_mut()
+        .insert("visit.AdmitVisitor".to_owned(), conflict());
+    app.focus_section("expected");
+    app.render_text(WIDTH, HEIGHT);
+    app.keys("a");
+    app.keys("y");
+    assert_eq!(
+        log.borrow().sent("visit.AdmitVisitor"),
+        1,
+        "matching does sends one command"
+    );
+    assert!(app
+        .render_text(WIDTH, HEIGHT)
+        .contains("Admit this visitor?"));
+    answers.borrow_mut().insert(
+        "visit.AdmitVisitor".to_owned(),
+        Answer::Unfinished { committed: true },
+    );
+    app.keys("y");
+    assert_eq!(
+        log.borrow().sent("visit.AdmitVisitor"),
+        2,
+        "refused command can be retried"
+    );
+    app.keys("y");
+    assert_eq!(
+        log.borrow().sent("visit.AdmitVisitor"),
+        2,
+        "committed command is never resent"
+    );
+}
+
 /// A `501` with `committed: true` says the command's effect stands. What the screen read is out
 /// of date exactly as after an accepted command, so it is read again.
 #[test]

@@ -116,18 +116,19 @@ fn fnv(text: &str) -> u64 {
     hash
 }
 
-/// Every file of the desk rendered without a model at story:ui-react-plain (`83f5f3e`), digested;
-/// the files this story's templates touch by name, then the whole project.
+/// The unbound desk after the consolidated UI fixes: confirm openers return their result and
+/// run once, while the remaining live-binding template projections retain their plain bytes.
+/// The whole-project digest also covers the shared expression, row and field fixes.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
-    ("src/runtime/actions.tsx", 0x1a2a_3db3_907f_aadd),
-    ("src/runtime/composites/confirm.tsx", 0xa71b_427a_f938_9777),
+    ("src/runtime/actions.tsx", 0x1440_0f25_3b4c_8e3b),
+    ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0x752b_3696_9db6_fbcc),
     ("src/runtime/data.ts", 0x27ef_3e5b_6f5b_b68c),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xf894_210c_1038_8404;
+const PLAIN_PROJECT: u64 = 0x6dae_633a_08fe_4f60;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
@@ -140,7 +141,7 @@ fn without_a_model_the_project_is_byte_identical() {
         assert_eq!(
             fnv(file(&plain, path)),
             digest,
-            "{path} differs from story:ui-react-plain's:\n{}",
+            "{path} differs from the consolidated unbound projection:\n{}",
             file(&plain, path)
         );
     }
@@ -154,7 +155,7 @@ fn without_a_model_the_project_is_byte_identical() {
     assert_eq!(
         fnv(&whole),
         PLAIN_PROJECT,
-        "the project differs from story:ui-react-plain's: {:?}",
+        "the project differs from the consolidated unbound projection: {:?}",
         plain.files.keys()
     );
     for absent in ["src/binding.ts", "src/runtime/answer.ts"] {
@@ -464,6 +465,62 @@ const app = jsx(ScopeLayer, {{
   assert.strictEqual(closed, 0);
   assert.deepStrictEqual(notices, []);
   assert.ok(reads() > before, `reads ${{before}} -> ${{reads()}}`);
+}})().catch((error) => {{ console.error(error); process.exit(1); }});
+"#
+        ),
+    );
+}
+
+#[test]
+fn a_matching_confirm_retries_refusal_then_closes_without_resending_committed_work() {
+    let document = load(&format!("{DESK}    overlays:\n      ask: {{kind: dialog, component: confirm, does: visit.AdmitVisitor}}\n"));
+    let binding = bind(&document, &gatepass_with(""));
+    let out = scratch("matching-confirm-retry");
+    ess_ui_react::generate_bound(&document, &root(), &out, Some(&binding)).expect("bound app");
+    compile(
+        &out,
+        &[
+            "binding.ts",
+            "runtime/actions.tsx",
+            "runtime/overlays.tsx",
+            "runtime/composites/confirm.tsx",
+        ],
+    );
+    node(
+        &out,
+        "matching-confirm-retry",
+        &format!(
+            r#"{STAGE}
+const {{ ActionControl }} = out("runtime/actions");
+const {{ OverlayHost }} = out("runtime/overlays");
+const {{ ConfirmView }} = out("runtime/composites/confirm");
+answer = {{ status: 409, body: '{{"outcome":"wrong-state","published":[],"error":"gatepass.visit.VisitStateConflict","payload":{{"state":"Departed"}}}}' }};
+const path = "pages/desk/sections/expected/actions/admit";
+const root = React.__root(jsx(OverlayHost, {{ overlays: {{}}, children: jsx(ScopeLayer, {{
+  values: {{ row: {{ visit_id: "v-1" }} }},
+  children: jsx(ActionControl, {{ action: {{
+    "data-ui-path": path, name: "admit", label: "Admit", does: "visit.AdmitVisitor",
+    bind: {{ visit_id: "row.visit_id" }},
+    confirm: jsx(ConfirmView, {{ "data-ui-path": `${{path}}/confirm/overlay`, does: "visit.AdmitVisitor" }}),
+  }} }}),
+}}) }})).settle();
+(async () => {{
+  await flush(root);
+  root.find((n) => n.tag === "button" && n.props["data-ui-path"] === path)[0].props.onClick();
+  await flush(root);
+  const primary = () => root.find((n) => n.tag === "button" && String(n.props.className).includes("ui-tone-danger"));
+  primary()[0].props.onClick();
+  await flush(root);
+  assert.strictEqual(posts().length, 1, "matching command is sent once");
+  assert.strictEqual(primary().length, 1, "refusal leaves confirm open");
+  assert.ok(root.text().includes("VisitStateConflict"), root.text());
+  {COMMITTED}
+  primary()[0].props.onClick();
+  await flush(root);
+  assert.strictEqual(posts().length, 2, "refused command is retryable");
+  assert.strictEqual(primary().length, 0, "committed command closes confirm");
+  await flush(root);
+  assert.strictEqual(posts().length, 2, "committed action is never resent");
 }})().catch((error) => {{ console.error(error); process.exit(1); }});
 "#
         ),

@@ -2519,10 +2519,12 @@ impl App {
             let entry = input.entry(segments[0].to_owned()).or_insert(Value::Null);
             put(entry, &segments[1..], value);
         }
-        if let Some(Value::String(id)) = self.overlay_params().get("id") {
-            input
-                .entry("id".to_owned())
-                .or_insert_with(|| Value::String(id.clone()));
+        if target == Target::Overlay {
+            // Like React's {...params, ...draft}, keep every resolved parameter's type and
+            // let an edited top-level draft field replace a colliding parameter.
+            let mut params = self.overlay_params();
+            params.extend(input);
+            input = params;
         }
         let ui = self.target_ui(target);
         self.ui_mut(&ui).editing = false;
@@ -2625,10 +2627,10 @@ impl App {
         let mut refused = None;
         if let Some(does) = confirm.does.as_ref().filter(|does| {
             !open.confirmed
-                && !open
+                && open
                     .then
                     .as_ref()
-                    .is_some_and(|(action, _)| action.does.as_deref() == Some(does.as_str()))
+                    .is_none_or(|(action, _)| action.does.as_deref() != Some(does.as_str()))
         }) {
             refused = self.run_command(does, &open.params);
             // Accepted: a retry after the action is refused sends only the action again.

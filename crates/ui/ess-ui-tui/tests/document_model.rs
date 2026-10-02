@@ -18,8 +18,8 @@ impl DataAdapter for Rows {
             total: None,
         })
     }
-    fn run(&mut self, _: &str, _: &BTreeMap<String, Value>) -> Result<String, String> {
-        Ok(String::new())
+    fn run(&mut self, _: &str, _: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
+        ess_ui::binding::Answer::Accepted
     }
     fn load_state(&self, _: &str) -> Option<Value> {
         None

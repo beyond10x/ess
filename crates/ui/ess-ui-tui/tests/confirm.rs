@@ -46,7 +46,7 @@ impl DataAdapter for Shared {
     fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
         self.0.borrow().read(request)
     }
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
         self.0.borrow_mut().run(command, input)
     }
     fn load_state(&self, path: &str) -> Option<Value> {

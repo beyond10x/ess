@@ -894,6 +894,17 @@ fn enum_values() {
 }
 
 #[test]
+fn icon_tone_map_values_are_checked_like_badge_values() {
+    let text = page("{kind: detail_page, title: P, sections: [{name: summary, component: record, reads: t.ById, children: [{name: mark, primitive: icon, icon: star, label: Star, tone_by: {value: row.state, map: {open: misspelled}}}]}]}");
+    let checked = report(&text);
+    trips_in(
+        &checked,
+        "enum_values",
+        "pages/p/sections/summary/children/mark",
+    );
+}
+
+#[test]
 fn degrades_known() {
     let text = page(
         "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById, \

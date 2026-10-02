@@ -27,6 +27,7 @@ const CHECKED: &[&str] = &[
     "chart.chart",
     "divider.orientation",
     "image.fit",
+    "icon.tone_by.map.*",
     "input.as",
 ];
 
@@ -127,6 +128,17 @@ fn body(sink: &mut Sink, path: &NodePath, body: &Body) {
                 }
             }
         }
+        Body::Primitive(Primitive::Icon(icon)) => {
+            let tones = icon
+                .tone_by
+                .as_ref()
+                .and_then(|tone_by| tone_by.map.as_mapping());
+            for tone in tones.into_iter().flatten().map(|(_, tone)| tone) {
+                if let Value::String(tone) = tone {
+                    value(sink, path, "icon.tone_by.map.*", "tone_by.map", tone);
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -182,6 +194,7 @@ mod tests {
         "SectionStates.stale.mark",
         "StateClass.(value)",
         "Store.(value)",
+        "ToneMap.(value).*",
         "Widget.arrange",
         "badge.tone",
         "button.tone",

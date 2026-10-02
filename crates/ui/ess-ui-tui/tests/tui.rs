@@ -689,6 +689,101 @@ pages:
 /// Every command run, in order, with its input.
 type Recorded = std::rc::Rc<std::cell::RefCell<Vec<(String, BTreeMap<String, Value>)>>>;
 
+fn submitted_overlay_parameters(test: &str) -> BTreeMap<String, Value> {
+    let dir = state_dir(test);
+    std::fs::create_dir_all(&dir).expect("fixture directory");
+    std::fs::write(dir.join("rows.yaml"), "views:\n  issues.All:\n    rows:\n      - {id: legacy-1, ambiguity_id: amb-7, enabled: true, revision: 3, budget: {limit_cents: 25}, metadata: {owner: Ada, labels: [urgent, review]}}\n").expect("fixture");
+    let document = ess_ui::load_str(r"
+format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {issues.All: rows.yaml}}
+shells:
+  app: {regions: {main: {kind: page_outlet}, overlay: {kind: overlay_outlet}}}
+navigation: {home: issues, sections: [{name: all, pages: [issues]}]}
+pages:
+  issues:
+    kind: list_page
+    title: Issues
+    sections:
+      - name: list
+        component: collection
+        reads: issues.All
+        columns: [ambiguity_id]
+        row_actions: [{name: edit, label: Edit, opens: resolve}]
+    overlays:
+      resolve:
+        kind: dialog
+        component: form
+        title: Resolve ambiguity
+        does: issues.Resolve
+        params: {id: row.id, ambiguity_id: row.ambiguity_id, enabled: row.enabled, revision: row.revision, budget: row.budget, metadata: row.metadata, resolution: old}
+        fields: [resolution, {field: budget.limit_cents, as: number}]
+").expect("overlay document");
+    let (inner, scripts) = FixtureAdapter::load(&document, &dir, None).expect("fixtures");
+    let commands = Recorded::default();
+    let mut app = App::with_adapter(
+        document,
+        Box::new(Budgeted {
+            inner,
+            commands: commands.clone(),
+        }),
+        scripts,
+        Options::new(dir.join("state")),
+    )
+    .expect("app");
+    app.focus_section("list");
+    app.render_text(120, HEIGHT);
+    app.keys("e");
+    app.keys("<enter>accepted<tab>7500<c-s>");
+    let commands = commands.borrow();
+    let (command, input) = commands.last().expect("overlay submitted");
+    assert_eq!(command, "issues.Resolve");
+    input.clone()
+}
+
+#[test]
+fn overlay_form_sends_non_id_parameters() {
+    let input = submitted_overlay_parameters("overlay-non-id");
+    assert_eq!(
+        input.get("ambiguity_id"),
+        Some(&Value::String("amb-7".to_owned()))
+    );
+    assert_eq!(input.get("id"), Some(&Value::String("legacy-1".to_owned())));
+    assert_eq!(
+        input.get("resolution"),
+        Some(&Value::String("accepted".to_owned()))
+    );
+}
+
+#[test]
+fn overlay_form_preserves_typed_parameters() {
+    let input = submitted_overlay_parameters("overlay-typed-params");
+    assert_eq!(input.get("enabled"), Some(&Value::Bool(true)));
+    assert_eq!(input.get("revision"), Some(&Value::Number(3.into())));
+    assert_eq!(
+        input.get("metadata"),
+        Some(
+            &serde_yaml::from_str::<Value>("{owner: Ada, labels: [urgent, review]}")
+                .expect("metadata")
+        )
+    );
+}
+
+#[test]
+fn overlay_form_draft_overrides_matching_parameter() {
+    let input = submitted_overlay_parameters("overlay-param-collision");
+    assert_eq!(
+        input.get("resolution"),
+        Some(&Value::String("accepted".to_owned()))
+    );
+    assert_eq!(
+        input.get("budget"),
+        Some(&serde_yaml::from_str::<Value>("{limit_cents: 7500}").expect("budget"))
+    );
+}
+
 /// The example's fixtures, with a `budget` struct on every invoice row and every command's
 /// input recorded.
 struct Budgeted {
@@ -715,7 +810,7 @@ impl DataAdapter for Budgeted {
         }
         Ok(result)
     }
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
         self.commands
             .borrow_mut()
             .push((command.to_owned(), input.clone()));
