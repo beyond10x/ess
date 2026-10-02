@@ -216,7 +216,15 @@ func exploreLoad(irText, suiteText string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("explore: cannot read `ir.json`: %w", err)
 	}
-	return exploreObject(model), nil
+	ir := exploreObject(model)
+	for _, command := range exploreSorted(ir["commands"]) {
+		for _, raw := range exploreList(command["outcomes"]) {
+			if len(exploreList(exploreObject(raw)["one_time_response"])) != 0 {
+				return nil, errors.New("UnsupportedOneTimeDisclosure: one-time response concurrent/history observation is not supported")
+			}
+		}
+	}
+	return ir, nil
 }
 
 func exploreObject(value any) map[string]any {
