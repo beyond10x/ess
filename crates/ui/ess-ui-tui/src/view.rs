@@ -630,7 +630,14 @@ impl App {
         for mark in &mut marks {
             mark.line += 2;
         }
-        self.region(open.path.to_string(), None, area, None);
+        self.region(
+            open.drawn_at
+                .clone()
+                .unwrap_or_else(|| open.path.to_string()),
+            None,
+            area,
+            None,
+        );
         self.place_marks(marks, inner(area));
         frame.render_widget(Clear, area);
         frame.render_widget(
@@ -756,24 +763,10 @@ impl App {
                 for field in &record.fields {
                     lines.push(labelled(field, &cell(field, &shown)));
                 }
-                if !record.tabs.is_empty() {
-                    let tab = self.ui(place.ui).tab;
-                    lines.push(tab_line(
-                        record
-                            .tabs
-                            .iter()
-                            .map(|tab| tab.label.clone().unwrap_or_else(|| tab.name.clone())),
-                        tab,
-                    ));
-                    if let Some(TabFields::Fields(fields)) =
-                        record.tabs.get(tab).and_then(|tab| tab.fields.as_ref())
-                    {
-                        let shown = self.labelled(fields, &row);
-                        for field in fields {
-                            lines.push(labelled(field, &cell(field, &shown)));
-                        }
-                    }
-                }
+                let tab = self
+                    .ui(place.ui)
+                    .tab
+                    .min(record.tabs.len().saturating_sub(1));
                 let inner = Place {
                     ctx: Ctx {
                         row: Some(&row),
@@ -782,10 +775,40 @@ impl App {
                     record: false,
                     ..*place
                 };
+                if !record.tabs.is_empty() {
+                    self.mark_tabs(&record.tabs, place, lines.len());
+                    lines.push(tab_line(
+                        record
+                            .tabs
+                            .iter()
+                            .map(|tab| tab.label.clone().unwrap_or_else(|| tab.name.clone())),
+                        tab,
+                    ));
+                    let current = record.tabs.get(tab);
+                    if let Some(TabFields::Fields(fields)) =
+                        current.and_then(|tab| tab.fields.as_ref())
+                    {
+                        let shown = self.labelled(fields, &row);
+                        for field in fields {
+                            lines.push(labelled(field, &cell(field, &shown)));
+                        }
+                    }
+                    // A tab's nested node draws below its fields, as the generated app shows it.
+                    if let (Some(current), Some(ess_ui::TabForm::Node(node))) =
+                        (current, current.and_then(|tab| tab.form.as_ref()))
+                    {
+                        let path = place.path.child("tabs").child(&current.name).child("form");
+                        let nested = Place {
+                            path: &path,
+                            ..inner
+                        };
+                        lines.extend(self.body_lines(&node.body, &nested));
+                    }
+                }
                 for node in &record.item {
                     lines.extend(self.node_lines(node, &inner));
                 }
-                lines.extend(self.action_hint(&record.actions, &inner.ctx));
+                lines.extend(self.action_hint(&record_actions(record, tab), &inner.ctx));
                 lines
             }
             Composite::Form(form) => self.form_lines(form, place),
@@ -1922,6 +1945,43 @@ fn labelled(field: &Field, value: &str) -> Line<'static> {
         Span::styled(format!("{} ", pad(&label_of(field), 16)), dim()),
         Span::raw(value.to_owned()),
     ])
+}
+
+/// The actions a record offers on the tab shown: its own, then the tab's `form` when that is an
+/// action. Drawing and key handling read the same list, so a hint's key runs its action.
+pub(crate) fn record_actions(record: &ess_ui::Record, tab: usize) -> Vec<ess_ui::Action> {
+    let mut actions = record.actions.clone();
+    if let Some(ess_ui::TabForm::Action(action)) =
+        record.tabs.get(tab).and_then(|tab| tab.form.as_ref())
+    {
+        actions.push((**action).clone());
+    }
+    actions
+}
+
+impl App {
+    /// Records each tab of a section's or an overlay's own record at `<path>/tabs/<name>`, on
+    /// the tab line drawn at `line` ([`tab_line`]).
+    fn mark_tabs(&self, tabs: &[ess_ui::Tab], place: &Place<'_>, line: usize) {
+        if !place.record {
+            return;
+        }
+        let mut x = 0;
+        for tab in tabs {
+            let label = tab.label.clone().unwrap_or_else(|| tab.name.clone());
+            let width = label.width() + 2;
+            self.mark(Mark {
+                path: format!("{}/tabs/{}", place.path, tab.name),
+                row: None,
+                line,
+                height: 1,
+                x,
+                width: Some(width),
+                text: Some(label),
+            });
+            x += width + 1;
+        }
+    }
 }
 
 fn tab_line(labels: impl Iterator<Item = String>, current: usize) -> Line<'static> {

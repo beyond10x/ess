@@ -1146,7 +1146,7 @@ Use before destructive commands, inside an overlay whose `title` is the question
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `body` | `string` |   |   | explanation |
-| `does` | name of an ESS `command` |   |   | command run on confirm |
+| `does` | name of an ESS `command` |   |   | command run on confirm, unless the action that opened the confirm runs the same command |
 | `references` | name of an ESS `view` |   |   | the used-by view shown first |
 | `consequences` | list of `string` |   |   | what the command will do |
 | `confirm_label` | `string` |   | `Delete` | confirm button text |
@@ -1964,7 +1964,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
 | `choice` | [Node](#node) |   |   | options for as choice |
 | `loads` | [Reads](#reads) |   |   | current value for a header toggle or choice |
-| `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first |
+| `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
 | `visible` | `expr` |   |   | UI condition beyond grants |

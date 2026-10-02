@@ -256,6 +256,12 @@ fn refusal(step: &Step, document: &Document) -> Option<String> {
     if let Some(reason) = crate::parity::unrendered(document, &target) {
         return Some(reason);
     }
+    if let Some(reason) = crate::parity::undriven(document, &target) {
+        return Some(reason);
+    }
+    if matches!(step, Step::Choose { .. }) {
+        return crate::parity::choose(document, &target);
+    }
     checks?
         .iter()
         .filter(|check| matches!(check, Check::Text(_) | Check::NotText(_)))
@@ -381,13 +387,56 @@ fn emit_step(
                     string(command)
                 )];
             }
-            let input: BTreeMap<&String, &Value> = input.iter().collect();
             vec![format!(
-                "expect(commands).toContainEqual(expect.objectContaining({{ command: {}, input: expect.objectContaining({}) }}));",
+                "expect(commands).toContainEqual(expect.objectContaining({{ command: {}, input: {} }}));",
                 string(command),
-                json(&input)
+                input_matcher(input)
             )]
         }
+    }
+}
+
+/// The matcher an expected command input is held to, as the terminal holds it: JSON values with
+/// their types, an object by the fields it names (`expect.objectContaining`), a list item by item,
+/// and a dotted field name as nested objects.
+fn input_matcher(input: &BTreeMap<String, Value>) -> String {
+    let mut nested = serde_yaml::Mapping::new();
+    for (field, value) in input {
+        let mut segments: Vec<&str> = field.split('.').collect();
+        let last = segments.pop().unwrap_or_default();
+        let mut at = &mut nested;
+        for segment in segments {
+            let key = Value::String(segment.to_owned());
+            if !at.get(&key).is_some_and(Value::is_mapping) {
+                at.insert(key.clone(), Value::Mapping(serde_yaml::Mapping::new()));
+            }
+            let Some(Value::Mapping(inner)) = at.get_mut(&key) else {
+                unreachable!("inserted above")
+            };
+            at = inner;
+        }
+        at.insert(Value::String(last.to_owned()), value.clone());
+    }
+    matcher(&Value::Mapping(nested))
+}
+
+fn matcher(value: &Value) -> String {
+    match value {
+        Value::Mapping(fields) => {
+            let fields: Vec<String> = fields
+                .iter()
+                .map(|(name, value)| {
+                    format!("{}:{}", string(&crate::spec::scalar(name)), matcher(value))
+                })
+                .collect();
+            format!("expect.objectContaining({{{}}})", fields.join(","))
+        }
+        Value::Sequence(items) => format!(
+            "[{}]",
+            items.iter().map(matcher).collect::<Vec<_>>().join(",")
+        ),
+        Value::Tagged(tagged) => matcher(&tagged.value),
+        other => json(other),
     }
 }
 
@@ -400,16 +449,23 @@ fn emit_check(at: &str, check: &Check) -> Vec<String> {
             string(status)
         )
     };
+    // A number of four or more digits matches with or without grouping, as in the terminal.
+    let expected = |text: &str| {
+        crate::numbers::pattern(text).map_or_else(
+            || string(text),
+            |pattern| format!("new RegExp({})", string(&pattern)),
+        )
+    };
     match check {
         Check::Text(text) => vec![format!(
             "await expect({}).toContainText({});",
             locator(at),
-            string(text)
+            expected(text)
         )],
         Check::NotText(text) => vec![format!(
             "await expect({}).not.toContainText({});",
             locator(at),
-            string(text)
+            expected(text)
         )],
         Check::RowCount(count) => vec![format!("await expect({rows}).toHaveCount({count});")],
         Check::RowKeys(keys) => {
@@ -534,6 +590,13 @@ fn choice(document: &Document, at: &str, option: &str) -> (String, bool) {
                 Body::Composite(Composite::Choice(choice)) => Some(choice.clone()),
                 _ => None,
             },
+            // A form's choice field: its `choice` node draws the control inside the field.
+            NodeRef::Field(field) if located.path.to_string() == at => {
+                match field.choice.as_ref().map(|node| &node.body) {
+                    Some(Body::Composite(Composite::Choice(choice))) => Some(choice.clone()),
+                    _ => None,
+                }
+            }
             _ => None,
         });
     let Some(choice) = found else {

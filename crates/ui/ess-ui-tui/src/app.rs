@@ -143,6 +143,9 @@ pub(crate) struct OpenOverlay {
     pub overlay: Overlay,
     pub params: BTreeMap<String, Value>,
     pub then: Option<(Action, Option<Value>)>,
+    /// The path the overlay is drawn at when it differs from `path`: an inline confirm opened
+    /// from a row is scoped under that row (`<collection>/rows/<key>/…`), as in React.
+    pub drawn_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1737,19 +1740,33 @@ impl App {
             Composite::Form(form) => self.form_key(target, &ui, &form, &draft, key),
             Composite::FilterBar(bar) => self.bar_key(&ui, &bar, section.as_deref(), key),
             Composite::Record(record) => {
-                if let KeyCode::Char(letter) = key.code {
-                    let ctx = Ctx {
-                        section: section.as_deref(),
-                        overlay,
-                        ..Ctx::default()
-                    };
-                    if let Some((_, action)) = self
-                        .action_keys(&record.actions, &ctx)
-                        .into_iter()
-                        .find(|(key, _)| *key == letter)
-                    {
-                        self.run_action(&action, None, false);
+                let tabs = record.tabs.len().max(1);
+                let tab = self.ui(&ui).tab.min(tabs - 1);
+                match key.code {
+                    KeyCode::Char(']') => {
+                        let state = self.ui_mut(&ui);
+                        state.tab = (tab + 1) % tabs;
                     }
+                    KeyCode::Char('[') => {
+                        let state = self.ui_mut(&ui);
+                        state.tab = (tab + tabs - 1) % tabs;
+                    }
+                    KeyCode::Char(letter) => {
+                        let ctx = Ctx {
+                            section: section.as_deref(),
+                            overlay,
+                            ..Ctx::default()
+                        };
+                        let actions = crate::view::record_actions(&record, tab);
+                        if let Some((_, action)) = self
+                            .action_keys(&actions, &ctx)
+                            .into_iter()
+                            .find(|(key, _)| *key == letter)
+                        {
+                            self.run_action(&action, None, false);
+                        }
+                    }
+                    _ => {}
                 }
             }
             Composite::Confirm(confirm) => self.confirm_key(&ui, &confirm, key),
@@ -2384,18 +2401,69 @@ impl App {
         }
     }
 
+    /// Confirming runs the action that opened the confirm, once, whether or not the confirm
+    /// declares `does`. A confirm's own `does` runs too when it names another command, or when no
+    /// action opened it.
     fn confirmed(&mut self, confirm: &ess_ui::Confirm) {
         let open = self.overlay.take();
+        let then = open.as_ref().and_then(|open| open.then.clone());
         if let Some(does) = &confirm.does {
-            let input = open
+            let opener_runs_it = then
                 .as_ref()
-                .map(|open| open.params.clone())
-                .unwrap_or_default();
-            self.run_command(does, &input);
+                .is_some_and(|(action, _)| action.does.as_deref() == Some(does.as_str()));
+            if !opener_runs_it {
+                let input = open
+                    .as_ref()
+                    .map(|open| open.params.clone())
+                    .unwrap_or_default();
+                self.run_command(does, &input);
+            }
         }
-        if let Some((action, row)) = open.and_then(|open| open.then) {
+        if let Some((action, row)) = then {
             self.run_action(&action, row, true);
         }
+    }
+
+    /// The canonical path of `action` on the page shown or its shell.
+    fn action_path(&self, action: &Action) -> Option<NodePath> {
+        let page = format!("{}/", self.page_path());
+        let shell = format!("shells/{}/", self.page_def().shell);
+        self.doc
+            .nodes()
+            .into_iter()
+            .filter(|located| {
+                let path = located.path.to_string();
+                path.starts_with(&page) || path.starts_with(&shell)
+            })
+            .find_map(|located| match located.node {
+                ess_ui::NodeRef::Action(found) if found == action => Some(located.path),
+                _ => None,
+            })
+    }
+
+    /// `path` scoped under `row` when it lies inside a collection's `row_actions`:
+    /// `<collection>/rows/<key>/row_actions/…`, the key being the section's `live.match` field,
+    /// else `id`.
+    fn row_scoped(&self, path: &NodePath, row: &Value) -> Option<String> {
+        let segments = path.segments();
+        let at = segments
+            .iter()
+            .position(|segment| segment == "row_actions")?;
+        let container = &segments[..at];
+        let key_field = match container {
+            [pages, _, sections, section] if pages == "pages" && sections == "sections" => self
+                .section_by_name(section)
+                .and_then(|section| section.live.as_ref())
+                .and_then(|live| live.match_field.clone()),
+            _ => None,
+        }
+        .unwrap_or_else(|| "id".to_owned());
+        let key = display(row.get(key_field.as_str())?);
+        Some(format!(
+            "{}/rows/{key}/{}",
+            container.join("/"),
+            segments[at..].join("/")
+        ))
     }
 
     fn run_command(&mut self, command: &str, input: &BTreeMap<String, Value>) {
@@ -2477,7 +2545,12 @@ impl App {
                     return;
                 }
                 Some(ActionConfirm::Inline(inline)) => {
-                    let path = self.page_path().child("confirm").child(&action.name);
+                    // The inline confirm's canonical path is its action's, `confirm/overlay`.
+                    let path = self.action_path(action).map_or_else(
+                        || self.page_path().child("confirm").child(&action.name),
+                        |at| at.child("confirm").child("overlay"),
+                    );
+                    let drawn_at = row.as_ref().and_then(|row| self.row_scoped(&path, row));
                     let params = row
                         .as_ref()
                         .and_then(|row| row.get("id"))
@@ -2489,6 +2562,7 @@ impl App {
                         overlay: (*inline.overlay).clone(),
                         params,
                         then: Some((action.clone(), row)),
+                        drawn_at,
                     });
                     return;
                 }
@@ -2607,6 +2681,7 @@ impl App {
             overlay,
             params,
             then,
+            drawn_at: None,
         });
     }
 
@@ -2690,9 +2765,17 @@ impl App {
         }
         if let Some(header) = &self.page_def().header {
             for action in &header.actions {
+                if !self.visible(
+                    action.visible.as_ref().map(|expr| expr.0.as_str()),
+                    &Ctx::default(),
+                ) {
+                    continue;
+                }
                 let label = action.label.clone().unwrap_or_else(|| action.name.clone());
+                // `do: <label>` names the action alone, past any page or synonym it shares
+                // its label with.
                 items.push((
-                    vec![label.clone()],
+                    vec![label.clone(), format!("do: {label}")],
                     PaletteItem {
                         label: format!("do: {label}"),
                         target: PaletteTarget::Action(Box::new(action.clone())),

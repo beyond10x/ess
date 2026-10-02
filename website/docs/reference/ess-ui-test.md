@@ -74,7 +74,13 @@ field the section's `live.match` names, else `id`. A node inside a row is addres
 | `pages/partners.list/sections/list/rows/pt-003` | the row whose key is `pt-003` |
 | `pages/partners.list/sections/list/rows/pt-003/row_actions/delete` | that row's `delete` action |
 | `pages/partners.list/header/actions/create` | a header action |
+| `pages/invoices.list/sections/list/rows/in-03/row_actions/remind/confirm/overlay` | the inline confirm `remind` opened on row `in-03` |
 | `pages/partners.list/overlays/create/fields/name` | a form field in an overlay |
+
+An inline confirm (`confirm: {title: …}`) is the overlay at its action's path and
+`confirm/overlay`; a row action's is addressed under the row that opened it. Confirming runs
+the action that opened the confirm, inline or `confirm: <overlay>`, whether or not the confirm
+declares `does`.
 
 A path that names no node fails its step with `no node at <path>`; a row key the collection does
 not hold fails with `no row <key> in <collection>`. A path on a page other than the one shown fails
@@ -95,7 +101,8 @@ Opens a page, with its params.
 
 ### select
 
-Focuses a section, or moves to a row (paging to it). Selecting the page closes an open overlay.
+Focuses a section, or moves to a row (paging to it). At a tab of a section's record
+(`…/sections/<s>/tabs/<t>`) it shows that tab. Selecting the page closes an open overlay.
 
 ```yaml
 - select: pages/partners.list/sections/list/rows/pt-005
@@ -112,8 +119,9 @@ the field holds.
 
 ### choose
 
-Picks an option of a choice, by its value or its label. In a multiple choice a second pick of the
-same option removes it.
+Picks an option of a choice, by its value or its label: a filter bar's choice, or a form field drawn
+`as: choice` (at the field or at its `choice` node). In a multiple choice a second pick of the same
+option removes it.
 
 ```yaml
 - choose: {at: pages/tickets.list/sections/filters/choices/priority, option: urgent}
@@ -158,6 +166,11 @@ path, rather than being satisfied by what a neighbour shows. A row, a cell, a co
 action are read whole, as the browser shows them, even where the terminal's screen cuts the value
 at the column's width.
 
+A number of four or more digits in `text` or `not_text` compares by value, not by spelling: the
+terminal prints `1840`, the browser groups it by its locale (`1,840`), and either spelling in the
+test matches either on the screen. A comma, a no-break space or a narrow no-break space between
+groups of three digits is grouping; a full stop is not, since it is also a decimal point.
+
 `stale` is the badge a section carries while a channel feeding it is stale; it outranks `ready` and
 `empty`. `ready` means shown and fresh.
 
@@ -197,8 +210,14 @@ Holds when the command has been sent, with at least the input fields given.
 - expect_command: {command: partners.DeletePartner, input: {id: pt-003}}
 ```
 
+Input values compare as JSON values with their types: `7500` holds only for the number, `'7500'`
+only for the string. An object holds when every field it names holds, at any depth; a list holds
+item by item. A dotted field name reaches into nested objects: `limits.cents: 7500` is
+`limits: {cents: 7500}`.
+
 A command never sent fails naming the commands that were; a command sent with other input fails
-showing the input it was sent with.
+showing the input it was sent with and, for each send, the first field that differs with both
+values and their types (`at website it sent string "7500", expected number 7500`).
 
 ## Fixtures
 
@@ -268,8 +287,8 @@ Every step goes through what a reader of the terminal has: key presses and the d
 | `select` a row | focus the section, move the cursor (`j`, `k`, `n`, `p`) until the highlighted line is the row |
 | `page` | back to the first page (`p`), then `n` to the page |
 | `type` | `/` and the text in a filter bar or collection; `enter`, the text, `enter` on a form field |
-| `choose` | move to the choice (`h`, `l`), to the option (`j`), `space` |
-| `act` | the key the hint line offers for the action; the palette (`:`) for a header action; `y` or `ctrl-s` on an overlay |
+| `choose` | in a filter bar, move to the choice (`h`, `l`), to the option (`j`), `space`; in a form, move to the field (`k`, `j`), then `space` until it shows the option |
+| `act` | the key the hint line offers for the action; the palette (`:do: <label>`, which names the action past any page sharing its label) for a header action; `]` until the tab is current for a node in a record's tab; `y` or `ctrl-s` on an overlay |
 | `expect` | the cells the renderer drew the node on: the screen, the section's box, the overlay, the row's line, the cell |
 
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
@@ -292,8 +311,13 @@ refuses:
 | any step at a column cell of a cards, list or tree collection with an `item` | the generated app renders the item there, not the cells |
 | any step at a column header of a collection that is not a table | the generated app draws no header for it |
 | any step inside the rows of a references list | the generated app does not address its rows |
+| any step at a row action's inline confirm not under a row | the generated app draws it under the row that opened it |
+| any step at a collection that is not a section's or an overlay's own body, or at its rows | the terminal draws it inside its section without addressing it or its rows |
+| any step at a tab's nested node (`tabs/<t>/form` that is a node) or inside it | the terminal draws it below the tab's fields but moves no focus into it |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
+| `choose` at a form choice field with `multiple: true` | the terminal sets one value in a form's choice field |
+| `choose` at a field `as: choice` without a `choice` node | it offers no options in either renderer |
 | `advance` or `play` past the end of the clock | the move does not fit |
 | `advance` or `play` over more than `MAX_CYCLES_PER_ADVANCE` cycles of a looping script | every cycle's events are delivered one by one |
 
@@ -316,7 +340,7 @@ its path, so the spec's `baseURL` is the generated project served by `npm run de
 | `type` | `pressSequentially` into the search input or the field's input |
 | `choose` | the option's button, or `selectOption` for a dropdown |
 | `act` | `click`; on an overlay, its primary button |
-| `expect` | `toContainText`, `toHaveCount` and `data-ui-path` of each `.ui-row`, `data-status`, `.ui-stale-badge` |
+| `expect` | `toContainText`, a `RegExp` that allows digit grouping where the text holds a number of four or more digits, `toHaveCount` and `data-ui-path` of each `.ui-row`, `data-status`, `.ui-stale-badge` |
 | `expect_command` | commands captured by routing `/commands/…` |
 
 `select` does not click the row with the pointer: a click lands on the row's centre, which may be a
@@ -358,9 +382,11 @@ the document, the React project as `data-ui-path`. What it removes:
 - **Backend state and time are declared.** Fixtures replace views per test and the clock is
   virtual, so live updates, staleness and loading are tested without a server or real waiting.
 
-**Limits.** The terminal runner addresses rows of a section's collection, types into filter bars,
-collection filters and form fields, and chooses in filter-bar choices; other targets fail naming the
-step. `expect text` at a node the terminal does not draw on cells of its own fails naming the path.
-The browser
-spec is generated and not run by `ess ui test`; its fixture and command routes assume the HTTP
+**Limits.** The terminal runner addresses rows of a section's or an overlay's collection, types into
+filter bars, collection filters and form fields, chooses in filter-bar choices and form choice
+fields, and shows a record's tabs; other targets fail naming the step. A collection nested in a
+record, a tab or a node, and a tab's nested node, are drawn but refused as step targets in both
+renderers (see [One verdict in both renderers](#one-verdict-in-both-renderers)). `expect text` at a
+node the terminal does not draw on cells of its own fails naming the path. The browser spec is
+generated and not run by `ess ui test`; its fixture and command routes assume the HTTP
 data adapter.

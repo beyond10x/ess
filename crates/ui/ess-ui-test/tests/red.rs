@@ -160,6 +160,35 @@ fn an_expected_command_never_sent_fails_naming_the_command() {
 }
 
 #[test]
+fn an_expected_command_input_is_compared_with_its_type() {
+    let typed = |expected: &str| {
+        run_steps(
+            "typed input",
+            &[
+                "open: partners.list",
+                "act: pages/partners.list/header/actions/create",
+                "type: {at: pages/partners.list/overlays/create/fields/website, text: '7500'}",
+                "act: pages/partners.list/overlays/create",
+                &format!("expect_command: {{command: partners.CreatePartner, input: {expected}}}"),
+            ],
+        )
+    };
+    // The terminal sends what was typed as text: the string matches, the number does not.
+    let outcome = typed("{website: '7500'}");
+    assert_eq!(outcome.status, Status::Passed, "{outcome:?}");
+    let outcome = typed("{website: 7500}");
+    let message = failed_at(&outcome, 5);
+    assert!(message.contains("website"), "{message}");
+    assert!(message.contains("\"7500\""), "{message}");
+    assert!(message.contains("number 7500"), "{message}");
+    assert!(message.contains("string \"7500\""), "{message}");
+    // A dotted name reaches into a nested input; a missing field is named.
+    let outcome = typed("{website.cents: 7500}");
+    let message = failed_at(&outcome, 5);
+    assert!(message.contains("website.cents"), "{message}");
+}
+
+#[test]
 fn a_later_step_does_not_run_after_a_failure_and_the_next_test_still_runs() {
     let text = format!(
         "format: ess-ui-test/1\ndocument: {}\ntests:\n\
