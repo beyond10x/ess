@@ -12,7 +12,7 @@ relations:
 - informed_by: story:ui-tui-live-binding
 - informed_by: story:ui-spec-style-tokens
 - informed_by: story:feature-request-323
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:20:40Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:20:40Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -58,3 +58,9 @@ The CLI refuses scope on tasks: `scope` is a field of `story`; a task inherits t
 ## Local integration checkpoint
 
 Local candidate010e6c06b062411047b5fb2746f72d61958f5f70 has all seven recorded source heads as exact ancestors, verified by git merge-base --is-ancestor. Six integration commits have verified bot author and committer. No source PR has been closed merely on this local preservation; publication remains pending. Source verification, confirm/refusal composition checks, issue323 red/green regression and the two demonstrated CI corrections are underway before a grouped gate. Local ancestry proves preservation, not combined correctness.
+
+## Publication 2026-10-02
+
+Published exact candidate 55061600bd2be2d5be71daae40a637f8d00ddb74 to PR381 through bot signed-evidence delivery; remote head verified. Current main fa08de5bd is an ancestor. Common local scan passed over 52 commits; receipt published as check110793061923. Remote full Gate is running; not yet green or merged.
+
+Closed absorbed PR377,344,345,368,369 through bot API only after verifying each current remote head is an exact ancestor of the published candidate. Original PR bodies retained with consolidation notes. Earlier PR375/380 were similarly closed; PR386 is merged. PR381 is the remaining original open carrier. Its description now states final combined scope, measured validation and partial issue boundaries, without claiming a release. All source is retained; no branches/worktrees deleted.
