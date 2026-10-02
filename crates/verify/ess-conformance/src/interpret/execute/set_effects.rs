@@ -22,7 +22,7 @@ pub(super) fn apply(
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     before: &Store,
-    supplied: &BTreeMap<String, Node>,
+    supplied: &super::Invocation<'_>,
     work: &mut Work<'_>,
 ) -> Result<Option<usize>, Undetermined> {
     if outcome.instances.is_none() && outcome.affects.is_empty() {

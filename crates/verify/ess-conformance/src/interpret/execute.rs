@@ -1,7 +1,8 @@
 //! One command, executed from the IR: state in, command in, every outcome the model allows out.
 //!
 //! This is the library half of the interpreter, and it is kept free of a runner on purpose. The
-//! [`Interpreted`](super::Interpreted) target calls [`execute`] once per `ExecuteCommand` step and
+//! [`Interpreted`](super::Interpreted) target adds the invocation's authenticated caller and
+//! executes once per `ExecuteCommand` step, then
 //! refuses when the answer is not exactly one step; a linearizability checker calls the same
 //! function as its sequential model and explores every step it returns.
 //!
@@ -44,9 +45,11 @@
 //! value whatever payload source it declares, and an identity the store already holds is never
 //! created again.
 
+pub(super) mod caller;
 mod related;
 mod set_effects;
 mod subject;
+use caller::Invocation;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -357,6 +360,7 @@ pub(super) fn without_input(
     ir: &EssIr,
     store: &Store,
     command: &QualifiedName,
+    caller: Option<&caller::Caller<'_>>,
 ) -> Result<Step, Undetermined> {
     let spec = ir
         .commands()
@@ -375,7 +379,10 @@ pub(super) fn without_input(
         spec,
         outcome,
         store,
-        &BTreeMap::new(),
+        &Invocation {
+            input: &BTreeMap::new(),
+            caller,
+        },
         &Generated::Counter,
     )?
     .map_err(Undetermined::Request)
@@ -396,6 +403,27 @@ pub fn execute_generating(
     store: &Store,
     command: &QualifiedName,
     input: &BTreeMap<String, Node>,
+    externals: &Externals,
+    generated: &Generated,
+) -> Result<Vec<Step>, Undetermined> {
+    in_context(
+        ir,
+        store,
+        command,
+        &Invocation {
+            input,
+            caller: None,
+        },
+        externals,
+        generated,
+    )
+}
+
+pub(super) fn in_context(
+    ir: &EssIr,
+    store: &Store,
+    command: &QualifiedName,
+    input: &Invocation<'_>,
     externals: &Externals,
     generated: &Generated,
 ) -> Result<Vec<Step>, Undetermined> {
@@ -450,7 +478,14 @@ pub fn execute_generating(
             subject::Held::new(ir, ir.entity(&subject.entity), held)?,
         );
     }
-    let selected = select(spec, &facts, command, externals, &held_subjects)?;
+    let selected = select(
+        spec,
+        &facts,
+        command,
+        externals,
+        &held_subjects,
+        input.caller,
+    )?;
 
     if selected.is_empty() {
         return Ok(vec![undeclared(store)]);
@@ -492,8 +527,10 @@ fn select<'s>(
     command: &QualifiedName,
     externals: &Externals,
     held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
+    caller: Option<&caller::Caller<'_>>,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
-    let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(facts) {
+    let invocation = caller::Facts::new(facts, caller, &spec.input);
+    let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&invocation) {
         Truth::True => Ok(true),
         Truth::False => Ok(false),
         Truth::Unknown => Err(Undetermined::Undecidable {
@@ -544,7 +581,7 @@ fn select<'s>(
         for outcome in &spec.outcomes {
             if let Some(takes) = held_subjects
                 .get(&outcome.name)
-                .map(|held| held.selects(&outcome.condition, facts, branch(spec, outcome)))
+                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
                 .transpose()?
                 .flatten()
             {
@@ -609,7 +646,7 @@ fn related_absent(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     generated: &Generated,
 ) -> Result<Option<Vec<Step>>, Undetermined> {
     let related: Vec<&ResolvedOutcome> = spec
@@ -696,7 +733,7 @@ fn refused_by_input(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
 ) -> Result<Option<Vec<Step>>, Undetermined> {
     let refusals: Vec<(&ResolvedOutcome, &Predicate)> = spec
         .outcomes
@@ -717,6 +754,7 @@ fn refused_by_input(
     let Ok(facts) = input::flatten(ir, spec, input) else {
         return Ok(None);
     };
+    let facts = caller::Facts::new(&facts, input.caller, &spec.input);
     for (outcome, guard) in refusals {
         match guard.evaluate(&facts) {
             Truth::True => return Ok(Some(vec![refusal(ir, spec, outcome, store, input, None)?])),
@@ -835,12 +873,13 @@ fn reference(spec: &ResolvedCommand, outcome: &ResolvedOutcome) -> OutcomeRef {
 /// An input field carries the input's value, a literal its value at the field's type, and a
 /// `{subject: …}` the row the refusal is answered for (`held`). A `{generated: true}` field is
 /// the implementation's to choose, so it is not carried, and a field with no source is not
-/// carried either, as before `ess/19`. A source this module does not read — the caller, a related
-/// row — is a gap, as it is on an event's payload.
+/// carried either, as before `ess/19`. Caller attributes come from this invocation's validated
+/// authentication facts, including nested leaves. An unread source, such as a related row,
+/// remains a gap, as it is on an event's payload.
 fn declared_error(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     held: Option<&Instance>,
 ) -> Result<Option<DeclaredErrorValue>, Undetermined> {
     let Some(handle) = outcome.error.as_ref().filter(|_| outcome.refuses) else {
@@ -848,32 +887,48 @@ fn declared_error(
     };
     let mut error = DeclaredErrorValue::new(ErrorRef::from(handle));
     for field in &outcome.error_payload {
-        let value = match &field.value {
-            ResolvedPayloadValue::Generated => None,
-            ResolvedPayloadValue::SubjectField { field: read, .. } => {
-                held.and_then(|row| row.fields.get(read)).cloned()
-            }
-            ResolvedPayloadValue::InputField { field: read, .. } => input
-                .get(read)
-                .filter(|value| **value != Node::Null)
-                .cloned(),
-            ResolvedPayloadValue::Literal { value } => {
-                Some(literal(ir, &field.target_type, value)?)
-            }
-            other => {
-                return Err(Undetermined::NotInterpreted {
-                    construct: format!(
-                        "the value source `{}` of error `{handle}`",
-                        other.describe()
-                    ),
-                })
-            }
-        };
-        if let Some(value) = value {
+        if let Some(value) = error_value(ir, field, input, held)? {
             error = error.with(field.target.clone(), value);
         }
     }
     Ok(Some(error))
+}
+
+fn error_value(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    input: &Invocation<'_>,
+    held: Option<&Instance>,
+) -> Result<Option<Node>, Undetermined> {
+    Ok(match &field.value {
+        ResolvedPayloadValue::Generated => None,
+        ResolvedPayloadValue::CallerAttribute {
+            attribute,
+            type_ref,
+        } => input.caller_value(ir, attribute, type_ref)?,
+        ResolvedPayloadValue::Struct { fields } => {
+            let mut values = BTreeMap::new();
+            for member in fields {
+                if let Some(value) = error_value(ir, member, input, held)? {
+                    values.insert(member.target.clone(), value);
+                }
+            }
+            Some(Node::Map(values))
+        }
+        ResolvedPayloadValue::SubjectField { field: read, .. } => {
+            held.and_then(|row| row.fields.get(read)).cloned()
+        }
+        ResolvedPayloadValue::InputField { field: read, .. } => input
+            .get(read)
+            .filter(|value| **value != Node::Null)
+            .cloned(),
+        ResolvedPayloadValue::Literal { value } => Some(literal(ir, &field.target_type, value)?),
+        other => {
+            return Err(Undetermined::NotInterpreted {
+                construct: format!("the value source `{}` of an error", other.describe()),
+            })
+        }
+    })
 }
 
 /// The store a branch is building, and where its assigned values come from.
@@ -890,7 +945,7 @@ fn create(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     subject: &ResolvedSubject,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     work: &mut Work<'_>,
 ) -> Result<Result<Node, Unmatched>, Undetermined> {
     let entity = ir.entity(&subject.entity);
@@ -961,7 +1016,7 @@ fn take(
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     generated: &Generated,
 ) -> Result<Result<Step, Unmatched>, Undetermined> {
     let mut work = Work {
@@ -1061,7 +1116,7 @@ fn act(
     sets: &[ResolvedPayloadField],
     effect: &ResolvedEffect,
     held: &Instance,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     work: &mut Work<'_>,
 ) -> Result<Acted, Undetermined> {
     let mut after = held.clone();
@@ -1103,7 +1158,7 @@ fn unknown_instance(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
 ) -> Result<Step, Undetermined> {
     match spec
         .outcomes
@@ -1122,7 +1177,7 @@ fn wrong_state(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     held: Option<&Instance>,
 ) -> Result<Step, Undetermined> {
     match spec
@@ -1142,7 +1197,7 @@ fn refusal(
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     held: Option<&Instance>,
 ) -> Result<Step, Undetermined> {
     Ok(Step {
@@ -1157,7 +1212,7 @@ fn refusal(
 fn write(
     ir: &EssIr,
     sets: &[ResolvedPayloadField],
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     before: Option<&Instance>,
     fields: &mut BTreeMap<String, Node>,
     work: &mut Work<'_>,
@@ -1195,10 +1250,14 @@ fn write(
 fn value(
     ir: &EssIr,
     field: &ResolvedPayloadField,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     work: &mut Work<'_>,
 ) -> Result<Option<Node>, Undetermined> {
     match &field.value {
+        ResolvedPayloadValue::CallerAttribute {
+            attribute,
+            type_ref,
+        } => input.caller_value(ir, attribute, type_ref),
         ResolvedPayloadValue::InputField { field: source, .. } => Ok(input
             .get(source)
             .filter(|value| **value != Node::Null)
@@ -1359,7 +1418,7 @@ fn emit(
     ir: &EssIr,
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     created: Option<&(String, Node)>,
     changed: Option<usize>,
     work: &mut Work<'_>,
