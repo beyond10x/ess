@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T11:01:57Z",
+  "actor": "human:timo",
+  "artifact": "story:release-status-publication-state",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "published_release_tags_come_from_the_json_report passed in362-pass native xtask run; source unchanged at482609; fullGate386success",
+    "reference": "https://github.com/beyond10x/ess/pull/386"
+  }
+}

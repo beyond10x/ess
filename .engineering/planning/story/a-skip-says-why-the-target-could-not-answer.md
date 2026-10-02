@@ -7,7 +7,8 @@ title: A skip says why the target could not answer
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
 - serves: vision:O2
-revision: 3
+- depends_on: story:a-report-says-why-a-scenario-was-skipped
+revision: 4
 ---
 
 # Story: a skip says why the target could not answer
@@ -76,3 +77,7 @@ The Rust runner, unless the same discard is there. Changing when a target *shoul
 ## Open Questions
 
 None.
+
+## Source reconciliation 2026-10-02
+
+Partially implemented, not complete. Current Go runtime includes the wrapped error in the command skip at src/go/runtime.go:2188, view skips:2402/:2481 and binding invocation skip:2643. The durable-report acceptance remains unimplemented: counts.rs:112-118 stores per-status Vec<ScenarioId>, not reasons, and legacy report/1 strings cannot be extended without corrupting identity parsing. Track the remaining document work with story:a-report-says-why-a-scenario-was-skipped rather than reimplementing the existing log fix. New event observation at runtime.go:2038 also discards ErrUnsupported detail; include it in a complete reason-propagation audit when that follow-on runs. No log-only closure or report-format waiver is claimed.

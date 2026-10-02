@@ -13,6 +13,8 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/finite_boolean.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command.rs
 - confidence: cited
@@ -31,7 +33,7 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 13, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 14, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}

@@ -2,14 +2,19 @@
 format: aep.planning-md/3
 id: story:release-status-publication-state
 kind: story
-status: draft
+status: implemented
 title: Release status distinguishes drafts from public releases
 relations:
 - informed_by: release-plan:consolidated-ess-019
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/edge/ess-xtask/src/main.rs
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T11:01:57Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T11:01:57Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T11:01:57Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Observed Gap
 
@@ -51,3 +56,7 @@ This is a follow-up tooling correction, not part of the already frozen 0.19.0
 source. Its independent release verification uses the GitHub API and actual
 downloaded packages. The historical 0.17.0 ancestry failure is a separate,
 source-accounted reconciliation owned by release-plan:consolidated-ess-019.
+
+## Verified reconciliation 2026-10-02
+
+Implemented in existing source by7cdf62513, an ancestor of released0.51.0. Current main.rs:491 explicitly requests tagName,isDraft; release_tag_names at:530 refuses missing/non-boolean isDraft and excludes true drafts. The regression published_release_tags_come_from_the_json_report at:1494 asserts published/draft separation and absent/malformed inputs. Its actual fresh execution passed in server target/backlog-input/green-task-test-xtask-retry.log:193 during the362-pass native xtask run; source is byte-identical from testedf0b220099 through482609. PR386's completeGate succeeded before exact-tree bot mergefa08. No new source implementation or release mutation is necessary. This resolves the stale draft; it does not manufacture historical red-first chronology (not required by this story's acceptance).
