@@ -181,7 +181,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             "spec_digest",
             "contract_digest",
         ],
-        &["component"],
+        &["component", "scenario_initial_state"],
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
@@ -189,6 +189,23 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
             "execution readers admit suite majors 1–35",
+        ));
+    }
+    if version.major() >= 34 {
+        if p.get("scenario_initial_state")
+            .map(|state| state.text())
+            .transpose()?
+            != Some("empty")
+        {
+            return Err(root["provenance"].error(
+                "InvalidSuite",
+                "scenario_initial_state must be empty in suite/34 and /35",
+            ));
+        }
+    } else if p.contains_key("scenario_initial_state") {
+        return Err(p["scenario_initial_state"].error(
+            "InvalidSuite",
+            "scenario_initial_state requires suite/34 or /35",
         ));
     }
     if matches!(

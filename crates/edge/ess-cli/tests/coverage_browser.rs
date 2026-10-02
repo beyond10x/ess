@@ -776,3 +776,40 @@ fn a_firefox_this_runner_does_not_have_refuses_rather_than_reading_as_a_defect()
     );
     assert!(!refusal.contains("deadline:"), "{refusal}");
 }
+
+#[test]
+fn browser_displays_logical_namespace_requirement_without_claiming_backend_reset() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let evidence =
+        std::env::temp_dir().join(format!("ess-initial-state-browser-{}", std::process::id()));
+    fs::create_dir_all(&evidence).unwrap();
+    let generated = evidence.join("site");
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["verify", "conform", "web", "--path"])
+        .arg(root.join("examples/billing"))
+        .args(["--suite-format", "5", "--out"])
+        .arg(&generated)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let server = browser::Server::new(&generated);
+    let mut browser = browser::Browser::new(&evidence);
+    let context = browser.open(&format!("{}/index.html", server.url));
+    let result = browser.evaluate(
+        &context,
+        r"(async()=>{
+      await import('./player.js');
+      await new Promise(resolve=>setTimeout(resolve,100));
+      return JSON.stringify({text:document.body.textContent});
+    })()",
+    );
+    let text = result["text"].as_str().unwrap();
+    assert!(
+        text.contains("empty logical modeled-instance/event/invocation namespace"),
+        "{text}"
+    );
+    assert!(
+        text.contains("does not establish backend isolation"),
+        "{text}"
+    );
+}

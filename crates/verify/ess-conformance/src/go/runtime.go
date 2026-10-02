@@ -1561,6 +1561,7 @@ type Provenance struct {
 	SpecificationVersion string `json:"specification_version"`
 	SpecDigest           string `json:"spec_digest"`
 	ContractDigest       string `json:"contract_digest"`
+	ScenarioInitialState string `json:"scenario_initial_state,omitempty"`
 }
 
 // Scenario is one thing the specification obliges an implementation to do.
@@ -1754,6 +1755,9 @@ func Run(t *testing.T, newTarget func() Target) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	if suite.Provenance.ScenarioInitialState == "empty" {
+		t.Log("Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.")
+	}
 
 	t.Logf(
 		"%s %s, %d scenario(s), spec digest %s",
@@ -2055,10 +2059,10 @@ func (r *run) execute(id string, scenario Scenario) {
 	if err := r.target.BeginScenario(context); err != nil {
 		r.callbacksComplete = true // begin returned; no teardown is required
 		if errors.Is(err, ErrUnsupported) {
-			r.skip("the target does not support this scenario: %v", err)
+			r.skip("ESS-CF-TARGET: the target does not support this scenario: %v", err)
 		}
 		r.recordStatus(statusError)
-		r.t.Fatalf("begin: %v", err)
+		r.t.Fatalf("ESS-CF-TARGET: begin: %v", err)
 	}
 	defer func() {
 		err := r.target.EndScenario(context)
@@ -2295,7 +2299,7 @@ func (r *run) expectOutcome(index int, step Step) bool {
 	if r.last.Outcome != step.Outcome.Outcome {
 		return r.assertionFailure(
 			index,
-			"`%s` took `%s`, and the specification says `%s`",
+			"ESS-CF-OUTCOME: `%s` took `%s`, and the specification says `%s`",
 			step.Outcome.Command, orNone(r.last.Outcome), step.Outcome.Outcome,
 		)
 	}
@@ -2334,7 +2338,7 @@ func (r *run) expectNotGranted(index int, step Step) bool {
 
 func (r *run) expectError(index int, step Step) bool {
 	if r.last.Error != step.Error {
-		return r.fail(index, "refused with `%s`, and the specification says `%s`", orNone(r.last.Error), step.Error)
+		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and the specification says `%s`", orNone(r.last.Error), step.Error)
 	}
 	return true
 }
@@ -2345,16 +2349,16 @@ func (r *run) expectEvent(index int, step Step) bool {
 	// carrying the wrong value" are two different repairs.
 	for _, event := range r.observed[step.Event] {
 		if reason := payloadCarries(event.Payload, step.Payload); reason != "" {
-			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "`%s` was emitted, and %s", step.Event, reason)
 		}
 		// The declared fields, and what each holds. Asserting only that the event arrived would
 		// pass an implementation that published it empty.
 		if reason := holds(event.Payload, step.Shape); reason != "" {
-			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "`%s` was emitted, and %s", step.Event, reason)
 		}
 		return true
 	}
-	return r.fail(index, "`%s` was not emitted", step.Event)
+	return r.assertionFailure(index, "ESS-CF-EVENT: `%s` was not emitted", step.Event)
 }
 
 // payloadCarries is why a payload does not carry every value an event assertion names, or "": each
@@ -2465,7 +2469,7 @@ func (r *run) captureInstance(index int, step Step) bool {
 	}
 	return r.fail(
 		index,
-		"nothing bound `%s`: `%s` did not carry `%s`",
+		"ESS-CF-INSTANCE: nothing bound `%s`: `%s` did not carry `%s`",
 		step.Instance, step.Event, step.Field,
 	)
 }
@@ -2589,7 +2593,11 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 		}
 		last = reason
 	}
-	return r.fail(index, "%s", last)
+	code := "ESS-CF-VIEW"
+	if retry {
+		code = "ESS-CF-EVENTUAL-VIEW"
+	}
+	return r.assertionFailure(index, "%s: %s", code, last)
 }
 
 // decide answers whether the view expectation holds, why not, and whether it could be decided.
@@ -3978,7 +3986,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component")
+	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component scenario_initial_state")
 	if err != nil {
 		return suite, err
 	}
@@ -3989,6 +3997,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	major := suiteMajor(version)
 	if major == 0 {
 		return suite, fmt.Errorf("unsupported suite version %q", version)
+	}
+	initial, declaresInitial := p["scenario_initial_state"]
+	if (major >= 34 && initial != "empty") || (major < 34 && declaresInitial) {
+		return suite, fmt.Errorf("scenario_initial_state must be empty exactly in suite/34 and /35")
 	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
 		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /35")
@@ -4114,6 +4126,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		suite.Provenance = Provenance{SuiteVersion: version, System: p["system"].(string),
 			SpecificationVersion: p["specification_version"].(string), SpecDigest: p["spec_digest"].(string),
 			ContractDigest: p["contract_digest"].(string)}
+		if major >= 34 {
+			suite.Provenance.ScenarioInitialState = "empty"
+		}
 		suite.Scenarios = make(map[string]Scenario, len(scenarios))
 		for id, value := range scenarios {
 			suite.Scenarios[id] = Scenario{Purpose: value.(map[string]any)["purpose"].(string)}

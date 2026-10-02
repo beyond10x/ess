@@ -460,6 +460,7 @@ mod tests {
                 "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
             ),
             component: None,
+            scenario_initial_state: None,
         })
     }
 

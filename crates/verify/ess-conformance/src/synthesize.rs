@@ -319,6 +319,20 @@ pub enum Note {
         /// Its declared type.
         type_ref: String,
     },
+    /// The mixed-caller scenario is retained, but its reversed-role counterpart cannot compose.
+    CrossCallerUnswapped {
+        /// The retained scenario.
+        scenario: ScenarioId,
+        /// The concrete arrangement or observation restriction.
+        reason: &'static str,
+    },
+    /// The ordinary witness remains, but no source-authorized mixed caller witness composes.
+    CrossCallerUnwitnessed {
+        /// The retained ordinary scenario.
+        scenario: ScenarioId,
+        /// Why crossing callers cannot retain its source-selected expectations.
+        reason: &'static str,
+    },
     /// A branch copying fields of the row its `when_related:` guard reads (`{related: …}` through
     /// the same input) whose scenario arranges no second row the guard accepts holding other values
     /// there (beyond10x/ess#270). A target that copies from a row the guard accepts, rather than
@@ -372,6 +386,7 @@ pub enum Note {
 }
 
 impl fmt::Display for Note {
+    #[allow(clippy::too_many_lines)] // Keep the complete note vocabulary in one exhaustive match.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownInstanceUnanswered { command } => write!(
@@ -453,6 +468,10 @@ impl fmt::Display for Note {
                  give it an identity no other scenario sends, so a target that answers one caller \
                  by name is not failed by it"
             ),
+            Self::CrossCallerUnswapped { scenario, reason } => write!(f,
+                "`{scenario}` retains its mixed-caller witness without an appended reversed-role run: {reason}"),
+            Self::CrossCallerUnwitnessed { scenario, reason } => write!(f,
+                "`{scenario}` retains its ordinary witness without a mixed-caller same-row witness: {reason}"),
             Self::UnaccompaniedRelatedCopy { scenario, fields } => {
                 let names: Vec<String> = fields.iter().map(|name| format!("`{name}`")).collect();
                 write!(
@@ -1717,6 +1736,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     } else {
         synthesize_plain(ir, Focus::Whole)
     };
+    grant::cross_caller(ir, &mut synthesis.suite, &mut synthesis.notes);
     // Read off the finished suite: no scenario expects the one row of a singleton entity created
     // twice in a run, whichever family built it (beyond10x/ess#287).
     singleton::withdraw_second_creations(ir, &mut synthesis);

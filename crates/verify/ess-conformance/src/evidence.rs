@@ -236,6 +236,7 @@ mod tests {
                 )
                 .expect("a digest"),
                 component: None,
+                scenario_initial_state: None,
             },
             implementation: ImplementationIdentity::new("billing-reference", "0.1.0"),
             started_at: ess_primitives::time::Timestamp::from_epoch_millis(1_700_000_000_000),

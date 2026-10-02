@@ -90,6 +90,7 @@ fn empty_suite(major: u32) -> ConformanceSuite {
         spec_digest: SpecDigest::new("ab".repeat(32)).expect("a digest"),
         contract_digest: SpecDigest::new("cd".repeat(32)).expect("a digest"),
         component: None,
+        scenario_initial_state: None,
     })
 }
 

@@ -232,6 +232,7 @@ const app = createApp({
     Object.assign(api, { scenario, acts, lanes, instances, liveViews, lifecycle, play, step, back, reset, select })
     return { state, scenarios, groups, scenario, acts, lanes, done, instances, changed, liveViews, oneTimePolicies,
       play, step, back, reset, select, rowState, mark, lifecycle, short,
+      initialState: suite.provenance?.scenario_initial_state ?? null,
       system: model.system, version: model.version, spec: (suite.provenance?.spec_digest ?? '').slice(0, 12), scenarioCount: scenarios.length }
   },
 })

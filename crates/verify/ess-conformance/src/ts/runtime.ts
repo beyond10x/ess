@@ -2412,6 +2412,7 @@ export interface Provenance {
   specification_version: string;
   spec_digest: string;
   contract_digest: string;
+  scenario_initial_state?: 'empty';
 }
 
 /** Scenario is one thing the specification obliges an implementation to do. */
@@ -2661,6 +2662,12 @@ export async function runWith(
   // machine.
   const ids = sortStrings(Object.keys(suite.scenarios));
 
+  if (suite.provenance.scenario_initial_state === 'empty') {
+    t.diagnostic(
+      'Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.',
+    );
+  }
+
   t.diagnostic(
     `${suite.provenance.system} ${suite.provenance.specification_version}, ${ids.length} scenario(s), ` +
       `spec digest ${suite.provenance.spec_digest}`,
@@ -2709,7 +2716,13 @@ export async function runWith(
     let status = statusPassed;
     let terminal = false;
     await t.test(id, async (subtest: TestScope) => {
-      const scenarioRun = new ScenarioRun(subtest, newTarget(), harness, harness.correlation());
+      const scenarioRun = new ScenarioRun(
+        subtest,
+        newTarget(),
+        harness,
+        harness.correlation(),
+        SUITE_MAJORS[suite.provenance.suite_version]! >= 28,
+      );
       let returned = false;
       let thrown: unknown;
       try {
@@ -3155,12 +3168,20 @@ export class ScenarioRun {
   private disclosureStopped = false;
   private disclosureIncomplete = false;
   private stepTargetError = false;
+  private readonly continuedAssertions: boolean;
 
-  constructor(t: TestScope, target: Target, harness: Harness, correlation: string) {
+  constructor(
+    t: TestScope,
+    target: Target,
+    harness: Harness,
+    correlation: string,
+    continuedAssertions = false,
+  ) {
     this.t = t;
     this.target = readAsJSON(target);
     this.harness = harness;
     this.correlation = correlation;
+    this.continuedAssertions = continuedAssertions;
   }
 
   async execute(id: string, scenario: Scenario): Promise<void> {
@@ -3196,10 +3217,12 @@ export class ScenarioRun {
     } catch (error) {
       this.callbacksComplete = true; // begin returned; no teardown is required
       if (isUnsupported(error)) {
-        this.unsupported(`the target does not support this scenario: ${errorText(error)}`);
+        this.unsupported(
+          `ESS-CF-TARGET: the target does not support this scenario: ${errorText(error)}`,
+        );
       }
       this.status = statusError;
-      throw new FatalSignal(`begin: ${errorText(error)}`);
+      throw new FatalSignal(`ESS-CF-TARGET: begin: ${errorText(error)}`);
     }
     try {
       if (scenario.purpose !== '' && this.disclosure === undefined) {
@@ -3227,7 +3250,7 @@ export class ScenarioRun {
           this.disclosureStopped ||
           (!continued &&
             !(
-              this.disclosure !== undefined &&
+              (this.disclosure !== undefined || this.continuedAssertions) &&
               !this.stepTargetError &&
               this.status === statusFailed &&
               step.step.startsWith('expect_')
@@ -3624,11 +3647,12 @@ export class ScenarioRun {
       );
     }
     if (this.last.outcome !== step.outcome.outcome) {
-      return this.fail(
+      this.fail(
         index,
-        `\`${step.outcome.command}\` took \`${orNone(this.last.outcome)}\`, and the specification ` +
+        `ESS-CF-OUTCOME: \`${step.outcome.command}\` took \`${orNone(this.last.outcome)}\`, and the specification ` +
           `says \`${step.outcome.outcome}\``,
       );
+      return this.continuedAssertions;
     }
     return true;
   }
@@ -3728,7 +3752,7 @@ export class ScenarioRun {
     if (this.last.error !== step.error) {
       return this.fail(
         index,
-        `refused with \`${orNone(this.last.error)}\`, and the specification says \`${step.error}\``,
+        `ESS-CF-ERROR: refused with \`${orNone(this.last.error)}\`, and the specification says \`${step.error}\``,
       );
     }
     return true;
@@ -3737,7 +3761,7 @@ export class ScenarioRun {
   expectEventValues(index: number, step: Step): boolean {
     // Match the Rust runner: select the first direct occurrence by name, never by its values.
     const event = this.last.directEvents?.find((observed) => observed.event === step.event);
-    if (!event) return this.fail(index, `\`${step.event}\` was not emitted`);
+    if (!event) return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
     if (!matches(event.payload, step.payload ?? {}))
       return this.fail(index, `\`${step.event}\` carried different fixture values`);
     const reason = holds(event.payload, step.shape ?? {});
@@ -3747,7 +3771,7 @@ export class ScenarioRun {
   expectEvent(index: number, step: Step): boolean {
     const seen = this.observed[step.event] ?? [];
     if (seen.length === 0) {
-      return this.fail(index, `\`${step.event}\` was not emitted`);
+      return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
     }
     let mismatch = '';
     for (const event of seen) {
@@ -3853,7 +3877,7 @@ export class ScenarioRun {
     }
     return this.fail(
       index,
-      `nothing bound \`${step.instance}\`: \`${step.event}\` did not carry \`${step.field}\``,
+      `ESS-CF-INSTANCE: nothing bound \`${step.instance}\`: \`${step.event}\` did not carry \`${step.field}\``,
     );
   }
 
@@ -4048,7 +4072,7 @@ export class ScenarioRun {
       }
       last = reason;
     }
-    return this.fail(index, last);
+    return this.fail(index, `${retry ? 'ESS-CF-EVENTUAL-VIEW' : 'ESS-CF-VIEW'}: ${last}`);
   }
 
   /** decide answers whether the view expectation holds, why not, and whether it could be decided. */
@@ -4349,7 +4373,7 @@ export class ScenarioRun {
       try {
         [node, present] = this.resolveAccessorExpected(written);
       } catch (error) {
-        return this.targetError(index, `\`${field}\`: ${errorText(error)}`);
+        return this.targetError(index, `ESS-CF-SUITE: \`${field}\`: ${errorText(error)}`);
       }
       if (present) {
         want[field] = node;
@@ -4862,7 +4886,7 @@ export class ScenarioRun {
       try {
         resolved[field] = this.resolve(written);
       } catch (error) {
-        this.targetError(index, `\`${field}\`: ${errorText(error)}`);
+        this.targetError(index, `ESS-CF-SUITE: \`${field}\`: ${errorText(error)}`);
         return null;
       }
     }
@@ -5832,12 +5856,18 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   const provenance = closed(
     root.provenance,
     'suite_version system specification_version spec_digest contract_digest',
-    'component',
+    'component scenario_initial_state',
   );
   const version = text(provenance.suite_version);
   const major = SUITE_MAJORS[version];
   if (major === undefined) {
     throw new Error(`unsupported suite version ${quoteGo(version)}`);
+  }
+  if (
+    (major >= 34 && provenance.scenario_initial_state !== 'empty') ||
+    (major < 34 && Object.prototype.hasOwnProperty.call(provenance, 'scenario_initial_state'))
+  ) {
+    throw new Error('scenario_initial_state must be empty exactly in suite/34 and /35');
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
@@ -5955,6 +5985,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       specification_version: provenance.specification_version as string,
       spec_digest: provenance.spec_digest as string,
       contract_digest: provenance.contract_digest as string,
+      ...(major >= 34 ? { scenario_initial_state: 'empty' as const } : {}),
     },
     scenarios: {},
     original: raw,

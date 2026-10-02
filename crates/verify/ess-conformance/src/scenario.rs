@@ -155,70 +155,9 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::one_time_response::used_by(self) {
-            SuiteFormat::parse("ess-conformance/34").expect("constant suite version")
-        } else if crate::structured_values::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::structured_values::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::delivery_context::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::delivery_context::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::direct_response::used_by(self) {
-            SuiteFormat::parse("ess-conformance/28").expect("constant suite version")
-        } else if crate::leaf_payloads::used_by(self)
-            || crate::absent_input::used_by(self)
-            || crate::aggregate_delta::used_by(self)
-            || crate::now_offset::used_by(self)
-            || crate::caller_values::used_by(self)
-            || crate::view_paging::used_by(self)
-            || crate::bounded_retry::used_by(self)
-            || crate::grant::used_by(self)
-        {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::leaf_payloads::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::presence::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::presence::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::outcome_shapes::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::outcome_shapes::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::text_match_format::case_fold_used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::text_match_format::CASE_FOLD_ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::fixtures::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::fixtures::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::aggregate::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::aggregate::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::text_match_format::used_by(self) {
-            SuiteFormat::parse("ess-conformance/14").expect("constant suite version")
-        } else if crate::replay::used_by(self) {
-            SuiteFormat::parse("ess-conformance/12").expect("constant suite version")
-        } else if self.requires_preservation_format() {
-            SuiteFormat::parse("ess-conformance/10").expect("constant suite version")
-        } else if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
-            SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
-        } else if self.requires_extended_format() {
-            SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
-        } else {
-            SuiteFormat::CURRENT
-        };
+        self.provenance.scenario_initial_state = Some(ScenarioInitialState::Empty);
+        self.provenance.suite_version =
+            SuiteFormat::parse("ess-conformance/34").expect("constant suite version");
     }
 
     /// [`select_fresh_format`](Self::select_fresh_format), with the constructs only the model can
@@ -400,6 +339,17 @@ pub struct SuiteProvenance {
     /// other field here is text: a suite is read back, and validated names do not deserialize.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<String>,
+    /// Required logical namespace before each scenario's setup. Legacy suites leave this absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario_initial_state: Option<ScenarioInitialState>,
+}
+
+/// The lifecycle precondition of a newly synthesized suite, not a physical database reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScenarioInitialState {
+    /// No modeled rows, observations or invocation history in this scenario's logical namespace.
+    Empty,
 }
 
 impl SuiteProvenance {
@@ -429,6 +379,7 @@ impl SuiteProvenance {
             spec_digest: digest(projection.source_digest.as_str()),
             contract_digest: digest(projection.contract_digest.as_str()),
             component: None,
+            scenario_initial_state: None,
         }
     }
 }
@@ -3179,6 +3130,7 @@ mod tests {
             )
             .expect("a digest"),
             component: None,
+            scenario_initial_state: None,
         }
     }
 }

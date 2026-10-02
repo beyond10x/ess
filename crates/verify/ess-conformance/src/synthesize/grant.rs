@@ -130,6 +130,127 @@ fn grants(actor: &ess_compiler::ir::ResolvedActor, command: &QualifiedName) -> b
     actor.may.iter().any(|granted| granted.name() == command)
 }
 
+/// Attribute-free actors still denote distinct principals even when their grants are identical.
+/// Choose a declared arranger and another declared actor of the command under test. With no
+/// credential-dependent predicates, actor substitution preserves the source-selected outcomes.
+pub(super) fn cross_caller(ir: &EssIr, suite: &mut ConformanceSuite, notes: &mut Vec<Note>) {
+    for (id, scenario) in &mut suite.scenarios {
+        let Some(command) =
+            super::caller::under_test(id).and_then(|name| name.parse::<QualifiedName>().ok())
+        else {
+            continue;
+        };
+        if scenario.steps.iter().any(|step| matches!(step,
+            ScenarioStep::ExecuteCommand { caller, .. } | ScenarioStep::ExecuteCommandWithoutInput { caller, .. } if !caller.is_empty())) {
+            continue;
+        }
+        let commands: BTreeSet<_> = scenario
+            .steps
+            .iter()
+            .filter_map(sent)
+            .map(|(sent, _)| sent.name().clone())
+            .collect();
+        let arranging: BTreeSet<_> = commands.iter().filter(|name| **name != command).collect();
+        if !commands.contains(&command)
+            || (arranging.is_empty() && scenario.steps.iter().filter_map(sent).count() < 2)
+        {
+            continue;
+        }
+        let pair = ir
+            .actors()
+            .values()
+            .filter(|actor| actor.attributes.is_empty())
+            .filter(|actor| {
+                arranging.iter().all(|name| grants(actor, name))
+                    && (!arranging.is_empty() || grants(actor, &command))
+            })
+            .find_map(|first| {
+                ir.actors()
+                    .values()
+                    .find(|second| {
+                        second.name != first.name
+                            && second.attributes.is_empty()
+                            && grants(second, &command)
+                    })
+                    .map(|second| (first, second))
+            });
+        let Some((first, second)) = pair else {
+            continue;
+        };
+        let original = scenario.clone();
+        if arranging.is_empty() {
+            let first = ActorRef::new(first.name.clone());
+            let second = ActorRef::new(second.name.clone());
+            split_invocations(scenario, &first, &second);
+            let mut reversed = original;
+            split_invocations(&mut reversed, &second, &first);
+            if let Err(reason) = super::caller::append_independent(ir, scenario, &reversed) {
+                notes.push(Note::CrossCallerUnswapped {
+                    scenario: id.clone(),
+                    reason,
+                });
+            }
+            continue;
+        }
+        for name in &commands {
+            send_as(
+                scenario,
+                name,
+                &ActorRef::new(if name == &command {
+                    second.name.clone()
+                } else {
+                    first.name.clone()
+                }),
+            );
+        }
+        if grants(first, &command) && arranging.iter().all(|name| grants(second, name)) {
+            let mut reversed = original;
+            for name in &commands {
+                send_as(
+                    &mut reversed,
+                    name,
+                    &ActorRef::new(if name == &command {
+                        first.name.clone()
+                    } else {
+                        second.name.clone()
+                    }),
+                );
+            }
+            if let Err(reason) = super::caller::append_independent(ir, scenario, &reversed) {
+                notes.push(Note::CrossCallerUnswapped {
+                    scenario: id.clone(),
+                    reason,
+                });
+            }
+        } else {
+            notes.push(Note::CrossCallerUnswapped {
+                scenario: id.clone(),
+                reason: "the declared grants do not permit the reversed caller assignment",
+            });
+        }
+    }
+}
+
+/// With no credential reads, the first invocation arranges and subsequent invocations act.
+fn split_invocations(scenario: &mut ConformanceScenario, first: &ActorRef, second: &ActorRef) {
+    let mut ordinal = 0;
+    for step in &mut scenario.steps {
+        let (ScenarioStep::ExecuteCommand { actor, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { actor, .. }) = step
+        else {
+            continue;
+        };
+        *actor = Some(if ordinal == 0 {
+            first.clone()
+        } else {
+            second.clone()
+        });
+        ordinal += 1;
+    }
+    scenario.source.insert(first.clone().into());
+    scenario.source.insert(second.clone().into());
+}
+
 /// The command a step sends, and as whom; `None` for a step that sends nothing.
 fn sent(step: &ScenarioStep) -> Option<(&CommandRef, &Option<ActorRef>)> {
     match step {

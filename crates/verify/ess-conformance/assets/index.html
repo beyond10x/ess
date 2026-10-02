@@ -125,6 +125,7 @@
 
   <main>
     <section>
+      <p v-if="typeof initialState !== 'undefined' && initialState === 'empty'" class="p">Suite requirement: an empty logical modeled-instance/event/invocation namespace before each scenario setup. Unrelated physical data need not be deleted. This player replays observations; it does not establish backend isolation.</p>
       <h2 v-if="(oneTimePolicies || []).length">One-time response source obligations</h2>
       <p v-for="policy in oneTimePolicies" :key="policy.command + '/' + policy.outcome" class="p">
         {{ policy.command }} / {{ policy.outcome }}; fields {{ policy.fields.join(', ') }}.
