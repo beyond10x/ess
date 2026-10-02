@@ -158,6 +158,8 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | Compiled realization: **`type: ess-realization-ir/1`** | Same identities plus realization digest | Serialize-only compiled output. Pretty JSON; **realization** tuple digest. [Source][realization] |
 | Authored realization: **`type: ess-realization/2`** | Realization id and specification/synthesis identities | Opt-in implementation-only selection: empty entrypoints allowed only without actors or conformance claims. Nonempty entrypoints retain v1 rules. Closed DTO and semantic compilation; v1 readers reject this version. [Source][realization] |
 | Compiled realization: **`type: ess-realization-ir/2`** | Same identities plus version-separated realization digest | Serialize-only compiled output; pretty JSON. V1 canonical bytes and identity remain unchanged. [Source][realization] |
+| Authored transport: **`type: ess-transport/1`** | Specification identity (system, version, `sha256:` source digest) | Closed JSON/YAML DTO binding events to a broker, subject, envelope, delivery and capturing stream; compiled against the supplied ESS. Refusals `ESS-TRANSPORT-001`–`016`. [Source][transport] |
+| Compiled transport: **`format: ess-transport-ir/1`** | Same specification identity | Serialize-only compiled output; pretty JSON, every collection ordered. Read by `ess generate --kind asyncapi --transport`. [Source][transport] |
 | `plan.json`: **unversioned** `SynthesisPlan` | Specification provenance | Neutral generated plan, consumed as a typed value by emitters. Pretty JSON and `PLAN.md`; **compiled-model/whole-contract** references, no plan-file hash. [Source][plan] |
 | `target.json`: **unversioned** `TargetReport` | Target name and specification provenance | Successful Go/Web/Clap synthesis includes this refusal/weakening report; successful Rust has `target: None` and no target metadata. No persisted admission reader. Unchanged pretty JSON and `TARGET.md`; provenance references, no report-file hash. [Source][synthesis] |
 | Complete failure: `format: ess-target-failure/1` | Target `rust` or `web`; unchanged neutral plan and its provenance | Serialize-only `TargetFailure` has `format`, `target`, `plan`, nonempty `causes`; private construction, read-only accessors, no Deserialize/admission reader. Typed pretty JSON+LF or CLI YAML; no failure-file digest or artifacts. [Source][target-failure] |
@@ -546,6 +548,7 @@ A format catalog alone does not establish an installed external consumer upgrade
 [ir]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-compiler/src/ir.rs
 [composition]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-composition/src/lib.rs
 [realization]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-realization/src/lib.rs
+[transport]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-transport/src/lib.rs
 [provenance]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/provenance.rs
 [stamp]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/stamp.rs
 [delivery-identity]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/src/identity.rs

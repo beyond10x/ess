@@ -489,6 +489,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-docs/1` | [0.4.0][r4] | The document representation between a model and its pages. |
 | `ess-realization/1` | [0.8.0][r8] | An authored realization: one exact ESS system bound to its implementations. `ess-realization/2`, introduced in [0.21.0][r21], admits implementation-only selections. |
 | `ess-realization-ir/1` | [0.8.0][r8] | A compiled realization. `ess-realization-ir/2`, introduced in [0.21.0][r21], compiles `ess-realization/2`. |
+| `ess-transport/1`, `ess-transport-ir/1` | unreleased | How the events of one exact ESS travel: broker, subject, envelope, delivery and the stream that captures each subject, and its compiled form. |
 | `ess-build/1`, `ess-build-ir/1` | [0.9.0][r9] | An authored build and its compiled form. |
 | `ess-runtime/1`, `ess-runtime-ir/1` | [0.9.0][r9] | An authored runtime mapping and its compiled form. |
 | `ess-release/1`, `ess-release-catalog/1` | [0.9.0][r9] | A release manifest, and the catalog of candidate releases. |

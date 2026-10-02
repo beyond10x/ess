@@ -27,6 +27,7 @@ ess-domain.workspace = true
 ess-compiler.workspace = true
 ess-composition.workspace = true
 ess-realization.workspace = true
+ess-transport.workspace = true
 ess-cli-contract.workspace = true
 ess-cli-project.workspace = true
 ess-deployment.workspace = true
