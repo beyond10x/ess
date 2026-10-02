@@ -211,11 +211,11 @@ fn issue_168_the_compiled_source_reads_the_callers_attribute() {
 }
 
 #[test]
-fn issue_168_every_command_is_sent_as_a_caller_and_the_suite_takes_suite_26() {
+fn issue_168_every_command_is_sent_as_a_caller_and_fresh_suite_declares_its_initial_state() {
     let suite = suite(NOTES);
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     let mut callers = BTreeSet::new();
     for scenario in suite.scenarios.values() {

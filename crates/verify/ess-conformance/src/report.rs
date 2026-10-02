@@ -629,6 +629,9 @@ impl ConformanceReport {
 
 impl fmt::Display for ConformanceReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.suite.scenario_initial_state.is_some() {
+            writeln!(f, "Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.")?;
+        }
         writeln!(
             f,
             "{} {} against {} — {}",

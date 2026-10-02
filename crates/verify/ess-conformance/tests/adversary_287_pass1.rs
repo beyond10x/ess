@@ -264,7 +264,13 @@ enum Fault {
     IgnoresPause,
     /// A second install replaces the switch instead of being refused.
     Reinstalls,
+    /// Accepts only the first concrete principal this target encountered.
+    OnlyFirstCaller,
+    /// Cannot establish the suite's declared scenario namespace.
+    CannotIsolate,
 }
+
+type CallTrace = BTreeMap<String, Vec<(String, Node, Node)>>;
 
 /// The model implemented by hand: one switch row at most, keyed by its identity.
 #[derive(Default)]
@@ -273,9 +279,14 @@ struct Plant {
     /// Rows outlive a scenario: the target is shared between scenarios, which §8 permits as long as
     /// one scenario's observations cannot satisfy another's.
     shared: bool,
+    namespaced: bool,
+    attribute_free: bool,
     switches: RefCell<BTreeMap<String, BTreeMap<String, Node>>>,
     jobs: RefCell<BTreeMap<String, BTreeMap<String, Node>>>,
     minted: Cell<u32>,
+    scenario: RefCell<String>,
+    calls: RefCell<CallTrace>,
+    first_caller: RefCell<Option<Node>>,
 }
 
 fn outcome(command: &CommandRef, name: &str) -> OutcomeRef {
@@ -299,7 +310,14 @@ impl ConformanceTarget for Plant {
     fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
         Ok(ImplementationIdentity::new("adversary-287-fixture", "1"))
     }
-    fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        if self.fault == Fault::CannotIsolate {
+            return Err(TargetError::unsupported(
+                "begin_scenario",
+                "empty logical namespace unavailable",
+            ));
+        }
+        *self.scenario.borrow_mut() = context.scenario.to_string();
         if !self.shared {
             self.switches.borrow_mut().clear();
             self.jobs.borrow_mut().clear();
@@ -309,11 +327,24 @@ impl ConformanceTarget for Plant {
     fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
         Ok(())
     }
+    #[allow(clippy::too_many_lines)] // Keep the reference target's command effects together.
     fn execute_command(
         &self,
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
-        let Some(caller) = request.caller.clone() else {
+        let supplied = if self.attribute_free {
+            assert!(
+                request.caller.is_none(),
+                "no invented credential attributes"
+            );
+            request
+                .actor
+                .as_ref()
+                .map(|actor| BTreeMap::from([("principal_id".into(), text(&actor.to_string()))]))
+        } else {
+            request.caller.clone()
+        };
+        let Some(caller) = supplied else {
             return Err(TargetError::unavailable(
                 "authenticating",
                 "every command of this system is sent as a caller",
@@ -331,7 +362,7 @@ impl ConformanceTarget for Plant {
                 return Ok(SemanticCommandResult::undeclared().with_consistency(token));
             };
             let jobs = self.jobs.borrow();
-            let result = match jobs.get(&key(&job_id)) {
+            let result = match jobs.get(&self.storage_key(&key(&job_id))) {
                 None => error(&command, "no-such-job", "demo.plant.JobNotFound"),
                 Some(row) => SemanticCommandResult::took(outcome(&command, "cancelled")).emitting(
                     ObservedEvent::new("demo.plant.JobCancelled".parse().unwrap())
@@ -345,11 +376,22 @@ impl ConformanceTarget for Plant {
             return Ok(SemanticCommandResult::undeclared().with_consistency(token));
         };
         let acted_by = caller["principal_id"].clone();
+        self.calls
+            .borrow_mut()
+            .entry(self.scenario.borrow().clone())
+            .or_default()
+            .push((command.to_string(), switch_id.clone(), acted_by.clone()));
+        let mut first = self.first_caller.borrow_mut();
+        let first = first.get_or_insert_with(|| acted_by.clone());
+        if self.fault == Fault::OnlyFirstCaller && first != &acted_by {
+            return Ok(SemanticCommandResult::undeclared().with_consistency(token));
+        }
         let row_key = if self.fault == Fault::KeysByCaller {
             format!("{}/{}", key(&acted_by), key(&switch_id))
         } else {
             key(&switch_id)
         };
+        let row_key = self.storage_key(&row_key);
         let mut switches = self.switches.borrow_mut();
         let row = switches.get(&row_key).cloned();
         let state = row.as_ref().map(|row| row["state"].clone());
@@ -408,8 +450,8 @@ impl ConformanceTarget for Plant {
     }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let rows = match request.view.to_string().as_str() {
-            "demo.plant.Switches" => self.switches.borrow().values().cloned().collect::<Vec<_>>(),
-            "demo.plant.Jobs" => self.jobs.borrow().values().cloned().collect(),
+            "demo.plant.Switches" => self.rows(&self.switches.borrow()),
+            "demo.plant.Jobs" => self.rows(&self.jobs.borrow()),
             other => panic!("no view {other}"),
         };
         Ok(SemanticViewResult::of(rows))
@@ -429,6 +471,21 @@ impl ConformanceTarget for Plant {
 }
 
 impl Plant {
+    fn storage_key(&self, key: &str) -> String {
+        if self.namespaced {
+            format!("{}/{key}", self.scenario.borrow())
+        } else {
+            key.into()
+        }
+    }
+
+    fn rows(&self, rows: &BTreeMap<String, BTreeMap<String, Node>>) -> Vec<BTreeMap<String, Node>> {
+        let prefix = format!("{}/", self.scenario.borrow());
+        rows.iter()
+            .filter(|(key, _)| !self.namespaced || key.starts_with(&prefix))
+            .map(|(_, row)| row.clone())
+            .collect()
+    }
     fn job(
         &self,
         command: &CommandRef,
@@ -452,7 +509,7 @@ impl Plant {
             }
         }
         self.jobs.borrow_mut().insert(
-            key(&job_id),
+            self.storage_key(&key(&job_id)),
             BTreeMap::from([
                 ("job_id".to_owned(), job_id.clone()),
                 ("switch_id".to_owned(), switch_id.clone()),
@@ -524,30 +581,126 @@ fn adv287_a_target_keeping_one_switch_per_caller_fails_some_scenario() {
 /// byte-identical to 0.49.0's). Red here says the per-caller store is a gap of synthesis at large,
 /// not of the singleton alone.
 #[test]
-#[ignore = "pre-existing, not this unit: beyond10x/ess#312 (coordinator, 2026-10-01)"]
 fn adv287_control_a_uuid_switch_suite_fails_a_target_keeping_one_switch_per_caller() {
     let model = with_id("{name: demo.plant.SwitchId, kind: newtype, of: Uuid}");
     let synthesis = synthesize(&ir(&model));
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
-    assert_eq!(failed(&synthesis.suite, &plant(Fault::None)), Vec::new());
-    assert!(
-        !failed(&synthesis.suite, &plant(Fault::KeysByCaller)).is_empty(),
-        "a target with one switch per caller passes every scenario of the Uuid suite"
+    let healthy = plant(Fault::None);
+    assert_eq!(failed(&synthesis.suite, &healthy), Vec::new());
+    let id = "demo.plant.StartJob/outcome/switch-paused";
+    assert!(failed(&synthesis.suite, &plant(Fault::KeysByCaller))
+        .iter()
+        .any(|(scenario, status)| scenario == id && *status == Status::Failed));
+    let trace = healthy.calls.borrow();
+    let calls = &trace[id];
+    let mut pairs = Vec::new();
+    for (position, (command, identity, principal)) in calls.iter().enumerate() {
+        if command != "demo.plant.StartJob" {
+            continue;
+        }
+        let arrangements: Vec<_> = calls[..position]
+            .iter()
+            .filter(|(command, key, _)| command == "demo.plant.InstallSwitch" && key == identity)
+            .collect();
+        assert_eq!(
+            arrangements.len(),
+            1,
+            "the acted row was installed exactly once: {calls:?}"
+        );
+        let owner = &arrangements[0].2;
+        assert_ne!(
+            owner, principal,
+            "the caller actually changes on the same row"
+        );
+        assert!(calls[..position]
+            .iter()
+            .any(|(command, key, actor)| command == "demo.plant.PauseSwitch"
+                && key == identity
+                && actor == owner));
+        pairs.push((owner.clone(), principal.clone()));
+    }
+    assert_eq!(pairs.len(), 2, "both caller orders actually execute");
+    assert_eq!(pairs[0], (pairs[1].1.clone(), pairs[1].0.clone()));
+}
+
+#[test]
+fn equal_grant_attribute_free_actors_act_on_the_same_shared_row() {
+    let source = with_id("{name: demo.plant.SwitchId, kind: newtype, of: Uuid}")
+        .replace(
+            "    attributes:\n      - {name: principal_id, type: demo.plant.PrincipalId}\n",
+            "",
+        )
+        .replace(", acted_by: {caller: principal_id}", "")
+        .replace(
+            "      - {name: acted_by, type: demo.plant.PrincipalId}\n",
+            "",
+        );
+    let actor = source
+        .split("actors:\n")
+        .nth(1)
+        .unwrap()
+        .split("commands:\n")
+        .next()
+        .unwrap();
+    let source = source.replace(
+        actor,
+        &format!(
+            "{actor}{}",
+            actor.replace("demo.plant.Operator", "demo.plant.SecondOperator")
+        ),
     );
+    let synthesis = synthesize(&ir(&source));
+    assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
+    let healthy = Plant {
+        attribute_free: true,
+        ..Plant::default()
+    };
+    assert_eq!(failed(&synthesis.suite, &healthy), Vec::new());
+    let partitioned = Plant {
+        attribute_free: true,
+        fault: Fault::KeysByCaller,
+        ..Plant::default()
+    };
+    assert!(failed(&synthesis.suite, &partitioned)
+        .iter()
+        .any(|(id, status)| id == "demo.plant.PauseSwitch/outcome/paused"
+            && *status == Status::Failed));
+    let trace = healthy.calls.borrow();
+    let steps = &trace["demo.plant.PauseSwitch/outcome/paused"];
+    let install = steps
+        .iter()
+        .find(|(command, _, _)| command == "demo.plant.InstallSwitch")
+        .unwrap();
+    let pause = steps
+        .iter()
+        .find(|(command, _, _)| command == "demo.plant.PauseSwitch")
+        .unwrap();
+    assert_eq!(install.1, pause.1);
+    assert_ne!(install.2, pause.2);
 }
 
 /// Control for the shared-target case: the `Uuid` switch suite passes a correct target that keeps
 /// its rows across scenarios, as §8 has every other suite do.
 #[test]
-#[ignore = "pre-existing, not this unit: beyond10x/ess#312 (coordinator, 2026-10-01)"]
 fn adv287_control_a_uuid_switch_suite_passes_a_shared_correct_target() {
     let model = with_id("{name: demo.plant.SwitchId, kind: newtype, of: Uuid}");
     let synthesis = synthesize(&ir(&model));
     let shared = Plant {
         shared: true,
+        namespaced: true,
         ..Plant::default()
     };
+    let sentinel = BTreeMap::from([("unrelated".into(), text("retained"))]);
+    shared
+        .switches
+        .borrow_mut()
+        .insert("other-tenant/sentinel".into(), sentinel.clone());
     assert_eq!(failed(&synthesis.suite, &shared), Vec::new());
+    assert_eq!(shared.switches.borrow()["other-tenant/sentinel"], sentinel);
+    assert!(
+        shared.switches.borrow().len() > 1,
+        "scenario rows also remain physically stored"
+    );
 }
 
 /// Withdrawal with a correct form:`CancelJob` is about a job, not the switch, and its two
@@ -634,28 +787,26 @@ fn adv287_an_in_list_naming_one_value_twice_draws_no_second_value() {
 /// target that keeps its rows across scenarios fails them; each scenario that does must carry a
 /// note saying it needs an empty target, or the suite claims more than it says.
 #[test]
-#[ignore = "pre-existing, not this unit: beyond10x/ess#312 (coordinator, 2026-10-01)"]
 fn adv287_a_shared_target_is_told_the_singleton_scenarios_need_an_empty_one() {
     let synthesis = synthesize(&ir(ONE_SWITCH));
     let shared = Plant {
         shared: true,
         ..Plant::default()
     };
-    let failed = failed(&synthesis.suite, &shared);
-    let unexplained: Vec<_> = failed
-        .iter()
-        .filter(|(scenario, _)| {
-            !synthesis.notes.iter().any(|note| {
-                !matches!(note, Note::UnswappedCallers { .. })
-                    && format!("{note:?}").contains(scenario.as_str())
-            })
-        })
-        .collect();
-    assert_eq!(
-        unexplained,
-        Vec::<&(String, Status)>::new(),
-        "scenarios that fail a correct shared target with no note saying why"
+    assert!(
+        !failed(&synthesis.suite, &shared).is_empty(),
+        "persistent modeled rows violate the declared precondition"
     );
+    let wire: serde_json::Value =
+        serde_json::from_str(&synthesis.suite.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(wire["provenance"]["scenario_initial_state"], "empty");
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let report = Runner::for_suite(&synthesis.suite)
+        .run_admitted(&admitted, &plant(Fault::None))
+        .into_report();
+    assert!(report
+        .to_string()
+        .contains("Requires an empty logical modeled-instance/event/invocation namespace"));
 }
 
 /// Interaction with ess/20: the pause guard read as the switch's lifecycle `state`. Synthesizes
@@ -705,4 +856,329 @@ fn adv287_a_one_variant_enum_on_a_plain_field_leaves_a_uuid_switch_alone() {
             .any(|note| matches!(note, Note::UnswappedCallers { .. })),
         "a Uuid switch has room for the swapped run"
     );
+}
+
+mod support_go;
+mod support_initial_state;
+
+#[test]
+#[allow(clippy::too_many_lines)] // Compare the two actual foreign runtimes against one native run.
+fn live_go_and_typescript_match_native_shared_row_and_isolation_verdicts() {
+    use ess_conformance::counts::CountReport;
+    use std::process::Command;
+    let model = ir(&with_id(
+        "{name: demo.plant.SwitchId, kind: newtype, of: Uuid}",
+    ));
+    let suite = synthesize(&model).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let directory = support_go::package(
+        "initial-state",
+        &suite,
+        &[("live_test.go", support_initial_state::GO)],
+    );
+    let typescript = directory.join("typescript");
+    std::fs::create_dir_all(&typescript).unwrap();
+    for artifact in ess_conformance::ts::emit(&suite).unwrap() {
+        let path = typescript.join(artifact.path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, artifact.contents).unwrap();
+    }
+    let package = typescript.join("essconform");
+    let mut compile = Command::new("tsc");
+    if let Some(modules) = std::env::var_os("ESS_TYPES_NODE") {
+        compile
+            .arg("--typeRoots")
+            .arg(std::path::Path::new(&modules).join("@types"));
+    }
+    let output = compile
+        .args(["--project", "tsconfig.json", "--noCheck"])
+        .current_dir(&package)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::write(package.join("live.mjs"), support_initial_state::TS).unwrap();
+    for fault in [
+        Fault::None,
+        Fault::KeysByCaller,
+        Fault::OnlyFirstCaller,
+        Fault::CannotIsolate,
+    ] {
+        let target = plant(fault);
+        let native = Runner::for_suite(&suite).run_admitted(&admitted, &target);
+        let expected: serde_json::Value = serde_json::from_str(
+            &CountReport::from_run(&native, &admitted)
+                .unwrap()
+                .to_canonical_json()
+                .unwrap(),
+        )
+        .unwrap();
+        let host = support_initial_state::Host::start(plant(fault));
+        let go = support_go::go_test(&directory, "TestLive", &[("PARITY_ADDRESS", &host.address)]);
+        let observed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(directory.join("report.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            observed["counts"], expected["counts"],
+            "Go {fault:?}: {}",
+            go.log
+        );
+        assert_eq!(
+            observed["outcomes"], expected["outcomes"],
+            "Go {fault:?}: {}",
+            go.log
+        );
+        assert!(go
+            .log
+            .contains("Requires an empty logical modeled-instance/event/invocation namespace"));
+        let go_target = host.stop();
+        let host = support_initial_state::Host::start(plant(fault));
+        let report = directory.join("typescript-report.json");
+        let output = Command::new("node")
+            .arg("live.mjs")
+            .arg("suite.json")
+            .arg(&host.address)
+            .env("ESS_REPORT_FORMAT", "2")
+            .env("ESS_REPORT_OUT", &report)
+            .current_dir(&package)
+            .output()
+            .unwrap();
+        let log = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let observed: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&report).unwrap_or_else(|error| panic!("{error}: {log}")),
+        )
+        .unwrap();
+        assert_eq!(
+            observed["counts"], expected["counts"],
+            "TypeScript {fault:?}: {log}"
+        );
+        assert_eq!(
+            observed["outcomes"], expected["outcomes"],
+            "TypeScript {fault:?}: {log}"
+        );
+        assert!(
+            log.contains("Requires an empty logical modeled-instance/event/invocation namespace")
+        );
+        let ts_target = host.stop();
+        let native_codes: std::collections::BTreeSet<_> = native
+            .scenarios
+            .iter()
+            .flat_map(ess_conformance::ScenarioResult::diagnostics)
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        let codes = |log: &str| {
+            ess_conformance::report::CheckCode::ALL
+                .into_iter()
+                .map(ess_conformance::CheckCode::as_str)
+                .filter(|code| log.contains(code))
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        assert_eq!(
+            codes(&go.log),
+            native_codes,
+            "Go diagnostic set for {fault:?}: {}",
+            go.log
+        );
+        assert_eq!(
+            codes(&log),
+            native_codes,
+            "TypeScript diagnostic set for {fault:?}: {log}"
+        );
+        if fault == Fault::CannotIsolate {
+            assert!(target.calls.borrow().is_empty());
+            assert!(go_target.calls.borrow().is_empty());
+            assert!(ts_target.calls.borrow().is_empty());
+        } else {
+            assert!(!go_target.calls.borrow().is_empty());
+            assert!(!ts_target.calls.borrow().is_empty());
+        }
+    }
+}
+
+#[test]
+fn wasm_executes_the_same_shared_row_and_isolation_fixtures() {
+    let suite = synthesize(&ir(&with_id(
+        "{name: demo.plant.SwitchId, kind: newtype, of: Uuid}",
+    )))
+    .suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let observed = support_initial_state::wasm(&admitted);
+    for (index, fault) in [
+        Fault::None,
+        Fault::KeysByCaller,
+        Fault::OnlyFirstCaller,
+        Fault::CannotIsolate,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let target = plant(fault);
+        let native = Runner::for_suite(&suite).run_admitted(&admitted, &target);
+        let count = ess_conformance::counts::CountReport::from_run(&native, &admitted).unwrap();
+        let expected: serde_json::Value =
+            serde_json::from_str(&count.to_canonical_json().unwrap()).unwrap();
+        assert_eq!(
+            observed[index]["report"]["counts"], expected["counts"],
+            "{fault:?}"
+        );
+        assert_eq!(
+            observed[index]["report"]["outcomes"], expected["outcomes"],
+            "{fault:?}"
+        );
+        let codes: std::collections::BTreeSet<_> = native
+            .scenarios
+            .iter()
+            .flat_map(ess_conformance::ScenarioResult::diagnostics)
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(
+            observed[index]["codes"],
+            serde_json::to_value(codes).unwrap(),
+            "{fault:?}"
+        );
+        assert_eq!(
+            observed[index]["calls"],
+            target.calls.borrow().len(),
+            "{fault:?}"
+        );
+    }
+}
+
+#[test]
+fn same_command_arranger_and_actor_cross_the_exact_row() {
+    for attributed in [false, true] {
+        let mut source = with_id("{name: demo.plant.SwitchId, kind: newtype, of: Uuid}")
+            .replace(", acted_by: {caller: principal_id}", "")
+            .replace(
+                "      - {name: acted_by, type: demo.plant.PrincipalId}\n",
+                "",
+            );
+        if !attributed {
+            source = source.replace(
+                "    attributes:\n      - {name: principal_id, type: demo.plant.PrincipalId}\n",
+                "",
+            );
+            let actor = source
+                .split("actors:\n")
+                .nth(1)
+                .unwrap()
+                .split("commands:\n")
+                .next()
+                .unwrap()
+                .to_owned();
+            source = source.replace(
+                &actor,
+                &format!(
+                    "{actor}{}",
+                    actor.replace("demo.plant.Operator", "demo.plant.SecondOperator")
+                ),
+            );
+        }
+        let synthesis = synthesize(&ir(&source));
+        let healthy = Plant {
+            attribute_free: !attributed,
+            ..Plant::default()
+        };
+        assert_eq!(failed(&synthesis.suite, &healthy), Vec::new());
+        let trace = healthy.calls.borrow();
+        let calls = &trace["demo.plant.InstallSwitch/outcome/already-installed"];
+        assert!(
+            calls
+                .windows(2)
+                .any(|pair| pair[0].1 == pair[1].1 && pair[0].2 != pair[1].2),
+            "attributed={attributed}: {calls:?}"
+        );
+        let partitioned = Plant {
+            attribute_free: !attributed,
+            fault: Fault::KeysByCaller,
+            ..Plant::default()
+        };
+        assert!(failed(&synthesis.suite, &partitioned)
+            .iter()
+            .any(
+                |(id, status)| id == "demo.plant.InstallSwitch/outcome/already-installed"
+                    && *status == Status::Failed
+            ));
+    }
+}
+
+#[test]
+fn upsert_updated_witness_crosses_callers_between_create_and_update() {
+    use ess_conformance::scenario::ScenarioStep;
+    let original =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml");
+    for attributed in [false, true] {
+        let actors = if attributed {
+            "  - {name: demo.items.Admin, attributes: [{name: principal, type: String}], may: [demo.items.PutItem, demo.items.BookSlot]}"
+        } else {
+            "  - {name: demo.items.Admin, may: [demo.items.PutItem, demo.items.BookSlot]}\n  - {name: demo.items.SecondAdmin, may: [demo.items.PutItem, demo.items.BookSlot]}"
+        };
+        let model = ir(&original
+            .replace("format: ess/16", "format: ess/18")
+            .replace(
+                "  - {name: demo.items.Admin, may: [demo.items.PutItem, demo.items.BookSlot]}",
+                actors,
+            ));
+        let synthesis = synthesize(&model);
+        let scenario =
+            &synthesis.suite.scenarios[&"demo.items.PutItem/outcome/updated".parse().unwrap()];
+        let calls: Vec<_> = scenario
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                ScenarioStep::ExecuteCommand {
+                    command,
+                    actor,
+                    caller,
+                    input,
+                    ..
+                } if command.to_string() == "demo.items.PutItem" => Some((actor, caller, input)),
+                _ => None,
+            })
+            .collect();
+        assert!(calls.len() >= 2);
+        assert_ne!(
+            (calls[0].0, calls[0].1),
+            (calls[1].0, calls[1].1),
+            "attributed={attributed}"
+        );
+    }
+}
+
+#[test]
+fn caller_sensitive_same_command_gap_is_explicit_without_false_mixed_claim() {
+    let synthesis = synthesize(&ir(&with_id(
+        "{name: demo.plant.SwitchId, kind: newtype, of: Uuid}",
+    )));
+    let id = "demo.plant.InstallSwitch/outcome/already-installed";
+    assert!(synthesis.notes.iter().any(
+        |note| matches!(note,Note::CrossCallerUnwitnessed {scenario,..} if scenario.to_string()==id)
+    ));
+    assert!(!synthesis.notes.iter().any(
+        |note| matches!(note,Note::CrossCallerUnswapped {scenario,..} if scenario.to_string()==id)
+    ));
+}
+
+#[test]
+fn caller_valued_upsert_records_the_remaining_per_invocation_witness_gap() {
+    let original =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml");
+    let source=original.replace("format: ess/16","format: ess/18")
+        .replace("  - {name: demo.items.Admin, may: [demo.items.PutItem, demo.items.BookSlot]}",
+            "  - {name: demo.items.Admin, attributes: [{name: principal, type: demo.items.Label}], may: [demo.items.PutItem, demo.items.BookSlot]}")
+        .replace("label: input.label","label: {caller: principal}");
+    let synthesis = synthesize(&ir(&source));
+    assert!(synthesis
+        .suite
+        .scenarios
+        .contains_key(&"demo.items.PutItem/outcome/updated".parse().unwrap()));
+    assert!(synthesis.notes.iter().any(|note|matches!(note,Note::CrossCallerUnwitnessed {scenario,..} if scenario.to_string()=="demo.items.PutItem/outcome/updated")));
 }

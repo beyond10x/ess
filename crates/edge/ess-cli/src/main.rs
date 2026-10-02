@@ -3254,7 +3254,9 @@ fn import_history(path: &Path, log: &Path, adapter: &Path, output: Option<&Path>
         }
     };
     if ess_conformance::one_time_response::marked_model(&loaded) {
-        eprintln!("UnsupportedOneTimeDisclosure: history import cannot preserve one_time_response policy");
+        eprintln!(
+            "UnsupportedOneTimeDisclosure: history import cannot preserve one_time_response policy"
+        );
         return ExitCode::from(REFUSED);
     }
     if output.is_some_and(|output| import_output_clashes(output, path, log, adapter)) {
@@ -3583,6 +3585,9 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         }
     };
     let suite = admitted.suite();
+    if suite.provenance.scenario_initial_state.is_some() {
+        eprintln!("Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.");
+    }
     let interpreted = match target {
         ReferenceTarget::Interpreted => match interpreter_for(&path, suite, format)? {
             Ok(interpreter) => Some(interpreter),

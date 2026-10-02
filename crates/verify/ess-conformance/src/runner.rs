@@ -3642,6 +3642,7 @@ mod tests {
             )
             .expect("a digest"),
             component: None,
+            scenario_initial_state: None,
         }));
 
         assert_eq!(

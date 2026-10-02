@@ -238,6 +238,7 @@ fn finish_inventory(
     );
     classify(&mut inventory, &owners, &rejected_needs);
     inventory.sort_and_count()?;
+    suite.select_fresh_format_for(ir);
     suite.provenance.suite_version = coverage_version(ir, &suite, &inventory);
     let original = coverage::suite_document(&suite, &inventory)?;
     AdmittedInput::from_suite(AdmittedSuite::from_json(&original)?)
@@ -496,46 +497,51 @@ fn coverage_version(
         || crate::bounded_retry::used_by(suite)
         || crate::grant::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
-    crate::scenario::SuiteFormat::parse(if crate::one_time_response::used_by(suite) {
-        "ess-conformance/35"
-    } else if crate::structured_values::used_by(suite) {
-        "ess-conformance/33"
-    } else if crate::delivery_context::used_by(suite) {
-        "ess-conformance/31"
-    } else if crate::direct_response::used_by(suite) {
-        "ess-conformance/29"
-    } else if round_three {
-        "ess-conformance/27"
-    } else if crate::presence::used_by(suite) {
-        "ess-conformance/25"
-    } else if crate::outcome_shapes::used_by(suite) {
-        "ess-conformance/23"
-    } else if crate::text_match_format::case_fold_used_by(suite) {
-        "ess-conformance/21"
-    } else if crate::fixtures::used_by(suite) {
-        "ess-conformance/19"
-    } else if crate::aggregate::used_by(suite)
-        || inventory
-            .refused
-            .iter()
-            .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
-    {
-        "ess-conformance/17"
-    } else if crate::text_match_format::used_by(suite) {
-        "ess-conformance/15"
-    } else if crate::replay::used_by(suite) {
-        "ess-conformance/13"
-    } else if suite.requires_preservation_format() {
-        "ess-conformance/11"
-    } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
-        "ess-conformance/9"
-    } else if suite.requires_extended_format()
-        || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
-    {
-        "ess-conformance/7"
-    } else {
-        coverage::COVERAGE_SUITE_FORMAT
-    })
+    crate::scenario::SuiteFormat::parse(
+        if suite.provenance.scenario_initial_state.is_some()
+            || crate::one_time_response::used_by(suite)
+        {
+            "ess-conformance/35"
+        } else if crate::structured_values::used_by(suite) {
+            "ess-conformance/33"
+        } else if crate::delivery_context::used_by(suite) {
+            "ess-conformance/31"
+        } else if crate::direct_response::used_by(suite) {
+            "ess-conformance/29"
+        } else if round_three {
+            "ess-conformance/27"
+        } else if crate::presence::used_by(suite) {
+            "ess-conformance/25"
+        } else if crate::outcome_shapes::used_by(suite) {
+            "ess-conformance/23"
+        } else if crate::text_match_format::case_fold_used_by(suite) {
+            "ess-conformance/21"
+        } else if crate::fixtures::used_by(suite) {
+            "ess-conformance/19"
+        } else if crate::aggregate::used_by(suite)
+            || inventory
+                .refused
+                .iter()
+                .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
+        {
+            "ess-conformance/17"
+        } else if crate::text_match_format::used_by(suite) {
+            "ess-conformance/15"
+        } else if crate::replay::used_by(suite) {
+            "ess-conformance/13"
+        } else if suite.requires_preservation_format() {
+            "ess-conformance/11"
+        } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite)
+        {
+            "ess-conformance/9"
+        } else if suite.requires_extended_format()
+            || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
+        {
+            "ess-conformance/7"
+        } else {
+            coverage::COVERAGE_SUITE_FORMAT
+        },
+    )
     .expect("constant suite version")
 }
 

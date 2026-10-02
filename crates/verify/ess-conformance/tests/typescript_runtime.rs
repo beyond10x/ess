@@ -387,6 +387,7 @@ fn suite() -> ess_conformance::ConformanceSuite {
         spec_digest: digest("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
         contract_digest: digest("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"),
         component: None,
+        scenario_initial_state: None,
     })
 }
 

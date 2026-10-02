@@ -188,3 +188,34 @@ fn without_a_runner_the_profile_still_marks_the_results_as_supplied() {
     let written: Value = serde_json::from_str(&fs::read_to_string(out).unwrap()).unwrap();
     assert_eq!(written["producer_profile"], "external-scenario-status/1");
 }
+
+#[test]
+fn scenario_namespace_requirement_is_visible_before_cli_execution() {
+    let directory = scratch("initial-state");
+    let (suite, compact) = suite_and_own_report(&directory);
+    let document: Value = serde_json::from_str(&fs::read_to_string(&suite).unwrap()).unwrap();
+    assert_eq!(document["provenance"]["scenario_initial_state"], "empty");
+    assert_eq!(
+        document["provenance"]["suite_version"],
+        "ess-conformance/35"
+    );
+    assert!(
+        compact.get("scenario_initial_state").is_none(),
+        "report/2 remains closed"
+    );
+    let output = ess(
+        &[
+            "verify",
+            "conform",
+            "run",
+            "--target",
+            "billing",
+            "--report-format",
+            "2",
+        ],
+        &[("--suite", &suite)],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("Requires an empty logical modeled-instance/event/invocation namespace"));
+}

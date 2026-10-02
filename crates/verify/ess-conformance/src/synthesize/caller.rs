@@ -192,7 +192,18 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             None => whole.notes.push(unswapped(id, exhausted)),
         }
     }
-    for command in &reading {
+    // A command need not read a credential to depend on shared state. In particular, a
+    // related-row guard must observe the row arranged by the other principal (#312).
+    let mixed_commands: BTreeSet<_> = ir
+        .commands()
+        .keys()
+        .filter(|command| {
+            callers.for_command(ir, Who::First, command)
+                != callers.for_command(ir, Who::Second, command)
+        })
+        .cloned()
+        .collect();
+    for command in &mixed_commands {
         let sent = |name: &QualifiedName| {
             if name == command {
                 Who::Second
@@ -203,7 +214,12 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
         let back = |name: &QualifiedName| sent(name).other();
         let (other, back) = about_command(ir, &callers, (&sent, &back), command, &rotated);
         for (id, mut scenario) in other.suite.scenarios {
-            if whole.suite.scenarios.contains_key(&id) || !about(&id, command) {
+            if !about(&id, command) {
+                continue;
+            }
+            // Preserve an existing single-caller witness unless the mixed plan actually sends
+            // another command as a different caller. Merely renaming a principal proves nothing.
+            if whole.suite.scenarios.contains_key(&id) && !crosses_callers(&scenario) {
                 continue;
             }
             if let Some(again) = back.suite.scenarios.get(&id) {
@@ -218,6 +234,7 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             whole.suite.scenarios.insert(id, scenario);
         }
     }
+    cross_single_command(ir, &callers, &reading, &mut whole);
     // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
     // the model's; the suite names the model it came from, the one a target and an adapter digest
     // (beyond10x/ess#216).
@@ -226,6 +243,94 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
     whole.suite.provenance.contract_digest = model.contract_digest;
     whole.suite.select_fresh_format();
     whole
+}
+
+/// Upserts and duplicate-identity controls arrange and act with the same command name.
+fn cross_single_command(
+    ir: &EssIr,
+    callers: &Callers,
+    reading: &BTreeSet<QualifiedName>,
+    whole: &mut Synthesis,
+) {
+    for (id, scenario) in &mut whole.suite.scenarios {
+        let Some(command) = under_test(id).and_then(|name| name.parse::<QualifiedName>().ok())
+        else {
+            continue;
+        };
+        let commands: Vec<_> = scenario
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                ScenarioStep::ExecuteCommand { command, .. }
+                | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => Some(command.name()),
+                _ => None,
+            })
+            .collect();
+        if commands.len() < 2
+            || commands.iter().any(|name| **name != command)
+            || callers.for_command(ir, Who::First, &command)
+                == callers.for_command(ir, Who::Second, &command)
+        {
+            continue;
+        }
+        if reading.contains(&command) {
+            whole.notes.push(Note::CrossCallerUnwitnessed {
+                scenario: id.clone(), reason: "same-command arrangement and action read caller values; a mixed invocation assignment cannot reuse a single-caller outcome witness",
+            });
+            continue;
+        }
+        let original = scenario.clone();
+        mark_invocations(ir, callers, scenario, Who::First);
+        let mut reversed = original;
+        mark_invocations(ir, callers, &mut reversed, Who::Second);
+        if let Err(reason) = append_independent(ir, scenario, &reversed) {
+            whole.notes.push(Note::CrossCallerUnswapped {
+                scenario: id.clone(),
+                reason,
+            });
+        }
+    }
+}
+
+fn mark_invocations(ir: &EssIr, callers: &Callers, scenario: &mut ConformanceScenario, first: Who) {
+    let mut ordinal = 0;
+    for step in &mut scenario.steps {
+        if matches!(
+            step,
+            ScenarioStep::ExecuteCommand { .. } | ScenarioStep::ExecuteCommandWithoutInput { .. }
+        ) {
+            mark(
+                ir,
+                callers,
+                &|_| if ordinal == 0 { first } else { first.other() },
+                step,
+            );
+            ordinal += 1;
+        }
+    }
+}
+
+/// Whether a scenario actually invokes commands under two distinct declared credentials.
+fn crosses_callers(scenario: &ConformanceScenario) -> bool {
+    let mut first = None;
+    for step in &scenario.steps {
+        let (ScenarioStep::ExecuteCommand { caller, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { caller, .. }) = step
+        else {
+            continue;
+        };
+        if caller.is_empty() {
+            continue;
+        }
+        if let Some(first) = first {
+            if first != caller {
+                return true;
+            }
+        } else {
+            first = Some(caller);
+        }
+    }
+    false
 }
 
 /// Which caller each command is sent as.
@@ -660,7 +765,7 @@ fn one_row_acted_on(
 }
 
 /// The command the scenario `id` names is about.
-fn under_test(id: &ScenarioId) -> Option<String> {
+pub(super) fn under_test(id: &ScenarioId) -> Option<String> {
     match id {
         ScenarioId::Outcome { outcome } => Some(outcome.command.to_string()),
         ScenarioId::Transition { by, .. } => Some(by.command.to_string()),
