@@ -4,11 +4,10 @@ repository: ess
 publishedAt: 2026-10-03T00:00:00Z
 title: Generated Go behavior, served view parameters and consumer fixes
 summary: >-
-  ESS generates determined Go command behavior and view queries, passes typed query
-  parameters through generated Go and Rust servers, and filters UI reads consistently
-  in React and terminal renderers. Consumer fixes cover creation identities,
-  conformance synthesis and browser runner startup. Generated behavior and served
-  view interfaces include breaking changes described in the release notes.
+  ESS generates Go command behavior and view queries, passes typed view parameters
+  through Go and Rust servers, and filters UI reads in React and terminal renderers.
+  Fixes cover creation identities, conformance synthesis and browser startup.
+  Generated behavior and view interfaces have breaking changes documented in the release notes.
 kind: capability
 impact: notable
 source:
