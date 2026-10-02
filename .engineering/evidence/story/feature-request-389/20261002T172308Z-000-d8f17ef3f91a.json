@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T17:23:08Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-389",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:consumer-one-time-go-observer-pass1",
+    "reference": "review-result:consumer-one-time-go-observer-final",
+    "review": "review-result:consumer-one-time-go-observer-pass1",
+    "outcome": "fixed"
+  }
+}
