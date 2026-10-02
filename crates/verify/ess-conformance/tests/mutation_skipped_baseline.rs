@@ -19,6 +19,12 @@ use ess_conformance::mutate::{
 };
 use ess_conformance::reference::Billing;
 use ess_conformance::runner::Runner;
+use ess_conformance::target::{
+    ConformanceTarget, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
+    InvocationObservationRequest, ObservedEvent, ObservedInvocation, RedeliveryRequest,
+    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
+    SemanticViewResult, TargetError,
+};
 use ess_conformance::{AdmittedSuite, CountReport};
 use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
@@ -320,12 +326,12 @@ fn a_go_report2_baseline_with_skipped_scenarios_is_scored() {
 
 #[test]
 fn the_built_in_audit_scores_past_unsupported_baseline_scenarios() {
-    // The interpreter derives no view and no binding, so it answers every scenario needing one
-    // `unsupported`. That used to refuse the audit; it now scores every mutant on the rest.
+    // Deliberately remove view support from the real interpreter. This control must keep testing
+    // unsupported baseline scoring even as the production target gains capabilities.
     let (files, texts) = example("billing");
     let ir = mutate::compile(files.clone(), &texts).unwrap();
     let report = mutate::audit(&files, &texts, &[MutantClass::ErrorSwap], || {
-        Interpreted::for_model(ir.clone())
+        WithoutViews(Interpreted::for_model(ir.clone()))
     })
     .unwrap_or_else(|refusal| panic!("scored, not {refusal}"));
     assert!(!report.baseline.not_scored.is_empty());
@@ -348,5 +354,60 @@ fn the_built_in_audit_scores_past_unsupported_baseline_scenarios() {
                 entry.id
             );
         }
+    }
+}
+
+struct WithoutViews(Interpreted);
+
+impl ConformanceTarget for WithoutViews {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.0.identity()
+    }
+
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.begin_scenario(context)
+    }
+
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.0.execute_command(request)
+    }
+
+    fn query_view(&self, _request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        Err(TargetError::unsupported(
+            "query view",
+            "deliberately absent in this audit control",
+        ))
+    }
+
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.0.observe_events(request)
+    }
+
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.0.configure_external_outcome(request)
+    }
+
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.0.redeliver_event(request)
+    }
+
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        self.0.observe_invocations(request)
+    }
+
+    fn end_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.end_scenario(context)
     }
 }
