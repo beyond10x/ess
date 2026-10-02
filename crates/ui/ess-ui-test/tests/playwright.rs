@@ -183,3 +183,92 @@ fn expected_text_matches_numbers_with_or_without_grouping() {
         assert!(spec.contains(&wanted), "{wanted}\n\n{spec}");
     }
 }
+
+/// A front desk over the gatepass surface, with a view derived by id from the expected list.
+const DESK: &str = "format: ess-ui/1
+app: desk
+model: gatepass
+placement_profile: fat
+fixtures:
+  derived:
+    visit.VisitById: {by_id_from: visit.ExpectedVisits, key: id}
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: desk, sections: [{name: all, pages: [desk]}]}
+pages:
+  desk:
+    kind: detail_page
+    title: Desk
+    sections:
+      - name: expected
+        component: collection
+        reads: visit.ExpectedVisits
+        actions: [{name: register, does: visit.RegisterVisit, label: Register}]
+      - name: one
+        component: record
+        reads: {view: visit.VisitById, params: {id: \"'v-1'\"}}
+";
+
+/// The binding `ess_ui_check::binding` gives the desk, with a query parameter on `VisitById`
+/// carried under another key than its name, so the routes below show which one they read.
+const BINDING: &str = r#"{
+  "system": "gatepass",
+  "components": {
+    "pass-service": {
+      "views": {
+        "gatepass.visit.ExpectedVisits": {"path": "/visits/views/expected", "params": []},
+        "gatepass.visit.VisitById": {
+          "path": "/visits/views/by-id",
+          "params": [{"name": "id", "wire": "visit", "required": true, "scalar": "Uuid"}]
+        }
+      },
+      "commands": {
+        "gatepass.visit.RegisterVisit": {
+          "path": "/visits/commands/register-visit",
+          "body_required": true,
+          "errors": {"gatepass.visit.InvalidVisitLength": {"status": 422, "display": "InvalidVisitLength"}}
+        }
+      }
+    }
+  },
+  "names": {
+    "visit.ExpectedVisits": "gatepass.visit.ExpectedVisits",
+    "visit.RegisterVisit": "gatepass.visit.RegisterVisit",
+    "visit.VisitById": "gatepass.visit.VisitById"
+  }
+}"#;
+
+#[test]
+fn commands_and_fixture_overrides_go_through_the_bound_routes() {
+    let document = ess_ui::load_str(DESK).unwrap_or_else(|error| panic!("{error}"));
+    let binding: ess_ui::binding::Binding =
+        serde_json::from_str(BINDING).expect("the binding parses");
+    let text = "format: ess-ui-test/1\ndocument: desk.yaml\ntests:\n\
+                - name: registering sends the command\n  fixtures:\n    views:\n\
+                \x20     visit.ExpectedVisits: {rows: [{id: v-1, visitor: Ada}]}\n  steps:\n\
+                \x20 - open: desk\n\
+                \x20 - act: pages/desk/sections/expected/actions/register\n\
+                \x20 - expect_command: {command: visit.RegisterVisit, input: {visitor: Ada}}\n";
+    // Named beside the crate; nothing is read from or written to that path.
+    let file =
+        ess_ui_test::parse_str(text, &example_dir().join("tests/desk.test.yaml")).expect("parses");
+    let spec = ess_ui_test::playwright_bound(&[file], &document, &binding);
+    for wanted in [
+        // The command is routed at its bound path and answered as an accepted declared branch.
+        "await page.route((url) => url.pathname.endsWith(\"/visits/commands/register-visit\"), async (route) => {",
+        "  commands.push({ command: \"gatepass.visit.RegisterVisit\", input: route.request().postDataJSON() });",
+        "  await route.fulfill({ status: 202, json: { outcome: \"accepted\", published: [] } });",
+        // The expected command is the qualified name the route records.
+        "expect(commands).toContainEqual(expect.objectContaining({ command: \"gatepass.visit.RegisterVisit\", input: expect.objectContaining({\"visitor\":\"Ada\"}) }));",
+        // The replaced view at its bound path.
+        "await page.route((url) => url.pathname.endsWith(\"/visits/views/expected\"), (route) => route.fulfill({ json: {",
+        // The view derived from it at its own path, narrowed by the parameter under its query key.
+        "await page.route((url) => url.pathname.endsWith(\"/visits/views/by-id\"), (route) => { const query = new URL(route.request().url()).searchParams; const params = Object.fromEntries([[\"id\",\"visit\"]].map(([name, wire]) => [name, query.get(wire)]));",
+    ] {
+        assert!(spec.contains(wanted), "{wanted}\n\n{spec}");
+    }
+    for unwanted in ["/views/visit.", "/commands/**", "\"params\""] {
+        assert!(!spec.contains(unwanted), "{unwanted}\n\n{spec}");
+    }
+    // The plain spec of the same files is unchanged by the binding's existence.
+    assert!(ess_ui_test::playwright(&[], &document).contains("route /views/…"));
+}

@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use ess_ui::binding::Answer;
 use ess_ui::Document;
 use serde_yaml::{Mapping, Value};
 
@@ -50,8 +51,9 @@ pub struct ReadResult {
 pub trait DataAdapter {
     /// Answers one read.
     fn read(&self, request: &ReadRequest) -> Result<ReadResult, String>;
-    /// Runs one command with its input; the text is shown as a notification.
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String>;
+    /// Runs one command with its input and answers what it meant to the user who sent it, as
+    /// [`ess_ui::binding::classify`] reads a served command's answer.
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Answer;
     /// Loads a server-held state value by its node path.
     fn load_state(&self, path: &str) -> Option<Value>;
     /// Stores a server-held state value by its node path.
@@ -247,20 +249,10 @@ impl DataAdapter for FixtureAdapter {
         Ok(ReadResult { rows, total })
     }
 
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    /// Every command is accepted, and logged in [`FixtureAdapter::commands`].
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Answer {
         self.commands.push((command.to_owned(), input.clone()));
-        let input: Vec<String> = input
-            .iter()
-            .map(|(name, value)| format!("{name}={}", display(value)))
-            .collect();
-        if input.is_empty() {
-            Ok(format!("{command} accepted (fixture)"))
-        } else {
-            Ok(format!(
-                "{command} accepted (fixture): {}",
-                input.join(", ")
-            ))
-        }
+        Answer::Accepted
     }
 
     fn load_state(&self, path: &str) -> Option<Value> {

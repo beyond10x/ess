@@ -29,7 +29,7 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 
-pub use playwright::playwright;
+pub use playwright::{playwright, playwright_bound};
 pub use runner::MAX_CYCLES_PER_ADVANCE;
 pub use spec::{
     parse_steps, parse_str, Check, Fixtures, Play, PlayBeat, SectionState, Step, Test, TestFile,

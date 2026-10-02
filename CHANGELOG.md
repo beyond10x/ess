@@ -15,6 +15,29 @@
   Go servers in `crates/ui/ess-ui/tests/vectors/answers.json`. `ess ui check --model` reports
   `read_params`: a read binding a parameter the view does not declare, and a required parameter
   left unbound (beyond10x/ess#311).
+- `ess generate ui --target react --model <spec>`: the generated React app reads and commands the
+  synthesized server through the binding. It emits `src/binding.ts` and a binding-driven
+  `httpAdapter`; the base URL per component comes from
+  `<meta name="ess-base-url:<component>">` (same origin when absent) and `setAuthorization`
+  sets the caller. Command answers go through `runtime/answer.ts`, a port of `classify` held to
+  the same vectors. A refusal shows on the form, confirm, action or account-menu entry that sent
+  it and keeps the draft. A bound app plays no fixture channel: live sections poll at `refresh:`
+  (5 s by default; outside 1 s to 24 h is refused). Without `--model` the project is unchanged.
+  `ess ui check --model` also binds a shell region's `does:` (beyond10x/ess#311).
+- `ess ui run --tui --path <doc> --model <spec> --base-url <url>`: the terminal renderer reads
+  and commands a synthesized server over HTTP/1.1 (`http://` only; `https://` is refused by name).
+  With more than one served component, `--base-url <component>=<url>` is repeated; the caller
+  comes only from `ESS_UI_AUTHORIZATION`. Answers go through `ess_ui::binding::classify`; a
+  refusal shows on the open form, the confirm or beside the action row and keeps the draft, and a
+  command answered committed is never sent again. A bound run plays no fixture channel and polls
+  live sections at `refresh:`. `DataAdapter::run` returns `ess_ui::binding::Answer`
+  (beyond10x/ess#311).
+- `ess generate ui --target tui --path <doc> --model <spec> --out <dir>` emits a Rust terminal
+  app crate: `Cargo.toml`, `src/main.rs` (clap), `src/binding.rs` and `src/ui.yaml`, depending on
+  `ess-ui-tui` at the generating release's tag, so generate with a released `ess`. The app takes
+  `--base-url`, `ESS_UI_AUTHORIZATION`, and `--screen-once <WxH>`, which prints one frame without
+  a terminal and exits 3 when a read on the page failed. Generation refuses to overwrite files it
+  did not write, and writes nothing when it refuses (beyond10x/ess#311).
 
 ### Changed
 

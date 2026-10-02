@@ -65,6 +65,14 @@ struct SectionBlock {
     marks: Vec<Mark>,
 }
 
+/// What a refusal shown in a view was sent by.
+#[derive(Clone, Copy)]
+enum Refusing<'a> {
+    Form,
+    Confirm,
+    Actions(&'a [ess_ui::Action]),
+}
+
 /// The cells inside a bordered block.
 fn inner(area: Rect) -> Rect {
     Rect {
@@ -194,9 +202,11 @@ impl App {
             page.title.clone().unwrap_or_else(|| self.page.clone()),
             self.location()
         );
+        // A bound run holds no channel open, so its top bar shows no live state.
         let live: Vec<String> = page
             .header
             .as_ref()
+            .filter(|_| self.bound.is_none())
             .map(|header| header.live.clone())
             .unwrap_or_default()
             .iter()
@@ -808,7 +818,9 @@ impl App {
                 for node in &record.item {
                     lines.extend(self.node_lines(node, &inner));
                 }
-                lines.extend(self.action_hint(&record_actions(record, tab), &inner.ctx));
+                let actions = record_actions(record, tab);
+                lines.extend(self.action_hint(&actions, &inner.ctx));
+                lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&actions)));
                 lines
             }
             Composite::Form(form) => self.form_lines(form, place),
@@ -855,6 +867,7 @@ impl App {
                 let row = rows.get(cursor);
                 let ctx = Ctx { row, ..place.ctx };
                 lines.extend(self.action_hint(&board.item_actions, &ctx));
+                lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&board.item_actions)));
                 lines
             }
             Composite::GraphEditor(editor) => {
@@ -964,6 +977,33 @@ impl App {
                 });
             }
         }
+    }
+
+    /// The refusal of the last command sent from the view `ui`, when `by` sent it: `form`,
+    /// `confirm`, or one of `actions`.
+    fn refusal_lines(&self, ui: &str, by: Refusing<'_>) -> Vec<Line<'static>> {
+        let Some(refused) = self.ui(ui).refusal else {
+            return Vec::new();
+        };
+        let sent = match by {
+            Refusing::Form => refused.by == "form",
+            Refusing::Confirm => refused.by == "confirm",
+            Refusing::Actions(actions) => actions.iter().any(|action| action.name == refused.by),
+        };
+        if !sent {
+            return Vec::new();
+        }
+        let mut lines = vec![Line::styled(format!("✗ {}", refused.text), bold())];
+        if let Some(Value::Mapping(fields)) = &refused.payload {
+            let fields: Vec<String> = fields
+                .iter()
+                .map(|(name, value)| format!("{}: {}", display(name), display(value)))
+                .collect();
+            if !fields.is_empty() {
+                lines.push(Line::from(format!("  {}", fields.join(" · "))));
+            }
+        }
+        lines
     }
 
     fn action_hint(&self, actions: &[ess_ui::Action], ctx: &Ctx<'_>) -> Vec<Line<'static>> {
@@ -1290,6 +1330,7 @@ impl App {
             );
         }
         lines.extend(self.action_hint(&collection.row_actions, &row_ctx));
+        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.row_actions)));
         let bulk = crate::app::bulk_keys(&collection.bulk_actions);
         if !bulk.is_empty() {
             let offered: Vec<String> = bulk
@@ -1307,6 +1348,7 @@ impl App {
                 format!("{} selected: {}", state.selected.len(), offered.join(" · "))
             };
             lines.push(Line::styled(line, dim()));
+            lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.bulk_actions)));
         }
         lines
     }
@@ -1466,9 +1508,12 @@ impl App {
             format!("[ {label} ] ctrl-s · enter edits · tab next field"),
             dim(),
         ));
+        lines.extend(self.refusal_lines(place.ui, Refusing::Form));
         lines.extend(self.action_hint(&form.actions, &place.ctx));
+        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&form.actions)));
         for group in &form.groups {
             lines.extend(self.action_hint(&group.actions, &place.ctx));
+            lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&group.actions)));
         }
         if let Some(result) = &form.result {
             lines.extend(self.node_lines(result, place));
@@ -1653,6 +1698,7 @@ impl App {
             let label = alternative.label.as_ref().unwrap_or(&alternative.name);
             let _ = write!(buttons, "   [{}] {label}", index + 1);
         }
+        lines.extend(self.refusal_lines(place.ui, Refusing::Confirm));
         lines.push(Line::from(buttons));
         lines
     }

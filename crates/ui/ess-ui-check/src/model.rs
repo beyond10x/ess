@@ -33,9 +33,10 @@ use ess_domain::types::Primitive;
 use ess_gen::http::{self, Served};
 use ess_ui::binding::{Binding, CommandRoute, ErrorRoute, QueryParam, ViewRoute};
 use ess_ui::{
-    ActorSource, Body, Carries, Composite, Document, Expr, NavPages, NodePath, NodeRef, Paging,
-    Reads,
+    Action, ActorSource, Body, Carries, Channel, Composite, Document, Expr, NavPages, NodePath,
+    NodeRef, Paging, Reads, Region, RegionKind,
 };
+use serde_yaml::Value;
 
 use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
 use crate::{CheckError, Sink};
@@ -763,6 +764,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                     );
                 }
             }
+            NodeRef::Region(region) => region_names(path, region, &mut push),
             NodeRef::NavSection(section) => {
                 if let NavPages::Dynamic(entries) = &section.pages {
                     push(
@@ -771,22 +773,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                     );
                 }
             }
-            NodeRef::Channel(channel) => {
-                let carries = path.child("carries");
-                match &channel.carries {
-                    Carries::Events(events) => {
-                        for event in &events.events {
-                            push(carries.clone(), Kind::Event(event));
-                        }
-                    }
-                    Carries::View(live_view) => {
-                        push(carries, view(&live_view.view, Bound::Elsewhere));
-                    }
-                }
-                for command in &channel.sends {
-                    push(path.child("sends"), Kind::Command(command));
-                }
-            }
+            NodeRef::Channel(channel) => channel_names(path, channel, &mut push),
             NodeRef::Section(section) => {
                 if let Some(live) = &section.live {
                     for event in &live.on {
@@ -797,32 +784,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
             }
             NodeRef::Overlay(overlay) => body_names(path, &overlay.body, &mut push),
             NodeRef::Node(node) => body_names(path, &node.body, &mut push),
-            NodeRef::Action(action) => {
-                if let Some(command) = &action.does {
-                    push(path.clone(), Kind::Command(command));
-                }
-                if let Some(upload) = &action.upload {
-                    push(path.clone(), Kind::Command(&upload.does));
-                }
-                if let Some(export) = &action.export {
-                    push(
-                        path.clone(),
-                        view(&export.reads, Bound::Export(export.params.as_ref())),
-                    );
-                }
-                if let Some(reads) = &action.loads {
-                    if let Some(name) = &reads.view {
-                        push(
-                            path.child("loads"),
-                            Kind::View {
-                                name,
-                                bound: Bound::Read(Read::of(reads)),
-                                body: false,
-                            },
-                        );
-                    }
-                }
-            }
+            NodeRef::Action(action) => action_names(path, action, &mut push),
             NodeRef::FormGroup(group) => {
                 if let Some(command) = &group.does {
                     push(path.clone(), Kind::Command(command));
@@ -841,6 +803,98 @@ fn names(document: &Document) -> Vec<Named<'_>> {
         }
     }
     out
+}
+
+/// The commands a shell region sends: the assistant's `does:`, and each account menu entry's
+/// `does:`, named by the entry.
+fn region_names<'a>(
+    path: &NodePath,
+    region: &'a Region,
+    push: &mut impl FnMut(NodePath, Kind<'a>),
+) {
+    match region.kind {
+        RegionKind::Assistant => {
+            let commands: Vec<&str> = match region.props.get("does") {
+                Some(Value::Sequence(items)) => items.iter().filter_map(Value::as_str).collect(),
+                Some(Value::String(one)) => vec![one.as_str()],
+                _ => Vec::new(),
+            };
+            for command in commands {
+                push(path.child("props").child("does"), Kind::Command(command));
+            }
+        }
+        RegionKind::AccountMenu => {
+            let Some(Value::Sequence(entries)) = region.props.get("actions") else {
+                return;
+            };
+            for entry in entries.iter().filter_map(Value::as_mapping) {
+                let Some(command) = entry.get("does").and_then(Value::as_str) else {
+                    continue;
+                };
+                let actions = path.child("props").child("actions");
+                let at = match entry.get("name").and_then(Value::as_str) {
+                    Some(name) => actions.child(name),
+                    None => actions,
+                };
+                push(at, Kind::Command(command));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// What a channel carries, and the commands it sends.
+fn channel_names<'a>(
+    path: &NodePath,
+    channel: &'a Channel,
+    push: &mut impl FnMut(NodePath, Kind<'a>),
+) {
+    let carries = path.child("carries");
+    match &channel.carries {
+        Carries::Events(events) => {
+            for event in &events.events {
+                push(carries.clone(), Kind::Event(event));
+            }
+        }
+        Carries::View(live_view) => {
+            push(carries, view(&live_view.view, Bound::Elsewhere));
+        }
+    }
+    for command in &channel.sends {
+        push(path.child("sends"), Kind::Command(command));
+    }
+}
+
+/// What an action sends, uploads, exports and loads.
+fn action_names<'a>(
+    path: &NodePath,
+    action: &'a Action,
+    push: &mut impl FnMut(NodePath, Kind<'a>),
+) {
+    if let Some(command) = &action.does {
+        push(path.clone(), Kind::Command(command));
+    }
+    if let Some(upload) = &action.upload {
+        push(path.clone(), Kind::Command(&upload.does));
+    }
+    if let Some(export) = &action.export {
+        push(
+            path.clone(),
+            view(&export.reads, Bound::Export(export.params.as_ref())),
+        );
+    }
+    if let Some(reads) = &action.loads {
+        if let Some(name) = &reads.view {
+            push(
+                path.child("loads"),
+                Kind::View {
+                    name,
+                    bound: Bound::Read(Read::of(reads)),
+                    body: false,
+                },
+            );
+        }
+    }
 }
 
 /// A view name written outside a body's composite read, its parameters bound as `bound` says.

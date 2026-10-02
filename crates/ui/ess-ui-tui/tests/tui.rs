@@ -544,7 +544,7 @@ impl DataAdapter for Switching {
         }
         Ok(result)
     }
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
         if command == "session.SwitchOrganization" {
             self.switched.set(true);
         }

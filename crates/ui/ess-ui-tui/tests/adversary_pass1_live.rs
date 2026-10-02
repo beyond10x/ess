@@ -40,7 +40,7 @@ impl DataAdapter for Counting {
         self.reads.borrow_mut().push(request.view.clone());
         self.inner.read(request)
     }
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
         self.inner.run(command, input)
     }
     fn load_state(&self, path: &str) -> Option<Value> {
