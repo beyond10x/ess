@@ -584,7 +584,7 @@ constructs:
     fields:
       reads:        {type: Reads, note: the rows}
       columns:      {type: {one_of: [{list: Field}, {record: {binds: expr, all: {list: Field}}}, string]}, note: "fixed columns, user-selectable columns, or an UNMAPPED string"}
-      sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {list: name}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
+      sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {optional: {list: name}}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
       style:        {type: {enum: [table, cards, list, tree]}, default: table, note: presentation hint}
       selection:    {type: {one_of: [{enum: [none, single, multiple]}, {record: {mode: {enum: [single, multiple]}, enabled: expr}}]}, default: none, note: "row selection, optionally only in a mode"}
       row_actions:  {type: {list: Action}, note: actions per row}
@@ -725,6 +725,8 @@ constructs:
       title:     {type: string, note: "overlay title; a confirm shows it as its question"}
       params:    {type: {map: {key: name, value: expr}}, note: values passed by the opener}
       state:     {type: {map: {key: name, value: State}}, note: overlay-local state}
+      visible:   {type: expr, note: shows the overlay only when true}
+      degrades:  {type: Degrades, note: fallbacks for renderers lacking a capability}
       same_as:   {type: {ref: overlay}, note: reuse another overlay; local props override}
       unmapped:  {type: {list: string}, note: gaps found by a retrofit}
     example:
@@ -888,6 +890,7 @@ constructs:
     expansion:
       - {step: substitute, detail: "args.<param> in the body is replaced by the bound expression"}
       - {step: validate,   detail: "the expanded nodes are checked like built-ins; findings are reported at <instance path>/body/<node name>"}
+      - {step: bound,      detail: "the expanded bodies of all uses in a document hold at most 100000 YAML values; the outermost use that passes the limit is refused (widget_expands)"}
     example: {component: status_badge, args: {status: row.stage, tones: {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}}}
 
   Node:
@@ -1015,6 +1018,8 @@ constructs:
       primitive: {type: {enum: [text, badge, icon, button, link, input, toggle, image, divider]}, required: true, note: kind of primitive}
       name:      {type: name, note: "node name, required inside lists"}
       visible:   {type: expr, note: shows the primitive only when true}
+      state:     {type: {map: {key: name, value: State}}, note: state local to the primitive}
+      degrades:  {type: Degrades, note: fallbacks for renderers lacking a capability}
     tone: {enum: [neutral, info, success, warning, danger]}
     example: {name: hint, primitive: text, text: "Tip: drop a CSV here to import partners", style: caption}
 
@@ -1475,10 +1480,13 @@ checks:
   list:
     - {id: names_unique,        subject: "every node", must: unique_name_among_siblings, severity: error}
     - {id: nav_resolves,        subject: ["navigation.sections[].pages[]", "navigation.hidden[]", navigation.home], must_resolve: {ref: page}, severity: error}
+    - {id: nav_unique,          subject: "navigation.sections[].pages[]", must: list_each_page_once, severity: error}
     - {id: page_reachable,      subject: "pages.*", must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"], severity: error}
     - {id: opens_resolves,      subject: "**.opens", must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays], severity: error}
     - {id: same_as_resolves,    subject: "**.same_as", must_resolve: {ref: overlay}, severity: error}
     - {id: page_refs,           subject: ["**.navigate.to", "**.to.to", "pages.*.switch_to[]", "shells.*.guards[].then.redirect"], must_resolve: {ref: page}, severity: error}
+    - {id: shell_refs,          subject: "pages.*.shell", must_resolve: {ref: shell}, severity: error}
+    - {id: page_outlet,         subject: "shells.* a page renders in", must: have_a_region_of_kind_page_outlet, severity: error}
     - {id: channel_refs,        subject: ["**.live.channel", "**.header.live[]", "channel.<name> inside expr"], must_resolve: {ref: channel}, severity: error}
     - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]"], must_resolve_in: [page.sections], severity: error}
     - {id: layout_complete,     subject: "pages.*.layout", must: place_every_section_once, severity: warning}

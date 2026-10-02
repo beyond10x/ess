@@ -148,6 +148,62 @@ fn nav_resolves() {
 }
 
 #[test]
+fn nav_unique() {
+    let pages = (
+        "pages",
+        "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}]}, \
+          q: {kind: detail_page, title: Q, sections: [{name: summary, reads: t.ById}]}}",
+    );
+    let twice_in_one = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p, q, p]}]}",
+        ),
+    ]);
+    let finding = trips(&twice_in_one, "nav_unique", "navigation/sections/all/pages");
+    assert!(finding.message.contains("`p`"), "{finding:?}");
+    let across_two = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p]}, {name: more, pages: [q, p]}]}",
+        ),
+    ]);
+    trips(&across_two, "nav_unique", "navigation/sections/more/pages");
+    let once = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p]}, {name: more, pages: [q]}]}",
+        ),
+    ]);
+    assert!(tripped(&report(&once), "nav_unique").is_empty());
+}
+
+#[test]
+fn shell_refs() {
+    let text = page(
+        "{kind: detail_page, title: P, shell: nowhere, sections: [{name: summary, reads: t.ById}]}",
+    );
+    let finding = trips(&text, "shell_refs", "pages/p/shell");
+    assert!(finding.message.contains("nowhere"), "{finding:?}");
+    assert!(tripped(&report(&doc(&[])), "shell_refs").is_empty());
+}
+
+#[test]
+fn page_outlet() {
+    let text = doc(&[("shells", "{app: {regions: {menu: {kind: navigation}}}}")]);
+    let finding = trips(&text, "page_outlet", "shells/app");
+    assert!(finding.message.contains("`p`"), "{finding:?}");
+    let unused = doc(&[(
+        "shells",
+        "{app: {regions: {main: {kind: page_outlet}}}, bare: {regions: {menu: {kind: navigation}}}}",
+    )]);
+    assert!(tripped(&report(&unused), "page_outlet").is_empty());
+}
+
+#[test]
 fn page_reachable() {
     let text = doc(&[(
         "pages",
@@ -341,6 +397,51 @@ fn a_chain_of_2000_widgets_is_checked_in_under_5_seconds() {
     assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
 }
 
+/// `w0` uses `w1` twice, `w1` uses `w2` twice, …: `2^depth` widget bodies once expanded.
+fn doubling_widgets(depth: usize) -> String {
+    let mut widgets = String::from("{");
+    for index in 0..depth {
+        let next = index + 1;
+        let _ = write!(
+            widgets,
+            "w{index}: {{summary: W, body: [{{name: a, component: w{next}}}, \
+             {{name: b, component: w{next}}}]}}, "
+        );
+    }
+    let _ = write!(
+        widgets,
+        "w{depth}: {{summary: W, body: [{{name: leaf, primitive: text, text: T}}]}}}}"
+    );
+    doc(&[
+        ("widgets", &widgets),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById, \
+              children: [{name: use, component: w0}]}]}}",
+        ),
+    ])
+}
+
+#[test]
+fn a_widget_doubling_at_each_of_64_levels_is_refused_in_under_5_seconds() {
+    let started = std::time::Instant::now();
+    let report = report(&doubling_widgets(64));
+    let took = started.elapsed();
+    let finding = trips_in(
+        &report,
+        "widget_expands",
+        "pages/p/sections/summary/children/use",
+    );
+    assert!(finding.message.contains("exceeds"), "{finding:?}");
+    assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
+}
+
+#[test]
+fn a_widget_doubling_at_each_of_8_levels_is_checked_clean() {
+    let report = report(&doubling_widgets(8));
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
 #[test]
 fn primitive_props() {
     let both = page(
@@ -494,6 +595,42 @@ fn layer_rules() {
 }
 
 #[test]
+fn enum_values() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+         {name: rows, component: collection, reads: t.Rows, \
+          columns: [{field: state, as: tag}, {field: stage, as: badge}, {field: owner, as: 'UNMAPPED: unknown'}]}, \
+         {name: totals, component: chart, chart: donut, reads: t.Totals}, \
+         {name: bars, component: chart, chart: bar, reads: t.Totals}, \
+         {name: logo, component: record, reads: t.ById, \
+          children: [{name: pic, primitive: image, src: row.logo, alt: Logo, fit: stretch}, \
+                     {name: rule, primitive: divider, orientation: diagonal}]}]}",
+    );
+    let report = report(&text);
+    let finding = trips_in(
+        &report,
+        "enum_values",
+        "pages/p/sections/rows/columns/state",
+    );
+    assert!(
+        finding.message.contains("`tag`") && finding.message.contains("badge"),
+        "{finding:?}"
+    );
+    trips_in(&report, "enum_values", "pages/p/sections/totals");
+    trips_in(&report, "enum_values", "pages/p/sections/logo/children/pic");
+    trips_in(
+        &report,
+        "enum_values",
+        "pages/p/sections/logo/children/rule",
+    );
+    let reported: Vec<&str> = tripped(&report, "enum_values")
+        .iter()
+        .map(|finding| finding.path.as_str())
+        .collect();
+    assert_eq!(reported.len(), 4, "{reported:?}");
+}
+
+#[test]
 fn degrades_known() {
     let text = page(
         "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById, \
@@ -611,6 +748,80 @@ fn event_in_model() {
     let carried = trips_in(&report, "event_in_model", "channels/stock/carries");
     assert!(carried.message.contains("stock.ItemSold"), "{carried:?}");
     trips_in(&report, "view_in_model", "channels/lens/carries");
+}
+
+#[test]
+fn type_in_model() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, \
+          params: {item: ItemId, full: shop.stock.ItemId, text: String, other: NoSuchTypeId, \
+                   many: {list: NoSuchRow}}, \
+          sections: [{name: summary, reads: stock.Items}]}}",
+        QUIET,
+    );
+    let other = trips_in(&report, "type_in_model", "pages/p/params/other");
+    assert!(other.message.contains("NoSuchTypeId"), "{other:?}");
+    trips_in(&report, "type_in_model", "pages/p/params/many");
+    assert_eq!(tripped(&report, "type_in_model").len(), 2, "{report:#?}");
+    let declared = doc(&[
+        ("model", "shop"),
+        ("types", "{Window: {enum: [day, week]}}"),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, params: {window: Window}, \
+              sections: [{name: summary, reads: stock.Items}]}}",
+        ),
+    ]);
+    let report = report_with(&declared, Some(&model()), &Options::default());
+    assert!(tripped(&report, "type_in_model").is_empty(), "{report:#?}");
+}
+
+#[test]
+fn field_in_model() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, sections: [\
+          {name: summary, component: collection, reads: stock.Items, \
+           columns: [label, item_id, sandbox_bogus], \
+           row_actions: [{name: add, does: stock.AddItem, bind: {label: row.label, lable: row.label}}, \
+                         {name: peek, opens: nowhere_needed, visible: row.labelX == x}]}, \
+          {name: entry, component: form, does: stock.AddItem, fields: [label, resolutoin]}, \
+          {name: one, component: record, reads: stock.Items, fields: [label, labl]}]}}",
+        QUIET,
+    );
+    let at = |suffix: &str| format!("pages/p/sections/{suffix}");
+    let column = trips_in(
+        &report,
+        "field_in_model",
+        &at("summary/columns/sandbox_bogus"),
+    );
+    assert!(column.message.contains("shop.stock.Items"), "{column:?}");
+    let bind = trips_in(&report, "field_in_model", &at("summary/row_actions/add"));
+    assert!(bind.message.contains("`lable`"), "{bind:?}");
+    let visible = trips_in(&report, "field_in_model", &at("summary/row_actions/peek"));
+    assert!(visible.message.contains("labelX"), "{visible:?}");
+    let input = trips_in(&report, "field_in_model", &at("entry/fields/resolutoin"));
+    assert!(input.message.contains("shop.stock.AddItem"), "{input:?}");
+    trips_in(&report, "field_in_model", &at("one/fields/labl"));
+    assert_eq!(
+        tripped(&report, "field_in_model").len(),
+        5,
+        "{:#?}",
+        tripped(&report, "field_in_model")
+    );
+}
+
+#[test]
+fn overlay_params() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}], \
+         overlays: {edit: {kind: drawer, component: record, \
+           reads: {view: t.ById, params: {id: params.item_id}}, \
+           params: {item_id: row.id, iten_id: row.id}}}}",
+    );
+    let report = report(&text);
+    let finding = trips_in(&report, "overlay_params", "pages/p/overlays/edit");
+    assert!(finding.message.contains("`params.iten_id`"), "{finding:?}");
+    assert_eq!(tripped(&report, "overlay_params").len(), 1, "{report:#?}");
 }
 
 #[test]

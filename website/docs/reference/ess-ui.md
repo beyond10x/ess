@@ -338,6 +338,12 @@ preload:
 guards: [{name: signed_in, when: not actor.signed_in, then: {redirect: auth.sign_in}}]
 ```
 
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `page_outlet` | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
+
 ### Region
 
 One named area of a shell.
@@ -605,6 +611,7 @@ overlays: {edit: {kind: drawer, component: form, same_as: partners.list.edit}}
 |---|---|---|---|
 | `page_reachable` | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
 
 ### PageLayout
 
@@ -882,7 +889,7 @@ Use for any list, table or card grid. Columns are fields of the rows; `as` picks
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | the rows |
 | `columns` | one of: list of [Field](#field) \| record \{ `binds`: `expr`, `all`: list of [Field](#field) \} \| `string` |   |   | fixed columns, user-selectable columns, or an UNMAPPED string |
-| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
+| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`), `allowed`: optional list of `name`, `mode`: optional (one of: `server` \| `client`) \} |   |   | default and allowed sort |
 | `style` | one of: `table` \| `cards` \| `list` \| `tree` |   | `table` | presentation hint |
 | `selection` | one of: `none` \| `single` \| `multiple` \| record \{ `mode`: (one of: `single` \| `multiple`), `enabled`: `expr` \} |   | `none` | row selection, optionally only in a mode |
 | `row_actions` | list of [Action](#action) |   |   | actions per row |
@@ -1096,6 +1103,8 @@ Overlays hold forms, confirms and detail views opened by actions. They belong to
 | `title` | `string` |   |   | overlay title; a confirm shows it as its question |
 | `params` | map of `name` → `expr` |   |   | values passed by the opener |
 | `state` | map of `name` → [State](#state) |   |   | overlay-local state |
+| `visible` | `expr` |   |   | shows the overlay only when true |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 | `same_as` | name of an [overlay](#overlay) |   |   | reuse another overlay; local props override |
 | `unmapped` | list of `string` |   |   | gaps found by a retrofit |
 
@@ -1365,6 +1374,8 @@ Written like a composite with `component` naming the widget and `args` supplying
 - {step: substitute, detail: args.<param> in the body is replaced by the bound expression}
 - step: validate
   detail: the expanded nodes are checked like built-ins; findings are reported at <instance path>/body/<node name>
+- step: bound
+  detail: the expanded bodies of all uses in a document hold at most 100000 YAML values; the outermost use that passes the limit is refused (widget_expands)
 ```
 
 **Example**
@@ -1608,6 +1619,8 @@ Composites are the normal level of a spec. Primitives exist for the small pieces
 | `primitive` | one of: `text` \| `badge` \| `icon` \| `button` \| `link` \| `input` \| `toggle` \| `image` \| `divider` | yes |   | kind of primitive |
 | `name` | `name` |   |   | node name, required inside lists |
 | `visible` | `expr` |   |   | shows the primitive only when true |
+| `state` | map of `name` → [State](#state) |   |   | state local to the primitive |
+| `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
 
 **Tone**
 
@@ -2445,10 +2458,13 @@ What a validator checks in a document, and the construct each check applies to. 
 |---|---|---|---|---|
 | `names_unique` | every node | `every node` | `{must: unique_name_among_siblings}` | error |
 | `nav_resolves` | [Navigation](#navigation) | `navigation.sections[].pages[]`, `navigation.hidden[]`, `navigation.home` | `{must_resolve: {ref: page}}` | error |
+| `nav_unique` | every node | `navigation.sections[].pages[]` | `{must: list_each_page_once}` | error |
 | `page_reachable` | [Page](#page) | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `opens_resolves` | [Action](#action) | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `same_as_resolves` | [overlay](#overlay) | `**.same_as` | `{must_resolve: {ref: overlay}}` | error |
 | `page_refs` | [Action](#action), [link](#link), [Page](#page), [Guard](#guard) | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | [Page](#page) | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
+| `page_outlet` | [Shell](#shell) | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
 | `channel_refs` | [Live](#live), [header](#header) | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
 | `section_refs` | [header](#header), [Section](#section), [PageLayout](#pagelayout) | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
 | `layout_complete` | [PageLayout](#pagelayout) | `pages.*.layout` | `{must: place_every_section_once}` | warning |
