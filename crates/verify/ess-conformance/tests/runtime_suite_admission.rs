@@ -6,12 +6,8 @@
 //! list here is read off the registration — [`SUPPORTED_SUITE_FORMATS`] — never written out, so a
 //! new major the synthesizer learns to write turns this red until both runtimes read it.
 //!
-//! The only majors left out are the ones a generated package cannot hold: the direct-response pair
-//! ([`direct_response::ORDINARY`], [`direct_response::COVERAGE`]), the delivery-context pair
-//! ([`delivery_context::ORDINARY`], [`delivery_context::COVERAGE`]) and the structured-value pair
-//! ([`structured_values::ORDINARY`], [`structured_values::COVERAGE`]), which the Go and TypeScript
-//! emitters refuse at generation. `only_the_direct_response_pair_is_left_out` keeps that
-//! exclusion honest.
+//! No supported major is exempt. Admission is a necessary condition; the runtime parity tests
+//! additionally exercise each feature against healthy and faulty targets.
 
 mod support_go;
 
@@ -20,7 +16,6 @@ use std::collections::BTreeSet;
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::scenario::SUPPORTED_SUITE_FORMATS;
 use ess_conformance::ConformanceSuite;
-use ess_conformance::{delivery_context, direct_response, structured_values};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
 /// A small specification, for a real suite and a real coverage inventory.
@@ -80,21 +75,7 @@ fn suite() -> ConformanceSuite {
 
 /// Every suite major a generated Go or TypeScript package can be asked to run.
 fn emittable_majors() -> BTreeSet<u32> {
-    SUPPORTED_SUITE_FORMATS
-        .iter()
-        .copied()
-        .filter(|major| {
-            ![
-                direct_response::ORDINARY,
-                direct_response::COVERAGE,
-                delivery_context::ORDINARY,
-                delivery_context::COVERAGE,
-                structured_values::ORDINARY,
-                structured_values::COVERAGE,
-            ]
-            .contains(major)
-        })
-        .collect()
+    SUPPORTED_SUITE_FORMATS.iter().copied().collect()
 }
 
 /// Whether a major carries a coverage inventory: the odd majors from 5, as
@@ -226,31 +207,5 @@ fn typescript_admits_every_suite_major_the_synthesizer_writes() {
         "the TypeScript runtime refuses suite majors the synthesizer writes: {missing:?}. \
          Owned by the ts unit of story:generated-runtimes-run-every-emitted-suite-version \
          (beyond10x/ess#188); red until that unit lands."
-    );
-}
-
-/// The generated packages cannot hold the direct-response pair: both emitters refuse a suite that
-/// carries a direct-response observation, which is the only thing that selects /28 or /29.
-#[test]
-fn only_the_direct_response_pair_is_left_out() {
-    let excluded: Vec<u32> = SUPPORTED_SUITE_FORMATS
-        .iter()
-        .copied()
-        .filter(|major| !emittable_majors().contains(major))
-        .collect();
-    assert_eq!(
-        excluded,
-        [
-            direct_response::ORDINARY,
-            direct_response::COVERAGE,
-            delivery_context::ORDINARY,
-            delivery_context::COVERAGE,
-            structured_values::ORDINARY,
-            structured_values::COVERAGE,
-        ],
-        "only the direct-response, delivery-context and structured-value pairs are left out; \
-         `tests/direct_returns.rs` (`pure_return_generators_refuse_unsupported_execution`), \
-         `tests/delivery_context.rs` and `tests/authored_structured_instances.rs` hold both \
-         emitters to refusing them"
     );
 }

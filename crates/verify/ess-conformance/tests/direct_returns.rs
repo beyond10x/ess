@@ -482,13 +482,10 @@ fn pure_return_json_obeys_the_same_recursive_resource_bounds() {
 }
 
 #[test]
-fn pure_return_generators_refuse_unsupported_execution() {
-    for error in [
-        ess_conformance::go::emit(&suite()).unwrap_err(),
-        ess_conformance::ts::emit(&suite()).unwrap_err(),
-    ] {
-        assert_eq!(error.issues[0].reason, "UnsupportedTarget");
-    }
+fn pure_return_generators_preserve_supported_execution() {
+    // Actual healthy/faulty callback execution belongs to the shared runtime parity controls.
+    ess_conformance::go::emit(&suite()).expect("Go supports direct response observations");
+    ess_conformance::ts::emit(&suite()).expect("TypeScript supports direct response observations");
 }
 
 #[test]

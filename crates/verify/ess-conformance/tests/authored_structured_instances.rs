@@ -294,16 +294,14 @@ fn a_suite_carrying_structured_references_claims_the_format_that_reads_them() {
     assert!(plain.provenance.suite_version.major() < 32, "{plain:?}");
 }
 
-/// The generated runners do not read suite/32, and say so when asked for a package rather than
-/// writing one their own admission refuses.
+/// Structured references must survive generation for every conformance runtime.
+/// Runtime parity controls separately check the actual resolved callback inputs.
 #[test]
-fn the_generated_runners_refuse_a_suite_they_cannot_read() {
+fn the_generated_runners_preserve_structured_references() {
     let ir = model();
     let suite = suite(&ir, &document(PLANNED));
-    let go = ess_conformance::go::emit(&suite).expect_err("Go refuses");
-    assert!(go.to_string().contains("Rust runner"), "{go}");
-    let ts = ess_conformance::ts::emit(&suite).expect_err("TypeScript refuses");
-    assert!(ts.to_string().contains("Rust runner"), "{ts}");
+    ess_conformance::go::emit(&suite).expect("Go supports structured references");
+    ess_conformance::ts::emit(&suite).expect("TypeScript supports structured references");
 }
 
 // ---- running it --------------------------------------------------------------------------------

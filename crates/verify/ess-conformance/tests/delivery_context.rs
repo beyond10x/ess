@@ -379,12 +379,10 @@ fn a_target_without_the_method_is_unsupported_too() {
 }
 
 #[test]
-fn go_and_typescript_generation_refuse_a_suite_that_delivers_with_context() {
+fn go_and_typescript_generation_preserve_delivery_context() {
     let suite = suite_of(INBOX);
-    let go = ess_conformance::go::emit(&suite).expect_err("Go refuses");
-    assert!(go.to_string().contains("delivery context"), "{go}");
-    let ts = ess_conformance::ts::emit(&suite).expect_err("TypeScript refuses");
-    assert!(ts.to_string().contains("delivery context"), "{ts}");
+    ess_conformance::go::emit(&suite).expect("Go supports delivery context");
+    ess_conformance::ts::emit(&suite).expect("TypeScript supports delivery context");
 }
 
 #[test]
