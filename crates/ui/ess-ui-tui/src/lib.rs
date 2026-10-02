@@ -153,7 +153,8 @@ pub struct Embedded {
     pub binding: &'static str,
 }
 
-/// The size of the one frame `--screen-once` prints: `<width>x<height>`, each from 1 to 65535.
+/// The size of the one frame `--screen-once` prints: `<width>x<height>`, each side digits only,
+/// from 1 to [`ScreenSize::MAX`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenSize {
     /// Columns.
@@ -162,13 +163,28 @@ pub struct ScreenSize {
     pub height: u16,
 }
 
+impl ScreenSize {
+    /// The largest side: a frame is drawn into memory, so its size is bounded.
+    pub const MAX: u16 = 1000;
+}
+
 impl std::str::FromStr for ScreenSize {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let refused = || format!("`{value}` is not <width>x<height>, such as 120x40");
+        let refused = || {
+            format!(
+                "`{value}` is not <width>x<height>, such as 120x40, each side from 1 to {}",
+                Self::MAX
+            )
+        };
         let (width, height) = value.split_once('x').ok_or_else(refused)?;
-        let side = |text: &str| text.parse::<u16>().ok().filter(|side| *side > 0);
+        let side = |text: &str| {
+            Some(text)
+                .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+                .and_then(|text| text.parse::<u16>().ok())
+                .filter(|side| (1..=Self::MAX).contains(side))
+        };
         match (side(width), side(height)) {
             (Some(width), Some(height)) => Ok(Self { width, height }),
             _ => Err(refused()),
@@ -327,6 +343,21 @@ fn drive(app: &mut App) -> Result<(), TuiError> {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    use super::ScreenSize;
+
+    /// `--screen-once` takes digits only on each side, from 1 to 1000.
+    #[test]
+    fn a_screen_size_is_bounded_and_unsigned() {
+        let size = |width, height| Ok(ScreenSize { width, height });
+        assert_eq!("120x40".parse(), size(120, 40));
+        assert_eq!("1000x1000".parse(), size(1000, 1000));
+        for refused in [
+            "+120x40", "120x+40", "1001x1", "1x1001", "0x5", "12x", " 1x1", "1X1",
+        ] {
+            assert!(refused.parse::<ScreenSize>().is_err(), "{refused}");
+        }
+    }
 
     /// The keys typed while a bound command waits are dropped, all but ctrl-c.
     #[test]

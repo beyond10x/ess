@@ -268,14 +268,29 @@ fn register(base: &str, visitor: &str, building: &str) {
 #[test]
 fn the_generated_crate_builds_and_its_help_names_base_url() {
     let binary = built_desk();
-    let help = Command::new(binary)
-        .arg("--help")
-        .output()
-        .expect("the generated binary runs");
-    assert_eq!(help.status.code(), Some(0), "{}", text(&help.stderr));
-    let help = text(&help.stdout);
-    assert!(help.contains("--base-url"), "{help}");
-    assert!(help.contains("ESS_UI_AUTHORIZATION"), "{help}");
+    for flag in ["--help", "-h"] {
+        let help = Command::new(binary)
+            .arg(flag)
+            .output()
+            .expect("the generated binary runs");
+        assert_eq!(help.status.code(), Some(0), "{}", text(&help.stderr));
+        let help = text(&help.stdout);
+        assert!(help.contains("--base-url"), "{flag}: {help}");
+        assert!(help.contains("ESS_UI_AUTHORIZATION"), "{flag}: {help}");
+    }
+    // A frame larger than 1000x1000, or a signed side, is a usage error.
+    for size in ["1001x40", "+120x40"] {
+        let refused = Command::new(binary)
+            .args(["--base-url", "http://127.0.0.1:9", "--screen-once", size])
+            .output()
+            .expect("the generated binary runs");
+        assert_eq!(
+            refused.status.code(),
+            Some(2),
+            "{size}: {}",
+            text(&refused.stderr)
+        );
+    }
 
     // No renderer code in it: the crate is its document, its binding and a command line.
     let dir = scratch("renderer");
