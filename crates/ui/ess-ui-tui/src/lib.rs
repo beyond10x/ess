@@ -17,11 +17,13 @@
 //!   its read instead), and a refused command shows where the user acted: on the open form, on
 //!   the confirm, or beside the action row, keeping the draft.
 //!
-//! [`run`] is the entry point an `ess ui run --tui` command wraps.
+//! [`run`] is the entry point an `ess ui run --tui` command wraps; [`generate`] writes the crate
+//! `ess generate ui --target tui` emits, whose `main` calls [`run_embedded`].
 
 mod app;
 pub mod data;
 mod expr;
+pub mod generate;
 pub mod http;
 pub mod keys;
 pub mod live;
@@ -131,26 +133,107 @@ pub fn run(args: &TuiArgs, binding: Option<&ess_ui::binding::Binding>) -> Result
             )))
         }
         (None, None) => App::from_path(&args.path, options)?,
-        (Some(binding), _) => {
-            let bases = http::base_urls(binding, &args.base_url)?;
-            let authorization = match std::env::var(AUTHORIZATION_VAR) {
-                Ok(value) if value.is_empty() => None,
-                Ok(value) => Some(value),
-                Err(std::env::VarError::NotPresent) => None,
-                Err(std::env::VarError::NotUnicode(_)) => {
-                    return Err(TuiError::Binding(format!(
-                        "{AUTHORIZATION_VAR} is not UTF-8"
-                    )))
-                }
-            };
-            let adapter = HttpAdapter::new(binding.clone(), &bases, authorization)?;
+        (Some(binding), _) => bound_app(binding, &args.base_url, options, || {
             let text = std::fs::read_to_string(&args.path).map_err(|error| {
                 TuiError::Io(format!("cannot read {}: {error}", args.path.display()))
             })?;
-            let document = ess_ui::load_str(&text).map_err(TuiError::Load)?;
-            App::bound(document, Box::new(adapter), binding.clone(), options)?
-        }
+            ess_ui::load_str(&text).map_err(TuiError::Load)
+        })?,
     };
+    interactive(&mut app)
+}
+
+/// What a crate `ess generate ui --target tui` generated compiles in: its `ess-ui/1` document
+/// and the route table [`generate`] computed for it, as JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Embedded {
+    /// The document's text.
+    pub document: &'static str,
+    /// The [`ess_ui::binding::Binding`] the document was generated with, as JSON.
+    pub binding: &'static str,
+}
+
+/// The size of the one frame `--screen-once` prints: `<width>x<height>`, each from 1 to 65535.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenSize {
+    /// Columns.
+    pub width: u16,
+    /// Rows.
+    pub height: u16,
+}
+
+impl std::str::FromStr for ScreenSize {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let refused = || format!("`{value}` is not <width>x<height>, such as 120x40");
+        let (width, height) = value.split_once('x').ok_or_else(refused)?;
+        let side = |text: &str| text.parse::<u16>().ok().filter(|side| *side > 0);
+        match (side(width), side(height)) {
+            (Some(width), Some(height)) => Ok(Self { width, height }),
+            _ => Err(refused()),
+        }
+    }
+}
+
+/// Runs a generated terminal app: its embedded document, bound to the served surface its
+/// binding describes at the `--base-url` values given ([`http::base_urls`]), the
+/// `Authorization` header from [`AUTHORIZATION_VAR`].
+///
+/// With `screen_once`, no terminal is touched: the app opens its home page, reads it once, and
+/// prints one rendered frame of that size to stdout, one line per row with trailing blanks
+/// trimmed. Otherwise it runs in the terminal until the user quits, as [`run`] does.
+pub fn run_embedded(
+    embedded: &Embedded,
+    base_url: &[String],
+    screen_once: Option<ScreenSize>,
+) -> Result<(), TuiError> {
+    let binding: ess_ui::binding::Binding =
+        serde_json::from_str(embedded.binding).map_err(|error| {
+            TuiError::Binding(format!("the embedded binding does not read: {error}"))
+        })?;
+    let mut app = bound_app(&binding, base_url, Options::new(state_dir()), || {
+        ess_ui::load_str(embedded.document).map_err(TuiError::Load)
+    })?;
+    let Some(size) = screen_once else {
+        return interactive(&mut app);
+    };
+    app.advance(Duration::ZERO);
+    let frame = app.render_text(size.width, size.height);
+    let mut stdout = io::stdout().lock();
+    io::Write::write_all(&mut stdout, frame.as_bytes())
+        .and_then(|()| io::Write::flush(&mut stdout))
+        .map_err(|error| TuiError::Io(error.to_string()))
+}
+
+/// The `Authorization` header of a bound run, from [`AUTHORIZATION_VAR`]: none when unset or
+/// empty.
+fn authorization() -> Result<Option<String>, TuiError> {
+    match std::env::var(AUTHORIZATION_VAR) {
+        Ok(value) if value.is_empty() => Ok(None),
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(TuiError::Binding(format!(
+            "{AUTHORIZATION_VAR} is not UTF-8"
+        ))),
+    }
+}
+
+/// The app bound to `binding` at the `--base-url` values given; the document is loaded after
+/// the base URLs and the credential are accepted.
+fn bound_app(
+    binding: &ess_ui::binding::Binding,
+    base_url: &[String],
+    options: Options,
+    document: impl FnOnce() -> Result<ess_ui::Document, TuiError>,
+) -> Result<App, TuiError> {
+    let bases = http::base_urls(binding, base_url)?;
+    let adapter = HttpAdapter::new(binding.clone(), &bases, authorization()?)?;
+    App::bound(document()?, Box::new(adapter), binding.clone(), options)
+}
+
+/// Runs `app` in the terminal until the user quits, restoring the terminal on every exit.
+fn interactive(app: &mut App) -> Result<(), TuiError> {
     let io = |error: io::Error| TuiError::Io(error.to_string());
     // Restores the terminal on every exit: a returned error, a normal quit (the guard's drop)
     // and a panic (the hook restores before the panic message prints, so it is readable).
@@ -170,7 +253,7 @@ pub fn run(args: &TuiArgs, binding: Option<&ess_ui::binding::Binding>) -> Result
         TERMINAL_OURS.store(true, Ordering::SeqCst);
         enable_raw_mode().map_err(io)?;
         io::stdout().execute(EnterAlternateScreen).map_err(io)?;
-        drive(&mut app)
+        drive(app)
     })();
     let _ = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| previous(info)));

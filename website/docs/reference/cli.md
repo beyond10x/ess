@@ -374,7 +374,11 @@ the HTTP surface that specification serves, showing a refusal where the user act
 React + TypeScript project from one whose only runtime dependencies are `react` and `react-dom`,
 with its routing generated into it and one esbuild step to build it; with `--model` the project
 is bound to the HTTP surface that specification serves, reading and commanding its paths and
-showing a refusal where the user acted. None of these has a flat
+showing a refusal where the user acted. `ess generate ui --target tui --model` writes a Rust
+terminal application crate holding the document, its binding and a clap command line
+(`--base-url`, and `--screen-once <width>x<height>` to print one rendered frame without a
+terminal); it depends on `ess-ui-tui` by the Git tag of the ESS version that generated it and
+holds no renderer code. None of these has a flat
 spelling. Their arguments are listed under [`ess ui`](#ess-ui) and
 [`ess generate ui`](#ess-generate-ui) in the command reference.
 
@@ -650,7 +654,7 @@ ess generate ui [OPTIONS] --target <TARGET> --path <PATH> --out <OUT>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--target` | `<TARGET>` | yes |  | What to generate. One of `react`. |
+| `--target` | `<TARGET>` | yes |  | What to generate. One of `react`, `tui`. |
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document |
 | `--out` | `<OUT>` | yes |  | Directory the project is written to |
 | `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): the app is bound to the HTTP surface the specification's `reached_by: network` components serve, instead of answering from fixtures |

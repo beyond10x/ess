@@ -228,19 +228,40 @@ fn generate_ui_react_with_a_model_writes_the_bound_project() {
 }
 
 #[test]
-fn generate_ui_offers_react_as_its_only_target() {
+fn generate_ui_offers_react_and_tui_as_its_targets() {
     let unknown = ess(&[
         "generate", "ui", "--target", "vue", "--path", EXAMPLE, "--out", "unused",
     ]);
     assert_eq!(unknown.status.code(), Some(2));
     assert!(
-        text(&unknown.stderr).contains("[possible values: react]"),
+        text(&unknown.stderr).contains("[possible values: react, tui]"),
         "{}",
         text(&unknown.stderr)
     );
     let missing = ess(&["generate", "ui", "--path", EXAMPLE, "--out", "unused"]);
     assert_eq!(missing.status.code(), Some(2));
     assert!(text(&missing.stderr).contains("--target"));
+
+    // The terminal app is always bound: without `--model` it is refused, writing nothing.
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let out = scratch.path().join("app");
+    let unbound = ess(&[
+        "generate",
+        "ui",
+        "--target",
+        "tui",
+        "--path",
+        EXAMPLE,
+        "--out",
+        utf8(&out),
+    ]);
+    assert_eq!(unbound.status.code(), Some(1), "{}", text(&unbound.stdout));
+    assert!(
+        text(&unbound.stderr).contains("--target tui needs --model"),
+        "{}",
+        text(&unbound.stderr)
+    );
+    assert!(!out.exists(), "a refused generation writes nothing");
 }
 
 #[test]

@@ -1,8 +1,9 @@
 //! `ess ui` and `ess generate ui`: the `crates/ui/` entry points, mounted on the command line.
 //!
 //! Each command is a thin shell over one crate's own entry point — [`ess_ui::check`], [`ess_ui_check::run`],
-//! [`ess_ui_docs::run`], [`ess_ui_tui::run`], [`ess_ui_test::run`] and [`ess_ui_react::run`] — so what the command does
-//! is what that crate does, and what it prints on a refusal is that crate's message verbatim.
+//! [`ess_ui_docs::run`], [`ess_ui_tui::run`], [`ess_ui_test::run`], [`ess_ui_react::run`] and
+//! [`ess_ui_tui::generate::generate`] — so what the command does is what that crate does, and
+//! what it prints on a refusal is that crate's message verbatim.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -52,7 +53,7 @@ pub(crate) struct Generate {
     #[arg(long, value_enum)]
     target: Target,
     #[command(flatten)]
-    react: ess_ui_react::ReactArgs,
+    project: ess_ui_react::ReactArgs,
 }
 
 /// The applications `ess generate ui` generates.
@@ -61,6 +62,10 @@ enum Target {
     /// A React + TypeScript project: react and react-dom only, generated routing, built with esbuild;
     /// with `--model`, bound to the HTTP surface the specification serves.
     React,
+    /// A Rust terminal application crate: a clap command line over `ess-ui-tui`, fetched by the
+    /// Git tag of this ESS version, bound to the HTTP surface the specification serves (`--model`
+    /// is required) and run with `--base-url`.
+    Tui,
 }
 
 /// Runs an `ess ui` command.
@@ -112,13 +117,30 @@ pub(crate) fn run(command: &Command) -> ExitCode {
 pub(crate) fn generate(arguments: &Generate) -> ExitCode {
     match arguments.target {
         Target::React => {
-            let react = &arguments.react;
+            let react = &arguments.project;
             let binding = match react.model.as_deref().map(|model| bind(&react.path, model)) {
                 None => None,
                 Some(Ok(binding)) => Some(binding),
                 Some(Err(error)) => return refusal(&format!("{error:#}")),
             };
             match ess_ui_react::run(react, binding.as_ref()) {
+                Ok(summary) => success(&summary),
+                Err(error) => refusal(&error.to_string()),
+            }
+        }
+        Target::Tui => {
+            let project = &arguments.project;
+            let Some(model) = project.model.as_deref() else {
+                return refusal(
+                    "--target tui needs --model: the terminal app is bound to the HTTP surface \
+                     the specification serves",
+                );
+            };
+            let binding = match bind(&project.path, model) {
+                Ok(binding) => binding,
+                Err(error) => return refusal(&format!("{error:#}")),
+            };
+            match ess_ui_tui::generate::generate(&project.path, &binding, &project.out) {
                 Ok(summary) => success(&summary),
                 Err(error) => refusal(&error.to_string()),
             }
