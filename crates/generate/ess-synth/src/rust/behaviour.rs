@@ -836,7 +836,7 @@ impl Writer<'_> {
                 let answer = self.variant(outcome, Held::None, None);
                 let _ = writeln!(
                     out,
-                    "        // `{}`: an input-guarded refusal, before anything else is read.\n        \
+                    "        // `{}`: an input-guarded refusal, before the addressed subject is loaded.\n        \
                      if {guard} {{\n            return Ok({answer});\n        }}",
                     outcome.name
                 );

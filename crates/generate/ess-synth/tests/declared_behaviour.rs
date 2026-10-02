@@ -312,6 +312,138 @@ const RELATED_GUARD: &str = concat!(
 "
 );
 
+/// Declaration order deliberately disagrees with selection: input refusal, absence, presence,
+/// creation, then existing-instance refusal. Presence must not inherit absence's priority.
+fn related_precedence_model() -> EssIr {
+    let (head, command) = RELATED_GUARD
+        .split_once("  - name: kept.shop.PlaceOrder")
+        .unwrap();
+    let command = command
+        .replace(
+            "    input:",
+            "    input:\n      - {name: order_id, type: kept.shop.OrderId}",
+        )
+        .replace(
+            "      - name: no-shop",
+            "      - {name: invalid-quantity, when: 'quantity < 0', error: kept.shop.Refused}\n      - name: no-shop",
+        )
+        .replace(
+            "      - name: placed",
+            "      - name: wrong-region\n        when_related: {via: input.shop_id, predicate: 'region != \"EU\"'}\n        error: kept.shop.Refused\n      - name: placed",
+        )
+        .replace(
+            "          kept.shop.OrderPlaced: {order_id: {generated: true}}\n",
+            "          kept.shop.OrderPlaced: {order_id: input.order_id}\n      - {name: already-placed, existing_instance: true, error: kept.shop.Conflict}\n",
+        );
+    compile_text(&format!("{head}  - name: kept.shop.PlaceOrder{command}"))
+}
+
+fn related_precedence_contract() -> String {
+    let plan = SynthesisPlan::of(&related_precedence_model());
+    match plan.disposition_of(CapabilityKind::CommandBehavior, "kept.shop.PlaceOrder") {
+        Some(SynthesisDisposition::Obligation(obligation)) => {
+            assert!(obligation.reason.describes().contains("`when_related:`"));
+            obligation.contract.clone()
+        }
+        other => panic!("related guards still owe their behavior: {other:?}"),
+    }
+}
+
+#[test]
+fn plan_contract_states_related_absence_before_input_refusal() {
+    let contract = related_precedence_contract();
+    assert!(
+        contract.contains("`exists: false` before input-guarded refusals"),
+        "{contract}"
+    );
+    let (_, inventory) = contract
+        .split_once("Declared outcomes (declaration order, not selection precedence):")
+        .expect("the inventory does not pretend to be the decision order");
+    assert!(inventory.find("`invalid-quantity`").unwrap() < inventory.find("`no-shop`").unwrap());
+}
+
+#[test]
+fn plan_contract_distinguishes_related_presence_from_absence() {
+    let contract = related_precedence_contract();
+    assert!(
+        contract.contains("Related-presence predicates do not precede input-guarded refusals"),
+        "{contract}"
+    );
+    assert!(
+        contract.contains("accepting and external branches in declaration order"),
+        "{contract}"
+    );
+    assert!(
+        contract.contains("`wrong-region` when the `kept.shop.Shop`"),
+        "{contract}"
+    );
+}
+
+#[test]
+fn plan_contract_states_existing_instance_exception_for_related_commands() {
+    let contract = related_precedence_contract();
+    assert!(
+        contract.contains(
+            "on commands with `when_related:`, check `existing_instance` then `exists: false`"
+        ),
+        "{contract}"
+    );
+    assert!(
+        contract.contains("`existing_instance` on commands without `when_related:`"),
+        "{contract}"
+    );
+    assert!(
+        contract.contains(
+            "`wrong_state` only if the selected branch moves from a state the row does not hold"
+        ),
+        "{contract}"
+    );
+}
+
+#[test]
+fn generated_refusal_comments_do_not_claim_universal_read_precedence() {
+    let ir = compile_directory(&fixture_root());
+    for (target, path) in [
+        (Target::Rust, "crates/desk-types/src/behaviour.rs"),
+        (Target::Go, "types/behaviour/behaviour.go"),
+    ] {
+        let synthesis = synthesize_for(&ir, target).expect("supported behavior");
+        let source = &synthesis.artifacts[path].contents;
+        assert!(
+            source.contains("an input-guarded refusal, before the addressed subject is loaded."),
+            "{target:?}: scoped precedence comment missing"
+        );
+        assert!(
+            !source.contains("before anything else is read"),
+            "{target:?}"
+        );
+    }
+}
+
+#[test]
+fn related_precedence_plan_projections_remain_target_independent() {
+    let ir = related_precedence_model();
+    let rust = synthesize_for(&ir, Target::Rust).expect("Rust carries obligations");
+    for target in [Target::Go, Target::Web, Target::Clap] {
+        let synthesis = synthesize_for(&ir, target).expect("targets carry obligations");
+        for path in ["PLAN.md", "plan.json"] {
+            assert_eq!(
+                synthesis.artifacts[path].contents, rust.artifacts[path].contents,
+                "{target:?}: {path}"
+            );
+        }
+    }
+    let json: serde_json::Value =
+        serde_json::from_str(&rust.artifacts["plan.json"].contents).expect("valid plan JSON");
+    let contract = related_precedence_contract();
+    assert!(
+        json.to_string()
+            .contains(&serde_json::to_string(&contract).unwrap()),
+        "JSON carries the same contract"
+    );
+    assert!(rust.artifacts["PLAN.md"].contents.contains(&contract));
+}
+
 const RELATED_SET: &str = concat!(
     include_str!("fixtures/declared-behaviour-kept/head.yaml"),
     "  - name: kept.shop.PlaceOrder

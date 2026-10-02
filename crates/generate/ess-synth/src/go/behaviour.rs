@@ -1375,7 +1375,7 @@ impl<'a> Writer<'a> {
                 (&outcome.condition, &outcome.error, &outcome.subject)
             {
                 self.lines.push(&format!(
-                    "// `{}`: an input-guarded refusal, before anything else is read.",
+                    "// `{}`: an input-guarded refusal, before the addressed subject is loaded.",
                     outcome.name
                 ));
                 let truth = self.predicate(&Env::Input(command), predicate, "");
