@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use ess_conformance::{AdmittedSuite, Runner};
 use serde_json::{json, Value};
 use support::{Mode, Service, FIRST};
+use resources::{ResourceMode, ResourceService};
 
 thread_local! {
     static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -20,11 +21,25 @@ thread_local! {
 
 fn run(request: &str) -> String {
     let request: Value = serde_json::from_str(request).unwrap();
-    let mode: Mode = serde_json::from_value(request["mode"].clone()).unwrap();
     let suite = AdmittedSuite::from_json(request["suite"].as_str().unwrap()).unwrap();
+    if let Some(resource) = request.get("resource") {
+        let mode = ResourceMode::ALL.into_iter()
+            .find(|mode| serde_json::to_value(mode).unwrap() == *resource).unwrap();
+        let target = ResourceService::new(mode);
+        return execute(&suite, &target, || (target.inner.trace(), target.inner.returned_plaintexts()));
+    }
+    let mode: Mode = serde_json::from_value(request["mode"].clone()).unwrap();
     let target = Service::new(mode);
-    let report = Runner::for_suite(suite.suite()).run_admitted(&suite, &target);
-    let counts = ess_conformance::counts::CountReport::from_run(&report, &suite).unwrap();
+    execute(&suite, &target, || (target.trace(), target.returned_plaintexts()))
+}
+
+fn execute<T: ess_conformance::target::ConformanceTarget>(
+    suite: &AdmittedSuite, target: &T,
+    observations: impl FnOnce() -> (Vec<&'static str>, Vec<String>),
+) -> String {
+    let report = Runner::for_suite(suite.suite()).run_admitted(suite, target);
+    let counts = ess_conformance::counts::CountReport::from_run(&report, suite).unwrap();
+    let (trace, plaintexts) = observations();
     let diagnostics = serde_json::to_string(&report.scenarios).unwrap();
     let count_bytes = counts.to_canonical_json().unwrap();
     let mut all_counts = serde_json::to_value(counts.counts()).unwrap();
@@ -33,10 +48,10 @@ fn run(request: &str) -> String {
         "status": report.scenarios[0].status,
         "scenario_ids": report.scenarios.iter().map(|s| &s.scenario).collect::<Vec<_>>(),
         "counts": all_counts, "total": total, "diagnostics": diagnostics,
-        "callback_trace": target.trace(), "count_report": count_bytes, "redacted": true,
+        "callback_trace": trace, "count_report": count_bytes, "redacted": true,
     }).to_string();
     // Captures stay inside WASM. Even the test result carries no captured plaintext.
-    for value in target.returned_plaintexts().into_iter().chain([FIRST.to_owned()]) {
+    for value in plaintexts.into_iter().chain([FIRST.to_owned()]) {
         if answer.contains(&value) {
             return json!({"redacted": false}).to_string();
         }
@@ -68,7 +83,7 @@ pub extern "C" fn ess_output_len() -> u32 {
 
 const DRIVER: &str = r"
 import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const [glue, wasm, fixtures] = process.argv.slice(2);
 const {open} = await import(pathToFileURL(glue));
@@ -78,7 +93,12 @@ const answers = manifest.map(item => ({
   case: item.case,
   answer: system.request({mode: item.case, suite: readFileSync(join(fixtures, item.suite), 'utf8')}),
 }));
-process.stdout.write(JSON.stringify(answers));
+const resources = JSON.parse(readFileSync(join(dirname(fixtures), 'one-time-resources.json'), 'utf8'));
+const resourceAnswers = resources.map(item => ({
+  case: item.case,
+  answer: system.request({resource: item.case, suite: readFileSync(join(fixtures, 'view.json'), 'utf8')}),
+}));
+process.stdout.write(JSON.stringify({execution: answers, resources: resourceAnswers}));
 ";
 
 fn run(command: &mut Command, label: &str) -> std::process::Output {
@@ -111,9 +131,11 @@ fn build_host(root: &Path, conformance: &Path) -> PathBuf {
     std::fs::write(root.join("Cargo.toml"), manifest).unwrap();
     let support = conformance.join("tests/support_one_time/mod.rs");
     let support_path = serde_json::to_string(support.to_str().unwrap()).unwrap();
+    let resources = conformance.join("tests/support_one_time/resources.rs");
+    let resources_path = serde_json::to_string(resources.to_str().unwrap()).unwrap();
     std::fs::write(
         root.join("src/lib.rs"),
-        format!("#[allow(dead_code)]\n#[path = {support_path}]\nmod support;\n{HOST}"),
+        format!("#[allow(dead_code)]\n#[path = {support_path}]\nmod support;\n#[allow(dead_code)]\n#[path = {resources_path}]\nmod resources;\n{HOST}"),
     )
     .unwrap();
     let target = root.join("target");
@@ -175,12 +197,13 @@ fn shared_disclosure_controls_execute_inside_wasm_through_browser_bridge() {
             .arg(&fixtures),
         "actual browser execution",
     );
-    let answers: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    let results: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let answers = results["execution"].as_array().unwrap();
     let manifest: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(fixtures.join("manifest.json")).unwrap()).unwrap();
     assert_eq!(answers.len(), 19);
     assert_eq!(manifest.len(), answers.len());
-    for (expected, actual) in manifest.iter().zip(&answers) {
+    for (expected, actual) in manifest.iter().zip(answers) {
         let case = expected["case"].as_str().unwrap();
         assert_eq!(actual["case"], case);
         let answer = &actual["answer"];
@@ -209,6 +232,55 @@ fn shared_disclosure_controls_execute_inside_wasm_through_browser_bridge() {
             .keys()
             .cloned()
             .collect();
+        assert_eq!(
+            answer["scenario_ids"],
+            serde_json::json!(ids),
+            "{case} identities"
+        );
+    }
+    resource_answers(&results["resources"], &fixtures);
+}
+
+fn resource_answers(answers: &serde_json::Value, fixtures: &Path) {
+    let manifest: Vec<serde_json::Value> = serde_json::from_slice(
+        &std::fs::read(fixtures.parent().unwrap().join("one-time-resources.json")).unwrap(),
+    )
+    .unwrap();
+    let answers = answers.as_array().unwrap();
+    assert_eq!(manifest.len(), 9);
+    assert_eq!(answers.len(), manifest.len());
+    let suite: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixtures.join("view.json")).unwrap()).unwrap();
+    let ids: Vec<_> = suite["scenarios"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    for (expected, actual) in manifest.iter().zip(answers) {
+        let case = expected["case"].as_str().unwrap();
+        assert_eq!(actual["case"], case);
+        let answer = &actual["answer"];
+        assert_eq!(answer["redacted"], true, "{case} resource redaction");
+        assert_eq!(answer["total"], 1, "{case}");
+        for field in ["status", "callback_trace"] {
+            assert_eq!(answer[field], expected[field], "{case} {field}");
+        }
+        for count in ["passed", "failed", "skipped", "unsupported", "error"] {
+            assert_eq!(
+                answer["counts"][count], expected["counts"][count],
+                "{case} {count}"
+            );
+        }
+        let code = if expected["status"] == "passed" {
+            "ESS-CF-DISCLOSURE"
+        } else {
+            "ESS-CF-TARGET"
+        };
+        assert!(
+            answer["diagnostics"].as_str().unwrap().contains(code),
+            "{case} fixed code"
+        );
         assert_eq!(
             answer["scenario_ids"],
             serde_json::json!(ids),
