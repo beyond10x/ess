@@ -62,6 +62,7 @@ pub struct Emission {
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Clap)?;
     crate::failure::input_absent(ir, plan, crate::Target::Clap)?;
+    crate::failure::one_time_response(ir, plan, crate::Target::Clap)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Clap)?;
     crate::paging::refuse(ir, plan, crate::Target::Clap)?;
     let layout = Layout::of(ir);

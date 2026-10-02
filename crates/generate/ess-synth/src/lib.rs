@@ -415,6 +415,7 @@ fn emit(ir: &EssIr, target: Target, layout: OutputLayout) -> Result<Synthesis, T
     }
     failure::binary64(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
+    failure::one_time_response(ir, &plan, target)?;
     set_effects::refuse(ir, &plan, target)?;
     paging::refuse(ir, &plan, target)?;
     failure::retry_bound(ir, &plan, target)?;

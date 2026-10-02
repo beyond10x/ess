@@ -237,6 +237,11 @@ impl<T: serde::Serialize> serde::Serialize for Table<T> {
 #[derive(serde::Serialize)]
 struct Document {
     #[serde(
+        rename = "x-ess-one-time-response",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    one_time_response: Vec<crate::one_time_response::Policy>,
+    #[serde(
         rename = "x-ess-retained-results",
         skip_serializing_if = "Vec::is_empty"
     )]
@@ -565,6 +570,7 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
 
     Document {
         retained_results: retained_results(ir, component),
+        one_time_response: crate::one_time_response::all(ir),
         periodic: ir
             .bindings()
             .values()

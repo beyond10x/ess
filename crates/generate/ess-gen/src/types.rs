@@ -207,6 +207,12 @@ pub(crate) fn pointer(name: &QualifiedName) -> String {
 /// One JSON Schema node: every keyword this repository has decided to publish, and no other.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct Node {
+    /// Temporal disclosure obligations; JSON Schema alone cannot enforce them.
+    #[serde(
+        rename = "x-ess-one-time-response",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub(crate) one_time_response: Vec<crate::one_time_response::Policy>,
     /// The declared clock-reading contract; an annotation does not supply observed authority.
     #[serde(rename = "x-ess-reading", skip_serializing_if = "Option::is_none")]
     pub(crate) reading: Option<ess_domain::reading::ReadingContract>,

@@ -1438,6 +1438,20 @@ fn outcome_prose(
     if let Some(summary) = &outcome.summary {
         out.push(Inline::text(format!("{summary} ")));
     }
+    if !outcome.one_time_response.is_empty() {
+        out.push(Inline::text("One-time response fields: "));
+        out.extend(inline_list(
+            outcome
+                .one_time_response
+                .iter()
+                .map(|field| vec![Inline::code(field.clone())])
+                .collect(),
+        ));
+        out.push(Inline::text(format!(
+            ". {} ",
+            crate::one_time_response::OBLIGATION
+        )));
+    }
     out.extend(condition_sentence(ir, command, &outcome.condition));
     out.push(Inline::text(" "));
     if let Some(replay) = &outcome.replays {
