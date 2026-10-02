@@ -30,6 +30,12 @@
   command answered committed is never sent again. A bound run plays no fixture channel and polls
   live sections at `refresh:`. `DataAdapter::run` returns `ess_ui::binding::Answer`
   (beyond10x/ess#311).
+- `ess generate ui --target tui --path <doc> --model <spec> --out <dir>` emits a Rust terminal
+  app crate: `Cargo.toml`, `src/main.rs` (clap), `src/binding.rs` and `src/ui.yaml`, depending on
+  `ess-ui-tui` at the generating release's tag, so generate with a released `ess`. The app takes
+  `--base-url`, `ESS_UI_AUTHORIZATION`, and `--screen-once <WxH>`, which prints one frame without
+  a terminal and exits 3 when a read on the page failed. Generation refuses to overwrite files it
+  did not write, and writes nothing when it refuses (beyond10x/ess#311).
 
 ### Changed
 

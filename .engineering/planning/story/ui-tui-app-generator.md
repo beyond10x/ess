@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-tui-app-generator
 kind: story
-status: active
+status: implemented
 title: ess generate ui --target tui emits a Rust terminal app crate
 refs:
 - provider: github
@@ -20,10 +20,11 @@ scope:
   path: crates/ui/ess-ui-tui/src/generate.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/lib.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:51Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:51Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-02T03:02:20Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":11}}}
 ---
 ## Outcome
 
