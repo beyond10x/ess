@@ -4,8 +4,7 @@
 //! Each shape is synthesized, its scenarios are read for the arranged state, and the suite is run:
 //! against a hand-written target that answers the model, which must pass every scenario of the
 //! command under test, and against mutants of it, each of which must fail at least one. The
-//! interpreted target does not evaluate a guard over the subject, and says so by name rather than
-//! passing or failing.
+//! interpreted target executes the state and stored-field guards and their view observations.
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
@@ -827,7 +826,7 @@ fn issue_204_the_guard_before_wrong_state_passes_a_faithful_target_and_fails_the
 }
 
 #[test]
-fn issue_204_the_interpreted_target_names_the_stored_field_guard_it_does_not_evaluate() {
+fn issue_204_the_interpreted_target_executes_stored_field_and_state_guards() {
     let model = ir(REPORT);
     let result = ess_conformance::synthesize::synthesize(&model);
     let target = ess_conformance::interpret::Interpreted::for_model(model);
@@ -835,12 +834,22 @@ fn issue_204_the_interpreted_target_names_the_stored_field_guard_it_does_not_eva
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &target)
         .into_report();
-    let run = report
-        .scenarios
-        .iter()
-        .find(|run| run.scenario.to_string() == KEPT)
-        .expect("kept-ready is run");
-    assert_eq!(run.status, Status::Unsupported, "{:?}", run.checks);
+    for id in [KEPT, PENDING] {
+        let run = report
+            .scenarios
+            .iter()
+            .find(|run| run.scenario.to_string() == id)
+            .unwrap_or_else(|| panic!("{id} is run"));
+        assert_eq!(run.status, Status::Passed, "{id}: {:?}", run.checks);
+        assert!(run
+            .checks
+            .iter()
+            .all(|check| check.status == Status::Passed));
+        assert!(run
+            .checks
+            .iter()
+            .any(|check| check.about == "view demo.shop.Orders"));
+    }
 }
 
 /// Two refusals of one held state told apart by the input share the state's one refusal id, and
