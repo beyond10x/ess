@@ -8,32 +8,33 @@ with it. This page is the design; no code lands with it.
 An `ess-ui/1` document says what a node means and never how it looks. It already names roles:
 a badge or icon has a `tone` (`neutral`, `info`, `success`, `warning`, `danger`;
 `crates/ui/ess-ui/src/model.rs:1822`, `schemas/ui/ess-ui.schema.yaml:1018`), a badge can pick its
-tone from its value (`tone_by`, `model.rs:1855`), a text has a `style` (`body`, `caption`,
-`heading`, `mono`; `model.rs:1782`) and a button an emphasis (`ButtonTone`, `model.rs:1891`). What
-those roles look like is fixed by each renderer, and the document cannot change it:
+tone from its value (`tone_by`, `model.rs:1849`, `1855`; an icon cannot), a text has a `style`
+(`body`, `caption`, `heading`, `mono`; `model.rs:1782`) and a button an emphasis (`ButtonTone`,
+`model.rs:1891`). What those roles look like is fixed by each renderer, and the document cannot
+change it:
 
 - **React** writes one stylesheet, the same for every document
-  (`crates/ui/ess-ui-react/src/assets.rs:124-127`). Its `:root` block declares ten colours as
-  custom properties (`templates/runtime/styles.css.tmpl:1-15`); seven more distinct colours are
+  (`crates/ui/ess-ui-react/src/assets.rs:124-127`). Its `:root` block declares ten colors as
+  custom properties (`templates/runtime/styles.css.tmpl:1-15`); seven more distinct colors are
   literals in rules (`#d7f0df` and `#f7e7c6` at 41-42, `#f7e7c6` and `#d9e4fb` at 55-56, `#fff` at
   66-67 and 95, `#eef2fd` at 77, `#f6d5d1` at 92, `rgb(0 0 0 / 0.3)` at 135). Spacing, radii and
   type sizes are literals throughout. There is one theme.
-- **The terminal** draws no colour at all. It has three styles, bold, reversed and dim
+- **The terminal** draws no color at all. It has three styles, bold, reversed and dim
   (`crates/ui/ess-ui-tui/src/view.rs:35-44`). A badge is `[value]` in bold whatever its tone
   (`view.rs:1784-1787`); an icon's tone is ignored (`view.rs:1788-1795`).
 - **The theme preference is inert.** The partner-portal example declares a `theme` state of
   class `preference`, typed `{enum: [light, dark]}`, in `local_storage`, pinned, default `light`,
   on its shell (`examples/partner-portal/ui.yaml:68`), and the reference names theme as shell
   state (`schema.yaml:258`) and as a preference (`schema.yaml:1326`). No renderer reads it.
-- **Status colours are written by hand at every use.** The example's `status_badge` widget takes a
+- **Status colors are written by hand at every use.** The example's `status_badge` widget takes a
   value-to-tone map as an argument (`ui.yaml:35-42`), and each use writes the map out again
-  (`ui.yaml:51`, `ui.yaml:322`). A second badge over the same state can colour `Failed` differently.
+  (`ui.yaml:51`, `ui.yaml:322`). A second badge over the same state can color `Failed` differently.
 
 ## The construct
 
 ```yaml
 tokens:
-  colour:
+  color:
     surface: '#ffffff'
     text: '#1c1d21'
     danger: '#c0392b'
@@ -48,7 +49,9 @@ tokens:
 themes:
   light: {}
   dark:
-    colour: {surface: '#1f2024', text: '#ecedf0', line: '#34363c', danger_fill: '#4a2420'}
+    color: {surface: '#1f2024', text: '#ecedf0', line: '#34363c', danger_fill: '#4a2420'}
+  dense:
+    space: {xs: 0.125rem, sm: 0.25rem, md: 0.5rem, lg: 0.75rem}
 theme: {default: light, chosen_by: shell.theme}
 tone_maps:
   job_state:  {Done: success, Failed: danger, HumanEscalation: warning, Running: info}
@@ -57,30 +60,40 @@ tone_maps:
 
 ```yaml
 - {name: state, primitive: badge, field: state, tone_by: {value: row.state, tones: job_state}}
+- name: alarm
+  primitive: icon
+  icon: alert
+  label: Job state
+  tone_by: {value: row.state, tones: job_state}
 ```
 
 ### Tokens
 
 `tokens:` has five groups, each a map of name to value. Every group is a map because no order is
-meaningful in it, which is the schema's rule for maps (`schema.yaml:9-12`).
+meaningful in it, which is the schema's rule for maps (`schema.yaml:9-12`). The group is spelled
+`color`, as ESS already spells the concept in the field widget `as: color` (`schema.yaml:915`);
+so are the capability `no_color` and the CSS names `--ui-color-*`.
 
 | group | value | names |
 |---|---|---|
-| `colour` | a colour literal: `#rgb`, `#rrggbb`, `#rrggbbaa` or `rgb(r g b / a)`, quoted | free |
+| `color` | a color literal in a closed grammar: `#rgb`, `#rrggbb`, `#rrggbbaa` or `rgb(r g b / a)`, quoted; no `hsl()`, no named colors | free |
 | `space` | a length: `0`, or a decimal with `px`, `rem` or `em` | free |
 | `radius` | a length, as `space` | free |
 | `type` | `{family?: string, size?: length, weight?: 100..900 in steps of 100}` | the `TextStyle` variants only |
-| `tone` | `{text: <colour name>, fill: <colour name>}` | the `Tone` variants only |
+| `tone` | `{text: <color name>, fill: <color name>}` | the `Tone` variants only |
 
 **The schema carries a built-in table**, and a document's `tokens:` is merged over it group by group
 and name by name. The built-in values are the React stylesheet's values today: the ten `:root`
-colours under their current names without the `--ui-` prefix (`bg`, `surface`, `text`, `muted`,
+colors under their current names without the `--ui-` prefix (`bg`, `surface`, `text`, `muted`,
 `line`, `accent`, `info`, `success`, `warning`, `danger`), the literals as `danger_fill`,
 `success_fill`, `warning_fill`, `info_fill`, `focus`, `on_accent` and `backdrop`, and a tone table
-that reproduces today's badges (`styles.css.tmpl:88-92`): each tone's `text` is its own colour
-(`neutral` uses `text`) and its `fill` is `line`, except `danger`, whose fill is `danger_fill`. So
-a document without `tokens:` looks exactly as it does now, and a document that names three colours
-changes three. A `type` entry falls back field by field to `body`, then to the built-in `body`.
+that reproduces today's badges (`styles.css.tmpl:88-92`): each tone's `text` is its own color
+(`neutral` uses `text`) and its `fill` is `line`, except `danger`, whose fill is `danger_fill`. The
+built-in `type.body` carries the `:root` font, `family: 'system-ui, sans-serif'`
+(`styles.css.tmpl:12`), and the other styles today's sizes and weights (`styles.css.tmpl:96-98`).
+So a document without `tokens:` looks exactly as it does now, and a document that names three
+colors changes three. A `type` entry falls back field by field to `body`, then to the built-in
+`body`.
 
 ### Themes and the theme preference
 
@@ -90,6 +103,11 @@ the merge of the built-in table, `tokens:` and its own overrides, so **every the
 token by construction**. The one error left is an override naming a token nothing declares, which
 `theme_tokens` refuses (below).
 
+A theme may override any group, not only `color`. `dense` above overrides `space` alone: once the
+React stylesheet reads only `var(--…)` (Renderers, below), every padding and gap shrinks with it,
+so density is a theme like any other. One theme is shown at a time, and themes do not combine; a
+look that is both dark and dense is declared as its own theme.
+
 `theme:` says which theme is shown. `default` names a theme. `chosen_by` is optional and names
 shell state in the expression form `shell.<name>` (`schema.yaml:64`): a state of class `preference`
 whose type is an enum, each variant naming a theme. A renderer shows the theme that state holds,
@@ -98,30 +116,41 @@ any state: an action `sets: {shell.theme: dark}` (`Action.sets`, `schema.yaml:11
 or an account-menu entry. Where it is stored, how long it lives and who shares it is the state's
 own `store`, `scope` and `pinned`, resolved by the placement profile as for every other state.
 The example's existing state at `ui.yaml:68` fits as it stands; for the choice, the example gains
-only the `theme:` line.
+only the `theme:` line. A variant may name any declared theme, and a theme no variant names is
+simply not offered.
 
-### Tones and status colours
+A shell that declares no such state (a sign-in shell) shows `theme.default`. To keep one choice
+across shells, each shell declares a state of the same name with `scope: user` in
+`local_storage`; they then share one value.
+
+### Tones and status colors
 
 `tone_maps:` names a value-to-tone map once. `tone_by` gains `tones: <name>` beside `map:`, exactly
-one of the two. The loader resolves `tones:` to the named map during expansion, after widget
-arguments are substituted (step 3 of `crates/ui/ess-ui/src/lib.rs:4-11`), so after loading
+one of the two. `Icon` gains `tone_by` with the same shape and meaning as `Badge`'s: today only a
+badge has it (`model.rs:1849`) while an icon has a fixed `tone` (`model.rs:1869`), so a state
+shown as an icon, such as a job's state in a dense list, could not follow the same map. The
+loader resolves `tones:` to the named map during expansion, after widget arguments are
+substituted (step 3 of `crates/ui/ess-ui/src/lib.rs:4-11`), so after loading
 `ToneBy.map` is always a map (`model.rs:1859`) and no renderer reads `tones:`. A value the map
-does not name takes the badge's `tone`, default `neutral`, which is what React does today
+does not name takes the node's `tone`, default `neutral`, which is what React does today
 (`templates/runtime/primitives/badge.tsx.tmpl:17-23`). A widget parameter that carries a map name
 is typed `{ref: tone_map}`.
 
-The chain is then value → tone (`tone_maps`) → `{text, fill}` (`tokens.tone`) → colour values
-(`tokens.colour`, per theme). An author colours a state by what it means, once per document.
+The chain is then value → tone (`tone_maps`) → `{text, fill}` (`tokens.tone`) → color values
+(`tokens.color`, per theme). An author colors a state by what it means, once per document.
 
 ## Where a node names a token
 
-In this step a node names a token only through a role it already has: `tone` and `tone_by` on
-badge and icon (through `tokens.tone`), and `style` on text (through `tokens.type`). Space and
+A node names a token only through a role: `tone` and `tone_by` on badge and icon (through
+`tokens.tone`), `style` on text (through `tokens.type`) and a button's emphasis (through the
+renderer convention under Renderers). Space and
 radius are named by the renderer's own stylesheet, not by nodes: no composite, primitive or region
-has a length or colour property today, and a region says what an area is for, not how it looks
+has a length or color property today, and a region says what an area is for, not how it looks
 (`schema.yaml:278`). Inside `tokens.tone` and `themes`, a reference is a bare name, read in the
-group its position implies (`tone.*.text` and `tone.*.fill` name colours). The story's
-`{token: <group>.<name>}` form on a node is not introduced here (question 3).
+group its position implies (`tone.*.text` and `tone.*.fill` name colors). There is no
+`{token: <group>.<name>}` form on a node and no `raw:` escape. The needs behind it (a dark look,
+a dense look, status colors) are met by themes that override `color` and `space` and by tone
+maps.
 
 ## Rules
 
@@ -130,12 +159,12 @@ New entries of `CHECKS` (`crates/ui/ess-ui-check/src/lib.rs:107-141`) and of the
 
 | check | rule | severity |
 |---|---|---|
-| `token_values` | a value is not its group's type: a colour that is not one of the four literal forms, a length without a unit or with another one, a weight outside 100..900 or not a multiple of 100 | error |
+| `token_values` | a value is not its group's type: a color outside the closed grammar (`#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb(r g b / a)`; so `hsl()` and named colors are refused), a length without a unit or with another one, a weight outside 100..900 or not a multiple of 100 | error |
 | `token_names` | a `type` key that is not a `TextStyle` variant, or a `tone` key that is not a `Tone` variant | error |
-| `token_refs` | a `tokens.tone` entry names no colour of the merged table | error |
+| `token_refs` | a `tokens.tone` entry names no color of the merged table | error |
 | `theme_tokens` | a theme overrides a group or a name the merged table does not declare, or gives a value of the wrong type | error |
 | `theme_choice` | `theme.default` names no theme; `theme:` without `themes:`; `chosen_by` is not `shell.<name>`, or names a state no shell declares, or one that is not class `preference`, not an enum, or has a variant or `default` that names no theme | error |
-| `tone_map_refs` | `tone_by.tones` names no entry of `tone_maps`: a loader refusal, which needs its own branch in `classify` (`crates/ui/ess-ui-check/src/classify.rs:51-72`) or it is filed as `document_loads` | error |
+| `tone_map_refs` | `tone_by.tones` on a badge or icon names no entry of `tone_maps`: a loader refusal, which needs its own branch in `classify` (`crates/ui/ess-ui-check/src/classify.rs:51-72`) or it is filed as `document_loads` | error |
 | `tone_map_unused` | a `tone_maps` entry no `tone_by` names | warning |
 
 An unknown key in `tokens`, a theme, `theme` or a `type` or `tone` entry is refused by the reader
@@ -150,48 +179,65 @@ because the built-in table is today's values. The new keys are optional. What ch
 newer reader accepts.
 
 An older reader, any `ess` release to date (0.50.0 is the newest, `CHANGELOG.md:29`), refuses a
-document that uses them and never renders it with its tokens dropped: `Document` refuses keys it does not declare (`model.rs:183`),
-so `tokens:`, `themes:`, `theme:` and `tone_maps:` are each a load error at the root, and
-`tone_by.tones` one at the badge (`ToneBy` is `deny_unknown_fields` too, `model.rs:1853`). Both
-renderers load through `ess_ui` (`crates/ui/ess-ui-react/src/lib.rs:127`,
-`crates/ui/ess-ui-tui/src/app.rs:236`), and `ess ui check` files the refusal under
-`document_loads` (`classify.rs:51-72`). The refusal says "unknown field" rather than "needs a
-newer format"; question 1 is whether that is enough.
+document that uses them and never renders it with its tokens dropped. `Document` refuses keys it
+does not declare (`model.rs:183`), so `tokens:`, `themes:`, `theme:` and `tone_maps:` are each a
+load error at the root; `tone_by.tones` is one at the badge (`ToneBy` is `deny_unknown_fields`
+too, `model.rs:1853`) and `tone_by` one at the icon. Both renderers load through `ess_ui`
+(`crates/ui/ess-ui-react/src/lib.rs:127`, `crates/ui/ess-ui-tui/src/app.rs:236`), and
+`ess ui check` files the refusal under `document_loads` (`classify.rs:51-72`). Nothing is silently
+ignored, so there is no per-construct version marker. The refusal says "unknown field", not which
+release reads the key; the `CHANGELOG.md` entry of the code change names the first release that
+reads `tokens:`, `themes:`, `theme:`, `tone_maps:` and both `tone_by` additions.
 
 ## Renderers
 
 **React.** The generator writes `src/runtime/tokens.css` from the document beside `styles.css`
 (`assets.rs:124-127`): one `:root` block with every token of the default theme, and one
 `[data-theme="<name>"]` block per other theme holding only what it overrides. Names are
-`--ui-colour-<name>`, `--ui-space-<name>`, `--ui-radius-<name>`, `--ui-type-<style>-family`,
+`--ui-color-<name>`, `--ui-space-<name>`, `--ui-radius-<name>`, `--ui-type-<style>-family`,
 `-size` and `-weight`, and `--ui-tone-<tone>-text` and `-fill`. `styles.css.tmpl` loses its
 `:root` values and its literals and uses `var(--…)` only; the badge and icon rules read the tone
-properties, which also gives `neutral` a rule (it has none today). Button emphasis moves to its own
+properties, which also gives `neutral` a rule (it has none today). The shell sets `data-theme` on
+the document element from the `chosen_by` state, through the state's own store module, and from
+`theme.default` before that state has a value. A generator test pins the built-in table by
+comparing the computed values of the old and the new stylesheet.
+
+**Button emphasis is a renderer convention over color tokens**, with no token group of its own.
+The reference states it as a fixed table, the values React uses today (`styles.css.tmpl:63-68`):
+
+| `ButtonTone` | fill | text | border |
+|---|---|---|---|
+| `primary` | `accent` | `on_accent` | `accent` |
+| `danger` | `danger` | `on_accent` | `danger` |
+| `secondary` (default) | `surface` | `text` | `line` |
+| `ghost` | none | `text` | none |
+
+A theme that overrides `accent` restyles every primary button. Button emphasis moves to its own
 class prefix, because `.ui-tone-danger` serves both a `ButtonTone` and a `Tone` today
-(`styles.css.tmpl:67` and `92`). The shell sets `data-theme` on the document element from the
-`chosen_by` state, through the state's own store module, and from `theme.default` before that
-state has a value.
+(`styles.css.tmpl:67` and `92`); the rename touches generated output only.
 
 **Terminal.** The terminal lacks two new capabilities, which join the schema's capability table
 (`schema.yaml:989-1001`) and the terminal profile (`crates/ui/ess-ui-tui/src/profile.rs:58-111`):
 
 | capability | fallbacks | applies to | the terminal |
 |---|---|---|---|
-| `no_colour` | `emphasis` | `Tokens`, badge, icon | `Lacks(["emphasis"])`: a tone is drawn as emphasis |
+| `no_color` | `emphasis` | `Tokens`, badge, icon | `Lacks(["emphasis"])`: a tone is drawn as emphasis |
 | `no_metrics` | `ignore` | `Tokens` | `Lacks(["ignore"])`: space, type and radius are not read |
 
 `emphasis` maps tones to modifiers and adds no text, so screen text and every text assertion of
 `ess-ui-test` stay as they are: `neutral` and `success` bold (a badge is bold today), `info`
 italic, `warning` underlined, `danger` bold and underlined. It never uses reversed, because
 reversed is the cursor: `ess-ui-test` finds focus by reversed cells
-(`crates/ui/ess-ui-test/src/screen.rs:75`, `120-138`). Neither capability has `refuse` among its
+(`crates/ui/ess-ui-test/src/screen.rs:75`, `120-138`). The reference states this table, and an
+`ess-ui-test` case pins it. A button's emphasis stays bold, as today (`view.rs:1797-1799`).
+Neither capability has `refuse` among its
 fallbacks, so `degrades_cover` (`crates/ui/ess-ui-check/src/rules.rs:1137`) never fires for them,
 and a document never has to declare `degrades` for tokens. A badge or icon may still write
-`degrades: {no_colour: emphasis}`, the one fallback there is; `Tokens` is not a node, so its uses
+`degrades: {no_color: emphasis}`, the one fallback there is; `Tokens` is not a node, so its uses
 resolve from the table's first fallback. The terminal never reads `theme:`. React lacks neither
 capability.
 
-A renderer that one day has colour drops `no_colour` from its profile and maps each colour token to
+A renderer that one day has color drops `no_color` from its profile and maps each color token to
 its palette.
 
 ## Departures from the story
@@ -202,14 +248,17 @@ The story's acceptance is the need; these are the places this design reads it di
 |---|---|---|
 | groups include `elevation` | four groups and `tone` | the stylesheet has no shadow (`styles.css.tmpl`, no `box-shadow`); nothing would read it |
 | a check refuses "a theme that leaves a token undefined" | impossible by construction; `theme_tokens` refuses the other side, an override of an undeclared token | a theme is the base plus overrides, and the base always has a value |
-| nodes name tokens (`padding: {token: space.md}`), with a `raw:` escape | nodes name roles (`tone`, `style`); no `{token: …}` on nodes and no `raw:` yet | no node has a length or colour property to put it on, and adding them makes the document a stylesheet |
-| `preferences:` lists theme, density and language with values, default and `store:`, replacing the theme state | no `preferences:`; `theme.chosen_by` names the existing `preference` state | `State` already declares the values (enum type), the default and the placement; a second declaration would have to be kept equal to it. Density and language have no construct that would read them |
-| capability `fixed_density` | `no_metrics` | density is not in this step; every existing capability is named `no_<what is missing>` |
+| the group and the capability in British spelling | `color`, `no_color`, `--ui-color-*` | ESS already spells the concept `color` (`as: color`, `schema.yaml:915`) |
+| nodes name tokens (`padding: {token: space.md}`), with a `raw:` escape | nodes name roles (`tone`, `tone_by`, `style`, button emphasis); no `{token: …}` on nodes and no `raw:` | no node has a length or color property to put it on, and adding them makes the document a stylesheet; a theme overriding `space` gives density |
+| `preferences:` lists theme, density and language with values, default and `store:`, replacing the theme state | no `preferences:`; `theme.chosen_by` names the existing `preference` state; density is a theme (`dense`) | `State` already declares the values (enum type), the default and the placement; a second declaration would have to be kept equal to it. Language has no construct that would read it |
+| capability `fixed_density` | `no_metrics` | the terminal lacks every length, not only density; every existing capability is named `no_<what is missing>` |
 
 ## Out of scope
 
-Density and language; per-node token references and `raw:`; a built-in `dark` theme; following the
-operating system's colour scheme; mapping colour tokens to a terminal palette; enum coverage of a
+A `preferences:` list (deferred: a later step may add a list of `shell.<name>` references with
+labels, over the same state); language; per-node token references and `raw:`; themes that combine
+(dark and dense at once); a built-in `dark` theme; following the
+operating system's color scheme; mapping color tokens to a terminal palette; enum coverage of a
 tone map against the ESS model, which `ess ui check --model` cannot do yet because its `Model` holds
 views, commands and events but no types (`crates/ui/ess-ui-check/src/model.rs:49-55`).
 
@@ -218,39 +267,32 @@ views, commands and events but no types (`crates/ui/ess-ui-check/src/model.rs:49
 In order, each its own pull request:
 
 1. **Model, schema, loader, check.** `Document` gains four optional fields; `ToneBy` gains `tones`;
-   expansion resolves it; seven checks; the schema gains the constructs with summary, doc, notes,
-   example, group and order (`crates/ui/ess-ui/tests/schema.rs:39` holds every construct to that),
-   probably in a new `style` group (`schema.yaml:125-132`); the reference is regenerated with
-   `ess ui docs`; the partner-portal example gains `tone_maps`, a `dark` theme and the `theme:`
-   line, and its two `status_badge` uses name a map. Files:
-   `crates/ui/ess-ui/src/{model,expand}.rs`, `crates/ui/ess-ui-check/src/*`,
-   `schemas/ui/ess-ui.schema.yaml`. None of them is in open work.
+   `Icon` gains `tone_by`; expansion resolves `tones`; seven checks; the schema gains the
+   constructs with summary, doc, notes, example, group and order
+   (`crates/ui/ess-ui/tests/schema.rs:39` holds every construct to that), probably in a new
+   `style` group (`schema.yaml:125-132`); the reference is regenerated with
+   `ess ui docs`, and states the button-emphasis and terminal-emphasis tables; the partner-portal
+   example gains `tone_maps`, `dark` and `dense` themes and the `theme:` line, and its two
+   `status_badge` uses name a map; `CHANGELOG.md` names the first release that reads the keys.
+   Files: `crates/ui/ess-ui/src/{model,expand}.rs`, `crates/ui/ess-ui-check/src/*`,
+   `schemas/ui/ess-ui.schema.yaml`. None of them is in open work. uilab's agent schemas mirror the
+   ess-ui schema and need the new keys; that is uilab's side.
 2. **React.** `assets.rs` (the new file), `emit.rs` (tokens out of the document), `styles.css.tmpl`,
    the badge, icon, button and text templates, `shell.tsx.tmpl` (`data-theme`), and
    `project/main.tsx.tmpl:4` (the import). **This collides with uilab's in-flight
    `ui-react-live-binding`**, which touches `ess-ui-react/src/{lib,assets,emit}.rs`, the runtime
    templates `data.ts`, `actions.tsx`, `answer.ts`, `composites/form.tsx`, `composites/confirm.tsx`
    and `project/{main.tsx,index.html,README.md}`. The overlap is `assets.rs`, `emit.rs` and
-   `main.tsx`; start this step after that unit lands, or rebase onto it.
-3. **Terminal.** `profile.rs` and `view.rs`. uilab's next unit, `ui-tui-live-binding`, touches
-   `ess-ui-tui` `data`, `app`, `lib` and `http`; this step stays out of those files.
+   `main.tsx`; start this step after that unit lands, or rebase onto it. The step carries the
+   generator test that compares the old and new stylesheets' computed values.
+3. **Terminal.** `profile.rs` and `view.rs`, and the `ess-ui-test` case that pins the emphasis
+   table. uilab's next unit, `ui-tui-live-binding`, touches `ess-ui-tui` `data`, `app`, `lib` and
+   `http`; this step stays out of those files.
 
-## Open questions
+## Decided in the fit review
 
-1. **Format.** Is an "unknown field `tokens`" refusal from an older reader enough, or should the
-   loader name the format, so that ess-ui gets a version marker per construct the way `ess/N` has
-   `unsupported_format_version`? This page assumes additive `ess-ui/1`; the maintainer decides.
-2. **Colour literal grammar.** Hex and `rgb()` only, or also `hsl()` and named colours? A closed
-   grammar keeps a later terminal palette mapping total.
-3. **`{token: …}` on nodes.** Is there a node property the editor needs to set directly (a section
-   padding, a card radius)? If so, which property, and does `raw:` come with it?
-4. **Button emphasis.** Should `ButtonTone` map through the token table too (`primary` to
-   `accent`/`on_accent`), or stay a renderer convention over colour tokens?
-5. **Several shells.** `chosen_by` reads one shell state name; a shell that does not declare it
-   (a sign-in shell) shows `theme.default`. Is a theme that changes when the user signs in
-   acceptable?
-6. **Emphasis mapping.** The tone-to-modifier table above is a proposal and is not grounded in an
-   existing terminal convention.
-7. **`preferences:`.** Is a settings page that lists the user's options the reason for the story's
-   block? If so it can come later as a list of `shell.<name>` references with labels, over the same
-   state.
+The ess-ui owner's fit review on beyond10x/ess#350 accepted this page with changes, all made above,
+and answered every question the first draft left open: additive `ess-ui/1` with no per-construct
+version marker; the closed color grammar; no `{token: …}` on nodes, density as a theme; button
+emphasis as a renderer convention; a shell without the theme state showing `theme.default`; the
+terminal emphasis table as proposed; `preferences:` deferred. No question remains open.
