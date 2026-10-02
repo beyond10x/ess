@@ -7,7 +7,7 @@
 //! lists as generated, written against ports the implementor supplies.
 //!
 //! Storage is a port: one trait per entity, get, put and delete of a snapshot by identity. ess
-//! generates the trait and never a store. `Context` is the other port: the caller's attributes,
+//! preserves the trait; generated network entries supply an ephemeral store. `Context` carries the caller's attributes,
 //! every identity and value the model says the implementation assigns, and the answer to each
 //! `external:` branch. [`Generated`] implements every generated `…Behavior` trait over those ports
 //! and forwards every behaviour and query the plan still owes to them, so it is a complete bundle
@@ -22,7 +22,7 @@ use crate::obligation::UnmetObligation;
 
 /// Where `gatepass.visit.Visit` is stored — a port the implementor provides.
 ///
-/// Keyed by the identity `visit_id`. ess generates this trait and never an implementation of it.
+/// Keyed by the identity `visit_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
 pub trait VisitStorage {
     /// The instance with this identity, or `None` where none is stored.
     fn get(&self, identity: &crate::visit::VisitId) -> Option<crate::visit::VisitSnapshot>;
@@ -41,7 +41,7 @@ pub trait VisitStorage {
 /// Every generated behaviour of this workspace, over the ports `P` supplies.
 ///
 /// `P` implements the storage trait of each entity a generated behaviour reads or writes,
-/// `Context` where one asks it anything, and every `…Behavior` and `…Query` trait the plan still
+/// `TryContext` (or its legacy `Context` blanket adapter) where one asks it anything, and every `…Behavior` and `…Query` trait the plan still
 /// owes; `Generated<P>` forwards those to it.
 pub struct Generated<P> {
     /// The storage and context ports, and every behaviour or query still owed.
@@ -78,8 +78,9 @@ where
             let capability = "entity invariant";
             return Err(UnmetObligation { capability, source: broken });
         }
+        let answer = crate::visit::AdmitVisitorOutcome::Admitted { visitor_admitted: crate::visit::VisitorAdmitted { visit_id: input.visit_id.clone(), badge: input.badge.clone() } };
         VisitStorage::put(&mut self.ports, next);
-        return Ok(crate::visit::AdmitVisitorOutcome::Admitted { visitor_admitted: crate::visit::VisitorAdmitted { visit_id: input.visit_id.clone(), badge: input.badge.clone() } });
+        return Ok(answer);
     }
 }
 
@@ -111,8 +112,9 @@ where
             let capability = "entity invariant";
             return Err(UnmetObligation { capability, source: broken });
         }
+        let answer = crate::visit::SignOutVisitorOutcome::SignedOut { visitor_departed: crate::visit::VisitorDeparted { visit_id: input.visit_id.clone() } };
         VisitStorage::put(&mut self.ports, next);
-        return Ok(crate::visit::SignOutVisitorOutcome::SignedOut { visitor_departed: crate::visit::VisitorDeparted { visit_id: input.visit_id.clone() } });
+        return Ok(answer);
     }
 }
 

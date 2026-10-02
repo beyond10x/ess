@@ -65,14 +65,14 @@ would have closed. What is lost is the compiler closing the question, not the pr
 
 | Target | Emits | Dependencies |
 |---|---|---|
-| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, generated behaviours and view queries over storage and context ports, one HTTP transport | none |
+| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, generated behaviours and view queries over storage and context ports, one HTTP transport; network components also get an ephemeral store and executable | reusable libraries: none; network servers: `clap`, `uuid` and `time` |
 | `go` | a Go module with the same system | standard library only |
 | `web` | a WebAssembly bridge over the Rust target plus a page built at load time from an emitted `catalog.json` — no model is typed into its HTML | no build tool, no `wasm-bindgen` |
 | `clap` | a command tree, shell completion support and a dispatcher with `Handler` seams for components declaring command-line reach and a CLI grammar | `clap` and `clap_complete` 4 |
 
 Clap emits grammar rather than another type layer. Its handlers receive `clap::ArgMatches`; the
 unimplemented handler names the obligation and refuses. The generated dependencies support parsing
-and completion, so the Rust target's zero-dependency boundary does not apply to Clap. See the
+and completion. Rust's semantic types and component libraries remain dependency-free. See the
 [Clap emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/clap/mod.rs)
 and [handler/completion tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs).
 
@@ -241,7 +241,7 @@ express, and the plan names the first one it found. They are:
 | unknown identity | a supplied subject with neither `unknown_instance:` nor `wrong_state:` to answer an identity no record carries; a `wrong_state:` refusal with fields describing the rows of more than one subject |
 | branches | `when_related:`, `input_absent:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits, except the creation of create-or-update |
 | selection by existence | a creation that `existing_instance:` or a creating `unknown_instance:` decides, whose identity is not read from the input (for create-or-update, a required input field; beside `existing_instance:`, the same input field on every creation) |
-| effects | `creates:` leaving a required field unset; a creation whose identity the caller supplies; a move, update or delete whose identity is observed; `sets:` without a subject |
+| effects | `creates:` leaving a required field unset; a move, update or delete whose identity is observed; `sets:` without a subject |
 | values | a declared conversion; a value of another type; `{subject:}` on a branch that holds no row; `{increment:}` with no previous value or on a field that is not an `Integer`; a struct source leaving a required member unset; `{related:}`; `{count: changed}`; a response field; `{cleared}` on an event or error |
 | errors | an error field with no `payload:` source that the held row does not determine |
 | guards | a path that does not resolve; a read into a union or a collection element (`.count` is read); an ordering over text; a truthiness test of a value that is not a `Boolean`; a comparison of two kinds of value or two literals; the current time |
@@ -297,8 +297,9 @@ the storage interface's `List`, with exact decimal sums and means. See the
 A `reached_by: network` component gets `cmd/<component>-server/main.go` in Go and
 `crates/<system>-server/src/bin/<component>-server.rs` in the Rust workspace. The Rust single-crate
 layout puts the executable under `src/bin/` and requires `--features server`. Rust entries use
-clap derive; their runtime dependencies are clap, uuid and time. Go entries use the standard
-library.
+clap derive; their runtime dependencies are pinned to clap 4.6.7, uuid 1.26.1 and time 0.3.45,
+compatible with Rust 1.85. These dependencies stay outside the reusable types and the default
+single-crate feature set, which also build for WebAssembly. Go entries use the standard library.
 
 Each entry accepts `--listen <addr>` (default `127.0.0.1:8080`), `--callers <mode>` (default
 `none`) and `--static <dir>`. Port `0` chooses an available port; the ready record reports the

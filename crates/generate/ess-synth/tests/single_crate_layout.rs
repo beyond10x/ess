@@ -219,7 +219,7 @@ fn the_crate_layout_is_one_crate_at_most_two_levels_deep() {
         assert!(!manifest.contains("members"), "{manifest}");
         let served = synthesis.artifacts.keys().any(|path| is_server(path));
         assert_eq!(
-            manifest.contains("\n[features]\nserver = []\n"),
+            manifest.contains("\n[features]\nserver = [\"dep:clap\", \"dep:uuid\", \"dep:time\"]\n"),
             served,
             "{name}: the `server` feature exists exactly when there is an HTTP surface:\n{manifest}"
         );

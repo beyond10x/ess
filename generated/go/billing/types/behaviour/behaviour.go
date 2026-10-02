@@ -8,8 +8,7 @@
 // ports the implementor supplies.
 //
 // Storage is a port: one interface per entity, get, put and delete of a snapshot by
-// identity, and list where a generated query reads every row. ess generates the interface
-// and never a store. Context is the other port: the caller's attributes, every identity and
+// identity, and list where a generated query reads every row. ess generates the interface. Network entries supply ephemeral stores. Context carries the caller's attributes, every identity and
 // value the model says the implementation assigns, and the answer to each `external:` branch.
 // Owed is every behaviour and query the plan still owes, which [Generated] forwards to.
 //
@@ -18,8 +17,8 @@
 // branch answers it), or — as `entity invariant` — the declared outcome would leave an
 // entity breaking an invariant.
 //
-// Every port a generated method reads must be set: a nil field of [Ports] is a nil-pointer
-// panic at the first call that reads it.
+// Every storage and owed port a generated method reads must be set. Context uses the
+// fallible companion when supplied, otherwise the legacy port; absence is a typed refusal.
 package behaviour
 
 import (
@@ -30,7 +29,7 @@ import (
 
 // InvoiceStorage is where `billing.invoice.Invoice` is stored — a port the implementor provides.
 //
-// Keyed by the identity `invoice_id`. ess generates this interface and never an implementation of it.
+// Keyed by the identity `invoice_id`. Network entries supply ephemeral stores; durable storage stays a port.
 type InvoiceStorage interface {
 	// Get is the instance with this identity and true, or false where none is stored.
 	Get(identity invoice.InvoiceId) (invoice.InvoiceSnapshot, bool)
@@ -66,6 +65,40 @@ type Context interface {
 	External(command string, outcome string) bool
 }
 
+// FallibleContext reports unavailable context answers explicitly.
+type FallibleContext interface {
+	TryGenerateBillingEmailMessageId() (email.MessageId, *obligation.UnmetObligation)
+	TryExternal(command string, outcome string) (bool, *obligation.UnmetObligation)
+}
+
+// readGenerateBillingEmailMessageId prefers the fallible port, then adapts the legacy context.
+func (contextPorts *Generated) readGenerateBillingEmailMessageId() (email.MessageId, *obligation.UnmetObligation) {
+	if contextPorts.context != nil {
+		return contextPorts.context.TryGenerateBillingEmailMessageId()
+	}
+	if contextPorts.ports.Context == nil {
+		var zero email.MessageId
+		return zero, UnmetContext("assigned value: billing.email.MessageId")
+	}
+	return contextPorts.ports.Context.GenerateBillingEmailMessageId(), nil
+}
+
+// readExternal prefers the fallible port, then adapts the legacy context.
+func (contextPorts *Generated) readExternal(command string, outcome string) (bool, *obligation.UnmetObligation) {
+	if contextPorts.context != nil {
+		return contextPorts.context.TryExternal(command, outcome)
+	}
+	if contextPorts.ports.Context == nil {
+		return false, UnmetContext("external branch answer")
+	}
+	return contextPorts.ports.Context.External(command, outcome), nil
+}
+
+// UnmetContext names an unavailable runtime answer, not a new planned capability.
+func UnmetContext(source string) *obligation.UnmetObligation {
+	return &obligation.UnmetObligation{Capability: "context answer", Source: source}
+}
+
 // Owed is every behaviour and query the plan still owes, which [Generated] forwards to — a
 // port the implementor provides.
 type Owed interface {
@@ -92,7 +125,8 @@ type Ports struct {
 // behaviour, write a bundle of your own with that method that delegates the rest to a
 // `*Generated`.
 type Generated struct {
-	ports Ports
+	ports   Ports
+	context FallibleContext
 }
 
 // New is the generated behaviours and queries, over ports.
@@ -100,15 +134,27 @@ func New(ports Ports) *Generated {
 	return &Generated{ports: ports}
 }
 
+// NewWithContext explicitly supplies the fallible companion; it takes precedence over Ports.Context.
+func NewWithContext(ports Ports, context FallibleContext) *Generated {
+	return &Generated{ports: ports, context: context}
+}
+
 // SendEmail is `billing.email.SendEmail`, generated: every outcome is one the specification fully determines.
 func (b *Generated) SendEmail(input email.SendEmail) (email.SendEmailOutcome, *obligation.UnmetObligation) {
 	// `failed`: an external branch, where the context takes it.
-	if b.ports.Context.External("billing.email.SendEmail", "failed") {
+	external0, contextErr1 := b.readExternal("billing.email.SendEmail", "failed")
+	if contextErr1 != nil {
+		return nil, contextErr1
+	}
+	if external0 {
 		return email.SendEmailOutcomeFailed{Error: email.Undeliverable{}}, nil
 	}
 	// `sent`: the default.
-	m0 := b.ports.Context.GenerateBillingEmailMessageId()
-	return email.SendEmailOutcomeSent{EmailSent: email.EmailSent{MessageId: m0, Recipient: input.Recipient}}, nil
+	m2, contextErr3 := b.readGenerateBillingEmailMessageId()
+	if contextErr3 != nil {
+		return nil, contextErr3
+	}
+	return email.SendEmailOutcomeSent{EmailSent: email.EmailSent{MessageId: m2, Recipient: input.Recipient}}, nil
 }
 
 // CancelInvoice is `billing.invoice.CancelInvoice`, generated: every outcome is one the specification fully determines.
@@ -134,8 +180,9 @@ func (b *Generated) CancelInvoice(input invoice.CancelInvoice) (invoice.CancelIn
 	if broken, breaks := next.Data.BrokenInvariant(); breaks {
 		return nil, &obligation.UnmetObligation{Capability: "entity invariant", Source: broken}
 	}
+	answer0 := invoice.CancelInvoiceOutcomeCancelled{InvoiceCancelled: invoice.InvoiceCancelled{InvoiceId: input.InvoiceId}}
 	b.ports.InvoiceStorage.Put(next)
-	return invoice.CancelInvoiceOutcomeCancelled{InvoiceCancelled: invoice.InvoiceCancelled{InvoiceId: input.InvoiceId}}, nil
+	return answer0, nil
 }
 
 // CreateInvoice forwards the owed behaviour `billing.invoice.CreateInvoice` to the ports.
@@ -164,8 +211,9 @@ func (b *Generated) IssueInvoice(input invoice.IssueInvoice) (invoice.IssueInvoi
 	if broken, breaks := next.Data.BrokenInvariant(); breaks {
 		return nil, &obligation.UnmetObligation{Capability: "entity invariant", Source: broken}
 	}
+	answer0 := invoice.IssueInvoiceOutcomeIssued{InvoiceIssued: invoice.InvoiceIssued{InvoiceId: input.InvoiceId}}
 	b.ports.InvoiceStorage.Put(next)
-	return invoice.IssueInvoiceOutcomeIssued{InvoiceIssued: invoice.InvoiceIssued{InvoiceId: input.InvoiceId}}, nil
+	return answer0, nil
 }
 
 // PayInvoice forwards the owed behaviour `billing.invoice.PayInvoice` to the ports.

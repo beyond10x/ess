@@ -628,11 +628,11 @@ fn a_generated_refusal_fills_its_error_from_the_declared_sources() {
         "NegativeEstimate { estimate: input.estimate.clone(), minimum: 0 }",
         "TicketNotFound { ticket_id: input.ticket_id.clone() }",
         "TicketStateConflict { state: held_state, ticket_id: input.ticket_id.clone() }",
-        "NotYours { caller: self.ports.caller_agent_id()",
+        "NotYours { caller: self.ports.try_caller_agent_id()?.ok_or_else(|| undeclared(\"desk.ticket.Reprioritize\"))?",
         "opened_by: held.data.opened_by.clone() }",
         "TicketIsClosed { title: held.data.title.clone(), priority: held.data.priority.clone() }",
         "PagerRefused { reason: input.reason.clone() }",
-        "Throttled { page_id: self.ports.generate_desk_ticket_escalation_id() }",
+        "Throttled { page_id: self.ports.try_generate_desk_ticket_escalation_id()? }",
     ] {
         assert!(
             behaviour.contains(filled),
