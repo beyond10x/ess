@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T16:38:14Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-01T16:38:15Z", actor: "human:timo", revision: 6}
@@ -51,3 +51,9 @@ Per `.agents/skills/assessing-external-requests/SKILL.md` (fit review 2026-10-01
 ## Evidence
 
 - Evidence 2026-10-01 (requester, ess 0.49.0): the String-guard idiom is **not** enough. A String identity accepting only one value, plus `existing_instance`, still refuses 7 branches with ESS-SYNTH-001; a one-value enum refuses 5. The coordinator's earlier inference that #275 covers it was wrong. The decided fix stands, raised to priority 1.
+
+## Released core and retained limits, 2026-10-02 audit
+
+The one-value enum and invariant-pinned text implementation1f131e170 is in release integration482bc33c2 and tag0.51.0, both ancestors of current main. singleton_identity.rs:490 asserts branch witnesses; :509 sends the same identity twice; :531 runs an honest target; :574 faults and :601 caller-swap notes are exercised. Retained current-session test-singleton_identity.log reports8 passed/0 failed/0 ignored.
+
+This is not evidence every singleton shape is complete. adversary_287_pass2.rs:481-513 retains ignored another-caller reinstall and Uuid-control cases; :535-547 retains an ignored ordered-view withdrawal that can remove installed/paused/resumed/transition scenarios with ESS-SYNTH-001. Its current retained result is5 passed/0 failed/3 ignored. Pass1 has three ignored cases already routed to312. Keep these explicit pending dispositions; this reconciliation does not count ignored cases as passing or declare this whole artifact completed.

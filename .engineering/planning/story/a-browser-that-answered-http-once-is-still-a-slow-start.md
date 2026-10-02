@@ -2,12 +2,21 @@
 format: aep.planning-md/3
 id: story:a-browser-that-answered-http-once-is-still-a-slow-start
 kind: story
-status: draft
+status: active
 title: A browser that answered HTTP once is still a slow start
+relations:
+- serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/edge/ess-cli/tests/browser_startup_refusal_boundary.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/browser_startup_slow_serve_boundary.rs
+- confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T11:44:58Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T11:44:58Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 # A browser that answered HTTP once is still a slow start
 
@@ -73,3 +82,7 @@ it to the non-refusal side. It declined to pick a side. It was right; the instru
 ## Fresh red evidence 2026-10-02
 
 The two named cases remain explicitly ignored on current source482609 and both fail when executed. The entire ignored startup lane is0passed4failed; browser-startup-existing-defects-red.log retains exact output. support/browser.rs::connect_give_up still panics after an earlier404 and omits the stderr it promises. This is actionable existing harness work, not fixed by the successful late-ready socket-timeout regression. Coordinate the repair with startup-lock and lost-startup-socket-retry; no ignored case is counted as a pass.
+
+## Boundary reconciliation before repair
+
+Current browser_startup_refusal_boundary.rs::a_handshake_answered_404_forever_stays_a_bidi_defect_and_is_not_blamed_on_the_runner encodes the older rule that HTTP404 proves readiness. That expectation conflicts with this accepted story: Firefox can answer404 before registering /session, and no successful upgrade has occurred. The repair must update that old discriminator assertion explicitly, retain its permanently404 stand-in, assert a measured startup refusal with stderr/last response, and separately preserve a genuine malformed/non101 successful-response protocol defect control. Do not delete the permanent404 case or call it passing unchanged. Include browser_startup_refusal_boundary.rs as cited scope alongside slow-serve boundary and support/browser.rs.

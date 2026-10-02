@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:02:14Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-251",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Retained current-session invariant_bound_held_state runner log: 4 passed, 0 failed, 0 ignored; timestamp is log completion mtime",
+    "reference": "local-evidence:ess-backlog-synthesis-20261002/target/backlog-input/309-full-package/test-invariant_bound_held_state.log"
+  }
+}

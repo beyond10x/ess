@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-01T19:18:37Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-306",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Previously recorded coordinator rerun: ownership_relocation_adversary_p2 10/10; output_ownership 51/51 (reconciled evidence kind, not a new run)",
+    "reference": ".engineering/evidence/story/feature-request-306/20261001T191837Z-001-88de0241d9d1.json"
+  }
+}
