@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 6
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -119,3 +119,21 @@ Implementation is authorized under the operator's fast-lane instruction and expl
 The frozen design is binding acceptance, including every applicable actor, outcome-local flow ownership, independent event logs observed through their finite deadlines, constrained newtype authority, exact-field exemption, all prior values after rotation, authored timelines, admission before callbacks, bounded capture, and value-free diagnostics. Unsupported intrinsic restart/concurrency obligations remain explicit and equal; they do not excuse a missing runtime port.
 
 Work proceeds in dependent stages within this story: closed typed source/IR/suite/admission and immutable shared vectors first, then independent Go/TypeScript ports from that exact contract commit, native execution and integration. Each stage retains red/green evidence and receives independent review; the story stays active until complete validation and integration. Source21/diff13/suite34/35 allocation and source22 reallocation remain as already recorded.
+
+## Prerequisite port sequencing
+
+Existing suite28–33 typed contracts are already frozen in main1ff305685. Start independent prerequisite ports from this identical committed native authority while the new389 contract is being implemented; their exact feature semantics and invalid-document rules remain unchanged. Go owns src/go/** and its new Rust parity integration binary; TypeScript owns src/ts/** and its own new binary. Shared admission API edits remain with the Go owner. Workers cannot change shared native DTOs, fixtures or expected meanings. The new389 ports still wait for the independently reviewed source21/suite34/35 contract commit and immutable vectors. This parallelizes implementation of existing contracts without guessing new policy.
+
+Include existing runtime report-status parity: native unsupported target capability and ordinary target errors must have identical unsupported/error status and counts in generated runners. Preserve explicitly skipped cases as skipped. Test this with actual callbacks and serialized report/2; do not equate skipped or failed with another terminal status.
+
+## Shared acceptance gates reproduce runtime omissions
+
+Shared gates now require every supported suite major and every native scenario step/value/expectation in TypeScript execution. The old28–33 exclusions and named missing-step allowance are removed. Native Unsupported is compared as unsupported, not rewritten to skipped. Existing three feature-generation refusals are replaced by successful-generation requirements; separate port tests must establish real execution.
+
+Before any port integration, the unchanged-runtime controls are red: runtime_suite_admission plus typescript_suite_versions filtered every_ execute0 passed/3 failed/0 ignored, exit101. The failures identify Go and TS suite28–33 refusals and all five missing TypeScript tags. Feature emission filtered preserve executes2 passed/3 failed/0 ignored, exit101, naming the three current emitter refusals. Raw logs: runtime-parity-gates-red.log and runtime-feature-emission-red.log in ess-backlog-next-20261002/target/backlog-input, each with an exit file. task fmt-check and git diff --check pass. These are intentional failing acceptance controls, not finished implementation or release evidence.
+
+## Interpreted target prerequisites
+
+The full runtime mandate exposed generic Interpreted target gaps already owned by existing stories: interpreted-eventual-views, interpreted-bindings-and-unmet-obligations, interpreted-scenario-supplied-facts and interpreted-trust-gate (all draftrev3 at audit). Do not duplicate their work in new intake or mark them delivered from a native Runner test using another target. Their retained acceptance compares actual billing/oracle scenarios and the fault matrix, including eventual lag and unsupplied external obligations.
+
+Issue389's accepted native stage must exercise its actual interpreted issuance/rotation/read/event path and account for these dependencies. The existing product target's missing implementation is not an intrinsic model impossibility or a consumer adapter limitation. These stories remain unfinished until their named acceptance executes; the parity audit is not passing evidence. Exploratory model-subset gaps remain separately owned by accepted221/223 and the recorded explorer inventory, not silently counted as conformance support.

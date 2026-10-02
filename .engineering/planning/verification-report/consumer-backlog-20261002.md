@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 21
+revision: 26
 ---
 ## Intake
 
@@ -52,7 +52,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #316 | Generated Rust creation ignores an identity the payload takes from the input | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #314 | Go target: generate determined command behaviours, view queries, a store and a server main, as the Rust target does | Behavior/query/invariants merged through PR386 (fa08de5); generated store and server entry remain in #318. Keep issue open. |
 | #312 | Suites assume an empty target per scenario without saying so, and never act on a row as a different caller than arranged it | Pending verification and fit review; no completion claim. |
-| #311 | ess-ui/1 renderers cannot run against a live served component (fixtures only) | Served view parameters merged through PR386 and UI transport preserved in PR381. Complete live consumer verification remains; no blanket closure. |
+| #311 | ess-ui/1 renderers cannot run against a live served component (fixtures only) | CLOSED after accepted live-binding criteria reconciliation; replacements implemented on main through PR387, new release pending. |
 | #309 | Aggregate with two group keys filled from one input is refused for a move the source does not have | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #308 | A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #307 | when_subject over a field copied from a related row at creation finds no candidate (ESS-SYNTH-003, then ESS-SYNTH-004) | Both Optional policies and named transitions implemented and independently reviewed with57 grouped tests and14 decisive mutants. Integrated in7474bb5c5 with360; full package and publication pending. |
@@ -235,7 +235,7 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:scrub-the-planning-store-or-say-why-not | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:served-committed-command-answers-its-outcome | draft | consumer gap with compatibility/design work | crates/edge/ess-cli/src/web/bridge.rs:346 converts pump failure after a command outcome to undelivered; exact path to reverify before implementation. |
 | story:served-store-and-entry | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#318 |
-| story:served-view-params | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
+| story:served-view-params | implemented | Accepted runtime criteria verified and merged through PR387; issue311 closed; release pending | github:beyond10x/ess#311 |
 | story:shared-public-gates | active | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:source-pinned-data-normalization | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:specification-declares-its-ess-release | active | stale-state candidate | Body cites #106; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
@@ -258,10 +258,10 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:typed-literals-in-sets-and-unknown-instances | active | delivered; documentation/evidence qualification | Fourteen literal and three unknown-instance cases passed at f863ee; chosen not-found policy documented. Old Decimal-never-admitted design text is stale after later support; historical red-first unlocated. |
 | story:types-only-realizations | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:typescript-conformance-target | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:ui-react-live-binding | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
+| story:ui-react-live-binding | implemented | Accepted runtime criteria verified and merged through PR387; issue311 closed; release pending | github:beyond10x/ess#311 |
 | story:ui-spec-style-tokens | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
-| story:ui-tui-app-generator | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
-| story:ui-tui-live-binding | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
+| story:ui-tui-app-generator | implemented | Accepted runtime criteria verified and merged through PR387; issue311 closed; release pending | github:beyond10x/ess#311 |
+| story:ui-tui-live-binding | implemented | Accepted runtime criteria verified and merged through PR387; issue311 closed; release pending | github:beyond10x/ess#311 |
 | story:union-tag-inline-with-fields | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:validate-sees-what-synthesize-refuses | active | stale-state candidate | Body cites #112; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:web-bridge-answers-like-http | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
@@ -349,7 +349,7 @@ The existing tests and retained logs below are evidence produced by earlier runs
 | #354 | Both requested capabilities remain open; design required | Decide nested subscription ownership and header record source/title semantics, preserving existing Header.live status display |
 | #330 | Inline/local enum workaround and bounded drift checking delivered; direct model enum resolution absent | Approve a model-aware loading/resolution contract, then implement across checker and both generation/run paths |
 | #328 | Same-name form-field projection delivered; general value/label and model identity defaults absent | Approve projection/default contract, then implement complete choice behavior across React/TUI and standalone/filter-bar uses |
-| #311 | Accepted redesign materially implemented; several replacement AEP states appear stale | Reconcile five replacement stories using existing runtime evidence; do not represent original channel streaming request as implemented |
+| #311 | Accepted redesign implemented; replacement states reconciled | Closed after named acceptance evidence and green merged gate; original channel-streaming proposal was explicitly redesigned |
 | #347 | ESS capability already exists; accepted guidance clarification present | Reconcile documentation delivery; keep private consumer adapter correctness externally unverified |
 
 ## #354: nested live readers and record-derived headers
@@ -625,3 +625,71 @@ Integrated runtime candidate 511ba5146 includes #307, #360, #318, unused-event b
 Issue311 is now closed after checking all accepted replacement-story criteria against source, retained execution and the green PR387 gate. The four remaining active replacement stories moved to implemented. This closes one further issue beyond the 34 already resolved before the prior status answer. Current last verified intake is therefore48 open GitHub issues (49 after PR387, minus311), including newly reported389; refresh again before delivery.
 
 Issue389 is active and prioritized in the next release group, alongside implemented local fixes307,360,318. Its independently approved design requires complete execution parity across native Rust, generated Go and TypeScript, and actual applicable WASM adapters. Existing Go/TypeScript suites28–33 gaps are prerequisites; suite34/35 adds one-time disclosure. Root acceptance is recorded on story:feature-request-389. No runtime-specific refusal-only or partial-runtime release satisfies the operator's instruction.
+
+## Runtime CLI verification, 2026-10-02
+
+The full ess-cli package run on integrated runtime source511ba5146 passed:110 test summaries,905 passed,0 failed,0 ignored; process exit0. Command: cargo test -p ess-cli --locked --no-fail-fast. Retained raw output: ess-backlog-next-20261002/target/backlog-input/cli-runtime-batch.log and .exit. Together with the completed conformance package run, this verifies the combined source before the independent #389 contract is integrated. Full remote gate and release remain pending.
+
+## Runtime static and projection verification
+
+Integrated source511ba5146 passed task ci-lint (exit0): supported formatting, strict workspace/all-target Clippy, rustdoc checks, release metadata consistency and workflow action checks. It also passed task projection-check (exit0): generated artifacts/schema, release summary projections, documented format versions, CLI reference and diagnostic catalogue. Retained raw logs and exit files are runtime-ci-lint and runtime-projection-check under ess-backlog-next-20261002/target/backlog-input. These results precede the deliberate parity-gate strengthening and new389 changes; those later changes require their own verification.
+
+## Full runtime parity audit
+
+# Executable conformance parity audit
+
+Read-only, 2026-10-02. Inspected `ess-backlog-one-time-response-20261002` base `1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036`; the cited conformance runtime/test files were unchanged during this audit. The implementation worker was editing separate domain files. Own executions: **0**; no tests/builds, source or AEP edits. This is a bounded explicit-capability audit, not proof of semantic equivalence of every implementation branch.
+
+All paths below are repository-relative. `src/` and `tests/` abbreviate `crates/verify/ess-conformance/src/` and `crates/verify/ess-conformance/tests/`.
+
+## Actionable gaps
+
+### 1. Existing terminal-status/report parity is weaker than the new requirement
+
+This affects earlier suites, not just new vocabulary. Native `src/runner.rs:3449` (`target_failure`) reports target unsupported as `Unsupported`, and other target failures as `Error`. Go `src/go/runtime.go:2187-2193` (`executeCommand`) uses `skip`/`statusSkipped` or `fail`/`statusFailed`; TypeScript `src/ts/runtime.ts:3252-3260` does the same. Go constants at `runtime.go:1795-1797` expose only passed/failed/skipped. The report/2 `countDocument` at Go `:4907-4919` and TS result serialization at `:6815-6843` accept only those three statuses, leaving their error/unsupported counters zero.
+
+This is not an adapter that cannot perform an observation: identical target outcomes are classified differently by runtimes. `tests/typescript_suite_versions.rs:163-179` explicitly maps native Unsupported to `skipped` before comparing results, so those green parity tests do not establish exact status/count parity. Native `tests/count_reports.rs:222-279` separately asserts distinct error/unsupported totals.
+
+**Next action:** implement precise runtime terminal classifications and report/2 counts, including begin/end callback errors, target-operation errors and capability refusals. Add shared same-target vectors asserting identical raw counts/statuses instead of normalizing Unsupported to skipped. Decide and preserve any legacy report/1 display compatibility separately; it must not weaken report/2 or #389's exact parity gate. A target-unavailable failure must not be reported as an implementation assertion failure.
+
+### 2. The current vocabulary gate permits new omissions
+
+No additional named missing suite1–27 step was found in the ordinary Go/TS dispatchers: Go `runtime.go:2073-2160` and TS `runtime.ts:3116-3210` contain the known step handlers. TS `UNEXECUTED_STEPS` at `:6393` is empty. Unknown-step/position/expectation/value default branches are not, by themselves, evidence that valid older vocabulary is omitted.
+
+However, `tests/typescript_suite_versions.rs:671-729` (`every_rust_suite_tag_is_executed_or_refused_by_name_in_typescript`) deliberately permits a named `UNEXECUTED_STEPS` refusal and also exempts the known newer tags. `tests/runtime_suite_admission.rs:234-255` (`only_the_direct_response_pair_is_left_out`) deliberately exempts all three newer pairs despite its obsolete name. Version admission is not executable semantic coverage.
+
+**Next action:** make the gate require execution of every admitted step/value/expectation in both languages, prohibit missing-runtime entries, remove the 28–33 exemptions as their ports land, and keep independent semantic/mutant vectors. Existing examples to retain include `tests/adversary_runtime_parity_go_pass2.rs:273,308,603,700,850` and `tests/typescript_suite_versions.rs:1172,1202,1239,1476`. No fresh passing execution is claimed here.
+
+### 3. Known 28–33 ports remain the concrete vocabulary backlog
+
+Both ordinary and coverage emitters explicitly refuse direct-response, delivery-context and structured-value vocabulary: Go `src/go/mod.rs:50-53,74-77`; TS `src/ts/mod.rs:71-74,232-235`. Go's maximum admitted major is27 (`go/mod.rs:362`). Tests intentionally enforce these omissions: `tests/direct_returns.rs:485` (`pure_return_generators_refuse_unsupported_execution`), `tests/delivery_context.rs:382` (`go_and_typescript_generation_refuse_a_suite_that_delivers_with_context`), and `tests/authored_structured_instances.rs:300` (`the_generated_runners_refuse_a_suite_they_cannot_read`). These must become execution parity controls, not merely deleted assertions. They are already accepted #389 prerequisites, listed here to connect the exact guards/tests.
+
+### 4. The generic interpreted reference target is still a partial execution path
+
+Native CLI execution selects the same Rust `Runner` for Billing, Oracle and Interpreted (`crates/edge/ess-cli/src/main.rs:3590-3599`); there is not a separate complete interpreter runner hidden behind the CLI.
+
+`Interpreted` is a product-provided partial target, not an intrinsically incapable external adapter. It explicitly lacks absent-input execution (`src/interpret.rs:236-244`), views (`:246-252`), binding publication observation (`:263-271`), redelivery (`:315-321`) and invocation observation (`:324-337`). `src/interpret/execute.rs:631-674` also refuses typed responses, retained results, current-time guards and several stored/state/related/existence conditions. Some other routes can intercept particular conditions before this fallback, so these lines are not a claim that every command using those conditions is refused. Views/bindings are unconditional gaps in the named methods.
+
+`tests/interpreted_command_execution.rs:183-207` explicitly allows the interpreter to be Unsupported where Billing executes; that test therefore cannot justify a claim that the interpreted path supports all admitted features. Fixed-domain Billing/Oracle and deliberately limited `Untraced` targets are fixtures, not universal runtime implementations.
+
+**Next action:** inventory the generic interpreted path separately in the execution matrix, close required feature cells and replace permissive Unsupported allowances with named execution vectors as features land. Do not count a green native Runner against another target as evidence that this CLI/reference path executed the feature. At minimum #389's interpreted issuance/rotation, reads and event/binding observer fixtures must use real supported callbacks or expose exact remaining unsupported cells; a missing interpreter port is not an intrinsic model impossibility.
+
+## Explicit refusals that are not additional language-port gaps
+
+- Absent-input, repeated external control, fixture setup, clock evidence, periodic host and similar optional target seams are implemented by runtime dispatch; a target can genuinely lack them. Examples: Go `runtime.go:7673,8054`, `go/fixtures.go:136`, `go/reading.go:98`; native default target methods and `tests/delivery_context.rs:323,337` require unsupported rather than pass. The classification disparity in item1 still applies.
+- Whole-second periodic anchors are restricted in native `src/periodic.rs:632-640` too, not only Go `runtime.go:6789` / TS `runtime.ts:8604`. `tests/periodic.rs:397-405` checks unavailable periodic observation explicitly.
+- Binary64 accessor observation is rejected in native `src/accessor.rs:94-97` as well as Go `runtime.go:5880` / TS `runtime.ts:7936`. Selection map profiles and operand grammar refusals likewise have native authorities (`src/selection.rs:696-709`; `crates/specify/ess-primitives/src/predicate.rs:1876`). Do not remove them as supposed language omissions without changing the shared admitted contract.
+- ObservedAccessor/ObservedSelection only in invocation input is a shared admission rule (`src/admission.rs:251-275`; Go `runtime.go:4148-4171`; TS `runtime.ts:5906-5922`), not missing general-value dispatch.
+- Browser replay is not an execution runner (`src/web.rs:268-288`); the fixed WASM lab is a target integration, not a generic suite runner. Actual browser/WASM target adapters require integration evidence, but replay display cannot supply that evidence. Recording/history conversion modules are not additional sequential suite executors.
+
+## Separate executable exploration limits
+
+The generated Go/TS explorers execute randomized checks, but they are not the ordinary suite1–27 executor. They still exclude model constructs in both languages: stored/existence/related condition whitelist (`src/go/explore.go:614-619`, `src/ts/explore.ts:475-489`), sequential replay (`go/explore.go:627-629`), undrawable input kinds (`exploreResolveAs`, `go/explore.go:315`) and selected effects (`exploreEffectRefusal`, `:566`). `tests/explore_preconditions.rs:317-343` expressly keeps list-input commands excluded from random draws even when a precondition can invoke them. This is missing exploration implementation, not language asymmetry or target unavailability. Existing accepted #221/#223 address part of it, not all exclusions. Preserve this separate inventory if the user's “every conformance test” promise includes exploration; do not claim universal model coverage merely because Go and TS exclude the same features.
+
+The highest-value newly identified correction for the current parity work is item1, followed by strengthening item2's gate. No additional explicit ordinary-suite1–27 language-only capability omission was established by this bounded read-only pass.
+
+## Existing interpreted target work reconciliation
+
+The full runtime mandate exposed generic Interpreted target gaps already owned by existing stories: interpreted-eventual-views, interpreted-bindings-and-unmet-obligations, interpreted-scenario-supplied-facts and interpreted-trust-gate (all draftrev3 at audit). Do not duplicate their work in new intake or mark them delivered from a native Runner test using another target. Their retained acceptance compares actual billing/oracle scenarios and the fault matrix, including eventual lag and unsupplied external obligations.
+
+Issue389's accepted native stage must exercise its actual interpreted issuance/rotation/read/event path and account for these dependencies. The existing product target's missing implementation is not an intrinsic model impossibility or a consumer adapter limitation. These stories remain unfinished until their named acceptance executes; the parity audit is not passing evidence. Exploratory model-subset gaps remain separately owned by accepted221/223 and the recorded explorer inventory, not silently counted as conformance support.
