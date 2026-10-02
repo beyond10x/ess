@@ -477,6 +477,7 @@ dependencies = [
  "ess-kubernetes",
  "ess-openapi",
  "ess-primitives",
+ "ess-publisher",
  "ess-realization",
  "ess-synth",
  "ess-transport",
@@ -679,6 +680,19 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "thiserror",
+]
+
+[[package]]
+name = "ess-publisher"
+version = "0.51.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-gen",
+ "ess-transport",
+ "schema-contract",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

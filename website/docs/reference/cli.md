@@ -745,6 +745,24 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 
+#### `ess generate client`
+
+Generate a typed event publisher for one component over its transport document
+
+```text
+ess generate client [OPTIONS] --component <COMPONENT> --transport <TRANSPORT> --target <TARGET> --package <PACKAGE> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--component` | `<COMPONENT>` | yes |  | The component whose published events the publisher sends |
+| `--transport` | `<TRANSPORT>` | yes |  | The `ess-transport/1` document binding those events |
+| `--target` | `<TARGET>` | yes |  | The language to generate. One of `rust`, `go`. |
+| `--package` | `<PACKAGE>` | yes |  | Native package identity |
+| `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
+
 #### `ess generate synthesize`
 
 Synthesize implementation artifacts and explicit obligations

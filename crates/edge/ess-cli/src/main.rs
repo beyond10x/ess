@@ -6,6 +6,7 @@ mod cli_binding;
 #[cfg(test)]
 #[path = "../../ess-xtask/src/cli_reference/render.rs"]
 mod cli_reference;
+mod client;
 mod coverage;
 mod git_checkout;
 mod input_discovery;
@@ -245,6 +246,8 @@ enum GenerateCommand {
     },
     /// Realize selected model types as standalone, accounted data libraries.
     Types(model_types::Args),
+    /// Generate a typed event publisher for one component over its transport document.
+    Client(client::Args),
     /// Synthesize implementation artifacts and explicit obligations.
     Synthesize {
         #[command(flatten)]
@@ -1390,6 +1393,7 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
     match command {
         GenerateCommand::Output { command } => output_ownership::run(command),
         GenerateCommand::Types(args) => model_types::run(&args),
+        GenerateCommand::Client(args) => client::run(&args),
         GenerateCommand::Synthesize {
             input,
             target,
@@ -5096,7 +5100,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 74;
+    const AREA_LEAVES: usize = 75;
     const AREA_ONLY_LEAVES: [&[&str]; 8] = [
         &["specify", "cli"],
         &["generate", "cli"],
