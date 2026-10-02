@@ -1066,13 +1066,13 @@ test('the runtime admits the new suite majors and a fold in them', () => {
     /case-insensitive text operators require suite\/20 or \/21/,
   );
   // A fold is admitted by every later major too (beyond10x/ess#188), and the first major this
-  // runtime does not read — direct returns — is still refused by version.
+  // runtime does not read is still refused by version.
   assert.equal(
     admitSuite(document('ess-conformance/26', false)).provenance.suite_version,
     'ess-conformance/26',
   );
   assert.match(
-    raised(() => admitSuite(document('ess-conformance/34', false))),
+    raised(() => admitSuite(document('ess-conformance/36', false))),
     /unsupported suite version/,
   );
 });

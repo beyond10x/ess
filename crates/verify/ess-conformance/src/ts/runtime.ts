@@ -49,6 +49,14 @@
 
 import { admitDirectResponse, compareDirectResponse } from './direct_response.js';
 import type { DirectResponse } from './direct_response.js';
+import {
+  admitOneTimeTrace,
+  admitDisclosureId,
+  parseDisclosureId,
+  DisclosureCaptures,
+  DisclosureViolation,
+} from './one_time_response.js';
+import type { OneTimeTrace } from './one_time_response.js';
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -2078,6 +2086,8 @@ export interface CommandResult {
   outcome?: string | undefined;
   /** The declared error it refused with, empty when it did not. */
   error?: string | undefined;
+  /** Complete declared-error payload, including fields unknown to this runner. */
+  errorPayload?: Record<string, Node> | undefined;
   /** A token a later read_your_writes query may demand, empty when the target has no such token. */
   consistency?: string | undefined;
   /** The events emitted as part of the command returning. */
@@ -2406,6 +2416,7 @@ export interface Provenance {
 
 /** Scenario is one thing the specification obliges an implementation to do. */
 export interface Scenario {
+  oneTimeResponse?: OneTimeTrace;
   purpose: string;
   steps: Step[];
   /** Why admission refused this scenario by name, when it did. It is skipped, never run. */
@@ -2630,7 +2641,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /33 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /35 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -2659,11 +2670,16 @@ export async function runWith(
   // that cannot name itself fails the run here, with that message, rather than leaving a report
   // that says nothing about what was tested.
   let identity: Identity;
+  const protectedRun = Object.values(suite.scenarios).some(
+    (scenario) => scenario.oneTimeResponse !== undefined,
+  );
   try {
     identity = normalizeIdentity(await newTarget().identity());
   } catch (error) {
-    throw new Error(`the target does not name itself: ${errorText(error)}`);
+    if (!protectedRun) throw new Error(`the target does not name itself: ${errorText(error)}`);
+    identity = { name: 'one-time-protected-target', version: '' };
   }
+  if (protectedRun) identity = { name: 'one-time-protected-target', version: '' };
 
   const harness = newHarness(suite.provenance.system);
   const results: ScenarioResult[] = [];
@@ -2700,7 +2716,10 @@ export async function runWith(
         await scenarioRun.execute(id, scenario);
         returned = true;
       } catch (error) {
-        thrown = error;
+        thrown =
+          scenario.oneTimeResponse === undefined
+            ? error
+            : new FatalSignal('ESS-CF-TARGET: protected target observation');
       }
       status = scenarioRun.status;
       terminal = scenarioRun.callbacksComplete && (returned || status !== statusPassed);
@@ -2926,6 +2945,7 @@ export interface ObservedCommandResult {
   response: { [field: string]: Node } | undefined;
   outcome: string;
   error: string;
+  errorPayload?: Record<string, Node> | undefined;
   consistency: string;
   directEvents: ObservedEvent[];
   notGranted: boolean;
@@ -3011,7 +3031,13 @@ function jsonValue(held: Node, key: string, open: Set<object>): Node {
     for (const field of Object.keys(object)) {
       const item = jsonValue((object as { [key: string]: Node })[field], field, open);
       if (item !== undefined) {
-        result[field] = item;
+        // JSON keys are data, including __proto__; assignment would invoke its inherited setter.
+        Object.defineProperty(result, field, {
+          value: item,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
       }
     }
     return result;
@@ -3054,6 +3080,7 @@ function normalizeResult(result: CommandResult | undefined): ObservedCommandResu
     response: result?.response,
     outcome: result?.outcome ?? '',
     error: result?.error ?? '',
+    errorPayload: result?.errorPayload,
     consistency: result?.consistency ?? '',
     directEvents: result?.directEvents ?? [],
     notGranted: result?.notGranted === true,
@@ -3124,6 +3151,10 @@ export class ScenarioRun {
    */
   callbacksComplete = false;
   private directResponseCommands = new Set<string>();
+  private disclosure: DisclosureCaptures | undefined;
+  private disclosureStopped = false;
+  private disclosureIncomplete = false;
+  private stepTargetError = false;
 
   constructor(t: TestScope, target: Target, harness: Harness, correlation: string) {
     this.t = t;
@@ -3133,6 +3164,10 @@ export class ScenarioRun {
   }
 
   async execute(id: string, scenario: Scenario): Promise<void> {
+    this.disclosure =
+      scenario.oneTimeResponse === undefined
+        ? undefined
+        : new DisclosureCaptures(scenario.oneTimeResponse);
     this.directResponseCommands = new Set(
       scenario.steps
         .filter((step) => step.step === 'expect_direct_response')
@@ -3167,7 +3202,7 @@ export class ScenarioRun {
       throw new FatalSignal(`begin: ${errorText(error)}`);
     }
     try {
-      if (scenario.purpose !== '') {
+      if (scenario.purpose !== '' && this.disclosure === undefined) {
         this.t.diagnostic(scenario.purpose);
       }
       for (
@@ -3186,11 +3221,27 @@ export class ScenarioRun {
         ) {
           return;
         }
-        if (!(await this.step(index, step))) {
-          return;
-        }
+        this.stepTargetError = false;
+        const continued = await this.step(index, step);
+        if (
+          this.disclosureStopped ||
+          (!continued &&
+            !(
+              this.disclosure !== undefined &&
+              !this.stepTargetError &&
+              this.status === statusFailed &&
+              step.step.startsWith('expect_')
+            ))
+        )
+          break;
+        if (!(await this.disclosureWindows(index, scenario))) break;
       }
     } finally {
+      if (this.disclosure !== undefined && !this.disclosureStopped) {
+        for (const event of this.disclosure.policy.events) {
+          if (!(await this.disclosureEvents(event.event))) break;
+        }
+      }
       let teardown: unknown;
       try {
         await this.target.endScenario(context);
@@ -3199,10 +3250,129 @@ export class ScenarioRun {
       }
       this.callbacksComplete = true;
       if (teardown !== undefined) {
+        this.disclosureIncomplete = true;
         this.recordStatus(isUnsupported(teardown) ? statusUnsupported : statusError);
-        this.failures.push(`end: ${errorText(teardown)}`);
+        this.failures.push(
+          this.disclosure === undefined
+            ? `end: ${errorText(teardown)}`
+            : 'ESS-CF-TARGET: protected target observation',
+        );
+      }
+      if (
+        this.disclosure !== undefined &&
+        !this.disclosureIncomplete &&
+        this.status !== statusError &&
+        this.status !== statusUnsupported
+      ) {
+        if (this.disclosure.complete())
+          this.t.diagnostic('ESS-CF-DISCLOSURE: protected observation completed');
+        else this.disclosureFailure(new DisclosureViolation('disclosure'));
       }
     }
+  }
+
+  private disclosureFailure(error: unknown): boolean {
+    const violation =
+      error instanceof DisclosureViolation ? error : new DisclosureViolation('resource');
+    this.disclosureStopped = true;
+    if (violation.kind === 'resource') this.disclosureIncomplete = true;
+    this.recordStatus(violation.kind === 'resource' ? statusUnsupported : statusFailed);
+    this.failures.push(
+      `${violation.message}: protected observation did not satisfy the declared rule`,
+    );
+    return false;
+  }
+  private disclosureMaps(rows: Record<string, Node>[]): boolean {
+    try {
+      this.disclosure?.maps(rows);
+      return true;
+    } catch (error) {
+      return this.disclosureFailure(error);
+    }
+  }
+  private async disclosureEvents(event: string, attempts = 0): Promise<boolean> {
+    try {
+      const observed =
+        (await this.target.observeEvents({
+          event,
+          correlation: this.correlation,
+          deadline: { attempts },
+        })) ?? [];
+      if (!this.disclosureMaps(observed.map((value) => value.payload))) return false;
+      for (const value of observed) this.remember(value);
+      return !this.disclosureStopped;
+    } catch (error) {
+      this.recordStatus(isUnsupported(error) ? statusUnsupported : statusError);
+      this.stepTargetError = true;
+      this.disclosureIncomplete = true;
+      this.failures.push('ESS-CF-TARGET: protected target observation');
+      return false;
+    }
+  }
+  private async disclosureWindows(index: number, scenario: Scenario): Promise<boolean> {
+    if (this.disclosure === undefined) return true;
+    let elapsedTicks = 0n;
+    for (const window of this.disclosure.policy.event_windows.filter(
+      (window) => window.after_step === index,
+    )) {
+      if (window.within_ms === 0n) {
+        if (!(await this.disclosureEvents(window.event))) return false;
+        continue;
+      }
+      const clock = this.target as Target & Partial<Clock>;
+      try {
+        if (!clock.markInstant || !clock.observeElapsed)
+          throw unsupported('protected clock capability');
+        let instant = '';
+        for (let serial = 0; serial < 65536; serial += 1) {
+          const candidate = `one-time-window-${index}-${serial}`;
+          if (
+            !scenario.steps.some(
+              (step) => step.step === 'mark_instant' && step.instant === candidate,
+            )
+          ) {
+            instant = candidate;
+            break;
+          }
+        }
+        if (instant === '') throw unsupported('protected instant bound');
+        await clock.markInstant({ instant, correlation: this.correlation });
+        // Match the native advancing observation clock; elapsed target evidence still establishes
+        // actual completion before the final scan, including early harmless log answers.
+        const deadlineTicks = (window.within_ms + 99n) / 100n;
+        const scans = deadlineTicks > elapsedTicks ? deadlineTicks - elapsedTicks : 1n;
+        for (let scan = 0n; scan < scans; scan += 1n) {
+          const remaining = scans - scan;
+          if (
+            !(await this.disclosureEvents(
+              window.event,
+              Number(remaining > 65536n ? 65536n : remaining),
+            ))
+          )
+            return false;
+          if (scan === 65535n) throw unsupported('protected observation bound');
+          elapsedTicks += 1n;
+        }
+        const seconds = (window.within_ms + 999n) / 1000n;
+        if (seconds > 4294967295n) throw unsupported('protected hold bound');
+        const observed = await clock.observeElapsed({
+          instant,
+          hold: Number(seconds),
+          watching: window.event,
+          correlation: this.correlation,
+        });
+        if (unsigned(observed.elapsedMillis ?? 0) < window.within_ms)
+          throw unsupported('protected window incomplete');
+        if (!(await this.disclosureEvents(window.event))) return false;
+      } catch (error) {
+        this.recordStatus(isUnsupported(error) ? statusUnsupported : statusError);
+        this.stepTargetError = true;
+        this.disclosureIncomplete = true;
+        this.failures.push('ESS-CF-TARGET: protected target observation');
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -3391,9 +3561,14 @@ export class ScenarioRun {
     let normalized = normalizeResult(result);
     if (normalized.response !== undefined && normalized.response !== null) {
       try {
+        const errorPayload = normalized.errorPayload;
         normalized = normalizeResult(
-          snapshotResponseResult(normalized, !this.directResponseCommands.has(step.command)),
+          snapshotResponseResult(
+            normalized,
+            this.disclosure === undefined && !this.directResponseCommands.has(step.command),
+          ),
         );
+        normalized.errorPayload = errorPayload;
       } catch (error) {
         return this.fail(index, `response observation: ${errorText(error)}`);
       }
@@ -3403,6 +3578,13 @@ export class ScenarioRun {
     this.lastCommand = step.command;
     this.lastInput = withoutInput ? undefined : input;
     this.lastActor = step.actor;
+    if (this.disclosure !== undefined) {
+      try {
+        this.disclosure.command(step.command, normalized);
+      } catch (error) {
+        return this.disclosureFailure(error);
+      }
+    }
     // Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
     // command.
     this.observed = {};
@@ -3420,6 +3602,7 @@ export class ScenarioRun {
 
   /** remember records an occurrence for the whole scenario, without recording one twice. */
   remember(event: ObservedEvent): void {
+    if (!this.disclosureMaps([event.payload])) return;
     for (const held of this.seen) {
       if (held.event === event.event && equal(held.payload, event.payload)) {
         return;
@@ -3695,6 +3878,7 @@ export class ScenarioRun {
       return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
     }
     this.lastView = result?.rows ?? [];
+    if (!this.disclosureMaps(this.lastView)) return false;
     this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
     this.queried = step.view;
     return true;
@@ -3846,6 +4030,7 @@ export class ScenarioRun {
           return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
         }
         this.lastView = result?.rows ?? [];
+        if (!this.disclosureMaps(this.lastView)) return false;
         this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
         this.queried = step.view;
       }
@@ -4145,7 +4330,11 @@ export class ScenarioRun {
         // The one method the model explicitly refuses to require. Unsupported is a fact about the
         // target, not a failure of the specification.
         this.recordStatus(statusUnsupported);
-        this.t.diagnostic(errorText(error));
+        this.t.diagnostic(
+          this.disclosure === undefined
+            ? errorText(error)
+            : 'ESS-CF-TARGET: protected target observation',
+        );
         return true;
       }
       return this.targetError(index, `observing \`${step.binding}\`: ${errorText(error)}`);
@@ -4531,7 +4720,11 @@ export class ScenarioRun {
       } catch (error) {
         if (isUnsupported(error)) {
           this.recordStatus(statusUnsupported);
-          this.t.diagnostic(errorText(error));
+          this.t.diagnostic(
+            this.disclosure === undefined
+              ? errorText(error)
+              : 'ESS-CF-TARGET: protected target observation',
+          );
           return true;
         }
         return this.targetError(index, `observing every invocation: ${errorText(error)}`);
@@ -4557,15 +4750,25 @@ export class ScenarioRun {
   }
 
   targetError(index: number, message: string): boolean {
+    this.stepTargetError = true;
+    this.disclosureIncomplete = true;
     this.recordStatus(statusError);
-    this.failures.push(`step ${index}: ${message}`);
+    this.failures.push(
+      this.disclosure === undefined
+        ? `step ${index}: ${message}`
+        : 'ESS-CF-TARGET: protected target observation',
+    );
     return false;
   }
 
   /** fail records one failed assertion and stops the scenario. */
   fail(index: number, message: string): boolean {
     this.status = statusFailed;
-    this.failures.push(`step ${index}: ${message}`);
+    this.failures.push(
+      this.disclosure === undefined
+        ? `step ${index}: ${message}`
+        : 'ESS-CF-PAYLOAD: protected observation did not satisfy the declared rule',
+    );
     return false;
   }
 
@@ -4576,8 +4779,12 @@ export class ScenarioRun {
 
   /** Record a target capability gap without collapsing its report/2 category. */
   unsupported(message: string): never {
+    this.stepTargetError = true;
+    this.disclosureIncomplete = true;
     this.recordStatus(statusUnsupported);
-    throw new SkipSignal(message);
+    throw new SkipSignal(
+      this.disclosure === undefined ? message : 'ESS-CF-TARGET: protected target observation',
+    );
   }
 
   /**
@@ -5495,6 +5702,11 @@ export function scenarioIdentity(id: string, major = 21): void {
   const parts = id.split('/');
   const segment = (index: number): string => parts[index] ?? '';
   let valid = false;
+  if (parts[1] === 'disclosure') {
+    // Inventory/refusal IDs use native grammar; executable policy admission owns the major gate.
+    parseDisclosureId(id);
+    return;
+  }
   const q = (value: string): boolean => qualifiedName.test(value);
   const k = (value: string): boolean => kebabName.test(value);
   if (parts.length === 3 && segment(1) === 'outcome') {
@@ -5590,10 +5802,12 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/31': 31,
   'ess-conformance/32': 32,
   'ess-conformance/33': 33,
+  'ess-conformance/34': 34,
+  'ess-conformance/35': 35,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
-const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33]);
+const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
 export function coverageMajor(major: number): boolean {
@@ -5648,7 +5862,16 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   const refused: { [id: string]: string } = {};
   for (const id of Object.keys(scenarios)) {
     scenarioIdentity(id, major);
-    const scenario = closed(scenarios[id], 'purpose steps source', '');
+    const scenario = closed(scenarios[id], 'purpose steps source', 'one_time_response');
+    let trace: OneTimeTrace | undefined;
+    if (scenario.one_time_response != null) {
+      if (major < 34) throw new Error('one-time response authority requires suite/34 or /35');
+      trace = admitOneTimeTrace(scenario.one_time_response, scenario);
+    }
+    if (id.split('/')[1] === 'disclosure') {
+      if (trace === undefined) throw new Error('disclosure identity requires policy');
+      admitDisclosureId(id, scenario, trace, version);
+    }
     const purpose = text(scenario.purpose);
     if (purpose.trim() === '' || [...purpose].length > 200) {
       throw new Error('invalid purpose');
@@ -5837,6 +6060,9 @@ function decodeScenarios(
         ? {
             purpose: (scenario.purpose as string) ?? '',
             steps: (scenario.steps as Node[]).map(decodeStep),
+            ...(scenario.one_time_response == null
+              ? {}
+              : { oneTimeResponse: admitOneTimeTrace(scenario.one_time_response, scenario) }),
           }
         : { purpose: (scenario.purpose as string) ?? '', steps: [], refused: refusal };
   }

@@ -335,6 +335,14 @@ fn typescript_reports_native_error_and_unsupported_counts_without_normalization(
     }
 }
 
+#[path = "support_one_time/fields.rs"]
+#[allow(dead_code)]
+mod disclosure_fields;
+#[path = "support_one_time/resources.rs"]
+mod disclosure_resources;
+#[allow(dead_code)]
+mod support_one_time;
+use support_one_time::{Mode, Service, FIRST};
 mod support_typescript_prerequisite;
 
 const LIVE_DRIVER: &str = r"
@@ -918,10 +926,11 @@ fn check_one_time_documents(files: &[PathBuf], label: &str) {
         &driver,
         r"
 import {readFileSync} from 'node:fs';
-import {strictJSON, admittedSuiteVersions, goMarshal} from './dist/runtime.js';
+import {strictJSON, admitSuite, admittedSuiteVersions, goMarshal} from './dist/runtime.js';
 let port;
 try { port = await import('./dist/one_time_response.js'); } catch {}
 const authorities = [];
+const fullAdmission = process.argv.slice(2).map(file => { try {admitSuite(readFileSync(file,'utf8'));return true;} catch{return false;} });
 const results = process.argv.slice(2).map(file => {
   try {
     const document = strictJSON(readFileSync(file, 'utf8'));
@@ -932,7 +941,7 @@ const results = process.argv.slice(2).map(file => {
     return true;
   } catch { authorities.push(null); return false; }
 });
-process.stdout.write(goMarshal({results, authorities, versions:admittedSuiteVersions()}));
+process.stdout.write(goMarshal({results, fullAdmission, authorities, versions:admittedSuiteVersions()}));
 ",
     )
     .unwrap();
@@ -951,7 +960,9 @@ process.stdout.write(goMarshal({results, authorities, versions:admittedSuiteVers
     for (index, file) in files.iter().enumerate() {
         let raw = std::fs::read_to_string(file).unwrap();
         let admitted = AdmittedSuite::from_json(&raw);
-        if actual["results"][index] != admitted.is_ok() {
+        if actual["results"][index] != admitted.is_ok()
+            || actual["fullAdmission"][index] != admitted.is_ok()
+        {
             disagreements.push(file.file_name().unwrap().to_string_lossy().to_string());
         }
         if let Ok(admitted) = admitted {
@@ -976,12 +987,58 @@ process.stdout.write(goMarshal({results, authorities, versions:admittedSuiteVers
         "native/TypeScript DTO admission disagrees: {disagreements:?}"
     );
     assert!(
-        !actual["versions"]
+        actual["versions"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|version| version == "ess-conformance/34" || version == "ess-conformance/35"),
-        "DTO preparation must not advertise unimplemented observer execution"
+            .any(|version| version == "ess-conformance/34"),
+        "the implemented observer executes suite34"
+    );
+}
+
+#[test]
+fn typescript_emits_all_shared_one_time_execution_suites() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-execution");
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(fixtures.join("manifest.json")).unwrap())
+            .unwrap();
+    let mut refused = Vec::new();
+    for case in manifest {
+        let file = fixtures.join(case["suite"].as_str().unwrap());
+        let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(file).unwrap()).unwrap();
+        if ess_conformance::ts::emit(admitted.suite()).is_err() {
+            refused.push(case["case"].clone());
+        }
+    }
+    assert!(
+        refused.is_empty(),
+        "live-executed suites refused by emitter: {refused:?}"
+    );
+}
+
+#[test]
+fn typescript_old_coverage_refusal_keeps_native_disclosure_id_grammar() {
+    let input = direct(true);
+    let mut value: Value = serde_json::from_str(input.selected().original_json()).unwrap();
+    value["coverage"]["refused"] = json!([{
+        "origin":"generated", "scenario":"library.api.Read/disclosure/returned/value/origin/as/anonymous",
+        "subject":{"kind":"command","name":"library.api.Read"}, "source":null,
+        "code":"ESS-SYNTH-001", "message":"candidate could not be arranged",
+        "effect":"candidate_not_emitted", "retained":null,"scope":"in_scope","needs":[]
+    }]);
+    value["coverage"]["counts"]["refused"] = json!(1);
+    let raw = value.to_string();
+    AdmittedSuite::from_json(&raw)
+        .expect("native IDs in a refusal are grammar, not executable vocabulary");
+    let file = runtime_package().join("old-refused-disclosure-id.json");
+    std::fs::write(&file, raw).unwrap();
+    let output = Command::new("node").arg("--input-type=module").arg("-e")
+        .arg("import {readFileSync} from 'node:fs'; import {admitSuite} from './dist/runtime.js'; admitSuite(readFileSync(process.argv[1],'utf8'));")
+        .arg(file).current_dir(runtime_package()).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -1048,12 +1105,368 @@ process.stdout.write(goMarshal({parsed, admitted}));
     );
 }
 
+fn one_time_driver() -> &'static PathBuf {
+    static DRIVER: OnceLock<PathBuf> = OnceLock::new();
+    DRIVER.get_or_init(|| {
+    // Same lossless network adapter as prerequisite controls, extended only for the shared
+    // service's declared-error and measured-window target surfaces.
+    let driver = LIVE_DRIVER
+        .replace("socket.on('error',reject);", "socket.setEncoding('utf8');socket.on('error',reject);")
+        .replace("response:value.Response??undefined,directEvents", "response:value.Response??undefined,error:value.Error??'',errorPayload:value.ErrorPayload??undefined,consistency:value.Consistency??'',directEvents")
+        .replace("redeliverEvent:async request", "markInstant:async request=>call('mark',upper(request)),observeElapsed:async request=>{const value=await call('elapsed',upper(request));return {elapsedMillis:value.ElapsedMillis,published:value.Published};},redeliverEvent:async request")
+        .replace("const scope={diagnostic(){},skip(){}", "const scope={diagnostic(message){console.log(message);},skip(){}");
+    let driver_path = runtime_package().join("one-time-live.mjs");
+    std::fs::write(&driver_path, driver).unwrap();
+    driver_path
+    })
+}
+
+#[test]
+fn typescript_one_time_live_observer_matches_all_shared_native_cases() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-execution");
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(fixtures.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest.len(), Mode::ALL.len());
+    let package = runtime_package();
+    let driver_path = one_time_driver();
+    let mut failures = Vec::new();
+    for case in manifest {
+        let label = case["case"].as_str().unwrap();
+        let input = fixtures.join(case["suite"].as_str().unwrap());
+        let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(&input).unwrap()).unwrap();
+        let report = package.join(format!("one-time-{label}-report.json"));
+        if report.exists() {
+            std::fs::remove_file(&report).unwrap();
+        }
+        let mode = serde_json::from_value(case["case"].clone()).unwrap();
+        let host = support_typescript_prerequisite::DisclosureHost::start(mode);
+        let output = Command::new("node")
+            .arg(driver_path)
+            .arg(input)
+            .arg(&host.address)
+            .env("ESS_REPORT_FORMAT", "2")
+            .env("ESS_REPORT_OUT", &report)
+            .output()
+            .unwrap();
+        let (trace, captured) = host.stop();
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report_bytes = std::fs::read_to_string(&report).unwrap_or_default();
+        for value in captured
+            .iter()
+            .map(String::as_str)
+            .chain([support_one_time::FIRST])
+        {
+            assert!(
+                !diagnostic.contains(value) && !report_bytes.contains(value),
+                "observed plaintext persisted for {label}"
+            );
+        }
+        let expected_exit = i32::from(case["status"] != "passed");
+        if output.status.code() != Some(expected_exit) || report_bytes.is_empty() {
+            failures.push(format!(
+                "{label}: exit {:?}, report exists {}",
+                output.status.code(),
+                !report_bytes.is_empty()
+            ));
+            continue;
+        }
+        CountReport::from_json(&report_bytes, &admitted).expect("actual produced report admits");
+        let actual: Value = serde_json::from_str(&report_bytes).unwrap();
+        let mut counts = actual["counts"].clone();
+        assert_eq!(
+            counts.as_object_mut().unwrap().remove("total"),
+            Some(json!(1))
+        );
+        if counts != case["counts"]
+            || json!(trace) != case["callback_trace"]
+            || !diagnostic.contains(case["required_code"].as_str().unwrap())
+        {
+            failures.push(format!(
+                "{label}: counts {counts}, callbacks {trace:?}, required diagnostic {}",
+                diagnostic.contains(case["required_code"].as_str().unwrap())
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "shared live disclosure mismatches: {failures:?}"
+    );
+}
+
+#[test]
+fn typescript_one_time_live_resources_match_native_encoded_boundaries() {
+    use disclosure_resources::ResourceMode;
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let manifest: Vec<Value> = serde_json::from_str(
+        &std::fs::read_to_string(fixtures.join("one-time-resources.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest.len(), ResourceMode::ALL.len());
+    let input = fixtures.join("one-time-execution/view.json");
+    let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(&input).unwrap()).unwrap();
+    let mut failures = Vec::new();
+    for (mode, case) in ResourceMode::ALL.into_iter().zip(manifest) {
+        assert_eq!(
+            serde_json::to_value(mode.expected()).unwrap(),
+            case["status"]
+        );
+        assert_eq!(serde_json::to_value(mode).unwrap(), case["case"]);
+        let label = case["case"].as_str().unwrap();
+        let report = runtime_package().join(format!("resource-{label}.json"));
+        if report.exists() {
+            std::fs::remove_file(&report).unwrap();
+        }
+        let host = support_typescript_prerequisite::DisclosureHost::start_resource(mode);
+        let output = Command::new("node")
+            .arg(one_time_driver())
+            .arg(&input)
+            .arg(&host.address)
+            .env("ESS_REPORT_FORMAT", "2")
+            .env("ESS_REPORT_OUT", &report)
+            .output()
+            .unwrap();
+        let (trace, captured) = host.stop();
+        let report_bytes = std::fs::read_to_string(&report).unwrap_or_default();
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for value in captured
+            .iter()
+            .map(String::as_str)
+            .chain([support_one_time::FIRST])
+        {
+            assert!(
+                !diagnostic.contains(value) && !report_bytes.contains(value),
+                "observed plaintext persisted for {label}"
+            );
+        }
+        if output.status.code() != Some(i32::from(case["status"] != "passed"))
+            || report_bytes.is_empty()
+        {
+            failures.push(format!(
+                "{label}: exit {:?}, report exists {}",
+                output.status.code(),
+                !report_bytes.is_empty()
+            ));
+            continue;
+        }
+        CountReport::from_json(&report_bytes, &admitted).unwrap();
+        let actual: Value = serde_json::from_str(&report_bytes).unwrap();
+        let code = if case["status"] == "passed" {
+            "ESS-CF-DISCLOSURE"
+        } else {
+            "ESS-CF-TARGET"
+        };
+        if actual["counts"] != case["counts"]
+            || json!(trace) != case["callback_trace"]
+            || !diagnostic.contains(code)
+        {
+            failures.push(format!(
+                "{label}: counts {}, callbacks {trace:?}, required diagnostic {}",
+                actual["counts"],
+                diagnostic.contains(code)
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "shared resource mismatches: {failures:?}"
+    );
+}
+
+#[test]
+fn typescript_one_time_fields_windows_and_original_coverage35_match_native() {
+    use disclosure_fields::FieldMode;
+    use support_typescript_prerequisite::DisclosureHost;
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    for group in ["one-time-fields", "one-time-coverage", "one-time-windows"] {
+        let covered = group == "one-time-coverage";
+        let directory = fixtures.join(group);
+        let input = directory.join(if covered { "input.json" } else { "suite.json" });
+        let original = std::fs::read_to_string(&input).unwrap();
+        let admitted = if covered {
+            let carrier = AdmittedInput::from_json(&original).unwrap();
+            assert_eq!(carrier.parents().len(), 1);
+            assert_eq!(
+                carrier.selected().suite().provenance.suite_version.major(),
+                35
+            );
+            carrier.selected().clone()
+        } else {
+            AdmittedSuite::from_json(&original).unwrap()
+        };
+        let manifest: Vec<Value> = serde_json::from_str(
+            &std::fs::read_to_string(directory.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            manifest.len(),
+            if group == "one-time-windows" { 2 } else { 4 }
+        );
+        for (index, case) in manifest.into_iter().enumerate() {
+            let host = if group == "one-time-fields" {
+                let mode = FieldMode::ALL[index];
+                assert_eq!(serde_json::to_value(mode).unwrap(), case["case"]);
+                assert_eq!(
+                    serde_json::to_value(mode.expected()).unwrap(),
+                    case["status"]
+                );
+                DisclosureHost::start_fields(mode)
+            } else {
+                DisclosureHost::start(serde_json::from_value(case["case"].clone()).unwrap())
+            };
+            let report = runtime_package().join(format!("{group}-{index}.json"));
+            if report.exists() {
+                std::fs::remove_file(&report).unwrap();
+            }
+            let output = Command::new("node")
+                .arg(one_time_driver())
+                .arg(&input)
+                .arg(&host.address)
+                .env("ESS_REPORT_FORMAT", "2")
+                .env("ESS_REPORT_OUT", &report)
+                .output()
+                .unwrap();
+            let (trace, captured) = host.stop();
+            let raw = std::fs::read_to_string(&report).unwrap_or_default();
+            let diagnostic = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            for value in captured
+                .iter()
+                .map(String::as_str)
+                .chain([support_one_time::FIRST])
+            {
+                assert!(
+                    !raw.contains(value) && !diagnostic.contains(value),
+                    "private value persisted: {group}/{index}"
+                );
+            }
+            assert_eq!(
+                output.status.code(),
+                Some(i32::from(case["status"] != "passed")),
+                "{group}/{index}: {diagnostic}"
+            );
+            CountReport::from_json(&raw, &admitted).unwrap();
+            let actual: Value = serde_json::from_str(&raw).unwrap();
+            assert_eq!(actual["counts"], case["counts"], "{group}/{index}");
+            assert_eq!(json!(trace), case["callback_trace"], "{group}/{index}");
+            assert!(
+                diagnostic.contains(case["required_code"].as_str().unwrap()),
+                "{group}/{index}"
+            );
+            assert_eq!(std::fs::read_to_string(&input).unwrap(), original);
+        }
+    }
+}
+
+#[test]
+fn typescript_one_time_observer_preserves_special_observed_object_keys() {
+    private_adapter_observation(
+        "special-key",
+        "return {rows:[Object.fromEntries([['__proto__',value.Rows[0].audit]])]};",
+        "failed",
+        "ESS-CF-DISCLOSURE",
+    );
+}
+
+#[test]
+fn typescript_one_time_observer_refuses_invalid_unicode_without_repair() {
+    for (label, replacement) in [
+        ("surrogate-value", r"return {rows:[{audit:'\ud800'}]};"),
+        (
+            "surrogate-key",
+            r"return {rows:[Object.fromEntries([['\ud800','public']])]};",
+        ),
+    ] {
+        private_adapter_observation(label, replacement, "unsupported", "ESS-CF-TARGET");
+    }
+}
+
+fn private_adapter_observation(label: &str, replacement: &str, status: &str, code: &str) {
+    let package = runtime_package();
+    let driver = std::fs::read_to_string(one_time_driver()).unwrap();
+    assert!(driver.contains("return {rows:value.Rows};"));
+    // Relocate the same real service's leaked value to a valid own JSON object key. Neither
+    // the target's sensitive bytes nor its actual callback execution is replaced by a fixture answer.
+    let driver = driver.replace("return {rows:value.Rows};", replacement);
+    let path = package.join(format!("one-time-{label}.mjs"));
+    std::fs::write(&path, driver).unwrap();
+    let input =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-execution/view.json");
+    let report = package.join(format!("one-time-{label}-report.json"));
+    if report.exists() {
+        std::fs::remove_file(&report).unwrap();
+    }
+    let host = support_typescript_prerequisite::DisclosureHost::start(Mode::View);
+    let output = Command::new("node")
+        .arg(path)
+        .arg(input)
+        .arg(&host.address)
+        .env("ESS_REPORT_FORMAT", "2")
+        .env("ESS_REPORT_OUT", &report)
+        .output()
+        .unwrap();
+    let (trace, captured) = host.stop();
+    assert!(trace.contains(&"execute_command") && trace.contains(&"query_view"));
+    let raw = std::fs::read_to_string(report).unwrap();
+    let result: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        result["counts"][status], 1,
+        "adapter observation boundary: {label}"
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let printed = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for value in captured {
+        assert!(!raw.contains(&value) && !printed.contains(&value));
+    }
+    assert!(printed.contains(code));
+}
+
+#[test]
+fn typescript_one_time_malformed_and_old_authority_refuses_before_callbacks() {
+    let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut checked = 0;
+    for group in ["one-time-response", "one-time-response-identifiers"] {
+        for entry in std::fs::read_dir(fixture_root.join(group)).unwrap() {
+            let file = entry.unwrap().path();
+            let raw = std::fs::read_to_string(&file).unwrap();
+            if AdmittedSuite::from_json(&raw).is_err() {
+                refused_depth_document(
+                    &raw,
+                    &format!("{group}-{}", file.file_stem().unwrap().to_string_lossy()),
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked >= 20, "the malformed vector inventory actually ran");
+    let original =
+        std::fs::read_to_string(fixture_root.join("one-time-response/valid-string.json")).unwrap();
+    for version in ["ess-conformance/32", "ess-conformance/36"] {
+        let raw = original.replace("ess-conformance/34", version);
+        refused_depth_document(
+            &raw,
+            &format!("one-time-version-{}", version.replace('/', "-")),
+        );
+    }
+}
+
 #[test]
 fn typescript_one_time_string_constraint_grammar_and_bounds_match_native() {
-    let base: Value = serde_json::from_str(include_str!(
-        "fixtures/one-time-response/valid-constrained-string.json"
-    ))
-    .unwrap();
     let mut variations = vec![
         ("compact-count", json!("value.count >= 4")),
         (
@@ -1142,6 +1555,14 @@ fn typescript_one_time_string_constraint_grammar_and_bounds_match_native() {
         "depth33",
         (0..33).fold(json!("value"), |inner, _| json!({"not":inner})),
     ));
+    check_constraint_variations(variations);
+}
+
+fn check_constraint_variations(variations: Vec<(&str, Value)>) {
+    let base: Value = serde_json::from_str(include_str!(
+        "fixtures/one-time-response/valid-constrained-string.json"
+    ))
+    .unwrap();
     let directory = runtime_package().join("constraint-vectors");
     std::fs::create_dir_all(&directory).unwrap();
     let mut files = Vec::new();

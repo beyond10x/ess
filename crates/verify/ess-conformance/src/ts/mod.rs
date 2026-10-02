@@ -64,11 +64,11 @@ pub const PACKAGE: &str = "essconform";
 
 /// This runtime's ceiling is independent of another language's port status.
 fn refuse_unadmitted(suite: &ConformanceSuite) -> Result<(), crate::admission::AdmissionError> {
-    if suite.provenance.suite_version.major() > 33 {
+    if suite.provenance.suite_version.major() > 35 {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedTarget",
             "$suite",
-            "TypeScript executes suites through ess-conformance/33",
+            "TypeScript executes suites through ess-conformance/35",
         ));
     }
     Ok(())
@@ -496,6 +496,13 @@ Suite versions 28–33 execute direct response contracts, external event deliver
 context, and instance references nested in lists or mappings. Implement `deliverEvent` where the
 suite requires it; a missing capability is recorded as unsupported. Delivery invocation checks
 observe the complete finite window, so a late wrong retry cannot be hidden by an early correct one.
+
+Suites 34–35 execute private one-time response observations. Return the complete declared-error
+payload in optional `CommandResult.errorPayload`, beside the existing `error` name; include unknown
+keys too. The runner scans response values, error payloads, view rows and independent event logs.
+Finite delayed observation windows require `markInstant` and `observeElapsed` completion evidence.
+Observed plaintext never enters diagnostics or count reports. Serial randomized exploration and
+concurrent history recording explicitly refuse marked models before callbacks or output creation.
 
 ## Numbers a binary64 cannot hold
 

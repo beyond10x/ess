@@ -1,4 +1,4 @@
-// Closed disclosure authority. The suite admission ceiling remains unchanged until execution exists.
+// Closed disclosure authority and private, scenario-local observation for suite versions34/35.
 import {
   accessorType,
   admitOutcome,
@@ -20,6 +20,7 @@ import {
   admitDirectResponse,
   admitDirectResponseField,
   nativeJSONBytes,
+  compareDirectResponse,
 } from './direct_response.js';
 import type { DirectResponse } from './direct_response.js';
 import {
@@ -30,6 +31,7 @@ import {
   parseOperand,
   parseDecimalLiteral,
   splitPredicateComparison,
+  facts,
 } from './predicate.js';
 
 export interface StringConstraints {
@@ -709,4 +711,190 @@ export function refusePrivateExploration(ir: Node): void {
     )
   )
     throw new Error('UnsupportedOneTimeDisclosure');
+}
+
+/** A closed, value-free failure: captured observations never become messages. */
+export class DisclosureViolation extends Error {
+  readonly kind: 'disclosure' | 'payload' | 'resource';
+  constructor(kind: 'disclosure' | 'payload' | 'resource') {
+    super(
+      kind === 'resource'
+        ? 'ESS-CF-TARGET'
+        : kind === 'payload'
+          ? 'ESS-CF-PAYLOAD'
+          : 'ESS-CF-DISCLOSURE',
+    );
+    this.kind = kind;
+  }
+}
+
+/** Private per-scenario state. It has no serialization or diagnostic operation. */
+export class DisclosureCaptures {
+  #values: string[] = [];
+  #bytes = 0;
+  #observed = new Set<string>();
+  readonly policy: OneTimeTrace;
+  constructor(policy: OneTimeTrace) {
+    this.policy = policy;
+  }
+  private text(text: string, values = this.#values): void {
+    if (values.some((value) => text.includes(value))) throw new DisclosureViolation('disclosure');
+  }
+  private scan(value: Node, values: string[], depth: number, budget: { members: number }): void {
+    if (depth > 128 || budget.members > 65536) throw new DisclosureViolation('resource');
+    if (typeof value === 'string') this.text(value, values);
+    else if (Array.isArray(value))
+      for (const child of value) {
+        budget.members += 1;
+        this.scan(child, values, depth + 1, budget);
+      }
+    else if (isObject(value) && !(value instanceof JsonNumber)) {
+      for (const [key, child] of Object.entries(value)) {
+        if (++budget.members > 65536) throw new DisclosureViolation('resource');
+        this.text(key, values);
+        this.scan(child, values, depth + 1, budget);
+      }
+    }
+  }
+  observe(value: Node, values = this.#values): void {
+    // Resource refusal precedes substring comparison, including over-budget leaked values.
+    this.scan(value, [], 0, { members: 0 });
+    let bytes = 0;
+    const add = (count: number) => {
+      bytes += count;
+      if (bytes > 1048576) throw new DisclosureViolation('resource');
+    };
+    const string = (text: string) => {
+      add(2);
+      for (const character of text) {
+        const code = character.codePointAt(0)!;
+        if (code >= 0xd800 && code <= 0xdfff) throw new DisclosureViolation('resource');
+        add(
+          code === 34 || code === 92 || [8, 9, 10, 12, 13].includes(code)
+            ? 2
+            : code < 32
+              ? 6
+              : code < 128
+                ? 1
+                : code < 2048
+                  ? 2
+                  : code < 65536
+                    ? 3
+                    : 4,
+        );
+      }
+    };
+    const write = (node: Node): void => {
+      if (typeof node === 'string') string(node);
+      else if (node instanceof JsonNumber || typeof node === 'number') {
+        const normalized = literalWire(
+          node instanceof JsonNumber ? numericLiteral(node.raw) : node,
+        );
+        add(normalized instanceof JsonNumber ? normalized.raw.length : String(normalized).length);
+      } else if (Array.isArray(node)) {
+        add(2 + Math.max(0, node.length - 1));
+        for (const child of node) write(child);
+      } else if (isObject(node)) {
+        const entries = Object.entries(node);
+        add(2 + Math.max(0, entries.length - 1));
+        for (const [key, child] of entries) {
+          string(key);
+          add(1);
+          write(child);
+        }
+      } else if (node === null) add(4);
+      else if (typeof node === 'boolean') add(node ? 4 : 5);
+      else throw new DisclosureViolation('resource');
+    };
+    write(value);
+    this.scan(value, values, 0, { members: 0 });
+  }
+  maps(rows: Record<string, Node>[]): void {
+    this.observe(rows);
+  }
+  private constraints(authority: OneTimeResponse, written: string, value: Node): void {
+    const type = accessorType(written, 0)[0];
+    if (type.startsWith('Optional<')) {
+      if (value != null) this.constraints(authority, type.slice(9, -1), value);
+      return;
+    }
+    if (type.startsWith('List<')) {
+      for (const child of array(value)) this.constraints(authority, type.slice(5, -1), child);
+      return;
+    }
+    if (type.startsWith('Map<')) {
+      for (const child of Object.values(value))
+        this.constraints(authority, type.slice(type.indexOf(',') + 1, -1).trim(), child);
+      return;
+    }
+    const rules = authority.constraints[type];
+    if (rules !== undefined) {
+      if (
+        typeof value !== 'string' ||
+        (rules.alphabet !== null &&
+          [...value].some((character) => !rules.alphabet!.includes(character))) ||
+        (rules.prefix !== null && !value.startsWith(rules.prefix))
+      )
+        throw new DisclosureViolation('payload');
+      for (const predicate of rules.invariants) {
+        const result = predicate.evaluate(facts({ value }));
+        if (result !== 'true')
+          throw new DisclosureViolation(result === 'unknown' ? 'resource' : 'payload');
+      }
+    }
+    const declaration = authority.shape.declarations[type];
+    if (declaration?.kind === 'newtype') this.constraints(authority, declaration.of, value);
+    else if (declaration?.kind === 'struct') {
+      for (const field of declaration.fields)
+        if (Object.hasOwn(value, field.name))
+          this.constraints(authority, field.type, value[field.name]);
+    } else if (declaration?.kind === 'union') {
+      const key = declaration.tag === 'value' ? 'content' : 'value';
+      if (Object.hasOwn(value, key))
+        this.constraints(authority, declaration.variants[value[declaration.tag]], value[key]);
+    }
+  }
+  command(command: string, result: Node): void {
+    if (result.response != null) this.observe(result.response);
+    const origin = this.policy.origins.find(
+      (origin) => origin.command === command && origin.outcome.outcome === result.outcome,
+    );
+    if (origin !== undefined) {
+      if (result.error) throw new DisclosureViolation('payload');
+      try {
+        compareDirectResponse(origin.response.shape, result.response);
+      } catch {
+        throw new DisclosureViolation('payload');
+      }
+      for (const field of origin.response.shape.fields)
+        if (Object.hasOwn(result.response, field.name))
+          this.constraints(origin.response, field.type, result.response[field.name]);
+      const added: string[] = [];
+      for (const field of origin.fields) {
+        const value = result.response[field];
+        if (typeof value !== 'string' || value.length === 0)
+          throw new DisclosureViolation('payload');
+        if (added.some((other) => other.includes(value) || value.includes(other)))
+          throw new DisclosureViolation('disclosure');
+        added.push(value);
+      }
+      const bytes = added.reduce((sum, value) => sum + new TextEncoder().encode(value).length, 0);
+      if (this.#values.length + added.length > 256 || this.#bytes + bytes > 1048576)
+        throw new DisclosureViolation('resource');
+      for (const [key, value] of Object.entries(result.response)) {
+        this.text(key, added);
+        if (!origin.fields.includes(key)) this.scan(value, added, 0, { members: 0 });
+      }
+      this.#values.push(...added);
+      this.#bytes += bytes;
+      this.#observed.add(`${origin.command}/${origin.outcome.outcome}`);
+    }
+    this.maps((result.directEvents ?? []).map((event: Node) => event.payload));
+    if (result.errorPayload != null) this.observe(result.errorPayload);
+  }
+  complete(): boolean {
+    return this.policy.required_origins.every((origin) =>
+      this.#observed.has(`${origin.command}/${origin.outcome}`),
+    );
+  }
 }
