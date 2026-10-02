@@ -197,8 +197,14 @@ Holds when the command has been sent, with at least the input fields given.
 - expect_command: {command: partners.DeletePartner, input: {id: pt-003}}
 ```
 
+Input values compare as JSON values with their types: `7500` holds only for the number, `'7500'`
+only for the string. An object holds when every field it names holds, at any depth; a list holds
+item by item. A dotted field name reaches into nested objects: `limits.cents: 7500` is
+`limits: {cents: 7500}`.
+
 A command never sent fails naming the commands that were; a command sent with other input fails
-showing the input it was sent with.
+showing the input it was sent with and, for each send, the first field that differs with both
+values and their types (`at website it sent string "7500", expected number 7500`).
 
 ## Fixtures
 

@@ -632,22 +632,22 @@ impl<'d> Runner<'d> {
                 others.join(", ")
             ));
         }
-        let holds = |given: &BTreeMap<String, Value>| {
-            input
-                .iter()
-                .all(|(field, value)| given.get(field).map(scalar) == Some(scalar(value)))
-        };
-        if named.iter().any(|given| holds(given)) {
+        let mismatches: Vec<String> = named
+            .iter()
+            .filter_map(|given| input_mismatch(input, given))
+            .collect();
+        if mismatches.len() < named.len() {
             return Ok(());
         }
         Err(format!(
-            "command {command} was sent with {}, not with {}",
+            "command {command} was sent with {}, not with {}: {}",
             named
                 .iter()
                 .map(|given| show_input(given))
                 .collect::<Vec<_>>()
                 .join(" and "),
-            show_input(input)
+            show_input(input),
+            mismatches.join("; ")
         ))
     }
 
@@ -857,9 +857,99 @@ fn key_spec(key: char) -> String {
 fn show_input(input: &BTreeMap<String, Value>) -> String {
     let fields: Vec<String> = input
         .iter()
-        .map(|(name, value)| format!("{name}={}", scalar(value)))
+        .map(|(name, value)| format!("{name}={}", json(value)))
         .collect();
     format!("{{{}}}", fields.join(", "))
+}
+
+/// A value as JSON, so `7500` and `"7500"` read differently.
+fn json(value: &Value) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| scalar(value))
+}
+
+/// A value with its JSON type: `number 7500`, `string "7500"`.
+fn typed(value: &Value) -> String {
+    let kind = match value {
+        Value::Null => return "null".to_owned(),
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Sequence(_) => "list",
+        Value::Mapping(_) => "object",
+        Value::Tagged(tagged) => return typed(&tagged.value),
+    };
+    format!("{kind} {}", json(value))
+}
+
+/// Where `given` (a sent input) departs from `expected`, if it does: the first expected field it
+/// lacks or holds another value at, with both values and their types. A field name with dots
+/// reaches into nested objects (`limits.cents`).
+fn input_mismatch(
+    expected: &BTreeMap<String, Value>,
+    given: &BTreeMap<String, Value>,
+) -> Option<String> {
+    let given = Value::Mapping(
+        given
+            .iter()
+            .map(|(name, value)| (Value::String(name.clone()), value.clone()))
+            .collect(),
+    );
+    expected.iter().find_map(|(field, wanted)| {
+        let found = field
+            .split('.')
+            .try_fold(&given, |value, segment| value.get(segment));
+        match found {
+            None => Some(format!("{field} is absent, expected {}", typed(wanted))),
+            Some(found) => value_mismatch(wanted, found, field),
+        }
+    })
+}
+
+/// Where `found` departs from `wanted` at `path`: values compare as JSON, with their types; an
+/// expected object holds when every field it names holds, a list when it is equal item by item.
+fn value_mismatch(wanted: &Value, found: &Value, path: &str) -> Option<String> {
+    let differs = || {
+        Some(format!(
+            "at {path} it sent {}, expected {}",
+            typed(found),
+            typed(wanted)
+        ))
+    };
+    match (wanted, found) {
+        (Value::Tagged(tagged), _) => value_mismatch(&tagged.value, found, path),
+        (_, Value::Tagged(tagged)) => value_mismatch(wanted, &tagged.value, path),
+        (Value::Mapping(fields), Value::Mapping(_)) => fields.iter().find_map(|(name, value)| {
+            let name = scalar(name);
+            let at = format!("{path}.{name}");
+            match found.get(name.as_str()) {
+                None => Some(format!("{at} is absent, expected {}", typed(value))),
+                Some(inner) => value_mismatch(value, inner, &at),
+            }
+        }),
+        (Value::Sequence(items), Value::Sequence(sent)) => {
+            if items.len() != sent.len() {
+                return differs();
+            }
+            items
+                .iter()
+                .zip(sent)
+                .enumerate()
+                .find_map(|(index, (item, sent))| {
+                    value_mismatch(item, sent, &format!("{path}[{index}]"))
+                })
+        }
+        (Value::Number(left), Value::Number(right)) => {
+            let same = match (left.as_f64(), right.as_f64()) {
+                (Some(left), Some(right)) => {
+                    left.partial_cmp(&right) == Some(std::cmp::Ordering::Equal)
+                }
+                _ => left == right,
+            };
+            (!same).then(differs).flatten()
+        }
+        _ if wanted == found => None,
+        _ => differs(),
+    }
 }
 
 /// The fields a form edits, in the order the terminal moves through them (first tab).
