@@ -15,6 +15,8 @@ relations:
 - depends_on: story:served-view-params
 scope:
 - confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/go/context.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/go/entry.rs
@@ -27,6 +29,8 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/store.rs
 - confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/context.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/entry.rs
@@ -36,6 +40,8 @@ scope:
   path: crates/generate/ess-synth/src/rust/layout.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/mod.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/single.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/store.rs
 - confidence: cited
@@ -48,7 +54,7 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 8
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -155,3 +161,5 @@ done needs the PR's CI run, whose `test` job has Go 1.25.10, showing these tests
 After story:go-generated-behaviour (the Go store implements its ports) and story:served-view-params (both edit `{go,rust}/http.rs`). Before
 story:related-guard-behaviour: both regenerate `generated/` and edit `synthesize.md`.
 `CHANGELOG.md` is a merge-time edit (epic).
+
+Recovery scope check (2026-10-02): the implementor read generated/rust/gatepass/crates/gatepass-types/src/primitives.rs:33 and found Uuid is a local string newtype; the earlier Decisions phrase "the uuid crate the generated types use" was an incorrect assumption. The entry runtime may use the uuid crate to mint v4 values and construct the existing wrapper, preserving its public representation. crates/generate/ess-synth/src/go/behaviour.rs:166 and rust/behaviour.rs:177 already collect the actual Context and storage uses privately. Reuse that metadata for store/context generation; both files are now cited typed scope. rust/single.rs is inferred scope until the generated entry's single-crate relayout is verified. No behavioral semantics are delegated to a new traversal. Concurrent PR #387 edits the emitters and generated fixtures; reconcile its eventual merge before publishing this unit.
