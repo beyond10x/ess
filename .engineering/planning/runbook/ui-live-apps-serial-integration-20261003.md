@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 4
+revision: 5
 ---
 ## Authority and delivery
 
@@ -49,3 +49,9 @@ The exclusively reused predecessor build cache's tmp directory was compressed to
 ## Confirmed merge boundary
 
 Operator answered on 2026-10-03: "Keep the existing ess/21 bundle; hold this PR until the remaining bundle work is ready". Implement the five approved units serially and accumulate them on batch/ui-live-apps-complete-20261003. The single PR remains held/unmergeable until the original full ess/21 bundle is ready. No omitted bundle member is implicitly deferred, and no partial-format release is authorized. This approval resolves the prior ownership-of-format question at the merge boundary; the coordinator owns shared format mechanics only as needed for the five units, preserving all other bundle obligations.
+
+## Exact-main fixture reference and retained cleanup limit
+
+The coordinator created managed ess-serial-baseline-20261003 at1ff305685, built ess-cli with debug0/jobs2/locked in that tree's own target (exit0,4m22s), and synthesized examples/billing and examples/gatepass for Rust and Go to `$HOME/.cache/uilab-todo/serial-20261003/baseline/reference`. All4 references matched their committed main fixture trees with diff-qr excluding .ess-output. The baseline executable is retained privately as baseline/ess-main. Its1.2GiB target was removed with cargo clean; the helper tree was clean, its own lease ended, and managed retirement was reviewed. References are suitable for official output adopt; no fixture copying or ownership bypass is permitted. Current-main comparison tests already exclude .ess-output, so retain official ownership metadata.
+
+The older w4 manager retry still returns worktree-dirty even after the remaining empty target directories were removed; repeated archive replacement preserves each state but did not complete retirement. Keep ess-w4-ui-tui-app retained and report the manager refusal. No manual checkout removal is authorized. w5/w6 cleanup succeeded. Historical standalone consumer rust-target caches under the original session scratch were removed with cargo clean after confirming no session process used them; source/log/report evidence remains. The surrounding find traversal printed missing-directory notices after cargo removed those targets (wrapper exit1); individual cargo removals completed. This is resource cleanup, not a test result.
