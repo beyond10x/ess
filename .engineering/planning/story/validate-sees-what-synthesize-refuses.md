@@ -4,9 +4,12 @@ id: story:validate-sees-what-synthesize-refuses
 kind: story
 status: active
 title: validate reports authored-scenario and unset-field problems synthesize would hit
+refs:
+- provider: github
+  reference: beyond10x/ess#112
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-26T02:51:13Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-26T02:51:44Z", actor: "human:timo", revision: 3, imported: true}

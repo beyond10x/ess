@@ -4,9 +4,12 @@ id: story:list-and-text-guards-are-synthesized
 kind: story
 status: active
 title: List and text-ordering input guards get synthesized scenarios
+refs:
+- provider: github
+  reference: beyond10x/ess#94
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-25T21:37:13Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-25T21:37:45Z", actor: "human:timo", revision: 3, imported: true}

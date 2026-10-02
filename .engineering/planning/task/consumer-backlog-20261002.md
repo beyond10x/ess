@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -29,7 +29,8 @@ The initial source set is 82 open GitHub issues and 161 nonterminal stories in a
 ## Current evidence
 
 - PR 381 at 28aeddddfc86c4a92c48aba98d5d70091ba4219d carries 21 fixes. Its ESS Gate passed; common security failed with `candidate exceeds scan limit` in Actions run 36961709429. The B10X_GATES_POLICY secret owner must refresh its approved baseline. No bypass or repeated unchanged rerun.
-- PR 383 at f07416ee95127532b819d5665e5e262150909d05 additionally fails two Entity Runtime lowering tests in Actions run 36964878883. They retain badge fulfillment expectations after the example changed to input assignment.
+- Generated-server corrections are published in combined PR 386 at f0b220099119090795c93cae07c14e6209918f67. PRs 383 and 384 are closed as superseded after verifying both exact heads are ancestors of this candidate. Local affected packages: 453 passed, two existing ignored; exact task test-xtask: 362 passed, three existing ignored; concurrent served-view nextest: eight passed. Strict Clippy and formatting passed. Correctness CI run 36987215656 is pending; common security run 36987213274 failed with the same scan-limit refusal. No integration or release claimed.
+- Story feature-request-309 has five measured failing regressions before the shared-input aggregate-key fix and five passing after it. All 300 package lanes completed successfully: 2145 passed, zero failed, 11 existing ignored. Independent review is in progress. The full-package baseline was interrupted for disk pressure and its total is unknown.
 - The 0.51.0 GitHub Release is public with four archives and SHA256SUMS. No 0.52.0 tag exists at intake.
 
 ## Completion boundary

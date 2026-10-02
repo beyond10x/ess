@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/tests/aggregate_shared_input_keys.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:44:47Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:44:47Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -30,7 +30,7 @@ An aggregate whose group keys copy the same creating input is synthesized with a
 
 ## Acceptance
 
-The named regression `aggregate_shared_input_keys` compiles a minimal single-state entity with two group keys copied from one input, synthesizes its aggregate scenario without ESS-SYNTH-017, and runs it successfully against the interpreter. Independent additional keys remain discriminated; reordered declarations and Optional shared keys preserve their meaning. Existing tests that detect truly rewritten keys continue to fail incorrect targets.
+The named regression `aggregate_shared_input_keys` compiles a minimal single-state entity with two group keys copied from one input, synthesizes its aggregate scenario without ESS-SYNTH-017, and runs it successfully against interpreted commands with independently computed aggregate views over their resulting state. Independent additional keys remain discriminated; reordered declarations and Optional shared keys preserve their meaning. Existing tests that detect truly rewritten keys continue to fail incorrect targets. The view target must not reproduce the tuple planner's algorithm.
 
 ## Origin
 
@@ -56,3 +56,7 @@ Accept as proposed. Fix the synthesis defect without weakening refusal checks or
 - Inferred: `crates/verify/ess-conformance/tests/aggregate_shared_input_keys.rs`, new regression through assembly, synthesis and interpreter.
 - Inferred: `docs/design/aggregate-views.md`, qualify the independent-key pattern where creating input mappings require equality.
 - Confidence high: the source walk identifies the contradictory assignments and refusal. Execution remains to be established by the regression.
+
+## Verification refinement
+
+The implementation's first focused red run fails five regressions with the reported nonexistent-move diagnostic. A first treatment synthesizes those scenarios, but the repository interpreter refuses every view (`Interpreted::query_view`: views are not interpreted yet). The acceptance therefore uses the existing interpreter for commands and an independent aggregate view over its resulting state. This preserves the actual acceptance claim, an exact runnable aggregate scenario, while making the unsupported pre-existing view seam explicit; it is not a reason to omit the Passed assertion.

@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 2
+revision: 3
 ---
 ## Intake
 
@@ -99,170 +99,171 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #197 | Feature request: a refused command cannot declare the compensating change the service makes before answering | Pending verification and fit review; no completion claim. |
 | #194 | Feature request: a binding cannot invoke only when an Optional path is present (ESS-BINDING-015 leaves no way to say 'skip') | Pending verification and fit review; no completion claim. |
 
+
 ## Nonterminal AEP stories
 
-Includes possible stale records and product roadmap work; each requires a scope disposition before counting it as a consumer defect.
+Source audit covers all 87 stories initially lacking structured issue references; 17 hidden references are now attached. Source corroboration is not test evidence. Stale candidates require full acceptance/release verification before closure; product work remains accounted for rather than silently excluded.
 
-| Artifact | Status at intake | Outcome | Current disposition |
+| Artifact | Current status | Disposition | Evidence / next verification |
 |---|---|---|---|
-| story:a-branch-may-clear-the-field-it-owns | draft | A branch may clear the field it owns | pending source verification |
-| story:a-browser-that-answered-http-once-is-still-a-slow-start | draft | A browser that answered HTTP once is still a slow start | pending source verification |
-| story:a-killed-childs-outcome-says-which-signal-ended-it | draft | A killed child's outcome says which signal ended it | pending source verification |
-| story:a-macro-invoked-twice-in-one-module-refuses-the-consumer-gate | active | A macro invoked twice in one module refuses the consumer gate | pending source verification |
-| story:a-marked-region-is-not-a-scan-of-what-runs | draft | A marked region is not a scan of what runs | pending source verification |
-| story:a-no-view-arranged-half-probes-the-row-through-the-command | draft | A no-view arranged half probes the row through the command | pending source verification |
-| story:a-refusal-records-the-document-it-was-read-from | draft | A refusal records the document it was read from | pending source verification |
-| story:a-report-says-why-a-scenario-was-skipped | draft | A report says why a scenario was skipped | pending source verification |
-| story:a-skip-says-why-the-target-could-not-answer | active | A skip says why the target could not answer | pending source verification |
-| story:acceptance-runs-as-toolchain-scenarios | draft | A toolchain story's acceptance is scenarios a conformance run decides | pending source verification |
-| story:adopter-reviewed-delta | draft | An adopter's approval of a specification change is a committed delta | pending source verification |
-| story:aggregate-views | active | A view can return aggregates over one entity's rows | pending source verification |
-| story:binding-delivery-at-most-once | proposed | A binding can say it delivers at most once | pending source verification |
-| story:browser-fixture-startup-deadline | active | The Firefox BiDi fixture assumes a 30-second startup on a shared runner | pending source verification |
-| story:change-fragment-upgrade-obligation | draft | A change fragment states the upgrade a release asks of adopters | pending source verification |
-| story:collection-quantifiers-witnessed-everywhere | draft | Every collection quantifier is witnessed with several elements, or says why not | pending source verification |
-| story:collections-reach-their-upper-count-boundary | draft | An upper count bound on a collection is never sent at its accepting boundary | pending source verification |
-| story:concurrent-history-records-inputs | draft | A concurrent history records each command's input | pending source verification |
-| story:consumer-accounting-baseline-never-extended | active | Reconcile changed consumer obligations without extending initial eligibility | pending source verification |
-| story:count-guards-above-one-are-synthesized | draft | A count guard above one gets synthesized scenarios | pending source verification |
-| story:create-only-command-cannot-refuse | draft | A command that only creates cannot declare a refusal | pending source verification |
-| story:cross-runtime-verdict-equivalence | draft | One corpus holds every emitted runtime to the same verdicts | pending source verification |
-| story:cross-system-relation-target | draft | A relation may target an entity another system declares | pending source verification |
-| story:crosswalk-verb-external-names-held-to-declarations | draft | ess verify crosswalk: hold external names (proto, REST, push) to the declarations that model them, refuse a gap | pending source verification |
-| story:deleting-a-scratch-tmpdir-breaks-sccache-for-every-other-agent | draft | Deleting a scratch TMPDIR breaks sccache for every other agent | pending source verification |
-| story:delivery-trust-fixture-race | draft | Delivery-trust tests never copy a fixture another test is rewriting | pending source verification |
-| story:diff-classifies-error-payload-sources | active | The diff classifies error payload sources per outcome | pending source verification |
-| story:empty-projection-is-refused-or-explained | active | A projection that writes nothing says why | pending source verification |
-| story:ess-ui-type-grammar-aligns | draft | ess-ui types are spelled as ESS types | pending source verification |
-| story:external-requests-are-assessed-before-adoption | active | An adopter request is assessed for fit before it is adopted | pending source verification |
-| story:feature-request-194 | draft | a binding cannot invoke only when an Optional path is present (ESS-BINDING-015 leaves no way to say 'skip') | pending source verification |
-| story:feature-request-197 | draft | a refused command cannot declare the compensating change the service makes before answering | pending source verification |
-| story:feature-request-200 | draft | a search parameter on a view (a view parameter as the operand of contains / starts_with) | pending source verification |
-| story:feature-request-212 | draft | ess verify conform mutate does not emit sets-drop, outcome-order-flip or the ==/!= and ±1 guard-boundary arms | pending source verification |
-| story:feature-request-221 | draft | the explorer draws commands with existing_instance, subject_state or subject_predicate outcomes | pending source verification |
-| story:feature-request-222 | draft | validate checks an authored scenario step's expected outcome against the command's guards | pending source verification |
-| story:feature-request-223 | draft | explorer strings reach .count boundaries and example: values | pending source verification |
-| story:feature-request-225 | draft | a guard comparing two identity-typed inputs (a self-edge check) | pending source verification |
-| story:feature-request-228 | draft | No way to declare a multi-field key unique within a scope (equality, one arranged row) | pending source verification |
-| story:feature-request-229 | active | No guard on another entity's state for non-creating commands, and no effect on related records | pending source verification |
-| story:feature-request-231 | draft | Entity Runtime lowering refuses constructs ess/15-16 validate: unknown_instance, existing_instance, {related:}, {increment}, {cleared}, alphabet:, text .count, now | pending source verification |
-| story:feature-request-233 | draft | Value expressions: dotted input paths in sets:/payload:, field arithmetic, sibling-field comparison, byte length | pending source verification |
-| story:feature-request-236 | draft | mutate --emit has no --component: a repository implementing one component cannot score mutants | pending source verification |
-| story:feature-request-237 | draft | Distinct list members and a count across records | pending source verification |
-| story:feature-request-244 | draft | Guards over elapsed time since a stored instant and over calendar windows | pending source verification |
-| story:feature-request-251 | active | A when_subject branch at an invariant upper bound is synthesized again | pending source verification |
-| story:feature-request-257 | active | An aggregate group key copied from a related row is witnessed | pending source verification |
-| story:feature-request-265 | active | An ungranted actor gets one declared refusal, witnessed per command | pending source verification |
-| story:feature-request-266 | proposed | Synthesized scenarios account for bindings that move state | pending source verification |
-| story:feature-request-267 | proposed | Binding flow, delivery and drop are synthesized into commands with wrong_state | pending source verification |
-| story:feature-request-268 | proposed | A binding may react to one outcome of its source command | pending source verification |
-| story:feature-request-269 | proposed | A binding failure policy may differ per refusal | pending source verification |
-| story:feature-request-270 | active | A related sets value beside a when_related guard witnesses success | pending source verification |
-| story:feature-request-271 | active | when_related over an owns via field is witnessed on both sides | pending source verification |
-| story:feature-request-272 | active | A when_related guard on the creating command does not refuse the aggregate view | pending source verification |
-| story:feature-request-273 | proposed | An event expectation checks identity fields against captured instances | pending source verification |
-| story:feature-request-274 | active | A generated CLI hands unparsable dynamic input to the adopter validator | pending source verification |
-| story:feature-request-275 | active | The caller-swapped run draws fresh identity inputs | pending source verification |
-| story:feature-request-276 | active | Declarations added or removed leave no residual in the diff | pending source verification |
-| story:feature-request-278 | active | An input guard beside a stored-field guard on one branch is synthesized | pending source verification |
-| story:feature-request-279 | proposed | A stored-guarded moving command does not count as rewriting a group key | pending source verification |
-| story:feature-request-280 | active | An enum-and-presence input guard is honoured by synthesis | pending source verification |
-| story:feature-request-281 | draft | An ess-ui section has a heading, and a page can omit a section its kind contributes | pending source verification |
-| story:feature-request-282 | draft | ESS-COMMAND-004 refuses a when_related refusal beside a wrong_state outcome; no precedence is stated | pending source verification |
-| story:feature-request-283 | draft | A command can guard on only one related row (a second exists: false branch is ESS-COMMAND-004) | pending source verification |
-| story:feature-request-284 | draft | ess ui check does not check that a page actor is granted the commands it binds | pending source verification |
-| story:feature-request-285 | draft | {related:} reads through an Optional reference or across two references | pending source verification |
-| story:feature-request-286 | draft | A view declares which actors may read it | pending source verification |
-| story:feature-request-287 | active | A singleton entity can be declared and synthesized | pending source verification |
-| story:feature-request-288 | draft | An affects: filter over subject identity is witnessed | pending source verification |
-| story:feature-request-289 | active | A quantifier binder on the right of a comparison means the binder | pending source verification |
-| story:feature-request-290 | draft | ess verify diff: no way to fail on a breaking change; a narrowing exits 0 | pending source verification |
-| story:feature-request-291 | draft | conform run --target interpreted answers wrong_state for an unknown identity where synthesis expects the declared not-found refusal | pending source verification |
-| story:feature-request-292 | draft | check-history: a generated Timestamp makes every history uncheckable (check.model-undetermined, exit 2) | pending source verification |
-| story:feature-request-293 | draft | Explorer excludes every command with an Optional input (and every command with an unknown_instance branch) | pending source verification |
-| story:feature-request-294 | draft | mutate: no way to declare a known-failing baseline scenario; one failure refuses the whole audit (ESS-MUTATE-001) | pending source verification |
-| story:feature-request-295 | draft | mutate: emit-drop is stillborn on every outcome that emits one event, so single-event emission is never audited | pending source verification |
-| story:feature-request-296 | draft | Retrofit: no way to declare intended behaviour that the implementation is known not to meet, and count it apart | pending source verification |
-| story:feature-request-297 | draft | Conformance and exploration have no process restart, so identities minted from a counter that resets on restart go undetected | pending source verification |
-| story:feature-request-298 | draft | A Boolean input is not treated as a closed domain | pending source verification |
-| story:feature-request-299 | draft | A row selected by a filter can be read in a guard and in sets | pending source verification |
-| story:feature-request-300 | draft | ess-ui/1: widget expansion is exponential in nesting depth; a valid document can hang ess ui check | pending source verification |
-| story:feature-request-301 | active | synthesize is 20-30x slower since 0.40.0 on one specification (8 s to 4-7 min, scenarios +15%) | pending source verification |
-| story:feature-request-303 | draft | ess-ui/1: three document faults ess ui check reports nothing on (duplicate nav entry, unknown shell, shell without page outlet) | pending source verification |
-| story:feature-request-305 | draft | ess-ui/1: ess ui check accepts any Field.as value; the schema lists a closed set | pending source verification |
-| story:feature-request-306 | active | Committed generated output regenerates in another checkout | pending source verification |
-| story:feature-request-307 | draft | when_subject over a field copied from a related row is witnessed | pending source verification |
-| story:feature-request-308 | draft | A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer | pending source verification |
-| story:feature-request-309 | draft | Aggregate with two group keys filled from one input is refused for a move the source does not have | pending source verification |
-| story:feature-request-310 | active | Generated code targets select a branch by whether the record exists | pending source verification |
-| story:feature-request-312 | draft | Suites state their empty-target assumption and act across callers | pending source verification |
-| story:field-sensitivity-class | draft | A field can carry a sensitivity class from a declared vocabulary | pending source verification |
-| story:format-rule-for-relaxations | draft | A relaxation says which format admits it | pending source verification |
-| story:go-and-typescript-read-current-suites | draft | Go and TypeScript packages read suite formats /28 to /33 | pending source verification |
-| story:go-generated-behaviour | active | The Go target generates determined behaviours, view queries and invariant checks at parity with Rust | pending source verification |
-| story:go-normalization-pattern-semantics | active | Qualify bounded ECMA-262 patterns in Go normalization | pending source verification |
-| story:go-numbers-compare-by-value | active | Go conformance compares JSON numbers by value | pending source verification |
-| story:held-state-has-one-operand | draft | Held state is selected by one operand | pending source verification |
-| story:host-context-has-one-shape | draft | Host-bound context has one block and one prefix | pending source verification |
-| story:integrate-source-driven-realizations | draft | Integrate source-driven realizations with the remediation baseline | pending source verification |
-| story:interpreted-bindings-and-unmet-obligations | draft | A binding reacts under the interpreter, and an unmet obligation stays one | pending source verification |
-| story:interpreted-eventual-views | draft | An eventual view is really eventual under the interpreter | pending source verification |
-| story:interpreted-scenario-supplied-facts | draft | A scenario supplies what the model does not determine | pending source verification |
-| story:interpreted-trust-gate | draft | The interpreter is checked against both hand-written targets | pending source verification |
-| story:java-conformance-target | draft | A conformance suite can be emitted as a Java test package | pending source verification |
-| story:list-and-text-guards-are-synthesized | active | List and text-ordering input guards get synthesized scenarios | pending source verification |
-| story:mutation-audit-and-model-runner | active | ess audits a suite by mutation and explores sequences against the IR | pending source verification |
-| story:native-realization-ci | draft | Run structural realization compiler checks in CI | pending source verification |
-| story:normalization-equality-eligibility | draft | Specify numeric equality eligibility and its format compatibility boundary | pending source verification |
-| story:optional-guards-mean-what-they-say | active | An Optional guard is refused or witnessed as its author meant | pending source verification |
-| story:outcome-decided-by-environment | draft | An outcome a caller cannot see: refusals decided by neither input nor entity state | pending source verification |
-| story:outcome-groups | active | One outcome can be declared for a group of commands | pending source verification |
-| story:payload-fields-have-one-filling-rule | draft | Event and error payloads follow one filling rule | pending source verification |
-| story:planning-store-carries-workstation-paths | active | 60 tracked files under .engineering/ carry home-directory paths the host-path lane does not scan | pending source verification |
-| story:predicate-reference-page | active | Every predicate form ESS accepts is on one reference page | pending source verification |
-| story:primitive-canonical-serialization | active | Canonical number serialization: the second stage of F08 | pending source verification |
-| story:reader-conformance-over-refusals | draft | Reader-side conformance does not refuse what a reader accepts | pending source verification |
-| story:reader-true-refused-for-closed-readers | draft | `reader: true` is refused where the reader is closed | pending source verification |
-| story:related-guard-behaviour | active | Commands guarded by when_related are generated in the Rust and Go targets | pending source verification |
-| story:related-guard-vocabulary-aligns | draft | `when_related` uses the vocabulary of its siblings | pending source verification |
-| story:related-record-effects | draft | A non-creating command may declare an effect on related records | pending source verification |
-| story:related-via-optional-input | active | when_related reads through an Optional input; an absent reference reads no row (ess/21) | pending source verification |
-| story:related-via-stored-reference | active | when_related reads through a stored field of the subject, Optional included (ess/21) | pending source verification |
-| story:release-status-publication-state | draft | Release status distinguishes drafts from public releases | pending source verification |
-| story:report-carries-passed-failed-skipped | active | The conformance report carries passed, failed and skipped counts | pending source verification |
-| story:review-stale-lines-corrected | draft | Stale lines found by the fit review are corrected | pending source verification |
-| story:rust-recorder-does-not-lose-a-creation | draft | The Rust recorder does not lose a creation it observed | pending source verification |
-| story:scrub-the-planning-store-or-say-why-not | draft | The reason for leaving the planning store unscanned was false; decide again on the real numbers | pending source verification |
-| story:served-committed-command-answers-its-outcome | draft | A committed command is answered with its outcome, not 501 | pending source verification |
-| story:served-store-and-entry | active | A served component gets a generated in-memory store and server entry point | pending source verification |
-| story:served-view-params | active | Synthesized servers pass declared view parameters from the query string to the view port | pending source verification |
-| story:shared-public-gates | active | Adopt independent common source gates | pending source verification |
-| story:source-pinned-data-normalization | active | Source-pinned checked data normalization across Go Rust and TypeScript | pending source verification |
-| story:specification-declares-its-ess-release | active | A specification declares the ess release it is maintained with | pending source verification |
-| story:specify-upgrade-command | draft | ess specify upgrade moves a specification to the next source format and checks the delta | pending source verification |
-| story:stored-field-guards | active | An outcome can be guarded by the addressed entity's stored fields | pending source verification |
-| story:string-length-guards | active | A guard can test the length of a String | pending source verification |
-| story:string-newtype-declares-its-alphabet | active | A String newtype can declare its character set | pending source verification |
-| story:string-prefix-suffix-substring-operators | active | String guards can test a prefix, a suffix or a substring | pending source verification |
-| story:suite-pins-transitions-updates-and-boundaries | active | Generated suites pin transition targets, update values, every source and guard boundaries | pending source verification |
-| story:the-browser-fixture-abandons-a-profile-per-start | draft | The browser fixture abandons a profile per start | pending source verification |
-| story:the-design-page-is-held-to-the-fixture-it-describes | draft | The design page is held to the fixture it describes | pending source verification |
-| story:the-generated-go-runtime-is-gofmt-clean | draft | The emitted Go runtime is not gofmt-stable, so an adopter's formatter changes it | pending source verification |
-| story:the-interpreter-executes-stored-field-guards | draft | The interpreter executes guards over the subject's stored fields | pending source verification |
-| story:the-lane-does-not-pin-a-count-that-its-own-bookkeeping-moves | draft | The lane does not pin a count that its own bookkeeping moves | pending source verification |
-| story:the-metadata-guard-rejects-every-build-but-one | draft | The metadata guard rejects every build but one | pending source verification |
-| story:the-published-schema-admits-the-name-aliases-the-parser-reads | draft | The published schema admits the name aliases the parser reads | pending source verification |
-| story:the-startup-clamp-does-not-outlive-the-startup | draft | The startup clamp does not outlive the startup | pending source verification |
-| story:the-startup-lock-does-not-cover-the-first-round-trip | draft | The startup lock does not cover the first round trip | pending source verification |
-| story:the-unread-tree-bullet-is-read-whole | draft | The unread-tree bullet is read whole | pending source verification |
-| story:typed-literals-in-sets-and-unknown-instances | active | sets: accepts typed literals and an unknown instance has a declared answer | pending source verification |
-| story:types-only-realizations | active | Consistent types-only realizations for Go Rust and TypeScript | pending source verification |
-| story:typescript-conformance-target | draft | A conformance suite can be emitted as a TypeScript test package | pending source verification |
-| story:ui-react-live-binding | active | The generated React app reads and commands a synthesized server; refusals show where the user acted | pending source verification |
-| story:ui-spec-style-tokens | draft | An ess-ui document declares design tokens, themes and user preferences | pending source verification |
-| story:ui-tui-app-generator | active | ess generate ui --target tui emits a Rust terminal app crate | pending source verification |
-| story:ui-tui-live-binding | active | The TUI reads and commands a synthesized server (ess ui run --tui --model --base-url) | pending source verification |
-| story:union-tag-inline-with-fields | draft | A union can carry its tag beside its variant's fields | pending source verification |
-| story:validate-sees-what-synthesize-refuses | active | validate reports authored-scenario and unset-field problems synthesize would hit | pending source verification |
-| story:web-bridge-answers-like-http | draft | The web bridge answers a command with the HTTP surface's shape | pending source verification |
-| story:wrong-state-witness-unknown-and-own-stored-guards | draft | A wrong-state witness handles unknown sibling guards and the moving branch's own stored guard | pending source verification |
+| story:a-branch-may-clear-the-field-it-owns | draft | stale-state candidate; acceptance remains to verify | Story body:75 records grammar/validation/synthesis shipped in 0.26.0; public-guide acceptance remains open at :76-79. |
+| story:a-browser-that-answered-http-once-is-still-a-slow-start | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:a-killed-childs-outcome-says-which-signal-ended-it | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:a-macro-invoked-twice-in-one-module-refuses-the-consumer-gate | active | parked by AGENTS consumer-accounting decision | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:a-marked-region-is-not-a-scan-of-what-runs | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:a-no-view-arranged-half-probes-the-row-through-the-command | draft | source-corroborated consumer defect/gap | crates/verify/ess-conformance/tests/adversary_arrangement_pass2.rs:551 explicitly asserts refusal mutation is not caught without a view. |
+| story:a-refusal-records-the-document-it-was-read-from | draft | source-corroborated consumer defect/gap | crates/specify/ess-compiler/tests/locator_citations.rs:252 still ignores the duplicate-source provenance acceptance. |
+| story:a-report-says-why-a-scenario-was-skipped | draft | consumer gap with compatibility/design work | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:a-skip-says-why-the-target-could-not-answer | active | stale-state candidate; acceptance remains to verify | CHANGELOG.md:2128-2141 records log reasons shipped but persisted report reasons absent; parent acceptance requires explicit split. |
+| story:acceptance-runs-as-toolchain-scenarios | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:adopter-reviewed-delta | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:aggregate-views | active | stale-state candidate | Body cites #96; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:binding-delivery-at-most-once | proposed | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:browser-fixture-startup-deadline | active | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:change-fragment-upgrade-obligation | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:collection-quantifiers-witnessed-everywhere | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:collections-reach-their-upper-count-boundary | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#196 |
+| story:concurrent-history-records-inputs | draft | consumer gap with compatibility/design work | crates/verify/ess-conformance/src/history.rs:195 Operation lacks input; story body:85 leaves wire compatibility unresolved. |
+| story:consumer-accounting-baseline-never-extended | active | parked by AGENTS consumer-accounting decision | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:count-guards-above-one-are-synthesized | draft | stale-state candidate; acceptance remains to verify | crates/verify/ess-conformance/tests/stored_field_guards_adversary.rs:282,432,476 exercise threshold witnesses and bounds; witness.rs:1904 cites this story. |
+| story:create-only-command-cannot-refuse | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:cross-runtime-verdict-equivalence | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:cross-system-relation-target | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:crosswalk-verb-external-names-held-to-declarations | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:deleting-a-scratch-tmpdir-breaks-sccache-for-every-other-agent | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:delivery-trust-fixture-race | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:diff-classifies-error-payload-sources | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#253 |
+| story:empty-projection-is-refused-or-explained | active | stale-state candidate | Body cites #102; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:ess-ui-type-grammar-aligns | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:external-requests-are-assessed-before-adoption | active | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:feature-request-194 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#194 |
+| story:feature-request-197 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#197 |
+| story:feature-request-200 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#200 |
+| story:feature-request-212 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#212 |
+| story:feature-request-221 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#221 |
+| story:feature-request-222 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#222 |
+| story:feature-request-223 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#223 |
+| story:feature-request-225 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#225 |
+| story:feature-request-228 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#228 |
+| story:feature-request-229 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#229 |
+| story:feature-request-231 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#231 |
+| story:feature-request-233 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#233 |
+| story:feature-request-236 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#236 |
+| story:feature-request-237 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#237 |
+| story:feature-request-244 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#244 |
+| story:feature-request-251 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#251 |
+| story:feature-request-257 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#257 |
+| story:feature-request-265 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#265 |
+| story:feature-request-266 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#266 |
+| story:feature-request-267 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#267 |
+| story:feature-request-268 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#268 |
+| story:feature-request-269 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#269 |
+| story:feature-request-270 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#270 |
+| story:feature-request-271 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#271 |
+| story:feature-request-272 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#272 |
+| story:feature-request-273 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#273 |
+| story:feature-request-274 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#274 |
+| story:feature-request-275 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#275 |
+| story:feature-request-276 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#276 |
+| story:feature-request-278 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#278 |
+| story:feature-request-279 | proposed | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#279 |
+| story:feature-request-280 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#280 |
+| story:feature-request-281 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#281 |
+| story:feature-request-282 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#282 |
+| story:feature-request-283 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#283 |
+| story:feature-request-284 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#284 |
+| story:feature-request-285 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#285 |
+| story:feature-request-286 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#286 |
+| story:feature-request-287 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#287 |
+| story:feature-request-288 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#288 |
+| story:feature-request-289 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#289 |
+| story:feature-request-290 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#290 |
+| story:feature-request-291 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#291 |
+| story:feature-request-292 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#292 |
+| story:feature-request-293 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#293 |
+| story:feature-request-294 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#294 |
+| story:feature-request-295 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#295 |
+| story:feature-request-296 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#296 |
+| story:feature-request-297 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#297 |
+| story:feature-request-298 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#298 |
+| story:feature-request-299 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#299 |
+| story:feature-request-300 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#300 |
+| story:feature-request-301 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#301 |
+| story:feature-request-303 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#303 |
+| story:feature-request-305 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#305 |
+| story:feature-request-306 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#306 |
+| story:feature-request-307 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#307 |
+| story:feature-request-308 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#308 |
+| story:feature-request-309 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#309 |
+| story:feature-request-310 | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#310 |
+| story:feature-request-312 | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#312 |
+| story:field-sensitivity-class | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:format-rule-for-relaxations | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:go-and-typescript-read-current-suites | draft | source-corroborated consumer defect/gap | crates/verify/ess-conformance/src/go/mod.rs:362 caps generated Go and TypeScript suite admission at /27. |
+| story:go-generated-behaviour | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#314 |
+| story:go-normalization-pattern-semantics | active | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:go-numbers-compare-by-value | active | stale-state candidate | Body cites #101; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:held-state-has-one-operand | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:host-context-has-one-shape | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:integrate-source-driven-realizations | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:interpreted-bindings-and-unmet-obligations | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:interpreted-eventual-views | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:interpreted-scenario-supplied-facts | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:interpreted-trust-gate | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:java-conformance-target | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:list-and-text-guards-are-synthesized | active | stale-state candidate | Body cites #94; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:mutation-audit-and-model-runner | active | stale-state candidate | Body cites #114; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:native-realization-ci | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:normalization-equality-eligibility | draft | product feature/design backlog; assess before scheduling | Story body:63-75 freezes formats 5/6; body:118-128 is design-only. Do not silently change current persisted equality. |
+| story:optional-guards-mean-what-they-say | active | stale-state candidate | Body cites #93; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:outcome-decided-by-environment | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:outcome-groups | active | stale-state candidate | Body cites #105; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:payload-fields-have-one-filling-rule | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:planning-store-carries-workstation-paths | active | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:predicate-reference-page | active | stale-state candidate | Body cites #92; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:primitive-canonical-serialization | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:reader-conformance-over-refusals | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#191 |
+| story:reader-true-refused-for-closed-readers | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:related-guard-behaviour | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#319 |
+| story:related-guard-vocabulary-aligns | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:related-record-effects | draft | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#229 |
+| story:related-via-optional-input | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#304 |
+| story:related-via-stored-reference | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#304 |
+| story:release-status-publication-state | draft | stale-state candidate; acceptance remains to verify | crates/edge/ess-xtask/src/main.rs:491,530,1497 requests isDraft, excludes drafts and tests malformed/missing/draft cases. |
+| story:report-carries-passed-failed-skipped | active | stale-state candidate | Body cites #110; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:review-stale-lines-corrected | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:rust-recorder-does-not-lose-a-creation | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:scrub-the-planning-store-or-say-why-not | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:served-committed-command-answers-its-outcome | draft | consumer gap with compatibility/design work | crates/edge/ess-cli/src/web/bridge.rs:346 converts pump failure after a command outcome to undelivered; exact path to reverify before implementation. |
+| story:served-store-and-entry | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#318 |
+| story:served-view-params | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
+| story:shared-public-gates | active | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:source-pinned-data-normalization | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:specification-declares-its-ess-release | active | stale-state candidate | Body cites #106; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:specify-upgrade-command | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:stored-field-guards | active | stale-state candidate | Body cites #75; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:string-length-guards | active | stale-state candidate | Body cites #104; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:string-newtype-declares-its-alphabet | active | stale-state candidate | Body cites #103; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:string-prefix-suffix-substring-operators | active | stale-state candidate | Body cites #95; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:suite-pins-transitions-updates-and-boundaries | active | stale-state candidate | Body cites #111; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:the-browser-fixture-abandons-a-profile-per-start | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:the-design-page-is-held-to-the-fixture-it-describes | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:the-generated-go-runtime-is-gofmt-clean | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:the-interpreter-executes-stored-field-guards | draft | source-corroborated consumer defect/gap | crates/verify/ess-conformance/src/interpret/execute.rs:652 returns NotInterpreted for stored-field guards. |
+| story:the-lane-does-not-pin-a-count-that-its-own-bookkeeping-moves | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:the-metadata-guard-rejects-every-build-but-one | draft | parked by AGENTS consumer-accounting decision | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:the-published-schema-admits-the-name-aliases-the-parser-reads | draft | source-corroborated consumer defect/gap | crates/specify/ess-domain/tests/adversary_charset_pass1.rs:186 explicitly asserts schema rejection of an accepted binding id alias. |
+| story:the-startup-clamp-does-not-outlive-the-startup | draft | stale-state candidate; acceptance remains to verify | crates/edge/ess-cli/tests/support/browser.rs:469 restores SESSION_TIMEOUT after upgrade. |
+| story:the-startup-lock-does-not-cover-the-first-round-trip | draft | internal tooling/test-quality report; verify current impact | crates/edge/ess-cli/tests/support/browser.rs:372 drops startup guard before session.new at :381; acceptance allows either lock correction or accurately documented bound. |
+| story:the-unread-tree-bullet-is-read-whole | draft | internal tooling/test-quality report; verify current impact | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:typed-literals-in-sets-and-unknown-instances | active | stale-state candidate | Body cites #113; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:types-only-realizations | active | partial parent; full acceptance remains | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:typescript-conformance-target | draft | stale-state candidate; acceptance remains to verify | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:ui-react-live-binding | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
+| story:ui-spec-style-tokens | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:ui-tui-app-generator | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
+| story:ui-tui-live-binding | active | Referenced issue / active candidate; verify against GitHub table | github:beyond10x/ess#311 |
+| story:union-tag-inline-with-fields | draft | product feature/design backlog; assess before scheduling | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:validate-sees-what-synthesize-refuses | active | stale-state candidate | Body cites #112; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
+| story:web-bridge-answers-like-http | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+| story:wrong-state-witness-unknown-and-own-stored-guards | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |

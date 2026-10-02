@@ -8,7 +8,7 @@ relations:
 - decomposes: story:go-generated-behaviour
 - informed_by: story:served-view-params
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:43:00Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:43:00Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -30,3 +30,11 @@ Owning stories: go-generated-behaviour and served-view-params. Source scope is c
 ## Execution
 
 One managed tree `ess-backlog-servers-20261002`, branch `batch/consumer-servers-20261002`, based on d414cfc213d8871b04ac18b08c47fee3dc0b71ca. Build output stays in that tree's target directory; coordinator owns store writes and publication.
+
+## Delivery evidence
+
+Published combined candidate: f0b220099119090795c93cae07c14e6209918f67, https://github.com/beyond10x/ess/pull/386. Superseded PRs 383 and 384 were closed through the bot App after exact-head ancestry verification. Both original PR bodies retain the consolidation reference. No code was discarded.
+
+Local checks: 453 affected-package passes, two existing ignored; exact task test-xtask 362 passes, three existing ignored; eight concurrent nextest passes; strict Clippy and formatting pass. Read-only adversary found no concrete counterexample and ran no tests. Source correction commit 51b3d92ff plus merge of current main produce the final candidate; merge changed only the already-published UI read-filter design.
+
+Remote correctness run 36987215656 remains pending at observation. Common security run 36987213274 failed on 2026-10-02 at 09:03:49Z: `b10x-gates: candidate exceeds scan limit`. A local signed common receipt passed but does not replace required remote admission. Integration remains blocked by the repository secret policy, not waived by local evidence.

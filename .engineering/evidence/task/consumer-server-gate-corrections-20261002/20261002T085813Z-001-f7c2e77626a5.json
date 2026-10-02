@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T08:58:13Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-server-gate-corrections-20261002",
+  "kind": "task",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Red badge and cross-process scratch regressions became green; root source review plus read-only adversary found no concrete counterexample",
+    "reference": "commit:51b3d92ff; target/backlog-input/red-lowering.log and red-process-isolation.log vs green-packages.log"
+  }
+}
