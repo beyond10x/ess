@@ -6,7 +6,7 @@ status: draft
 title: Remaining interpreter capabilities beyond Billing and Oracle
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 2
+revision: 3
 ---
 Read-only capability audit of native Interpreted at ff128cbdb
 
@@ -80,3 +80,7 @@ After the source audit, the coordinator ran the built carrier CLI against eight 
 The set-effects silent omission is now measured: demo.desk.Invite/outcome/invited returns an admitted outcome but SessionDetails still shows on_hold=false for each secondary row where the synthesized check requires true. EndTeam and NoteTeam are Unsupported at sets-without-subject. The upsert fixture additionally exposes missing events and an unestablished captured identity; these actual failure/error results must be rechecked after supplied/existence execution, not normalized into successful Unsupported counts. The error-payload fixture passes all six scenarios, narrowing the audit's generic value-source concern: that source-derived concern is not a claim that this particular existing fixture fails.
 
 These probes confirm implementation work remains. They do not cover every typed value source, scan control or externally supplied authority; the source inventory's other claims remain explicitly unexecuted until their dedicated regressions run.
+
+## Entity identity follow-up
+
+The entity-setup implementor now measured the formerly unverified identity limitation in a compiler-admitted Integer-identity model: the real Interpreted setup path returns a named text-store Unsupported result. This is remaining admitted-feature implementation work, not an invalid model or permission to stringify identities. Its source/test evidence will be pinned in the entity-setup unit report. Text-identity setup progress alone does not discharge the all-features release requirement. Preserve typed equality and view reconstruction when correcting the Store representation.
