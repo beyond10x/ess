@@ -321,6 +321,7 @@ impl Trace {
                     crate::ScenarioStep::ExecuteCommand { .. }
                         | crate::ScenarioStep::ExecuteCommandWithoutInput { .. }
                         | crate::ScenarioStep::QueryView { .. }
+                        | crate::ScenarioStep::EventuallyView { .. }
                 )
             ) {
                 return Err("one-time event window is not anchored to an operation".into());
@@ -332,6 +333,7 @@ impl Trace {
                 crate::ScenarioStep::ExecuteCommand { .. }
                     | crate::ScenarioStep::ExecuteCommandWithoutInput { .. }
                     | crate::ScenarioStep::QueryView { .. }
+                    | crate::ScenarioStep::EventuallyView { .. }
             ) {
                 for authority in &self.events {
                     if !windows.contains(&(&authority.event, index, 0))

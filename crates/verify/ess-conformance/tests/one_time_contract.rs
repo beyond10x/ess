@@ -282,3 +282,31 @@ fn marked_constrained_newtype_authority_is_carried_from_ir() {
     assert_eq!(rules.invariants.len(), 1);
     response.validate().unwrap();
 }
+
+#[test]
+fn eventual_reads_require_independent_event_windows_too() {
+    let mut valid = document_with("events:\n  - name: credentials.api.Issued\n    fields: [{name: audit, type: String}]\nentities:\n  - name: credentials.api.Record\n    identity: {name: id, type: Uuid}\n    lifecycle: {initial: Open, states: [Open], terminal: [Open]}\nviews:\n  - name: credentials.api.Records\n    source: credentials.api.Record\n    consistency: eventual\n    fields: [{name: id, type: Uuid}]\n");
+    for scenario in valid["scenarios"].as_object_mut().unwrap().values_mut() {
+        let index = scenario["steps"].as_array().unwrap().len();
+        scenario["steps"].as_array_mut().unwrap().push(serde_json::json!({"step":"eventually_view","view":"credentials.api.Records","expectation":{"expect":"excludes","fields":{}}}));
+        scenario["source"].as_array_mut().unwrap().extend([
+            serde_json::json!({"kind":"event","name":"credentials.api.Issued"}),
+            serde_json::json!({"kind":"view","name":"credentials.api.Records"}),
+        ]);
+        scenario["one_time_response"]["events"] =
+            serde_json::json!([{"event":"credentials.api.Issued","within_ms":0}]);
+        scenario["one_time_response"]["event_windows"] = serde_json::json!([
+            {"event":"credentials.api.Issued","after_step":0,"within_ms":0},
+            {"event":"credentials.api.Issued","after_step":index,"within_ms":0}
+        ]);
+    }
+    assert_vector("valid-eventual-read-window", true, &valid);
+    let mut omitted = valid;
+    for scenario in omitted["scenarios"].as_object_mut().unwrap().values_mut() {
+        scenario["one_time_response"]["event_windows"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+    }
+    assert_vector("omitted-eventual-read-window", false, &omitted);
+}
