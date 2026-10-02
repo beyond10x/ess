@@ -39,8 +39,7 @@ use std::fmt::Write as _;
 
 use ess_compiler::ir::{
     EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity,
-    ResolvedField, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedTypeRef,
+    ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -68,6 +67,8 @@ pub(crate) struct Seams {
     pub forwarded: BTreeSet<Capability>,
     /// The method names more than one seam derives, each with the seams deriving it.
     pub collisions: BTreeMap<String, Vec<String>>,
+    /// Every seam whose method name another seam derives too: on neither `Generated` nor `Owed`.
+    pub colliding: BTreeSet<Capability>,
 }
 
 impl Seams {
@@ -120,6 +121,13 @@ impl Seams {
                 continue;
             }
             let colliding = methods.contains_key(&method);
+            let planned = plan.is_generated(capability.kind, &capability.source)
+                || plan
+                    .obligation_of(capability.kind, &capability.source)
+                    .is_some();
+            if colliding && planned {
+                seams.colliding.insert(capability.clone());
+            }
             if plan.is_generated(capability.kind, &capability.source) {
                 if colliding {
                     seams.weakened.insert(capability);
@@ -257,8 +265,114 @@ pub(super) fn package(
                from a generated method is the typed refusal naming the command: the model\n// \
                declares no outcome for the request (a guard is undecidable over it, or no \
                declared\n// branch answers it), or — as `entity invariant` — the declared outcome \
-               would leave an\n// entity breaking an invariant.\n";
+               would leave an\n// entity breaking an invariant.\n//\n// Every port a generated method reads must be set: a nil field of [Ports] is a nil-pointer\n// panic at the first call that reads it.\n";
+    let body = rename_helpers(&body, &reserved);
     Some(emit.file(provenance, doc, &body))
+}
+
+/// Every package-level identifier the private helpers declare.
+const HELPER_NAMES: &[&str] = &[
+    "truth",
+    "unknown",
+    "falsity",
+    "verity",
+    "undeclared",
+    "unrepresentable",
+    "some",
+    "present",
+    "known",
+    "truthOf",
+    "not",
+    "allOf",
+    "anyOf",
+    "equal",
+    "textMatch",
+    "numberParts",
+    "magnitudeOrder",
+    "compareNumbers",
+    "isEq",
+    "isNe",
+    "isLt",
+    "isLe",
+    "isGt",
+    "isGe",
+    "numberKey",
+    "numberKeyOf",
+    "keyOf",
+    "sameKey",
+    "numberOrder",
+    "textOrder",
+    "readOrder",
+    "flagOrder",
+    "textOf",
+    "instant",
+    "instantKey",
+    "instantOrder",
+    "distinct",
+    "fitsWide",
+    "sumValues",
+    "spell",
+    "average",
+];
+
+/// `body` with every helper whose name is an imported package's moved out of its way, as a local
+/// is (`fresh`): a domain package called `equal` and a helper called `equal` are one name declared
+/// twice in this file.
+///
+/// Identifiers only — never one inside a comment, a string or a rune, and never one beside a `.`,
+/// which is a package qualifier (`equal.TaskId`) or a selector, not a helper. A model whose
+/// package names meet no helper keeps every byte.
+fn rename_helpers(body: &str, reserved: &BTreeSet<String>) -> String {
+    let mut taken: BTreeSet<String> = reserved.clone();
+    taken.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
+    let renamed: BTreeMap<&str, String> = HELPER_NAMES
+        .iter()
+        .filter(|name| reserved.contains(**name))
+        .map(|name| (*name, fresh(&taken, name)))
+        .collect();
+    if renamed.is_empty() {
+        return body.to_owned();
+    }
+    let bytes = body.as_bytes();
+    let mut out = String::with_capacity(body.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        let rest = &body[index..];
+        if rest.starts_with("//") {
+            let end = rest.find('\n').map_or(body.len(), |at| index + at);
+            out.push_str(&body[index..end]);
+            index = end;
+        } else if byte == b'"' || byte == b'\'' || byte == b'`' {
+            let mut end = index + 1;
+            while end < bytes.len() && bytes[end] != byte {
+                if bytes[end] == b'\\' && byte != b'`' {
+                    end += 1;
+                }
+                end += 1;
+            }
+            let end = (end + 1).min(bytes.len());
+            out.push_str(&body[index..end]);
+            index = end;
+        } else if byte.is_ascii_alphabetic() || byte == b'_' {
+            let mut end = index + 1;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+            let word = &body[index..end];
+            let qualified = index > 0 && bytes[index - 1] == b'.' || bytes.get(end) == Some(&b'.');
+            match renamed.get(word) {
+                Some(replacement) if !qualified => out.push_str(replacement),
+                _ => out.push_str(word),
+            }
+            index = end;
+        } else {
+            let width = rest.chars().next().map_or(1, char::len_utf8);
+            out.push_str(&body[index..index + width]);
+            index += width;
+        }
+    }
+    out
 }
 
 /// The storage interface name of each entity: `<Type>Storage`, or — where two entities of
@@ -1390,11 +1504,7 @@ impl<'a> Writer<'a> {
 
     /// The Go member of an entity's data struct.
     fn data_member(entity: &ResolvedEntity, field: &str) -> String {
-        let stored: Vec<ResolvedField> = std::iter::once(&entity.identity)
-            .chain(&entity.fields)
-            .cloned()
-            .collect();
-        items::member_ident(&stored, field)
+        super::invariant::data_member(entity, field)
     }
 
     /// `held, found := <storage>.Get(<identity>)`.

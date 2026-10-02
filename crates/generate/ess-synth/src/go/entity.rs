@@ -20,7 +20,6 @@
 //!   sealed interface whose zero value is nil and names no declared state. `Refine` therefore
 //!   answers `(value, ok)`.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use ess_compiler::ir::ResolvedEntity;
@@ -55,7 +54,7 @@ fn data_struct(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity) {
     );
     super::invariant::doc(out, entity, data);
     let _ = writeln!(out, "type {data} struct {{");
-    let mut taken = BTreeMap::new();
+    let mut taken = super::invariant::data_taken(entity);
     let identity = items::field_ident(&mut taken, &entity.identity.name);
     let _ = writeln!(
         out,

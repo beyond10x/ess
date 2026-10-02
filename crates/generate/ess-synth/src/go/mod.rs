@@ -591,14 +591,14 @@ fn weakenings(
     if !serves {
         out.extend(grant_table_weakening(ir));
     }
-    if !seams.weakened.is_empty() {
+    if !seams.colliding.is_empty() {
         out.push(one_method_set(seams));
     }
     out
 }
 
-/// Seams the plan marks generated that this target keeps owed, because their Go method name is
-/// another seam's too and `behaviour.Generated` can carry only one of them.
+/// Seams whose Go method name is another seam's too, which `behaviour.Generated` cannot carry: a
+/// generated one is kept owed here, and an owed one is not forwarded.
 fn one_method_set(seams: &behaviour::Seams) -> TargetWeakening {
     let groups: Vec<String> = seams
         .collisions
@@ -606,21 +606,24 @@ fn one_method_set(seams: &behaviour::Seams) -> TargetWeakening {
         .map(|(method, sources)| format!("`{method}` ({})", sources.join(", ")))
         .collect();
     let mut affects: Vec<CapabilityKind> = seams
-        .weakened
+        .colliding
         .iter()
         .map(|capability| capability.kind)
         .collect();
     affects.sort();
     affects.dedup();
     TargetWeakening {
-        guarantee: "a command behaviour or view query the specification fully determines is \
-                    generated, over storage and context ports"
+        guarantee: "the generated behaviour bundle carries every behaviour and query a \
+                    component's port names — generated where the specification determines it, \
+                    forwarded to the implementor where the plan owes it"
             .to_owned(),
         instead: format!(
             "Go gives a type one method set, and `behaviour.Generated` is one type: seams whose \
-             Go method names coincide cannot all be its methods, so none of them is, and each \
-             one the plan marks generated keeps its seam here, owed, with the same contract and \
-             a stub refusing it, exactly as an obligation. The colliding names: {}",
+             Go method names coincide cannot all be its methods, so none of them is. Each one \
+             the plan marks generated keeps its seam here, owed, with the same contract and a \
+             stub refusing it, exactly as an obligation, and none the plan owes is forwarded. A \
+             component whose port names one of them takes a bundle of your own that has the \
+             method and delegates the rest to a `*Generated`. The colliding names: {}",
             groups.join("; ")
         ),
         affects,

@@ -17,6 +17,9 @@
 // declares no outcome for the request (a guard is undecidable over it, or no declared
 // branch answers it), or — as `entity invariant` — the declared outcome would leave an
 // entity breaking an invariant.
+//
+// Every port a generated method reads must be set: a nil field of [Ports] is a nil-pointer
+// panic at the first call that reads it.
 package behaviour
 
 import (

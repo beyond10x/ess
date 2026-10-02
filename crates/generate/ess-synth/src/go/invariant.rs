@@ -74,6 +74,31 @@ pub(super) fn preflight(
     }
 }
 
+/// The field names an entity's data struct has taken before its first field: `BrokenInvariant`,
+/// the check's method, where the entity declares an invariant. Go gives a struct one namespace for
+/// fields and methods, so a field exporting to that name takes the struct's usual repair
+/// (`BrokenInvariant_`) rather than the method's.
+pub(super) fn data_taken(entity: &ResolvedEntity) -> std::collections::BTreeMap<String, usize> {
+    let mut taken = std::collections::BTreeMap::new();
+    if !entity.invariants.is_empty() {
+        taken.insert("BrokenInvariant".to_owned(), 0);
+    }
+    taken
+}
+
+/// The Go member of an entity's data struct that holds `field` — the identity or a stored field —
+/// as the struct declares it.
+pub(super) fn data_member(entity: &ResolvedEntity, field: &str) -> String {
+    let mut taken = data_taken(entity);
+    for stored in std::iter::once(&entity.identity).chain(&entity.fields) {
+        let ident = items::field_ident(&mut taken, &stored.name);
+        if stored.name == field {
+            return ident;
+        }
+    }
+    unreachable!("`{field}` is a field of `{}`", entity.name)
+}
+
 /// The doc lines naming each declared invariant and the method that checks it.
 pub(super) fn doc(out: &mut String, entity: &ResolvedEntity, data: &str) {
     if entity.invariants.is_empty() {
@@ -629,7 +654,7 @@ impl<'a> Check<'a> {
                 format!(
                     "{}.{}",
                     self.receiver,
-                    items::member_ident(&stored, &field.name)
+                    data_member(self.entity, &field.name)
                 ),
                 field.type_ref.clone(),
             )));
