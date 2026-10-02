@@ -277,7 +277,11 @@ fn analyze_partition<'a>(
                 predicate: outcome.condition.predicate(),
             })
             .collect();
-        finite::analyze_with_states(&environment, &guards, &entity.states.states)
+        if command.default_outcome().is_some() {
+            finite::analyze_enum_states(&environment, &guards, &entity.states.states)
+        } else {
+            finite::analyze_with_states(&environment, &guards, &entity.states.states)
+        }
     };
     if let Some(cases) = analyze(&guarded) {
         return Some((cases, guarded));

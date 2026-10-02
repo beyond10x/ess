@@ -1,9 +1,11 @@
-# Closed-enum outcome coverage
+# Closed enum and Boolean outcome coverage
 
 Commands may omit a default only when a finite proof establishes exactly one input
-branch for every assignment in a closed domain. The initial fragment is required
-enum facts (including transparent newtypes and struct paths), equality/inequality
-with text literals, membership, and Boolean combinations of those predicates.
+branch for every assignment in a closed domain. Required enum and Boolean facts
+(including transparent newtypes and struct paths), equality/inequality with typed
+text or Boolean literals, membership, Boolean truthiness, and Boolean combinations
+of those predicates participate. Boolean domains are exactly `[false, true]`; enum
+domains keep their declaration order.
 It uses the existing expression type environment and predicate evaluator; it does
 not derive the domain from the guard's literals. At most 64 joint assignments and
 128 predicate nodes are admitted. Every referenced input participates in the joint
@@ -12,12 +14,12 @@ domain. Unreferenced inputs do not affect the proof.
 Optional paths, open scalar domains, collection selectors, quantifiers, unsupported
 operations, invalid literals and exhausted resource bounds cannot establish this
 proof. Unknown is never false and never proves coverage. Such commands retain the
-requirement for a genuine default. Missing cases name a real enum assignment;
+requirement for a genuine default. Missing cases name a real typed assignment;
 overlapping guards name the conflicting outcomes and assignment. A branch whose
 guard is never true remains declared and receives the existing synthesis refusal.
 
 Raw command shape checking has no registry. It may defer the missing-default check
-only for the syntactic finite fragment over named input roots. Full typed validation
+only for the syntactic finite fragment over named or primitive Boolean input roots. Full typed validation
 must establish the proof before the command becomes a validated specification.
 Shape checking still rejects multiple defaults and other structural defects.
 
@@ -31,7 +33,7 @@ including nested newtype and struct invariants. False or Unknown removes that
 candidate; it does not stop the remaining bounded search or prove unsatisfiability.
 An unreachable outcome retains its named refusal, whose trial count includes only
 admitted candidates actually decided against its guard (zero when none was admitted).
-The finite domain proof remains conservative over every declared enum value; filtering
+The finite domain proof remains conservative over every declared enum or Boolean value; filtering
 execution witnesses does not weaken source coverage validation or add an invariant solver.
 Existing commands with defaults retain the order and bytes of their admitted candidates;
 previously emitted invariant-invalid inputs now produce honest branch refusals.
@@ -40,8 +42,17 @@ are not treated as enum alternatives or as evidence covering input.
 
 This adds no source syntax, persisted fields, new diagnostic code or serialized proof.
 Previously rejected exhaustive commands become valid; existing admitted commands
-with real defaults keep their semantics. No format migration is required. Held-state
-guards and consumer adoption are separate work.
+with real defaults keep their semantics. `Case.values` and `FieldCase.fields/input`
+now carry `FactValue` instead of `String`, a public Rust source API change; enum text
+diagnostics and witness bytes remain unchanged. No format migration is required.
+Stored/related-row and held-state validators use the expanded proof only without a
+default. With a default they retain the prior enum-only proof, including its existing
+overlap checks and unsupported-domain fallback. Learning Boolean values must not add
+a new overlap rejection policy to previously admitted default-bearing commands.
+The shared product analyses retain their existing accounting: stored and input
+predicate lists each have a 128-node budget, and their combined assignment product
+has the single 64-assignment budget. Held states likewise multiply the input domain
+under that same 64-assignment limit.
 
 Deciding checks cover both measured six-value report shapes, every branch's concrete
 witness, omitted values, duplicate/overlapping guards, transparent wrappers, extra

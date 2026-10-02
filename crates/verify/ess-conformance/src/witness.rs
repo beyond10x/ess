@@ -478,7 +478,16 @@ fn finite_partition(
         let overrides: BTreeMap<FactPath, Choice> = case
             .values
             .into_iter()
-            .map(|(path, value)| (path, Choice::Value(Node::Text(value))))
+            .map(|(path, value)| {
+                (
+                    path,
+                    Choice::Value(match value {
+                        FactValue::Text(value) => Node::Text(value),
+                        FactValue::Bool(value) => Node::Bool(value),
+                        FactValue::Number(value) => Node::Number(value),
+                    }),
+                )
+            })
             .collect();
         for input in paired(builder, command, &overrides, presence_omits)? {
             if !inputs.contains(&input) {

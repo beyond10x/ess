@@ -76,17 +76,19 @@ field's type and synthesis drops it, and `lane_id: ""` is an empty string, which
 apart from an absent value and which a struct cannot hold at all. To empty a field, write
 `{cleared: true}`; see [value expressions](values-and-views.md#value-expressions).
 
-### Cover every declared enum value
+### Cover every declared enum or Boolean value
 
 Since 0.23.0 a command may omit its default when its input guards
 select exactly one outcome for every value of a required, closed enum. For example,
 if `status` has the declared variants `Ready` and `Stopped`, the two guards
 `status == Ready` and `status == Stopped` cover that input. Synthesis uses the same
 declared domain to construct a witness for each reachable branch. An omitted value
-or overlapping guards produce a concrete failing assignment.
+or overlapping guards produce a concrete failing assignment. Required `Boolean`
+inputs also form a closed domain: `pause == true` and `pause == false` cover every
+value without a default. Their witnesses carry Boolean values, not text.
 
 This proof is bounded to 64 joint assignments and 128 predicate nodes. Required
-enum fields, transparent wrappers, equality, membership and supported Boolean
+enum and Boolean fields, transparent wrappers, equality, membership, Boolean truthiness and supported Boolean
 combinations participate. Every referenced input must fit that finite domain;
 Optional paths, open types, unsupported expressions and unknown results retain the
 requirement for a default. Existing defaults and external outcomes keep their behavior.

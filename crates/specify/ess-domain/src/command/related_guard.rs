@@ -669,7 +669,12 @@ fn validate_partition(
         .collect();
     let default = command.default_outcome();
     let readable = readable_fields(entity, types);
-    let Some(cases) = super::finite::analyze_with_fields(
+    let analyze = if default.is_some() {
+        super::finite::analyze_enum_fields
+    } else {
+        super::finite::analyze_with_fields
+    };
+    let Some(cases) = analyze(
         &DomainEnvironment::new(types, &readable),
         &DomainEnvironment::new(types, &command.input),
         &guards,
@@ -699,13 +704,14 @@ fn validate_partition(
         if selected == 1 {
             continue;
         }
-        let assignment = |values: &std::collections::BTreeMap<_, String>| {
-            values
-                .iter()
-                .map(|(path, value)| format!("{path} = {value}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
+        let assignment =
+            |values: &std::collections::BTreeMap<_, ess_primitives::facts::FactValue>| {
+                values
+                    .iter()
+                    .map(|(path, value)| format!("{path} = {value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
         errors.push(ValidationError::at(
             command.site().key("outcomes"),
             if selected == 0 {
