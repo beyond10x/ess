@@ -32,6 +32,10 @@ export interface ReadRequest {
   view: string;
   params: Record<string, unknown>;
   paging?: string;
+//+bound
+  /** Aborts the request when the read is dropped before it answers. */
+  signal?: AbortSignal;
+//-bound
 }
 
 /** What a read returns. */
@@ -343,6 +347,7 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
       const search = query.toString();
       const response = await fetch(`${base(found.component)}${found.route.path}${search ? `?${search}` : ""}`, {
         headers: headers(false),
+        signal: request.signal,
       });
       const text = await response.text();
       if (response.status < 200 || response.status >= 300) {
@@ -473,9 +478,18 @@ export function useRead(
       ...previous,
       status: previous.status === "ready" ? "refreshing" : "loading",
     }));
+//+plain
     const start = () =>
       current
         .read({ view: spec.view, params, paging: spec.paging })
+//-plain
+//+bound
+    // A read dropped before it answers (params changed, a refetch, unmounted) is aborted.
+    const controller = new AbortController();
+    const start = () =>
+      current
+        .read({ view: spec.view, params, paging: spec.paging, signal: controller.signal })
+//-bound
         .then((result) => {
           if (live) {
             setState({ status: "ready", rows: result.rows, total: result.total ?? result.rows.length });
@@ -491,12 +505,18 @@ export function useRead(
     return () => {
       live = false;
       clearTimeout(timer);
+//+bound
+      controller.abort();
+//-bound
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled, seen, nonce]);
   return { ...state, params, refetch: () => setNonce((value) => value + 1) };
 }
 //+bound
+
+/** How many poll intervals a read may go unanswered before the poll gives it up. */
+const STALLED = 5;
 
 /**
  * Reads again every `every` milliseconds while mounted: a `live:` section's fallback, since no
@@ -505,11 +525,20 @@ export function useRead(
 export function usePoll(read: ReadState, every: number): ReadState {
   const refetch = read.refetch;
   // A tick while the read is still in flight is skipped: starting another would drop its answer.
+  // A read unanswered for `STALLED` intervals is given up (aborted) and read again.
+  const busy = (value: ReadStatus) => value === "loading" || value === "refreshing";
   const status = useRef(read.status);
+  // When the read in flight started: whatever started it, a refetch, a command or new params.
+  const since = useRef(Date.now());
+  if (busy(read.status) && !busy(status.current)) {
+    since.current = Date.now();
+  }
   status.current = read.status;
   useEffect(() => {
     const timer = setInterval(() => {
-      if (status.current !== "loading" && status.current !== "refreshing") {
+      const now = Date.now();
+      if (!busy(status.current) || now - since.current >= every * STALLED) {
+        since.current = now;
         refetch();
       }
     }, every);

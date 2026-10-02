@@ -131,6 +131,10 @@ const POLL_MS: u64 = 5000;
 /// The shortest `refresh:` a bound `live:` section may poll at; shorter is refused.
 const MIN_POLL_MS: u64 = 1000;
 
+/// The longest `refresh:` a bound `live:` section may poll at (24 h), well inside the 2^31 - 1 ms
+/// a browser timer holds; longer is refused.
+const MAX_POLL_MS: u64 = 24 * 3_600_000;
+
 /// `constructs.PlacementProfile.profiles.<profile>.defaults` of the schema this crate was built
 /// with: the store each profile gives each state class.
 fn schema_profiles() -> BTreeMap<String, BTreeMap<String, Store>> {
@@ -1701,6 +1705,102 @@ impl<'d> Gen<'d> {
     }
 
     #[allow(clippy::too_many_lines)] // one component, one hook per concern
+    /// How often a bound `live:` section polls, in milliseconds: no served surface streams, so the
+    /// section takes its `no_live` fallback, polling unless it says `refuse`. Its read's
+    /// `refresh:` is the interval (5 s without one) and must be a duration from 1 s to 24 h; one
+    /// the generator cannot read as a duration is refused, never replaced by the default.
+    fn poll_interval(&mut self, at: &NodePath, section: &Section) -> u64 {
+        let fallback = section
+            .common
+            .degrades
+            .get("no_live")
+            .map_or("poll", String::as_str);
+        if fallback == "refuse" {
+            self.refuse(
+                &at.child("live"),
+                "the served surface streams no events, and this section's \
+                 `degrades: {no_live: refuse}` refuses to poll instead",
+            );
+        }
+        let Some(refresh) =
+            Self::section_reads(&section.body).and_then(|reads| reads.refresh.as_ref())
+        else {
+            return POLL_MS;
+        };
+        let at = at.child("reads").child("refresh");
+        let Some(every) = millis(&refresh.0) else {
+            self.refuse(
+                &at,
+                &format!(
+                    "a live section bound to the served surface polls at its `refresh:`, and `{}` \
+                     is not a whole number of ms, s, m or h this generator can poll at",
+                    refresh.0
+                ),
+            );
+            return POLL_MS;
+        };
+        if !(MIN_POLL_MS..=MAX_POLL_MS).contains(&every) {
+            self.refuse(
+                &at,
+                &format!(
+                    "a live section bound to the served surface polls at its `refresh:`, and \
+                     {every} ms is outside 1 s to 24 h"
+                ),
+            );
+        }
+        every
+    }
+
+    /// What a reading section shows: `__read`, or `__data` when it is live — polled in a bound
+    /// project, played from its channel otherwise.
+    fn live_data(
+        &mut self,
+        lines: &mut Vec<String>,
+        page: &Page,
+        at: &NodePath,
+        section: &Section,
+    ) -> &'static str {
+        let Some(live) = &section.live else {
+            return "__read";
+        };
+        if self.bound {
+            let every = self.poll_interval(at, section);
+            let use_poll = self.import("runtime/data", "usePoll");
+            lines.push(format!("const __data = {use_poll}(__read, {every});"));
+            return "__data";
+        }
+        let use_live = self.import("runtime/live", "useLive");
+        let session = match self.session_expr(at, Some(page), &live.channel) {
+            Some(session) => {
+                let evaluate = self.import("runtime/expr", "evaluate");
+                format!(", {evaluate}({}, __scope.values)", ts::string(&session))
+            }
+            None => String::new(),
+        };
+        lines.push(format!(
+            "const __data = {use_live}(__read, {}{session});",
+            Self::live_literal(live)
+        ));
+        "__data"
+    }
+
+    /// `frame` with the section's `states:`, and the action its empty state offers.
+    fn with_states(&mut self, mut frame: El, at: &NodePath, section: &Section) -> El {
+        if let Some(states) = &section.states {
+            frame = frame.expr("states", Self::states_literal(states));
+            if let Some(action) = states
+                .empty
+                .as_ref()
+                .and_then(|empty| empty.action.as_ref())
+            {
+                let control =
+                    self.action_control(&at.child("states").child("empty").child("action"), action);
+                frame = frame.expr("emptyAction", control);
+            }
+        }
+        frame
+    }
+
     fn section_component(&mut self, name: &str, page: &Page, at: &NodePath, section: &Section) {
         let mut lines = Vec::new();
         self.section_profile = section.profile.as_ref().and_then(variant);
@@ -1737,54 +1837,7 @@ impl<'d> Gen<'d> {
             lines.push(format!(
                 "const __read = {use_read}({reads}, __scope.values, {enabled});"
             ));
-            let data = if let (Some(_), true) = (&section.live, self.bound) {
-                // No served surface streams: the section takes its `no_live` fallback, polling
-                // unless it says `refuse`.
-                let fallback = section
-                    .common
-                    .degrades
-                    .get("no_live")
-                    .map_or("poll", String::as_str);
-                if fallback == "refuse" {
-                    self.refuse(
-                        &at.child("live"),
-                        "the served surface streams no events, and this section's \
-                         `degrades: {no_live: refuse}` refuses to poll instead",
-                    );
-                }
-                let every = Self::section_reads(&section.body)
-                    .and_then(|reads| reads.refresh.as_ref())
-                    .and_then(|refresh| millis(&refresh.0))
-                    .unwrap_or(POLL_MS);
-                if every < MIN_POLL_MS {
-                    self.refuse(
-                        &at.child("reads").child("refresh"),
-                        &format!(
-                            "a live section bound to the served surface polls at its `refresh:`, \
-                             and {every} ms would read the server faster than once a second"
-                        ),
-                    );
-                }
-                let use_poll = self.import("runtime/data", "usePoll");
-                lines.push(format!("const __data = {use_poll}(__read, {every});"));
-                "__data"
-            } else if let Some(live) = &section.live {
-                let use_live = self.import("runtime/live", "useLive");
-                let session = match self.session_expr(at, Some(page), &live.channel) {
-                    Some(session) => {
-                        let evaluate = self.import("runtime/expr", "evaluate");
-                        format!(", {evaluate}({}, __scope.values)", ts::string(&session))
-                    }
-                    None => String::new(),
-                };
-                lines.push(format!(
-                    "const __data = {use_live}(__read, {}{session});",
-                    Self::live_literal(live)
-                ));
-                "__data"
-            } else {
-                "__read"
-            };
+            let data = self.live_data(&mut lines, page, at, section);
             frame = frame
                 .expr("data", data)
                 .expr("active", "__active")
@@ -1793,19 +1846,8 @@ impl<'d> Gen<'d> {
                 frame = frame.expr("load", ts::string(&load));
             }
         }
-        if let Some(states) = &section.states {
-            frame = frame.expr("states", Self::states_literal(states));
-            if let Some(action) = states
-                .empty
-                .as_ref()
-                .and_then(|empty| empty.action.as_ref())
-            {
-                let control =
-                    self.action_control(&at.child("states").child("empty").child("action"), action);
-                frame = frame.expr("emptyAction", control);
-            }
-        }
-        frame = frame
+        frame = self
+            .with_states(frame, at, section)
             .opt(
                 "degrades",
                 (!section.common.degrades.is_empty())
