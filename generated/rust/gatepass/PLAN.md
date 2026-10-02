@@ -56,7 +56,7 @@ What the specification fully determines is generated; what it cannot determine i
 
 | capability | source | why not generated | contract |
 | --- | --- | --- | --- |
-| command behaviour | `gatepass.visit.RegisterVisit` | kept an obligation by `creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered` | given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength` |
+| command behaviour | `gatepass.visit.RegisterVisit` | kept an obligation by `creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered` | given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength` |
 
 ## Refused — not represented by this synthesis
 

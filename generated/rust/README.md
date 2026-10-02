@@ -1,7 +1,8 @@
 # Synthesised Rust workspaces
 
 **Do not edit these files.** They are synthesised from the specifications under
-[`examples/`](../../examples) by `cargo xtask synth`, and CI fails if they differ from what
+[`examples/`](../../examples) by `ess generate synthesize`
+([refresh procedure](../../docs/design/synthesis-fixture-maintenance.md)), and CI fails if they differ from what
 the specifications determine — or if a workspace stops compiling.
 
 A workspace here is the part of an implementation that was never anyone's to write: the
@@ -20,8 +21,8 @@ implements each obligation against its contract, and its linker assembles compon
 implementations into a runnable system without ever choosing — zero implementations for an
 obligation is an unsatisfied obligation, two is an ambiguity error naming both (gap register D-2,
 whose home is [`the linker never chooses`](../../docs/design/linker-never-chooses.md)).
-`cargo xtask synth` then executes the committed conformance suite, unchanged, against
-that linked system: 29 of 29 scenarios must pass, and the deliberately corrupted variant
+The realization tests execute the committed conformance suite, unchanged, against
+that linked system: 33 of 33 scenarios must pass, and the deliberately corrupted variant
 beside the honest one must fail exactly the scenario that exists to catch it.
 
 ## The second transport, and the record two applications write
@@ -48,13 +49,13 @@ synthesised into, the address it bound and the port it took.
 | `surface.serving` | the served component, its declared reach, the transport, the number of routes, and every route as method, path, what it serves and the construct it serves |
 | `system.ready` | the system, and how many surfaces this process serves |
 
-The split is the whole comparison. Two applications synthesised from one specification must
-agree on every byte **outside** `runtime`, and `cargo xtask synth` starts both, reads their
-records, strips `runtime` and compares — so a member that moved into `runtime` to make a
-comparison pass would be a member that stopped being compared, and a member the record
-gains tomorrow is compared without anyone editing the comparison.
+Two applications synthesised from one specification must agree on every byte **outside**
+`runtime`. The HTTP projection test compares the static startup records embedded in generated
+Rust and Go source. It does not start the applications or compare their process output.
 
-| workspace | generated from | generated | obligations | refused | plan |
-| --- | --- | --- | --- | --- | --- |
-| [`billing/`](billing) | billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3, contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6) | 33 | 8 | 4 | [`billing/PLAN.md`](billing/PLAN.md) |
-| [`gatepass/`](gatepass) | gatepass v1 (model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c, contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed) | 22 | 5 | 2 | [`gatepass/PLAN.md`](gatepass/PLAN.md) |
+The generated plans record the current model/contract digests and disposition counts.
+
+| workspace | specification | plan |
+| --- | --- | --- |
+| [`billing/`](billing) | [`examples/billing`](../../examples/billing) | [`billing/PLAN.md`](billing/PLAN.md) |
+| [`gatepass/`](gatepass) | [`examples/gatepass`](../../examples/gatepass) | [`gatepass/PLAN.md`](gatepass/PLAN.md) |

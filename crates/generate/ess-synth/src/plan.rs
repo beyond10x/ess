@@ -698,8 +698,27 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
         }
         branches.push(branch);
     }
+    // The inventory below retains source order. For related guards the implementation is owed,
+    // so its reader also needs the conditional order from the binding design:
+    // docs/design/cross-record-and-stored-field-guards.md#the-precedence-order.
+    let precedence = if command
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
+    {
+        " Selection precedence: on commands with `when_related:`, check `existing_instance` then \
+         `exists: false` before input-guarded refusals; choose the first declared input refusal \
+         whose guard holds; then check addressed-row existence (`unknown_instance`, and \
+         `existing_instance` on commands without `when_related:`); then the held state \
+         (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch \
+         moves from a state the row does not hold; then accepting and external branches in \
+         declaration order. An accepting branch that moves nothing answers in every state. \
+         Related-presence predicates do not precede input-guarded refusals."
+    } else {
+        ""
+    };
     format!(
-        "given `{}` input, decide and enact exactly one outcome — {}",
+        "given `{}` input, decide and enact exactly one outcome.{precedence} Declared outcomes (declaration order, not selection precedence): {}",
         command.name,
         branches.join("; ")
     )

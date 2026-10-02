@@ -633,7 +633,7 @@ type AdmitVisitorBehavior interface {
 //
 // Why it is not generated: kept an obligation by `creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered`.
 //
-// Contract: given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength`.
+// Contract: given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength`.
 type RegisterVisitBehavior interface {
 	// RegisterVisit decides and enacts exactly one declared outcome of `gatepass.visit.RegisterVisit`.
 	//
