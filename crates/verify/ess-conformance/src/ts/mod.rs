@@ -281,6 +281,10 @@ fn sources(runtime: String) -> Vec<TsArtifact> {
             "src/direct_response.ts",
             include_str!("direct_response.ts").to_owned(),
         ),
+        file(
+            "src/one_time_response.ts",
+            include_str!("one_time_response.ts").to_owned(),
+        ),
         file("src/fixtures.ts", include_str!("fixtures.ts").to_owned()),
         file("src/reading.ts", include_str!("reading.ts").to_owned()),
         file(

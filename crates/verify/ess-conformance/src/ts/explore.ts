@@ -37,6 +37,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { refusePrivateExploration } from './one_time_response.js';
 import { join } from 'node:path';
 
 import { facts, fromNode, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
@@ -217,7 +218,9 @@ export function loadModel(
   if (digest !== declared) {
     throw new Error(MODEL_MISMATCH);
   }
-  return strictJSON(body);
+  const model = strictJSON(body);
+  refusePrivateExploration(model);
+  return model;
 }
 
 /** An object's values in byte order of key. */
