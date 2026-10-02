@@ -95,3 +95,20 @@ fn shared_resource_manifest_matches_actual_counts_and_encoding() {
         );
     }
 }
+
+#[test]
+fn integral_float_json_bytes_exact() {
+    check(ResourceMode::IntegralExact);
+}
+#[test]
+fn integral_float_json_bytes_over() {
+    check(ResourceMode::IntegralOver);
+}
+#[test]
+fn fractional_json_bytes_exact() {
+    check(ResourceMode::FractionalExact);
+}
+#[test]
+fn fractional_json_bytes_over() {
+    check(ResourceMode::FractionalOver);
+}
