@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 8
+revision: 9
 ---
 ## Intake
 
@@ -304,3 +304,12 @@ Full intake remains82 issues plus161 initially nonterminal stories. Counts are i
 PR381 merged as b4da64e38b770fe74103409fe1fef7ae6ca214f4 by the bot App; merge tree4ec76c386613762c7157d3908deb3addb136620d exactly matches tested55061600. Every reported check passed. Refreshed GitHub intake:58open issues, no new reports,24closed since82issue intake:364,358,357,356,355,353,352,351,348,346,329,327,326,325,324,323,322,320,305,303,300,291,281,279. GitHub closure is recorded separately from any remaining individual AEP acceptance reconciliation. No release beyond0.51.0 yet.
 
 Next server group316/379/385 plus347guidance now has full373pass package evidence, corrected generated fixtures and projection/site validation; synchronization with published UI main and one new remote gate remain. Synthesis288 committed63e64f6cd after measured red/treatment and independent review;308 now active, followed by accepted298.365complete read-filter work continues in its isolated tree.
+
+## Follow-up checkpoint after UI integration
+
+- Canonical planning commit577092dc2 records exact308 review/commit,318scope correction,298activation,284source-syntax mismatch and290full direction-aware design scope. The imported308 report was sanitized through the AEP CLI after common checks correctly refused workstation-specific paths; retry passed. No hook/policy was relaxed.
+- Conformance source b05007e49 adds reviewed constrained-newtype structural replay observation; five focused binaries43pass3fail baseline to46pass0fail0ignored treatment. Boolean finite-domain work298 is active next in the same batch; no full group check or publication yet.
+- Server candidate482609 includes mainb4da and passed common checks, ci-lint and projections; final site npm11 root-admission refusal is recorded on task:consumer-fixture-adoption-20261002. It remains unpublished pending the toolchain decision. Earlier full synthesis373pass0fail1existingignored and site evidence remain attributed to their exact source state.
+- Full accepted318implementation started in isolated tree ess-backlog-served-entry-20261002 at482609. No partial acceptance, release or durability claim.
+- UI365 full affected packages are running. Coordinator early source review identified two potential new shared-read cache defects: staggered local refetch counters can reuse a fulfilled stale request, and an authorization change is absent from the request key. Implementor is establishing decisive regressions; no final review verdict or green delivery claim yet.
+- New story:feature-request-360 records the full consumer need and a bounded, shared arrangement approach with accepted307. It is planned, not implemented; removing the view parameter is explicitly not closure.
