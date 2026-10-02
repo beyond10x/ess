@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -179,3 +179,11 @@ The reviewed generated disclosure identity contract is integrated as d213671dd; 
 The shared live observer declared-error case exposed a generated target API omission: native DeclaredErrorValue carries fields, while Go CommandResult.Error and TypeScript CommandResult.error carried only the declared error name. Accept an additive optional payload alongside the unchanged name: Go ErrorPayload map[string]Node and TypeScript errorPayload?: Record<string, Node>. The private observer must inspect the whole bounded payload, including unknown keys and nested strings, before persistence. Do not silently drop fields or fabricate conformance from the error name.
 
 This is a generated target API addition, not a suite/count/history format change. Omitted payload preserves legacy target behavior. Go users with unkeyed CommandResult struct literals must update those literals; documentation and release notes must disclose that source compatibility implication. Ports compare the same real shared declared-error callback against the native pinned status/counts/trace and verify that its observed plaintext never enters persisted evidence. This approval implements the existing accepted full-surface disclosure requirement and does not relax the complete runtime parity gate.
+
+## Exact private observation resource limits
+
+Coordinator review found that raw key/text lengths plus ad hoc node increments undercount the documented JSON payload byte bound: escaping, quotes, separators and numeric spellings were missing. This is a pre-freeze correctness finding; native and both ports must fix it before execution approval. Existing nineteen shared protocol cases do not establish resource-boundary parity.
+
+Accepted exact semantics: canonical compact JSON UTF-8 length at most 1,048,576 bytes inclusive; number spelling follows the native typed JSON authority. Members are each object entry or array element counted once, with no additional charge for an object's key. The root value has depth zero and every child value adds one, with depth at most 128 inclusive. Apply the limits to each response object and declared-error fields object, and to aggregate arrays of view rows or observed event payload objects. Limits must not reset for every row or event. Validate depth and member count before a bounded counting writer; do not allocate unbounded serialized plaintext to discover an overflow.
+
+Exact boundary, escaped-control-character, numeric and wrapper controls must be shared with both ports. Typed protocol identifiers and correlation metadata remain outside these declared JSON payload surfaces. Captured values, target error messages and identity failures must still never enter persisted evidence. Root owns independent review; native owner implements and freezes the resource vectors.
