@@ -10,6 +10,9 @@ use ess_domain::{
 use ess_primitives::predicate::Predicate;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod cells;
+pub use cells::{Aspect, Cell};
+
 /// Ordinary execution vocabulary containing a one-time trace policy.
 pub const ORDINARY: u32 = 34;
 /// Corresponding inventory-bearing execution vocabulary.
@@ -352,14 +355,25 @@ impl Trace {
 
 /// Whether the new closed policy occurs in an assembled suite.
 pub fn used_by(suite: &crate::ConformanceSuite) -> bool {
-    suite
-        .scenarios
-        .values()
-        .any(|scenario| scenario.one_time_response.is_some())
+    suite.scenarios.iter().any(|(id, scenario)| {
+        matches!(id, crate::ScenarioId::Disclosure { .. }) || scenario.one_time_response.is_some()
+    })
 }
 
 pub(crate) fn admit(suite: &crate::ConformanceSuite) -> Result<(), crate::AdmissionError> {
-    for scenario in suite.scenarios.values() {
+    for (id, scenario) in &suite.scenarios {
+        if let crate::ScenarioId::Disclosure { cell } = id {
+            if suite.provenance.suite_version.major() < ORDINARY {
+                return Err(crate::AdmissionError::new(
+                    "UnsupportedVocabulary",
+                    "$suite",
+                    "disclosure identity requires suite/34 or /35",
+                ));
+            }
+            cell.validate(scenario).map_err(|reason| {
+                crate::AdmissionError::new("InvalidOneTimeResponse", "$suite", reason)
+            })?;
+        }
         if let Some(trace) = &scenario.one_time_response {
             if suite.provenance.suite_version.major() < ORDINARY {
                 return Err(crate::AdmissionError::new(
