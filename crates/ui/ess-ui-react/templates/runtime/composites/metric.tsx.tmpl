@@ -5,7 +5,7 @@ import type { ReadSpec } from "../data";
 import { evaluate } from "../expr";
 import { getPath, isObject } from "../json";
 
-/** One number: from an expression (a channel field), or the first row of a read. */
+/** One number: from an expression (a channel field), the first row of a read, or an aggregate over its rows. */
 export function MetricView(props: {
   "data-ui-path"?: string;
   reads?: ReadSpec;
@@ -14,6 +14,8 @@ export function MetricView(props: {
   window?: string;
   format?: "number" | "duration" | "percent" | "bytes";
   label?: string;
+  aggregate?: "count" | "sum" | "min" | "max" | "avg";
+  field?: string;
 }): ReactNode {
   const scope = useScope();
   const data = useData(props.reads);
@@ -21,7 +23,9 @@ export function MetricView(props: {
   if (props.from !== undefined) {
     value = evaluate(props.from, scope.values);
   }
-  if (value === undefined && data) {
+  if (value === undefined && data && props.aggregate) {
+    value = aggregateRows(data.rows, props.aggregate, props.field);
+  } else if (value === undefined && data) {
     const row = data.rows[0];
     value = isObject(row)
       ? props.match
@@ -35,4 +39,31 @@ export function MetricView(props: {
       {props.label ? <span className="ui-metric-label">{props.label}</span> : null}
     </div>
   );
+}
+
+/** A metric's value over `rows`: the row count, or the sum, least, greatest or mean of `field`. */
+export function aggregateRows(
+  rows: readonly unknown[],
+  aggregate: "count" | "sum" | "min" | "max" | "avg",
+  field?: string,
+): number | undefined {
+  if (aggregate === "count") {
+    return rows.length;
+  }
+  const numbers = rows
+    .map((row) => (field === undefined ? undefined : getPath(row, field.split("."))))
+    .filter((value): value is number => typeof value === "number");
+  if (numbers.length === 0) {
+    return aggregate === "sum" ? 0 : undefined;
+  }
+  switch (aggregate) {
+    case "sum":
+      return numbers.reduce((total, value) => total + value, 0);
+    case "min":
+      return Math.min(...numbers);
+    case "max":
+      return Math.max(...numbers);
+    case "avg":
+      return numbers.reduce((total, value) => total + value, 0) / numbers.length;
+  }
 }

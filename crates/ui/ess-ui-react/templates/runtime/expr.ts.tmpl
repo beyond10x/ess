@@ -313,10 +313,37 @@ export function evaluate(text: string | undefined, values: Record<string, unknow
     return undefined;
   }
   const ast = parse(text);
-  if (ast === null) {
+  if (ast === null || (operates(ast) && !reads(ast))) {
     return text;
   }
   return run(ast, values);
+}
+
+/** Whether the expression applies an operator (`not`, `and`, `or`, `in`, `==`, `!=`). */
+function operates(ast: Ast): boolean {
+  return ast.kind === "not" || ast.kind === "binary";
+}
+
+/**
+ * Whether the expression reads a path from a root or calls a function. Words joined by an
+ * operator that read nothing (`Limit in cents`, `not yet sent`) are literal text, as
+ * `ess ui check` classifies them.
+ */
+function reads(ast: Ast): boolean {
+  switch (ast.kind) {
+    case "literal":
+      return false;
+    case "path":
+      return isRoot(ast.segments[0]);
+    case "call":
+      return true;
+    case "list":
+      return ast.items.some(reads);
+    case "not":
+      return reads(ast.operand);
+    case "binary":
+      return reads(ast.left) || reads(ast.right);
+  }
 }
 
 /** Whether an expression names a writable path (`state.x`, `draft.y`, `shell.z`). */

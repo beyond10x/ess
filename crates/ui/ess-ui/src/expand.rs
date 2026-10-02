@@ -621,6 +621,12 @@ impl Local<'_> {
                             at.clone(),
                             format!("`{type_name}` is not an enum type of this document"),
                         )
+                        .with_hint(
+                            "a renderer runs without the ESS model, so it cannot list a model \
+                             enum's variants; list them, or declare them under `types`, and \
+                             `ess ui check --model` holds a form field's options to its command \
+                             input's variants",
+                        )
                     })?;
                 let shape = &self.schema.template("choice", "options")["as"];
                 *short = Value::Sequence(

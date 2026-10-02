@@ -729,6 +729,13 @@ impl<'d> Gen<'d> {
             opts.choice_value = Some(field.field.clone());
             self.node(&at.child("choice"), node, &opts)
         });
+        let label_from = field.label_from.as_ref().map(|label_from| {
+            ts::object([
+                ("view", Some(ts::string(&label_from.view))),
+                ("field", Some(ts::string(&label_from.field))),
+                ("key", quoted(label_from.key.as_ref())),
+            ])
+        });
         ts::object([
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("field", Some(ts::string(&field.field))),
@@ -738,6 +745,7 @@ impl<'d> Gen<'d> {
             ("sortable", field.sortable.then(|| "true".to_owned())),
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
+            ("labelFrom", label_from),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
         ])
@@ -976,6 +984,14 @@ impl<'d> Gen<'d> {
                     .opt("reorder", reorder)
                     .opt("groupBy", quoted(c.group_by.as_ref()))
                     .opt(
+                        "groupOrder",
+                        (!c.group_order.is_empty()).then(|| strings(&c.group_order)),
+                    )
+                    .opt(
+                        "showEmptyGroups",
+                        c.show_empty_groups.then(|| "true".to_owned()),
+                    )
+                    .opt(
                         "rowKey",
                         c.reads
                             .as_ref()
@@ -1193,6 +1209,11 @@ impl<'d> Gen<'d> {
                         m.format.as_ref().and_then(variant).map(|f| ts::string(&f)),
                     )
                     .opt("label", quoted(m.label.as_ref()))
+                    .opt(
+                        "aggregate",
+                        m.aggregate.map(|kind| ts::string(kind.as_str())),
+                    )
+                    .opt("field", quoted(m.field.as_ref()))
                     .render()
             }
             Composite::Chart(c) => {

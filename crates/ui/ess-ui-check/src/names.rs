@@ -17,7 +17,7 @@ use ess_ui::{
     TypeExpr,
 };
 
-use crate::model::Model;
+use crate::model::{Fields, Model};
 use crate::schema::{self, is_unmapped_marker};
 use crate::walk::{body_of, in_declaration};
 use crate::Sink;
@@ -89,18 +89,18 @@ fn unresolved_types(model: &Model, document: &Document, ty: &TypeExpr, out: &mut
 }
 
 /// The input fields of the command `does` names, with its qualified name.
-fn inputs<'m>(model: &'m Model, does: &str) -> Option<(String, &'m BTreeSet<String>)> {
+fn inputs<'m>(model: &'m Model, does: &str) -> Option<(String, &'m Fields)> {
     let qualified = model.command(does)?;
     let inputs = model.inputs.get(&qualified)?;
     Some((qualified, inputs))
 }
 
-fn listing(names: &BTreeSet<String>) -> String {
+fn listing(names: &Fields) -> String {
     if names.is_empty() {
         return "none".to_owned();
     }
     names
-        .iter()
+        .keys()
         .map(|name| format!("`{name}`"))
         .collect::<Vec<_>>()
         .join(", ")
@@ -112,7 +112,7 @@ fn bind_keys(model: &Model, sink: &mut Sink, path: &NodePath, action: &Action) {
         return;
     };
     for key in action.bind.keys() {
-        if !inputs.contains(key) {
+        if !inputs.contains_key(key) {
             sink.push(
                 "field_in_model",
                 path,
@@ -141,7 +141,7 @@ fn field_head(field: &Field) -> Option<&str> {
 struct Known<'m> {
     /// The view or command, qualified.
     owner: String,
-    names: &'m BTreeSet<String>,
+    names: &'m Fields,
     /// `field` or `input`.
     what: &'static str,
 }
@@ -171,7 +171,7 @@ impl<'m> Known<'m> {
             let Some(head) = field_head(field) else {
                 continue;
             };
-            if !names.contains(head) {
+            if !names.contains_key(head) {
                 sink.push(
                     "field_in_model",
                     &under.child(&field.name),
@@ -190,7 +190,7 @@ impl<'m> Known<'m> {
                 continue;
             };
             for field in row_paths(&visible.0) {
-                if !self.names.contains(field) {
+                if !self.names.contains_key(field) {
                     sink.push(
                         "field_in_model",
                         &at.child(&action.name),

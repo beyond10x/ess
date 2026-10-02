@@ -23,8 +23,8 @@ use ess_ui::{
 };
 
 use crate::app::{
-    bar_items, board_rows, columns_of, form_fields, graph_collection, references_collection, App,
-    BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
+    aggregate, bar_items, board_rows, columns_of, form_fields, graph_collection, group_names,
+    references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
 };
 use crate::expr::{display, truthy};
 
@@ -752,8 +752,9 @@ impl App {
                     .or_else(|| place.ctx.row.cloned())
                     .unwrap_or(Value::Null);
                 let mut lines = Vec::new();
+                let shown = self.labelled(&record.fields, &row);
                 for field in &record.fields {
-                    lines.push(labelled(field, &cell(field, &row)));
+                    lines.push(labelled(field, &cell(field, &shown)));
                 }
                 if !record.tabs.is_empty() {
                     let tab = self.ui(place.ui).tab;
@@ -767,8 +768,9 @@ impl App {
                     if let Some(TabFields::Fields(fields)) =
                         record.tabs.get(tab).and_then(|tab| tab.fields.as_ref())
                     {
+                        let shown = self.labelled(fields, &row);
                         for field in fields {
-                            lines.push(labelled(field, &cell(field, &row)));
+                            lines.push(labelled(field, &cell(field, &shown)));
                         }
                     }
                 }
@@ -1000,10 +1002,16 @@ impl App {
         );
         let record_cells = table || collection.item.is_empty();
         let mut lines = Vec::new();
+        // Each row as shown: a `label_from` column holds its label (beyond10x/ess#364).
+        let shown_rows: Vec<Value> = rows
+            .iter()
+            .map(|row| self.labelled(&columns, row))
+            .collect();
         let widths: Vec<usize> = columns
             .iter()
             .map(|field| {
-                rows.iter()
+                shown_rows
+                    .iter()
                     .map(|row| cell(field, row).width())
                     .chain(std::iter::once(label_of(field).width()))
                     .max()
@@ -1071,12 +1079,32 @@ impl App {
             lines.push(Line::styled(format!("  {}", header.join("  ")), bold()));
         }
         let mut group = None;
+        // The groups in the order they are shown, and how many of them are already drawn: a
+        // declared group no row falls under is drawn, empty, where it stands in that order.
+        let groups = group_names(collection, &all);
+        let mut drawn = 0;
+        let empty_heading = |name: &str, lines: &mut Vec<Line<'static>>| {
+            if let Some(by) = &collection.group_by {
+                if collection.show_empty_groups
+                    && !all.iter().any(|row| display(&row[by.as_str()]) == name)
+                {
+                    lines.push(Line::styled(format!("── {by}: {name} ──"), bold()));
+                    lines.push(Line::styled("  (none)", dim()));
+                }
+            }
+        };
         // Each recorded row: its key, its line and its data.
         let mut recorded: Vec<(String, usize, &Value)> = Vec::new();
         for (index, row) in rows.iter().enumerate() {
             if let Some(by) = &collection.group_by {
                 let current = display(&row[by.as_str()]);
                 if group.as_ref() != Some(&current) {
+                    if let Some(at) = groups.iter().position(|name| *name == current) {
+                        for name in groups.get(drawn..at).unwrap_or_default() {
+                            empty_heading(name, &mut lines);
+                        }
+                        drawn = drawn.max(at + 1);
+                    }
                     lines.push(Line::styled(format!("── {by}: {current} ──"), bold()));
                     group = Some(current);
                 }
@@ -1084,14 +1112,17 @@ impl App {
             let selected = state.selected.contains(&display(&row["id"]));
             let mark = if selected { "✓ " } else { "  " };
             let text = if cards {
-                let mut parts: Vec<String> = columns.iter().map(|field| cell(field, row)).collect();
+                let mut parts: Vec<String> = columns
+                    .iter()
+                    .map(|field| cell(field, &shown_rows[index]))
+                    .collect();
                 parts.retain(|part| !part.is_empty());
                 parts.join(" · ")
             } else {
                 columns
                     .iter()
                     .zip(&widths)
-                    .map(|(field, width)| pad(&cell(field, row), *width))
+                    .map(|(field, width)| pad(&cell(field, &shown_rows[index]), *width))
                     .collect::<Vec<_>>()
                     .join("  ")
             };
@@ -1109,7 +1140,7 @@ impl App {
                 } else {
                     columns
                         .iter()
-                        .map(|field| cell(field, row))
+                        .map(|field| cell(field, &shown_rows[index]))
                         .collect::<Vec<_>>()
                         .join("  ")
                 };
@@ -1125,7 +1156,7 @@ impl App {
                 recorded.push((key.clone(), lines.len(), row));
                 let mut x = 2;
                 for (field, (width, start)) in columns.iter().zip(widths.iter().zip(&starts)) {
-                    let shown = cell(field, row);
+                    let shown = cell(field, &shown_rows[index]);
                     let (at, cells) = if cards {
                         if shown.is_empty() {
                             continue;
@@ -1156,6 +1187,11 @@ impl App {
                 truncate(&format!("{mark}{text}"), place.width),
                 style,
             ));
+        }
+        if collection.group_by.is_some() && state.page.min(pages - 1) + 1 == pages {
+            for name in groups.get(drawn..).unwrap_or_default() {
+                empty_heading(name, &mut lines);
+            }
         }
         let row = rows.get(cursor);
         let row_ctx = Ctx { row, ..place.ctx };
@@ -1618,6 +1654,11 @@ impl App {
                         value = row[key].clone();
                     }
                 }
+            }
+        } else if let (Some(reads), Some(kind)) = (&metric.reads, metric.aggregate) {
+            let request = self.request(reads, &place.ctx);
+            if let Some(result) = self.rows_of(&request) {
+                value = aggregate(kind, metric.field.as_deref(), &result.rows);
             }
         } else if let Some(reads) = &metric.reads {
             let request = self.request(reads, &place.ctx);

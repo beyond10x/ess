@@ -30,15 +30,42 @@ pub(crate) enum Resolved {
 }
 
 /// Evaluates `text`. `None` means the expression is outside the fixture grammar.
+///
+/// Words joined by an operator that read no path from a root (`not yet sent`, `Limit in cents`)
+/// are literal text, as `ess ui check` classifies them (beyond10x/ess#353).
 pub(crate) fn eval(text: &str, scope: &dyn Resolve) -> Option<Value> {
+    if is_literal_text(text) {
+        return Some(Value::String(text.trim().to_owned()));
+    }
+    eval_expr(text, scope)
+}
+
+/// `true` when `text` combines words with an operator but reads no path from a root and calls
+/// nothing: a sentence, not an expression.
+pub(crate) fn is_literal_text(text: &str) -> bool {
+    let text = text.trim();
+    let words: Vec<&str> = text
+        .split(|c: char| c.is_whitespace() || "[],".contains(c))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let operator = words
+        .iter()
+        .any(|word| ["not", "and", "or", "in", "==", "!="].contains(word));
+    let reads = words.iter().any(|word| {
+        word.contains('(') || ROOTS.contains(&word.split('.').next().unwrap_or_default())
+    });
+    operator && !reads
+}
+
+fn eval_expr(text: &str, scope: &dyn Resolve) -> Option<Value> {
     let text = text.trim();
     if let Some(rest) = text.strip_prefix("not ") {
-        return eval(rest, scope).map(|value| Value::Bool(!truthy(&value)));
+        return eval_expr(rest, scope).map(|value| Value::Bool(!truthy(&value)));
     }
     for (operator, equal) in [(" == ", true), (" != ", false)] {
         if let Some((left, right)) = text.split_once(operator) {
-            let left = eval(left, scope)?;
-            let right = eval(right, scope)?;
+            let left = eval_expr(left, scope)?;
+            let right = eval_expr(right, scope)?;
             return Some(Value::Bool((display(&left) == display(&right)) == equal));
         }
     }

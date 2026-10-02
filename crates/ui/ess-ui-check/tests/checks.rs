@@ -1125,3 +1125,123 @@ fn a_document_file_is_checked_relative_to_its_directory() {
         report.findings
     );
 }
+
+/// The fixture model with an enum: every item sits on a `shop.stock.Shelf` (Top, Middle,
+/// Bottom), which `AddItem` takes and the `Items` view shows.
+fn shelf_model() -> Model {
+    let read = |file: &str| {
+        std::fs::read_to_string(crate_dir().join("tests/fixtures/model").join(file))
+            .unwrap_or_else(|error| panic!("{file}: {error}"))
+    };
+    let stock = read("domains/stock.yaml")
+        .replace(
+            "    of: Uuid\n",
+            "    of: Uuid\n  - name: shop.stock.Shelf\n    kind: enum\n    variants: [Top, Middle, Bottom]\n",
+        )
+        .replace(
+            "      - name: label\n        type: String\n",
+            "      - name: label\n        type: String\n      - name: shelf\n        type: shop.stock.Shelf\n",
+        );
+    let sources = [
+        ("system.yaml", read("system.yaml")),
+        ("components.yaml", read("components.yaml")),
+        ("domains/stock.yaml", stock),
+        ("domains/audit.yaml", read("domains/audit.yaml")),
+    ]
+    .map(|(label, text)| (label.to_owned(), text));
+    model_from_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"))
+}
+
+fn shelf_report(sections: &str) -> Report {
+    let text = doc(&[
+        ("model", "shop"),
+        (
+            "pages",
+            &format!("{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: stock.Items}}, {sections}]}}}}"),
+        ),
+    ]);
+    report_with(&text, Some(&shelf_model()), &Options::default())
+}
+
+/// beyond10x/ess#351, #358, #364: a `group_by`, an aggregate's `field` and a `label_from` name
+/// row fields of their views.
+#[test]
+fn row_fields() {
+    let report = shelf_report(
+        "{name: list, component: collection, reads: stock.Items, group_by: aisle, \
+          columns: [{field: item_id, label_from: {view: stock.Items, field: title}}, \
+                    {field: label, label_from: {view: stock.Items, field: label, key: label}}]}, \
+         {name: tally, component: metric, reads: stock.Items, aggregate: sum, field: weight}",
+    );
+    trips_in(&report, "row_fields", "pages/p/sections/list/group_by");
+    trips_in(
+        &report,
+        "row_fields",
+        "pages/p/sections/list/columns/item_id/label_from/field",
+    );
+    trips_in(&report, "row_fields", "pages/p/sections/tally/field");
+    // The default key, `id`, is no row field of `Items` either: its identity is `item_id`.
+    trips_in(
+        &report,
+        "row_fields",
+        "pages/p/sections/list/columns/item_id/label_from/key",
+    );
+    assert_eq!(tripped(&report, "row_fields").len(), 4, "{report:#?}");
+}
+
+/// beyond10x/ess#351, #330: a `group_order` over an enum field, and a form choice's fixed
+/// options for an enum input, hold the model's variants.
+#[test]
+fn model_enum_values() {
+    let report = shelf_report(
+        "{name: list, component: collection, reads: stock.Items, group_by: shelf, \
+          group_order: [Top, Floor]}, \
+         {name: add, component: form, does: stock.AddItem, \
+          fields: [label, {field: shelf, as: choice, choice: {component: choice, options: [Top, Middle]}}]}, \
+         {name: fine, component: collection, reads: stock.Items, group_by: shelf, group_order: [Bottom, Top]}",
+    );
+    let order = trips_in(&report, "model_enum_values", "pages/p/sections/list/group_order");
+    assert!(order.message.contains("`Floor`"), "{order:#?}");
+    let options = trips_in(
+        &report,
+        "model_enum_values",
+        "pages/p/sections/add/fields/shelf/choice/options",
+    );
+    assert!(options.message.contains("`Bottom`"), "{options:#?}");
+    assert_eq!(tripped(&report, "model_enum_values").len(), 2, "{report:#?}");
+}
+
+/// beyond10x/ess#358: `aggregate` needs `reads`, and a `field` unless it counts.
+#[test]
+fn metric_aggregate() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+          {name: a, component: metric, from: channel.c.n, aggregate: count}, \
+          {name: b, component: metric, reads: t.All, aggregate: avg}, \
+          {name: c, component: metric, reads: t.All, field: amount}, \
+          {name: d, component: metric, reads: t.All, aggregate: count}, \
+          {name: e, component: metric, reads: t.All, aggregate: max, field: amount}]}",
+    ));
+    trips_in(&report, "metric_aggregate", "pages/p/sections/a/aggregate");
+    trips_in(&report, "metric_aggregate", "pages/p/sections/b/aggregate");
+    trips_in(&report, "metric_aggregate", "pages/p/sections/c/field");
+    assert_eq!(tripped(&report, "metric_aggregate").len(), 3, "{report:#?}");
+}
+
+/// beyond10x/ess#351: `group_order` and `show_empty_groups` order the groups of `group_by`.
+#[test]
+fn group_order() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+          {name: a, component: collection, reads: t.All, group_order: [x]}, \
+          {name: b, component: collection, reads: t.All, group_by: s, show_empty_groups: true}, \
+          {name: c, component: collection, reads: t.All, group_by: s, group_order: [x], show_empty_groups: true}]}",
+    ));
+    trips_in(&report, "group_order", "pages/p/sections/a");
+    trips_in(
+        &report,
+        "group_order",
+        "pages/p/sections/b/show_empty_groups",
+    );
+    assert_eq!(tripped(&report, "group_order").len(), 2, "{report:#?}");
+}

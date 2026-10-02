@@ -40,6 +40,9 @@ use ess_ui::{
 use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
 use crate::{CheckError, Sink};
 
+/// Fields by name (and wire name), each with the wire variants of its enum, if it is one.
+pub(crate) type Fields = BTreeMap<String, Option<Vec<String>>>;
+
 /// A compiled ESS model, indexed by the names a document can use.
 ///
 /// Readability is an approximation: ESS grants commands, not views, so a view counts as readable
@@ -50,10 +53,10 @@ pub struct Model {
     system: String,
     views: BTreeMap<String, View>,
     commands: BTreeSet<String>,
+    /// Each command's input fields by qualified name, as [`View::fields`] holds a row's.
+    pub(crate) inputs: BTreeMap<String, Fields>,
     events: BTreeSet<String>,
     readable: BTreeSet<DomainHandle>,
-    /// Each command's input fields, by qualified name.
-    pub(crate) inputs: BTreeMap<String, BTreeSet<String>>,
     /// The qualified names a document type can name: the model's types, entities and views.
     pub(crate) type_names: BTreeSet<String>,
 }
@@ -63,8 +66,8 @@ pub struct Model {
 pub(crate) struct View {
     domain: DomainHandle,
     params: Vec<Param>,
-    /// The fields of a row.
-    pub(crate) fields: BTreeSet<String>,
+    /// Its row fields, by name and by wire name: the variants each holds when it is an enum.
+    pub(crate) fields: Fields,
 }
 
 /// One declared view parameter: its name, and whether a read must bind it — every parameter but
@@ -206,26 +209,19 @@ impl Model {
                         View {
                             domain: view.domain.clone(),
                             params,
-                            fields: view.fields.iter().map(|field| field.name.clone()).collect(),
+                            fields: fields_of(ir, &view.fields),
                         },
                     )
                 })
                 .collect(),
             commands: ir.commands().keys().map(ToString::to_string).collect(),
-            events: ir.events().keys().map(ToString::to_string).collect(),
-            readable,
             inputs: ir
                 .commands()
                 .iter()
-                .map(|(name, command)| {
-                    let fields = command
-                        .input
-                        .iter()
-                        .map(|field| field.name.clone())
-                        .collect();
-                    (name.to_string(), fields)
-                })
+                .map(|(name, command)| (name.to_string(), fields_of(ir, &command.input)))
                 .collect(),
+            events: ir.events().keys().map(ToString::to_string).collect(),
+            readable,
             type_names: ir
                 .types()
                 .keys()
@@ -326,6 +322,147 @@ impl Model {
                 }
             }
         }
+        self.values(document, sink);
+    }
+
+    /// The qualified name and row fields of the view `reads` names, when the model has it.
+    fn row_fields(&self, reads: Option<&Reads>) -> Option<(String, &Fields)> {
+        let name = reads?.view.as_ref()?;
+        self.view(name)
+            .map(|(qualified, view)| (qualified, &view.fields))
+    }
+
+    /// The fields and values the document reads from rows and inputs the model types: a
+    /// `group_by`, `group_order`, an aggregate's `field`, a `label_from` and a form choice's fixed
+    /// options (beyond10x/ess#351, #358, #364, #330).
+    fn values(&self, document: &Document, sink: &mut Sink) {
+        for located in document.nodes() {
+            let path = &located.path;
+            if in_declaration(path) {
+                continue;
+            }
+            if let NodeRef::Field(field) = located.node {
+                if let Some(label_from) = &field.label_from {
+                    if let Some((qualified, view)) = self.view(&label_from.view) {
+                        for (key, name) in
+                            [("field", &*label_from.field), ("key", label_from.key())]
+                        {
+                            let at = path.child("label_from").child(key);
+                            row_field(sink, &at, &qualified, &view.fields, name);
+                        }
+                    }
+                }
+                continue;
+            }
+            let Some(Body::Composite(composite)) = crate::walk::body_of(located.node) else {
+                continue;
+            };
+            match composite {
+                Composite::Collection(collection) => {
+                    let (Some(by), Some((view, fields))) = (
+                        &collection.group_by,
+                        self.row_fields(collection.reads.as_ref()),
+                    ) else {
+                        continue;
+                    };
+                    if row_field(sink, &path.child("group_by"), &view, fields, by) {
+                        if let Some(Some(variants)) = fields.get(by.as_str()) {
+                            enum_values(
+                                sink,
+                                &path.child("group_order"),
+                                &format!("`{by}` of `{view}`"),
+                                variants,
+                                &collection.group_order,
+                                false,
+                            );
+                        }
+                    }
+                }
+                Composite::Metric(metric) => {
+                    if let (Some(field), Some((view, fields)), Some(_)) = (
+                        &metric.field,
+                        self.row_fields(metric.reads.as_ref()),
+                        metric.aggregate,
+                    ) {
+                        row_field(sink, &path.child("field"), &view, fields, field);
+                    }
+                }
+                Composite::Form(form) => self.form_options(form, path, sink),
+                _ => {}
+            }
+        }
+    }
+
+    /// A form field whose choice lists fixed options, over a command input that is an enum:
+    /// the options are the enum's variants.
+    fn form_options(&self, form: &ess_ui::Form, path: &NodePath, sink: &mut Sink) {
+        let mut fields: Vec<(NodePath, &ess_ui::Field, &str)> = form
+            .fields
+            .iter()
+            .map(|field| {
+                (
+                    path.child("fields").child(&field.name),
+                    field,
+                    form.does.as_str(),
+                )
+            })
+            .collect();
+        for group in &form.groups {
+            let does = group.does.as_deref().unwrap_or(&form.does);
+            let at = path.child("groups").child(&group.name).child("fields");
+            fields.extend(
+                group
+                    .fields
+                    .iter()
+                    .map(|field| (at.child(&field.name), field, does)),
+            );
+        }
+        for tab in &form.tabs {
+            if let Some(ess_ui::TabFields::Fields(tab_fields)) = &tab.fields {
+                let at = path.child("tabs").child(&tab.name).child("fields");
+                fields.extend(
+                    tab_fields
+                        .iter()
+                        .map(|field| (at.child(&field.name), field, form.does.as_str())),
+                );
+            }
+        }
+        for (at, field, does) in fields {
+            let Some(Body::Composite(Composite::Choice(choice))) =
+                field.choice.as_deref().map(|node| &node.body)
+            else {
+                continue;
+            };
+            if choice.options.is_empty() || field.binds.is_some() {
+                continue;
+            }
+            let Some(Some(Some(variants))) = self
+                .command(does)
+                .and_then(|command| self.inputs.get(&command))
+                .map(|inputs| inputs.get(field.field.as_str()))
+            else {
+                continue;
+            };
+            let written: Vec<String> = choice
+                .options
+                .iter()
+                .map(|option| match &option.value {
+                    serde_yaml::Value::String(text) => text.clone(),
+                    other => serde_yaml::to_string(other)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_owned(),
+                })
+                .collect();
+            enum_values(
+                sink,
+                &at.child("choice").child("options"),
+                &format!("input `{}` of `{does}`", field.field),
+                variants,
+                &written,
+                true,
+            );
+        }
     }
 
     fn readable(
@@ -347,6 +484,75 @@ impl Model {
                 ),
             );
         }
+    }
+}
+
+/// `true` when `name` is a row field of `view`; else reports it under `row_fields`.
+fn row_field(sink: &mut Sink, at: &NodePath, view: &str, fields: &Fields, name: &str) -> bool {
+    if fields.contains_key(name) {
+        return true;
+    }
+    sink.push(
+        "row_fields",
+        at,
+        format!(
+            "`{name}` is no row field of `{view}`; it has {}",
+            fields
+                .keys()
+                .map(|key| format!("`{key}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    );
+    false
+}
+
+/// Values a document writes for an enum of the model: each must be a variant, and when `every`
+/// holds, every variant must be written.
+fn enum_values(
+    sink: &mut Sink,
+    at: &NodePath,
+    what: &str,
+    variants: &[String],
+    written: &[String],
+    every: bool,
+) {
+    let unknown: Vec<&String> = written
+        .iter()
+        .filter(|value| !variants.contains(value))
+        .collect();
+    let missing: Vec<&String> = variants
+        .iter()
+        .filter(|variant| !written.contains(variant))
+        .collect();
+    let list = |values: &[&String]| {
+        values
+            .iter()
+            .map(|value| format!("`{value}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if !unknown.is_empty() {
+        sink.push(
+            "model_enum_values",
+            at,
+            format!(
+                "{} {} no variant of the enum {what} ({})",
+                list(&unknown),
+                if unknown.len() == 1 { "is" } else { "are" },
+                variants.join(", ")
+            ),
+        );
+    }
+    if every && !missing.is_empty() {
+        sink.push(
+            "model_enum_values",
+            at,
+            format!(
+                "the enum {what} also has {}, which the options leave out",
+                list(&missing)
+            ),
+        );
     }
 }
 
@@ -525,6 +731,7 @@ impl<'a> Read<'a> {
 /// Every view, command and event name `document` writes, with the node it is written on: the one
 /// walk the model checks and the binding both read, so the two cannot disagree about which names
 /// a document uses.
+#[allow(clippy::too_many_lines)] // one arm per kind of node that names a view, command or event
 fn names(document: &Document) -> Vec<Named<'_>> {
     let mut out = Vec::new();
     for located in document.nodes() {
@@ -619,6 +826,15 @@ fn names(document: &Document) -> Vec<Named<'_>> {
             NodeRef::FormGroup(group) => {
                 if let Some(command) = &group.does {
                     push(path.clone(), Kind::Command(command));
+                }
+            }
+            NodeRef::Field(field) => {
+                if let Some(label_from) = &field.label_from {
+                    // A renderer reads the related view once, without params.
+                    push(
+                        path.child("label_from"),
+                        view(&label_from.view, Bound::Nothing),
+                    );
                 }
             }
             _ => {}
@@ -971,6 +1187,37 @@ impl Surface {
             }
         }
         surface
+    }
+}
+
+/// Fields by name and by wire name, each with the wire variants of its enum, if it is one.
+fn fields_of(ir: &EssIr, fields: &[ess_compiler::ir::ResolvedField]) -> Fields {
+    let mut out = BTreeMap::new();
+    for field in fields {
+        let variants = enum_variants(ir, &field.type_ref);
+        if let Some(wire) = &field.naming.wire {
+            out.insert(wire.clone(), variants.clone());
+        }
+        out.insert(field.name.clone(), variants);
+    }
+    out
+}
+
+/// The wire variants of the enum `type_ref` holds, through `Optional`, a list and newtypes.
+fn enum_variants(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<Vec<String>> {
+    match type_ref {
+        ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => enum_variants(ir, of),
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Enum { variants } => Some(
+                variants
+                    .iter()
+                    .map(|variant| variant.wire().to_owned())
+                    .collect(),
+            ),
+            ResolvedBody::Newtype { of, .. } => enum_variants(ir, of),
+            ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => None,
+        },
+        ResolvedTypeRef::Primitive { .. } | ResolvedTypeRef::Map { .. } => None,
     }
 }
 

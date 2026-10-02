@@ -803,6 +803,7 @@ impl App {
                 if let Some(reads) = body_reads(body) {
                     out.push(self.request(reads, ctx));
                 }
+                Self::composite_label_reads(composite, out);
                 match composite {
                     Composite::Collection(collection) => {
                         if let Some(expand) = &collection.expand {
@@ -880,6 +881,75 @@ impl App {
         }
     }
 
+    /// The read a `label_from` looks its labels up in: the related view, without params.
+    fn label_request(label_from: &ess_ui::LabelFrom) -> ReadRequest {
+        ReadRequest {
+            view: label_from.view.clone(),
+            fixture: None,
+            params: BTreeMap::new(),
+        }
+    }
+
+    /// One read per related view the fields label from.
+    fn label_reads(fields: &[Field], out: &mut Vec<ReadRequest>) {
+        out.extend(
+            fields
+                .iter()
+                .filter_map(|field| field.label_from.as_ref())
+                .map(Self::label_request),
+        );
+    }
+
+    /// The related views a composite's shown fields label from: a collection's columns, a
+    /// record's fields and tab fields, a references list's columns.
+    fn composite_label_reads(composite: &Composite, out: &mut Vec<ReadRequest>) {
+        match composite {
+            Composite::Collection(collection) => match &collection.columns {
+                Some(Columns::Fixed(fields)) => Self::label_reads(fields, out),
+                Some(Columns::Selectable(columns)) => Self::label_reads(&columns.all, out),
+                _ => {}
+            },
+            Composite::Record(record) => {
+                Self::label_reads(&record.fields, out);
+                for tab in &record.tabs {
+                    if let Some(TabFields::Fields(fields)) = &tab.fields {
+                        Self::label_reads(fields, out);
+                    }
+                }
+            }
+            Composite::References(references) => Self::label_reads(&references.columns, out),
+            _ => {}
+        }
+    }
+
+    /// `row` as it is shown: each field with a `label_from` holds the label of the related row
+    /// its value keys, where the related view has one (beyond10x/ess#364). The row an action
+    /// sees keeps the value.
+    pub(crate) fn labelled(&self, fields: &[Field], row: &Value) -> Value {
+        let mut shown = row.clone();
+        for field in fields {
+            let Some(label_from) = &field.label_from else {
+                continue;
+            };
+            let key = display(&row[field.field.as_str()]);
+            let label = self
+                .rows_of(&Self::label_request(label_from))
+                .and_then(|result| {
+                    result
+                        .rows
+                        .iter()
+                        .find(|related| display(&related[label_from.key()]) == key)
+                })
+                .map(|related| related[label_from.field.as_str()].clone());
+            if let (Some(label), Value::Mapping(shown)) = (label, &mut shown) {
+                if !label.is_null() {
+                    shown.insert(Value::from(field.field.as_str()), label);
+                }
+            }
+        }
+        shown
+    }
+
     pub(crate) fn overlay_params(&self) -> BTreeMap<String, Value> {
         self.overlay
             .as_ref()
@@ -936,7 +1006,11 @@ impl App {
             });
         }
         if let Some(group) = &collection.group_by {
-            rows.sort_by_key(|row| display(&row[group.as_str()]));
+            let groups = group_names(collection, &rows);
+            rows.sort_by_key(|row| {
+                let value = display(&row[group.as_str()]);
+                groups.iter().position(|name| *name == value)
+            });
         }
         rows
     }
@@ -2993,6 +3067,64 @@ pub(crate) fn form_fields(form: &Form, tab: usize) -> Vec<&Field> {
     fields
 }
 
+/// The groups of a grouped collection, in the order they are shown: its `group_order`, then
+/// every other value in the order it first appears in `rows` (beyond10x/ess#351).
+pub(crate) fn group_names(collection: &ess_ui::Collection, rows: &[Value]) -> Vec<String> {
+    let mut groups = collection.group_order.clone();
+    if let Some(by) = &collection.group_by {
+        for row in rows {
+            let value = display(&row[by.as_str()]);
+            if !groups.contains(&value) {
+                groups.push(value);
+            }
+        }
+    }
+    groups
+}
+
+/// A metric's value computed over `rows` (beyond10x/ess#358): `Null` when no row holds a
+/// number for an aggregate that needs one.
+pub(crate) fn aggregate(
+    kind: ess_ui::MetricAggregate,
+    field: Option<&str>,
+    rows: &[Value],
+) -> Value {
+    use ess_ui::MetricAggregate::{Avg, Count, Max, Min, Sum};
+    if kind == Count {
+        return Value::Number(rows.len().into());
+    }
+    let numbers: Vec<f64> = rows
+        .iter()
+        .filter_map(|row| field.and_then(|field| row[field].as_f64()))
+        .collect();
+    if numbers.is_empty() {
+        return if kind == Sum {
+            Value::Number(0.into())
+        } else {
+            Value::Null
+        };
+    }
+    let value = match kind {
+        Sum => numbers.iter().sum(),
+        Min => numbers.iter().copied().fold(f64::INFINITY, f64::min),
+        Max => numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        #[allow(clippy::cast_precision_loss)] // a row count far below 2^52
+        Avg => numbers.iter().sum::<f64>() / numbers.len() as f64,
+        Count => unreachable!("answered above"),
+    };
+    number(value)
+}
+
+/// A whole number as an integer, so `60` is not shown as `60.0`.
+fn number(value: f64) -> Value {
+    #[allow(clippy::cast_possible_truncation)] // checked to be whole and in range
+    if value.fract() == 0.0 && value.abs() < 9e15 {
+        Value::Number((value as i64).into())
+    } else {
+        Value::Number(value.into())
+    }
+}
+
 /// The columns of a collection, or one per key of its first row when it names none.
 pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec<Field> {
     match &collection.columns {
@@ -3013,6 +3145,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         sortable: false,
                         visible: None,
                         binds: None,
+                        label_from: None,
                         note: None,
                     })
                     .collect()
@@ -3031,6 +3164,7 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         sortable: false,
         visible: None,
         binds: None,
+        label_from: None,
         note: None,
     }
 }
@@ -3063,6 +3197,8 @@ pub(crate) fn graph_collection(editor: &ess_ui::GraphEditor) -> ess_ui::Collecti
         item: Vec::new(),
         reorder: None,
         group_by: None,
+        group_order: Vec::new(),
+        show_empty_groups: false,
     }
 }
 
@@ -3082,6 +3218,8 @@ pub(crate) fn references_collection(references: &ess_ui::References) -> ess_ui::
         item: Vec::new(),
         reorder: None,
         group_by: None,
+        group_order: Vec::new(),
+        show_empty_groups: false,
     }
 }
 

@@ -193,6 +193,7 @@ mod tests {
         "collection.style",
         "form.save",
         "icon.tone",
+        "metric.aggregate",
         "metric.format",
         "overlay.kind",
         "rich_text.syntax",
