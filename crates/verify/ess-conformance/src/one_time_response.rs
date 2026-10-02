@@ -12,6 +12,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod cells;
 pub use cells::{Aspect, Cell};
+pub(crate) mod produce;
+
+/// Whether a compiled model requires private disclosure observations.
+/// Model-aware recording/import callers check this before observing or persisting target data.
+pub fn marked_model(ir: &ess_compiler::EssIr) -> bool {
+    ir.commands().values().any(|command| {
+        command
+            .outcomes
+            .iter()
+            .any(|outcome| !outcome.one_time_response.is_empty())
+    })
+}
 
 /// Ordinary execution vocabulary containing a one-time trace policy.
 pub const ORDINARY: u32 = 34;

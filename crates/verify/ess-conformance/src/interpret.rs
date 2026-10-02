@@ -45,6 +45,7 @@
 //! same ones, and the runner never compares one against an expected value.
 
 pub mod execute;
+mod protected;
 
 use std::cell::RefCell;
 
@@ -89,6 +90,7 @@ struct Scenario {
     published: Vec<ObservedEvent>,
     sequence: u64,
     forced: Option<OutcomeRef>,
+    issued: protected::Issued,
 }
 
 impl Scenario {
@@ -205,6 +207,16 @@ impl ConformanceTarget for Interpreted {
             ));
         }
         let step = steps.remove(0);
+        let response = if crate::one_time_response::marked_model(model) {
+            protected::response(
+                model,
+                &request.command,
+                step.outcome.as_ref(),
+                &mut scenario.issued,
+            )?
+        } else {
+            None
+        };
         scenario.store = step.next;
         let mut direct_events = Vec::with_capacity(step.events.len());
         for event in step.events {
@@ -229,7 +241,7 @@ impl ConformanceTarget for Interpreted {
             error: step.error,
             consistency,
             direct_events,
-            response: None,
+            response,
         })
     }
 
@@ -245,7 +257,10 @@ impl ConformanceTarget for Interpreted {
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let observation = format!("reading `{}`", request.view);
-        self.model(observation.clone())?;
+        let model = self.model(observation.clone())?;
+        if crate::one_time_response::marked_model(model) {
+            return protected::view(model, &self.scenario.borrow().store, &request);
+        }
         Err(TargetError::unsupported(
             observation,
             "views are not interpreted yet",

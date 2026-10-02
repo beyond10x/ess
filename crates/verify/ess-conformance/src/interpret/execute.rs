@@ -348,7 +348,11 @@ pub fn execute_generating(
     if let Some(steps) = refused_by_input(ir, spec, store, input)? {
         return Ok(steps);
     }
-    interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
+    interpretable(
+        spec,
+        matches!(generated, Generated::Recorded(_)),
+        crate::one_time_response::marked_model(ir),
+    )?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
     let selected = select(spec, &facts, command, externals)?;
@@ -628,9 +632,13 @@ fn refused_by_input(
 /// retained to replay is the request's, which a step does not see: the checker takes a replay only
 /// once its request's origin branch has been taken in the order it tries ([`crate::linearize`]). A target,
 /// which owes the response and the retained result themselves, is still refused both.
-fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermined> {
+fn interpretable(
+    spec: &ResolvedCommand,
+    recorded: bool,
+    protected: bool,
+) -> Result<(), Undetermined> {
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    if !recorded && !spec.response.is_empty() {
+    if !recorded && !protected && !spec.response.is_empty() {
         return gap(format!("the typed response of `{}`", spec.name));
     }
     for outcome in &spec.outcomes {

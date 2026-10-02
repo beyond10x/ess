@@ -26,17 +26,27 @@ fn document_from_source(source: &str) -> serde_json::Value {
         ir.commands().values().next().unwrap(),
     )
     .unwrap();
-    let suite = ess_conformance::synthesize(&ir).suite;
-    let mut value = serde_json::to_value(suite).unwrap();
-    if value["scenarios"].as_object().unwrap().is_empty() {
-        // Admission fixtures author the same invocation explicitly when the legacy
-        // synthesizer cannot yet witness constrained returns. This is no synthesis claim.
-        let mut authored = document();
-        authored["provenance"] = value["provenance"].clone();
-        value = authored;
-    }
+    // Keep the original single-invocation admission template stable as production synthesis
+    // adds disclosure inventory cells. These are admission vectors, not producer snapshots;
+    // provenance and response authority are still independently derived from their source.
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/one-time-response/valid-string.json")).unwrap();
+    value["provenance"] = serde_json::to_value(ess_conformance::SuiteProvenance::of(&ir)).unwrap();
     value["provenance"]["suite_version"] = "ess-conformance/34".into();
     for scenario in value["scenarios"].as_object_mut().unwrap().values_mut() {
+        // The original ordinary outcome asserted absence for each declared event and
+        // carried its source reference. Keep those template bytes, including the later
+        // event-vector builder's independently appended reference.
+        for event in ir.events().values() {
+            scenario["source"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({"kind":"event","name":event.name}));
+            scenario["steps"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({"step":"expect_no_event","event":event.name}));
+        }
         for step in scenario["steps"].as_array_mut().unwrap() {
             if step["step"] == "expect_direct_response" {
                 step["response"]["fields"] = serde_json::to_value(&response.fields).unwrap();
