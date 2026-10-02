@@ -27,7 +27,7 @@ pub const MAX_BODY: usize = 1_048_576;
 ///
 /// Every header is kept for the caller ([`Request::headers`]), so a request that sent headers
 /// without end would be memory without end. A hundred is far past what a client and a proxy add
-/// together.
+/// together. The Go server keeps the same count and answers the same `431` beyond it.
 pub const MAX_HEADERS: usize = 100;
 
 /// The most bytes the request line and headers may take together: what Go's `net/http` reads by
@@ -37,6 +37,19 @@ pub const MAX_HEADERS: usize = 100;
 /// from one specification answer an oversized request alike. Without one, a caller could hold a
 /// request line of any length in memory.
 pub const MAX_HEAD: usize = 1_048_576 + 4096;
+
+/// How long a connection may send nothing before this surface drops it.
+///
+/// The surface answers one connection at a time, so a caller that connects and goes quiet would
+/// otherwise hold every other caller. Go's server answers each connection on its own goroutine
+/// and sets no such bound; one connection at a time cannot, and a second without a byte is far
+/// past the gap between two segments of a request in flight. It bounds each wait, not the whole
+/// request: a caller that sends a byte every half second is still read.
+pub const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// How long writing an answer may stall before this surface gives the connection up, for the same
+/// reason: a caller that stops reading must not hold the others.
+pub const WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The media type every answer derived from the model carries.
 pub const JSON: &str = "application/json";

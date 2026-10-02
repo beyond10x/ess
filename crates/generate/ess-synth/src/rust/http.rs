@@ -622,8 +622,11 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
     }
     let _ = write!(
         out,
-        "///\n/// # Errors\n///\n/// Anything the listener refuses: the address is taken, the \
-         port is privileged, the socket\n/// died.\npub fn serve{angled}(system: &mut \
+        "///\n/// One connection at a time: each is dropped after [`http::READ_TIMEOUT`] without a \
+         byte, or\n/// [`http::WRITE_TIMEOUT`] of a stalled write, and whatever fails on one connection \
+         — a caller\n/// that hung up before reading its answer, a reset, a failed accept — ends that \
+         connection only.\n///\n/// # Errors\n///\n/// What binding the address refuses: \
+         the address is taken, or the port is privileged.\npub fn serve{angled}(system: &mut \
          {system_crate}::System{angled}, address: &str{}) -> std::io::Result<()>\n",
         if grants {
             format!(
@@ -694,14 +697,23 @@ const SERVE_BODY: &str = r"{
     let listener = std::net::TcpListener::bind(address)?;
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
-        let mut reader = std::io::BufReader::new(connection?);
+        // What fails on one connection ends that connection, never this loop: a caller that
+        // gave up before it was accepted, or before it read its answer, is that caller's affair.
+        let Ok(connection) = connection else {
+            // An accept the listener itself failed (no descriptor left) would fail again at
+            // once: pause before the next.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            continue;
+        };
+        let _ = connection.set_read_timeout(Some(http::READ_TIMEOUT));
+        let _ = connection.set_write_timeout(Some(http::WRITE_TIMEOUT));
+        let mut reader = std::io::BufReader::new(connection);
         let (answer, refused) = match http::read(&mut reader) {
             Ok(request) => (dispatch(system, &request), false),
             Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();
-        http::write(&mut stream, &answer)?;
-        if refused {
+        if http::write(&mut stream, &answer).is_ok() && refused {
             http::linger(&mut stream);
         }
     }
@@ -1347,7 +1359,7 @@ pub const MAX_BODY: usize = 1_048_576;
 ///
 /// Every header is kept for the caller ([`Request::headers`]), so a request that sent headers
 /// without end would be memory without end. A hundred is far past what a client and a proxy add
-/// together.
+/// together. The Go server keeps the same count and answers the same `431` beyond it.
 pub const MAX_HEADERS: usize = 100;
 
 /// The most bytes the request line and headers may take together: what Go's `net/http` reads by
@@ -1357,6 +1369,19 @@ pub const MAX_HEADERS: usize = 100;
 /// from one specification answer an oversized request alike. Without one, a caller could hold a
 /// request line of any length in memory.
 pub const MAX_HEAD: usize = 1_048_576 + 4096;
+
+/// How long a connection may send nothing before this surface drops it.
+///
+/// The surface answers one connection at a time, so a caller that connects and goes quiet would
+/// otherwise hold every other caller. Go's server answers each connection on its own goroutine
+/// and sets no such bound; one connection at a time cannot, and a second without a byte is far
+/// past the gap between two segments of a request in flight. It bounds each wait, not the whole
+/// request: a caller that sends a byte every half second is still read.
+pub const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// How long writing an answer may stall before this surface gives the connection up, for the same
+/// reason: a caller that stops reading must not hold the others.
+pub const WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The media type every answer derived from the model carries.
 pub const JSON: &str = "application/json";

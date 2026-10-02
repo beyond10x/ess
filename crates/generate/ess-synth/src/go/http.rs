@@ -1059,7 +1059,7 @@ fn dispatch(
          method is a 405 naming the one it answers. Neither is a status\n// the contract declares, \
          and neither should be: both are facts about a transport rather than\n// about any \
          command.{grant_doc}\nfunc dispatch{exported}(system *{system}, {caller}request \
-         *http.Request) response {{\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
+         *http.Request) response {{\n\tif refused := tooManyHeaders(request); refused != nil {{\n\t\treturn *refused\n\t}}\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
          *refused\n\t}}\n\t// Held from the port call through Pump and TakePublished: the system \
          is shared by\n\t// every connection.\n\tserving.Lock()\n\tdefer \
          serving.Unlock()\n\tswitch request.URL.Path {{\n"
@@ -1858,38 +1858,61 @@ func bytesAt(value any, at string, expected string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	held, decodeErr := base64.StdEncoding.DecodeString(text)
-	if decodeErr != nil {
-		return nil, DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	return base64Text(text, at, expected)
+}
+
+// base64Text is base64 text as bytes, in the published pattern only: whole groups of four characters
+// of the alphabet, the last of them padded with one or two = at most — nothing unpadded, nothing
+// after padding, no whitespace (which the standard decoder would skip). The same rule and the same
+// words as the Rust target's reader.
+func base64Text(text string, at string, expected string) ([]byte, error) {
+	refused := DecodeError{At: at, Expected: expected, Found: "a string that is not base64"}
+	if len(text)%4 != 0 {
+		return nil, refused
+	}
+	body := strings.TrimRight(text, "=")
+	if len(text)-len(body) > 2 {
+		return nil, refused
+	}
+	for index := 0; index < len(body); index++ {
+		char := body[index]
+		if !((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '+' || char == '/') {
+			return nil, refused
+		}
+	}
+	held, err := base64.StdEncoding.DecodeString(text)
+	if err != nil {
+		return nil, refused
 	}
 	return held, nil
 }
 
-// keyBool reads a boolean written as an object key.
+// keyBool reads a boolean written as an object key: `true` or `false`, and nothing else.
 func keyBool(key string, at string) (bool, error) {
-	held, err := strconv.ParseBool(key)
-	if err != nil {
-		return false, DecodeError{At: at, Expected: "a key spelling true or false", Found: fmt.Sprintf("`%s`", key)}
+	switch key {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
 	}
-	return held, nil
+	return false, DecodeError{At: at, Expected: "a key spelling `true` or `false`", Found: fmt.Sprintf("the key `%s`", key)}
 }
 
-// keyInteger reads a whole number written as an object key.
+// keyInteger reads an integer written as an object key, in the published pattern: no sign but -, no
+// leading zero, and within 64 bits.
 func keyInteger(key string, at string) (int64, error) {
-	held, err := strconv.ParseInt(key, 10, 64)
-	if err != nil {
-		return 0, DecodeError{At: at, Expected: "a key spelling a whole number", Found: fmt.Sprintf("`%s`", key)}
+	digits := strings.TrimPrefix(key, "-")
+	if digitsOnly(digits) && (digits == "0" || digits[0] != '0') {
+		if held, err := strconv.ParseInt(key, 10, 64); err == nil {
+			return held, nil
+		}
 	}
-	return held, nil
+	return 0, DecodeError{At: at, Expected: "a key spelling an integer", Found: fmt.Sprintf("the key `%s`", key)}
 }
 
 // keyBytes reads base64-encoded bytes written as an object key.
 func keyBytes(key string, at string) ([]byte, error) {
-	held, err := base64.StdEncoding.DecodeString(key)
-	if err != nil {
-		return nil, DecodeError{At: at, Expected: "a key spelling base64-encoded bytes", Found: fmt.Sprintf("`%s`", key)}
-	}
-	return held, nil
+	return base64Text(key, at, "a base64 key")
 }
 "#;
 
@@ -1981,6 +2004,27 @@ func rendered(status int, body any) response {
 		return response{status: 500, contentType: mediaJSON, body: `{"refused":"the answer could not be encoded"}`}
 	}
 	return response{status: status, contentType: mediaJSON, body: string(encoded)}
+}
+
+// maxHeaders is the most headers this surface keeps from one request, as the Rust target's
+// http::MAX_HEADERS: a hundred is far past what a client and a proxy add together.
+const maxHeaders = 100
+
+// tooManyHeaders is the 431 the Rust target answers for a request past maxHeaders, word for word,
+// or nil. net/http moves Host out of the header map; it counts as one header, as it does there.
+func tooManyHeaders(request *http.Request) *response {
+	count := 0
+	if request.Host != "" {
+		count = 1
+	}
+	for _, values := range request.Header {
+		count += len(values)
+	}
+	if count <= maxHeaders {
+		return nil
+	}
+	answer := refusal(431, fmt.Sprintf("the request carries more than %d headers, which is all this surface keeps", maxHeaders))
+	return &answer
 }
 
 // readBody reads at most maxBody bytes of a request, or the refusal that says why it could not.

@@ -594,8 +594,17 @@ pub fn bytes_at(value: &Value, at: &str, expected: &str) -> Result<Vec<u8>, Deco
 ///
 /// # Errors
 ///
-/// [`DecodeError`] when a character is outside the alphabet.
+/// [`DecodeError`] when the text is not in the published pattern: whole groups of four characters
+/// of the alphabet, the last of them padded with one or two `=` at most — nothing unpadded,
+/// nothing after padding, no whitespace.
 fn base64(text: &str, at: &str, expected: &str) -> Result<Vec<u8>, DecodeError> {
+    if !base64_text(text) {
+        return Err(DecodeError {
+            at: at.to_owned(),
+            expected: expected.to_owned(),
+            found: "a string that is not base64".to_owned(),
+        });
+    }
     let mut packed = 0_u32;
     let mut held = 0_u32;
     let mut out = Vec::new();
@@ -620,6 +629,20 @@ fn base64(text: &str, at: &str, expected: &str) -> Result<Vec<u8>, DecodeError> 
     Ok(out)
 }
 
+/// `true` where `text` is in the published base64 pattern,
+/// `^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`.
+fn base64_text(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.len() % 4 != 0 {
+        return false;
+    }
+    let padding = bytes.iter().rev().take_while(|byte| **byte == b'=').count();
+    padding <= 2
+        && bytes[..bytes.len() - padding]
+            .iter()
+            .all(|byte| ALPHABET.contains(byte))
+}
+
 /// The integer a map key spells.
 ///
 /// JSON has only string keys, and the published wire contract constrains a non-string map's
@@ -628,13 +651,21 @@ fn base64(text: &str, at: &str, expected: &str) -> Result<Vec<u8>, DecodeError> 
 ///
 /// # Errors
 ///
-/// [`DecodeError`] when the key is not an integer's spelling.
+/// [`DecodeError`] when the key is not an integer's spelling in the published pattern,
+/// `^-?(0|[1-9][0-9]*)$` — no sign but `-`, no leading zero — or is one past 64 bits.
 pub fn key_integer(key: &str, at: &str) -> Result<i64, DecodeError> {
-    key.parse::<i64>().map_err(|_| DecodeError {
-        at: at.to_owned(),
-        expected: "a key spelling an integer".to_owned(),
-        found: format!("the key `{key}`"),
-    })
+    let digits = key.strip_prefix('-').unwrap_or(key);
+    let spelled = !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'));
+    spelled
+        .then(|| key.parse::<i64>().ok())
+        .flatten()
+        .ok_or_else(|| DecodeError {
+            at: at.to_owned(),
+            expected: "a key spelling an integer".to_owned(),
+            found: format!("the key `{key}`"),
+        })
 }
 
 /// The boolean a map key spells.

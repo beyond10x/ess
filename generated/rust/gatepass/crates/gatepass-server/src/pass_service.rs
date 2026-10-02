@@ -76,10 +76,13 @@ fn announce(address: &std::net::SocketAddr) {
 /// [`dispatch`] checks that caller's grant before the command runs. Nothing here reads an
 /// actor from the request itself.
 ///
+/// One connection at a time: each is dropped after [`http::READ_TIMEOUT`] without a byte, or
+/// [`http::WRITE_TIMEOUT`] of a stalled write, and whatever fails on one connection — a caller
+/// that hung up before reading its answer, a reset, a failed accept — ends that connection only.
+///
 /// # Errors
 ///
-/// Anything the listener refuses: the address is taken, the port is privileged, the socket
-/// died.
+/// What binding the address refuses: the address is taken, or the port is privileged.
 pub fn serve<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<gatepass_types::actor::Caller>) -> std::io::Result<()>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
@@ -87,14 +90,23 @@ where
     let listener = std::net::TcpListener::bind(address)?;
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
-        let mut reader = std::io::BufReader::new(connection?);
+        // What fails on one connection ends that connection, never this loop: a caller that
+        // gave up before it was accepted, or before it read its answer, is that caller's affair.
+        let Ok(connection) = connection else {
+            // An accept the listener itself failed (no descriptor left) would fail again at
+            // once: pause before the next.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            continue;
+        };
+        let _ = connection.set_read_timeout(Some(http::READ_TIMEOUT));
+        let _ = connection.set_write_timeout(Some(http::WRITE_TIMEOUT));
+        let mut reader = std::io::BufReader::new(connection);
         let (answer, refused) = match http::read(&mut reader) {
             Ok(request) => (dispatch(system, authenticate(&request).as_ref(), &request), false),
             Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();
-        http::write(&mut stream, &answer)?;
-        if refused {
+        if http::write(&mut stream, &answer).is_ok() && refused {
             http::linger(&mut stream);
         }
     }

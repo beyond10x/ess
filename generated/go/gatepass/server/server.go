@@ -106,6 +106,27 @@ func rendered(status int, body any) response {
 	return response{status: status, contentType: mediaJSON, body: string(encoded)}
 }
 
+// maxHeaders is the most headers this surface keeps from one request, as the Rust target's
+// http::MAX_HEADERS: a hundred is far past what a client and a proxy add together.
+const maxHeaders = 100
+
+// tooManyHeaders is the 431 the Rust target answers for a request past maxHeaders, word for word,
+// or nil. net/http moves Host out of the header map; it counts as one header, as it does there.
+func tooManyHeaders(request *http.Request) *response {
+	count := 0
+	if request.Host != "" {
+		count = 1
+	}
+	for _, values := range request.Header {
+		count += len(values)
+	}
+	if count <= maxHeaders {
+		return nil
+	}
+	answer := refusal(431, fmt.Sprintf("the request carries more than %d headers, which is all this surface keeps", maxHeaders))
+	return &answer
+}
+
 // readBody reads at most maxBody bytes of a request, or the refusal that says why it could not.
 func readBody(request *http.Request) ([]byte, *response) {
 	if request.Body == nil {

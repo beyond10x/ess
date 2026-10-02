@@ -108,6 +108,9 @@ func ServePassService(system *system.System, address string, authenticate func(*
 // its grant before it runs, and answers the standard refusal when the caller is nil or is
 // an actor the specification does not grant the command.
 func dispatchPassService(system *system.System, caller *Caller, request *http.Request) response {
+	if refused := tooManyHeaders(request); refused != nil {
+		return *refused
+	}
 	body, refused := readBody(request)
 	if refused != nil {
 		return *refused
