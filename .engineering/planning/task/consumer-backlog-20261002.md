@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 18
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -113,3 +113,21 @@ The operator explicitly requires every supported conformance runtime to support 
 Use shared healthy and adversarial fixtures to verify capture, retries, fresh rotation, actor changes, recursive leak checks including keys, authored timelines, admission, bounds, value-free diagnostics and verdict/count equivalence. Inventory all supported execution surfaces and test each; do not assume a shared library proves an unexecuted integration path. Intrinsic finite observation limits, including unavailable restart/concurrency primitives, remain explicit and identical across runtimes. A target's inability to provide an observation is distinct from a runtime omitting the newly admitted vocabulary, and must never become a passing check.
 
 Full runtime parity is a release acceptance gate. Prioritization changes order, not completeness.
+
+## Timestamp explorer integration regression
+
+The explicit Billing Timestamp input migration exposed a regression in the existing implemented story:concurrent-explorer-runner and story:explorers-record-view-reads acceptance. The actual combined CLI run fails go_and_typescript_write_equal_bytes_from_the_same_seed_over_examples_billing because IssueInvoice is absent from the command inventory, and the_explorers_read_every_view_and_write_rows_only_on_an_answered_read because no OutstandingInvoices row is ever read. Native source audit identifies both generated primitive planners omitting Timestamp, before any target callback; intake SHA2562627cc97f00d7b7d97ae9c72b2eec8240cfddf6b96e07d65b4e728992d83c51f, own additional executions0.
+
+Correction within this active consumer-runtime batch: scope_aggregate owns the generated Go and TypeScript explorer templates and focused regression paths in its managed TS tree. Add matching deterministic seeded Timestamp scenario-input generation, including named Timestamp wrappers. Preserve existing command-inventory, actual-row and byte-identical-seed assertions; no target-owned clock, arbitrary stored value, skipped command or changed expected inventory substitutes for the feature. The current native witness generator already supplies valid Timestamp inputs, so this is a generated explorer capability repair, not new source syntax or a source-major allocation. Exact changed-path scope and hashes accompany the frozen handoff. All committed executable code remains Rust apart from established generated-language templates exercised by Rust harnesses.
+
+Root remains the only AEP writer and owns integration. The existing browser one-line compatibility correction stays a separate patch. Compile work pauses near the8GiB disk floor; current root run stays live and source-frozen. Final affected checks and independent review precede publication in the grouped PR. Existing implemented story statuses do not imply this newly exposed regression is already repaired.
+
+## Combined validation correction pass
+
+Combined runtime/examples validation completed with exit101 in ess-backlog-next-20261002/target/backlog-input/combined-runtime-examples-packages.log. It reported21 failed test binaries. Exact failures are retained; no full-pass claim is made. They include derived example pins/corpus, strict report/2 categories/exits, legacy HTML metadata compatibility, missing Timestamp explorer generation, obsolete Interpreter unsupported expectations, a mutation fixture missing explicit issuance input, new Oracle contact-retarget mutation inventory, and tutorial format/file-count output.
+
+Carrierff128cbdb commits the exact12 native Interpreter files from reviewed00ecf91c6b3a98eee27372e914d16f89df2fa83d, verified by Git object hashes. Carrier01ce4b82f integrates native obligation controls20ee6382, Rust historical producer compatibility7d29598a and reviewed21-file migration3014907d18de801849c74ed10274f33348a2eb60. The latter's author reports64 focused tests green, strict Clippy and formatting exit0; independent source review approved with0 reviewer executions and immutable JSON SHA25662294c42ac1506dff244c2435fc5ace73fbbdd74f9c9c9260875197708842d97. The carrier already supplies the required explicit Go profile/2 semantic plan.
+
+Remaining corrections are bounded continuations of the accepted runtime batch: native worker owns CLI capability expectations plus mutation audit assumptions, Go worker owns exact go_conformance count categories, TS worker owns Timestamp planners, coordinator owns legacy browser patch, mutation-survivor input, tutorial output and state/view expectations. No component PR or remote gate is started. Final combined checks and new site validation after changed snippets remain required. Earlier core package counts predate the regenerated example corpus and are not final-byte evidence.
+
+After the combined process handle11050 returned terminal101, coordinator removed only368 completed task-owned test executables (13.71GiB), listed in combined-finished-test-binaries.txt, checking regular executable/non-symlink status and fuser inactivity. No source, logs, libraries or worker cache was deleted; observed free space afterward30GiB.
