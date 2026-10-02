@@ -42,6 +42,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize
 - confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/singleton.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/ts
 - confidence: cited
   path: crates/verify/ess-conformance/src/web.rs
@@ -51,7 +53,7 @@ scope:
   path: crates/verify/ess-diff/src/impact.rs
 - confidence: inferred
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T21:59:23Z", actor: "human:timo", revision: 16, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T21:59:24Z", actor: "human:timo", revision: 17, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
