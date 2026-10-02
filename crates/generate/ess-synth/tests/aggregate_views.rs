@@ -34,7 +34,7 @@ fn emitted(target: Target) -> String {
 fn the_plan_contract_names_the_grouping_and_every_aggregate() {
     // `TalkTimeByAgent` is fully declared, so its query is generated
     // (`story:generated-view-queries`) and the plan owes no contract for it; `QueueTotals` reads a
-    // parameter, which the generated query does not receive, so its query is still owed and its
+    // parameter, which a generated query does not apply, so its query is still owed and its
     // contract names the one row it computes.
     let planned = SynthesisPlan::of(&ir());
     assert_eq!(

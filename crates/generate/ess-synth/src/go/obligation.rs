@@ -184,11 +184,7 @@ pub(super) fn domain_obligations(
         return;
     }
     for seam in &seams {
-        let parameter = seam
-            .parameter
-            .as_ref()
-            .map(|(ident, of)| format!("{ident} {of}"))
-            .unwrap_or_default();
+        let parameter = super::port::signature(&seam.parameters);
         let (why, refusal) = match &seam.obligation {
             Some(obligation) => (
                 format!(
@@ -239,11 +235,7 @@ pub(super) fn domain_obligations(
     );
     for seam in owed {
         record(stubbed, seam.kind, &seam.source);
-        let parameter = seam
-            .parameter
-            .as_ref()
-            .map(|(ident, of)| format!("{ident} {of}"))
-            .unwrap_or_default();
+        let parameter = super::port::signature(&seam.parameters);
         let _ = writeln!(
             out,
             "\n// {} refuses: {}\nfunc ({unimplemented}) {}({parameter}) ({}, {}) {{\n\treturn \
@@ -329,10 +321,10 @@ fn seams_of_domain(
             interface: emit.layout.behavior(&command.name).to_owned(),
             method: emit.layout.declared(&command.name).to_owned(),
             method_doc: format!("decides and enacts exactly one declared outcome of `{source}`."),
-            parameter: Some((
+            parameters: vec![(
                 "input".to_owned(),
                 emit.layout.declared(&command.name).to_owned(),
-            )),
+            )],
             answer: emit.layout.outcome(&command.name).to_owned(),
             zero: "nil".to_owned(),
         });
@@ -360,7 +352,12 @@ fn seams_of_domain(
             interface: emit.layout.query(&view.name).to_owned(),
             method: emit.layout.declared(&view.name).to_owned(),
             method_doc: format!("serves `{source}` rows at the view's declared consistency."),
-            parameter: None,
+            // The refusing stub's body names the obligation package, which no parameter may shadow.
+            parameters: super::port::view_params(
+                emit,
+                view,
+                &[emit.layout.obligation().name.as_str()],
+            ),
             answer: format!("[]{}", emit.layout.declared(&view.name)),
             zero: "nil".to_owned(),
         });
@@ -384,8 +381,8 @@ struct Seam {
     method: String,
     /// The method's one-line doc.
     method_doc: String,
-    /// The parameter beyond the receiver, if the seam takes one.
-    parameter: Option<(String, String)>,
+    /// The parameters beyond the receiver: a behaviour's input, or a view's declared parameters.
+    parameters: Vec<(String, String)>,
     /// The first result type.
     answer: String,
     /// The first result's zero value, which the refusing stub returns beside the refusal.

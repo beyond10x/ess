@@ -183,6 +183,7 @@ fn main() {
         let request = http::Request {
             method: (*method).to_owned(),
             path: (*path).to_owned(),
+            query: String::new(),
             headers: vec![("authorization".to_owned(), "Bearer entry".to_owned())],
             body,
         };

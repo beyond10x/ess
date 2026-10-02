@@ -87,7 +87,7 @@ pub(super) fn server_package(
             && !refusals.refuses_kind(CapabilityKind::BindingDelivery, &source)
     });
     let mut artifacts = vec![
-        helpers_file(ir, layout, package, provenance),
+        helpers_file(ir, layout, refusals, package, provenance),
         wire_file(ir, plan, layout, refusals, package, provenance),
     ];
 
@@ -132,6 +132,7 @@ pub(super) fn server_package(
 fn helpers_file(
     ir: &EssIr,
     layout: &Layout,
+    refusals: &TargetRefusals,
     package: &Package,
     provenance: &Provenance,
 ) -> Artifact {
@@ -150,6 +151,12 @@ fn helpers_file(
     };
     if http::checks_grants(ir) {
         helpers.push_str(&grant_helpers(ir));
+    }
+    if serves_params(ir, refusals) {
+        emit.import("net/url");
+        emit.import("strings");
+        emit.import("unicode/utf8");
+        helpers.push_str(QUERY_HELPERS);
     }
     emit.file(provenance, SERVER_DOC, &helpers)
 }
@@ -290,6 +297,9 @@ fn wire_file(
     for view in ir.views().values() {
         if presents(CapabilityKind::ViewType, &view.name) {
             view_encoder(&mut body, &emit, view);
+            if !view.params.is_empty() {
+                params_decoder(&mut body, &emit, view);
+            }
         }
     }
     for command in ir.commands().values() {
@@ -1092,10 +1102,16 @@ fn dispatch(
                     );
                 }
                 Served::View(handle) => {
+                    let view = ir.view(handle);
                     let _ = writeln!(
                         body,
-                        "\t\treturn serve{}(system)",
-                        ident(&ir.view(handle).name)
+                        "\t\treturn serve{}(system{})",
+                        ident(&view.name),
+                        if view.params.is_empty() {
+                            ""
+                        } else {
+                            ", request.URL.RawQuery"
+                        }
                     );
                 }
             }
@@ -1390,11 +1406,42 @@ fn view_handler(
     let function = ident(&view.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&view.name);
+    let (doc, parameter, decoded, arguments) = if view.params.is_empty() {
+        (
+            "every row the owed projection\n// holds.".to_owned(),
+            "",
+            String::new(),
+            String::new(),
+        )
+    } else {
+        (
+            "every row the owed projection\n// holds for the parameters the query string \
+             carries, read by their wire names. A key the\n// view does not declare is ignored."
+                .to_owned(),
+            ", query string",
+            format!(
+                "\tvalue, err := queryObject(query, {}, \"query\")\n\tif err != nil {{\n\t\treturn \
+                 refusal(400, err.Error())\n\t}}\n\tparams, err := decodeParams{function}(value, \
+                 \"query\")\n\tif err != nil {{\n\t\treturn refusal(400, err.Error())\n\t}}\n",
+                query_table(emit.ir, view)
+            ),
+            view.params
+                .iter()
+                .map(|param| {
+                    format!(
+                        "params.{}",
+                        super::items::member_ident(&view.params, &param.name)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
     let _ = write!(
         out,
-        "\n// serve{function} answers `GET` `{}` at `{}` consistency: every row the owed \
-         projection\n// holds.\nfunc serve{function}(system *{system}) response {{\n\trows, unmet \
-         := system.{field}.{method}()\n\tif unmet != nil {{\n\t\treturn \
+        "\n// serve{function} answers `GET` `{}` at `{}` consistency: {doc}\nfunc \
+         serve{function}(system *{system}{parameter}) response {{\n{decoded}\trows, unmet \
+         := system.{field}.{method}({arguments})\n\tif unmet != nil {{\n\t\treturn \
          unfinished(unmet.Error(), false)\n\t}}\n\tencoded := make([]any, 0, len(rows))\n\tfor _, row := range rows \
          {{\n\t\tencoded = append(encoded, encodeView{function}(row))\n\t}}\n\treturn \
          rendered(200, map[string]any{{\"rows\": encoded}})\n}}\n",
@@ -1402,6 +1449,188 @@ fn view_handler(
         view.consistency.as_str()
     );
 }
+
+/// A view's declared parameters as the `[]queryParam` literal `queryObject` reads.
+fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
+    let rows: Vec<String> = view
+        .params
+        .iter()
+        .map(|param| {
+            let scalar = match crate::view_query::query_scalar(ir, &param.type_ref) {
+                Some(crate::view_query::QueryScalar::Integer) => "queryInteger",
+                Some(crate::view_query::QueryScalar::Boolean) => "queryBoolean",
+                // `refuse_unqueryable` has refused every other parameter of a served view.
+                Some(crate::view_query::QueryScalar::Text) | None => "queryText",
+            };
+            format!(
+                "{{wire: {:?}, scalar: {scalar}}}",
+                ess_gen::schema::wire_field_name(param)
+            )
+        })
+        .collect();
+    format!("[]queryParam{{{}}}", rows.join(", "))
+}
+
+/// One view's declared parameters, decoded: the struct the route reads them into and its decoder,
+/// which reads an object keyed by their wire names exactly as a command input's decoder does.
+fn params_decoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
+    let function = ident(&view.name);
+    let _ = writeln!(
+        out,
+        "\n// params{function} is the declared parameters of `{}`, decoded.\ntype \
+         params{function} struct {{",
+        view.name
+    );
+    let fields: Vec<(String, String)> = view
+        .params
+        .iter()
+        .map(|param| {
+            (
+                super::items::member_ident(&view.params, &param.name),
+                emit.go_type(&param.type_ref),
+            )
+        })
+        .collect();
+    // Aligned as gofmt aligns a struct's fields, so the emitted file is gofmt-clean.
+    let width = fields
+        .iter()
+        .map(|(field, _)| field.len())
+        .max()
+        .unwrap_or(0);
+    for (field, of) in &fields {
+        let _ = writeln!(out, "\t{field:width$} {of}");
+    }
+    let _ = write!(
+        out,
+        "}}\n\n// decodeParams{function} reads the parameters of `{}` from an object keyed by their \
+         wire names.\nfunc decodeParams{function}(value any, at string) (params{function}, error) \
+         {{\n\tvar out params{function}\n\tif _, err := objectAt(value, at, \"an object\"); err != \
+         nil {{\n\t\treturn out, err\n\t}}\n",
+        view.name
+    );
+    let mut slot = 0;
+    for param in &view.params {
+        decode_member(
+            out,
+            emit,
+            "\t",
+            &format!(
+                "out.{}",
+                super::items::member_ident(&view.params, &param.name)
+            ),
+            param,
+            &mut slot,
+        );
+    }
+    out.push_str("\treturn out, nil\n}\n");
+}
+
+/// `true` where some served view declares parameters, and so where the package carries
+/// [`QUERY_HELPERS`]: a model without one keeps its bytes.
+fn serves_params(ir: &EssIr, refusals: &TargetRefusals) -> bool {
+    served(ir, refusals).into_iter().any(|component| {
+        http::routes(ir, component).iter().any(
+            |route| matches!(route.serves, Served::View(view) if !ir.view(view).params.is_empty()),
+        )
+    })
+}
+
+/// What the package adds where a served view declares parameters: the query string read as the
+/// object those parameters' decoder reads (story:served-view-params). The same reading the Rust
+/// surface's `http::query_object` makes, refusal for refusal.
+const QUERY_HELPERS: &str = r#"
+// queryScalar is how one declared parameter's query value is written as JSON before its decoder
+// reads it. A query value is text; the parameter's declared type says which JSON scalar the wire
+// writes it as, and the generated decoder then reads it exactly as it reads a command's input.
+type queryScalar int
+
+const (
+	// queryText is a JSON string: text, a decimal, an instant, a duration, a UUID, base64 bytes,
+	// an enum's wire spelling.
+	queryText queryScalar = iota
+	// queryInteger is a JSON number where the value spells a whole number, and a string otherwise,
+	// so the decoder names what arrived rather than a number that never did.
+	queryInteger
+	// queryBoolean is a JSON boolean where the value is true or false, and a string otherwise.
+	queryBoolean
+)
+
+// queryParam is one declared parameter: the key the query carries it under, and how its value is
+// written.
+type queryParam struct {
+	wire   string
+	scalar queryScalar
+}
+
+// queryObject is the parameters a query string carries, as the object their decoder reads: one
+// member per declared parameter the query names, keyed by its wire name.
+//
+// Keys and values are form-decoded (%XX and +). A key nothing declares is ignored, and a declared
+// key the query omits is absent from the object, for the decoder to refuse or to read as absent.
+// A declared key that arrives more than once, or whose value is not percent-encoded UTF-8, is
+// refused under at.
+func queryObject(query string, declared []queryParam, at string) (map[string]any, error) {
+	object := map[string]any{}
+	for _, param := range declared {
+		var found []string
+		for _, pair := range strings.Split(query, "&") {
+			if pair == "" {
+				continue
+			}
+			key, value, _ := strings.Cut(pair, "=")
+			if decoded, ok := formDecoded(key); ok && decoded == param.wire {
+				found = append(found, value)
+			}
+		}
+		place := nested(at, param.wire)
+		if len(found) == 0 {
+			continue
+		}
+		if len(found) > 1 {
+			return nil, fmt.Errorf("%s: expected one value, found %d", place, len(found))
+		}
+		text, ok := formDecoded(found[0])
+		if !ok {
+			return nil, fmt.Errorf("%s: expected percent-encoded UTF-8 text, found `%s`", place, found[0])
+		}
+		switch {
+		case param.scalar == queryInteger && whole(text):
+			object[param.wire] = json.Number(text)
+		case param.scalar == queryBoolean && text == "true":
+			object[param.wire] = true
+		case param.scalar == queryBoolean && text == "false":
+			object[param.wire] = false
+		default:
+			object[param.wire] = text
+		}
+	}
+	return object, nil
+}
+
+// formDecoded is one form-encoded key or value, decoded: + is a space and %XX a byte. Not ok where
+// an escape is not two hexadecimal digits or the bytes are not UTF-8.
+func formDecoded(text string) (string, bool) {
+	decoded, err := url.QueryUnescape(text)
+	if err != nil || !utf8.ValidString(decoded) {
+		return "", false
+	}
+	return decoded, true
+}
+
+// whole reports whether text spells a whole number: an optional -, then one or more digits.
+func whole(text string) bool {
+	digits := strings.TrimPrefix(text, "-")
+	if digits == "" {
+		return false
+	}
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
+}
+"#;
 
 /// What the emitted enum and union encoders answer for a value no branch names.
 ///

@@ -293,6 +293,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::input_absent(ir, plan, crate::Target::Go)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Go)?;
     crate::paging::refuse(ir, plan, crate::Target::Go)?;
+    crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Go)?;
     crate::failure::retry_bound(ir, plan, crate::Target::Go)?;
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);

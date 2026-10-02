@@ -26,6 +26,10 @@ ess-conformance.workspace = true
 # Only `tests/served_publication.rs`: a served answer validated against the contract the same server
 # serves. Same version and spelling as `ess-gen`'s, with no retriever: every `$ref` there is local.
 jsonschema = { version = "0.52.1", default-features = false }
+# Only `tests/view_params_served.rs`: the query keys a UI document's binding names, sent to both
+# servers.
+ess-ui.workspace = true
+ess-ui-check.workspace = true
 
 [lints]
 workspace = true

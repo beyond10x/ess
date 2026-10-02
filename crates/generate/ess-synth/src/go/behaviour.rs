@@ -220,7 +220,7 @@ pub(super) fn package(
                 &emit, view, &storages, &mut uses, &reserved, &receiver,
             ));
         } else if seams.forwards(CapabilityKind::ViewQuery, &source) {
-            forward_query(&mut methods, &emit, &receiver, &view.name);
+            forward_query(&mut methods, &emit, &receiver, view);
         }
     }
 
@@ -571,15 +571,24 @@ fn forward_behaviour(out: &mut String, emit: &Emit<'_>, receiver: &str, command:
     );
 }
 
-/// Forwards one owed query to `Ports.Owed`.
-fn forward_query(out: &mut String, emit: &Emit<'_>, receiver: &str, view: &QualifiedName) {
+/// Forwards one owed query to `Ports.Owed`, with the parameters the view declares.
+fn forward_query(
+    out: &mut String,
+    emit: &Emit<'_>,
+    receiver: &str,
+    view: &ess_compiler::ir::ResolvedView,
+) {
+    let params = super::port::view_params(emit, view, &[receiver]);
+    let signature = super::port::signature(&params);
+    let arguments = super::port::arguments(&params);
+    let view = &view.name;
     let method = emit.layout.declared(view);
     let row = emit.reference(view);
     let unmet = emit.unmet();
     let _ = writeln!(
         out,
         "\n// {method} forwards the owed query `{view}` to the ports.\nfunc ({receiver} *Generated) \
-         {method}() ([]{row}, {unmet}) {{\n\treturn {receiver}.ports.Owed.{method}()\n}}"
+         {method}({signature}) ([]{row}, {unmet}) {{\n\treturn {receiver}.ports.Owed.{method}({arguments})\n}}"
     );
 }
 

@@ -44,12 +44,15 @@ pub const MARKDOWN: &str = "text/markdown; charset=utf-8";
 pub struct Request {
     /// The method, verbatim.
     pub method: String,
-    /// The target, with any query string removed.
-    ///
-    /// The model declares no parameter, so a query string names nothing on this surface. It is
-    /// dropped rather than refused, because a caller that appends one has not made a different
-    /// request.
+    /// The target, with any query string removed: what routing matches.
     pub path: String,
+    /// The target's query string, after the `?` and still percent-encoded; empty when there is
+    /// none.
+    ///
+    /// Only a view that declares parameters reads it, each by its wire name; a key no view
+    /// declares names nothing on this surface, and is ignored rather than refused, because a
+    /// caller that appends one has not made a different request.
+    pub query: String,
     /// Every header, in the order it arrived: the name lower-cased, the value trimmed.
     ///
     /// Kept for the caller rather than read here: the model declares no header, so routing never
@@ -176,11 +179,10 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
             "the request line is not `METHOD TARGET HTTP/1.1`",
         ));
     }
-    let path = target
-        .split('?')
-        .next()
-        .unwrap_or(target.as_str())
-        .to_owned();
+    let (path, query) = match target.split_once('?') {
+        Some((path, query)) => (path.to_owned(), query.to_owned()),
+        None => (target.clone(), String::new()),
+    };
 
     let mut length = 0_usize;
     let mut chunked = false;
@@ -257,6 +259,7 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
     Ok(Request {
         method,
         path,
+        query,
         headers,
         body,
     })

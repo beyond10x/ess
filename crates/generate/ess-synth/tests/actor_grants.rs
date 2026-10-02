@@ -411,6 +411,7 @@ fn main() {
         let request = http::Request {
             method: method.clone(),
             path: path.clone(),
+            query: String::new(),
             headers: Vec::new(),
             body: body.as_bytes().to_vec(),
         };

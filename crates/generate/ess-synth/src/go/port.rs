@@ -277,12 +277,88 @@ fn query(
     let port = emit.layout.port(&component.name);
     let method = emit.layout.declared(&view.name);
     let row = emit.reference(&view.name);
+    let params = view_params(emit, view, &["c"]);
     let _ = writeln!(
         out,
         "\n// {method} serves `{}` at `{}` consistency, from the owed projection.\nfunc (c \
-         *{port}) {method}() ([]{row}, {}) {{\n\treturn c.behaviors.{method}()\n}}",
+         *{port}) {method}({}) ([]{row}, {}) {{\n\treturn c.behaviors.{method}({})\n}}",
         view.name,
         view.consistency.as_str(),
+        signature(&params),
         emit.unmet(),
+        arguments(&params),
     );
+}
+
+/// A view's declared parameters as `(identifier, Go type)`, in declaration order, the types
+/// spelled from `emit`'s package (story:served-view-params). An identifier is the parameter's
+/// name in lower camel case, with `_` appended where that is a Go keyword or one of `taken`, the
+/// names the method body already binds.
+pub(super) fn view_params(
+    emit: &Emit<'_>,
+    view: &ess_compiler::ir::ResolvedView,
+    taken: &[&str],
+) -> Vec<(String, String)> {
+    view.params
+        .iter()
+        .map(|param| {
+            let pascal = name::exported(&param.name);
+            let mut chars = pascal.chars();
+            let mut ident: String = chars
+                .next()
+                .map(|first| first.to_lowercase().chain(chars).collect())
+                .unwrap_or_default();
+            if GO_KEYWORDS.contains(&ident.as_str()) || taken.contains(&ident.as_str()) {
+                ident.push('_');
+            }
+            (ident, emit.go_type(&param.type_ref))
+        })
+        .collect()
+}
+
+/// Every Go keyword, none of which can name a parameter.
+const GO_KEYWORDS: &[&str] = &[
+    "break",
+    "case",
+    "chan",
+    "const",
+    "continue",
+    "default",
+    "defer",
+    "else",
+    "fallthrough",
+    "for",
+    "func",
+    "go",
+    "goto",
+    "if",
+    "import",
+    "interface",
+    "map",
+    "package",
+    "range",
+    "return",
+    "select",
+    "struct",
+    "switch",
+    "type",
+    "var",
+];
+
+/// The parameters of a signature: `owner string, minHours int64`.
+pub(super) fn signature(params: &[(String, String)]) -> String {
+    params
+        .iter()
+        .map(|(ident, of)| format!("{ident} {of}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The same parameters, passed on: `owner, minHours`.
+pub(super) fn arguments(params: &[(String, String)]) -> String {
+    params
+        .iter()
+        .map(|(ident, _)| ident.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
