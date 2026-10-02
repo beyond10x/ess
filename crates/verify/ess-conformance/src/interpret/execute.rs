@@ -29,7 +29,7 @@
 //! refusal the model does not declare is not available, so it is never answered as a declared one.
 //!
 //! Where the model uses a construct this module does not execute yet — a retained replay, a value
-//! expression other than an input field or a literal — the answer is [`Undetermined::NotInterpreted`], never a
+//! expression reading a related row or a response — the answer is [`Undetermined::NotInterpreted`], never a
 //! guess. A guard that evaluates to `Unknown` is [`Undetermined::Undecidable`] for the same reason.
 //!
 //! # Minted values
@@ -50,6 +50,7 @@ mod existence;
 mod related;
 mod set_effects;
 mod subject;
+mod values;
 use caller::Invocation;
 
 use std::collections::BTreeMap;
@@ -915,9 +916,10 @@ fn error_value(
             }
             Some(Node::Map(values))
         }
-        ResolvedPayloadValue::SubjectField { field: read, .. } => {
-            held.and_then(|row| row.fields.get(read)).cloned()
-        }
+        ResolvedPayloadValue::SubjectField {
+            field: read,
+            type_ref,
+        } => values::subject(ir, read, type_ref, &field.target_type, held)?,
         ResolvedPayloadValue::InputField { field: read, .. } => input
             .get(read)
             .filter(|value| **value != Node::Null)
@@ -935,6 +937,8 @@ fn error_value(
 struct Work<'g> {
     next: Store,
     supply: Supply<'g>,
+    /// Immutable pre-outcome fields, including the exact identity held outside `Instance.fields`.
+    before: Option<Instance>,
 }
 
 /// Brings the instance `subject` creates into existence in `work`, and returns its identity.
@@ -976,7 +980,7 @@ fn create(
         .clone()
         .unwrap_or_else(|| entity.lifecycle.initial.clone());
     let mut fields = BTreeMap::new();
-    write(ir, &outcome.sets, input, None, &mut fields, work)?;
+    write(ir, &outcome.sets, input, &mut fields, work)?;
     work.next
         .instances
         .entry(entity.name.clone())
@@ -1034,11 +1038,10 @@ fn take(
     let mut work = Work {
         next: store.clone(),
         supply: Supply::of(generated),
+        before: None,
     };
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, Node)> = None;
-    // The row an existing subject held before this branch, which an error field may read.
-    let mut before: Option<Instance> = None;
 
     if let Some(subject) = &outcome.subject {
         let entity = ir.entity(&subject.entity);
@@ -1074,10 +1077,20 @@ fn take(
                 let Some(held) = store.instance_typed(&entity.name, &key) else {
                     return Ok(Ok(unknown_instance(ir, spec, store, input, generated)?));
                 };
-                before = Some(held.clone());
+                let mut before = held.clone();
+                before
+                    .fields
+                    .insert(entity.identity.name.clone(), key.clone());
+                work.before = Some(before);
                 let after = match act(ir, &outcome.sets, effect, held, input, &mut work)? {
                     Acted::NotFromHere => {
-                        return Ok(Ok(wrong_state(ir, spec, store, input, Some(held))?))
+                        return Ok(Ok(wrong_state(
+                            ir,
+                            spec,
+                            store,
+                            input,
+                            work.before.as_ref(),
+                        )?))
                     }
                     Acted::Rests(after) => Some(after),
                     Acted::Removed => None,
@@ -1116,7 +1129,7 @@ fn take(
     }
     Ok(Ok(Step {
         outcome: Some(reference(spec, outcome)),
-        error: declared_error(ir, outcome, input, before.as_ref())?,
+        error: declared_error(ir, outcome, input, work.before.as_ref())?,
         events,
         next: work.next,
     }))
@@ -1142,7 +1155,7 @@ fn act(
         ResolvedEffect::Updates | ResolvedEffect::Preserves | ResolvedEffect::Creates => {}
         ResolvedEffect::Deletes => return Ok(Acted::Removed),
     }
-    write(ir, sets, input, Some(held), &mut after.fields, work)?;
+    write(ir, sets, input, &mut after.fields, work)?;
     Ok(Acted::Rests(after))
 }
 
@@ -1234,7 +1247,6 @@ fn write(
     ir: &EssIr,
     sets: &[ResolvedPayloadField],
     input: &Invocation<'_>,
-    before: Option<&Instance>,
     fields: &mut BTreeMap<String, Node>,
     work: &mut Work<'_>,
 ) -> Result<(), Undetermined> {
@@ -1242,16 +1254,6 @@ fn write(
         match &set.value {
             ResolvedPayloadValue::Cleared => {
                 fields.remove(&set.target);
-            }
-            ResolvedPayloadValue::SubjectField { field, .. } => {
-                match before.and_then(|held| held.fields.get(field)) {
-                    Some(value) => {
-                        fields.insert(set.target.clone(), value.clone());
-                    }
-                    None => {
-                        fields.remove(&set.target);
-                    }
-                }
             }
             _ => match value(ir, set, input, work)? {
                 Some(value) => {
@@ -1275,6 +1277,13 @@ fn value(
     work: &mut Work<'_>,
 ) -> Result<Option<Node>, Undetermined> {
     match &field.value {
+        ResolvedPayloadValue::SubjectField {
+            field: read,
+            type_ref,
+        } => values::subject(ir, read, type_ref, &field.target_type, work.before.as_ref()),
+        ResolvedPayloadValue::Increment { by } => {
+            values::increment(ir, field, by, work.before.as_ref()).map(Some)
+        }
         ResolvedPayloadValue::CallerAttribute {
             attribute,
             type_ref,
