@@ -1709,9 +1709,7 @@ impl<'a> Writer<'a> {
             .expect("a creation names its subject");
         let entity = self.ir.entity(&subject.entity);
         let storage = self.storage(&entity.name);
-        let by_existence = determined::creates_unknown(outcome)
-            || determined::existing_instance(self.command).is_some();
-        let assigned = match determined::identity_source(outcome).filter(|_| by_existence) {
+        let assigned = match determined::identity_source(outcome) {
             Some(source) => self.value(source, None),
             None => self.generate(&entity.identity.type_ref),
         };
