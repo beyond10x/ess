@@ -7,7 +7,7 @@ title: Adopt legacy synthesis fixtures and refresh through the generator
 relations:
 - decomposes: story:feature-request-385
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:24:33Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:24:34Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -27,3 +27,7 @@ Only feasibility's full-tree walker (lines954-981) must ignore the root .ess-out
 All5legacy trees adopted through the public CLI using settled references generated from exact baselinef0b220099. Independent check matched every reference payload and complete inventory against Git baseline:85files. Current generator refreshed15artifact files (24lines of expected385prose); no payload copy bypass. Root-only ordinary .ess-output metadata excluded from snapshots/Git, exact artifact checks retained. Handwritten maintenance guide lives under docs/design; generator-root orphan check remains unchanged.
 
 Combined server verification:58/58package lanes,373passed,zero failures,one old ignored; baseline365passed/twoignored. Strict Clippy, task fmt-check, all6projection commands and task site-build passed (21browser claims,28lab steps/64rows). Three initial snapshot drift failures and the misplaced guide refusal were preserved then corrected. Integration committed17bfc38c0539c9a921274bf46866b23dd8f21cdc after independent review and correction of pre-existing README discrepancies. Main synchronization/final publication verification still pending; no source release claim.
+
+## Final combined candidate and npm admission refusal
+
+The exact candidate is 4826099161bec53d2da65996958b97cb0c96165a, incorporating tested main b4da64e38b770fe74103409fe1fef7ae6ca214f4. The synthesis source is byte-identical to the prior full 373-pass package run. On this candidate, task ci-lint and task projection-check pass; the browser boundary holds 21 claims and the lab 28 steps/64 rows. Common signed checks pass for 58 commits. The final site build under Node24.15.0/npm11.12.1 refuses at npm ci with EALLOWGIT: the directly declared docs-system dependency is treated as non-root under committed website/.npmrc allow-git=root. The exact package and lock both declare git+https at 8eb302de78feba319fbdd8191270d9fe7b6c1244; the error names its equivalent git+ssh form. Installed arborist reify.js:736 passes options to pacote.extract without the _isRoot provenance that pacote/fetcher.js:494 requires. No config relaxation, source patch to npm or alternate client retry was made. Earlier source-candidate site-build succeeded with Node22/npm10, also the repository CI toolchain. A narrow operator decision to use that toolchain for final validation is pending; publication is held. Evidence: server target/backlog-input/482609-{environment.txt,checks.tsv,site-build.log,ci-lint.log,projection-check.log}.

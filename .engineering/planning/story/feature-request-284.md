@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 4
+revision: 5
 ---
 ## Outcome
 
@@ -41,3 +41,7 @@ Per `.agents/skills/assessing-external-requests/SKILL.md` (coordinator, 2026-10-
 Backlog reconciliation (coordinator, 2026-10-01).
 
 - UI spec: lower priority than every base-spec story (operator, 2026-10-01).
+
+## Current source reconciliation (2026-10-02)
+
+Still open; do not mark implemented or dismiss the consumer's grant-checking need. Current source at 482609 differs from the report's syntax premise: crates/ui/ess-ui/src/model.rs:239 ActorSource admits FromSession, Anonymous and Unmapped only, and Page at :543 has no named actor field. The published UI reference line152 likewise lists from_session and anonymous. ess-ui-check/src/model.rs:280 checks that each referenced command exists, but :307-312 performs no actor-specific command-grant comparison; its view-readability check at :190 pools grants from every actor. A named-page-actor interpretation therefore requires an explicit authored-contract decision, not merely adding a comparison to the current checker. The earlier accept decision remains recorded, but its implementation scope must be reconciled against these concrete types before dispatch. No current red regression has yet established the report's claimed successful admission of that exact named-actor document.

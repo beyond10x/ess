@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-298
 kind: story
-status: draft
+status: active
 title: A Boolean input is not treated as a closed domain
 tags:
 - feature-request
@@ -22,6 +22,8 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/subject_fact.rs
 - confidence: cited
+  path: crates/specify/ess-domain/src/command/subject_state.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/finite_enum.rs
@@ -29,7 +31,10 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 12
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 13, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 14, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 
@@ -63,3 +68,7 @@ Accept as proposed: required Boolean domains within the existing finite proof, i
 - boolean_finite_witness_respects_wrapper_invariants: excluded candidates are never executed, without making coverage an invariant solver.
 - existing_enum_and_default_candidates_keep_order_and_bytes; boolean_shared_proof_callers_preserve_default_semantics.
 - Generated target sampling confirms actual admitted Boolean command behavior where existing target support applies; unsupported target constructs retain named obligations/refusals.
+
+## Scope confirmation during implementation
+
+subject_state.rs::analyze_partition (lines264-294 at b05007e49) is another shared finite-proof caller and is added as cited scope. The implementor established that stored/related/state callers invoke the shared proof even with defaults; unrestricted Boolean admission there would introduce new overlap rejection. Preserve their existing enum-only proof for commands with defaults while admitting Boolean in their no-default proof. This preserves current rejection policy; demonstrate it with before/after default and enum regression controls. Existing top-level explicit Boolean partition support remains required.
