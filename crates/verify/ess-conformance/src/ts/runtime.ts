@@ -619,6 +619,53 @@ export function strictResponseJSON(raw: string): Node {
   return parseJSON(raw, 130).value;
 }
 
+type SuiteJSONScope =
+  | 'plain'
+  | 'suite'
+  | 'scenarios'
+  | 'scenario'
+  | 'steps'
+  | 'step'
+  | 'response'
+  | 'expected';
+
+/** Match the native reader's finite path to payload-local expected-value depth. */
+function strictSuiteJSONWithSpans(raw: string): {
+  value: Node;
+  spans: WeakMap<object, [number, number]>;
+} {
+  // Seven envelope levels precede a direct expected field. Keep parsing bounded before
+  // checking the narrower scope-dependent limit, without rewriting its original bytes.
+  const decoded = parseJSON(raw, 135);
+  const root = decoded.value;
+  const version =
+    isObject(root) && isObject(root.provenance) ? root.provenance.suite_version : undefined;
+  const direct = typeof version === 'string' && (SUITE_MAJORS[version] ?? 0) >= 28;
+  function visit(value: Node, depth: number, scope: SuiteJSONScope): void {
+    if (depth > 128) throw new Error('JSON nesting exceeds 128');
+    if (Array.isArray(value)) {
+      for (const child of value) visit(child, depth + 1, scope === 'steps' ? 'step' : 'plain');
+    } else if (isObject(value)) {
+      for (const [key, child] of Object.entries(value)) {
+        let next: SuiteJSONScope = 'plain';
+        if (scope === 'suite' && key === 'scenarios') next = 'scenarios';
+        else if (scope === 'scenarios') next = 'scenario';
+        else if (scope === 'scenario' && key === 'steps') next = 'steps';
+        else if (scope === 'step' && key === 'response' && value.step === 'expect_direct_response')
+          next = 'response';
+        else if (scope === 'response' && key === 'expected') next = 'expected';
+        visit(child, scope === 'expected' ? 0 : depth + 1, next);
+      }
+    }
+  }
+  visit(root, 0, direct ? 'suite' : 'plain');
+  return decoded;
+}
+
+function strictSuiteJSON(raw: string): Node {
+  return strictSuiteJSONWithSpans(raw).value;
+}
+
 function parseJSON(
   raw: string,
   maxDepth: number,
@@ -1334,7 +1381,7 @@ export function completeCoverage(coverage: { [key: string]: Node } | undefined):
 }
 
 export function admitRunInput(raw: string): Suite {
-  const value = strictJSON(raw);
+  const value = strictSuiteJSON(raw);
   if (!isObject(value)) {
     throw coverageError();
   }
@@ -5564,7 +5611,7 @@ export function admitSuite(raw: string): Suite {
 
 export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   accessorPreflight(raw);
-  const value = strictJSON(raw);
+  const value = strictSuiteJSON(raw);
   const root = closed(value, 'provenance scenarios', 'coverage');
   const provenance = closed(
     root.provenance,
@@ -7405,7 +7452,7 @@ export function decodeAccessorTypeFacts(value: Node): AccessorTypeFacts {
 export function accessorPreflight(raw: string): void {
   let decoded: { value: Node; spans: WeakMap<object, [number, number]> };
   try {
-    decoded = strictJSONWithSpans(raw);
+    decoded = strictSuiteJSONWithSpans(raw);
   } catch {
     return; // The ordinary closed admitter diagnoses malformed legacy documents.
   }

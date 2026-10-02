@@ -775,3 +775,121 @@ fn typescript_stops_target_error_after_prior_failed_delivery_assertion() {
         2
     );
 }
+
+fn expected_depth_suite(covered: bool, depth: usize) -> String {
+    let source = constant(include_str!("direct_returns.rs"), "MODEL")
+        .replace("name: value, type: String", "name: value, type: Json");
+    let ir = model(&source);
+    let mut document: Value = if covered {
+        serde_json::from_str(
+            build(&ir, &[], Scope::System, Origins::Generated)
+                .unwrap()
+                .selected()
+                .original_json(),
+        )
+        .unwrap()
+    } else {
+        serde_json::to_value(ess_conformance::synthesize(&ir).suite).unwrap()
+    };
+    let response = scenario_steps(&mut document)
+        .iter_mut()
+        .find(|step| step["step"] == "expect_direct_response")
+        .unwrap();
+    response["response"]["expected"]["value"] =
+        (0..depth).fold(Value::Null, |value, _| json!([value]));
+    // Intentionally keep the original compact bytes, including the step tag after response.
+    document.to_string()
+}
+
+fn refused_depth_document(raw: &str, label: &str) {
+    assert!(
+        AdmittedSuite::from_json(raw).is_err(),
+        "native admitted {label}"
+    );
+    let directory = runtime_package();
+    let input = directory.join(format!("{label}.json"));
+    let report = directory.join(format!("{label}-report.json"));
+    std::fs::write(&input, raw).unwrap();
+    let _ = std::fs::remove_file(&report);
+    let host = support_typescript_prerequisite::Host::start("direct", "json-128");
+    let output = Command::new("node")
+        .arg(directory.join("live.mjs"))
+        .arg(input)
+        .arg(&host.address)
+        .env("ESS_REPORT_FORMAT", "2")
+        .env("ESS_REPORT_OUT", &report)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "TypeScript admitted {label}");
+    assert!(!report.exists());
+    assert!(host.stop().is_empty());
+}
+
+#[test]
+fn typescript_direct_expected_literal_has_native_payload_depth_and_exact_parents() {
+    for covered in [false, true] {
+        let raw = expected_depth_suite(covered, 128);
+        let admitted =
+            AdmittedSuite::from_json(&raw).expect("native admits expected Json depth128");
+        let target = support_typescript_prerequisite::Fixture::new("direct", "json-128");
+        let native = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+        assert_eq!(
+            native.scenarios[0].status,
+            ess_conformance::report::Status::Passed
+        );
+        let (actual, _) = live_run(
+            &admitted,
+            &raw,
+            "direct",
+            "json-128",
+            &format!("expected-depth128-{covered}"),
+        );
+        assert_eq!(actual["counts"]["passed"], 1);
+        if covered {
+            let input = AdmittedInput::from_suite(admitted).unwrap();
+            let ids = input
+                .selected()
+                .suite()
+                .scenarios
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            let selected = input.select(&ids).unwrap();
+            let wire = selected.document().to_canonical_json().unwrap();
+            let (actual, _) = live_run(
+                selected.selected(),
+                &wire,
+                "direct",
+                "json-128",
+                "expected-depth128-selected",
+            );
+            assert_eq!(actual["counts"]["passed"], 1);
+            assert_eq!(
+                selected.document().parent_suites[0],
+                raw,
+                "selection retains exact original parent bytes"
+            );
+        }
+    }
+}
+
+#[test]
+fn typescript_direct_depth_allowance_never_escapes_its_finite_envelope_path() {
+    refused_depth_document(&expected_depth_suite(false, 129), "expected-depth129");
+    let base = expected_depth_suite(false, 0);
+    for (label, wrapped) in [("unrelated-deep", false), ("forged-expected-deep", true)] {
+        let mut document: Value = serde_json::from_str(&base).unwrap();
+        let nested = (0..128).fold(Value::Null, |value, _| json!([value]));
+        let literal = if wrapped {
+            json!({"step":"expect_direct_response","response":{"expected":{"value":nested}}})
+        } else {
+            nested
+        };
+        scenario_steps(&mut document)[0]["input"] =
+            json!({"unrelated":{"kind":"literal","value":literal}});
+        refused_depth_document(&document.to_string(), label);
+    }
+    let older =
+        expected_depth_suite(false, 128).replace("ess-conformance/28", "ess-conformance/26");
+    refused_depth_document(&older, "old-deep-direct");
+}
