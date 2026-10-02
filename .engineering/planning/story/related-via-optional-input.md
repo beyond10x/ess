@@ -29,7 +29,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_optional.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -80,3 +80,9 @@ Cited: `ess-domain/src/command/related_guard.rs` (parsing, type check :501, form
 Base 0.50.0+. #287 touches `synthesize/related_guard.rs` and `related.rs`: the synthesis half waits for it. #310, #306: none. Within ess/21: story 1 before #285 or in its unit (shared `related_value.rs`); story 2 after #282 (owns the precedence step); #283 and family F's row-set form edit the same files: one at a time. `ess-gen/src/openapi.rs` (`:1155`, "when present" wording) is also edited by story:served-view-params (`:560-564` comment): different regions, whichever lands second rebases.
 
 `CHANGELOG.md` is a merge-time edit (epic).
+
+## Bounded prerequisite disposition for the serial batch, 2026-10-03
+
+Read-only ancestry inspection found singleton core1f131e170, release integration482bc33c2 and tag0.51.0 ancestors of current main1ff305685. feature-request-287 itself records that released core and remaining ignored cross-caller reinstall, Uuid and ordered-view scenario-withdrawal limits. Optional-input requires the landed singleton synthesis change and serialized edits to related witness arrangement; its named acceptance does not require the retained failing shapes. The coordinator therefore treats that landed core as satisfying this unit's sequencing prerequisite while preserving the broader #287 artifact as active and preserving every ignored limitation as unresolved. This is a bounded planning disposition, not a new test result or whole-story completion. The depends_on edge remains visible with this qualification.
+
+Current main's interpreter declines present related predicates; later guard-generation work must implement them or integrate a bounded reviewed equivalent. Candidate ee50829da is not landed and relies on earlier held-subject work on a74-commit line: do not import that line wholesale under this five-wave approval. Optional absence must skip both row lookup and related-branch selection, rather than fall into the unconditional decline. Merge readiness still depends on the ess/21 format bundle decision.

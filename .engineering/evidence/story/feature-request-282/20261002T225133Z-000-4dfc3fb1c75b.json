@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T22:51:33Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-282",
+  "kind": "story",
+  "revision": 18,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Operator approved five serial waves in this session on 2026-10-03, integrated into one branch and one PR",
+    "reference": "runbook:ui-live-apps-serial-integration-20261003"
+  }
+}

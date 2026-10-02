@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 1
+revision: 2
 ---
 ## Authority and delivery
 
@@ -29,3 +29,11 @@ Integration checkout: ess-w7-server-public; owner session codex-resume-459ab620-
 Current integration checkout was clean before branch creation. Predecessor ids ess-w4-ui-tui-app, ess-w5-go-behaviour and ess-w6-view-params have no live leases or tracked/untracked changes, but retain ignored target output; the third also retains examples/billing-web/Cargo.lock. They require reviewed recovery proof and evidence preservation before managed cleanup. Original ess-w7-store-entry was already privately archived and removed through managed GC. Do not infer the workspace is globally clean: other sessions own active work and open PRs.
 
 Read-only GitHub release listing shows 0.51.0 published at 2026-10-02T03:20:46Z. Exact tag/check/artifact verification is being performed independently; later merged UI work is not assumed released. No new release is cut as part of this audit.
+
+## Unit dispatch and verified release facts
+
+Recovered candidate committed as aee7c22561865469b09a297fd2881cdf03d941ac with both bot identities verified. #318 unit checkout created through worktree: ess-serial-318-20261003, branch unit/serial-served-entry-20261003, same base. Implementor owns source/tests/docs and scoped dependency resolution, its own target directory and lease; root owns all AEP/CHANGELOG/integration writes. Scratch: `$HOME/.cache/uilab-todo/serial-20261003/318`. Its brief requires measured reconciliation with older test controls, full package counts, strict Clippy and fmt-check. No previous candidate's green is claimed for these bytes.
+
+Independent read-only audit verified ESS 0.51.0 published 2026-10-02T03:20:46Z, annotated tag e86d26acc5b4dc680814d5fac34346c557540310 peeling to 0347ffa222939e3791e574d2dbe42d4b4b02d979. https://github.com/beyond10x/ess/actions/runs/36958141779 succeeded, including four native archives, SHA256SUMS, checksum and Linux binary smoke verification. Exact-tag Gate succeeded in run36958106188. Release-record audit37008746985 succeeded. Assets were verified via metadata and successful release checks, not independently downloaded. No remote0.52.0 tag or release exists. Current main is106 commits beyond0.51.0; merged PR381/386/387 work remains unreleased. Documentation publication was not audited.
+
+Predecessor refresh inspection proved all three retained heads ancestors of advertised main: ess-w4-ui-tui-app at88bd4f3aa, ess-w5-go-behaviour at896696ae7, ess-w6-view-params atd414cfc21. Ignored output is being preserved with managed archives before exact-id retirement; no raw tree deletion or blanket cleaning.
