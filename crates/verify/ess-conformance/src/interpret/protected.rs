@@ -1,10 +1,10 @@
 //! Actual interpreted issuance and reads, with private, non-serializable finite value state.
 use crate::{
     scenario::{CommandRef, OutcomeRef},
-    target::{SemanticViewRequest, SemanticViewResult, TargetError},
+    target::TargetError,
 };
 use ess_compiler::EssIr;
-use ess_primitives::{node::Node, predicate::Truth};
+use ess_primitives::node::Node;
 use std::collections::BTreeMap;
 
 #[derive(Default)]
@@ -193,54 +193,4 @@ fn contains(node: &Node, value: &str) -> bool {
         Node::Seq(values) => values.iter().any(|node| contains(node, value)),
         Node::Null | Node::Bool(_) | Node::Number(_) => false,
     }
-}
-
-pub(super) fn view(
-    ir: &EssIr,
-    store: &super::execute::Store,
-    request: &SemanticViewRequest,
-) -> Result<SemanticViewResult, TargetError> {
-    let view = ir
-        .views()
-        .get(request.view.name())
-        .ok_or_else(unsupported)?;
-    if view.is_aggregate() || !view.order_by.is_empty() || view.paging.is_some() {
-        return Err(unsupported());
-    }
-    for param in &view.params {
-        let value = request.params.get(&param.name).ok_or_else(unsupported)?;
-        crate::input::validate_typed_value(ir, &param.type_ref, value)
-            .map_err(|_| unsupported())?;
-    }
-    let entity = ir.entity(&view.source);
-    let mut rows = Vec::new();
-    for (name, identity, instance) in store.instances() {
-        if name != &entity.name {
-            continue;
-        }
-        let mut fields = instance.fields.clone();
-        fields.insert(
-            entity.identity.name.clone(),
-            Node::Text(identity.to_owned()),
-        );
-        fields.insert("state".into(), Node::Text(instance.state.to_string()));
-        if let Some(filter) = &view.filter {
-            let mut facts = fields.clone();
-            facts.insert("param".into(), Node::Map(request.params.clone()));
-            match filter.evaluate(&crate::runner::row_facts(&facts)) {
-                Truth::True => {}
-                Truth::False => continue,
-                Truth::Unknown => return Err(unsupported()),
-            }
-        }
-        let mut row = BTreeMap::new();
-        for field in &view.fields {
-            let value = fields.get(&field.name).cloned().ok_or_else(unsupported)?;
-            crate::input::validate_typed_value(ir, &field.type_ref, &value)
-                .map_err(|_| unsupported())?;
-            row.insert(field.name.clone(), value);
-        }
-        rows.push(row);
-    }
-    Ok(SemanticViewResult::of(rows))
 }

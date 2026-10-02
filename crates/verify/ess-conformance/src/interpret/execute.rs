@@ -28,7 +28,7 @@
 //! refusal the model does not declare is not available, so it is never answered as a declared one.
 //!
 //! Where the model uses a construct this module does not execute yet — a guard over the subject's
-//! stored fields or its held state, a retained replay, a typed response, a value expression other
+//! stored fields, a retained replay, a value expression other
 //! than an input field or a literal — the answer is [`Undetermined::NotInterpreted`], never a
 //! guess. A guard that evaluates to `Unknown` is [`Undetermined::Undecidable`] for the same reason.
 //!
@@ -348,11 +348,7 @@ pub fn execute_generating(
     if let Some(steps) = refused_by_input(ir, spec, store, input)? {
         return Ok(steps);
     }
-    interpretable(
-        spec,
-        matches!(generated, Generated::Recorded(_)),
-        crate::one_time_response::marked_model(ir),
-    )?;
+    interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
     let mut held_states = BTreeMap::new();
@@ -673,15 +669,8 @@ fn refused_by_input(
 /// retained to replay is the request's, which a step does not see: the checker takes a replay only
 /// once its request's origin branch has been taken in the order it tries ([`crate::linearize`]). A target,
 /// which owes the response and the retained result themselves, is still refused both.
-fn interpretable(
-    spec: &ResolvedCommand,
-    recorded: bool,
-    protected: bool,
-) -> Result<(), Undetermined> {
+fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermined> {
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    if !recorded && !protected && !spec.response.is_empty() {
-        return gap(format!("the typed response of `{}`", spec.name));
-    }
     for outcome in &spec.outcomes {
         let at = branch(spec, outcome);
         if let ResolvedCondition::When { predicate }
@@ -1182,12 +1171,25 @@ fn mint(
     let no_value = || Undetermined::NoValue {
         what: format!("a value of `{target}`"),
     };
-    match representation(ir, target) {
-        Representation::Primitive(Primitive::Uuid) => Ok(Some(Node::Text(format!(
+    if let Representation::Primitive(Primitive::Uuid) = representation(ir, target) {
+        Ok(Some(Node::Text(format!(
             "00000000-0000-4000-8000-{:012}",
             work.next.tick()
-        )))),
-        _ => Err(no_value()),
+        ))))
+    } else {
+        let field = ess_compiler::ir::ResolvedField {
+            name: "generated".into(),
+            type_ref: target.clone(),
+            naming: ess_domain::name::Naming::default(),
+        };
+        let distinction = usize::try_from(work.next.tick()).map_err(|_| no_value())?;
+        crate::witness::fields(
+            ir,
+            &[field],
+            crate::witness::Distinction::further(distinction),
+        )
+        .map(|mut values| values.remove("generated"))
+        .map_err(|_| no_value())
     }
 }
 
