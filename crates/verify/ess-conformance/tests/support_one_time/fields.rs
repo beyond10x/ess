@@ -115,7 +115,7 @@ pub fn admitted() -> AdmittedSuite {
         origin.fields.push("recovery".into());
         for step in &mut scenario.steps {
             if let ess_conformance::ScenarioStep::ExpectDirectResponse { response } = step {
-                response.fields = origin.response.fields.clone();
+                response.fields.clone_from(&origin.response.fields);
             }
         }
     }
