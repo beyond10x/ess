@@ -780,7 +780,7 @@ header:
 
 A region of a page with one read and its own loading lifecycle.
 
-The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button).
+The section, not the page, is the unit of loading. Each has at most one `reads`, its own states and optional live updates; a slow section never blocks its siblings. Use `load: on_visible` for partial loading and `depends_on` when a section needs another section's selection. `component` names a member of the composite union or a widget; its props are written inline beside the section's own fields, and a key that is neither is refused. `children` adds widgets or primitives rendered with the section (a caption, a button). `title` is the heading a reader sees, which tells two sections over the same view apart.
 
 **Properties**
 
@@ -788,6 +788,7 @@ The section, not the page, is the unit of loading. Each has at most one `reads`,
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name among the page's sections |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes |   | what the section renders |
+| `title` | `string` |   |   | heading shown above the section; absent, none |
 | `reads` | [Reads](#reads) |   |   | the section's data; one per section; it is the composite's own `reads` |
 | `live` | [Live](#live) |   |   | how channel events change the rows |
 | `load` | one of: `eager` \| `on_visible` \| `on_demand` |   | `eager` | when the read starts |
@@ -1886,7 +1887,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `endpoint` and `derived` are traceability for retrofits.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits.
 
 **Properties**
 
@@ -1895,6 +1896,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `view` | name of an ESS `view` |   |   | ESS view name |
 | `placeholder` | `name` |   |   | a view name not yet bound to the model |
 | `fixture` | `string` |   |   | fixture file answering the placeholder |
+| `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
@@ -2133,7 +2135,7 @@ How a section applies a channel's events to its rows.
 | `channel` | name of a [Channel](#channel) | yes |   | channel to consume |
 | `on` | list of name of an ESS `event` |   |   | subset of the channel's events |
 | `effect` | one of: `patch_row` \| `insert_or_patch` \| `insert_top` \| `remove_row` \| `replace` \| `refetch` | yes |   | what an event does to the rows |
-| `match` | `name` |   | `id` | row identity field |
+| `match` | `name` |   |   | row identity field; absent, the read's `key`, else `id` |
 | `only_if` | `expr` |   |   | drop events that fail the condition |
 | `coalesce` | `duration` |   |   | batch bursts into one render |
 | `when_paged_away` | one of: `count_new` \| `ignore` \| `insert` |   | `count_new` | behaviour when the reader is not on page one |

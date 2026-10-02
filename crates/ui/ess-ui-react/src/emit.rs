@@ -84,7 +84,7 @@ struct Opts {
     degrades: BTreeMap<String, String>,
     /// The enclosing section or overlay frame already carries this path.
     framed: bool,
-    /// The field keying rows (`live.match` of the section).
+    /// The field keying rows: the section's `reads.key`, else its `live.match` (#320).
     row_key: Option<String>,
     /// The row key a choice takes each option's value from (the form field it picks for).
     choice_value: Option<String>,
@@ -975,7 +975,14 @@ impl<'d> Gen<'d> {
                     .opt("item", item)
                     .opt("reorder", reorder)
                     .opt("groupBy", quoted(c.group_by.as_ref()))
-                    .opt("rowKey", opts.row_key.as_ref().map(|key| ts::string(key)))
+                    .opt(
+                        "rowKey",
+                        c.reads
+                            .as_ref()
+                            .and_then(|reads| reads.key.as_ref())
+                            .or(opts.row_key.as_ref())
+                            .map(|key| ts::string(key)),
+                    )
                     .opt("degrades", Self::degrades(opts))
                     .render()
             }
@@ -1707,7 +1714,8 @@ impl<'d> Gen<'d> {
         let reads = Self::section_reads(&section.body).and_then(Self::reads);
         let mut frame = El::new(&self.import("runtime/core", "SectionFrame"))
             .path(&at.to_string())
-            .expr("name", ts::string(&section.name));
+            .expr("name", ts::string(&section.name))
+            .opt("title", quoted(section.title.as_ref()));
         if let Some(reads) = &reads {
             let use_scope = self.import("runtime/core", "useScope");
             let trigger = self.import("runtime/core", "useLoadTrigger");
@@ -1800,10 +1808,7 @@ impl<'d> Gen<'d> {
             selection_state: Self::selection_state(page, section),
             degrades: section.common.degrades.clone(),
             framed: true,
-            row_key: section
-                .live
-                .as_ref()
-                .and_then(|live| live.match_field.clone()),
+            row_key: section.row_key().map(str::to_owned),
             choice_value: None,
         };
         if let Body::Composite(Composite::Form(form)) = &section.body {
