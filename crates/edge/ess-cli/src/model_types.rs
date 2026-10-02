@@ -6,16 +6,24 @@ use std::process::ExitCode;
 use anyhow::{bail, Result};
 
 #[derive(Debug, clap::Args)]
-#[command(group(clap::ArgGroup::new("selection").required(true).args(["root", "all_types"])))]
+#[command(group(
+    clap::ArgGroup::new("selection")
+        .required(true)
+        .multiple(true)
+        .args(["root", "all_types", "all_events"])
+))]
 pub struct Args {
     #[command(flatten)]
     input: crate::SpecLocation,
-    /// Qualified model type root. Repeat for a shared transitive closure.
-    #[arg(long)]
+    /// Qualified model type or event root. Repeat for a shared transitive closure.
+    #[arg(long, conflicts_with_all = ["all_types", "all_events"])]
     root: Vec<String>,
     /// Explicitly select every named type in the resolved model.
     #[arg(long)]
     all_types: bool,
+    /// Explicitly select every event payload in the resolved model; combines with `--all-types`.
+    #[arg(long)]
+    all_events: bool,
     #[command(flatten)]
     options: crate::schema_bundle::TypeOptions,
     /// Library destination, outside the specification input tree.
@@ -27,8 +35,10 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     let Ok((ir, _)) = crate::resolved(&args.input.path, crate::Format::Text)? else {
         return Ok(ExitCode::from(1));
     };
-    let roots = if args.all_types {
-        ir.types().keys().map(ToString::to_string).collect()
+    let roots = if args.all_types || args.all_events {
+        let types = ir.types().keys().filter(|_| args.all_types);
+        let events = ir.events().keys().filter(|_| args.all_events);
+        types.chain(events).map(ToString::to_string).collect()
     } else {
         args.root.iter().cloned().collect()
     };
