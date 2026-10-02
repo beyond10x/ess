@@ -2,6 +2,7 @@
 use serde_json::{json, Value};
 use std::{
     ffi::OsStr,
+    fmt::Write as _,
     fs::{self, File},
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -146,10 +147,10 @@ const RFC6455_EXAMPLE_ACCEPT: &str = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="; // gitleaks
 /// Startup is the phase that competes for CPU and the only phase the deadline
 /// judges: fixtures in one test binary otherwise launch Firefox at the same
 /// instant, and a runner slow enough to lose that race fails every one of them
-/// at once. Hold this from spawn to `BiDi` readiness; everything after it runs in
-/// parallel as before.
+/// at once. Hold this from spawn through the first `session.new` round trip;
+/// everything after the usable session runs in parallel as before.
 static STARTUP: Mutex<()> = Mutex::new(());
-/// How many startups sit between a spawned child and `BiDi` readiness right now,
+/// How many startups sit between a spawned child and its first session answer right now,
 /// and the most there have ever been. These count the startup itself rather than
 /// the lock that serializes it: a fixture that released `STARTUP` early would
 /// leave real startups overlapping while every acquisition still looked orderly,
@@ -162,6 +163,12 @@ static PEAK_IN_STARTUP: AtomicUsize = AtomicUsize::new(0);
 #[allow(dead_code)]
 pub fn peak_concurrent_startups() -> usize {
     PEAK_IN_STARTUP.load(Ordering::SeqCst)
+}
+
+/// Read by the stand-in server while it handles the first session round trip.
+#[allow(dead_code)]
+pub fn current_startups() -> usize {
+    IN_STARTUP.load(Ordering::SeqCst)
 }
 
 struct Starting {
@@ -292,8 +299,8 @@ impl Browser {
     // exceptions it is:
     //   `startup-path: harness` — this runner's own filesystem or process table,
     //      which is a broken machine and not a start that was lost; and
-    //   `startup-path: defect`  — a deliberate BiDi defect signal, kept because a
-    //      browser that answered is a browser that started.
+    //   `startup-path: defect`  — a malformed upgrade or protocol answer;
+    //      a boot-time HTTP 404 alone does not establish readiness.
     // `no_unaccounted_panic_site_can_end_a_start` in coverage_browser.rs reads
     // this region and holds that class, so a further give-up site cannot arrive
     // unnamed the way the WebSocket upgrade read did.
@@ -356,20 +363,15 @@ impl Browser {
         };
         // startup-path: harness
         fs::write(evidence.join("firefox.pid"), format!("{}\n", child.0.id())).unwrap();
-        let (stream, response) = {
-            // Counted for the whole startup rather than for the lock. A fixture
-            // that released `starting` any earlier would leave these overlapping,
-            // and the peak this counter records is what says so.
-            let _in_startup = InStartup::begin();
-            Self::reach_bidi(&mut child, evidence, started, deadline)
-        }?;
+        // Count the first session round trip too, independently of the lock's extent.
+        let in_startup = InStartup::begin();
+        let (stream, response) = Self::reach_bidi(&mut child, evidence, started, deadline)?;
         // startup-path: harness
         fs::write(evidence.join("websocket-handshake.txt"), &response).unwrap();
         // startup-path: defect
         assert!(response.starts_with("HTTP/1.1 101"), "{response}");
         // startup-path: defect
         assert!(response.contains(RFC6455_EXAMPLE_ACCEPT), "{response}");
-        drop(starting);
         let mut browser = Self {
             _child: child,
             stream,
@@ -379,6 +381,8 @@ impl Browser {
             evidence: evidence.to_path_buf(),
         };
         browser.call("session.new", &json!({"capabilities":{"alwaysMatch":{}}}));
+        drop(in_startup);
+        drop(starting);
         Ok(browser)
     }
 
@@ -393,6 +397,7 @@ impl Browser {
         let port = Self::assigned_bidi_port(child, evidence, started, deadline)?;
         // The last thing the announced endpoint said, if it said anything at all.
         let mut answered: Option<String> = None;
+        let mut last_socket_error: Option<String> = None;
         loop {
             // startup-path: harness
             if child.0.try_wait().unwrap().is_some() {
@@ -411,21 +416,28 @@ impl Browser {
                     evidence,
                     port,
                     answered.as_deref(),
+                    last_socket_error.as_deref(),
                 ));
             }
-            let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
-                thread::sleep(Duration::from_millis(50));
+            let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+            let Ok(mut stream) =
+                TcpStream::connect_timeout(&address, deadline.saturating_sub(elapsed))
+            else {
+                thread::sleep(
+                    Duration::from_millis(50).min(deadline.saturating_sub(started.elapsed())),
+                );
                 continue;
             };
             // The socket inherits what is left of the deadline. A fixed timeout
             // here is not a bound on startup at all: it lets a single iteration
             // overrun the deadline by its own length, and it did, by 20s.
             let remaining = deadline
-                .saturating_sub(elapsed)
+                .saturating_sub(started.elapsed())
                 .max(Duration::from_millis(1));
             let response = match Self::upgrade(&mut stream, port, remaining) {
                 Ok(response) => response,
                 Err(error) => {
+                    last_socket_error = Some(error.to_string());
                     // startup-path: harness
                     if child.0.try_wait().unwrap().is_some() {
                         return Err(startup_refusal(
@@ -443,14 +455,13 @@ impl Browser {
                             evidence,
                             port,
                             answered.as_deref(),
+                            last_socket_error.as_deref(),
                         ));
                     }
-                    return Err(startup_refusal(
-                        Stage::Upgrade(&error.to_string()),
-                        elapsed,
-                        deadline,
-                        evidence,
-                    ));
+                    // A lost socket before a successful upgrade is another transient
+                    // startup state, just like a refused connection or a boot-time 404.
+                    thread::sleep(Duration::from_millis(50).min(deadline.saturating_sub(elapsed)));
+                    continue;
                 }
             };
             // Firefox can listen before registering /session. TCP readiness alone is not
@@ -484,12 +495,20 @@ impl Browser {
 
     /// One upgrade attempt, bounded by what is left of the startup deadline.
     fn upgrade(stream: &mut TcpStream, port: u16, remaining: Duration) -> std::io::Result<String> {
-        stream.set_read_timeout(Some(remaining))?;
+        let started = Instant::now();
         stream.set_write_timeout(Some(remaining))?;
         let handshake = format!("GET /session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {RFC6455_EXAMPLE_KEY}\r\nSec-WebSocket-Version: 13\r\n\r\n");
         stream.write_all(handshake.as_bytes())?;
         let mut response = Vec::new();
         while !response.ends_with(b"\r\n\r\n") {
+            let left = remaining.saturating_sub(started.elapsed());
+            if left.is_zero() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "startup deadline expired during the upgrade",
+                ));
+            }
+            stream.set_read_timeout(Some(left))?;
             let mut byte = [0];
             stream.read_exact(&mut byte)?;
             response.push(byte[0]);
@@ -499,33 +518,25 @@ impl Browser {
         Ok(String::from_utf8_lossy(&response).into_owned())
     }
 
-    /// How the connect phase gives up once the deadline has expired. A browser
-    /// that answered the upgrade with HTTP is running and listening on the port
-    /// it announced, so this runner did start it: the refusal's claim would be
-    /// false, and this says what was seen instead of picking a side it cannot
-    /// see. A port that never answered anything is a start this runner lost, and
-    /// that is the refusal.
+    /// No successful upgrade was reached before the deadline. Keep any boot-time
+    /// HTTP response and transport failure beside the measured startup and stderr.
     fn connect_give_up(
         elapsed: Duration,
         deadline: Duration,
         evidence: &Path,
         port: u16,
         answered: Option<&str>,
+        last_socket_error: Option<&str>,
     ) -> String {
-        let Some(response) = answered else {
-            return startup_refusal(Stage::Connect, elapsed, deadline, evidence);
-        };
-        // startup-path: defect
-        panic!(
-            "Firefox did not expose BiDi: it announced 127.0.0.1:{port}, stayed alive, and \
-             answered the upgrade with a response that is not 101 for {:.3}s. This runner did \
-             start a browser, so it is not a fixture environment refusal; whether /session is \
-             defective or this runner never gave the browser the CPU to register it is decided \
-             by the response and the log below.\n\
-             \x20 evidence:         {}\n\x20 last startup response:\n{response}",
-            elapsed.as_secs_f64(),
-            evidence.display(),
-        );
+        let mut refusal = startup_refusal(Stage::Connect, elapsed, deadline, evidence);
+        let _ = writeln!(refusal, "\n  announced endpoint: 127.0.0.1:{port}");
+        if let Some(response) = answered {
+            let _ = write!(refusal, "  last startup response:\n{response}");
+        }
+        if let Some(error) = last_socket_error {
+            let _ = writeln!(refusal, "\n  last upgrade error: {error}");
+        }
+        refusal
     }
 
     fn assigned_bidi_port(

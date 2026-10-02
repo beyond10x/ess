@@ -130,7 +130,6 @@ fn booting_then_starved(port_sink: &Arc<AtomicUsize>) -> u16 {
 /// while it was still registering `/session`, and the deadline then expired
 /// mid-request because the runner starved it.
 #[test]
-#[ignore = "story:a-browser-that-answered-http-once-is-still-a-slow-start — one transient 404 sets a sticky discriminator, so a starved start panics with the story's own headline instead of refusing"]
 fn a_browser_too_slow_to_serve_session_before_the_deadline_is_the_slow_start_the_story_is_about() {
     let evidence = evidence_dir("boot-then-starve");
     let accepted = Arc::new(AtomicUsize::new(0));
@@ -158,7 +157,6 @@ fn a_browser_too_slow_to_serve_session_before_the_deadline_is_the_slow_start_the
 /// an instruction to read something that is not there — which is the position
 /// the base message (`read firefox.stderr`) already left the reader in.
 #[test]
-#[ignore = "story:a-browser-that-answered-http-once-is-still-a-slow-start — the give-up tells the reader to decide by a log it does not print"]
 fn the_kept_panic_carries_the_log_it_tells_the_reader_to_decide_by() {
     let evidence = evidence_dir("promised-log");
     let accepted = Arc::new(AtomicUsize::new(0));
@@ -190,22 +188,28 @@ fn the_kept_panic_carries_the_log_it_tells_the_reader_to_decide_by() {
 /// and the deadline still has its whole budget left — and it ends the start on
 /// the first attempt instead.
 #[test]
-#[ignore = "review-result:adversary-wave24-unit1-pass-2 G3 — a refused connect and a 404 retry, an upgrade io error does not; pre-existing, reproduces at base, no story filed"]
 fn a_socket_lost_while_the_child_is_alive_is_retried_like_every_other_state_on_the_way_up() {
     let evidence = evidence_dir("closed-once");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let accepted = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&accepted);
+    let (began, accepted_at) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        let mut began = Some(began);
         while let Ok((stream, _)) = listener.accept() {
+            if let Some(began) = began.take() {
+                began.send(std::time::Instant::now()).unwrap();
+            }
             counter.fetch_add(1, Ordering::SeqCst);
             drop(stream);
         }
     });
     let program = announcing_stand_in(&evidence, port);
     let deadline = Duration::from_secs(2);
-    let _ = startup_outcome(evidence, program, deadline);
+    let outcome = startup_outcome(evidence.clone(), program, deadline);
+    // Waiting for another test's startup lock is outside this start's deadline.
+    let elapsed = accepted_at.recv().unwrap().elapsed();
     assert!(
         accepted.load(Ordering::SeqCst) >= 2,
         "the fixture gave up on the first lost socket and made {} connection attempt(s) \
@@ -214,6 +218,14 @@ fn a_socket_lost_while_the_child_is_alive_is_retried_like_every_other_state_on_t
         accepted.load(Ordering::SeqCst),
         deadline.as_secs_f64()
     );
+    let Ok(Err(refusal)) = outcome else {
+        panic!("a socket that never upgraded did not refuse: {outcome:?}")
+    };
+    assert!(refusal.contains("measured startup:"), "{refusal}");
+    assert!(refusal.contains("2.000s (expired)"), "{refusal}");
+    let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
+    assert!(refusal.contains(log.trim()), "{refusal}");
+    assert!(elapsed < deadline + Duration::from_secs(2));
 }
 
 /// The upgrade socket's read and write timeouts are now the *remaining* startup
@@ -345,11 +357,11 @@ fn the_same_browser_answering_the_same_call_at_the_same_speed_succeeds_when_it_i
 /// `reach_bidi` alone; this counts the overlap from the browser's own side
 /// instead, which is where competing for CPU is visible.
 #[test]
-#[ignore = "story:the-startup-lock-does-not-cover-the-first-round-trip — the lock is released eight lines before session.new"]
 fn three_fixtures_do_not_ask_three_browsers_to_create_a_session_at_the_same_time() {
     let root = evidence_dir("session-new-overlap");
     let in_flight = Arc::new(AtomicUsize::new(0));
     let peak = Arc::new(AtomicUsize::new(0));
+    let least_counted = Arc::new(AtomicUsize::new(usize::MAX));
     let work = Duration::from_millis(500);
     let barrier = Arc::new(std::sync::Barrier::new(3));
     let mut threads = Vec::new();
@@ -360,6 +372,7 @@ fn three_fixtures_do_not_ask_three_browsers_to_create_a_session_at_the_same_time
         let port = listener.local_addr().unwrap().port();
         let live = Arc::clone(&in_flight);
         let most = Arc::clone(&peak);
+        let counted = Arc::clone(&least_counted);
         std::thread::spawn(move || {
             while let Ok((mut stream, _)) = listener.accept() {
                 read_request(&mut stream);
@@ -381,6 +394,7 @@ fn three_fixtures_do_not_ask_three_browsers_to_create_a_session_at_the_same_time
                     continue;
                 }
                 // The browser is now doing the work session.new asks for.
+                counted.fetch_min(browser::current_startups(), Ordering::SeqCst);
                 let live_now = live.fetch_add(1, Ordering::SeqCst) + 1;
                 most.fetch_max(live_now, Ordering::SeqCst);
                 std::thread::sleep(work);
@@ -429,5 +443,10 @@ fn three_fixtures_do_not_ask_three_browsers_to_create_a_session_at_the_same_time
         "three {:.3}s session.new calls finished in {:.3}s, so the fixture overlapped them",
         work.as_secs_f64(),
         elapsed.as_secs_f64()
+    );
+    assert_eq!(
+        least_counted.load(Ordering::SeqCst),
+        1,
+        "session.new must remain visible to the startup counter"
     );
 }
