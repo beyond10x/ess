@@ -27,9 +27,8 @@
 //! [`SemanticCommandResult::undeclared`](crate::target::SemanticCommandResult::undeclared): a
 //! refusal the model does not declare is not available, so it is never answered as a declared one.
 //!
-//! Where the model uses a construct this module does not execute yet — a guard over the subject's
-//! related rows, a retained replay, a value expression other
-//! than an input field or a literal — the answer is [`Undetermined::NotInterpreted`], never a
+//! Where the model uses a construct this module does not execute yet — a retained replay, a value
+//! expression other than an input field or a literal — the answer is [`Undetermined::NotInterpreted`], never a
 //! guess. A guard that evaluates to `Unknown` is [`Undetermined::Undecidable`] for the same reason.
 //!
 //! # Minted values
@@ -45,6 +44,7 @@
 //! value whatever payload source it declares, and an identity the store already holds is never
 //! created again.
 
+mod related;
 mod subject;
 
 use std::collections::BTreeMap;
@@ -372,6 +372,10 @@ pub fn execute_generating(
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
     let mut held_subjects = BTreeMap::new();
     for outcome in &spec.outcomes {
+        if let Some(held) = related::held(ir, store, input, &outcome.condition)? {
+            held_subjects.insert(outcome.name.clone(), held);
+            continue;
+        }
         if !matches!(
             outcome.condition,
             ResolvedCondition::SubjectState { .. }
@@ -726,8 +730,12 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
                 }
             }
 
-            ResolvedCondition::Related { .. } => {
-                return gap(format!("the guard over a related row of `{at}`"));
+            ResolvedCondition::Related { test, input, .. } => {
+                if matches!(test, ResolvedRelatedTest::Holds { predicate } if reads_now(predicate))
+                    || input.as_ref().is_some_and(reads_now)
+                {
+                    return gap(format!("the current-time guard of `{at}`"));
+                }
             }
             ResolvedCondition::InputAbsent => {
                 return gap(format!("the absent-input branch of `{at}`"));

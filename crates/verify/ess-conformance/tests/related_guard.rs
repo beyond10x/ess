@@ -5,7 +5,7 @@
 //!
 //! The suite is run against a hand-written target that answers the model, which must pass every
 //! scenario of the guarded command, and against mutants of it, each of which must fail at least one.
-//! The interpreted target does not evaluate a guard over another entity's row, and says so by name.
+//! The interpreted target evaluates related guards from the actual addressed stored row.
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
@@ -520,7 +520,7 @@ fn issue_211_each_mutant_fails_an_initiate_scenario() {
 }
 
 #[test]
-fn issue_211_the_interpreted_target_names_the_related_guard_it_does_not_evaluate() {
+fn issue_211_the_interpreted_target_executes_the_complete_sign_in_suite() {
     let model = ir(SIGN_IN);
     let result = ess_conformance::synthesize::synthesize(&model);
     let target = ess_conformance::interpret::Interpreted::for_model(model);
@@ -528,26 +528,17 @@ fn issue_211_the_interpreted_target_names_the_related_guard_it_does_not_evaluate
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &target)
         .into_report();
-    // Superseded by the precedence order (#227 correction 1): the interpreter answers a missing
-    // related row by its `exists: false` branch, so `no-configuration` passes rather than being
-    // unsupported. The branches that read a stored related row are still not evaluated.
-    let absent = report
-        .scenarios
-        .iter()
-        .find(|run| run.scenario.to_string() == NO_CONFIGURATION)
-        .unwrap_or_else(|| panic!("{NO_CONFIGURATION} is run"));
-    assert_eq!(absent.status, Status::Passed, "{:?}", absent.checks);
-    for id in [NO_REDIRECT, INITIATED] {
+    assert_eq!(report.scenarios.len(), 4);
+    for id in [NO_CONFIGURATION, NO_REDIRECT, INITIATED] {
         let run = report
             .scenarios
             .iter()
             .find(|run| run.scenario.to_string() == id)
             .unwrap_or_else(|| panic!("{id} is run"));
-        assert_eq!(run.status, Status::Unsupported, "{id}: {:?}", run.checks);
-        assert!(
-            format!("{:?}", run.checks).contains("related row"),
-            "{id} names the construct: {:?}",
-            run.checks
-        );
+        assert_eq!(run.status, Status::Passed, "{id}: {:?}", run.checks);
     }
+    assert!(report
+        .scenarios
+        .iter()
+        .all(|run| run.status == Status::Passed));
 }
