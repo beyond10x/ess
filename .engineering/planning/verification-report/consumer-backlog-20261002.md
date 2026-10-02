@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 27
+revision: 31
 ---
 ## Intake
 
@@ -16,6 +16,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 
 | Issue | Report | Current disposition and evidence |
 |---|---|---|
+| #389 | One-time response values with non-disclosure conformance checks | ACTIVE fast lane; independently approved source21/suite34-35 design. Native contract and Go/TypeScript prerequisite ports in progress. All-runtime parity is required before release. |
 | #385 | PLAN.md and a generated comment list input guards before when_related refusals, against the precedence the suite checks | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #379 | Go, web and clap targets still refuse existing_instance branches (follow-up to #310) | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #365 | ess-ui/1: no row filter on a read or collection (where: over row and page params) | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
@@ -23,7 +24,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #363 | Aggregates: no conditional count or sum (count where state == Done) | Pending verification and fit review; no completion claim. |
 | #362 | Synthesis: an aggregate grouped by lifecycle state alone is refused (ESS-SYNTH-016) | Open synthesis design question: state-only grouping cannot isolate rows under current shared-target assumption. Needs witnessed isolation or grouped-delta semantics; not fixed by #309. |
 | #361 | Synthesis: a parameter or copied field on an aggregate group key is refused (ESS-SYNTH-017) | Pending verification and fit review; no completion claim. |
-| #360 | Synthesis: a view parameter over a field copied from a related row is refused (ESS-SYNTH-005) | Copied-source creation/later arrangement and view exclusion implemented and independently reviewed with307. Honest target passes; wrong-row/ignored-parameter mutants fail. Integrated7474bb5c5; full package pending. |
+| #360 | Synthesis: a view parameter over a field copied from a related row is refused (ESS-SYNTH-005) | Copied-source creation/later arrangement and view exclusion implemented and independently reviewed with307. Honest target passes; wrong-row/ignored-parameter mutants fail. Integrated through511ba5146; full conformance2191 and CLI905 cases pass, strict lint and projections pass; remote gate and release pending. |
 | #358 | ess-ui/1: metric cannot count or sum rows of its read | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #357 | ess-ui/1 React: charts have no series legend and x labels overflow | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #356 | ess-ui/1 TUI: record-tab forms and header actions are not rendered or drivable; ess ui test cannot address nested rows | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
@@ -47,7 +48,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #322 | ess ui check does not resolve names inside pages (param types, form fields, bind keys, overlay params, columns) | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #320 | ess-ui/1: rows are keyed only by live.match, so a section without a channel over a view keyed by another field gets empty row keys | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #319 | Code targets: generate behaviours for commands guarded by when_related | Pending verification and fit review; no completion claim. |
-| #318 | Synthesized servers: generate an in-memory store and a server entry point for components reached by network | Implemented and independently reviewed: 25 focused cases pass, including strict generated Rust/Go HTTP targets and legacy context compatibility. Integrated in next carrier7474bb5c5; full package and publication pending. |
+| #318 | Synthesized servers: generate an in-memory store and a server entry point for components reached by network | Implemented and independently reviewed: 25 focused cases pass, including strict generated Rust/Go HTTP targets and legacy context compatibility. Integrated through511ba5146; full affected package checks pass after integration corrections, strict lint and projections pass; remote publication pending. |
 | #317 | No scenario re-creates an identity after deletes: removed it, so a lookup that finds removed rows passes | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #316 | Generated Rust creation ignores an identity the payload takes from the input | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #314 | Go target: generate determined command behaviours, view queries, a store and a server main, as the Rust target does | Behavior/query/invariants merged through PR386 (fa08de5); generated store and server entry remain in #318. Keep issue open. |
@@ -55,7 +56,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #311 | ess-ui/1 renderers cannot run against a live served component (fixtures only) | CLOSED after accepted live-binding criteria reconciliation; replacements implemented on main through PR387, new release pending. |
 | #309 | Aggregate with two group keys filled from one input is refused for a move the source does not have | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #308 | A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
-| #307 | when_subject over a field copied from a related row at creation finds no candidate (ESS-SYNTH-003, then ESS-SYNTH-004) | Both Optional policies and named transitions implemented and independently reviewed with57 grouped tests and14 decisive mutants. Integrated in7474bb5c5 with360; full package and publication pending. |
+| #307 | when_subject over a field copied from a related row at creation finds no candidate (ESS-SYNTH-003, then ESS-SYNTH-004) | Both Optional policies and named transitions implemented and independently reviewed with57 grouped tests and14 decisive mutants. Integrated through511ba5146 with360; full conformance2191 and CLI905 cases pass, strict lint and projections pass; remote publication pending. |
 | #305 | ess-ui/1: ess ui check accepts any Field.as value; the schema lists a closed set | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #304 | when_related through an Optional input: an absent reference takes the not-found branch instead of skipping the guard | Pending verification and fit review; no completion claim. |
 | #303 | ess-ui/1: three document faults ess ui check reports nothing on (duplicate nav entry, unknown shell, shell without page outlet) | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
@@ -697,3 +698,23 @@ Issue389's accepted native stage must exercise its actual interpreted issuance/r
 ## Preserved pre-takeover lifecycle history
 
 Integration found these four stories already implemented in main1ff305685: ui-react-live-binding at2026-10-02T00:36:47Z, ui-tui-live-binding at02:07:01Z, ui-tui-app-generator at03:02:20Z, and served-view-params at06:11:46Z. The canonical takeover store had an older active snapshot and redundantly recorded later completion transitions at13:47. Git conflict resolution preserves main's original CLI-authored lifecycle records and their evidence counts; the acceptance audit is re-applied through the AEP body command. Both branch histories remain in Git, and the later test_result records remain available. Issue311 closure is still supported; only the inferred need for a new completion transition was wrong.
+
+## Refreshed intake after parity audit
+
+Read-only GitHub refresh on2026-10-02 confirms48 open issues, newest389. No new higher-numbered consumer ticket was present. Original intake82 and intermediate49 are historical observations; issue311 is now closed. Current release group retains307,360,318 and389; the first three are locally implemented/independently reviewed with integrated package checks, while389 and its complete-runtime prerequisites are in progress. No new release or remote gate for this combined candidate is claimed.
+
+## Known-failure and restart intake audit
+
+Confirmed capability request on current source, not a failing implementation of the present default. mutate.rs Ruler::new at1890 rejects every baseline Failed/Error before constructing the unscored set; only Unsupported/Skipped enter that set. Both direct audit and collect share this ruler; collect at2724 preserves the same refusal. CLI Mutate atmain.rs655-724 exposes no known-failure input. Current refusal is intentional and scientifically necessary without a declared exception contract.
+
+Group294 with296 around one reviewed known-failure assessment contract. They are related but not duplicates:294 specifies mutation scoring/exclusion, while296 covers run/report/strict interpretation. A source-external declaration keyed by exact suite/scenario identity is a promising way to preserve the specification's intended truth without relabeling a failed check as passed; that choice is a proposal, not an implemented or accepted format. Before implementation settle digest/target binding, duplicate/unknown IDs, reasons/tracking references, stale pass/error/unsupported entries, empty eligible sets and versioned reporting. Unlisted failure still refuses; a mutant affecting excluded known-failing cells must be inconclusive unless an independently eligible witness kills it. Test default behavior, mixed known/unknown failures, stale declarations, exclusion-only mutants and full target/collect parity.
+
+This does not authorize treating a failed baseline as a skipped success or silently changing report/2. New generated-runtime status-profile work for389 is a separate correction and does not implement known failures. Source audit only; own new test/build executions0. Binding design and named red-capable acceptance remain the next deliverables.
+
+## Restart capability intake audit
+
+Confirmed missing observation primitive. docs/design/concurrent-history-conformance.md decision6 explicitly excludes restart because no specification, realization or ConformanceTarget seam declares it. Current target.rs exposes begin/end scenario but no process restart; scenario/history vocabulary contains no restart action. Treating EndScenario/BeginScenario as restart would change isolation and erase the very durable state the requested counterexample needs.
+
+The request needs a reviewed capability and history contract before implementation: distinguish restarting a process while preserving durable state from resetting a scenario; establish process incarnation and completion/failure evidence; decide which creating identities must remain unique against retained rows and how reads witness persistence; define unarrangeable identities/views and unavailable target capability; preserve model state across the restart step in explorers. All runtimes must execute the admitted primitive consistently, with unknown/older formats refusing it. A counter-reset mutant plus healthy durable issuer must distinguish this from an ordinary two-create test, including timeout/failed restart and no-capability controls. Do not allocate a new suite/history major until that contract is closed and coordinated with389.
+
+Issue389 explicitly reports restart/concurrency as intrinsic unsupported coverage today; that disclosure is not delivery of297. This remains planned capability work with a binding-design prerequisite. Source audit only; own new test/build executions0.

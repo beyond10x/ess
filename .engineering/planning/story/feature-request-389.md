@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 9
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -137,3 +137,39 @@ Before any port integration, the unchanged-runtime controls are red: runtime_sui
 The full runtime mandate exposed generic Interpreted target gaps already owned by existing stories: interpreted-eventual-views, interpreted-bindings-and-unmet-obligations, interpreted-scenario-supplied-facts and interpreted-trust-gate (all draftrev3 at audit). Do not duplicate their work in new intake or mark them delivered from a native Runner test using another target. Their retained acceptance compares actual billing/oracle scenarios and the fault matrix, including eventual lag and unsupplied external obligations.
 
 Issue389's accepted native stage must exercise its actual interpreted issuance/rotation/read/event path and account for these dependencies. The existing product target's missing implementation is not an intrinsic model impossibility or a consumer adapter limitation. These stories remain unfinished until their named acceptance executes; the parity audit is not passing evidence. Exploratory model-subset gaps remain separately owned by accepted221/223 and the recorded explorer inventory, not silently counted as conformance support.
+
+## Versioned generated report status semantics
+
+The existing go-scenario-status/1 producer profile explicitly forbids error and unsupported categories; TypeScript also emits that profile. Correcting terminal classifications under the same profile would silently change persisted meaning. Allocate go-scenario-status/2 for both generated runtimes, carrying all five existing report/2 categories: passed, failed, error, unsupported and skipped. Keep /1 parsing and its three-category restriction unchanged; unknown profiles refuse. The report/2 envelope already carries these five categories and an explicit versioned producer_profile, so its envelope stays /2. Native rust-scenario-status/1 remains unchanged. Skipped is never substituted for an unsupported observation, and target execution errors never become assertion failures.
+
+Independent bounded decision review by scope_aggregate: coherent, no contradiction; older readers must refuse the new profile. Root owns shared counts.rs, count reader regression tests and documentation/CLI producer expectations. Go/TypeScript workers emit the new profile and execute actual status parity controls. Test new-profile round trips, legacy profile restrictions and bytes, exact counts/outcomes, unknown profile rejection and inconclusive/failing execution status. This is a dependent acceptance contract within389, not a claim that runtime ports are complete.
+
+## Shared profile reader verification
+
+Shared producer-profile reader committed as30e9e84e7891f793c0c89d4695acf2fac88bf28e. New-profile regression tests against the prior reader:0passed2failed0ignored, exit101. Final unchanged tests plus existing count-report controls:11passed0failed0ignored, exit0. Scoped strict Clippy across conformance/CLI libraries, ess binary and count_reports target passed; task fmt-check and git diff --check passed. Logs and exit files are generated-profile-v2-{red,final,clippy,fmt} in ess-backlog-next-20261002/target/backlog-input. Independent source review by scope_boolean approved with no findings and own executions0. Generated Go/TypeScript actual producer parity is still the port workers' dependent acceptance, not established by these reader tests alone.
+
+## Runtime review corrections
+
+Independent coordinator prerequisite reviews were source inspections with own build/test executions: 0. Deciding controls were run by the implementors and retained alongside their exact patches.
+
+Go's aggregate Failed status previously controlled continuation after a later ordinary target error, and unresolved structured-instance values were classified Failed instead of Error. Both findings were reproduced and fixed before review approval. The exact final test bytes went from 1 passed/9 failed on baseline to 10 passed/0 failed. Approved prerequisite commit6855c4a5888749bd201047f85dfab9cb036122a0 is integrated as cb5234491; review-result:consumer-go-prerequisites records the boundary.
+
+TypeScript independently corrected structured-instance and clock-reading error categories. Coordinator review then found a suite-level depth ceiling rejecting an otherwise admitted depth128 expected response value. Its exact-path budget correction went from 2 passed/1 failed to 3 passed/0 failed, with final13 prerequisite Rust tests,4 runtime Rust checks and237 TypeScript cases passing. Approved commitsc0a89a4f682f295463df909c3b8c86a1565b553e and a2e4f56c076417e93d5df5d4368dccd302765c52 are integrated as1b9b8d3a4. Review-result:consumer-typescript-prerequisites records own-execution and Node-version limits.
+
+The initial one-time admission manifest lacked constrained-newtype and source controls. These were added before frozen core8241136438ac52be3f9fe64ebcdd585d61be0882; review-result:consumer-one-time-contract-stage1 records the23 immutable vectors and source checks. An additive reviewed contract refinement9f94eecd7c6d0cbfa45354d9c38ec4bb5f7882b6 requires event windows after EventuallyView too, with two additional immutable controls, focused0/1red to1/1green and full contract7/7green. It is integrated as c9a9dcbff. Native observation, automatic scenario inventory and complete Go/TypeScript execution remain in progress; admission-only preparation does not deliver the feature.
+
+Structural projection implementation40066842c preserves policy and obligations or explicitly refuses unsupported implementation generation; review-result:consumer-one-time-projections approves that local dependency. Browser review-result:consumer-one-time-browser-pass1 found source policy loss with empty selections and a direct public replay-constructor bypass. The corrected source preserves nonempty policy on model outcomes, displays source obligations independently of scenario selection, and centralizes the named refusal at AdmittedReplay::new. Review-result:consumer-one-time-browser-pass2 approves the corrected source; integrated execution checks are being completed.
+
+Coordinator shared report/2 tests and actual CLI Go-producer expectations preserve distinct Error and Unsupported categories. Those migrations await the combined runtime tests. Public one-time policy documentation and updated runtime semantics passed task site-build before the latest additional legacy-status prose corrections; final publication checks remain required. No new PR, tag or release is published from this unfinished group.
+
+## Integrated prerequisite and projection verification
+
+Coordinator executions in the integration carrier, 2026-10-02, before the generated disclosure-ID contract was integrated:
+
+- Integrated prerequisites and neighboring profile migrations: 141 passed, 2 failed, 0 ignored across 13 summaries. The two failures are generated_docs checks requiring TypeScript suite34/35 support while its truthful intermediate cap remains33. They remain required and unchanged until the port executes the feature. Both actual prerequisite binaries passed (Go10, TypeScript13), and coverage_producers passed all3 tests, including the15 updated Go report/2 producer instances. Semantic-plan expected bytes and their pinned SHA256 were updated together. Log: target/backlog-input/runtime-prerequisites-integrated.log.
+- Browser corrected tests: CLI browser3 passed, synthesis projection3 passed. The two independent review findings were reproduced against the previous implementation (1 passed/2 failed) before correction; Firefox now displays policy even with an empty selected suite, and the public replay constructor refuses policy loss. Scoped strict Clippy passed. Implementation committed as e7c6bcf01.
+- History import CLI boundary: identical controls1 passed/1 failed before the guard,2 passed/0 failed after it; missing and malformed adapter/log inputs cannot precede the static model-aware refusal, existing output survives, no sidecar is written, and unmarked input errors retain their behavior. Independent source review approved. Implementation a0ce3e944; native record/sessions/import_for guards remain in the native owner's pending follow-up.
+- Integrated scoped strict Clippy passed for the changed prerequisite/shared profile test targets and CLI history/producer targets. Shared migrations and obsolete generation-refusal helper removals committed as f0092b8b7.
+- task site-build passed again after all current public prose changes, including the actual existing WASM boundary21 claims and deterministic lab28-step checks. This does not establish #389 target execution. Documentation committed as86cf019bc. Raw log and exit file: target/backlog-input/runtime-parity-site-build.*.
+
+The reviewed generated disclosure identity contract is integrated as d213671dd; its source-only coordinator review and implementor red/green evidence are in review-result:consumer-one-time-identifiers. All referenced carrier commits have verified bot author and committer. The carrier is local and unpublished. Full changed-package checks and release gates remain pending; no partial result here authorizes marking #389 implemented or released.
