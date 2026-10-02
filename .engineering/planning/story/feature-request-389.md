@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -161,3 +161,15 @@ The initial one-time admission manifest lacked constrained-newtype and source co
 Structural projection implementation40066842c preserves policy and obligations or explicitly refuses unsupported implementation generation; review-result:consumer-one-time-projections approves that local dependency. Browser review-result:consumer-one-time-browser-pass1 found source policy loss with empty selections and a direct public replay-constructor bypass. The corrected source preserves nonempty policy on model outcomes, displays source obligations independently of scenario selection, and centralizes the named refusal at AdmittedReplay::new. Review-result:consumer-one-time-browser-pass2 approves the corrected source; integrated execution checks are being completed.
 
 Coordinator shared report/2 tests and actual CLI Go-producer expectations preserve distinct Error and Unsupported categories. Those migrations await the combined runtime tests. Public one-time policy documentation and updated runtime semantics passed task site-build before the latest additional legacy-status prose corrections; final publication checks remain required. No new PR, tag or release is published from this unfinished group.
+
+## Integrated prerequisite and projection verification
+
+Coordinator executions in the integration carrier, 2026-10-02, before the generated disclosure-ID contract was integrated:
+
+- Integrated prerequisites and neighboring profile migrations: 141 passed, 2 failed, 0 ignored across 13 summaries. The two failures are generated_docs checks requiring TypeScript suite34/35 support while its truthful intermediate cap remains33. They remain required and unchanged until the port executes the feature. Both actual prerequisite binaries passed (Go10, TypeScript13), and coverage_producers passed all3 tests, including the15 updated Go report/2 producer instances. Semantic-plan expected bytes and their pinned SHA256 were updated together. Log: target/backlog-input/runtime-prerequisites-integrated.log.
+- Browser corrected tests: CLI browser3 passed, synthesis projection3 passed. The two independent review findings were reproduced against the previous implementation (1 passed/2 failed) before correction; Firefox now displays policy even with an empty selected suite, and the public replay constructor refuses policy loss. Scoped strict Clippy passed. Implementation committed as e7c6bcf01.
+- History import CLI boundary: identical controls1 passed/1 failed before the guard,2 passed/0 failed after it; missing and malformed adapter/log inputs cannot precede the static model-aware refusal, existing output survives, no sidecar is written, and unmarked input errors retain their behavior. Independent source review approved. Implementation a0ce3e944; native record/sessions/import_for guards remain in the native owner's pending follow-up.
+- Integrated scoped strict Clippy passed for the changed prerequisite/shared profile test targets and CLI history/producer targets. Shared migrations and obsolete generation-refusal helper removals committed as f0092b8b7.
+- task site-build passed again after all current public prose changes, including the actual existing WASM boundary21 claims and deterministic lab28-step checks. This does not establish #389 target execution. Documentation committed as86cf019bc. Raw log and exit file: target/backlog-input/runtime-parity-site-build.*.
+
+The reviewed generated disclosure identity contract is integrated as d213671dd; its source-only coordinator review and implementor red/green evidence are in review-result:consumer-one-time-identifiers. All referenced carrier commits have verified bot author and committer. The carrier is local and unpublished. Full changed-package checks and release gates remain pending; no partial result here authorizes marking #389 implemented or released.
