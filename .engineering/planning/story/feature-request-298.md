@@ -33,7 +33,7 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 13, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 14, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -82,3 +82,7 @@ The conformance batch now has bot merge3ee06ca31b099c59db703820f6d3b40dbc59392d,
 ## Final implementation and source review
 
 Bot commit d1e3bed41 contains the ten frozen paths on current-main-integrated 3ee06ca. Identical final test bytes execute 138 cases on baseline and treatment: baseline127 passed/11 failed, treatment138 passed/0 failed/0 ignored. Actual generated Rust and Go commands execute both Boolean outcomes; generated Go conformance passes2/2, TypeScript honest runner passes2/2 and ignored-flag mutant fails1/2. Strict all-target Clippy for domain/conformance/synth and formatting passed. Source review consumer-boolean-298-pass1-20261002 found no additional counterexample, with zero reviewer executions. Final affected-package checks and integration remain pending; no completion move yet.
+
+## Combined documentation integration correction
+
+The combined fba30d2af candidate passed ci-lint and all six projection checks. Its site build exited successfully but warned that guides/write-a-specification links to fields-and-invariants#cover-every-declared-enum-value, removed by the Boolean heading rename. Preserve that published fragment with an explicit heading id and rebuild the site before publishing the combined PR 387 head. This is a documentation compatibility correction within the existing fields-and-invariants scope.

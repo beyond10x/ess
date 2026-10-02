@@ -62,7 +62,7 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -220,3 +220,9 @@ The compiler does not restrict entity identity to scalar types. The generated st
 The earlier proposed numeric-key canonicalization was an unverified coordinator inference and is withdrawn. Existing generated Rust explicitly defines Decimal equality AND order over rendering (rust/mod.rs:395-399) and Json number spelling/object order as representation identity (rust/json.rs:793-798); Go preserves the same comparability (go/mod.rs:694-703, go/json.rs:5-15). Existing store harnesses use typed equality, with no overriding canonical identity rule found.
 
 Preserve those contracts in the new store: Integer numeric order; Decimal and textual scalar rendering order; transparent wrappers; records by declared field structure; ordered lists; map/set canonical ordering only where existing generated equality ignores insertion order; Json number spelling and object member order retained. Numeric-equivalent Decimal spellings such as1 and1.0 remain distinct identities as the generated type documents. No num-bigint dependency is needed for this design; remove only newly added direct edges from the abandoned proposal. Add exact representation-distinction and lookup/order controls through the real HTTP path. This corrects the earlier assumption before publication rather than silently changing row-address equality.
+
+## MemoryPorts identity boundary after preparatory review
+
+The generated MemoryPorts identity contract is equality of decoded wire values, preserving Decimal rendering and Json numeric spelling and object-member order. It does not promise universal Go native == preservation: pointer-bearing Optional values and collections already make that promise incoherent across targets. Existing primitive types, constructors and equality remain unchanged.
+
+In particular Go Json retains raw constructor document text, whereas Rust Json parses a tree. Direct Go constructors for [1] and [ 1 ], or zero Json{} and NewJson("null"), can differ under native equality but normalize to the same MemoryPorts key. Generated HTTP cannot produce the whitespace distinction after decoding. Document and test this direct-port boundary explicitly, alongside HTTP numeric/member-order controls; do not silently claim the representations are identical. This narrows the revision 13 preservation statement for the new store only. Preparatory reviewer server_corrections performed source inspection, zero test/build executions; frozen implementation still needs independent review.
