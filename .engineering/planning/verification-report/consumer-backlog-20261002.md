@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 9
+revision: 10
 ---
 ## Intake
 
@@ -313,3 +313,13 @@ Next server group316/379/385 plus347guidance now has full373pass package evidenc
 - Full accepted318implementation started in isolated tree ess-backlog-served-entry-20261002 at482609. No partial acceptance, release or durability claim.
 - UI365 full affected packages are running. Coordinator early source review identified two potential new shared-read cache defects: staggered local refetch counters can reuse a fulfilled stale request, and an authorization change is absent from the request key. Implementor is establishing decisive regressions; no final review verdict or green delivery claim yet.
 - New story:feature-request-360 records the full consumer need and a bounded, shared arrangement approach with accepted307. It is planned, not implemented; removing the view parameter is explicitly not closure.
+
+## Server follow-up published; npm dependency admission resolved
+
+Bot PR https://github.com/beyond10x/ess/pull/387 has exact head 4826099161bec53d2da65996958b97cb0c96165a and groups issues316,379,385, plus fixture ownership and issue347 documentation. Its current-main parent is b4da64e. The signed common receipt passed and remote security/privacy is already green; full correctness gate remains running. No merge or release claimed.
+
+Exact task site-build passed with Node24.15.0/npm12.2.0 and unchanged website allow-git=root. Official npm12 fixes propagation of actual root dependency admission to pacote; local probes preserved transitive and allow-none refusals. The earlier proposed Node22/npm10 exception was not used and is no longer needed. Server log: target/backlog-input/482609-site-build-npm12.log. The frozen UI candidate also passed task site-build (target/ui-reads-evidence/43-site-build.log), before the next review corrections.
+
+UI review now has two further source counterexamples under focused reproduction: filtered live refetch bypasses only_if, and Rust number-to-text differs from JavaScript at exponent thresholds. The owner is correcting these before publication. Add workspace Cargo.toml and crates/ui/ess-ui/Cargo.toml to the issue365 scope for ryu-js ECMAScript formatting; Cargo.lock was already scoped. No unrelated numeric semantics change is authorized.
+
+Issue318 reachability testing also exposed a pre-existing zero-input binding emitted unused event parameter under strict Rust warnings in rust/system.rs. The entry/store story remains bounded; the observation needs its own backlog disposition after an exact reproduction is retained. Non-scalar identity ordering remains under investigation, not silently declared supported.

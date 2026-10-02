@@ -12,6 +12,8 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 scope:
 - confidence: cited
+  path: Cargo.toml
+- confidence: cited
   path: crates/ui/ess-ui
 - confidence: cited
   path: crates/ui/ess-ui-check
@@ -22,12 +24,14 @@ scope:
 - confidence: cited
   path: crates/ui/ess-ui-tui
 - confidence: cited
+  path: crates/ui/ess-ui/Cargo.toml
+- confidence: cited
   path: docs/design/ui-read-filter.md
 - confidence: cited
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:09:54Z", actor: "human:timo", revision: 10, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:09:54Z", actor: "human:timo", revision: 11, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -57,3 +61,7 @@ All named requirements and cases in docs/design/ui-read-filter.md:97-135,180-199
 ## Scope
 
 ess-ui model/schema; ess-ui-check rules/expression/model; React read emission/core/data/live/collection/choice; TUI expression/app/view; parity tests; schema/reference and accepted design clarification. No conformance/server source changes. Coordinator owns AEP, commits and remote publication.
+
+## Numeric parity scope refinement
+
+The shared filter requires React/TUI parity even for admitted mixed scalar comparisons. Rust f64 display and JavaScript String(number) differ at small/large exponent thresholds. The correction uses ryu-js ECMAScript number formatting, adding workspace Cargo.toml and crates/ui/ess-ui/Cargo.toml with the existing Cargo.lock scope. These manifest paths are cited from the implementation dependency seam. Regression controls cover scalar and canonical array/object comparisons and negative zero. This changes only UI filter comparison, not ESS numeric semantics.
