@@ -63,16 +63,56 @@ impl Base {
         if authority.is_empty() || authority.contains('@') {
             return Err(format!("{url}: a base URL names a host (and no user)"));
         }
-        let authority = if authority.ends_with(']') || !authority.contains(':') {
-            format!("{authority}:80")
-        } else {
-            authority.to_owned()
-        };
         Ok(Self {
-            authority,
+            authority: authority_of(authority).map_err(|why| format!("{url}: {why}"))?,
             prefix: prefix.trim_end_matches('/').to_owned(),
         })
     }
+}
+
+/// `host[:port]` or `[v6][:port]` as `host:port` (port 80 when absent), or why it cannot be
+/// connected to: no host, an unclosed `[`, a bare IPv6 address, or a port that is empty, not a
+/// number, or outside 1 to 65535.
+fn authority_of(authority: &str) -> Result<String, String> {
+    let (host, port) = if let Some(inner) = authority.strip_prefix('[') {
+        let (address, after) = inner
+            .split_once(']')
+            .ok_or("an IPv6 host opened with `[` is closed with `]`")?;
+        if address.is_empty() {
+            return Err("an IPv6 host names an address".to_owned());
+        }
+        match after {
+            "" => (&authority[..address.len() + 2], None),
+            _ => (
+                &authority[..address.len() + 2],
+                Some(
+                    after
+                        .strip_prefix(':')
+                        .ok_or("an IPv6 host is followed by `:<port>`")?,
+                ),
+            ),
+        }
+    } else {
+        match authority.split_once(':') {
+            None => (authority, None),
+            Some((_, port)) if port.contains(':') => {
+                return Err("an IPv6 host is written in brackets, `[::1]:8080`".to_owned())
+            }
+            Some((host, port)) => (host, Some(port)),
+        }
+    };
+    if host.is_empty() {
+        return Err("a base URL names a host".to_owned());
+    }
+    let port = match port {
+        None => 80,
+        Some(port) => Some(port)
+            .filter(|port| port.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|port| port.parse::<u16>().ok())
+            .filter(|port| *port != 0)
+            .ok_or_else(|| format!("the port `{port}` is not a number from 1 to 65535"))?,
+    };
+    Ok(format!("{host}:{port}"))
 }
 
 /// Reads and commands the served surface a [`Binding`] describes.
@@ -218,7 +258,16 @@ impl HttpAdapter {
                 .map_err(io)?;
             match stream.read(&mut chunk) {
                 Ok(0) => break,
-                Ok(read) => answer.extend_from_slice(&chunk[..read]),
+                Ok(read) => {
+                    answer.extend_from_slice(&chunk[..read]);
+                    // Whole by its `Content-Length` or its last chunk: done, whether or not the
+                    // server closes the connection.
+                    if let Some(whole) = parse_answer(&answer, false)
+                        .map_err(|error| format!("{}: {error}", base.authority))?
+                    {
+                        return Ok(whole);
+                    }
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(error)
                     if matches!(
@@ -241,7 +290,9 @@ impl HttpAdapter {
                 ));
             }
         }
-        parse_answer(&answer).map_err(|error| format!("{}: {error}", base.authority))
+        parse_answer(&answer, true)
+            .and_then(|whole| whole.ok_or_else(|| "the answer is cut short".to_owned()))
+            .map_err(|error| format!("{}: {error}", base.authority))
     }
 }
 
@@ -435,19 +486,31 @@ fn connect(authority: &str, deadline: Instant) -> Result<TcpStream, String> {
 
 /// The status and body of a whole HTTP/1.1 answer, its body framed by `Content-Length`,
 /// `Transfer-Encoding: chunked` or the end of the connection.
-fn parse_answer(answer: &[u8]) -> Result<(u16, String), String> {
-    let end = answer
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .ok_or("the answer has no header end")?;
-    let head = std::str::from_utf8(&answer[..end]).map_err(|_| "the header is not UTF-8")?;
-    let mut lines = head.split("\r\n");
-    let status = lines
-        .next()
-        .and_then(|line| line.strip_prefix("HTTP/1."))
-        .and_then(|line| line.get(2..5))
-        .and_then(|code| code.parse::<u16>().ok())
-        .ok_or("the answer has no HTTP/1.x status line")?;
+///
+/// `Ok(None)`: not whole yet. `eof` says the connection has closed, so a body framed by neither
+/// is whatever came, and anything still missing is an error. Interim `1xx` answers before the
+/// final one are read past (RFC 9110 §15.2); a `101` switches protocols and is refused.
+fn parse_answer(mut answer: &[u8], eof: bool) -> Result<Option<(u16, String)>, String> {
+    let incomplete = |why: &str| if eof { Err(why.to_owned()) } else { Ok(None) };
+    let (status, lines, rest) = loop {
+        let Some(end) = answer.windows(4).position(|window| window == b"\r\n\r\n") else {
+            return incomplete("the answer has no header end");
+        };
+        let head = std::str::from_utf8(&answer[..end]).map_err(|_| "the header is not UTF-8")?;
+        let mut lines = head.split("\r\n");
+        let status = lines
+            .next()
+            .and_then(|line| line.strip_prefix("HTTP/1."))
+            .and_then(|line| line.get(2..5))
+            .and_then(|code| code.parse::<u16>().ok())
+            .ok_or("the answer has no HTTP/1.x status line")?;
+        let rest = &answer[end + 4..];
+        match status {
+            101 => return Err("the server switched protocols (101)".to_owned()),
+            100..=199 => answer = rest,
+            _ => break (status, lines, rest),
+        }
+    };
     let mut length = None;
     let mut chunked = false;
     for line in lines {
@@ -461,37 +524,45 @@ fn parse_answer(answer: &[u8]) -> Result<(u16, String), String> {
             chunked = value.to_ascii_lowercase().contains("chunked");
         }
     }
-    let rest = &answer[end + 4..];
     let body = if chunked {
-        unchunk(rest)?
+        match unchunk(rest)? {
+            Some(body) => body,
+            None => return incomplete("a chunk is cut short"),
+        }
     } else if let Some(length) = length {
-        rest.get(..length)
-            .ok_or("the body is shorter than its Content-Length")?
-            .to_vec()
-    } else {
+        match rest.get(..length) {
+            Some(body) => body.to_vec(),
+            None => return incomplete("the body is shorter than its Content-Length"),
+        }
+    } else if eof {
         rest.to_vec()
+    } else {
+        return Ok(None);
     };
     let body = String::from_utf8(body).map_err(|_| "the body is not UTF-8")?;
-    Ok((status, body))
+    Ok(Some((status, body)))
 }
 
-fn unchunk(mut rest: &[u8]) -> Result<Vec<u8>, String> {
+/// A chunked body, or `None` while its last chunk has not arrived.
+fn unchunk(mut rest: &[u8]) -> Result<Option<Vec<u8>>, String> {
     let mut body = Vec::new();
     loop {
-        let line_end = rest
-            .windows(2)
-            .position(|window| window == b"\r\n")
-            .ok_or("a chunk has no size line")?;
+        let Some(line_end) = rest.windows(2).position(|window| window == b"\r\n") else {
+            return Ok(None);
+        };
         let size = std::str::from_utf8(&rest[..line_end])
             .ok()
             .and_then(|line| usize::from_str_radix(line.split(';').next()?.trim(), 16).ok())
             .ok_or("a chunk size is not hexadecimal")?;
         rest = &rest[line_end + 2..];
         if size == 0 {
-            return Ok(body);
+            return Ok(Some(body));
         }
-        body.extend_from_slice(rest.get(..size).ok_or("a chunk is cut short")?);
-        rest = rest.get(size + 2..).ok_or("a chunk is cut short")?;
+        let (Some(chunk), Some(next)) = (rest.get(..size), rest.get(size + 2..)) else {
+            return Ok(None);
+        };
+        body.extend_from_slice(chunk);
+        rest = next;
     }
 }
 
@@ -590,19 +661,59 @@ mod tests {
             "http://",
             "http://u@desk",
             "http://desk/?a=1",
+            "http://desk:",
+            "http://desk:0",
+            "http://desk:+80",
+            "http://desk:65536",
+            "http://[::1",
+            "http://[]:80",
+            "http://::1:80",
+            "http://[::1]80",
         ] {
             assert!(Base::parse(refused).is_err(), "{refused}");
         }
+        assert_eq!(
+            Base::parse("http://[::1]:8080").map(|base| base.authority),
+            Ok("[::1]:8080".into())
+        );
+        assert_eq!(
+            Base::parse("http://[::1]").map(|base| base.authority),
+            Ok("[::1]:80".into())
+        );
     }
 
     #[test]
     fn an_answer_is_framed_by_its_length_or_its_chunks() {
         let plain = b"HTTP/1.1 422 Unprocessable\r\nContent-Length: 2\r\n\r\n{}trailing";
-        assert_eq!(parse_answer(plain), Ok((422, "{}".to_owned())));
+        let whole = Ok(Some((422, "{}".to_owned())));
+        assert_eq!(parse_answer(plain, false), whole, "whole before the close");
+        assert_eq!(parse_answer(plain, true), whole);
         let chunked =
             b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n[1,\r\n2\r\n2]\r\n0\r\n\r\n";
-        assert_eq!(parse_answer(chunked), Ok((200, "[1,2]".to_owned())));
-        assert!(parse_answer(b"garbage").is_err());
+        assert_eq!(
+            parse_answer(chunked, false),
+            Ok(Some((200, "[1,2]".to_owned())))
+        );
+        // Not whole yet: more is read; whole only once the connection closes.
+        let cut = &chunked[..chunked.len() - 7];
+        assert_eq!(parse_answer(cut, false), Ok(None));
+        assert!(parse_answer(cut, true).is_err());
+        let unframed = b"HTTP/1.1 200 OK\r\n\r\n[]";
+        assert_eq!(parse_answer(unframed, false), Ok(None));
+        assert_eq!(
+            parse_answer(unframed, true),
+            Ok(Some((200, "[]".to_owned())))
+        );
+        // Interim answers are read past; a protocol switch is not an answer.
+        let interim = b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 103 Early Hints\r\nLink: x\r\n\r\n\
+                        HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\n\r\n{}";
+        assert_eq!(
+            parse_answer(interim, false),
+            Ok(Some((202, "{}".to_owned())))
+        );
+        assert!(parse_answer(b"HTTP/1.1 101 Switching\r\n\r\n", true).is_err());
+        assert!(parse_answer(b"garbage", true).is_err());
+        assert_eq!(parse_answer(b"garbage", false), Ok(None));
     }
 
     #[test]

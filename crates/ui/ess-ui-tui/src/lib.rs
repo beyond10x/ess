@@ -197,6 +197,15 @@ fn restore_terminal() {
     }
 }
 
+/// Whether `key` is the press of ctrl-c, which quits whatever else is going on.
+fn is_quit(key: crossterm::event::KeyEvent) -> bool {
+    key.kind == KeyEventKind::Press
+        && key.code == crossterm::event::KeyCode::Char('c')
+        && key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
+}
+
 fn drive(app: &mut App) -> Result<(), TuiError> {
     let io = |error: io::Error| TuiError::Io(error.to_string());
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout())).map_err(io)?;
@@ -209,11 +218,17 @@ fn drive(app: &mut App) -> Result<(), TuiError> {
                 if key.kind == KeyEventKind::Press {
                     let sent = app.commands_sent;
                     app.key(key);
-                    // One command in flight per place: what was typed while a command waited for
-                    // its answer is dropped, so a second submit, confirm or action is not sent.
-                    if app.commands_sent != sent {
+                    // One command in flight per place: in a bound run, what was typed while a
+                    // command waited for its answer is dropped, so a second submit, confirm or
+                    // action is not sent. Ctrl-c is never dropped: it quits once the answer (or
+                    // the timeout) has come.
+                    if app.bound.is_some() && app.commands_sent != sent {
                         while event::poll(Duration::ZERO).map_err(io)? {
-                            event::read().map_err(io)?;
+                            if let Event::Key(key) = event::read().map_err(io)? {
+                                if is_quit(key) {
+                                    app.key(key);
+                                }
+                            }
                         }
                     }
                 }
@@ -224,4 +239,26 @@ fn drive(app: &mut App) -> Result<(), TuiError> {
         last = now;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    /// The keys typed while a bound command waits are dropped, all but ctrl-c.
+    #[test]
+    fn only_a_ctrl_c_press_survives_the_drain() {
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert!(super::is_quit(ctrl_c));
+        let mut released = ctrl_c;
+        released.kind = KeyEventKind::Release;
+        for kept in [
+            released,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        ] {
+            assert!(!super::is_quit(kept), "{kept:?}");
+        }
+    }
 }

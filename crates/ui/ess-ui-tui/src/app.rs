@@ -248,6 +248,8 @@ pub(crate) struct OpenOverlay {
     pub overlay: Overlay,
     pub params: BTreeMap<String, Value>,
     pub then: Option<(Action, Option<Value>)>,
+    /// The confirm's own command was accepted: confirming again retries only `then`.
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2498,13 +2500,15 @@ impl App {
     /// Runs a confirm's command, then the action it confirms. A refusal of either keeps the
     /// confirm open and shows on it; nothing after the refused command runs.
     fn confirmed(&mut self, confirm: &ess_ui::Confirm) {
-        let Some(open) = self.overlay.take() else {
+        let Some(mut open) = self.overlay.take() else {
             return;
         };
         let ui = format!("o:{}", open.name);
         let mut refused = None;
-        if let Some(does) = &confirm.does {
+        if let Some(does) = confirm.does.as_ref().filter(|_| !open.confirmed) {
             refused = self.run_command(does, &open.params);
+            // Accepted: a retry after the action is refused sends only the action again.
+            open.confirmed = refused.is_none();
         }
         if refused.is_none() {
             if let Some((action, row)) = open.then.clone() {
@@ -2535,8 +2539,11 @@ impl App {
         self.commands_sent += 1;
         let answer = self.adapter.run(command, input);
         if answer != Answer::Accepted {
-            if self.wrong_state(command, &answer) {
-                // A conflict says what was read is out of date: read it again.
+            // What was read is out of date when the answer says the state moved (a declared
+            // `409`) or that the effect was committed though not delivered: read it again.
+            let committed =
+                self.bound.is_some() && answer == Answer::Unfinished { committed: true };
+            if committed || self.wrong_state(command, &answer) {
                 self.invalidate();
             }
             let payload = match &answer {
@@ -2665,12 +2672,16 @@ impl App {
                         .and_then(|row| row.get("id"))
                         .map(|id| BTreeMap::from([("id".to_owned(), id.clone())]))
                         .unwrap_or_default();
+                    // A freshly opened confirm starts clean, as `show_overlay` does: no typed
+                    // text and no refusal from an earlier attempt.
+                    self.uis.retain(|id, _| !id.starts_with("o:"));
                     self.overlay = Some(OpenOverlay {
                         name: format!("confirm {}", action.name),
                         path,
                         overlay: (*inline.overlay).clone(),
                         params,
                         then: Some((action.clone(), row)),
+                        confirmed: false,
                     });
                     return None;
                 }
@@ -2808,6 +2819,7 @@ impl App {
             overlay,
             params,
             then,
+            confirmed: false,
         });
     }
 
