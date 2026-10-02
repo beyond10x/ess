@@ -6,7 +6,7 @@ status: draft
 title: Resume ui-live-apps wave 7 after the Claude session limit
 relations:
 - informed_by: story:served-store-and-entry
-revision: 6
+revision: 7
 ---
 ## Continuation
 
@@ -70,3 +70,15 @@ Bot commit of the first immutable review record was refused by common checks: 43
 Public delivery now uses managed tree ess-w7-server-public, branch unit/served-store-and-entry-public, base d58db28ea230fd5e6a1844c7e65977b95128d6b1 and coordinator lease codex-resume-459ab620-public. The first correction source/test patch was transferred exactly (SHA-256 b4afdefac8bd031806f80e35f7a6f0c722478962501ed383558c0c2f242968a5). The public report was created afresh through AEP in this clean store and its fixed outcome recorded there. The old tree is retired through archive-backed managed cleanup before its build cache is reused here.
 
 Pass 1 covered d58db28ea2 and added two tests: 11 to 13 executed, one CONFIRMED blocker. The review leaves origin undecided because it did not execute the base. The coordinator routes it as introduced based on the exact source diff: the baseline emits ordinary modules unconditionally, while this unit added the runtime feature guard by module spelling. The non-network memory domain fails; its network sibling passes both layouts. Same implementor reproduced red, then used one predicate for runtime-module insertion and feature gating. Both adversarial tests and assertions remain intact. Verification: served_entry 13, feasibility 49, single_crate_layout 6, all 68 passed with zero ignored; package Clippy, task fmt-check and diff-check exit 0. Committed fixture bytes are unchanged, so regeneration was unnecessary. Source delta is nine lines in rust/mod.rs. Logs remain in assigned scratch under correction-pass-1. The second and final adversary pass follows this correction.
+
+## Concurrent ownership discovered before final review
+
+Read-only remote reconciliation on 2026-10-02 found PR #387 merged at 1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036; its required Gate succeeded. That main contains additional accepted requirements on story:served-store-and-entry, including component-reachable startup obligations, typed structural identity ordering, and additive fallible Context behavior. Both histories independently reached story revision 17 with different content.
+
+`worktree inspect --repo ess --id ess-backlog-served-entry-20261002 --json` observed the other checkout active with one live lease, branch batch/consumer-served-entry-20261002, actual HEAD e9355b003a8c0153d927fbe89c8597cebc667787, and no tracked or untracked changes. That commit independently implements the same story in 26 files. Its source was inspected only; this coordinator did not validate or modify it. The other implementation's Rust module emitter does not contain this candidate's conditional memory-module insertion, so transferring the first review correction blindly would be inappropriate.
+
+Our candidate 43fb9a25a553c024a0ecf5580530c483802197c0 retains bot author and committer, the original implementation, the first adversary's publication copy, the retained regression cases and the verified correction. It is not published. An attempted no-commit merge of main conflicted in the canonical story, planning workflow pin and changelog; it was aborted, restoring a clean candidate. No concurrent work was overwritten. Final adversary dispatch and publication are held pending the operator's ownership answer; no third review has occurred.
+
+The original ess-w7-store-entry checkout was archived with its original immutable private report, then finished and removed through exact-id managed GC after its archive proof was reviewed. Archive: `$HOME/.local/state/worktree/archives/ess/ess-w7-store-entry`. The active delivery checkout remains ess-w7-server-public under its coordinator lease. Source/test evidence and logs remain in `$HOME/.cache/uilab-todo/w7s-codex`.
+
+Next action: settle ownership of #318. If the concurrent implementation owns delivery, retain this candidate as recovery evidence and contribute only independently useful regression evidence after explicit coordination; do not publish a competing implementation. Reconcile current AEP dependencies before selecting downstream work: related-via-optional-input depends on feature-request-287 (still active in the store); related-via-stored-reference also depends on feature-request-282 (draft); related-guard-behaviour depends on those and this story. Git shipping facts alone do not close their artifacts.
