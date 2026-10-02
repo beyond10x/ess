@@ -259,19 +259,14 @@ impl ConformanceTarget for Interpreted {
             scenario.published.push(event.clone());
             direct_events.push(event);
         }
-        // A determined refusal also observes the held state. Its token lets the runner
-        // check that state remained unchanged without weakening the read to Current.
-        let consistency = match &step.outcome {
-            Some(_) => {
-                let sequence = scenario.tick();
-                Some(
-                    ConsistencyToken::new(format!("seq:{sequence}")).map_err(|error| {
-                        TargetError::unavailable(observation.clone(), error.to_string())
-                    })?,
-                )
-            }
-            _ => None,
-        };
+        // Every completed command observes the held state, including an undeclared result.
+        // Its token lets the runner verify unchanged state without weakening reads to Current.
+        let sequence = scenario.tick();
+        let consistency = Some(
+            ConsistencyToken::new(format!("seq:{sequence}")).map_err(|error| {
+                TargetError::unavailable(observation.clone(), error.to_string())
+            })?,
+        );
         let result = SemanticCommandResult {
             outcome: step.outcome,
             error: step.error,

@@ -577,3 +577,38 @@ fn adversary_mixedguard_suite_bytes_are_deterministic() {
 fn is_command(step: &ScenarioStep) -> bool {
     matches!(step, ScenarioStep::ExecuteCommand { .. })
 }
+
+#[test]
+fn interpreted_executes_every_adversarial_mixed_guard_shape() {
+    for (siblings, view) in [
+        (vec![ALREADY_CONFIRMED, TOKEN_REQUIRED, GONE], VIEW),
+        (vec![ALREADY_CONFIRMED, TOKEN_REQUIRED, HELD, GONE], VIEW),
+        (vec![HELD, GONE], VIEW),
+        (vec![ALREADY_CONFIRMED, URGENT, TOKEN_REQUIRED, GONE], VIEW),
+        (vec![ALREADY_CONFIRMED_NOT, TOKEN_REQUIRED, GONE], VIEW),
+        (
+            vec![ALREADY_CONFIRMED, TOKEN_REQUIRED, GONE],
+            VIEW_WITHOUT_HISTORY,
+        ),
+    ] {
+        let model = ir(&spec(&siblings, view));
+        let suite = synthesize(&model).suite;
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        let report = Runner::for_suite(&suite)
+            .run_admitted(
+                &admitted,
+                &ess_conformance::interpret::Interpreted::for_model(model),
+            )
+            .into_report();
+        assert!(!report.scenarios.is_empty());
+        for run in report.scenarios {
+            assert_eq!(
+                run.status,
+                Status::Passed,
+                "{}: {:?}",
+                run.scenario,
+                run.checks
+            );
+        }
+    }
+}
