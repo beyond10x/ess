@@ -8,6 +8,7 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 pub(super) struct Held<'a> {
     state: &'a StateName,
     row: TypedFacts<'a>,
+    fields: &'a [ess_compiler::ir::ResolvedField],
 }
 impl<'a> Held<'a> {
     pub(super) fn new(
@@ -25,6 +26,7 @@ impl<'a> Held<'a> {
         Ok(Self {
             state: &instance.state,
             row,
+            fields: &entity.fields,
         })
     }
 
@@ -32,6 +34,7 @@ impl<'a> Held<'a> {
         &self,
         condition: &ResolvedCondition,
         input: &input::InputFacts<'_>,
+        caller: Option<&super::caller::Caller<'_>>,
         outcome: String,
     ) -> Result<Option<bool>, Undetermined> {
         let (stored, additional) = match condition {
@@ -62,10 +65,14 @@ impl<'a> Held<'a> {
                 input: additional,
                 ..
             } => (
-                predicate.evaluate(&RowAndInput {
-                    row: &self.row,
-                    input,
-                }),
+                predicate.evaluate(&super::caller::Facts::new(
+                    &RowAndInput {
+                        row: &self.row,
+                        input,
+                    },
+                    caller,
+                    self.fields,
+                )),
                 additional.as_ref(),
             ),
             ResolvedCondition::Related {
@@ -87,7 +94,8 @@ impl<'a> Held<'a> {
             ),
             _ => return Ok(None),
         };
-        match stored.and(additional.map_or(Truth::True, |guard| guard.evaluate(input))) {
+        let input = super::caller::Facts::new(input, caller, &input.command().input);
+        match stored.and(additional.map_or(Truth::True, |guard| guard.evaluate(&input))) {
             Truth::True => Ok(Some(true)),
             Truth::False => Ok(Some(false)),
             Truth::Unknown => Err(Undetermined::Undecidable {

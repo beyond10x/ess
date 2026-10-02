@@ -201,6 +201,9 @@ impl ConformanceTarget for Interpreted {
         // (beyond10x/ess#265). A command sent as no actor is sent as the interpreter's own
         // authority: the suite sends a command no actor is granted that way.
         self.command_grant(&request.command, request.actor.as_ref())?;
+        let caller =
+            execute::caller::Caller::bind(model, request.actor.as_ref(), request.caller.as_ref())
+                .map_err(|why| refusal(observation.clone(), &why))?;
         let mut scenario = self.scenario.borrow_mut();
         let externals = match scenario.forced.take() {
             Some((forced, remaining)) if forced.command == request.command => {
@@ -214,12 +217,16 @@ impl ConformanceTarget for Interpreted {
                 Externals::Withheld
             }
         };
-        let mut steps = execute::execute(
+        let mut steps = execute::in_context(
             model,
             &scenario.store,
             request.command.name(),
-            &request.input,
+            &execute::caller::Invocation {
+                input: &request.input,
+                caller: caller.as_ref(),
+            },
             &externals,
+            &execute::Generated::Counter,
         )
         .map_err(|why| refusal(observation.clone(), &why))?;
         if steps.len() != 1 {
@@ -252,9 +259,16 @@ impl ConformanceTarget for Interpreted {
         let observation = format!("invoking `{}` with no input", request.command);
         let model = self.model(&observation)?;
         self.command_grant(&request.command, request.actor.as_ref())?;
-        let step =
-            execute::without_input(model, &self.scenario.borrow().store, request.command.name())
-                .map_err(|why| refusal(observation, &why))?;
+        let caller =
+            execute::caller::Caller::bind(model, request.actor.as_ref(), request.caller.as_ref())
+                .map_err(|why| refusal(observation.clone(), &why))?;
+        let step = execute::without_input(
+            model,
+            &self.scenario.borrow().store,
+            request.command.name(),
+            caller.as_ref(),
+        )
+        .map_err(|why| refusal(observation, &why))?;
         self.complete_command(&request.command, &request.correlation, step)
     }
 
