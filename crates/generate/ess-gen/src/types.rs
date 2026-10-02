@@ -27,7 +27,7 @@
 //! |---|---|---|
 //! | `String` | `{"type": "string"}` | the same |
 //! | `Boolean` | `{"type": "boolean"}` | the same |
-//! | `Integer` | `{"type": "integer"}` | the same; no width, because the model states none |
+//! | `Integer` | `{"type": "integer"}`, plus `minimum`/`maximum`/`const` a field's invariants state | the same; no width beyond the bounds the author wrote |
 //! | `Decimal` | `{"type": "string", "format": "decimal", "pattern": …}` | an exact decimal string, checked by the pattern |
 //! | `Timestamp` | `{"type": "string", "format": "date-time"}` | any string |
 //! | `Duration` | `{"type": "string", "format": "duration"}` | any string |
@@ -243,9 +243,16 @@ pub(crate) struct Node {
     /// How bytes are carried.
     #[serde(rename = "contentEncoding", skip_serializing_if = "Option::is_none")]
     pub(crate) content_encoding: Option<&'static str>,
-    /// The one value this node accepts — a union's tag, an outcome's name.
+    /// The smallest integer this node accepts, from an invariant on the field (beyond10x/ess#394).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) minimum: Option<i64>,
+    /// The largest integer this node accepts, from an invariant on the field (beyond10x/ess#394).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) maximum: Option<i64>,
+    /// The one value this node accepts — a union's tag, an outcome's name, an integer an invariant
+    /// fixes.
     #[serde(rename = "const", skip_serializing_if = "Option::is_none")]
-    pub(crate) constant: Option<String>,
+    pub(crate) constant: Option<Constant>,
     /// An enum's variants.
     #[serde(rename = "enum", skip_serializing_if = "Vec::is_empty")]
     pub(crate) choices: Vec<String>,
@@ -362,6 +369,14 @@ impl Properties {
         self.0.push((name.into(), schema));
     }
 
+    /// The property published under `name`, to add a keyword to it.
+    fn get_mut(&mut self, name: &str) -> Option<&mut Node> {
+        self.0
+            .iter_mut()
+            .find(|(declared, _)| declared == name)
+            .map(|(_, schema)| schema)
+    }
+
     /// `true` when the object declares no property, so the keyword is left out entirely.
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -378,6 +393,17 @@ impl serde::Serialize for Properties {
         }
         map.end()
     }
+}
+
+/// The value of a `const` keyword: text for a tag or an outcome name, an integer for a field an
+/// invariant fixes. Serialised as the bare JSON value.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(untagged)]
+pub(crate) enum Constant {
+    /// A string constant.
+    Text(String),
+    /// An integer constant.
+    Integer(i64),
 }
 
 /// What an object permits beyond the properties it declares.
@@ -743,10 +769,14 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
                 ..wrapped
             }
         }
-        ResolvedBody::Struct { fields, invariants } => Node {
-            invariants: statements(invariants),
-            ..object(fields)
-        },
+        ResolvedBody::Struct { fields, invariants } => {
+            let mut node = Node {
+                invariants: statements(invariants),
+                ..object(fields)
+            };
+            integer_bounds(&mut node, fields, invariants);
+            node
+        }
         // The wire spellings: a generated schema describes the document on the wire, and for a
         // variant that declares none the spelling is its name, so nothing an older model produced
         // moves.
@@ -788,7 +818,7 @@ fn variant(tag: &str, label: &str, payload: &ResolvedTypeRef) -> Node {
         tag,
         Node {
             kind: Some("string"),
-            constant: Some(label.to_owned()),
+            constant: Some(Constant::Text(label.to_owned())),
             ..Node::default()
         },
     );
@@ -817,6 +847,76 @@ pub(crate) fn content_key(tag: &str) -> &'static str {
         CONTENT_WHEN_TAKEN
     } else {
         CONTENT
+    }
+}
+
+/// The integer bounds a struct's invariants state about its own fields, as `minimum`, `maximum`
+/// and `const` on those fields' properties (beyond10x/ess#394).
+///
+/// Only the shape a JSON Schema keyword says exactly is lowered: one comparison of a top-level
+/// `Integer` field (required or `Optional`) with an integer literal on its right, `>=`, `>`, `<=`, `<`
+/// or `==`. Anything else — `!=`, a dotted path, two fields, a `Decimal`, a disjunction — stays an
+/// annotation in `x-ess-invariants` only, which is still published beside the keywords. `==` on a
+/// field that may be absent or `null` becomes `minimum` and `maximum` rather than `const`, because
+/// `const` would refuse the `null` the field admits and the numeric keywords ignore it.
+fn integer_bounds(node: &mut Node, fields: &[ResolvedField], invariants: &[Invariant]) {
+    use ess_primitives::predicate::{CompareOp, Operand, Predicate};
+    use ess_primitives::FactValue;
+
+    for invariant in invariants {
+        let Predicate::Compare { left, op, right } = &invariant.predicate else {
+            continue;
+        };
+        let (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) = (left, right)
+        else {
+            continue;
+        };
+        let op = *op;
+        let [segment] = path.segments() else {
+            continue;
+        };
+        let Some(field) = fields.iter().find(|field| field.name == *segment) else {
+            continue;
+        };
+        if !matches!(
+            field.type_ref.required(),
+            ResolvedTypeRef::Primitive {
+                name: Primitive::Integer
+            }
+        ) {
+            continue;
+        }
+        let Some(value) = number.as_i64() else {
+            continue;
+        };
+        let may_be_missing = field.type_ref.is_optional();
+        let Some(property) = node.properties.get_mut(wire_name(field)) else {
+            continue;
+        };
+        let raise =
+            |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.max(bound)));
+        let lower =
+            |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.min(bound)));
+        match op {
+            CompareOp::Ge => property.minimum = raise(property.minimum, value),
+            CompareOp::Gt => {
+                if let Some(bound) = value.checked_add(1) {
+                    property.minimum = raise(property.minimum, bound);
+                }
+            }
+            CompareOp::Le => property.maximum = lower(property.maximum, value),
+            CompareOp::Lt => {
+                if let Some(bound) = value.checked_sub(1) {
+                    property.maximum = lower(property.maximum, bound);
+                }
+            }
+            CompareOp::Eq if may_be_missing => {
+                property.minimum = raise(property.minimum, value);
+                property.maximum = lower(property.maximum, value);
+            }
+            CompareOp::Eq => property.constant = Some(Constant::Integer(value)),
+            CompareOp::Ne => {}
+        }
     }
 }
 
@@ -1321,7 +1421,10 @@ mod tests {
         );
         assert_eq!(node.required, vec!["kind".to_owned(), "value".to_owned()]);
         assert_eq!(node.additional, Some(Additional::Refused));
-        assert_eq!(node.properties.0[0].1.constant, Some("person".to_owned()));
+        assert_eq!(
+            node.properties.0[0].1.constant,
+            Some(Constant::Text("person".to_owned()))
+        );
     }
 
     #[test]
