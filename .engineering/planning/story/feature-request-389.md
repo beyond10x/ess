@@ -33,7 +33,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -150,12 +150,14 @@ Shared producer-profile reader committed as30e9e84e7891f793c0c89d4695acf2fac88bf
 
 ## Runtime review corrections
 
-Independent coordinator review, 2026-10-02. Own build/test executions for these review findings: 0; findings are source inspections, with deciding controls assigned to implementors.
+Independent coordinator prerequisite reviews were source inspections with own build/test executions: 0. Deciding controls were run by the implementors and retained alongside their exact patches.
 
-The Go prerequisite port incorrectly used aggregate scenario Failed status to decide whether an assertion should continue. A preceding contradiction can leave the aggregate Failed after a later ordinary target error; native execution stops at that error. The worker accepted the finding and is adding an actual callback trace covering contradiction, later observation error, and a subsequent delivery which must not run. Flow and joined status must remain separate.
+Go's aggregate Failed status previously controlled continuation after a later ordinary target error, and unresolved structured-instance values were classified Failed instead of Error. Both findings were reproduced and fixed before review approval. The exact final test bytes went from 1 passed/9 failed on baseline to 10 passed/0 failed. Approved prerequisite commit6855c4a5888749bd201047f85dfab9cb036122a0 is integrated as cb5234491; review-result:consumer-go-prerequisites records the boundary.
 
-Go unresolved structured-instance values were also classified as Failed by resolveAll, where native reports Error before the invocation. The worker accepted the finding and is adding a live native-versus-Go control. The TypeScript worker independently found and corrected the same resolution category and an older clock-reading callback-error classification. Final commits and independent review remain pending.
+TypeScript independently corrected structured-instance and clock-reading error categories. Coordinator review then found a suite-level depth ceiling rejecting an otherwise admitted depth128 expected response value. Its exact-path budget correction went from 2 passed/1 failed to 3 passed/0 failed, with final13 prerequisite Rust tests,4 runtime Rust checks and237 TypeScript cases passing. Approved commitsc0a89a4f682f295463df909c3b8c86a1565b553e and a2e4f56c076417e93d5df5d4368dccd302765c52 are integrated as1b9b8d3a4. Review-result:consumer-typescript-prerequisites records own-execution and Node-version limits.
 
-The initial one-time contract admission fixture manifest lacked constrained-newtype authority vectors and source regressions for nested forbidden flow, retained replay, opaque reading and null input. The coordinator requested these before contract freeze; the worker reports focused source10/0 and admission6/0 after adding them. These counts are implementation evidence, not coordinator executions, and do not establish disclosure execution or full runtime parity.
+The initial one-time admission manifest lacked constrained-newtype and source controls. These were added before frozen core8241136438ac52be3f9fe64ebcdd585d61be0882; review-result:consumer-one-time-contract-stage1 records the23 immutable vectors and source checks. An additive reviewed contract refinement9f94eecd7c6d0cbfa45354d9c38ec4bb5f7882b6 requires event windows after EventuallyView too, with two additional immutable controls, focused0/1red to1/1green and full contract7/7green. It is integrated as c9a9dcbff. Native observation, automatic scenario inventory and complete Go/TypeScript execution remain in progress; admission-only preparation does not deliver the feature.
 
-Coordinator shared test migration now preserves precise report/2 Error and Unsupported categories rather than comparing normalized Failed/Skipped values. CLI live-producer fixture expectations and projection policy work are uncommitted and awaiting integrated validation. No new PR, tag or release is published from this unfinished group.
+Structural projection implementation40066842c preserves policy and obligations or explicitly refuses unsupported implementation generation; review-result:consumer-one-time-projections approves that local dependency. Browser review-result:consumer-one-time-browser-pass1 found source policy loss with empty selections and a direct public replay-constructor bypass. The corrected source preserves nonempty policy on model outcomes, displays source obligations independently of scenario selection, and centralizes the named refusal at AdmittedReplay::new. Review-result:consumer-one-time-browser-pass2 approves the corrected source; integrated execution checks are being completed.
+
+Coordinator shared report/2 tests and actual CLI Go-producer expectations preserve distinct Error and Unsupported categories. Those migrations await the combined runtime tests. Public one-time policy documentation and updated runtime semantics passed task site-build before the latest additional legacy-status prose corrections; final publication checks remain required. No new PR, tag or release is published from this unfinished group.
