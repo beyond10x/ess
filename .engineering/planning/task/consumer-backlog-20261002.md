@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -28,17 +28,17 @@ The initial source set is 82 open GitHub issues and 161 nonterminal stories in a
 
 ## Current evidence
 
-PR386 merged as fa08de5bd816b3cc46694ec4d19d20d13e128764 and consolidated UI PR381 merged as b4da64e38b770fe74103409fe1fef7ae6ca214f4 after required green gates and exact tree checks. The approved policy secret refresh cleared the scan-limit blocker. The one-time personal gh secret exception is consumed; all subsequent GitHub writes use the bot App.
+Refreshed GitHub through the bot API at 2026-10-02T17:50Z: 48 open issues, with no open pull request in that response. This inventory includes issue389 and work beyond the current runtime batch; it is not a count of completed fixes. The operator requested a release status update; the coordinator clarified that an optimistic few-hours estimate applied only to the current batch, not to completing all remaining tickets before release. No reliable full-backlog release ETA is claimed.
 
-All nine original PRs are resolved: the two carriers merged and seven absorbed PRs closed with preservation proof. No source branches/worktrees were deleted. The open GitHub issue inventory is58, down from82; a fresh refresh found no new or changed open issue bodies. This count does not imply completion of all related AEP acceptance.
+PR386 and PR381 merged under required gates; PR387 subsequently merged as 1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036 with all15 checks green, preserving exact tested bytes. Its ten issue fixes and browser corrections are on main. All nine original PRs are resolved through merged carriers or evidence-backed consolidation; no source branches or managed worktrees were deleted. The secret-baseline blocker was corrected using the operator's one-time exception, which remains consumed. All subsequent GitHub writes use the bot App.
 
-Server follow-up PR387 publishes exact4826099161bec53d2da65996958b97cb0c96165a, grouping316/379/385 and fixture/347 documentation. Site, security, planning and preliminary lanes passed; full Gate is running. The npm11 direct-root Git dependency admission problem is resolved using official npm12.2 with allow-git=root unchanged; no exception was taken.
+The active carrier batch/consumer-runtime-20261002 locally integrates307/360,318, binding and child-signal corrections, and389 source/IR/diff/projection support. It now includes native, Go and TypeScript private observers, all43 shared runtime controls, actual WASM execution through the generated browser bridge, reviewed TypeScript whole-event-batch correction, and source-owned stateful retry/rotation/read/denied/follow-up composition. Producer17/0 plus isolated Interpreter state-guard1/0 and scoped strictlint passed. Shared CLI history preflight2/0 passed. These are local evidence, not a published candidate or release.
 
-Conformance batch locally commits309,342,317,288,308,298. Headf863ee87b5fd6295e086c6134d104025983441d9 includes current main and the canonical planning reconciliation through56b48d26c. Full affected packages domain/conformance/synth are running on those bytes; no remote PR yet. Boolean final paired tests execute138 on both sides, with11 baseline failures and zero treatment failures.
+Full domain/compiler/diff/generator package tests passed1891/0 with4 existing ignored tests across221 summaries. Combined conformance/synth package validation is running; its first pass found an obsolete TypeScript emitted-file-list assertion, now corrected to include both newly required modules. The resumed run retains every original assertion and uses no-fail-fast to gather integration failures. Logs and reviewed patches remain in task-owned ignored directories. To maintain the8GiB floor, the coordinator removed only217 reviewed executable artifacts from the already completed four-package test run (4.1GiB); no source, managed tree, active-worker cache, or retained evidence was removed.
 
-UI365 has passed six affected package checks, lint, browser lab and site validation on its prior frozen snapshot. Review found additional live-event/filter, numeric-parity and source-switch/live composition defects, now under measured correction before publication. Full store/entry318 remains active implementation and is not represented by the earlier behavior-only fixes.
+Remaining current-batch work includes complete actual Interpreter bindings/views/facts, billing/Oracle reference parity and the fault matrix, explicit example source-fact corrections, combined package/public API/projection/site validation and the grouped PR gate. Oracle stores its supplied contact; billing examples explicitly supply issue timestamps rather than the Interpreter inventing stored facts. Existing acceptance and scenario IDs remain required. The48-issue backlog includes separately planned syntax/design work and is not declared complete by finishing389.
 
-Release0.51.0 remains the latest verified public release with four archives and SHA256SUMS. No0.52release is claimed. Historical execution sections below retain earlier observations; this section is the current checkpoint.
+Release0.51.0 remains the latest verified public release with four archives and SHA256SUMS. No0.52 tag or release is claimed. No new remote full gate has been started for this unfinished batch. Historical execution sections below retain earlier observations.
 
 ## Completion boundary
 
