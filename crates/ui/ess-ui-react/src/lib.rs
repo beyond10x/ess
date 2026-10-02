@@ -109,7 +109,8 @@ pub fn render_bound(
         files.insert(file, gen.page(name, page));
     }
     files.insert("src/App.tsx".to_owned(), gen.app());
-    if !document.channels.is_empty() {
+    // A bound project runs no channel: the served surface streams nothing to play them against.
+    if !document.channels.is_empty() && binding.is_none() {
         gen.used.insert("runtime/live".to_owned());
     }
     files.insert("src/model.ts".to_owned(), gen.model());

@@ -128,6 +128,9 @@ pub(crate) struct Gen<'d> {
 /// How often a bound `live:` section reads again when its read declares no `refresh:` duration.
 const POLL_MS: u64 = 5000;
 
+/// The shortest `refresh:` a bound `live:` section may poll at; shorter is refused.
+const MIN_POLL_MS: u64 = 1000;
+
 /// `constructs.PlacementProfile.profiles.<profile>.defaults` of the schema this crate was built
 /// with: the store each profile gives each state class.
 fn schema_profiles() -> BTreeMap<String, BTreeMap<String, Store>> {
@@ -1753,6 +1756,15 @@ impl<'d> Gen<'d> {
                     .and_then(|reads| reads.refresh.as_ref())
                     .and_then(|refresh| millis(&refresh.0))
                     .unwrap_or(POLL_MS);
+                if every < MIN_POLL_MS {
+                    self.refuse(
+                        &at.child("reads").child("refresh"),
+                        &format!(
+                            "a live section bound to the served surface polls at its `refresh:`, \
+                             and {every} ms would read the server faster than once a second"
+                        ),
+                    );
+                }
                 let use_poll = self.import("runtime/data", "usePoll");
                 lines.push(format!("const __data = {use_poll}(__read, {every});"));
                 "__data"
@@ -1894,9 +1906,10 @@ impl<'d> Gen<'d> {
             .opt("total", quoted(header.total.as_ref()))
             .opt("filters", quoted(header.filters.as_ref()))
             .opt("switchTo", switch_to)
+            // A bound project holds no channel open, so its header shows no live state.
             .opt(
                 "live",
-                (!header.live.is_empty()).then(|| strings(&header.live)),
+                (!header.live.is_empty() && !self.bound).then(|| strings(&header.live)),
             )
             .opt("help", help)
             .opt("actions", (!actions.is_empty()).then(|| fragment(actions)))
@@ -2076,7 +2089,8 @@ impl<'d> Gen<'d> {
         let scanned = format!("{}\n{hosted}", self.hoisted.join("\n"));
         let channels = self.channels_used(&scanned, &live);
         let mut extra = vec![("params".to_owned(), "__params".to_owned())];
-        if !channels.is_empty() {
+        // A bound project runs no channel; `channel.*` reads nothing there.
+        if !channels.is_empty() && !self.bound {
             let use_channels = self.import("runtime/live", "useChannels");
             // The same values the page's scope layer gives its sections: params and page state.
             let page_values = ts::object([
@@ -2353,7 +2367,7 @@ impl<'d> Gen<'d> {
         let scanned = format!("{}\n{hosted}", self.hoisted.join("\n"));
         let channels = self.channels_used(&scanned, &[]);
         let mut extra = Vec::new();
-        if !channels.is_empty() {
+        if !channels.is_empty() && !self.bound {
             let use_channels = self.import("runtime/live", "useChannels");
             let sessions = self.sessions(&at, None, &channels, "{}");
             lines.push(format!(

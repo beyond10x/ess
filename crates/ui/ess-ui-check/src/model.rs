@@ -34,8 +34,9 @@ use ess_gen::http::{self, Served};
 use ess_ui::binding::{Binding, CommandRoute, ErrorRoute, QueryParam, ViewRoute};
 use ess_ui::{
     ActorSource, Body, Carries, Composite, Document, Expr, NavPages, NodePath, NodeRef, Paging,
-    Reads,
+    Reads, RegionKind,
 };
+use serde_yaml::Value;
 
 use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
 use crate::{CheckError, Sink};
@@ -518,6 +519,40 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                     );
                 }
             }
+            // The commands a shell region sends: the assistant's `does:`, and each account menu
+            // entry's `does:`, named by the entry.
+            NodeRef::Region(region) => match region.kind {
+                RegionKind::Assistant => {
+                    let does = region.props.get("does");
+                    let commands: Vec<&str> = match does {
+                        Some(Value::Sequence(items)) => {
+                            items.iter().filter_map(Value::as_str).collect()
+                        }
+                        Some(Value::String(one)) => vec![one.as_str()],
+                        _ => Vec::new(),
+                    };
+                    for command in commands {
+                        push(path.child("props").child("does"), Kind::Command(command));
+                    }
+                }
+                RegionKind::AccountMenu => {
+                    let Some(Value::Sequence(entries)) = region.props.get("actions") else {
+                        continue;
+                    };
+                    for entry in entries.iter().filter_map(Value::as_mapping) {
+                        let Some(command) = entry.get("does").and_then(Value::as_str) else {
+                            continue;
+                        };
+                        let actions = path.child("props").child("actions");
+                        let at = match entry.get("name").and_then(Value::as_str) {
+                            Some(name) => actions.child(name),
+                            None => actions,
+                        };
+                        push(at, Kind::Command(command));
+                    }
+                }
+                _ => {}
+            },
             NodeRef::NavSection(section) => {
                 if let NavPages::Dynamic(entries) = &section.pages {
                     push(

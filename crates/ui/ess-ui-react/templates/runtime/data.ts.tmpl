@@ -14,6 +14,7 @@ import { fixtures, type FixtureView } from "../fixtures";
 import { evaluate } from "./expr";
 import { getPath, isObject, stableKey, type Json, type JsonObject } from "./json";
 //+bound
+import { useRef } from "react";
 import { classify, type Answer } from "./answer";
 //-bound
 
@@ -503,8 +504,17 @@ export function useRead(
  */
 export function usePoll(read: ReadState, every: number): ReadState {
   const refetch = read.refetch;
+  // A tick while the read is still in flight is skipped: starting another would drop its answer.
+  const status = useRef(read.status);
+  status.current = read.status;
   useEffect(() => {
-    const timer = setInterval(() => refetch(), every);
+    const timer = setInterval(() => {
+      if (status.current !== "loading" && status.current !== "refreshing") {
+        refetch();
+      }
+    }, every);
+    // Outside a browser (node), a poll alone never keeps the process running.
+    (timer as unknown as { unref?: () => void }).unref?.();
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [every]);

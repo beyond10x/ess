@@ -370,7 +370,9 @@ ESS specification; each finding names its node path, and any error exits `1`. `e
 reference from its schema, and `--check` fails when a written copy is stale. `ess ui run --tui`
 runs a document in the terminal against its fixtures. `ess generate ui --target react` writes a
 React + TypeScript project from one whose only runtime dependencies are `react` and `react-dom`,
-with its routing generated into it and one esbuild step to build it. None of these has a flat
+with its routing generated into it and one esbuild step to build it; with `--model` the project
+is bound to the HTTP surface that specification serves, reading and commanding its paths and
+showing a refusal where the user acted. None of these has a flat
 spelling. Their arguments are listed under [`ess ui`](#ess-ui) and
 [`ess generate ui`](#ess-generate-ui) in the command reference.
 
@@ -649,6 +651,7 @@ ess generate ui [OPTIONS] --target <TARGET> --path <PATH> --out <OUT>
 | `--target` | `<TARGET>` | yes |  | What to generate. One of `react`. |
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document |
 | `--out` | `<OUT>` | yes |  | Directory the project is written to |
+| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): the app is bound to the HTTP surface the specification's `reached_by: network` components serve, instead of answering from fixtures |
 
 #### `ess generate output adopt`
 

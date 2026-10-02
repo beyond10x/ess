@@ -34,8 +34,7 @@ parameters, and commands are `POST` on the command's path. Generate again when t
 
 - **Base URL.** Each served component is reached at the `content` of its
   `<meta name="ess-base-url:<component>">` tag in `www/index.html`; empty or absent means the
-  page's own origin. The server sends no CORS headers, so serve the app from the same origin, or
-  allow it in a proxy in front of both.
+  page's own origin. The app is served from the server's origin.
 - **Caller.** Call `setAuthorization("<value>")` from `src/runtime/data.ts` before rendering:
   every request carries it as its `Authorization` header, unchanged. How the server authenticates
   it is the realization's.
@@ -44,8 +43,9 @@ parameters, and commands are `POST` on the command's path. Generate again when t
   the error's display text and fields; the form keeps its draft, a change saved on change is
   reverted, and reads are read again after an accepted command and after a `409` refusal.
 - **Live sections.** The served surface streams no events: a section with `live:` reads again
-  every `refresh:` interval of its read (5 seconds when it gives none), unless its
-  `degrades: {no_live: refuse}` refuses, in which case the project is not generated.
+  every `refresh:` interval of its read (5 seconds when it gives none; under 1 second is
+  refused), unless its `degrades: {no_live: refuse}` refuses, in which case the project is not
+  generated. No channel runs: a header shows no live state, and `channel.*` reads nothing.
 //-bound
 
 ## Type-check
