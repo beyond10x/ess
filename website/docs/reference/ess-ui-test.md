@@ -101,7 +101,8 @@ Opens a page, with its params.
 
 ### select
 
-Focuses a section, or moves to a row (paging to it). Selecting the page closes an open overlay.
+Focuses a section, or moves to a row (paging to it). At a tab of a section's record
+(`…/sections/<s>/tabs/<t>`) it shows that tab. Selecting the page closes an open overlay.
 
 ```yaml
 - select: pages/partners.list/sections/list/rows/pt-005
@@ -287,7 +288,7 @@ Every step goes through what a reader of the terminal has: key presses and the d
 | `page` | back to the first page (`p`), then `n` to the page |
 | `type` | `/` and the text in a filter bar or collection; `enter`, the text, `enter` on a form field |
 | `choose` | in a filter bar, move to the choice (`h`, `l`), to the option (`j`), `space`; in a form, move to the field (`k`, `j`), then `space` until it shows the option |
-| `act` | the key the hint line offers for the action; the palette (`:`) for a header action; `y` or `ctrl-s` on an overlay |
+| `act` | the key the hint line offers for the action; the palette (`:do: <label>`, which names the action past any page sharing its label) for a header action; `]` until the tab is current for a node in a record's tab; `y` or `ctrl-s` on an overlay |
 | `expect` | the cells the renderer drew the node on: the screen, the section's box, the overlay, the row's line, the cell |
 
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
@@ -311,6 +312,8 @@ refuses:
 | any step at a column header of a collection that is not a table | the generated app draws no header for it |
 | any step inside the rows of a references list | the generated app does not address its rows |
 | any step at a row action's inline confirm not under a row | the generated app draws it under the row that opened it |
+| any step at a collection that is not a section's or an overlay's own body, or at its rows | the terminal draws it inside its section without addressing it or its rows |
+| any step at a tab's nested node (`tabs/<t>/form` that is a node) or inside it | the terminal draws it below the tab's fields but moves no focus into it |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
 | `choose` at a form choice field with `multiple: true` | the terminal sets one value in a form's choice field |
@@ -379,9 +382,11 @@ the document, the React project as `data-ui-path`. What it removes:
 - **Backend state and time are declared.** Fixtures replace views per test and the clock is
   virtual, so live updates, staleness and loading are tested without a server or real waiting.
 
-**Limits.** The terminal runner addresses rows of a section's collection, types into filter bars,
-collection filters and form fields, and chooses in filter-bar choices and form choice fields; other targets fail naming the
-step. `expect text` at a node the terminal does not draw on cells of its own fails naming the path.
-The browser
-spec is generated and not run by `ess ui test`; its fixture and command routes assume the HTTP
+**Limits.** The terminal runner addresses rows of a section's or an overlay's collection, types into
+filter bars, collection filters and form fields, chooses in filter-bar choices and form choice
+fields, and shows a record's tabs; other targets fail naming the step. A collection nested in a
+record, a tab or a node, and a tab's nested node, are drawn but refused as step targets in both
+renderers (see [One verdict in both renderers](#one-verdict-in-both-renderers)). `expect text` at a
+node the terminal does not draw on cells of its own fails naming the path. The browser spec is
+generated and not run by `ess ui test`; its fixture and command routes assume the HTTP
 data adapter.

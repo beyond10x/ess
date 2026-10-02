@@ -139,6 +139,9 @@ impl<'d> Runner<'d> {
         if let Some(reason) = crate::parity::unrendered(self.doc, &target) {
             return Err(reason);
         }
+        if let Some(reason) = crate::parity::undriven(self.doc, &target) {
+            return Err(reason);
+        }
         if let Some(page) = target.page() {
             if page != self.app.page() {
                 return Err(format!(
@@ -192,6 +195,7 @@ impl<'d> Runner<'d> {
             )
         })?;
         self.app.focus_section(&section);
+        self.select_tab(target)?;
         Ok(())
     }
 
@@ -440,8 +444,10 @@ impl<'d> Runner<'d> {
         self.require_no_overlay(target)?;
         let segments: Vec<&str> = target.node.split('/').collect();
         if let ["pages", _, "header", "actions", _] = segments.as_slice() {
-            self.app
-                .keys(&format!(":{}<enter>", label(&action).replace('<', "<lt>")));
+            self.app.keys(&format!(
+                ":do: {}<enter>",
+                label(&action).replace('<', "<lt>")
+            ));
             return Ok(());
         }
         let section = target.section().ok_or_else(|| {
@@ -451,6 +457,7 @@ impl<'d> Runner<'d> {
             )
         })?;
         self.app.focus_section(&section);
+        self.select_tab(target)?;
         let lines = self.section_box(&section)?.lines;
         let key =
             hint_key(lines.iter().map(|line| line.text.as_str()), &action).ok_or_else(|| {
@@ -479,6 +486,28 @@ impl<'d> Runner<'d> {
             return Err(format!("{} shows page {shown}, not {to}", target.written));
         }
         Ok(())
+    }
+
+    /// When `target` lies in a tab of its section's record (`…/sections/<s>/tabs/<t>/…`), shows
+    /// that tab: `]` until the tab's cells are drawn as the current one.
+    fn select_tab(&mut self, target: &Target) -> Result<(), String> {
+        let segments: Vec<&str> = target.node.split('/').collect();
+        let ["pages", _, "sections", section, "tabs", tab, ..] = segments.as_slice() else {
+            return Ok(());
+        };
+        let tab_path = segments[..6].join("/");
+        let tabs = match &self.section_def(section)?.body {
+            Body::Composite(Composite::Record(record)) => record.tabs.len(),
+            _ => return Ok(()),
+        };
+        for _ in 0..=tabs {
+            match self.screen().reversed(&tab_path) {
+                Some(true) => return Ok(()),
+                Some(false) => self.app.keys("]"),
+                None => return Err(format!("tab {tab} of section {section} is not drawn")),
+            }
+        }
+        Err(format!("{}: tab {tab} does not come up", target.written))
     }
 
     // ── rows ────────────────────────────────────────────────────────────────────────────────

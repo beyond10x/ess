@@ -113,6 +113,47 @@ pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String>
     }
 }
 
+/// Why any step at `target` is refused because the terminal draws the node but cannot drive or
+/// address it, if it is. Both renderers read this, so the spec marks the same steps `test.fixme`:
+///
+/// - a collection that is not a section's or an overlay's own body (nested in a record's
+///   `item`, a tab, a section's `children`, a form's `parts`), and its rows: the terminal draws
+///   them inside their section, without a cursor or row regions of their own;
+/// - a tab's nested node (`tabs/<t>/form` when it is a node) and what is inside it: the terminal
+///   draws it below the tab's fields but moves no focus into it. A tab's `form` that is an action
+///   is driven by its key, like the record's own actions.
+pub(crate) fn undriven(document: &Document, target: &Target) -> Option<String> {
+    let path = &target.written;
+    let container = target
+        .row
+        .as_ref()
+        .map_or(&target.node, |row| &row.container);
+    if let Some((Held::Collection(_), false)) = body_at(document, container) {
+        return Some(format!(
+            "{path}: the terminal draws a collection nested inside a record, a tab or a node \
+             without addressing it or its rows; address a section's or an overlay's own \
+             collection instead"
+        ));
+    }
+    let segments: Vec<&str> = target.node.split('/').collect();
+    let nested_tab = segments
+        .windows(3)
+        .position(|window| window[0] == "tabs" && window[2] == "form")
+        .map(|at| segments[..at + 3].join("/"));
+    if let Some(form) = nested_tab {
+        let is_node = document.nodes().into_iter().any(|located| {
+            located.path.to_string() == form && matches!(located.node, NodeRef::Node(_))
+        });
+        if is_node {
+            return Some(format!(
+                "{path}: the terminal draws a tab's nested node but does not move into it, so \
+                 one test cannot drive it in both renderers"
+            ));
+        }
+    }
+    None
+}
+
 /// Why `text` (or `not_text`) at `target` is refused, if it is: a node the generated app renders
 /// no element at ([`unrendered`]), a node the terminal does not draw on cells of its own, or an
 /// action that shows no label in the browser.

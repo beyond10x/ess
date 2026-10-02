@@ -1666,19 +1666,33 @@ impl App {
             Composite::Form(form) => self.form_key(target, &ui, &form, &draft, key),
             Composite::FilterBar(bar) => self.bar_key(&ui, &bar, section.as_deref(), key),
             Composite::Record(record) => {
-                if let KeyCode::Char(letter) = key.code {
-                    let ctx = Ctx {
-                        section: section.as_deref(),
-                        overlay,
-                        ..Ctx::default()
-                    };
-                    if let Some((_, action)) = self
-                        .action_keys(&record.actions, &ctx)
-                        .into_iter()
-                        .find(|(key, _)| *key == letter)
-                    {
-                        self.run_action(&action, None, false);
+                let tabs = record.tabs.len().max(1);
+                let tab = self.ui(&ui).tab.min(tabs - 1);
+                match key.code {
+                    KeyCode::Char(']') => {
+                        let state = self.ui_mut(&ui);
+                        state.tab = (tab + 1) % tabs;
                     }
+                    KeyCode::Char('[') => {
+                        let state = self.ui_mut(&ui);
+                        state.tab = (tab + tabs - 1) % tabs;
+                    }
+                    KeyCode::Char(letter) => {
+                        let ctx = Ctx {
+                            section: section.as_deref(),
+                            overlay,
+                            ..Ctx::default()
+                        };
+                        let actions = crate::view::record_actions(&record, tab);
+                        if let Some((_, action)) = self
+                            .action_keys(&actions, &ctx)
+                            .into_iter()
+                            .find(|(key, _)| *key == letter)
+                        {
+                            self.run_action(&action, None, false);
+                        }
+                    }
+                    _ => {}
                 }
             }
             Composite::Confirm(confirm) => self.confirm_key(&ui, &confirm, key),
@@ -2671,9 +2685,17 @@ impl App {
         }
         if let Some(header) = &self.page_def().header {
             for action in &header.actions {
+                if !self.visible(
+                    action.visible.as_ref().map(|expr| expr.0.as_str()),
+                    &Ctx::default(),
+                ) {
+                    continue;
+                }
                 let label = action.label.clone().unwrap_or_else(|| action.name.clone());
+                // `do: <label>` names the action alone, past any page or synonym it shares
+                // its label with.
                 items.push((
-                    vec![label.clone()],
+                    vec![label.clone(), format!("do: {label}")],
                     PaletteItem {
                         label: format!("do: {label}"),
                         target: PaletteTarget::Action(Box::new(action.clone())),
