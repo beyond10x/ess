@@ -2357,6 +2357,19 @@ fn exercise_as(
         }
     };
 
+    exercise_run(ir, command, outcome, actors, id, refusals, run)
+}
+
+/// Assert a branch whose invocation was arranged by the caller, including post-state retries.
+fn exercise_run(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+    run: Run,
+) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
     let absent = not_emitted(ir, &emitted);
     let actor = run.actor.clone();
