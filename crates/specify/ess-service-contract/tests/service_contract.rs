@@ -505,7 +505,7 @@ fn expected_obligations() -> Vec<(Capability, ImplementationObligation)> {
                 reason: ObligationReason::Undetermined {
                     construct: "a typed response (`response:`)".to_owned(),
                 },
-                contract: "given `contract.local.Run` input, decide and enact exactly one outcome — `completed` otherwise, creates `contract.local.Child`, emits `contract.local.PrivateEmission`, emits `contract.local.First`, emits `contract.local.Second`; `rejected` externally decided (an upstream authority rejects the request), error `contract.local.Rejected`".to_owned(),
+                contract: "given `contract.local.Run` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `completed` otherwise, creates `contract.local.Child`, emits `contract.local.PrivateEmission`, emits `contract.local.First`, emits `contract.local.Second`; `rejected` externally decided (an upstream authority rejects the request), error `contract.local.Rejected`".to_owned(),
             },
         ),
         // `contract.local.ChildById` projects its entity's own fields, so since 0.46 its query is
