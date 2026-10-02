@@ -108,6 +108,26 @@ views:
 const DISPATCH: &str = "demo.shipping.Dispatch/outcome/dispatched";
 const PACK: &str = "demo.shipping.Pack/outcome/packed";
 
+#[test]
+fn the_native_interpreter_executes_the_shipping_suite() {
+    let model = ir(SHIPPING);
+    let synthesis = ess_conformance::synthesize::synthesize(&model);
+    assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let run = Runner::for_suite(admitted.suite()).run_admitted(
+        &admitted,
+        &ess_conformance::interpret::Interpreted::for_model(model),
+    );
+    assert!(!run.scenarios.is_empty());
+    assert!(
+        run.scenarios
+            .iter()
+            .all(|result| result.status == Status::Passed),
+        "{:#?}",
+        run.scenarios
+    );
+}
+
 fn ir(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
     let spec = Specification::assemble([(Source::new("shipping.yaml"), raw)])
