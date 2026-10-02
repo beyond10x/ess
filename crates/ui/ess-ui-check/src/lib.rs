@@ -138,6 +138,17 @@ pub const CHECKS: &[Check] = &[
     // With `--model`: a read binds a parameter its view does not declare, or leaves a required
     // one unbound.
     rule("read_params"),
+    // With `--model`: a `group_by`, an aggregate's `field` or a `label_from` names a row field
+    // the view does not have.
+    rule("row_fields"),
+    // With `--model`: a `group_order` value, or a form choice's fixed option, is no variant of the
+    // enum the field holds, or the options leave a variant out.
+    rule("enum_values"),
+    // `metric`: `aggregate` reads rows, so it needs `reads`; every aggregate but `count` needs a
+    // `field`, and `field` means nothing without one.
+    rule("metric_aggregate"),
+    // `collection`: `group_order` and `show_empty_groups` order the groups of `group_by`.
+    rule("group_order"),
 ];
 
 fn severity_of(id: &str) -> Severity {

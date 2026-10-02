@@ -51,7 +51,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 
 Binding expressions — the values of fields typed `expr`.
 
-Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path.
+Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path. A string that does not parse, or that joins words with an operator but reads no path or function form (`Limit in cents`, `not yet sent`), is literal text, including a widget argument substituted into an `expr` position.
 
 | Form | Meaning |
 |---|---|
@@ -892,6 +892,8 @@ Use for any list, table or card grid. Columns are fields of the rows; `as` picks
 | `item` | list of [Node](#node) |   |   | nested named nodes per row, in order |
 | `reorder` | record \{ `does`: name of an ESS `command`, `endpoint`: optional `string` \} |   |   | drag to reorder, saved by a command |
 | `group_by` | `name` |   |   | field rows are grouped under |
+| `group_order` | list of `string` |   |   | order groups are shown in; values not listed follow in the order they first appear |
+| `show_empty_groups` | `boolean` |   | `false` | a heading for every `group_order` value, even one no row falls under |
 
 **Example**
 
@@ -1170,6 +1172,8 @@ For KPI tiles and per-row live numbers. With `from` a metric reads a channel fie
 | `window` | `duration` |   |   | time window the value covers |
 | `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format |
 | `label` | `string` |   |   | caption |
+| `aggregate` | one of: `count` \| `sum` \| `min` \| `max` \| `avg` |   |   | computed over every row of the read instead of read from one; needs `reads` |
+| `field` | `name` |   |   | row field `aggregate` reads; required for every aggregate but count |
 
 **Example**
 
@@ -1426,6 +1430,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `sortable` | `boolean` |   | `false` | column can sort |
 | `visible` | `expr` |   |   | shows the field only when true |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
+| `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `note` | `string` |   |   | author remark |
 
 **You may also write**

@@ -29,8 +29,59 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     checker.widget_cycles(&located, sink);
     for node in &located {
         checker.node(node, sink);
+        if !in_declaration(&node.path) {
+            if let Some(Body::Composite(composite)) = body_of(node.node) {
+                keys_together(composite, &node.path, sink);
+            }
+        }
     }
     degrades_cover(&located, options, sink);
+}
+
+/// Keys that mean something only beside another: a metric's `aggregate`, `field` and `reads`
+/// (beyond10x/ess#358), and a collection's `group_order` and `group_by` (#351).
+fn keys_together(composite: &Composite, path: &NodePath, sink: &mut Sink) {
+    match composite {
+        Composite::Metric(metric) => match (metric.aggregate, &metric.field) {
+            (Some(kind), _) if metric.reads.is_none() => sink.push(
+                "metric_aggregate",
+                &path.child("aggregate"),
+                format!("`aggregate: {}` is computed over the rows of `reads`, which this metric does not have", kind.as_str()),
+            ),
+            (Some(kind), None) if kind != ess_ui::MetricAggregate::Count => sink.push(
+                "metric_aggregate",
+                &path.child("aggregate"),
+                format!("`aggregate: {}` needs the row `field` it reads", kind.as_str()),
+            ),
+            (None, Some(_)) => sink.push(
+                "metric_aggregate",
+                &path.child("field"),
+                "`field` is the row field an `aggregate` reads; this metric has no `aggregate`",
+            ),
+            _ => {}
+        },
+        Composite::Collection(collection) if collection.group_by.is_none() => {
+            if !collection.group_order.is_empty() || collection.show_empty_groups {
+                sink.push(
+                    "group_order",
+                    path,
+                    "`group_order` and `show_empty_groups` order the groups of `group_by`, which \
+                     this collection does not have",
+                );
+            }
+        }
+        Composite::Collection(collection)
+            if collection.show_empty_groups && collection.group_order.is_empty() =>
+        {
+            sink.push(
+                "group_order",
+                &path.child("show_empty_groups"),
+                "`show_empty_groups` shows the `group_order` values no row has; there is no \
+                 `group_order`",
+            );
+        }
+        _ => {}
+    }
 }
 
 /// Every view and channel the document's fixtures answer.

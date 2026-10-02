@@ -1004,6 +1004,12 @@ pub struct Collection {
     pub reorder: Option<Reorder>,
     /// Field rows are grouped under.
     pub group_by: Option<String>,
+    /// The order groups are shown in; values not listed follow, in the order they first appear.
+    #[serde(default)]
+    pub group_order: Vec<String>,
+    /// Shows a heading for every `group_order` value, even one no row falls under.
+    #[serde(default)]
+    pub show_empty_groups: bool,
 }
 
 /// The columns of a collection.
@@ -1501,6 +1507,39 @@ pub struct Metric {
     pub format: Option<MetricFormat>,
     /// Caption.
     pub label: Option<String>,
+    /// Computes the value over every row of the read instead of reading one.
+    pub aggregate: Option<MetricAggregate>,
+    /// The row field `aggregate` reads; `count` needs none.
+    pub field: Option<String>,
+}
+
+/// What a metric computes over the rows of its read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricAggregate {
+    /// The number of rows.
+    Count,
+    /// The sum of a field.
+    Sum,
+    /// The least value of a field.
+    Min,
+    /// The greatest value of a field.
+    Max,
+    /// The mean of a field.
+    Avg,
+}
+
+impl MetricAggregate {
+    /// The aggregate as the document spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::Sum => "sum",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::Avg => "avg",
+        }
+    }
 }
 
 /// Metric display format.
@@ -1983,8 +2022,29 @@ pub struct Field {
     pub visible: Option<Expr>,
     /// Bind to UI state instead of the command input.
     pub binds: Option<Expr>,
+    /// Shows a field of a related view, matched by this field's value, instead of the value.
+    pub label_from: Option<LabelFrom>,
     /// Author remark.
     pub note: Option<String>,
+}
+
+/// A field of a related view shown in place of a key (`Field.label_from`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LabelFrom {
+    /// The related view, read once without params.
+    pub view: String,
+    /// The field of its row that is shown.
+    pub field: String,
+    /// The field of its row the key matches; `id` when absent.
+    pub key: Option<String>,
+}
+
+impl LabelFrom {
+    /// The field of the related row the key matches.
+    pub fn key(&self) -> &str {
+        self.key.as_deref().unwrap_or("id")
+    }
 }
 
 /// One tab of a form or record.

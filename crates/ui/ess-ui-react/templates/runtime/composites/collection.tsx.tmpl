@@ -4,7 +4,7 @@ import { ActionControl, runCommand, type ActionSpec } from "../actions";
 import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useReport, useScope, useSectionName } from "../core";
 import type { ReadSpec } from "../data";
 import { evaluate, truthy } from "../expr";
-import { FieldValue, fieldLabel, type FieldSpec } from "../fields";
+import { FieldValue, fieldLabel, useLabelled, type FieldSpec } from "../fields";
 import { isObject, stableKey, type Json } from "../json";
 
 /** Rows of one read as a table, cards, a list or a tree. */
@@ -27,6 +27,8 @@ export function Collection(props: {
   /** The field that keys rows (`live.match`); `id` when absent. */
   rowKey?: string;
   groupBy?: string;
+  groupOrder?: string[];
+  showEmptyGroups?: boolean;
   degrades?: Record<string, string>;
 }): ReactNode {
   const scope = useScope();
@@ -42,6 +44,7 @@ export function Collection(props: {
       ? `${scopedContainer}${own.slice(container.length)}`
       : own;
   const data = useData(props.reads);
+  const labelled = useLabelled(props.columns ?? []);
   const section = useSectionName();
   const [selected, setSelected] = useState<Json[]>([]);
   const [focused, setFocused] = useState<Json | undefined>(undefined);
@@ -90,7 +93,7 @@ export function Collection(props: {
     const isSelected = selected.some((entry) => stableKey(entry) === stableKey(row));
     const cells = columns.map((column) => (
       <td key={column.name}>
-        <FieldValue field={column} row={row} />
+        <FieldValue field={column} row={labelled(row)} />
       </td>
     ));
     const extras = (
@@ -152,7 +155,7 @@ export function Collection(props: {
                 <div key={column.name}>
                   <dt>{fieldLabel(column)}</dt>
                   <dd>
-                    <FieldValue field={column} row={row} />
+                    <FieldValue field={column} row={labelled(row)} />
                   </dd>
                 </div>
               ))}
@@ -182,10 +185,7 @@ export function Collection(props: {
     );
   };
   const groups: [string, Json[]][] = props.groupBy
-    ? [...new Set(rows.map((row) => String(display(row, props.groupBy as string))))].map((group) => [
-        group,
-        rows.filter((row) => String(display(row, props.groupBy as string)) === group),
-      ])
+    ? groupRows(rows, props.groupBy, props.groupOrder, props.showEmptyGroups)
     : [["", rows]];
   const list = (entries: Json[]) =>
     props.style === "cards" || props.style === "list" || props.style === "tree" ? (
@@ -253,4 +253,21 @@ export function Collection(props: {
       ) : null}
     </div>
   );
+}
+
+/**
+ * Rows under their `by` value: the `order` values first, in that order, then every other value
+ * in the order it first appears. With `showEmpty` an `order` value no row has is kept, empty.
+ */
+export function groupRows<T>(rows: readonly T[], by: string, order: readonly string[] = [], showEmpty = false): [string, T[]][] {
+  const names = [...order];
+  for (const row of rows) {
+    const name = String(display(row, by));
+    if (!names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names
+    .map((name): [string, T[]] => [name, rows.filter((row) => String(display(row, by)) === name)])
+    .filter(([name, entries]) => entries.length > 0 || (showEmpty && order.includes(name)));
 }

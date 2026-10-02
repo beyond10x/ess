@@ -51,7 +51,7 @@ type_rule:
 
 expressions:
   summary: Binding expressions — the values of fields typed `expr`.
-  doc: Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path.
+  doc: Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path. A string that does not parse, or that joins words with an operator but reads no path or function form (`Limit in cents`, `not yet sent`), is literal text, including a widget argument substituted into an `expr` position.
   forms:
     - {form: "state.<name>",             note: "page, section or overlay state"}
     - {form: "params.<name>",            note: "path params of the page, or values passed to an overlay"}
@@ -594,6 +594,8 @@ constructs:
       item:         {type: {list: Node}, note: "nested named nodes per row, in order"}
       reorder:      {type: {record: {does: {ref: command}, endpoint: {optional: string}}}, note: "drag to reorder, saved by a command"}
       group_by:     {type: name, note: field rows are grouped under}
+      group_order:  {type: {list: string}, note: "order groups are shown in; values not listed follow in the order they first appear"}
+      show_empty_groups: {type: boolean, default: false, note: "a heading for every `group_order` value, even one no row falls under"}
     example:
       component: collection
       style: cards
@@ -770,6 +772,8 @@ constructs:
       window: {type: duration, note: time window the value covers}
       format: {type: {enum: [number, duration, percent, bytes]}, default: number, note: display format}
       label:  {type: string, note: caption}
+      aggregate: {type: {enum: [count, sum, min, max, avg]}, note: "computed over every row of the read instead of read from one; needs `reads`"}
+      field:  {type: name, note: "row field `aggregate` reads; required for every aggregate but count"}
     example: {component: metric, from: channel.metrics.overdue_invoices, label: Overdue invoices}
 
   chart:
@@ -917,6 +921,7 @@ constructs:
       sortable: {type: boolean, default: false, note: column can sort}
       visible:  {type: expr, note: shows the field only when true}
       binds:    {type: expr, note: bind to UI state instead of the command input}
+      label_from: {type: {record: {view: {ref: view}, field: name, key: {optional: name}}}, note: "show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params"}
       note:     {type: string, note: author remark}
     example: {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}
 
