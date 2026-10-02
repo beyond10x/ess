@@ -381,7 +381,8 @@ constructs:
       A page owns the state a link should reproduce (filters, paging, selection) and composes
       sections, each loading on its own. Start from a page kind and declare only what differs.
       `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as
-      a view switch.
+      a view switch; switching keeps every current param the target page declares, by name, so
+      sibling views of one record stay on that record.
     inheritance:
       from: kind
       merge: shorthands.inheritance

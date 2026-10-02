@@ -1842,7 +1842,7 @@ impl<'d> Gen<'d> {
                             ),
                             (
                                 "href",
-                                Some(format!("{href}({}, {{}})", ts::string(target))),
+                                Some(format!("{href}({}, __params)", ts::string(target))),
                             ),
                         ])
                     }),

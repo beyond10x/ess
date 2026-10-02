@@ -536,7 +536,7 @@ Routes, layouts, page templates, and the section as the unit of loading.
 
 One route — its state, layout, header, sections and overlays.
 
-A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch.
+A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch; switching keeps every current param the target page declares, by name, so sibling views of one record stay on that record.
 
 **Properties**
 

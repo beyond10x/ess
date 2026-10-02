@@ -2594,9 +2594,47 @@ impl App {
         self.prompt = Some(prompt);
     }
 
+    /// The sibling pages the page shown offers as a switch (`header.switch`, then `switch_to`),
+    /// each with the current params the target declares, by name.
+    fn switch_targets(&self) -> Vec<(String, BTreeMap<String, Value>)> {
+        let page = self.page_def();
+        let header = page.header.iter().flat_map(|header| header.switch.iter());
+        let mut seen = BTreeSet::new();
+        header
+            .chain(page.switch_to.iter())
+            .filter(|target| **target != self.page && seen.insert((*target).clone()))
+            .filter_map(|target| {
+                let declared = &self.doc.pages.get(target)?.params;
+                let params = self
+                    .params
+                    .iter()
+                    .filter(|(name, _)| declared.contains_key(*name))
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect();
+                Some((target.clone(), params))
+            })
+            .collect()
+    }
+
     /// Palette entries matching `query`, best first.
     pub(crate) fn palette(&self, query: &str) -> Vec<PaletteItem> {
         let mut items = Vec::new();
+        for (page, params) in self.switch_targets() {
+            let def = &self.doc.pages[&page];
+            let label = def
+                .nav
+                .as_ref()
+                .and_then(|nav| nav.label.clone())
+                .or_else(|| def.title.clone())
+                .unwrap_or_else(|| page.clone());
+            items.push((
+                vec![label.clone()],
+                PaletteItem {
+                    label: format!("⇄ {label}"),
+                    target: PaletteTarget::Page(page, params),
+                },
+            ));
+        }
         for entry in self.nav().into_iter().flat_map(|group| group.entries) {
             let mut words = vec![entry.label.clone()];
             words.extend(entry.synonyms.clone());
