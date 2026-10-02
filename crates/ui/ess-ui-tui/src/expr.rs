@@ -6,6 +6,13 @@
 //! bare word that is not a root is its own text, as in `row.status == overdue`. A function call
 //! (`matches(params)`, `same_as(list)`) is not evaluated here and yields [`None`]; callers decide
 //! what an unknown means in their position.
+//!
+//! A string that reads no path and calls no function form is literal text, whatever operators
+//! or parentheses it holds (`Limit in cents`, `Cost (cents)`); a lone quoted string, `true`,
+//! `false`, `null` or number is that value.
+
+use std::collections::BTreeSet;
+use std::sync::OnceLock;
 
 use serde_yaml::Value;
 
@@ -34,31 +41,17 @@ pub(crate) enum Resolved {
 /// Words joined by an operator that read no path from a root (`not yet sent`, `Limit in cents`)
 /// are literal text, as `ess ui check` classifies them (beyond10x/ess#353).
 pub(crate) fn eval(text: &str, scope: &dyn Resolve) -> Option<Value> {
-    if is_literal_text(text) {
-        return Some(Value::String(text.trim().to_owned()));
-    }
     eval_expr(text, scope)
-}
-
-/// `true` when `text` combines words with an operator but reads no path from a root and calls
-/// nothing: a sentence, not an expression.
-pub(crate) fn is_literal_text(text: &str) -> bool {
-    let text = text.trim();
-    let words: Vec<&str> = text
-        .split(|c: char| c.is_whitespace() || "[],".contains(c))
-        .filter(|word| !word.is_empty())
-        .collect();
-    let operator = words
-        .iter()
-        .any(|word| ["not", "and", "or", "in", "==", "!="].contains(word));
-    let reads = words.iter().any(|word| {
-        word.contains('(') || ROOTS.contains(&word.split('.').next().unwrap_or_default())
-    });
-    operator && !reads
 }
 
 fn eval_expr(text: &str, scope: &dyn Resolve) -> Option<Value> {
     let text = text.trim();
+    if let Some(value) = scalar(text) {
+        return Some(value);
+    }
+    if !reads(text) {
+        return Some(Value::String(text.to_owned()));
+    }
     if let Some(rest) = text.strip_prefix("not ") {
         return eval_expr(rest, scope).map(|value| Value::Bool(!truthy(&value)));
     }
@@ -72,15 +65,28 @@ fn eval_expr(text: &str, scope: &dyn Resolve) -> Option<Value> {
     if text.contains('(') {
         return None;
     }
-    if let Some(quoted) = text
-        .strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'))
-        .or_else(|| {
-            text.strip_prefix('\'')
-                .and_then(|rest| rest.strip_suffix('\''))
-        })
-    {
-        return Some(Value::String(quoted.to_owned()));
+    let segments: Vec<&str> = text.split('.').collect();
+    if ROOTS.contains(&segments[0]) {
+        let rest = &segments[1..];
+        return Some(match scope.resolve(segments[0], rest) {
+            Resolved::Whole(value) => value,
+            Resolved::Root(value) => walk(&value, rest),
+        });
+    }
+    Some(Value::String(text.to_owned()))
+}
+
+/// A lone literal: one quoted string, `true`, `false`, `null` or a number.
+fn scalar(text: &str) -> Option<Value> {
+    for quote in ['"', '\''] {
+        if let Some(inner) = text
+            .strip_prefix(quote)
+            .and_then(|rest| rest.strip_suffix(quote))
+        {
+            if !inner.contains(quote) {
+                return Some(Value::String(inner.to_owned()));
+            }
+        }
     }
     match text {
         "true" => return Some(Value::Bool(true)),
@@ -94,15 +100,72 @@ fn eval_expr(text: &str, scope: &dyn Resolve) -> Option<Value> {
     if let Ok(number) = text.parse::<f64>() {
         return Some(Value::Number(number.into()));
     }
-    let segments: Vec<&str> = text.split('.').collect();
-    if ROOTS.contains(&segments[0]) {
-        let rest = &segments[1..];
-        return Some(match scope.resolve(segments[0], rest) {
-            Resolved::Whole(value) => value,
-            Resolved::Root(value) => walk(&value, rest),
+    None
+}
+
+/// The roots (`row`, `state`, …) and function forms (`same_as`, `matches`) of the schema's
+/// `expressions.forms`.
+fn forms() -> &'static (BTreeSet<String>, BTreeSet<String>) {
+    static FORMS: OnceLock<(BTreeSet<String>, BTreeSet<String>)> = OnceLock::new();
+    FORMS.get_or_init(|| {
+        let schema: Value =
+            serde_yaml::from_str(ess_ui::SCHEMA).expect("the embedded schema is YAML");
+        let mut roots = BTreeSet::new();
+        let mut functions = BTreeSet::new();
+        for form in schema["expressions"]["forms"]
+            .as_sequence()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry["form"].as_str())
+        {
+            let head: String = form
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            match form[head.len()..].chars().next() {
+                Some('.') => {
+                    roots.insert(head);
+                }
+                Some('(') => {
+                    functions.insert(head);
+                }
+                _ => {}
+            }
+        }
+        (roots, functions)
+    })
+}
+
+/// Whether `text`, outside its quoted strings, reads a path (`row.stage`) or calls a function
+/// form (`matches(params)`). A string that reads neither is literal text, as `ess-ui-check`
+/// decides: `Limit in cents`, `Cost (cents)` and `Terms and conditions` are not expressions.
+fn reads(text: &str) -> bool {
+    let (roots, functions) = forms();
+    let mut quote = None;
+    let mut word = String::new();
+    for character in text.chars().chain([' ']) {
+        if let Some(open) = quote {
+            if character == open {
+                quote = None;
+            }
+            continue;
+        }
+        if character.is_ascii_alphanumeric() || "_.-".contains(character) {
+            word.push(character);
+            continue;
+        }
+        let path = word.split_once('.').is_some_and(|(root, rest)| {
+            roots.contains(root) && rest.split('.').all(|segment| !segment.is_empty())
         });
+        if path || (character == '(' && functions.contains(&word)) {
+            return true;
+        }
+        word.clear();
+        if character == '"' || character == '\'' {
+            quote = Some(character);
+        }
     }
-    Some(Value::String(text.to_owned()))
+    false
 }
 
 /// The value at `segments` inside `value`, or `Null`.
@@ -187,5 +250,30 @@ mod tests {
         assert_eq!(display(&eval("row.amount", &row).unwrap()), "5 EUR");
         assert_eq!(eval("matches(params)", &row), None);
         assert_eq!(eval("Open", &row), Some(Value::String("Open".into())));
+    }
+
+    /// #353: a string that reads no path and no function form is literal text; a lone scalar
+    /// literal keeps its value.
+    #[test]
+    fn a_string_reading_no_path_is_literal_text() {
+        let row = Row(serde_yaml::from_str("{stage: won}").unwrap());
+        let text = |text: &str| Some(Value::String(text.into()));
+        for literal in [
+            "Limit in cents",
+            "Cost (cents)",
+            "Terms and conditions",
+            "not now",
+            "a == b",
+        ] {
+            assert_eq!(eval(literal, &row), text(literal), "{literal}");
+        }
+        assert_eq!(eval("\"Cost (cents)\"", &row), text("Cost (cents)"));
+        assert_eq!(eval("'Limit in cents'", &row), text("Limit in cents"));
+        assert_eq!(eval("false", &row), Some(Value::Bool(false)));
+        assert_eq!(eval("null", &row), Some(Value::Null));
+        assert_eq!(eval("42", &row), Some(Value::Number(42.into())));
+        assert_eq!(eval("row.stage == won", &row), Some(Value::Bool(true)));
+        assert_eq!(eval("row.stage == \"won\"", &row), Some(Value::Bool(true)));
+        assert_eq!(eval("not row.stage", &row), Some(Value::Bool(false)));
     }
 }
