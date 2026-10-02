@@ -3253,12 +3253,7 @@ fn import_history(path: &Path, log: &Path, adapter: &Path, output: Option<&Path>
             return ExitCode::from(REFUSED);
         }
     };
-    if loaded.commands().values().any(|command| {
-        command
-            .outcomes
-            .iter()
-            .any(|outcome| !outcome.one_time_response.is_empty())
-    }) {
+    if ess_conformance::one_time_response::marked_model(&loaded) {
         eprintln!("UnsupportedOneTimeDisclosure: history import cannot preserve one_time_response policy");
         return ExitCode::from(REFUSED);
     }
