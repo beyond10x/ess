@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T21:43:08Z",
+  "actor": "human:timo",
+  "artifact": "story:interpreted-scenario-supplied-facts",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:consumer-entity-setup-pass1",
+    "reference": "local-evidence:ess-backlog-entity-setup-20261002/target/backlog-input/entity-setup-recovery-test.log",
+    "review": "review-result:consumer-entity-setup-pass1",
+    "outcome": "fixed"
+  }
+}
