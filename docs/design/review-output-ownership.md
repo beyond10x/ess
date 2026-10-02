@@ -124,6 +124,35 @@ prefix .ess-output-init- in generated destinations and enrollment discovery. Pre
 reserved entries and unpublished initialization orphans; do not grant cleanup authority from
 a filename.
 
+The binding protects an in-flight transaction, not a settled one (beyond10x/ess#306). A
+repository that commits its generated output carries `.ess-output` to every other checkout of
+it: a clone, a second worktree, a moved checkout or CI. There the recorded root and directory
+identity cannot match. An Idle checkpoint has nothing to recover, so the reader admits it when
+every ledger-owned file present in the root has its recorded length and digest; an absent
+owned file is admitted and recreated by generation. Mode is not compared, since checkouts apply
+different umasks; for the same reason a publication whose bytes equal an owned file's recorded
+bytes keeps the recorded mode in its ledger and leaves the file untouched, so an unchanged
+regeneration in a checkout with another umask stays a no-op. An owned path with other bytes, a
+directory, a symlink, or a symlinked or non-directory parent refuses before mutation, as it
+does for publication; copying `.ess-output` alone into a foreign root is not an ownership
+transfer and never replaces or retires an authored file. The refusal lists the differing
+files (the first ten and a count) and prints the route that re-enrolls the root: move those
+files aside or delete them, remove `.ess-output`, adopt from a fresh reference once per
+recorded owner (naming each owner key), then regenerate. Adoption itself is unchanged. An admitted copy is bound to
+the current absolute root and directory identity in memory only. Nothing is written for the
+binding itself: check, recovery, adoption that changes nothing and a publication that changes
+nothing leave the committed `state.json` byte-identical, so a regenerate-and-diff check stays
+clean. The first checkpoint an operation publishes anyway (Staging, or adoption's metadata
+transaction) records the new binding with the anchor UUID, producer and ledger unchanged; an
+operation cut before it leaves the copied checkpoint in force. The carried ledger still decides
+which files each owner may replace or retire. A Staging, Prepared, Committed or Restored
+checkpoint whose binding does not match still refuses before any mutation and deletes no
+evidence. When the recorded path differs, the refusal names it as the place recovery must run.
+When the path is the same and only the directory identity differs, the root was replaced by a
+copy while an operation was in progress; its recorded transaction and blob identities no longer
+hold, so it is not recoverable there, and the refusal names removing `.ess-output` and adopting
+the existing files instead. Like the checksum, the binding is not an authentication boundary.
+
 Existing producer artifact bytes and their format identities remain unchanged. Older ESS
 versions have no output-state reader or participating lock protocol; their generation commands
 are outside the enrolled-root contract. Compatibility tests distinguish unchanged generated

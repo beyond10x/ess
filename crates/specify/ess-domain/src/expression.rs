@@ -1015,6 +1015,23 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             ));
             return;
         }
+        // An unquoted bare word naming a binder in scope already reads the binder
+        // (beyond10x/ess#289). What is still text here was quoted or written in the equality
+        // shorthand, which is always a literal: the same misread, refused the same way.
+        if !enum_variant && self.bindings.iter().any(|binding| binding.name == *text) {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{expression}` reads `{text}` as the text literal \"{text}\", not the binder \
+                     `{text}`: the equality shorthand and a quoted word are always text. To compare \
+                     with the binder, write it bare in a comparison, such as `{path} {op} {text}`"
+                ),
+            ));
+            return;
+        }
         if typed.instant && self.current_time_literal(expression, path, op, text) {
             return;
         }

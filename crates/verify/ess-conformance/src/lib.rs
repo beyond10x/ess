@@ -181,6 +181,7 @@ pub mod view_paging;
 pub mod web;
 pub mod web_replay;
 pub mod witness;
+mod witness_memo;
 
 pub use admission::{AdmissionError, AdmittedSuite};
 pub use counts::{CountReport, CountRun, CountStatus};

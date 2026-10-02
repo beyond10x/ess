@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-280
 kind: story
-status: proposed
+status: active
 title: An enum-and-presence input guard is honoured by synthesis
 tags:
 - feature-request
@@ -21,9 +21,10 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: docs/design/input-guard-overlap-precedence.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T06:31:26Z", actor: "human:timo", revision: 7}
+- {from: "proposed", to: "active", at: "2026-10-01T19:35:46Z", actor: "human:timo", revision: 8}
 ---
 ## Outcome
 

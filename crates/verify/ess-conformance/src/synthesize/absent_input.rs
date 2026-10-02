@@ -8,7 +8,7 @@
 
 use super::{
     clipped, insert, not_emitted, ActorRef, BTreeMap, BTreeSet, CommandRef, ConformanceScenario,
-    ConformanceSuite, ErrorRef, EssIr, EssSemanticRef, OutcomeRef, QualifiedName, Refusal,
+    ConformanceSuite, ErrorRef, EssIr, EssSemanticRef, Focus, OutcomeRef, QualifiedName, Refusal,
     RefusalCause, ResolvedCommand, ResolvedCondition, ResolvedOutcome, ScenarioId, ScenarioStep,
 };
 
@@ -17,10 +17,14 @@ use super::{
 pub(super) fn absent_inputs(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
+        if !focus.takes(&command.name) {
+            continue;
+        }
         let Some(declared) = command
             .outcomes
             .iter()

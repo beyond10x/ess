@@ -90,6 +90,27 @@ pub(super) fn denied(
     }
 }
 
+/// The commands whose scenarios [`admit_every_granted_actor`] sends in turn as each actor granted
+/// them: served, held by two actors or more, none of them carrying attributes. Which actor one such
+/// scenario is sent as depends on every other scenario of the suite sending the command, so a
+/// synthesis that writes only some scenarios (`Focus::About`) cannot say it for them.
+pub(super) fn rotated(ir: &EssIr) -> BTreeSet<QualifiedName> {
+    if ir.actors().is_empty() {
+        return BTreeSet::new();
+    }
+    served_commands(ir)
+        .into_iter()
+        .filter(|command| {
+            let holders: Vec<&ess_compiler::ir::ResolvedActor> = ir
+                .actors()
+                .values()
+                .filter(|actor| grants(actor, command))
+                .collect();
+            holders.len() >= 2 && holders.iter().all(|actor| actor.attributes.is_empty())
+        })
+        .collect()
+}
+
 /// The commands a served component accepts.
 fn served_commands(ir: &EssIr) -> BTreeSet<QualifiedName> {
     ir.components()
