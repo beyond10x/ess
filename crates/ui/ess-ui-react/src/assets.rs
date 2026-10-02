@@ -1,5 +1,6 @@
-//! The fixed files of a generated project: its configuration, the offline type declarations and
-//! the runtime component set. Runtime modules are emitted only when something imports them.
+//! The fixed files of a generated project: its configuration, the page it is served from, the
+//! offline type declarations and the runtime component set (the router among them). Runtime
+//! modules are emitted only when something imports them.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,6 +26,7 @@ const RUNTIME: &[Module] = &[
     module!("runtime/expr", "ts"),
     module!("runtime/data", "ts"),
     module!("runtime/core", "tsx"),
+    module!("runtime/router", "tsx"),
     module!("runtime/actions", "tsx"),
     module!("runtime/fields", "tsx"),
     module!("runtime/overlays", "tsx"),
@@ -144,11 +146,7 @@ pub(crate) fn project(app: &str, title: &str) -> BTreeMap<String, String> {
             include_str!("../templates/project/tsconfig.offline.json.tmpl"),
         ),
         (
-            "vite.config.ts",
-            include_str!("../templates/project/vite.config.ts.tmpl"),
-        ),
-        (
-            "index.html",
+            "www/index.html",
             include_str!("../templates/project/index.html.tmpl"),
         ),
         (
@@ -174,10 +172,6 @@ pub(crate) fn project(app: &str, title: &str) -> BTreeMap<String, String> {
         (
             "types/react-dom-client.d.ts",
             include_str!("../templates/types/react-dom-client.d.ts.tmpl"),
-        ),
-        (
-            "types/react-router.d.ts",
-            include_str!("../templates/types/react-router.d.ts.tmpl"),
         ),
     ] {
         files.insert(file.to_owned(), fill(text));

@@ -3,16 +3,20 @@ import { useUiPath } from "../core";
 import { useScope } from "../core";
 import { evaluate } from "../expr";
 
+/** How an image fills its box; a value outside the list shows it whole. */
+const fits = ["contain", "cover", "fill", "none", "scale-down"] as const;
+
 /** An image from an expression. */
 export function ImageView(props: { "data-ui-path": string; src: string; alt: string; fit?: string }): ReactNode {
   const scope = useScope();
   const src = evaluate(props.src, scope.values);
+  const fit = fits.find((value) => value === props.fit) ?? "contain";
   return (
     <img
       className="ui-image"
       src={typeof src === "string" ? src : ""}
       alt={props.alt}
-      style={{ objectFit: props.fit ?? "contain" }}
+      style={{ objectFit: fit }}
       data-ui-path={useUiPath(props["data-ui-path"])}
     />
   );

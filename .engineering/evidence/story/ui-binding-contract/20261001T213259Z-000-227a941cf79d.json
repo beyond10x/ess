@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T21:32:59Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-binding-contract",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction 1",
+    "reference": "review-result:ui-binding-contract-adversary-pass1#finding-4",
+    "review": "review-result:ui-binding-contract-adversary-pass1",
+    "outcome": "fixed"
+  }
+}

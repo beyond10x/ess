@@ -1,0 +1,152 @@
+// The router: the location from the History API, navigation, links, redirects, and the matched
+// page's params and the element its shell renders at its outlet. `src/App.tsx` decides which
+// page a path is (`matchPage` in `src/routes.ts`); this module only follows the address bar.
+
+import { createContext, useContext, useEffect, useState, type MouseEvent, type ReactNode } from "react";
+
+/** Where the browser is. */
+export interface Location {
+  pathname: string;
+  search: string;
+  hash: string;
+}
+
+/** Goes to an href; `replace` replaces the current history entry instead of pushing one. */
+export type NavigateFunction = (to: string, options?: { replace?: boolean }) => void;
+
+interface RouterValue {
+  location: Location;
+  navigate: NavigateFunction;
+}
+
+function here(): Location {
+  if (typeof window === "undefined") {
+    return { pathname: "/", search: "", hash: "" };
+  }
+  const { pathname, search, hash } = window.location;
+  return { pathname, search, hash };
+}
+
+const RouterContext = createContext<RouterValue>({
+  location: { pathname: "/", search: "", hash: "" },
+  navigate: () => undefined,
+});
+
+/** Follows `window.location`: renders again on `popstate` and after every navigation. */
+export function Router(props: { children?: ReactNode }): ReactNode {
+  const [location, setLocation] = useState<Location>(here);
+  useEffect(() => {
+    const update = () => setLocation(here());
+    window.addEventListener("popstate", update);
+    return () => window.removeEventListener("popstate", update);
+  }, []);
+  const navigate: NavigateFunction = (to, options) => {
+    if (options?.replace) {
+      window.history.replaceState(null, "", to);
+    } else {
+      window.history.pushState(null, "", to);
+    }
+    setLocation(here());
+  };
+  return <RouterContext.Provider value={{ location, navigate }}>{props.children}</RouterContext.Provider>;
+}
+
+/** The current location. */
+export function useLocation(): Location {
+  return useContext(RouterContext).location;
+}
+
+/** The function that navigates. */
+export function useNavigate(): NavigateFunction {
+  return useContext(RouterContext).navigate;
+}
+
+/** Sets the query string, keeping the path and hash. */
+export type SetURLSearchParams = (
+  next: URLSearchParams | ((previous: URLSearchParams) => URLSearchParams),
+  options?: { replace?: boolean },
+) => void;
+
+/** The query string, and a setter that navigates to the same path with another one. */
+export function useSearchParams(): [URLSearchParams, SetURLSearchParams] {
+  const { location, navigate } = useContext(RouterContext);
+  const set: SetURLSearchParams = (next, options) => {
+    const now = here();
+    const params = typeof next === "function" ? next(new URLSearchParams(now.search)) : next;
+    const query = params.toString();
+    navigate(`${now.pathname}${query === "" ? "" : `?${query}`}${now.hash}`, options);
+  };
+  return [new URLSearchParams(location.search), set];
+}
+
+/**
+ * An `<a href>` to a page of this app. An unmodified primary-button click navigates in place;
+ * any other click is left to the browser (a new tab, a new window, a download). A link to the
+ * location the browser is already on replaces the entry, so Back is not a no-op.
+ */
+export function Link(props: { to: string; children?: ReactNode; className?: string; title?: string }): ReactNode {
+  const { location, navigate } = useContext(RouterContext);
+  const current = `${location.pathname}${location.search}${location.hash}`;
+  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.shiftKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    navigate(props.to, { replace: props.to === current });
+  };
+  return (
+    <a href={props.to} className={props.className} title={props.title} onClick={onClick}>
+      {props.children}
+    </a>
+  );
+}
+
+/** Replaces the current history entry with `to`, unless the browser is already there. */
+export function Redirect(props: { to: string }): ReactNode {
+  const { location, navigate } = useContext(RouterContext);
+  const current = `${location.pathname}${location.search}${location.hash}`;
+  useEffect(() => {
+    if (props.to !== current) {
+      navigate(props.to, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.to, current]);
+  return null;
+}
+
+interface MatchValue {
+  params: Readonly<Record<string, string | undefined>>;
+  outlet: ReactNode;
+}
+
+const MatchContext = createContext<MatchValue>({ params: {}, outlet: null });
+
+/** The matched page: its params, and the element the shell's `Outlet` renders. */
+export function Matched(props: {
+  params: Record<string, string>;
+  outlet?: ReactNode;
+  children?: ReactNode;
+}): ReactNode {
+  return (
+    <MatchContext.Provider value={{ params: props.params, outlet: props.outlet ?? null }}>
+      {props.children}
+    </MatchContext.Provider>
+  );
+}
+
+/** Where a shell renders its page. */
+export function Outlet(): ReactNode {
+  return useContext(MatchContext).outlet;
+}
+
+/** The matched page's path params, decoded. */
+export function useParams(): Readonly<Record<string, string | undefined>> {
+  return useContext(MatchContext).params;
+}

@@ -57,7 +57,7 @@ pub(crate) struct Generate {
 /// The applications `ess generate ui` generates.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Target {
-    /// A Vite + React + TypeScript project.
+    /// A React + TypeScript project: react and react-dom only, generated routing, built with esbuild.
     React,
 }
 

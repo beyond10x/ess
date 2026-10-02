@@ -67,11 +67,11 @@ views:
       - {id: pt-006, name: Fir Cloud,     tier: silver,     revenue_ytd: {amount: 97000, currency: EUR}, tags: [apac], website: "https://fir.example.com", logo_url: "https://cdn.example.com/logos/pt-006.png", created_at: "2025-03-14"}
   partners.UsedBy:
     rows:
-      - {label: Cloud rollout, type: deal, id: dl-01}
-      - {label: Security add-on, type: deal, id: dl-02}
-      - {label: INV-1042, type: invoice, id: in-01}
-      - {label: SSO login fails, type: ticket, id: tk-01}
-      - {label: Gold partners pipeline, type: saved_view, id: sv-04}
+      - {label: Cloud rollout, type: deal, ref: dl-01}
+      - {label: Security add-on, type: deal, ref: dl-02}
+      - {label: INV-1042, type: invoice, ref: in-01}
+      - {label: SSO login fails, type: ticket, ref: tk-01}
+      - {label: Gold partners pipeline, type: saved_view, ref: sv-04}
   contacts.ByPartner:
     by_params: {partner_id: pt-001}
     rows:
@@ -156,11 +156,11 @@ views:
       - {id: partner, label: partner}
   users.UsedBy:
     rows:
-      - {label: Cloud rollout, type: deal_owner, id: dl-01}
-      - {label: Renewal 2027, type: deal_owner, id: dl-05}
-      - {label: SSO login fails, type: ticket_assignee, id: tk-01}
-      - {label: My open deals, type: saved_view, id: sv-01}
-      - {label: Approval workflow, type: workflow_approver, id: wf-1}
+      - {label: Cloud rollout, type: deal_owner, ref: dl-01}
+      - {label: Renewal 2027, type: deal_owner, ref: dl-05}
+      - {label: SSO login fails, type: ticket_assignee, ref: tk-01}
+      - {label: My open deals, type: saved_view, ref: sv-01}
+      - {label: Approval workflow, type: workflow_approver, ref: wf-1}
   workflows.Graph:
     rows:
       - {id: st-1, kind: node, step_type: approval, label: Sales lead approval, approver_role: sales}

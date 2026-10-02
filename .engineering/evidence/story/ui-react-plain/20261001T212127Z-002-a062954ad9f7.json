@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T21:21:27Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-react-plain",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction 2, verified by the coordinator (npm run build against real @types/react 19.3.0)",
+    "reference": "review-result:ui-react-plain-adversary-pass2#finding-3",
+    "review": "review-result:ui-react-plain-adversary-pass2",
+    "outcome": "fixed"
+  }
+}
