@@ -329,6 +329,13 @@ fn start(executable: &Path) -> Running {
 
 /// `GET target` over a socket: the status and the body.
 fn get(server: &Running, target: &str) -> (u16, serde_json::Value) {
+    let (status, body) = get_text(server, target);
+    let body = serde_json::from_str(&body).unwrap_or_else(|error| panic!("{error}: {body}"));
+    (status, body)
+}
+
+/// `GET target` over a socket: the status and the body as text, whatever its media type.
+fn get_text(server: &Running, target: &str) -> (u16, String) {
     let mut stream = TcpStream::connect(("127.0.0.1", server.port)).expect("the server accepts");
     write!(
         stream,
@@ -347,8 +354,7 @@ fn get(server: &Running, target: &str) -> (u16, serde_json::Value) {
         .nth(1)
         .and_then(|status| status.parse().ok())
         .unwrap_or_else(|| panic!("a status line: {head}"));
-    let body = serde_json::from_str(body).unwrap_or_else(|error| panic!("{error}: {body}"));
-    (status, body)
+    (status, body.to_owned())
 }
 
 /// What the port was handed, as the harness's one row spells it.
@@ -702,4 +708,30 @@ fn a_non_scalar_param_of_a_served_view_is_refused_by_the_serving_targets() {
             Ok(_) => panic!("{target:?} serves a struct parameter no query value carries"),
         }
     }
+}
+
+/// A query string is part of the request line, and both servers bound the request head at Go's
+/// `net/http` default (one MiB and 4096 bytes): within it the value reaches the port, past it each
+/// answers `431` with the same body.
+#[test]
+fn a_request_head_past_the_shared_bound_is_a_431_from_both_servers() {
+    let path = view_path();
+    let mut refusals = Vec::new();
+    for executable in [rust_server(), go_server()] {
+        let server = start(executable);
+        let within = "a".repeat(512 * 1024);
+        let (status, body) = get(&server, &format!("{path}?who={within}&min_hours=1"));
+        assert_eq!(
+            handed(status, &body),
+            format!("owner={within};min_hours=1;urgent=-;level=-")
+        );
+        let past = "a".repeat(2 * 1024 * 1024);
+        let (status, body) = get_text(&server, &format!("{path}?who={past}&min_hours=1"));
+        assert_eq!(status, 431, "{body}");
+        refusals.push(body);
+    }
+    assert_eq!(
+        refusals[0], refusals[1],
+        "the two servers answer an oversized head alike"
+    );
 }

@@ -137,6 +137,7 @@ fn emitted(
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
     crate::paging::refuse(ir, plan, crate::Target::Rust)?;
     crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Rust)?;
+    crate::view_query::refuse_colliding_params(ir, plan, crate::Target::Rust, name::value_ident)?;
     crate::failure::retry_bound(ir, plan, crate::Target::Rust)?;
     let layout = feasibility::checked_shaped(ir, plan, crate::Target::Rust, single_crate)?;
     accessor::preflight(ir, plan, &layout)?;

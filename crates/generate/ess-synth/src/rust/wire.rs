@@ -792,7 +792,7 @@ fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at
             format!("json::bytes_at({value}, {at}, \"base64-encoded bytes\")?")
         }
         Primitive::Decimal => format!(
-            "{primitives}::Decimal(json::text_at({value}, {at}, \"a decimal string\")?.to_owned())"
+            "{primitives}::Decimal(json::decimal_at({value}, {at}, \"a decimal string\")?.to_owned())"
         ),
         Primitive::Timestamp => format!(
             "{primitives}::Timestamp(json::text_at({value}, {at}, \"an RFC 3339 \
@@ -803,7 +803,7 @@ fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at
              duration\")?.to_owned())"
         ),
         Primitive::Uuid => {
-            format!("{primitives}::Uuid(json::text_at({value}, {at}, \"a UUID\")?.to_owned())")
+            format!("{primitives}::Uuid(json::uuid_at({value}, {at}, \"a UUID\")?.to_owned())")
         }
     }
 }

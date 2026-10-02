@@ -179,6 +179,46 @@ pub(crate) fn refuse_unqueryable(
     }
 }
 
+/// Every pair of one view's parameters whose names a target spells as one identifier — `minHours`
+/// and `min_hours` — named at both keys, refused by that target: its query methods take the
+/// parameters as arguments, and two arguments of one name are a program that does not build.
+/// `ident` is the target's own spelling of a parameter name, before any escape it applies.
+pub(crate) fn refuse_colliding_params(
+    ir: &EssIr,
+    plan: &crate::SynthesisPlan,
+    target: crate::Target,
+    ident: impl Fn(&str) -> String,
+) -> Result<(), crate::failure::TargetFailure> {
+    use crate::failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
+    let mut causes = Vec::new();
+    for view in ir.views().values() {
+        let mut seen: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+        for param in &view.params {
+            let spelled = ident(&param.name);
+            if let Some(earlier) = seen.get(&spelled) {
+                causes.push(TargetFailureCause::new(
+                    TargetFailureCode::SymbolCollision,
+                    vec![
+                        format!("views.{}.params.{earlier}", view.name),
+                        format!("views.{}.params.{}", view.name, param.name),
+                    ],
+                    format!(
+                        "two parameters of one view are both spelled `{spelled}` in this target, \
+                         and a query method cannot take two arguments of one name"
+                    ),
+                ));
+            } else {
+                seen.insert(spelled, &param.name);
+            }
+        }
+    }
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}
+
 /// `true` where the plan marks this view's query generated.
 pub(crate) fn generated(ir: &EssIr, view: &ResolvedView) -> bool {
     self::view(ir, view).is_ok()

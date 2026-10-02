@@ -695,12 +695,15 @@ const SERVE_BODY: &str = r"{
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
         let mut reader = std::io::BufReader::new(connection?);
-        let answer = match http::read(&mut reader) {
-            Ok(request) => dispatch(system, &request),
-            Err(refusal) => refusal,
+        let (answer, refused) = match http::read(&mut reader) {
+            Ok(request) => (dispatch(system, &request), false),
+            Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();
         http::write(&mut stream, &answer)?;
+        if refused {
+            http::linger(&mut stream);
+        }
     }
     Ok(())
 }
@@ -1347,6 +1350,14 @@ pub const MAX_BODY: usize = 1_048_576;
 /// together.
 pub const MAX_HEADERS: usize = 100;
 
+/// The most bytes the request line and headers may take together: what Go's `net/http` reads by
+/// default (`DefaultMaxHeaderBytes`, one MiB, and the 4096 bytes it allows beyond it).
+///
+/// The same bound, and above it the same answer ([`head_too_large`]), so the two servers synthesised
+/// from one specification answer an oversized request alike. Without one, a caller could hold a
+/// request line of any length in memory.
+pub const MAX_HEAD: usize = 1_048_576 + 4096;
+
 /// The media type every answer derived from the model carries.
 pub const JSON: &str = "application/json";
 
@@ -1357,7 +1368,10 @@ pub const JSON: &str = "application/json";
 pub const MARKDOWN: &str = "text/markdown; charset=utf-8";
 
 /// One request, as much of it as this surface reads.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Default` is the empty request, so a caller that builds one names only what it sets:
+/// `Request { method: "GET".to_owned(), path: "/openapi.json".to_owned(), ..Default::default() }`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Request {
     /// The method, verbatim.
     pub method: String,
@@ -1470,15 +1484,17 @@ pub fn method_not_allowed(allowed: &str) -> Response {
 /// Never as an `Err` of the outer kind: everything that can go wrong with a request is an answer
 /// the caller should receive, so the failure arm is the [`Response`] to send back.
 pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Request, Response> {
+    let mut budget = MAX_HEAD;
     let mut line = String::new();
-    match reader.read_line(&mut line) {
-        Ok(0) => {
+    match head_line(reader, &mut line, &mut budget) {
+        Ok(Some(0)) => {
             return Err(Response::refusal(
                 400,
                 "the connection closed before a request line arrived",
             ))
         }
-        Ok(_) => {}
+        Ok(None) => return Err(head_too_large()),
+        Ok(Some(_)) => {}
         Err(error) => {
             return Err(Response::refusal(
                 400,
@@ -1506,14 +1522,15 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
     let mut headers = Vec::new();
     loop {
         let mut header = String::new();
-        match reader.read_line(&mut header) {
-            Ok(0) => {
+        match head_line(reader, &mut header, &mut budget) {
+            Ok(Some(0)) => {
                 return Err(Response::refusal(
                     400,
                     "the connection closed inside the headers",
                 ))
             }
-            Ok(_) => {}
+            Ok(None) => return Err(head_too_large()),
+            Ok(Some(_)) => {}
             Err(error) => {
                 return Err(Response::refusal(
                     400,
@@ -1580,6 +1597,51 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
         headers,
         body,
     })
+}
+
+/// One line of the request head, read within what is left of [`MAX_HEAD`]: `Some` with the bytes
+/// it took (`0` at the end of the connection), and `None` where the line runs past the bound.
+fn head_line(
+    reader: &mut std::io::BufReader<std::net::TcpStream>,
+    line: &mut String,
+    budget: &mut usize,
+) -> std::io::Result<Option<usize>> {
+    let allowed = u64::try_from(*budget).unwrap_or(u64::MAX);
+    let read = reader.by_ref().take(allowed).read_line(line)?;
+    if read == *budget && !line.ends_with('\n') {
+        return Ok(None);
+    }
+    *budget -= read;
+    Ok(Some(read))
+}
+
+/// The answer to a request head past [`MAX_HEAD`]: byte for byte what Go's `net/http` answers, the
+/// one refusal on this surface that is not JSON, because the Go server writes it before any code
+/// of its own runs and the two servers must answer one request alike.
+pub fn head_too_large() -> Response {
+    Response::new(
+        431,
+        "text/plain; charset=utf-8",
+        "431 Request Header Fields Too Large",
+    )
+}
+
+/// After answering a request it refused while reading it: stop writing, then read and drop what
+/// the caller is still sending — at most 64 reads of 64 KiB, each waiting at most half a second.
+///
+/// Closing with unread bytes waiting makes the kernel reset the connection, and a reset can
+/// destroy the answer before the caller reads it. Go's `net/http` lingers the same way. Bounded
+/// by reads rather than by a clock, so this surface reads no clock.
+pub fn linger(stream: &mut std::net::TcpStream) {
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+    let mut sink = vec![0_u8; 65_536];
+    for _ in 0..64 {
+        match stream.read(&mut sink) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+    }
 }
 
 /// Writes one answer, and lets the connection close behind it.

@@ -94,7 +94,7 @@ pub fn decode_gatepass_visit_deposit(value: &json::Value, at: &str) -> Result<ga
         amount: {
             let at0 = json::nested(at, "amount");
             let member0 = json::member_at(value, at, "amount")?;
-            gatepass_types::primitives::Decimal(json::text_at(member0, &at0, "a decimal string")?.to_owned())
+            gatepass_types::primitives::Decimal(json::decimal_at(member0, &at0, "a decimal string")?.to_owned())
         },
         currency: {
             let at1 = json::nested(at, "currency");
@@ -211,7 +211,7 @@ pub fn encode_gatepass_visit_visit_id(value: &gatepass_types::visit::VisitId, ou
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_gatepass_visit_visit_id(value: &json::Value, at: &str) -> Result<gatepass_types::visit::VisitId, json::DecodeError> {
-    Ok(gatepass_types::visit::VisitId(gatepass_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
+    Ok(gatepass_types::visit::VisitId(gatepass_types::primitives::Uuid(json::uuid_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `gatepass.visit.VisitorName` as JSON.

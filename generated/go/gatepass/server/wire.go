@@ -12,6 +12,7 @@ import (
 	"example.invalid/gatepass/types/visit"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // DecodeError is a refusal at one path, with what the declaration says belongs there and what
@@ -146,9 +147,59 @@ func integerAt(value any, at string, expected string) (int64, error) {
 	}
 	held, err := number.Int64()
 	if err != nil {
-		return 0, DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", number.String())}
+		return 0, DecodeError{At: at, Expected: expected, Found: "the number " + number.String()}
 	}
 	return held, nil
+}
+
+// decimalAt is the decimal string at this path, in the published pattern: an optional -, digits
+// without a leading zero, then an optional . and digits. Refused otherwise, as the contract refuses
+// it, rather than handed on as a decimal nobody can read.
+func decimalAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	whole, fraction, fractional := strings.Cut(strings.TrimPrefix(text, "-"), ".")
+	if !digitsOnly(whole) || (len(whole) > 1 && whole[0] == '0') || (fractional && !digitsOnly(fraction)) {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// uuidAt is the UUID at this path, in the published pattern: the canonical hyphenated form, in
+// either case.
+func uuidAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	valid := len(text) == 36
+	for index := 0; valid && index < len(text); index++ {
+		switch char := text[index]; {
+		case index == 8 || index == 13 || index == 18 || index == 23:
+			valid = char == '-'
+		default:
+			valid = (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')
+		}
+	}
+	if !valid {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// digitsOnly reports whether text is one or more ASCII digits.
+func digitsOnly(text string) bool {
+	if text == "" {
+		return false
+	}
+	for index := 0; index < len(text); index++ {
+		if text[index] < '0' || text[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // bytesAt is the base64-encoded bytes at this path.
@@ -223,7 +274,7 @@ func decodeGatepassVisitBadge(value any, at string) (visit.Badge, error) {
 		return out, err
 	}
 	if found2 {
-		held3, err := textAt(member2, at2, "an RFC 3339 timestamp as a string")
+		held3, err := textAt(member2, at2, "an RFC 3339 instant")
 		if err != nil {
 			return out, err
 		}
@@ -294,7 +345,7 @@ func decodeGatepassVisitDeposit(value any, at string) (visit.Deposit, error) {
 	if err != nil {
 		return out, err
 	}
-	held1, err := textAt(member0, at0, "a decimal as a string, such as `10.50`")
+	held1, err := decimalAt(member0, at0, "a decimal string")
 	if err != nil {
 		return out, err
 	}
@@ -442,7 +493,7 @@ func encodeGatepassVisitVisitId(value visit.VisitId) any {
 // decodeGatepassVisitVisitId reads `gatepass.visit.VisitId` from JSON, or refuses at the path it was reached at.
 func decodeGatepassVisitVisitId(value any, at string) (visit.VisitId, error) {
 	var out visit.VisitId
-	held0, err := textAt(value, at, "a UUID as a string")
+	held0, err := uuidAt(value, at, "a UUID")
 	if err != nil {
 		return out, err
 	}
@@ -599,7 +650,7 @@ func decodeCommandGatepassVisitRegisterVisit(value any, at string) (visit.Regist
 	if err != nil {
 		return out, err
 	}
-	held7, err := integerAt(member6, at6, "a whole number")
+	held7, err := integerAt(member6, at6, "an integer")
 	if err != nil {
 		return out, err
 	}
@@ -608,7 +659,7 @@ func decodeCommandGatepassVisitRegisterVisit(value any, at string) (visit.Regist
 	if err != nil {
 		return out, err
 	}
-	held9, err := textAt(member8, at8, "an ISO 8601 duration as a string, such as `P30D`")
+	held9, err := textAt(member8, at8, "an ISO 8601 duration")
 	if err != nil {
 		return out, err
 	}
@@ -662,7 +713,7 @@ func decodeCommandGatepassVisitRegisterVisit(value any, at string) (visit.Regist
 	if err != nil {
 		return out, err
 	}
-	held20, err := boolAt(member19, at19, "true or false")
+	held20, err := boolAt(member19, at19, "a boolean")
 	if err != nil {
 		return out, err
 	}

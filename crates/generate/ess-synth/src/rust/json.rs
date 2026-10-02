@@ -556,6 +556,47 @@ pub fn integer_at(value: &Value, at: &str, expected: &str) -> Result<i64, Decode
     }
 }
 
+/// The decimal string at this path, in the published pattern: an optional `-`, digits without a
+/// leading zero, then an optional `.` and digits.
+///
+/// # Errors
+///
+/// [`DecodeError`] when the value is not a string, or is one the pattern refuses — refused as the
+/// contract refuses it, rather than handed on as a decimal nobody can read.
+pub fn decimal_at<'a>(value: &'a Value, at: &str, expected: &str) -> Result<&'a str, DecodeError> {
+    let text = text_at(value, at, expected)?;
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    let unsigned = text.strip_prefix('-').unwrap_or(text);
+    let (whole, fraction) = match unsigned.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (unsigned, None),
+    };
+    if digits(whole) && !(whole.len() > 1 && whole.starts_with('0')) && fraction.map_or(true, digits) {
+        Ok(text)
+    } else {
+        Err(DecodeError { at: at.to_owned(), expected: expected.to_owned(), found: format!("`{text}`") })
+    }
+}
+
+/// The UUID at this path, in the published pattern: the canonical hyphenated form, in either case.
+///
+/// # Errors
+///
+/// [`DecodeError`] when the value is not a string, or is one the pattern refuses.
+pub fn uuid_at<'a>(value: &'a Value, at: &str, expected: &str) -> Result<&'a str, DecodeError> {
+    let text = text_at(value, at, expected)?;
+    let valid = text.len() == 36
+        && text.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        });
+    if valid {
+        Ok(text)
+    } else {
+        Err(DecodeError { at: at.to_owned(), expected: expected.to_owned(), found: format!("`{text}`") })
+    }
+}
+
 /// The boolean at this path.
 ///
 /// # Errors

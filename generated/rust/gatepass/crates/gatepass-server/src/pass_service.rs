@@ -88,12 +88,15 @@ where
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
         let mut reader = std::io::BufReader::new(connection?);
-        let answer = match http::read(&mut reader) {
-            Ok(request) => dispatch(system, authenticate(&request).as_ref(), &request),
-            Err(refusal) => refusal,
+        let (answer, refused) = match http::read(&mut reader) {
+            Ok(request) => (dispatch(system, authenticate(&request).as_ref(), &request), false),
+            Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();
         http::write(&mut stream, &answer)?;
+        if refused {
+            http::linger(&mut stream);
+        }
     }
     Ok(())
 }

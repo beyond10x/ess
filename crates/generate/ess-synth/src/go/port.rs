@@ -292,29 +292,89 @@ fn query(
 
 /// A view's declared parameters as `(identifier, Go type)`, in declaration order, the types
 /// spelled from `emit`'s package (story:served-view-params). An identifier is the parameter's
-/// name in lower camel case, with `_` appended where that is a Go keyword or one of `taken`, the
-/// names the method body already binds.
+/// name in lower camel case ([`param_base`]), with `_` appended — as often as it takes — where that
+/// is a Go keyword, a predeclared identifier, one of `taken` (the names the method body already
+/// binds) or an identifier an earlier parameter already took. Two parameters with one base
+/// spelling are refused before emission (`view_query::refuse_colliding_params`).
 pub(super) fn view_params(
     emit: &Emit<'_>,
     view: &ess_compiler::ir::ResolvedView,
     taken: &[&str],
 ) -> Vec<(String, String)> {
-    view.params
-        .iter()
-        .map(|param| {
-            let pascal = name::exported(&param.name);
-            let mut chars = pascal.chars();
-            let mut ident: String = chars
-                .next()
-                .map(|first| first.to_lowercase().chain(chars).collect())
-                .unwrap_or_default();
-            if GO_KEYWORDS.contains(&ident.as_str()) || taken.contains(&ident.as_str()) {
-                ident.push('_');
-            }
-            (ident, emit.go_type(&param.type_ref))
-        })
-        .collect()
+    let mut params: Vec<(String, String)> = Vec::new();
+    for param in &view.params {
+        let mut ident = param_base(&param.name);
+        while GO_KEYWORDS.contains(&ident.as_str())
+            || GO_PREDECLARED.contains(&ident.as_str())
+            || taken.contains(&ident.as_str())
+            || params.iter().any(|(earlier, _)| *earlier == ident)
+        {
+            ident.push('_');
+        }
+        params.push((ident, emit.go_type(&param.type_ref)));
+    }
+    params
 }
+
+/// A parameter name as a Go identifier, before any escape: lower camel case (`min_hours` is
+/// `minHours`).
+pub(super) fn param_base(name: &str) -> String {
+    let pascal = name::exported(name);
+    let mut chars = pascal.chars();
+    chars
+        .next()
+        .map(|first| first.to_lowercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+/// Every predeclared Go identifier: a parameter of that name would shadow it in the method body,
+/// where a refusing stub returns `nil`.
+const GO_PREDECLARED: &[&str] = &[
+    "any",
+    "append",
+    "bool",
+    "byte",
+    "cap",
+    "clear",
+    "close",
+    "comparable",
+    "complex",
+    "complex128",
+    "complex64",
+    "copy",
+    "delete",
+    "error",
+    "false",
+    "float32",
+    "float64",
+    "imag",
+    "int",
+    "int16",
+    "int32",
+    "int64",
+    "int8",
+    "iota",
+    "len",
+    "make",
+    "max",
+    "min",
+    "new",
+    "nil",
+    "panic",
+    "print",
+    "println",
+    "real",
+    "recover",
+    "rune",
+    "string",
+    "true",
+    "uint",
+    "uint16",
+    "uint32",
+    "uint64",
+    "uint8",
+    "uintptr",
+];
 
 /// Every Go keyword, none of which can name a parameter.
 const GO_KEYWORDS: &[&str] = &[

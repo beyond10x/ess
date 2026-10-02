@@ -260,6 +260,7 @@ fn wire_file(
     emit.import("encoding/json");
     emit.import("fmt");
     emit.import("strconv");
+    emit.import("strings");
 
     let presents = |kind: CapabilityKind, declared: &QualifiedName| {
         plan.is_generated(kind, &declared.to_string())
@@ -850,19 +851,20 @@ fn decode_into(
     }
 }
 
-/// The helper that reads one primitive, and what a refusal says belongs there.
+/// The helper that reads one primitive, and what a refusal says belongs there — in the Rust
+/// target's words (`rust::wire::decode_primitive`), so the two servers refuse one value alike.
 fn decode_primitive(primitive: Primitive) -> (&'static str, &'static str) {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::Json => ("jsonAt", "any JSON value"),
         Primitive::String => ("textAt", "a string"),
-        Primitive::Boolean => ("boolAt", "true or false"),
-        Primitive::Integer => ("integerAt", "a whole number"),
+        Primitive::Boolean => ("boolAt", "a boolean"),
+        Primitive::Integer => ("integerAt", "an integer"),
         Primitive::Bytes => ("bytesAt", "base64-encoded bytes"),
-        Primitive::Decimal => ("textAt", "a decimal as a string, such as `10.50`"),
-        Primitive::Timestamp => ("textAt", "an RFC 3339 timestamp as a string"),
-        Primitive::Duration => ("textAt", "an ISO 8601 duration as a string, such as `P30D`"),
-        Primitive::Uuid => ("textAt", "a UUID as a string"),
+        Primitive::Decimal => ("decimalAt", "a decimal string"),
+        Primitive::Timestamp => ("textAt", "an RFC 3339 instant"),
+        Primitive::Duration => ("textAt", "an ISO 8601 duration"),
+        Primitive::Uuid => ("uuidAt", "a UUID"),
     }
 }
 
@@ -1795,9 +1797,59 @@ func integerAt(value any, at string, expected string) (int64, error) {
 	}
 	held, err := number.Int64()
 	if err != nil {
-		return 0, DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", number.String())}
+		return 0, DecodeError{At: at, Expected: expected, Found: "the number " + number.String()}
 	}
 	return held, nil
+}
+
+// decimalAt is the decimal string at this path, in the published pattern: an optional -, digits
+// without a leading zero, then an optional . and digits. Refused otherwise, as the contract refuses
+// it, rather than handed on as a decimal nobody can read.
+func decimalAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	whole, fraction, fractional := strings.Cut(strings.TrimPrefix(text, "-"), ".")
+	if !digitsOnly(whole) || (len(whole) > 1 && whole[0] == '0') || (fractional && !digitsOnly(fraction)) {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// uuidAt is the UUID at this path, in the published pattern: the canonical hyphenated form, in
+// either case.
+func uuidAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	valid := len(text) == 36
+	for index := 0; valid && index < len(text); index++ {
+		switch char := text[index]; {
+		case index == 8 || index == 13 || index == 18 || index == 23:
+			valid = char == '-'
+		default:
+			valid = (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')
+		}
+	}
+	if !valid {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// digitsOnly reports whether text is one or more ASCII digits.
+func digitsOnly(text string) bool {
+	if text == "" {
+		return false
+	}
+	for index := 0; index < len(text); index++ {
+		if text[index] < '0' || text[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // bytesAt is the base64-encoded bytes at this path.
