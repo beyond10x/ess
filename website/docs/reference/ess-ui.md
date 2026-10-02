@@ -1365,6 +1365,8 @@ Written like a composite with `component` naming the widget and `args` supplying
 - {step: substitute, detail: args.<param> in the body is replaced by the bound expression}
 - step: validate
   detail: the expanded nodes are checked like built-ins; findings are reported at <instance path>/body/<node name>
+- step: bound
+  detail: the expanded bodies of all uses in a document hold at most 100000 YAML values; the outermost use that passes the limit is refused (widget_expands)
 ```
 
 **Example**

@@ -341,6 +341,51 @@ fn a_chain_of_2000_widgets_is_checked_in_under_5_seconds() {
     assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
 }
 
+/// `w0` uses `w1` twice, `w1` uses `w2` twice, …: `2^depth` widget bodies once expanded.
+fn doubling_widgets(depth: usize) -> String {
+    let mut widgets = String::from("{");
+    for index in 0..depth {
+        let next = index + 1;
+        let _ = write!(
+            widgets,
+            "w{index}: {{summary: W, body: [{{name: a, component: w{next}}}, \
+             {{name: b, component: w{next}}}]}}, "
+        );
+    }
+    let _ = write!(
+        widgets,
+        "w{depth}: {{summary: W, body: [{{name: leaf, primitive: text, text: T}}]}}}}"
+    );
+    doc(&[
+        ("widgets", &widgets),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById, \
+              children: [{name: use, component: w0}]}]}}",
+        ),
+    ])
+}
+
+#[test]
+fn a_widget_doubling_at_each_of_64_levels_is_refused_in_under_5_seconds() {
+    let started = std::time::Instant::now();
+    let report = report(&doubling_widgets(64));
+    let took = started.elapsed();
+    let finding = trips_in(
+        &report,
+        "widget_expands",
+        "pages/p/sections/summary/children/use",
+    );
+    assert!(finding.message.contains("exceeds"), "{finding:?}");
+    assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
+}
+
+#[test]
+fn a_widget_doubling_at_each_of_8_levels_is_checked_clean() {
+    let report = report(&doubling_widgets(8));
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
 #[test]
 fn primitive_props() {
     let both = page(
