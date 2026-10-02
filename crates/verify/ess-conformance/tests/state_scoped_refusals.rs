@@ -462,7 +462,7 @@ fn issue_201_each_mutant_fails_a_ship_order_scenario() {
 }
 
 #[test]
-fn issue_201_the_interpreted_target_names_the_held_state_guard_it_does_not_evaluate() {
+fn issue_201_the_interpreted_target_executes_held_state_refusals_and_snapshots() {
     let model = ir(SHIP);
     let result = ess_conformance::synthesize::synthesize(&model);
     let target = ess_conformance::interpret::Interpreted::for_model(model);
@@ -476,7 +476,24 @@ fn issue_201_the_interpreted_target_names_the_held_state_guard_it_does_not_evalu
             .iter()
             .find(|run| run.scenario.to_string() == id)
             .unwrap_or_else(|| panic!("{id} is run"));
-        assert_eq!(run.status, Status::Unsupported, "{id}: {:?}", run.checks);
+        assert_eq!(run.status, Status::Passed, "{id}: {:?}", run.checks);
+        assert!(run
+            .checks
+            .iter()
+            .all(|check| check.status == Status::Passed));
+        assert_eq!(
+            run.checks
+                .iter()
+                .filter(|check| check.about == "subject snapshot demo.ship.Orders")
+                .count(),
+            2,
+            "{id}: before and after snapshots must both execute: {:?}",
+            run.checks
+        );
+        assert!(run
+            .checks
+            .iter()
+            .any(|check| check.about == "no direct events"));
     }
 }
 

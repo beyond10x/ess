@@ -80,7 +80,8 @@ type Target interface {
 The methods answer the same questions as the TypeScript runner's; its
 [method table](./typescript.md#what-your-implementation-provides) says what each one answers. A
 method the implementation cannot answer returns `essconform.ErrUnsupported`, and the scenario is
-reported as skipped. Specifications that declare more ask for optional interfaces a target may
+reported as `unsupported` in report/2; the default strict run fails. Ordinary target errors remain
+`error` and make execution inconclusive. Specifications that declare more ask for optional interfaces a target may
 also implement: `EntitySetupTarget`, `AbsentInputTarget`, `RepeatedOutcomeTarget`,
 `PeriodicTarget`, `ClockReadingTarget` and `InterleavedTarget`. The generated `README.md` names
 the ones its suite needs.

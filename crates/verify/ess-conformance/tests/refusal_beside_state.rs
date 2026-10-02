@@ -722,11 +722,10 @@ mod interpreter {
         }
     }
 
-    /// The interpreter reads no view yet, so the scenario stops at its first view read, which is the
-    /// arranged half's observation: everything before it — the plain send and its boundary
-    /// sends — passes, and nothing fails.
+    /// The interpreter executes the sends and the observations that prove a refusal leaves
+    /// the configured state unchanged.
     #[test]
-    fn the_plain_sends_pass_against_the_interpreted_model_up_to_the_first_view_read() {
+    fn the_plain_sends_and_view_observations_pass_against_the_interpreted_model() {
         let ir = ir(ROTATE);
         let result = ess_conformance::synthesize::synthesize(&ir);
         let admitted =
@@ -739,19 +738,21 @@ mod interpreter {
             .iter()
             .find(|run| run.scenario.to_string() == TOO_SHORT)
             .expect("the refusal scenario ran");
-        let (read, before) = run
+        assert_eq!(run.status, Status::Passed, "{:?}", run.checks);
+        assert!(run
             .checks
             .iter()
-            .position(|check| check.status != Status::Passed)
-            .map(|at| (&run.checks[at], &run.checks[..at]))
-            .expect("the interpreter reads no view");
+            .all(|check| check.status == Status::Passed));
+        assert!(run
+            .checks
+            .iter()
+            .any(|check| check.about.starts_with("view ")));
+        assert!(run
+            .checks
+            .iter()
+            .any(|check| check.about.starts_with("subject snapshot ")));
         assert!(
-            read.status == Status::Unsupported && read.about.starts_with("reading `"),
-            "{:?}",
             run.checks
-        );
-        assert!(
-            before
                 .iter()
                 .any(|check| check.about == "outcome demo.secrets.RotateSecret/too-short"),
             "{:?}",

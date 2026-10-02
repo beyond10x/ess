@@ -45,7 +45,7 @@ docs/index.md — 4140 byte(s)
 6 artifact(s), written to target/projections
 $ ess generate --path examples/billing --kind site --out target/site
 …
-index.html — 11793 byte(s)
+index.html — 12262 byte(s)
 …
 9 artifact(s), written to target/site
 ```

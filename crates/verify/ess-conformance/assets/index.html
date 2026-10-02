@@ -125,7 +125,7 @@
 
   <main>
     <section>
-      <h2 v-if="oneTimePolicies.length">One-time response source obligations</h2>
+      <h2 v-if="(oneTimePolicies || []).length">One-time response source obligations</h2>
       <p v-for="policy in oneTimePolicies" :key="policy.command + '/' + policy.outcome" class="p">
         {{ policy.command }} / {{ policy.outcome }}; fields {{ policy.fields.join(', ') }}.
         This policy applies even when no selected scenario exercises it. Values may be disclosed
