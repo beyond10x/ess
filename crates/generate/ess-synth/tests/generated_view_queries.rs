@@ -411,7 +411,42 @@ fn assert_suite_passes(ir: &EssIr, binary: &Path, arguments: &[String]) {
         suite.scenarios.len()
     );
     assert_eq!(report.scenarios.len(), suite.scenarios.len());
+    assert_ties_rank_by_the_next_key(&target);
     drop(target);
+}
+
+/// `order_by: [owner desc, kind]` ranks rows that tie on `owner` by `kind`. The synthesized suite
+/// gives every row its own owner, so its `ranked` check never reaches the second key; these rows
+/// tie, and arrive in the order the second key must reverse.
+fn assert_ties_rank_by_the_next_key(target: &Harnessed) {
+    let answer = target.ask(&serde_json::json!({"op": "reset"}));
+    assert_eq!(answer["ok"], serde_json::json!(true), "{answer}");
+    for (owner, kind) in [("same", "Fix"), ("other", "Build"), ("same", "Build")] {
+        let answer = target.ask(&serde_json::json!({
+            "op": "command",
+            "command": "ledger.work.CreateTask",
+            "input": {"owner": owner, "kind": kind},
+        }));
+        assert_eq!(answer["outcome"], "created", "{answer}");
+    }
+    let answer = target.ask(&serde_json::json!({"op": "view", "view": "ledger.work.TasksByOwner"}));
+    let ranked: Vec<(String, String)> = answer["rows"]
+        .as_array()
+        .unwrap_or_else(|| panic!("rows: {answer}"))
+        .iter()
+        .map(|row| {
+            (
+                row["owner"].as_str().unwrap_or_default().to_owned(),
+                row["kind"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    let expected = [("same", "Build"), ("same", "Fix"), ("other", "Build")]
+        .map(|(owner, kind)| (owner.to_owned(), kind.to_owned()));
+    assert_eq!(
+        ranked, expected,
+        "owner descending, then kind ascending among equal owners"
+    );
 }
 
 /// `story:go-generated-behaviour`: the generated Go queries — projections, filters, an order and

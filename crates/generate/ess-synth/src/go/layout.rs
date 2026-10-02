@@ -33,6 +33,14 @@ use super::refusal::TargetRefusals;
 /// path, and a plausible-looking path would be the one thing they forget to change.
 pub const MODULE_HOST: &str = "example.invalid";
 
+/// The name of every standard-library package a generated file may import, which no domain or
+/// component package may take: Go spells an import by its last path element, so a domain package
+/// `sort` and the standard `sort` would be one name twice in any file importing both.
+const STANDARD_IMPORTS: &[&str] = &[
+    "base64", "big", "bytes", "embed", "fmt", "http", "io", "json", "net", "reflect", "sort",
+    "strconv", "strings", "sync", "time", "utf8",
+];
+
 /// One Go package of the generated module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Package {
@@ -182,6 +190,9 @@ impl Layout {
             invariant.name.clone(),
         ]
         .into();
+        // And every standard-library package a generated file may import beside a domain or a
+        // component: a domain called `sort` would otherwise be a second `sort` in that file.
+        taken.extend(STANDARD_IMPORTS.iter().map(|name| (*name).to_owned()));
         let mut domains = BTreeMap::new();
         for (domain, ident) in domain_idents(ir) {
             let name = repair(&mut taken, ident, "domain");

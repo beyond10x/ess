@@ -360,7 +360,12 @@ fn rename_helpers(body: &str, reserved: &BTreeSet<String>) -> String {
                 end += 1;
             }
             let word = &body[index..end];
-            let qualified = index > 0 && bytes[index - 1] == b'.' || bytes.get(end) == Some(&b'.');
+            // A word after one `.` is a selector or follows a package qualifier; after the variadic
+            // `...` it is a type, and a helper.
+            let selected = index > 0
+                && bytes[index - 1] == b'.'
+                && !(index >= 3 && &body[index - 3..index] == "...");
+            let qualified = selected || bytes.get(end) == Some(&b'.');
             match renamed.get(word) {
                 Some(replacement) if !qualified => out.push_str(replacement),
                 _ => out.push_str(word),

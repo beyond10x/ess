@@ -10,8 +10,7 @@
 // This module is that half, and it is deliberately *not* a translation of
 // `examples/gatepass-realization/`. Both were written from the same specification, in the language
 // of the tree each links into, and the demonstration is that the two answer the same requests the
-// same way — except one: the Rust realization's hand-written AdmitVisitor stores the admitted badge
-// and the generated Go one does not, until the model's `admitted` outcome declares `sets: {badge}`.
+// same way: the admitted badge included, which the model's `admitted` outcome now sets.
 //
 // # No clock, no randomness
 //

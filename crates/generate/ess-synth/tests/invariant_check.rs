@@ -23,8 +23,8 @@ use ess_synth::{synthesize_for, Synthesis, Target};
 /// text length, Boolean equality, truthiness of a number and of a Boolean, `all`/`any`/`not`,
 /// `Duration`, `Uuid` and `Bytes` equality, `defined` over an `Optional` aggregate and over
 /// `Json`, an `Optional` scalar, a list's count and position, `forall` and `exists` over a list
-/// and a map, a nested quantifier reading both binders, and `state`. A second entity declares
-/// `never`.
+/// and a map, a nested quantifier reading both binders, `not` around an `all` that reads an
+/// absent value, and `state`. A second entity declares `never`.
 const MODEL: &str = r#"format: ess/16
 system: demo
 version: v1
@@ -112,6 +112,7 @@ entities:
       - tags.count <= 3
       - exists: {in: tags, as: tag, that: tag >= 10}
       - forall: {in: lines, as: line, that: {exists: {in: tags, as: tag, that: tag >= line.qty}}}
+      - {not: {all: [note == x, count >= 0]}}
       - any: [state == Open, window.high < 100]
     lifecycle:
       initial: Open
@@ -262,6 +263,7 @@ fn main() {
         ("33", with(|v| v.tags = BTreeMap::from([(text("a"), 1)]))),
         ("33", with(|v| v.tags.clear())),
         ("34", with(|v| v.lines[1].qty = 11)),
+        ("35", with(|v| v.note = Some(text("x")))),
         ("none", with(|v| v.window.high = 200)),
         ("2", with(|v| { v.count = -1; v.lines[1].qty = 0; })),
     ];
@@ -419,6 +421,7 @@ func main() {
 		{"33", with(func(v *ledger.AccountData) { v.Tags = map[string]int64{"a": 1} })},
 		{"33", with(func(v *ledger.AccountData) { v.Tags = map[string]int64{} })},
 		{"34", with(func(v *ledger.AccountData) { v.Lines[1].Qty = 11 })},
+		{"35", with(func(v *ledger.AccountData) { v.Note = text("x") })},
 		{"none", with(func(v *ledger.AccountData) { v.Window.High = 200 })},
 		{"2", with(func(v *ledger.AccountData) { v.Count = -1; v.Lines[1].Qty = 0 })},
 	}
@@ -517,7 +520,7 @@ fn every_invariant_form_is_checked_by_the_generated_data_type() {
         .iter()
         .map(|invariant| invariant.statement.clone())
         .collect();
-    assert_eq!(statements.len(), 36, "{statements:#?}");
+    assert_eq!(statements.len(), 37, "{statements:#?}");
     let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
 
     let root = scratch("harness");
@@ -639,7 +642,7 @@ fn every_invariant_form_is_checked_by_the_go_data_type() {
         .iter()
         .map(|invariant| invariant.statement.clone())
         .collect();
-    assert_eq!(statements.len(), 36, "{statements:#?}");
+    assert_eq!(statements.len(), 37, "{statements:#?}");
     let synthesis = synthesize_for(&ir, Target::Go).expect("the fixture synthesizes to Go");
     let domain = &synthesis.artifacts["types/ledger/ledger.go"].contents;
     assert!(
