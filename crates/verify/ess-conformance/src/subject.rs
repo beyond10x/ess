@@ -14,7 +14,8 @@ pub struct SubjectShape {
     pub identity_field: String,
     /// All declared fields of this projection, including state where projected.
     pub fields: Vec<Field>,
-    /// Exactly the reachable finite nominal declarations.
+    /// Exactly the reachable finite nominal structural declarations. Newtype invariants are
+    /// not observation authority: admission checks representation, not invariant satisfaction.
     pub declarations: BTreeMap<QualifiedName, Declaration>,
 }
 #[derive(serde::Deserialize)]
@@ -45,7 +46,11 @@ impl SubjectShape {
             .collect();
         let shape = Self {
             identity_field: identity.into(),
-            declarations: crate::replay::declarations_for(ir, &fields)?,
+            declarations: crate::replay::declarations_for(
+                ir,
+                &fields,
+                crate::replay::DeclarationProfile::CompleteSubject,
+            )?,
             fields,
         };
         shape.validate()?;
@@ -85,7 +90,8 @@ impl SubjectShape {
             _ => false,
         }
     }
-    /// Require every declared value; extra row keys remain part of exact comparison.
+    /// Require every declared structural value; extra row keys remain part of exact comparison.
+    /// This does not evaluate source invariants erased from the structural declarations.
     pub fn admit_row(&self, row: &BTreeMap<String, Node>) -> Result<(), String> {
         self.validate()?;
         let mut bytes = 0;

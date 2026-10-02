@@ -218,9 +218,19 @@ legacy snapshot pair unchanged, including in mixed upgraded suites.
 Before callbacks, refuse omitted/malformed descriptors, invalid identities,
 unknown or unrelated declarations, unsupported recursive observers, mismatched
 pairs/views/identity binding and new steps mislabeled as an old suite. The exact
-complete-subject profile shares retained-result resource and type bounds;
-Decimal/Binary64, invariant and reading observers refuse synthesis recursively.
+complete-subject profile shares retained-result resource and finite structural type bounds;
+Decimal/Binary64 and reading observers refuse synthesis recursively. Newtype wrappers in a
+complete subject may carry source invariants: this observation compares their actual represented
+values exactly and checks their structural type, without claiming to evaluate those invariants.
+Other constrained declarations still refuse. Retained-result response observations retain their
+separate stricter profile and refuse constrained declarations, including newtypes, recursively.
 Observe lifecycle state at its declared enum type where projected.
+
+This subject-only admission uses the existing `Declaration::Newtype { of }` descriptor unchanged,
+including nested wrappers and Optional fields. That descriptor has always described structural
+representation and carries no invariant authority. Existing readers already admit and compare
+these values; no field, step, suite meaning or format version changes. A source invariant remains
+a separate obligation and is not established by a passing complete-subject equality check.
 
 Validate each selected actual row against the same retained descriptor before
 capturing it and before comparing its replacement. Required fields must exist

@@ -114,7 +114,7 @@ impl Observation {
             .iter()
             .map(|f| Field::new(&f.name, crate::accessor::unresolve(&f.type_ref)))
             .collect();
-        let declarations = declarations_for(ir, &fields)?;
+        let declarations = declarations_for(ir, &fields, DeclarationProfile::RetainedResult)?;
         let command = CommandRef::new(command.name.clone());
         let result = Self {
             snapshot: InstanceName::new("retained-result").map_err(|e| e.to_string())?,
@@ -157,9 +157,18 @@ impl Observation {
     }
 }
 
+/// Which observation the structural declaration authority will serve. A complete subject
+/// compares actual represented values; it does not certify a newtype's source invariants.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeclarationProfile {
+    RetainedResult,
+    CompleteSubject,
+}
+
 pub(crate) fn declarations_for(
     ir: &EssIr,
     fields: &[Field],
+    profile: DeclarationProfile,
 ) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
     let mut pending: Vec<_> = fields
         .iter()
@@ -174,7 +183,9 @@ pub(crate) fn declarations_for(
             return Err("replay declaration limit".into());
         }
         let ty = ir.types().get(&name).ok_or("missing response type")?;
-        if ty.reading.is_some() || ty.body.is_constrained() {
+        let structural_newtype = profile == DeclarationProfile::CompleteSubject
+            && matches!(ty.body, ResolvedBody::Newtype { .. });
+        if ty.reading.is_some() || (ty.body.is_constrained() && !structural_newtype) {
             return Err("replay response invariant/reading observer is unsupported".into());
         }
         let body = match &ty.body {

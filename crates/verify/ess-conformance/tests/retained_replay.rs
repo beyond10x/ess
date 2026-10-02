@@ -1882,3 +1882,295 @@ fn adversary_r2_complete_rows_validate_union_payload_and_exact_integer_bounds() 
         assert_eq!(shape.admit_row(&row).is_ok(), valid, "{payload}");
     }
 }
+
+mod issue_308 {
+    use super::*;
+    use ess_conformance::subject::SubjectShape;
+
+    const TYPES: &str = r"types:
+  - name: retained.core.BaseId
+    kind: newtype
+    of: String
+    invariants: [value == '00000000-0000-4000-8000-000000000037']
+  - name: retained.core.RecordId
+    kind: newtype
+    of: retained.core.BaseId
+";
+    // This is the pre-existing structural descriptor language. No invariant authority is encoded.
+    const DESCRIPTOR: &str = r#"{
+      "identity_field":"record_id",
+      "fields":[
+        {"name":"record_id","type":"retained.core.RecordId"},
+        {"name":"value","type":"String"},
+        {"name":"optional","type":"Optional<retained.core.RecordId>"},
+        {"name":"stamp","type":"Timestamp"},
+        {"name":"state","type":"retained.core.Record.State"}
+      ],
+      "declarations":{
+        "retained.core.BaseId":{"kind":"newtype","of":"String"},
+        "retained.core.RecordId":{"kind":"newtype","of":"retained.core.BaseId"},
+        "retained.core.Record.State":{"kind":"enum","variants":["Committed"]}
+      }
+    }"#;
+
+    fn model() -> String {
+        MODEL
+            .replace("entities:\n", &format!("{TYPES}entities:\n"))
+            .replace("{name: record_id, type: Uuid}", "{name: record_id, type: retained.core.RecordId}")
+            .replace("      - {name: value, type: String}", "      - {name: value, type: String}\n      - {name: optional, type: Optional<retained.core.RecordId>}")
+    }
+
+    fn compiled(source: &str) -> ess_compiler::ir::EssIr {
+        let spec = Specification::assemble([(
+            Source::new("constrained-subject.yaml"),
+            RawSpecFile::parse(source).unwrap(),
+        )])
+        .unwrap();
+        compile(&spec, &SourceMap::new()).unwrap()
+    }
+
+    fn synthesize(source: &str) -> ess_conformance::synthesize::Synthesis {
+        ess_conformance::synthesize::synthesize(&compiled(source))
+    }
+
+    fn suite() -> ess_conformance::ConformanceSuite {
+        let result = synthesize(&model());
+        assert!(result.refusals.is_empty(), "{:#?}", result.refusals);
+        let mut suite = result.suite;
+        suite
+            .scenarios
+            .retain(|id, _| id.to_string().ends_with("/outcome/replayed"));
+        assert_eq!(
+            suite.scenarios.len(),
+            1,
+            "the actual retained retry must exist"
+        );
+        suite
+    }
+
+    fn shape(suite: &ess_conformance::ConformanceSuite) -> &SubjectShape {
+        suite
+            .scenarios
+            .values()
+            .flat_map(|scenario| &scenario.steps)
+            .find_map(|step| match step {
+                ScenarioStep::SnapshotCompleteSubject { shape, .. } => Some(shape),
+                _ => None,
+            })
+            .expect("a complete typed snapshot, not a legacy downgrade")
+    }
+
+    fn row() -> BTreeMap<String, Node> {
+        serde_json::from_str(r#"{"record_id":"00000000-0000-4000-8000-000000000037","value":"actual document","stamp":"2026-09-22T01:02:03Z","state":"Committed"}"#).unwrap()
+    }
+
+    #[test]
+    fn issue_308_constrained_identity_has_an_exact_subject_snapshot() {
+        let suite = suite();
+        let steps = &suite.scenarios.values().next().unwrap().steps;
+        assert_eq!(
+            steps
+                .iter()
+                .filter(|step| matches!(step, ScenarioStep::SnapshotCompleteSubject { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            steps
+                .iter()
+                .filter(|step| matches!(step, ScenarioStep::ExpectCompleteSubjectUnchanged { .. }))
+                .count(),
+            1
+        );
+        assert!(!steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::SnapshotSubject { .. } | ScenarioStep::ExpectSubjectUnchanged { .. }
+        )));
+        assert_eq!(suite.provenance.suite_version.major(), 12);
+        assert_eq!(
+            serde_json::to_value(shape(&suite)).unwrap(),
+            serde_json::from_str::<serde_json::Value>(DESCRIPTOR).unwrap()
+        );
+        AdmittedSuite::from_json(&suite.to_canonical_json().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn issue_308_constrained_identity_snapshot_detects_changed_row() {
+        let admitted = AdmittedSuite::from_suite(&suite()).unwrap();
+        for mode in ["valid", "mutated-subject"] {
+            let target = Backend {
+                mode,
+                calls: Cell::new(0),
+                queries: Cell::new(0),
+            };
+            let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+            assert_eq!(
+                report.scenarios[0].status,
+                if mode == "valid" {
+                    Status::Passed
+                } else {
+                    Status::Failed
+                },
+                "{mode}: {:?}",
+                report.scenarios[0]
+            );
+            assert_eq!((target.calls.get(), target.queries.get()), (2, 2));
+        }
+        for (phase, fault) in [
+            (1, "missing-value"),
+            (1, "wrong-stamp"),
+            (2, "missing-state"),
+            (2, "wrong-state"),
+        ] {
+            let target = CompleteRowsBackend {
+                inner: Backend {
+                    mode: "valid",
+                    calls: Cell::new(0),
+                    queries: Cell::new(0),
+                },
+                phase,
+                fault,
+            };
+            let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+            assert_eq!(
+                report.scenarios[0].status,
+                Status::Failed,
+                "{phase}/{fault}"
+            );
+            assert_eq!(
+                target.inner.calls.get(),
+                phase,
+                "malformed original must stop before retry"
+            );
+        }
+    }
+
+    #[test]
+    fn issue_308_nested_newtype_representation_is_preserved() {
+        let suite = suite();
+        let shape = shape(&suite);
+        let original = row();
+        shape.admit_row(&original).unwrap();
+        for value in [Node::Null, original["record_id"].clone()] {
+            let mut present = original.clone();
+            present.insert("optional".into(), value);
+            shape.admit_row(&present).unwrap();
+        }
+        for field in ["record_id", "optional"] {
+            for malformed in [
+                Node::Bool(false),
+                serde_json::from_str(r#"{"value":"wrapped"}"#).unwrap(),
+            ] {
+                let mut invalid = original.clone();
+                invalid.insert(field.into(), malformed);
+                assert!(
+                    shape.admit_row(&invalid).is_err(),
+                    "{field} keeps its scalar wire shape"
+                );
+            }
+        }
+        for field in ["record_id", "value", "stamp", "state"] {
+            let mut incomplete = original.clone();
+            incomplete.remove(field);
+            assert!(shape.admit_row(&incomplete).is_err(), "missing {field}");
+        }
+    }
+
+    #[test]
+    fn issue_308_existing_descriptor_reader_is_structural_and_bounded() {
+        // This test also passes on the old production code: the existing reader admits precisely
+        // the descriptor now emitted for the constrained source. No new reader meaning is needed.
+        let shape: SubjectShape = serde_json::from_str(DESCRIPTOR).unwrap();
+        shape.admit_row(&row()).unwrap();
+        let mut structurally_valid = row();
+        structurally_valid.insert(
+            "record_id".into(),
+            Node::Text("outside the source invariant".into()),
+        );
+        shape
+            .admit_row(&structurally_valid)
+            .expect("structural observation makes no invariant-validation claim");
+        for primitive in ["Decimal", "Binary64"] {
+            let descriptor =
+                DESCRIPTOR.replace("\"of\":\"String\"", &format!("\"of\":\"{primitive}\""));
+            assert!(
+                serde_json::from_str::<SubjectShape>(&descriptor).is_err(),
+                "{primitive}"
+            );
+        }
+        let recursive =
+            DESCRIPTOR.replace("\"of\":\"String\"", "\"of\":\"retained.core.RecordId\"");
+        assert!(serde_json::from_str::<SubjectShape>(&recursive).is_err());
+        let mut too_many = shape.clone();
+        for index in 0..257 {
+            too_many.fields.push(ess_domain::Field::new(
+                format!("extra_{index}"),
+                "String".parse().unwrap(),
+            ));
+        }
+        assert!(too_many.validate().is_err());
+        let mut oversized = row();
+        oversized.insert("extra".into(), Node::Text("x".repeat(1_048_577)));
+        assert!(shape.admit_row(&oversized).is_err());
+        let mut too_deep = shape;
+        let mut nested: ess_domain::TypeRef = "String".parse().unwrap();
+        for _ in 0..130 {
+            nested = ess_domain::TypeRef::Optional(Box::new(nested));
+        }
+        too_deep.fields.push(ess_domain::Field::new("deep", nested));
+        assert!(too_deep.validate().is_err());
+    }
+
+    #[test]
+    fn issue_308_retained_response_constraints_and_readings_still_refuse() {
+        let response = model().replace(
+            "{name: revision_id, type: Uuid}",
+            "{name: revision_id, type: retained.core.RecordId}",
+        );
+        let ir = compiled(&response);
+        let command = ir
+            .commands()
+            .values()
+            .find(|command| command.name.to_string() == "retained.core.Seed")
+            .unwrap();
+        let replay = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.replays.is_some())
+            .unwrap();
+        let refusal = ess_conformance::replay::Observation::of(
+            &ir,
+            command,
+            replay,
+            "actual-record".parse().unwrap(),
+        )
+        .expect_err("the separate retained-response profile must remain strict");
+        assert!(
+            refusal.contains("invariant/reading observer is unsupported"),
+            "{refusal}"
+        );
+        let reading = model().replace("    of: String\n", "    of: String\n    reading:\n      encoding: offset_date_time_text\n      origins: [{role: producer_process, offset: encoded_offset}]\n");
+        for (kind, source) in [
+            ("retained response", response),
+            ("subject reading", reading),
+        ] {
+            let result = synthesize(&source);
+            assert!(!result.refusals.is_empty(), "{kind}");
+            assert!(
+                result.refusals.iter().any(|refusal| refusal
+                    .to_string()
+                    .contains("invariant/reading observer is unsupported")),
+                "{kind}: {:?}",
+                result.refusals
+            );
+            assert!(
+                !result
+                    .suite
+                    .scenarios
+                    .keys()
+                    .any(|id| id.to_string().ends_with("/outcome/replayed")),
+                "{kind}"
+            );
+        }
+    }
+}
