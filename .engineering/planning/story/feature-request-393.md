@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#393
 relations:
 - serves: vision:O2
+- decomposes: epic:message-contract-clients
 revision: 1
 ---
 ## Outcome
