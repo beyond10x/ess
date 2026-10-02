@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 5
+revision: 7
 ---
 ## Authority and delivery
 
@@ -55,3 +55,17 @@ Operator answered on 2026-10-03: "Keep the existing ess/21 bundle; hold this PR 
 The coordinator created managed ess-serial-baseline-20261003 at1ff305685, built ess-cli with debug0/jobs2/locked in that tree's own target (exit0,4m22s), and synthesized examples/billing and examples/gatepass for Rust and Go to `$HOME/.cache/uilab-todo/serial-20261003/baseline/reference`. All4 references matched their committed main fixture trees with diff-qr excluding .ess-output. The baseline executable is retained privately as baseline/ess-main. Its1.2GiB target was removed with cargo clean; the helper tree was clean, its own lease ended, and managed retirement was reviewed. References are suitable for official output adopt; no fixture copying or ownership bypass is permitted. Current-main comparison tests already exclude .ess-output, so retain official ownership metadata.
 
 The older w4 manager retry still returns worktree-dirty even after the remaining empty target directories were removed; repeated archive replacement preserves each state but did not complete retirement. Keep ess-w4-ui-tui-app retained and report the manager refusal. No manual checkout removal is authorized. w5/w6 cleanup succeeded. Historical standalone consumer rust-target caches under the original session scratch were removed with cargo clean after confirming no session process used them; source/log/report evidence remains. The surrounding find traversal printed missing-directory notices after cargo removed those targets (wrapper exit1); individual cargo removals completed. This is resource cleanup, not a test result.
+
+## Review continuity and comparative proof
+
+The first adversary's unchanged publication copy was recreated through AEP on this integration line as review-result:served-store-and-entry-adversary-pass-1-20261002. It describes original candidate d58db28, not the newer implementation. Its finding was fixed in preserved43fb9a25; the recovered current implementation uses a different module arrangement and now passes recovered controls. Keep this distinction explicit. The final second pass will attack the newly frozen corrected candidate; do not claim the earlier review covers its new code, and do not add a third attack after that pass.
+
+Exact-main CLI synthesized the same served-notes fixture used by the current unit: Rust23 artifacts, Go16 artifacts, both16 generated capabilities and0 obligations/refusals. Both entry paths were absent (explicit filesystem assertions passed). Logs: baseline/notes-{rust,go}.log in assigned scratch. Corrected unit acceptance now reports30 passed,0 failed,0 ignored, including actual generated executable operation, compared with initial25 passed. This establishes new no-handwritten-server behavior against main; final frozen bytes still require the remaining package checks and adversary.
+
+Coordinator inspected the three legacy assertion corrections. Caller/generation/external expressions now pin the fallible try-call and propagation syntax while preserving other error-field assertions. Single-crate feature assertion pins exactly dep:clap/uuid/time. The independent planned-stub reader excludes only the exact asserted dynamic unmet_context helper, bounds literal-source scans to each struct literal, and preserves the four-entry plan/stub equality check. These are accepted companion-seam contract updates, not removed acceptance obligations.
+
+## Completed predecessor cleanup correction
+
+The retained w4 checkout was not merely empty directories. Filesystem inspection found two stale Unix sockets under target/review-boundaries-17/authored-discovery/fixtures/181773-11: socket-config/ess-inputs.yaml and bad/socket. The creating PID181773 was absent and ss -xap showed no active matching sockets. After deleting exactly those disposable socket entries and then empty target directories, the manager's dry run reported ess-w4-ui-tui-app eligible. Exact-id gc apply reported removed; the path was verified absent. This corrects the earlier incomplete empty-directory inference. Managed archives preserve the prior states.
+
+The helper ess-serial-baseline-20261003 was also removed through managed GC after its reference outputs and executable were retained outside the checkout. The three predecessor branches unit/ui-tui-app-generator, unit/go-generated-behaviour and unit/served-view-params each passed merge-base --is-ancestor against origin/main, then git branch -d deleted exactly those branches. No unrelated checkout or branch was removed. All six recovered predecessor worktrees w2 through w7 are now retired; the separately named integration checkout and current serial unit remain active.
