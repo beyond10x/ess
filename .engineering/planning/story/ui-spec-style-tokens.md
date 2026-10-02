@@ -8,7 +8,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
 - depends_on: story:ui-spec-schema
-revision: 1
+scope:
+- confidence: cited
+  path: crates/ui/ess-ui
+revision: 2
 ---
 ## Outcome
 

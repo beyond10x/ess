@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 3
+revision: 5
 ---
 ## Intake
 
@@ -29,39 +29,39 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #356 | ess-ui/1 TUI: record-tab forms and header actions are not rendered or drivable; ess ui test cannot address nested rows | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #355 | ess-ui/1: switch_to drops the current page params | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #354 | ess-ui/1: no live on composites in tabs or on header nodes, and a header title cannot read the record | Pending verification and fit review; no completion claim. |
-| #353 | ess-ui/1: a literal string widget argument is evaluated as an expression (renders false) | Queued candidate claims closure: PR #381, PR #369. Not shipped; preserve issue until accepted evidence. |
+| #353 | ess-ui/1: a literal string widget argument is evaluated as an expression (renders false) | PR369 and381 contain different fixes; preserve unique regression coverage and resolve literal semantics in consolidated UI candidate before closure. |
 | #352 | ess-ui/1: graph_editor takes nodes and edges from one read; no separate node and edge views | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #351 | ess-ui/1: group_by orders groups by data order, not the enum or a declared order | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #348 | ess-ui/1: the TUI and React format integers differently (1840 vs 1,840), so a text assertion passes in only one | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #347 | Conformance suite: expect_not_granted cannot check unpublished events, since no step exposes the target's event log | Pending verification and fit review; no completion claim. |
 | #346 | ess ui test: expect_command compares values as text, so 7500 and '7500' both pass | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
-| #342 | synthesize: a when_subject refusal beside a deletes: branch makes the closed and invariant-after scenarios assert the deleted row | Pending verification and fit review; no completion claim. |
+| #342 | synthesize: a when_subject refusal beside a deletes: branch makes the closed and invariant-after scenarios assert the deleted row | Locally fixed at 0bcabd5f1: three regressions red then green, 75 focused passes; independent source review found no concrete defect. Final grouped package verification/publication pending. |
 | #330 | ess-ui/1: options cannot name an enum declared in the model | Pending verification and fit review; no completion claim. |
-| #329 | ess-ui/1 TUI: dotted struct fields are sent flat and as text instead of nested and typed | Queued candidate claims closure: PR #345. Not shipped; preserve issue until accepted evidence. |
+| #329 | ess-ui/1 TUI: dotted struct fields are sent flat and as text instead of nested and typed | PR345 source merged locally into carrier381 tree; combined verification/publication pending. OriginalPR remains open until preservation published. |
 | #328 | ess-ui/1: a choice over a view takes its value from row.id; no way to name the value or label field | Partially delivered in 0.51.0 via PR #343; explicit value/label fields and standalone/filter choices remain open per PR body. |
 | #327 | ess ui test: choose acts only on filter-bar choices, not on form choice fields | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #326 | ess-ui/1: an inline confirm has no testable node path, and a confirm overlay without does closes without running the action (React) | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #325 | ess-ui/1 TUI: a burst of live refetch events re-reads once per event instead of once per batch | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
-| #324 | ess-ui/1 React: overlay params are evaluated without the opener's row in scope | Queued candidate claims closure: PR #344. Not shipped; preserve issue until accepted evidence. |
-| #323 | ess-ui/1 TUI: a form overlay submits only params.id, not its other params | Pending verification and fit review; no completion claim. |
+| #324 | ess-ui/1 React: overlay params are evaluated without the opener's row in scope | PR344 source merged locally into carrier381 tree; combined verification/publication pending. OriginalPR remains open until preservation published. |
+| #323 | ess-ui/1 TUI: a form overlay submits only params.id, not its other params | Accepted and active in UI consolidation batch; source confirms id-only overlay parameter copy. Fresh red regression and fix pending source integration. |
 | #322 | ess ui check does not resolve names inside pages (param types, form fields, bind keys, overlay params, columns) | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #320 | ess-ui/1: rows are keyed only by live.match, so a section without a channel over a view keyed by another field gets empty row keys | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #319 | Code targets: generate behaviours for commands guarded by when_related | Pending verification and fit review; no completion claim. |
 | #318 | Synthesized servers: generate an in-memory store and a server entry point for components reached by network | Pending verification and fit review; no completion claim. |
-| #317 | No scenario re-creates an identity after deletes: removed it, so a lookup that finds removed rows passes | Pending verification and fit review; no completion claim. |
+| #317 | No scenario re-creates an identity after deletes: removed it, so a lookup that finds removed rows passes | Accepted and active in synthesis batch after342; bounded create-delete-recreate witness implementation underway, no completion claim. |
 | #316 | Generated Rust creation ignores an identity the payload takes from the input | Pending verification and fit review; no completion claim. |
-| #314 | Go target: generate determined command behaviours, view queries, a store and a server main, as the Rust target does | Queued candidate claims closure: PR #384. Not shipped; preserve issue until accepted evidence. |
+| #314 | Go target: generate determined command behaviours, view queries, a store and a server main, as the Rust target does | Behavior/query/invariant portion queued in combined PR386; generated store/entry requirement remains in318. PR uses Refs, not automatic issue closure. |
 | #312 | Suites assume an empty target per scenario without saying so, and never act on a row as a different caller than arranged it | Pending verification and fit review; no completion claim. |
 | #311 | ess-ui/1 renderers cannot run against a live served component (fixtures only) | Queued in PRs #375/#377/#380; served view parameters in #386. Candidate failures tracked by task:consumer-server-gate-corrections-20261002. |
-| #309 | Aggregate with two group keys filled from one input is refused for a move the source does not have | Active: shared-input aggregate-key correction in grouped synthesis batch; story:feature-request-309. |
-| #308 | A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer | Pending verification and fit review; no completion claim. |
+| #309 | Aggregate with two group keys filled from one input is refused for a move the source does not have | Locally fixed at c28e3bdae: five regressions red then green, 300 package lanes/2145 passes; independent read-only review found no concrete defect. Awaiting grouped publication. |
+| #308 | A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer | Fit accepted with explicit subject-only structural observation design; retained-result constraint refusal stays separate. Scoped in AEP; implementation pending. |
 | #307 | when_subject over a field copied from a related row at creation finds no candidate (ESS-SYNTH-003, then ESS-SYNTH-004) | Pending verification and fit review; no completion claim. |
 | #305 | ess-ui/1: ess ui check accepts any Field.as value; the schema lists a closed set | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #304 | when_related through an Optional input: an absent reference takes the not-found branch instead of skipping the guard | Pending verification and fit review; no completion claim. |
 | #303 | ess-ui/1: three document faults ess ui check reports nothing on (duplicate nav entry, unknown shell, shell without page outlet) | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #300 | ess-ui/1: widget expansion is exponential in nesting depth; a valid document can hang ess ui check | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #299 | No read of a row selected by a filter (the instance with field == input.x) in a guard or in sets: | Pending verification and fit review; no completion claim. |
-| #298 | A Boolean input is not treated as a closed domain | Scoped gap: shared finite-domain proof excludes Boolean; implementation pending fit review and regression. |
+| #298 | A Boolean input is not treated as a closed domain | Fit accepted: bounded typed Boolean finite proof with default-semantics compatibility controls. Scoped in AEP; implementation pending. |
 | #297 | Conformance and exploration have no process restart, so identities minted from a counter that resets on restart go undetected | Pending verification and fit review; no completion claim. |
 | #296 | Retrofit: no way to declare intended behaviour that the implementation is known not to meet, and count it apart | Pending verification and fit review; no completion claim. |
 | #295 | mutate: emit-drop is stillborn on every outcome that emits one event, so single-event emission is never audited | Pending verification and fit review; no completion claim. |
@@ -70,7 +70,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #292 | check-history: a generated Timestamp makes every history uncheckable (check.model-undetermined, exit 2) | Pending verification and fit review; no completion claim. |
 | #291 | conform run --target interpreted answers wrong_state for an unknown identity where synthesis expects the declared not-found refusal | Queued candidate claims closure: PR #381. Not shipped; preserve issue until accepted evidence. |
 | #290 | ess verify diff: no way to fail on a breaking change; a narrowing exits 0 | Pending verification and fit review; no completion claim. |
-| #288 | An affects: filter over subject.<identity> validates but synthesis refuses it (ESS-SYNTH-001) | Pending verification and fit review; no completion claim. |
+| #288 | An affects: filter over subject.<identity> validates but synthesis refuses it (ESS-SYNTH-001) | Fit accepted: preserve symbolic captured subject identity in affects witnesses. Scoped in AEP; implementation pending. |
 | #286 | No read grant on a view: an actor's may: covers commands only | Pending verification and fit review; no completion claim. |
 | #285 | {related:} follows only one required reference: no read through an Optional reference or across two references (ESS-COMMAND-002) | Pending verification and fit review; no completion claim. |
 | #284 | ess ui check does not check that a page actor is granted the commands it binds | Pending verification and fit review; no completion claim. |
@@ -98,7 +98,6 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #200 | Feature request: a search parameter on a view (a view parameter as the operand of contains / starts_with) | Pending verification and fit review; no completion claim. |
 | #197 | Feature request: a refused command cannot declare the compensating change the service makes before answering | Pending verification and fit review; no completion claim. |
 | #194 | Feature request: a binding cannot invoke only when an Optional path is present (ESS-BINDING-015 leaves no way to say 'skip') | Pending verification and fit review; no completion claim. |
-
 
 ## Nonterminal AEP stories
 
@@ -267,3 +266,13 @@ Source audit covers all 87 stories initially lacking structured issue references
 | story:validate-sees-what-synthesize-refuses | active | stale-state candidate | Body cites #112; CHANGELOG.md:1408-1479 records 0.34.0 implementation. Verify whole acceptance and release before lifecycle closure. |
 | story:web-bridge-answers-like-http | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
 | story:wrong-state-witness-unknown-and-own-stored-guards | draft | consumer report awaiting current reproduction | Existing story body is the source; read-only audit 2026-10-02. This classification is not completion or a new deferral. |
+
+## Verified AEP resolutions
+
+- optional-guards-mean-what-they-say / issue93 moved to implemented after exact acceptance mapping, inspected actual historical red/green logs and verified containment in public0.51.0. Original intake row reflects prior active status; current artifact is authoritative.
+- list-and-text-guards-are-synthesized / issue94 moved to implemented after the same independent acceptance/release audit. This covers the four reported guards, not arbitrary list predicates.
+- go-numbers-compare-by-value /101 is released; original red-first chronology has not been located. No missing implementation inferred from missing historical evidence.
+- report-carries-passed-failed-skipped /110 is delivered through the documented report/2 design, preserving report/1. Exact requested report/1 field names did not ship; original red-first chronology unlocated.
+- specification-declares-its-ess-release /106 is released with versioned manifests/output state and later exact-pin delegation. Original warning/refusal behavior is superseded where delegation applies; original red-first chronology unlocated.
+
+Each source-backed disposition is recorded on its owning story. The latter three remain active for their process-evidence qualification, not because their released behavior needs another implementation or gate run.

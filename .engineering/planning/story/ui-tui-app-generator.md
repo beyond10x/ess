@@ -13,6 +13,8 @@ relations:
 - depends_on: story:ui-tui-live-binding
 scope:
 - confidence: cited
+  path: .github/workflows/ci.yml
+- confidence: cited
   path: crates/edge/ess-cli/src/ui.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/generate_ui_tui.rs
@@ -20,7 +22,7 @@ scope:
   path: crates/ui/ess-ui-tui/src/generate.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/lib.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:51Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:51Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}

@@ -7,6 +7,7 @@ title: Required security CI exceeds the historical scan limit
 relations:
 - blocks: task:consumer-backlog-20261002
 - blocks: task:consumer-server-gate-corrections-20261002
+- blocks: task:consumer-ui-consolidation-20261002
 revision: 1
 ---
 ## Blocked boundary

@@ -12,7 +12,24 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/finite.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/related_guard.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/subject_fact.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/finite_enum.rs
+- confidence: cited
+  path: docs/design/closed-enum-outcome-coverage.md
+- confidence: cited
+  path: website/docs/guides/specify/fields-and-invariants.md
+revision: 12
 ---
 ## Outcome
 
@@ -24,4 +41,25 @@ beyond10x/ess#298, from a downstream hardening run on ess 0.48.0; reproduced min
 
 ## Fit review
 
-Pending.
+1. Need: required Boolean input partitioned by pause == true and pause == false must validate without a default and produce typed executable witnesses. The existing issue reproduction introduces no syntax. finite.rs:49-65 excludes Boolean literals, :102-108 admits enum domains only, command.rs:2799-2807 defers only named roots, and witness.rs:477-482 emits text values.
+2. Class: gap in the existing finite proof, with a misleading uncovered-input diagnostic. docs/design/closed-enum-outcome-coverage.md:3-17 deliberately describes the initial enum-only fragment. Do not describe documented Boolean support as a regression.
+3. Existing idiom: one Boolean guard plus an unguarded default validates (command.rs:2738-2765), but does not prove the explicitly authored two-guard partition. Existing predicate vocabulary already supports Boolean comparisons and truthiness; no new predicate syntax.
+4. Fit: use the existing resolver's ScalarKind::Bool domain [false,true], typed FactValue assignments, existing evaluator and witness input builder. Required transparent wrappers/dotted struct paths use existing resolution; Optional traversal remains outside the proof. Preserve enum ordering/diagnostics, bounds and runtime representation. Stored/related/state proof callers also use this mechanism and must not silently gain new overlap rejection policy when defaults are present.
+5. Second adopter: a shipping command explicitly partitions signature_required to emit corresponding handling events. Same existing Boolean type and outcome selection, no local policy.
+6. Cost: transient public Rust Case/FieldCase values become typed instead of String, a source API consequence even without serialized changes. No new authored keyword or persisted proof/format expected. Sample generated Rust/Go/TypeScript execution; source inspection alone is not parity evidence. Preserve existing enum witness bytes and order.
+7. Alternatives: retain the default idiom and unsupported explicit partition; special-case two guards, duplicating authority and failing mixed domains; selected bounded typed finite-domain extension, without general satisfiability or invariant solving.
+
+## Decisions
+
+Accept as proposed: required Boolean domains within the existing finite proof, including direct Boolean predicate siblings and executable witnesses. Preserve default selection, Optional/open-domain refusals, existing enum behavior, 64-assignment/128-node bounds and unrelated proof exclusions. Do not extend rejection policy of stored/related/state validators merely because their shared proof learns Boolean values. Implementation remains pending in the synthesis batch sequence.
+
+## Acceptance
+
+- boolean_no_default_partition_has_two_typed_witnesses: both guards validate, Boolean inputs select exactly one branch, interpreted command scenarios pass.
+- mixed_enum_boolean_partition_covers_the_product: cover every assignment; missing/overlapping combinations name actual typed values.
+- boolean_transparent_wrapper_preserves_closed_domain and boolean_struct_path_preserves_closed_domain: required nested wrappers/fields work; Optional fields/containers still require a default.
+- boolean_membership_negation_and_truthiness_are_typed: existing equality/inequality/membership and Boolean combinations use values, never text true/false.
+- mixed_domain_bounds_remain_64_assignments_and_128_nodes: boundary and boundary-plus-one controls, including state/stored-input products.
+- boolean_finite_witness_respects_wrapper_invariants: excluded candidates are never executed, without making coverage an invariant solver.
+- existing_enum_and_default_candidates_keep_order_and_bytes; boolean_shared_proof_callers_preserve_default_semantics.
+- Generated target sampling confirms actual admitted Boolean command behavior where existing target support applies; unsupported target constructs retain named obligations/refusals.

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:33:25Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-server-gate-corrections-20261002",
+  "kind": "task",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Exact candidate f0b220099119090795c93cae07c14e6209918f67: final ESS Gate SUCCESS, all four test shards and Checks SUCCESS; common security remains separately blocked",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36987215656"
+  }
+}

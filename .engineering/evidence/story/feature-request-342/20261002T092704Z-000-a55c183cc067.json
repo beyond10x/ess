@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:27:04Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-342",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Three regressions fail on unchanged source; corrected outcome_shapes12 passed and 8 focused binaries75 passed/0 failed/0 ignored. Strict all-target Clippy, package formatting and diff check pass. Full grouped package run deferred until batch stable.",
+    "reference": "local-evidence:ess-backlog-synthesis-20261002/target/backlog-input/342-focused.log"
+  }
+}

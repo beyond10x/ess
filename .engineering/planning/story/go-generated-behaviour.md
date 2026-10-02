@@ -32,7 +32,7 @@ scope:
   path: generated/go
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:52Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:52Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -73,3 +73,7 @@ Cited: `src/go/mod.rs` (432-467, 587-610), `src/go/obligation.rs` (252, 296), `s
 ## Sequencing
 
 #310: semantic overlap (reads `determined.rs`, `existence.rs`, ports `rust/behaviour.rs`, all changed by #310): land after #310 and port its existence selection (lift `src/go/mod.rs:292`). #287: no file overlap; re-check suite counts. #306, #272: none. `CHANGELOG.md` (Breaking) is a merge-time edit (epic).
+
+## Issue completion boundary 2026-10-02
+
+PR386 at f0b220099 carries this story's behavior/query/invariant implementation and served-view parameters, with local corrections verified. It does not yet implement generated in-memory stores or entry points. Issue314's full stated acceptance includes those features, now tracked by served-store-and-entry / issue318. The PR body therefore uses Refs #314, not an automatic closure directive. Keep the full consumer request open until both portions are delivered; splitting the plan is not permission to narrow completion.
