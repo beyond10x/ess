@@ -220,6 +220,30 @@ views:
       - {name: state, type: demo.orders.Order.State}
 ";
 
+#[test]
+fn the_interpreter_executes_the_complete_value_expression_suite() {
+    let spec = Specification::assemble([(
+        Source::new("orders.yaml"),
+        RawSpecFile::parse(EXPRESSIONS).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert!(!synthesis.suite.scenarios.is_empty());
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let run = ess_conformance::Runner::for_suite(admitted.suite()).run_admitted(
+        &admitted,
+        &ess_conformance::interpret::Interpreted::for_model(ir),
+    );
+    assert!(
+        run.scenarios
+            .iter()
+            .all(|scenario| scenario.status == ess_conformance::report::Status::Passed),
+        "{:#?}",
+        run.scenarios
+    );
+}
+
 fn literal(value: Node) -> ess_conformance::ScenarioValue {
     ess_conformance::ScenarioValue::Literal { value }
 }
