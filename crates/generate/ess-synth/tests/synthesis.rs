@@ -227,7 +227,7 @@ fn send_email_behaviour_is_generated_and_asks_the_context_for_the_providers_answ
     let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     let behaviour = artifact(&synthesis, "crates/billing-types/src/behaviour.rs");
     assert!(
-        behaviour.contains("self.ports.external(\"billing.email.SendEmail\", \"failed\")"),
+        behaviour.contains("self.ports.try_external(\"billing.email.SendEmail\", \"failed\")?"),
         "{behaviour}"
     );
 }
@@ -687,6 +687,12 @@ fn stubs_in(synthesis: &ess_synth::Synthesis) -> Vec<(String, String)> {
         while let Some(position) = text[from..].find("UnmetObligation { capability: \"") {
             let at = from + position + "UnmetObligation { capability: \"".len();
             let capability_end = text[at..].find('"').expect("the capability closes") + at;
+            // A fallible context's runtime refusal names the requested source dynamically.
+            // It is not a stub for a capability the synthesis plan leaves unimplemented.
+            if &text[at..capability_end] == "context answer" {
+                from = capability_end;
+                continue;
+            }
             let source_at = text[capability_end..]
                 .find("source: \"")
                 .expect("the source follows")
