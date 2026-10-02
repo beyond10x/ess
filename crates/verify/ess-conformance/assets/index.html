@@ -125,10 +125,22 @@
 
   <main>
     <section>
+      <h2 v-if="oneTimePolicies.length">One-time response source obligations</h2>
+      <p v-for="policy in oneTimePolicies" :key="policy.command + '/' + policy.outcome" class="p">
+        {{ policy.command }} / {{ policy.outcome }}; fields {{ policy.fields.join(', ') }}.
+        This policy applies even when no selected scenario exercises it. Values may be disclosed
+        only by their originating response; fresh issuance and atomic durable consumption belong
+        to the implementation. This player observes no values and verifies no non-disclosure guarantee.
+      </p>
       <h2>Scenarios</h2>
       <div v-for="s in scenarios" :key="s.name" class="scn" :class="{on:s.name===state.selected}" @click="select(s.name)">
         <div class="n">{{ s.short }}</div>
         <div class="p">{{ s.purpose }}</div>
+        <p v-for="origin in (s.oneTimeOrigins || [])" :key="origin.command + '/' + origin.outcome.outcome" class="p">
+          One-time response obligation (unexecuted): {{ origin.command }} / {{ origin.outcome.outcome }};
+          fields {{ origin.fields.join(', ') }}. Only the originating response may disclose each value.
+          This player observes no values and verifies no non-disclosure guarantee.
+        </p>
       </div>
     </section>
 

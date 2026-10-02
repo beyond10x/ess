@@ -18,6 +18,9 @@ const [model, suite] = await Promise.all([
 const short = (n) => (n ? String(n).split('.').pop() : n)
 const commandsByName = new Map(model.commands.map((c) => [c.name, c]))
 const entitiesByName = new Map(model.entities.map((e) => [e.name, e]))
+const oneTimePolicies = model.commands.flatMap(command => command.outcomes
+  .filter(outcome => outcome.one_time_response?.length)
+  .map(outcome => ({command: command.name, outcome: outcome.name, fields: outcome.one_time_response})))
 const UNKNOWN_LITERAL = 'Unknown: assignment literal is absent from this replay projection.'
 const UNKNOWN_CONVERSION = 'Unknown: assignment types/conversion are absent from this replay projection.'
 const UNKNOWN_SUBJECT = 'Unknown: subject identity source is absent from this replay projection.'
@@ -83,7 +86,8 @@ const scenarios = Object.entries(suite.scenarios).map(([name, body]) => {
   const acts = groupSteps(body.steps)
   const lanes = [...new Set(acts.map((a) => a.actor))]
   return { name, short: name.split('/').pop(), group: name.split('/').slice(0, -1).join('/'),
-    purpose: body.purpose, acts, lanes, hasBindingLane: acts.some((a) => a.consequences.length) }
+    purpose: body.purpose, oneTimeOrigins: body.one_time_response?.origins ?? [],
+    acts, lanes, hasBindingLane: acts.some((a) => a.consequences.length) }
 })
 const groups = [...new Set(scenarios.map((s) => s.group))]
 const freshWorld = () => ({ instances: Object.create(null), events: [], notes: [], unknownEffects: [], queries: [] })
@@ -226,7 +230,7 @@ const app = createApp({
       return entity ? { states: entity.states, terminal: entity.terminal } : null
     }
     Object.assign(api, { scenario, acts, lanes, instances, liveViews, lifecycle, play, step, back, reset, select })
-    return { state, scenarios, groups, scenario, acts, lanes, done, instances, changed, liveViews,
+    return { state, scenarios, groups, scenario, acts, lanes, done, instances, changed, liveViews, oneTimePolicies,
       play, step, back, reset, select, rowState, mark, lifecycle, short,
       system: model.system, version: model.version, spec: (suite.provenance?.spec_digest ?? '').slice(0, 12), scenarioCount: scenarios.length }
   },

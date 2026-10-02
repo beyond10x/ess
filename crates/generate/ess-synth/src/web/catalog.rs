@@ -172,7 +172,32 @@ fn commands(bridge: &Bridge<'_>) -> Value {
                 &source
             )),
         );
-        if let Some(component) = bridge.acceptors.get(&command.name) {
+        if command
+            .outcomes
+            .iter()
+            .any(|outcome| !outcome.one_time_response.is_empty())
+        {
+            let origins = command
+                .outcomes
+                .iter()
+                .filter(|outcome| !outcome.one_time_response.is_empty())
+                .map(|outcome| {
+                    format!("{}: {}", outcome.name, outcome.one_time_response.join(", "))
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let refusal = format!("one_time_response ({origins}) requires implementation-owned atomic durable consumption and fresh issuance; this browser target does not implement the policy");
+            entry.insert(
+                "component".to_owned(),
+                json!(bridge.acceptors.get(&command.name)),
+            );
+            entry.insert("dispatchable".to_owned(), json!(false));
+            entry.insert(
+                "behavior".to_owned(),
+                json!({"disposition": "refused", "why": refusal}),
+            );
+            entry.insert("refusal".to_owned(), json!(refusal));
+        } else if let Some(component) = bridge.acceptors.get(&command.name) {
             entry.insert("component".to_owned(), json!(component.to_string()));
             entry.insert("dispatchable".to_owned(), json!(true));
         } else {

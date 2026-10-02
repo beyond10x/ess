@@ -135,6 +135,17 @@ impl AdmittedReplay {
     /// Pair a projection derived from the actual model with an admitted suite input.
     pub fn new(ir: &EssIr, input: &AdmittedInput) -> Result<Self, AdmissionError> {
         crate::admission::model(ir)?;
+        if ir.commands().values().any(|command| {
+            command
+                .outcomes
+                .iter()
+                .any(|outcome| !outcome.one_time_response.is_empty())
+        }) {
+            return Err(AdmissionError::new(
+                "UnsupportedVocabulary", "$model",
+                "coverage replay/1 cannot preserve one_time_response authority; use the ordinary declaration player or an execution runner",
+            ));
+        }
         let expected = crate::SuiteProvenance::of(ir);
         let actual = &input.selected().suite().provenance;
         if expected.system != actual.system

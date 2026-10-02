@@ -59,3 +59,37 @@ fn ordinary_direct_returns_keep_their_existing_implementation_path() {
         assert!(synthesize_for(&model, target).is_ok(), "{target:?}");
     }
 }
+
+#[test]
+fn direct_browser_catalog_refuses_dispatch_without_losing_policy_location() {
+    let wired = format!("{MODEL}components:\n  - component: issuer\n    owns:\n      domains: [credentials.api]\n    accepts:\n      commands: [credentials.api.Issue]\n");
+    for marked in [true, false] {
+        let source = if marked {
+            wired.clone()
+        } else {
+            wired.replace(", one_time_response: [secret]", "")
+        };
+        let model = ir(&source);
+        let catalog: serde_json::Value = serde_json::from_str(
+            ess_synth::web::browser_catalog(&model, &SynthesisPlan::of(&model)).as_json(),
+        )
+        .unwrap();
+        assert_eq!(catalog["format"], "ess-browser-catalog/1");
+        let command = &catalog["commands"][0];
+        assert_eq!(command["component"], "issuer");
+        assert_eq!(command["dispatchable"], !marked);
+        if marked {
+            assert_eq!(command["behavior"]["disposition"], "refused");
+            let refusal = command["refusal"].as_str().unwrap();
+            for required in [
+                "one_time_response",
+                "issued: secret",
+                "atomic durable consumption",
+            ] {
+                assert!(refusal.contains(required), "{refusal}");
+            }
+        } else {
+            assert!(command.get("refusal").is_none());
+        }
+    }
+}
