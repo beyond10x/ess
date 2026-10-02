@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 13
+revision: 17
 ---
 ## Intake
 
@@ -16,14 +16,14 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 
 | Issue | Report | Current disposition and evidence |
 |---|---|---|
-| #385 | PLAN.md and a generated comment list input guards before when_related refusals, against the precedence the suite checks | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
-| #379 | Go, web and clap targets still refuse existing_instance branches (follow-up to #310) | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
-| #365 | ess-ui/1: no row filter on a read or collection (where: over row and page params) | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
+| #385 | PLAN.md and a generated comment list input guards before when_related refusals, against the precedence the suite checks | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
+| #379 | Go, web and clap targets still refuse existing_instance branches (follow-up to #310) | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
+| #365 | ess-ui/1: no row filter on a read or collection (where: over row and page params) | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #364 | ess-ui/1: a column cannot show a field of a related view (label_from / lookup) | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #363 | Aggregates: no conditional count or sum (count where state == Done) | Pending verification and fit review; no completion claim. |
 | #362 | Synthesis: an aggregate grouped by lifecycle state alone is refused (ESS-SYNTH-016) | Open synthesis design question: state-only grouping cannot isolate rows under current shared-target assumption. Needs witnessed isolation or grouped-delta semantics; not fixed by #309. |
 | #361 | Synthesis: a parameter or copied field on an aggregate group key is refused (ESS-SYNTH-017) | Pending verification and fit review; no completion claim. |
-| #360 | Synthesis: a view parameter over a field copied from a related row is refused (ESS-SYNTH-005) | Current copied-related view arrangement assessment grouped with #307; no implementation claim. |
+| #360 | Synthesis: a view parameter over a field copied from a related row is refused (ESS-SYNTH-005) | Copied-source creation/later arrangement and view exclusion implemented and independently reviewed with307. Honest target passes; wrong-row/ignored-parameter mutants fail. Integrated7474bb5c5; full package pending. |
 | #358 | ess-ui/1: metric cannot count or sum rows of its read | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #357 | ess-ui/1 React: charts have no series legend and x labels overflow | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #356 | ess-ui/1 TUI: record-tab forms and header actions are not rendered or drivable; ess ui test cannot address nested rows | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
@@ -35,7 +35,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #348 | ess-ui/1: the TUI and React format integers differently (1840 vs 1,840), so a text assertion passes in only one | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #347 | Conformance suite: expect_not_granted cannot check unpublished events, since no step exposes the target's event log | PR387 documents existing before/after event-log observation. Private consumer runner remains unverified; keep issue open. |
 | #346 | ess ui test: expect_command compares values as text, so 7500 and '7500' both pass | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
-| #342 | synthesize: a when_subject refusal beside a deletes: branch makes the closed and invariant-after scenarios assert the deleted row | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
+| #342 | synthesize: a when_subject refusal beside a deletes: branch makes the closed and invariant-after scenarios assert the deleted row | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #330 | ess-ui/1: options cannot name an enum declared in the model | Pending verification and fit review; no completion claim. |
 | #329 | ess-ui/1 TUI: dotted struct fields are sent flat and as text instead of nested and typed | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #328 | ess-ui/1: a choice over a view takes its value from row.id; no way to name the value or label field | Partially delivered in 0.51.0 via PR #343; explicit value/label fields and standalone/filter choices remain open per PR body. |
@@ -47,30 +47,30 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #322 | ess ui check does not resolve names inside pages (param types, form fields, bind keys, overlay params, columns) | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #320 | ess-ui/1: rows are keyed only by live.match, so a section without a channel over a view keyed by another field gets empty row keys | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #319 | Code targets: generate behaviours for commands guarded by when_related | Pending verification and fit review; no completion claim. |
-| #318 | Synthesized servers: generate an in-memory store and a server entry point for components reached by network | Active implementation: generated store and server entry, 21 focused process cases passed; independent frozen review and full package remain. See story:served-store-and-entry. |
-| #317 | No scenario re-creates an identity after deletes: removed it, so a lookup that finds removed rows passes | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
-| #316 | Generated Rust creation ignores an identity the payload takes from the input | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
+| #318 | Synthesized servers: generate an in-memory store and a server entry point for components reached by network | Implemented and independently reviewed: 25 focused cases pass, including strict generated Rust/Go HTTP targets and legacy context compatibility. Integrated in next carrier7474bb5c5; full package and publication pending. |
+| #317 | No scenario re-creates an identity after deletes: removed it, so a lookup that finds removed rows passes | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
+| #316 | Generated Rust creation ignores an identity the payload takes from the input | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #314 | Go target: generate determined command behaviours, view queries, a store and a server main, as the Rust target does | Behavior/query/invariants merged through PR386 (fa08de5); generated store and server entry remain in #318. Keep issue open. |
 | #312 | Suites assume an empty target per scenario without saying so, and never act on a row as a different caller than arranged it | Pending verification and fit review; no completion claim. |
 | #311 | ess-ui/1 renderers cannot run against a live served component (fixtures only) | Served view parameters merged through PR386 and UI transport preserved in PR381. Complete live consumer verification remains; no blanket closure. |
-| #309 | Aggregate with two group keys filled from one input is refused for a move the source does not have | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
-| #308 | A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
-| #307 | when_subject over a field copied from a related row at creation finds no candidate (ESS-SYNTH-003, then ESS-SYNTH-004) | Released implementation located in 0.51.0 and main; automatic_rollback and named-transition acceptance evidence remains missing. Review grouped with #360. |
+| #309 | Aggregate with two group keys filled from one input is refused for a move the source does not have | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
+| #308 | A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
+| #307 | when_subject over a field copied from a related row at creation finds no candidate (ESS-SYNTH-003, then ESS-SYNTH-004) | Both Optional policies and named transitions implemented and independently reviewed with57 grouped tests and14 decisive mutants. Integrated in7474bb5c5 with360; full package and publication pending. |
 | #305 | ess-ui/1: ess ui check accepts any Field.as value; the schema lists a closed set | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #304 | when_related through an Optional input: an absent reference takes the not-found branch instead of skipping the guard | Pending verification and fit review; no completion claim. |
 | #303 | ess-ui/1: three document faults ess ui check reports nothing on (duplicate nav entry, unknown shell, shell without page outlet) | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #300 | ess-ui/1: widget expansion is exponential in nesting depth; a valid document can hang ess ui check | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #299 | No read of a row selected by a filter (the instance with field == input.x) in a guard or in sets: | Pending verification and fit review; no completion claim. |
-| #298 | A Boolean input is not treated as a closed domain | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
+| #298 | A Boolean input is not treated as a closed domain | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #297 | Conformance and exploration have no process restart, so identities minted from a counter that resets on restart go undetected | Pending verification and fit review; no completion claim. |
 | #296 | Retrofit: no way to declare intended behaviour that the implementation is known not to meet, and count it apart | Pending verification and fit review; no completion claim. |
-| #295 | mutate: emit-drop is stillborn on every outcome that emits one event, so single-event emission is never audited | Pending verification and fit review; no completion claim. |
+| #295 | mutate: emit-drop is stillborn on every outcome that emits one event, so single-event emission is never audited | Confirmed capability gap: sole-event drop makes ordinary outcomes invalid; source/test pin matches0.51.0. Deleting ExpectEvent would weaken the suite and is rejected. Compatible event-swap needs operator/payload/no-alternative design; see story fit review. |
 | #294 | mutate: no way to declare a known-failing baseline scenario; one failure refuses the whole audit (ESS-MUTATE-001) | Pending verification and fit review; no completion claim. |
 | #293 | Explorer excludes every command with an Optional input (and every command with an unknown_instance branch) | Pending verification and fit review; no completion claim. |
 | #292 | check-history: a generated Timestamp makes every history uncheckable (check.model-undetermined, exit 2) | Pending verification and fit review; no completion claim. |
 | #291 | conform run --target interpreted answers wrong_state for an unknown identity where synthesis expects the declared not-found refusal | Merged in PR381 at b4da64e, 15 required checks passed; GitHub issue closed. Source is on main; release after 0.51.0 remains pending. |
 | #290 | ess verify diff: no way to fail on a breaking change; a narrowing exits 0 | Pending verification and fit review; no completion claim. |
-| #288 | An affects: filter over subject.<identity> validates but synthesis refuses it (ESS-SYNTH-001) | Locally implemented and reviewed for combined PR387; affected-package tests passed. Previous server-only head 482609 failed one stale service-contract wording assertion, corrected in c23165a. Final combined publication and remote gate pending; issue remains open. |
+| #288 | An affects: filter over subject.<identity> validates but synthesis refuses it (ESS-SYNTH-001) | Merged in PR387 at1ff305685; all15 checks passed onad45061626 and merged tree is identical. GitHub issue closed. Source on main; release after0.51.0 pending. |
 | #286 | No read grant on a view: an actor's may: covers commands only | Pending verification and fit review; no completion claim. |
 | #285 | {related:} follows only one required reference: no read through an Optional reference or across two references (ESS-COMMAND-002) | Pending verification and fit review; no completion claim. |
 | #284 | ess ui check does not check that a page actor is granted the commands it binds | Pending verification and fit review; no completion claim. |
@@ -94,7 +94,7 @@ Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 ha
 | #223 | Feature request: explorer strings reach .count boundaries and example: values | Pending verification and fit review; no completion claim. |
 | #222 | Feature request: validate checks an authored scenario step's expected outcome against the command's guards | Pending verification and fit review; no completion claim. |
 | #221 | Feature request: the explorer draws commands with existing_instance, subject_state or subject_predicate outcomes | Pending verification and fit review; no completion claim. |
-| #212 | ess verify conform mutate does not emit sets-drop, outcome-order-flip or the ==/!= and ±1 guard-boundary arms | Pending verification and fit review; no completion claim. |
+| #212 | ess verify conform mutate does not emit sets-drop, outcome-order-flip or the ==/!= and ±1 guard-boundary arms | Existing adopted operator design remains unimplemented: sets-drop, precedence swap and additional guard arms. Closed MutantClass decoding requires format compatibility decision; nine current classes unchanged from0.51.0. See updated story audit. |
 | #200 | Feature request: a search parameter on a view (a view parameter as the operand of contains / starts_with) | Pending verification and fit review; no completion claim. |
 | #197 | Feature request: a refused command cannot declare the compensating change the service makes before answering | Pending verification and fit review; no completion claim. |
 | #194 | Feature request: a binding cannot invoke only when an Optional path is present (ESS-BINDING-015 leaves no way to say 'skip') | Pending verification and fit review; no completion claim. |
@@ -335,3 +335,196 @@ Read-only independent source audit by server_corrections; own new test execution
 - **shared-public-gates:** source adoption is delivered. Fresh GitHub audit found secret scanning and push protection enabled and active main ruleset22765952 requiring common security, Gate, both macOS ownership checks and planning validation with strict base updates. Workflow pin95d64e differs from the original acceptance's literal Gates0.1.0 tag4317ac; version qualification needs reconciliation. Historic producer-asset/receipt/task-check/site evidence was not re-executed. Historical SKIP_CONSUMER_CHECKS guidance is superseded by current opt-in CONSUMER_CHECKS.
 
 These findings distinguish shipped behavior, missing evidence and actual unfinished design. None alone authorizes an unsupported implemented transition.
+
+# Remaining UI and consumer-runner backlog audit
+
+Source inspected: ess-backlog-next-20261002 at 7474bb5c5. Canonical decisions: ess-consumer-backlog-20261002/.engineering/planning/story. Issue bodies: cached issues-current-refresh.json, numbers 354, 330, 328, 311 and 347. No remote calls; current remote closure/release state was not independently refreshed. Own test/build executions: 0. No source, AEP or remote writes. This report contains no adopter files or credentials.
+
+The existing tests and retained logs below are evidence produced by earlier runs, not executions by this audit. All paths below are repository-relative unless a log location is given. The UI source diff from aabc378c8 to 7474bb5c5 is empty (`git diff --name-only ... -- crates/ui`), so the retained final UI lane covers the same UI bytes. This does not replace combined-candidate integration gates.
+
+## Recommended ledger dispositions
+
+| Issue | Disposition at inspected source | Concrete next action |
+|---|---|---|
+| #354 | Both requested capabilities remain open; design required | Decide nested subscription ownership and header record source/title semantics, preserving existing Header.live status display |
+| #330 | Inline/local enum workaround and bounded drift checking delivered; direct model enum resolution absent | Approve a model-aware loading/resolution contract, then implement across checker and both generation/run paths |
+| #328 | Same-name form-field projection delivered; general value/label and model identity defaults absent | Approve projection/default contract, then implement complete choice behavior across React/TUI and standalone/filter-bar uses |
+| #311 | Accepted redesign materially implemented; several replacement AEP states appear stale | Reconcile five replacement stories using existing runtime evidence; do not represent original channel streaming request as implemented |
+| #347 | ESS capability already exists; accepted guidance clarification present | Reconcile documentation delivery; keep private consumer adapter correctness externally unverified |
+
+## #354: nested live readers and record-derived headers
+
+Canonical feature-request-354 revision 1 is draft, explicitly retaining BOTH halves and requiring a design. This is not a title-only task.
+
+Current facts:
+- `crates/ui/ess-ui/src/model.rs:685` NodeCommon has name/state/visible/degrades/unmapped, no live. Section owns `live: Option<Live>` at :713. Header title remains `Option<String>` at :1410. Header.live at :1423 is a list of channels whose lifecycle is displayed, not a read-update policy.
+- TUI polling iterates page.sections in `crates/ui/ess-ui-tui/src/app.rs:141-188`; live event handling selects sections at :1393. React section handling at `crates/ui/ess-ui-react/src/emit.rs:1799-1817` applies usePoll/useLive to section reads. Shared/filtering read machinery delivered with #365 does not make an arbitrary nested node a live subscriber.
+- TUI `view.rs:365-380` prints the literal header title. React `emit.rs:2024` quotes that title and `templates/runtime/core.tsx.tmpl:488` displays it directly. Existing header live display is visible at core.tsx.tmpl:490-492.
+
+Remaining decisions: choose the source record when a page has multiple reads; define nested reader subscription lifetime while tabs are inactive/unmounted; specify which effects are meaningful for record, metric and list readers; preserve the existing Header.live meaning with an unambiguous additive design. Also specify loading/empty/error title behavior. These are concrete contract decisions, not an external infrastructure blocker.
+
+Falsifiable future probes: a tab-held record/list changes after its channel event in both renderers; switch tabs repeatedly and prove one subscription/no duplicate event application; inactive-tab policy follows the chosen contract; two records on a page prove the title uses the explicitly selected read; title changes on refresh and handles absent/error states; old literal titles and channel lifecycle badges remain unchanged. No such new cases were run here.
+
+## #330: model enums in options
+
+Canonical feature-request-330 revision 1 is draft. Existing fit accepts the need for direct lookup and calls for a bounded loading design. It does not accept the inline workaround as closure.
+
+Delivered: local enum and literal options expand, and ordinary unbound form choices are checked against their command input enum. `crates/ui/ess-ui-check/src/model.rs:399-467` checks these, including form groups/tabs; :439 deliberately excludes explicitly bound fields. `tests/checks.rs:1491` model_enum_values checks missing/unknown variants. The final UI log records this case passing at line 271.
+
+Still absent: `crates/ui/ess-ui/src/expand.rs:616-632` resolves options only from the UI document's types and reports "not an enum type of this document" for a model enum. `ess-ui-check/src/lib.rs:387` calls model-free load_str before Model.check. CLI binding also loads the UI first (`crates/edge/ess-cli/src/ui.rs:153-157`), so supplying --model cannot repair this early refusal. Direct model enum references in standalone choices are equally blocked.
+
+Smallest coherent design: an explicit model-aware resolution phase/API used consistently by check, React generation, TUI run and generated TUI production. Preserve existing model-free load APIs; do not resolve unavailable information into empty options. Decide local-versus-model name collisions, fully qualified names/aliases, unknown/non-enum types, missing --model and emitted variant order. Avoid assuming that adding a lookup inside Model.check is sufficient: the loader already refused by then.
+
+Future red-capable tests: options naming a qualified model enum in form AND standalone choice; deterministic variant order; local options without a model; unknown/non-enum references and missing model have named diagnostics; conflicting local/model names follow the decision; inline variants still detect drift. A generation test must execute the same resolved options that check admitted.
+
+## #328: dynamic choice values and labels
+
+Canonical feature-request-328 revision 1 is draft, but its decision accepts the complete need and awaits a concrete projection/default contract, not another product approval. Scope includes model/binding/schema/checker, both renderers, choice_value tests and reference documentation.
+
+Delivered partial correction (ba1a1d31d, source present): a form field named repository_id takes row.repository_id before row.id. Current TUI `app.rs:2476-2513` uses receiving field, then id, then entire row; labels use label/name/value. React `templates/runtime/composites/choice.tsx.tmpl:31-36` uses valueKey, then id/value/null; labels use label/name/value. The UI filter changes preserve this behavior; they add no projection contract.
+
+Existing tests deliberately choose a receiving field ALSO named repository_id: `crates/ui/ess-ui-react/tests/choice_value.rs:25-40,133,157`, TUI `tests/choice_value.rs:81`. Their passing 2 React and 1 TUI cases substantiate this partial correction, not the broader request.
+
+Remaining: a receiving field named selected_repository still cannot select repository_id and show location; neither dynamic fallback uses reads.key; Choice has no dynamic value/label fields (`ess-ui/src/model.rs:1301-1317`); ViewRoute carries only path/params (`binding.rs:45-50`). Model identity inference is not carried to either renderer. Standalone/filter-bar calls cannot rely on the form field's name.
+
+Important design boundary: a ResolvedView has source entity and projected fields, plus possible aggregation (`ess-compiler/src/ir.rs:1444-1486`), not an unconditional unique row-identity member. Infer a model default only when the source identity is actually projected and the view shape justifies it; decide the named refusal/fallback for aggregate or identity-omitting views. Do not fabricate a first-field identity. Decide explicit value projection versus reads.key precedence, field path versus row expression, null/missing projection behavior and fixture-only legacy fallback. Preserve typed values through actual command submission; stringifying an option for display is not permission to stringify its value.
+
+Future probes: selected_repository receives integer 42 from repository_id while displaying location; explicit reads.key; model identity with no explicit key; explicit value and label; standalone/filter-bar; unknown/missing/null projections; aggregate/identity-omitting view; legacy same-name field unchanged. Run both renderers through selection and inspect submitted command/state, not just generated JSX. Include filtered/polled read changes because #365 shares these seams.
+
+## #311: live served-component binding
+
+feature-request-311 is archived revision 2 and superseded. The replacement states are ui-binding-contract implemented rev10; ui-react-live-binding active rev6; ui-tui-live-binding active rev6; ui-tui-app-generator active rev8; served-view-params active rev7. Do not infer unresolved implementation solely from those active states.
+
+The accepted redesign explicitly chose model-derived routes, --base-url rather than endpoint, explicit authorization, no server stream, and polling or named refusal for no_live. It excluded server paging; TUI's http://-only restriction is explicit. Therefore lack of SSE/WebSocket remains a difference from the original request, but is not missing acceptance under the recorded redesign.
+
+Delivered source:
+- CLI routes --model through binding for TUI run and React/TUI generation (`crates/edge/ess-cli/src/ui.rs:92-157`). Binding is generated from the served route table, with checked parameters (`ess-ui-check/tests/binding.rs:126` and following named controls).
+- React bound httpAdapter, explicit setAuthorization and per-component baseUrl exist at `templates/runtime/data.ts.tmpl:271,283,336`; TUI HttpAdapter construction and post are in `ess-ui-tui/src/http.rs:175,241`.
+- Actual served refusal and read/command cases: React `tests/live_binding.rs:351,430,622,796`; TUI `tests/http_adapter.rs:212,333,371,397`. Polling/refusal policies are tested at TUI :488 and React adversary_live_binding_pass1.rs. The final UI lane reports React live_binding 11/0/0 and TUI http_adapter 5/0/0, including actual synthesized gatepass server calls.
+- Generated Rust TUI executable checks are `ess-cli/tests/generate_ui_tui.rs:269,323,351`; retained cli-ui-tests.log reports 3/0/0, including its built crate reading from the synthesized server. ui_run_live reports 3/0/0 for missing model, ambiguous base URL and named HTTPS refusal.
+- View params reach both actual servers in `ess-synth/tests/view_params_served.rs:426,431,454,542,697`; server-group-lanes/view_params_served.log reports 8/0/0, including missing-param refusal and unchanged parameter-free control.
+
+Disposition: reconcile the replacement stories' accepted cases/evidence as delivered in source; no specific new implementation defect was established by this audit. Final combined validation/publication is coordinator-owned. Neither old active states nor the absence of a streaming transport justify inventing new work in this batch.
+
+## #347: independent unpublished-event observation
+
+Canonical feature-request-347 is active rev6. The accepted scope is guidance, not a new suite step or runtime fix, and expressly excludes claiming the private runner corrected.
+
+Existing runtime: `ess-conformance/src/runner.rs:438-445` looks ahead to ExpectNotGranted and records counts before ExecuteCommand; :1418-1475 counts after and fails growth, including duplicate occurrences. `src/target.rs:212` exposes independent observe_events. The whole log for the requested event/correlation is the authority, not direct answer events or view snapshots.
+
+Delivered guidance: `website/docs/guides/verify/runners.md:68-78` now explicitly specifies before-send lookahead, same-correlation post-refusal count, duplicate occurrences and unsupported observation. `author-scenarios.md:148-155` repeats the ordering and states no extra authored step. These changes are present through commit 17bfc38c0 in the current source.
+
+Retained grant-log-audit.log records adversary_265_pass2 7/0/0: late-refusing surface; repeated earlier occurrence; Go/TypeScript direct publication on refusal; TypeScript log publication before refusal. This is actual existing-runtime evidence, not a reproduction of the consumer's reported 91/131 survivors.
+
+External evidence still needed to resolve the consumer failure: its adapter implementation/version and a sanitized run showing ObserveEvents reads the real implementation log under the scenario correlation both before and after a denied command. Require an event-only mutation that publishes before refusing while returning no direct events, plus duplicate-occurrence mutation; both must fail, and unsupported observation must be non-passing. Without that evidence, mark consumer integration unverified, not ESS capability absent. Do not send any message to the consumer without authorization.
+
+## Smallest next implementation group
+
+Recommend one choice-resolution group: design #330 and #328 together, then implement #330's explicit model-aware load path followed by #328's projection/default propagation in one carrier. They share loading, model resolution, form/standalone choice paths, CLI generation and React/TUI tests; one package validation and one remote gate are appropriate after both stabilize. Decisions listed above must be recorded before implementation. This is a proposed grouping, not permission to silently select new authored syntax.
+
+Keep #354 separate: it changes nested subscription lifecycle and header read ownership, not merely choice resolution. Keep #347 outside the implementation group: shipped runtime plus delivered guidance needs consumer evidence, not duplicate semantics. Handle #311 as evidence/state reconciliation, with any actual newly demonstrated defect separately scoped.
+
+## Retained evidence locations
+
+- UI lane: ess-backlog-ui-reads-20261002/target/ui-reads-evidence/58-final-packages.log. Relevant ranges: binding 222-231; model_enum_values 271; React choice 508-514; React live_binding 552-567; TUI choice 920-925; TUI http_adapter 952-961. All relative tree paths are under the managed ESS trees directory.
+- CLI lane: batch-0-51/target/ui-consolidation/cli-ui-tests.log:135-142 and :165-172.
+- Server lane: ess-backlog-servers-20261002/target/backlog-input/server-group-lanes/view_params_served.log; final-results.tsv records exit 0.
+- Grant lane: batch-0-51/target/ui-consolidation/grant-log-audit.log, seven passing cases, no ignored cases.
+
+Own test/build executions remain 0. No completion inferred from issue title, existing test name alone, or stale AEP lifecycle state.
+
+# Synthesis and semantics backlog audit
+
+Source: `ess-backlog-next-20261002` at `7474bb5c5d9eda9642342ea968a8873103778751`. Canonical planning: `ess-consumer-backlog-20261002/.engineering/planning/`. GitHub issue bodies and OPEN state were refreshed read-only for all six issues on 2026-10-02; their contents match the retained intake. Own builds/test executions: **0**. This is source/design reconciliation, not fresh reproduction or completion evidence. No source or planning changes were made. During this read-only pass the coordinator advanced next-tree to `2291c5adfa61baad92b80efb752a841a11710723`; the compared commit changes only Cargo.lock and generated billing/gatepass artifacts, so every cited implementation/test/design source remains identical to the pinned audit head.
+
+| Issue | Evidence-backed disposition | Smallest coherent next work |
+|---|---|---|
+| [#363](https://github.com/beyond10x/ess/issues/363) | Conditional per-measure aggregates are absent from the authored and resolved types; no accepted design/story was found. | Fit/design one per-measure predicate extension, then its complete type/IR/evaluation/synthesis/projection change. Keep separate from witness-only aggregate repairs. |
+| [#362](https://github.com/beyond10x/ess/issues/362) | State is understood as a group key, but state alone cannot scope an exact count under the documented shared-target model. The refusal is intentional under the current contract. | Decide empty-target qualification versus grouped delta semantics; coordinate that decision with #312. Do not remove ESS-SYNTH-016 alone. |
+| [#361](https://github.com/beyond10x/ess/issues/361) | Parameters on group keys are explicitly rejected. Some related copied keys already work; generated related identities and other unchosen source shapes still need separate reductions. | One bounded aggregate key/parameter witness group, with independent-key and source-decoy controls. First classify each reported shape rather than reimplement #257 or claim #360 fixes aggregates. |
+| [#312](https://github.com/beyond10x/ess/issues/312) | General identity reuse/isolation disclosure and some cross-caller histories remain open; existing ignored regressions name them. Some cross-caller cases already exist. | One suite isolation/caller-history contract group; choose provenance/report compatibility before adding fields. Restore the named ignored regressions as decisive controls when fixed. |
+| [#304](https://github.com/beyond10x/ess/issues/304) | Archived intake was superseded by two accepted active stories, neither implemented at this head. Actual present behavior is validation refusal, not absent-reference execution. | Deliver the accepted ess/21 Optional-input story, then stored-reference story after #282; coordinate the shared reference seam with #285. No new fit review or revival of the archived duplicate is needed. |
+| [#299](https://github.com/beyond10x/ess/issues/299) | Filter-selected guard sets have an adopted family-F design; reading one selected row's value into sets has no complete accepted selection/cardinality design. Neither surface exists in current code. | Guard half with family F B; settle zero/one/many and pre-state selection for the value-read half before implementation. An arbitrary first-row rule would invent behavior. |
+
+## #363 — conditional measures
+
+Current `Aggregate` contains only function, input field and `skip_absent` (`crates/specify/ess-domain/src/view.rs:356`). `RawFunction` accepts `Count(Empty)` and `Sum(String)` rather than a measure-local condition (`view.rs:472`). `ResolvedAggregate` likewise has no predicate (`crates/specify/ess-compiler/src/ir.rs:1515`). The evaluator receives an already chosen vector of values, not a row predicate (`crates/verify/ess-conformance/src/aggregate.rs:92,154`). A view-wide filter therefore cannot express total/done/escalated counts in different fields of one row. Existing aggregate design describes a shared source/filter and functions (`docs/design/aggregate-views.md:108,164,443`), not conditional measures.
+
+Canonical search found only the generic ledger entry, no accepted #363 artifact/design. This is an authored capability gap, not a current synthesis defect. Minimum complete design must decide: measure-local predicate vocabulary and type environment, its composition with the view-wide filter, empty conditional count/sum semantics, Optional/skip_absent interaction, and source/IR format gating with unchanged old bytes. Choosing the requester's example spelling is a proposal, not an approved decision.
+
+The coherent implementation crosses domain raw/validated aggregate, compiler IR/resolution, shared aggregate evaluation and generated behavior/runtime consumers, conformance arrangement, docs/schema/diff projections. Decisive cases: one row reporting total and two different conditional counts; conditional sum with qualifying/nonqualifying/absent inputs; an empty qualifying subset; mutants ignoring or swapping a measure's condition. Existing `aggregate_views.rs`, `aggregate_optional_fields.rs` and `aggregate_optional_fields_adversary*.rs` are compatibility seams, not evidence that #363 shipped.
+
+## #362 — state-only grouping
+
+`aggregate.rs:936` already constructs `Key::State` from the lifecycle states. Refusal occurs later at `:971-982`: no scopable key, no parameter scope, and no allowed ungrouped additive delta. The delta path is explicitly restricted to `aggregation.is_ungrouped()`. This is not a missing lifecycle-state parser or a tuple-selection bug.
+
+The design explains why an exact aggregate needs rows belonging to this scenario (`docs/design/aggregate-views.md:443-455`): generated IDs can isolate observations without clearing all pre-existing rows, so another row in state Done changes the exact count. Existing `aggregate_views.rs:321` deliberately refuses an enum-only group with ESS-SYNTH-016. State is the same finite, unscopable class. #309's tuple repair preserves a separate independently scoped key; it does not solve this shape.
+
+Concrete design choice required:
+
+1. Declare and qualify an empty logical target for the affected scenario, then assert absolute counts per reached state; this intersects #312's suite/provenance/runner contract. A comment or silent reset assumption is insufficient.
+2. Add before/after grouped additive observations, with declared semantics for absent groups, state transitions moving rows between buckets and concurrent/external writers. Existing ungrouped count/sum deltas (`scenario.rs:2616`, `aggregate-views.md:722-771`) are a precedent, not authorization for a grouped step. This covers additive measures only unless the acceptance/design explicitly expands it.
+
+A state-only count is the minimal issue reduction. Test against pre-existing rows in the same states, a transition between groups, a wrong grouping target and an off-by-one target. Preserve explicit refusal for shapes the chosen observation cannot justify. The current canonical ledger correctly calls this a design question; no dedicated accepted #362 story was found.
+
+## #361 — parameters and copied group keys
+
+There are at least two independent remaining shapes:
+
+- A declared parameter can scope an aggregate only through one top-level equality over a field **not** in `group_by` (`aggregate.rs:877-921`, especially `:894`). Thus direct `group_by: [objective_id]` plus `objective_id == param.objective_id` is rejected even when the field is otherwise a valid scoped key. Existing positive parameter coverage is an ungrouped view, `aggregate_views.rs:449`, while disjunctive parameter use is intentionally refused at `:477`.
+- Related copied keys are not wholly missing. `related_key` supports a reference read when some source creator writes the copied field from input (`aggregate.rs:291-333`), and planning records/scoping use that support (`:783-831`). `aggregate_related_key.rs:125` and `:378` cover honest copied keys and wrong-key mutants; `:398` covers an absent copied Optional key. `adversary_257_pass1.rs:382,431,468` cover owner-link, optional and mixed keys. But a related row's generated identity is not a field set from input, and `related_key` rejects that route at `:322-330`. Chained reads and copied aggregate inputs remain explicitly refused (`adversary_257_pass1.rs:450,501`).
+
+The issue names both parameters and copied `goal` fields but does not include a full admitted model for each affected aggregate. The evidence blocker is therefore exact shape classification for that second half, not generic pending work. Required reductions: direct key+parameter; copied ordinary String key+parameter; captured/generated related identity key; a pre-existing supported copied scalar key without a parameter as a compatibility control. Preserve captured source identity instead of replacing it with a made-up literal or inferred ownership edge.
+
+Recommended bounded group: key/parameter planning, typed binding and observation in `synthesize/aggregate.rs`, with the existing aggregate related-key and parameter fixtures. The ordinary row-view repair #360 uses a different planner and does not bypass the aggregate parameter restriction. Require a queried group with several rows, nonmatching groups, each key varied independently, source rows before/after the referenced row, and mutants ignoring the parameter, grouping by the reference rather than its copied value, or reading another source. #309's independent-tuple controls and #257/#272 controls remain required. No authored syntax change appears necessary for the direct-key shape; extend the aggregate design's current restriction explicitly before claiming the broader copied-identity shape is accepted.
+
+## #312 — isolation disclosure and cross-caller histories
+
+Canonical `story:feature-request-312` is draft revision 1 with fit review pending, not an accepted implementation design. The generic isolation contract exists: every scenario gets an isolated logical context and targets may achieve it through resets, namespaces or generated IDs (`docs/design/ess-closed-loop-execution-conformance-design-v0.1.md:383-406`; `target.rs:13,179`). That does **not** record that a particular suite needs an empty target. `SuiteProvenance` has format/system/version/digests/component only (`scenario.rs:367-401`); `ScenarioContext` carries scenario/correlation only (`target.rs:482-496`). No empty-target requirement was found in these carriers.
+
+The code does not literally never vary callers: `synthesize/caller.rs:1-26` already runs assigned caller values and swapped histories, and `:171`/`:601` have a singleton-specific act-on-the-same-row path. `granted_actors` selects an authorized actor deterministically (`synthesize.rs:11606`). So the issue must not be described as an absent caller subsystem.
+
+Concrete retained gaps:
+
+- `adversary_287_pass1.rs:526-552`: ignored Uuid controls for a per-caller store and a correct shared target, both explicitly linked to #312.
+- `adversary_287_pass1.rs:636-659`: ignored empty-target disclosure control.
+- `adversary_287_pass2.rs:480-516`: ignored second-caller reinstall controls for singleton and Uuid cases. The comment identifies the command-level `creates_it` exclusion; `caller.rs:613-617` still takes that path.
+
+These are existing claimed regressions, not fresh red observations in this audit. Smallest complete group must cover both requested axes: make caller-supplied identities fresh across scenarios where their domain permits it, and explicitly carry/qualify an isolation requirement where it does not; arrange and act on the **same** row as two distinguishable authorized callers, including existing-instance branches. Preserve grant enforcement and caller-dependent semantics. Decide how the runner reports unsupported isolation and how old suites retain meaning before adding provenance/report fields. Merely switching actors without distinguishable credentials, or swapping an entire scenario so every row is still created and read by the same caller, does not prove shared-state behavior.
+
+This design can establish the isolation premise needed by #362. It should not automatically change all aggregate assertions or assert that existing shared-target semantics were already an empty-target requirement.
+
+## #304 — accepted replacement work, not a lost archived issue
+
+Canonical intake `feature-request-304` is archived revision 2. It is superseded by active `related-via-optional-input` revision 8 and `related-via-stored-reference` revision 8. Their fit review explicitly corrected the reported failure: Optional input via was rejected at validation on 0.48/0.49 rather than reaching a not-found branch. Current source agrees: `related_guard.rs:500-513` permits only primitive/named input types and asks for a required identity. Parsing accepts only `input.<field>` (`:100-125`), not a stored reference. These are supported-gap refusals, not hidden runtime acceptance.
+
+Accepted design already decides both forms in ess/21: absent Optional reference reads no row and selects no related branch; remaining selection must reach exactly one branch. Present-reference behavior remains unchanged. The stored-reference variant follows addressed existence/held state and precedes accepting branches via #282's new precedence step. Creation/no-subject restrictions remain. Generated Rust/Go/Web/Clap behavior stays an obligation until the separate `related-guard-behaviour` story; Entity Runtime keeps its named refusal.
+
+Neither accepted suite is implemented at the audited head: no `issue_304_*` or stored-reference acceptance tests were found under crates, and `interpret/execute.rs:524-535` still declines stored via and missing/non-text input. `RelatedVia` remains only Subject(String)/Input(String) with required-reference semantics (`related_value.rs:15-31,66-69`).
+
+Next group should follow the existing accepted sequence, not invent another one: Optional input admission/compiler/synthesis/interpreter/docs first, stored reference after #282, shared with #285's reference type work where appropriate. Reconcile #287's delivered singleton dependency from source/evidence rather than treating its stale active state as a new code blocker. #282 is still a draft story with an accepted redesigned decision, and its precedence step remains real prerequisite work. The source format bundle policy is recorded in `.engineering/waves/downstream-gaps.md:40-46`; do not silently ship only half a coordinated ess/21 contract.
+
+Exact accepted cases are already named in the two stories: absent/present/missing and dishonest-target mutants; old ess/20 IR bytes; absent-exhaustiveness refusal; stored blocker not Done/Done, wrong referenced-row/subject-row mutants, dangling reference witnessed or explicitly noted unreachable. No fresh design blocker is needed for these accepted semantics.
+
+## #299 — accepted row-set guard idiom, unresolved single-row value selection
+
+Current guard raw input is identity-via-only (`related_guard.rs:65,100-125,500-526`). Related values use a Subject/Input reference field, one hop, rather than a filter (`related_value.rs:1-31`). Neither current surface can select “the previous Session with the same agent and campaign” without an explicit identity link.
+
+Canonical #299 is draft revision 1, fit review pending. However the guard half already has a coordinator-adopted design under family F B: `when_related: {entity, where, exists | count | forall}` over bounded row sets, reusing set-effect filter vocabulary and scoped arrangement (canonical `feature-request-237`, Fit questions 4/6 and final Decisions; related #228/#233). It is part of the ess/21 bundle. That is an accepted related design, not an implemented guard or a complete design for a value read.
+
+The remaining value-side decision is concrete: a filter can match zero, one or many rows. The issue's “current/previous” is not defined by the Session model given—new generated identity per Login does not identify which of several matching sessions is current. Decide whether the model guarantees exactly one, declares deterministic ordering/selection, or explicitly names the superseded row; define the zero-match default, multiple-match refusal, and pre-command snapshot (so the newly created session cannot read itself). Copying one arbitrary/first row or assuming uniqueness from equal agent/campaign fields would invent semantics.
+
+Smallest coherent delivery: guard half within family F B, then a separately accepted value-read extension reusing that typed selection after cardinality and snapshot rules are settled. #285's Optional/chained identity-reference design is adjacent but does not authorize filtered lookup. Tests need zero/one/two matching predecessors, an unrelated decoy, matching agent with different campaign, preservation of the old counter, and a first/last-row mutant. Until that value-side decision is recorded, #299 cannot be closed merely because exists/count guards arrive.
+
+## Suggested sequencing
+
+1. Prepare bounded #361 key/parameter reductions and fit scope; it does not need a new authored construct for its narrow parameter case.
+2. Deliver already accepted #304 replacement stories in the coordinated reference/precedence bundle, preserving their documented target obligations.
+3. Decide #312 isolation reporting and complete cross-caller histories; use that decision to resolve #362's exact-count premise, or explicitly choose grouped additive deltas for #362 instead.
+4. Complete #363 measure-local predicate design and #299 single-row value selection design; retain family F B as the already selected guard idiom.
+
+These are specific ready-to-scope, accepted-to-implement, and decision-required dispositions. None of these six issues is claimed complete by this audit. No ignored regression was run or changed.
+
+## PR387 verified merge
+
+Merged2026-10-02T13:27:46Z by app/b10x-bot as1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036. Tree0c8693cea107f7ffef46319f70d27e1eb87a2917 equals tested headad45061626; first parentb4da64e is its ancestor. All15 reported checks passed. Refreshed GitHub intake now has49 open issues; all ten closing references are closed. Three browser-startup stories are also implemented. The private consumer adapter for347 remains unverified. No new release is claimed.
