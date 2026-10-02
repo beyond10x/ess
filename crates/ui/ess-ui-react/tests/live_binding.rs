@@ -470,6 +470,97 @@ const app = jsx(ScopeLayer, {{
     );
 }
 
+/// A `501` whose effect was committed (`ess_ui::binding::Answer::Unfinished { committed: true }`):
+/// the command is done and must not be sent again, so the stage closes as after an accepted
+/// command, reads are read again, and what failed after the effect is shown, not lost.
+const COMMITTED: &str = r#"answer = { status: 501, body: '{"refused":"delivering what the command published: the binding refused the event","committed":true}' };"#;
+
+#[test]
+fn a_committed_unfinished_submit_is_not_sent_again() {
+    let out = refusal_stage("unfinished-form");
+    node(
+        &out,
+        "unfinished-form",
+        &format!(
+            r#"{STAGE}
+const {{ FormView }} = out("runtime/composites/form");
+{COMMITTED}
+let closed = 0;
+const notices = [];
+const app = jsx(ScopeLayer, {{
+  values: {{ draft: {{ visitor: "Ada", building: "North", expected_minutes: 30 }} }},
+  setters: {{ draft: () => undefined }},
+  actions: {{ close: () => {{ closed += 1; }}, notify: (message) => notices.push(message) }},
+  children: [
+    jsx(Reader, {{}}, "reader"),
+    jsx(FormView, {{ "data-ui-path": "pages/desk/sections/register", does: "visit.RegisterVisit" }}, "form"),
+  ],
+}});
+(async () => {{
+  const root = React.__root(app).settle();
+  await flush(root);
+  const before = reads();
+  const form = () => root.find((n) => n.tag === "form")[0];
+  form().props.onSubmit({{ preventDefault() {{}} }});
+  await flush(root);
+  assert.strictEqual(posts().length, 1);
+  // Done: the form closes, so it offers no second submit of a command whose effect stands.
+  assert.strictEqual(closed, 1, "the form stays open over a committed command");
+  assert.ok(reads() > before, `reads ${{before}} -> ${{reads()}}`);
+  const shown = within(form(), (n) => n.props && n.props["data-ui-refusal"] !== undefined);
+  assert.strictEqual(shown.length, 1, root.text());
+  assert.strictEqual(shown[0].props["data-ui-refusal"], "unfinished");
+  assert.ok(notices.some((message) => message.includes("do not send it again")), JSON.stringify(notices));
+  await flush(root);
+  assert.strictEqual(posts().length, 1, "the committed command was sent again");
+}})().catch((error) => {{ console.error(error); process.exit(1); }});
+"#
+        ),
+    );
+}
+
+#[test]
+fn a_committed_unfinished_confirm_is_not_sent_again() {
+    let out = refusal_stage("unfinished-confirm");
+    node(
+        &out,
+        "unfinished-confirm",
+        &format!(
+            r#"{STAGE}
+const {{ ConfirmView }} = out("runtime/composites/confirm");
+{COMMITTED}
+let closed = 0;
+const notices = [];
+const app = jsx(ScopeLayer, {{
+  values: {{ row: {{ id: "v-1" }}, params: {{ visit_id: "v-1" }} }},
+  actions: {{ close: () => {{ closed += 1; }}, notify: (message) => notices.push(message) }},
+  children: [
+    jsx(Reader, {{}}, "reader"),
+    jsx(ConfirmView, {{ "data-ui-path": "pages/desk/sections/depart", does: "visit.SignOutVisitor", body: "Sign the visitor out?" }}, "confirm"),
+  ],
+}});
+(async () => {{
+  const root = React.__root(app).settle();
+  await flush(root);
+  const before = reads();
+  const confirm = () => root.find((n) => n.props && n.props["data-ui-path"] === "pages/desk/sections/depart")[0];
+  const button = () => within(confirm(), (n) => n.tag === "button" && textOf(n).includes("Confirm"))[0];
+  button().props.onClick();
+  await flush(root);
+  assert.strictEqual(posts().length, 1);
+  // Done: the confirm closes and its guard is released, as after an accepted command.
+  assert.strictEqual(closed, 1, "the confirm stays open over a committed command");
+  assert.ok(reads() > before, `reads ${{before}} -> ${{reads()}}`);
+  assert.ok(notices.some((message) => message.includes("do not send it again")), JSON.stringify(notices));
+  const shown = within(confirm(), (n) => n.props && n.props["data-ui-refusal"] !== undefined);
+  assert.strictEqual(shown.length, 1, root.text());
+  assert.strictEqual(shown[0].props["data-ui-refusal"], "unfinished");
+}})().catch((error) => {{ console.error(error); process.exit(1); }});
+"#
+        ),
+    );
+}
+
 #[test]
 fn a_refused_command_renders_on_the_action_that_sent_it() {
     let out = refusal_stage("action");
