@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:41:02Z",
+  "actor": "human:timo",
+  "artifact": "story:predicate-reference-page",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ESS4ff39cf22 contained in0.51.0; required agentplugins follow-up delivered at b38f8d9 and exact remote3910ec5 syntax reference verified corrected, unlike stale local checkout",
+    "reference": "https://github.com/beyond10x/agentplugins/commit/b38f8d9cd13f149251282cc653ff029f1f7f4e5b"
+  }
+}

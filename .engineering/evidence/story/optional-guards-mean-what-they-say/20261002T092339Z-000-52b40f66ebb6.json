@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:23:39Z",
+  "actor": "human:timo",
+  "artifact": "story:optional-guards-mean-what-they-say",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Inspected actual historical red.log then final2.log and cli2.log EXIT=0; CLI guard adversary 8 passed. Current complete package test-synthesis.log passes both presence branches, omitted-key and quoted/unquoted-null cases.",
+    "reference": "local-evidence:ess-wave-20260925/a1-scratch/"
+  }
+}

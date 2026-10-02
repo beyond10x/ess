@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:00:38Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-server-gate-corrections-20261002",
+  "kind": "task",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Corrected candidate f0b220099 published with signed common receipt; remote correctness gate pending",
+    "reference": "https://github.com/beyond10x/ess/pull/386"
+  }
+}

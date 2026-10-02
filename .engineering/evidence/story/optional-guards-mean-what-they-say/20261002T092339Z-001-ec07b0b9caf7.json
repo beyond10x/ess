@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:23:39Z",
+  "actor": "human:timo",
+  "artifact": "story:optional-guards-mean-what-they-say",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "eff666c72 is ancestor of published0.51.0; exact release verified public with four native archives and SHA256SUMS, acceptance mapped to named tests",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.51.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:23:40Z",
+  "actor": "human:timo",
+  "artifact": "story:list-and-text-guards-are-synthesized",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "eff666c72 is ancestor of public0.51.0; all three stated acceptance lines mapped to tests/documentation and four native release archives plus SHA256SUMS verified",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.51.0"
+  }
+}

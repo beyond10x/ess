@@ -15,6 +15,14 @@ relations:
 - depends_on: story:served-view-params
 scope:
 - confidence: cited
+  path: Cargo.lock
+- confidence: cited
+  path: crates/generate/ess-synth/Cargo.toml
+- confidence: cited
+  path: crates/generate/ess-synth/src/feasibility.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/behaviour.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/go/context.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/go/entry.rs
@@ -27,6 +35,8 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/store.rs
 - confidence: cited
+  path: crates/generate/ess-synth/src/rust/behaviour.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/context.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/entry.rs
@@ -37,7 +47,11 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/mod.rs
 - confidence: cited
+  path: crates/generate/ess-synth/src/rust/single.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/store.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/served.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/fixtures/served-notes
 - confidence: cited
@@ -48,7 +62,7 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -155,3 +169,44 @@ done needs the PR's CI run, whose `test` job has Go 1.25.10, showing these tests
 After story:go-generated-behaviour (the Go store implements its ports) and story:served-view-params (both edit `{go,rust}/http.rs`). Before
 story:related-guard-behaviour: both regenerate `generated/` and edit `synthesize.md`.
 `CHANGELOG.md` is a merge-time edit (epic).
+
+# #318: read-only implementation outline
+
+Authority: canonical `story:served-store-and-entry`, revision 8, complete accepted decisions and all nine named scenarios. Source inspected at server candidate `4826099161bec53d2da65996958b97cb0c96165a`. No implementation, fixture edit or planning mutation in this pass. The follow-on implementation needs its own managed tree and lease.
+
+## Work sequence
+
+1. Add the accepted served-notes specification and a Rust integration harness. Generate both language trees into test scratch and build/start their emitted binaries without injecting business code or a handwritten store. Capture the startup record to discover a port bound at `127.0.0.1:0`. Establish meaningful red for the no-code server, default denial, explicit actor-header mode, static/API coexistence and conformance run before changing emission.
+2. Derive generated-store and context requirements from the existing behavior/storage port seam. Emit deterministic in-memory storage implementations and a composed ports value that delegates those exact traits/interfaces. Use typed model/layout information; avoid parsing generated source text or inventing a second definition of which behavior is generated. Context supplies random v4 UUIDs and system-clock timestamps only; other assignments, caller attributes and external answers remain named startup refusals. Emit this convenience only for network-reached components.
+3. Emit each component's executable and connect it to the existing generated system and HTTP surface. Rust command lines use clap derive; generated Go uses the story's flag-based output, emitted and exercised by Rust repository code. Keep the existing public `serve`/`Serve*` authentication callback usable by handwritten realizations. Add explicit entry-point configuration for listen address, caller mode and static root. Startup must reject unmet behavior/context obligations before announcing readiness. API routes, grant failures and unsupported operations must keep their existing behavior when static serving is enabled.
+4. Prove every accepted case in both languages, then run package and projection verification. Refresh committed trees through the now-documented settled-reference/adoption workflow. Amend the stated documentation claims about generated stores, caller resolution and nondurability. Regeneration and any scope extension are reviewed before commit; no reduced version of the acceptance is proposed.
+
+## Acceptance coverage
+
+| Named acceptance | Decisive observation |
+|---|---|
+| `the_served_notes_plan_has_no_obligation` | Actual compiled fixture plan has zero owed capabilities; target-independent plan stays consistent. |
+| `the_go_entry_point_serves_the_fixture_with_no_hand_written_code` | Build untouched Go emission, start it, AddNote returns 202, Notes includes the created row, undeclared Reader gets 403, omitted caller mode gets 403. |
+| `the_rust_entry_point_serves_the_fixture_with_no_hand_written_code` | Same process-level behavior for untouched Rust emission. |
+| `the_static_directory_is_served_beside_the_api` | Both targets return index.html at `/` and correct view rows at the declared API route; API refusal statuses do not turn into static responses. |
+| `an_entry_point_with_owed_commands_refuses_to_start_naming_them` | Gatepass fails startup naming RegisterVisit and all other relevant owed capabilities; handwritten linkage remains possible through the existing public seams. |
+| `the_store_lists_in_identity_order` | Insert out of order, replace/delete rows, and observe deterministic identity order in both generated stores. |
+| `the_generated_context_assigns_distinct_uuids` | Actual emitted context produces distinct valid v4 UUIDs in both targets. System-clock timestamp behavior also needs a real bounded observation because it is an explicit decision. |
+| `an_entry_point_needing_caller_attributes_refuses_to_start_naming_them` | Before ready/listen, deterministic diagnostics identify the actual unsupported attribute; external and unsupported assigned types receive equivalent explicit evidence. |
+| `the_fixture_suite_passes_against_the_generated_go_and_rust_servers` | Synthesized, admitted suite executes through HTTP with strict Passed statuses and nonzero expected case counts; no injected handwritten behavior. |
+
+Toolchains are present locally, so required Go evidence must execute rather than early-return. The canonical CI requirement must also be verified when the follow-on group is published.
+
+## Scope and acceptance risks to resolve during implementation
+
+- **Rust dependency premise is stale.** `rust/mod.rs:402/410` emits Timestamp/Uuid as String wrappers; generated manifests currently have zero external dependencies (`rust/http.rs:247`, `rust/single.rs:228`). The story's claim that the generated types already use the uuid crate is inaccurate. Its explicit UUID-v4 and clap decisions still stand, requiring deliberate server/runtime dependencies and offline build evidence. Do not replace random UUIDs with sample/counter strings to preserve the old dependency claim.
+- **Single-crate layout must be handled.** `rust/single.rs:140–202` drops workspace manifests and places every server file below `src/server/`; its manifest at :228 has no dependencies. New executable paths and dependencies need folding/feature treatment here, although single.rs is absent from the current cited scope. This is a necessary scope refinement rather than permission to break an admitted layout.
+- **Context requirements are currently global.** `rust/behaviour.rs:59–130` collects `Uses` over all model commands/views; `Uses` at :177 includes caller, assigned and external requirements. A component's startup cannot silently invent answers to unrelated global methods or falsely refuse a runnable component because of an unrelated sibling. Requirement accounting must include behavior reachable through bindings, not only its direct HTTP routes.
+- **Nominal identity wrappers lack Ord.** Generated Uuid primitives derive Ord, but nominal newtypes such as `EmployeeId` derive only equality. A store cannot blindly use the public newtype as a BTreeMap key or impose new derives on every domain type. Preserve the port's types and choose an internal typed ordering representation; integer identity order must not become lexicographic numeric-string order.
+- **Authentication spelling needs an explicit choice consistent with acceptance.** The accepted fixture sends `Authorization: Actor Writer`; existing realization examples compare qualified declared names (`gatepass-server.rs:authenticate`). Do not accidentally make the required short-name case fail, accept arbitrary undeclared names, or choose between ambiguous aliases. Default `none` must never read a granting header.
+- **Startup is part of the contract.** Existing bound-port/startup facts are shared by Rust and Go (`rust/http.rs:460–551`, Go :957–984). Include the explicitly selected demonstration caller mode without emitting ready on a refused entry point. Preserve genuine unmet obligations rather than satisfying them with placeholder return values.
+- **Static routing belongs after route selection.** Existing Go Serve creates its own handler; Rust serve owns its listener loop. Add fallback without changing current callback signatures/behavior for realizations that do not opt in. Preserve known-route method, auth and decoding errors. Confine file resolution to the selected static root, including encoded paths and filesystem aliases.
+- **Generated names and package coverage matter.** New store/context/binary paths need the existing feasibility allocation checks, including collisions with authored component/module names. Existing no-server specifications should not gain server stores/binaries; generated HTTP/WASM consumers and no-feature single-crate builds must still compile.
+- **Generated claims also need amendment.** Storage trait prose currently says ESS never emits an implementation (`rust/behaviour.rs:250`), beyond the website lines named in the story. Update only claims the accepted network-served exception changes. Keep durability, authentication and unresolved behavior responsibility explicit.
+
+No caller policy, durable persistence, CORS policy, broader related-guard generation or general symbolic/context solver is added by this story.

@@ -4,9 +4,12 @@ id: story:typed-literals-in-sets-and-unknown-instances
 kind: story
 status: active
 title: 'sets: accepts typed literals and an unknown instance has a declared answer'
+refs:
+- provider: github
+  reference: beyond10x/ess#113
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-26T02:53:20Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-26T02:54:00Z", actor: "human:timo", revision: 3, imported: true}

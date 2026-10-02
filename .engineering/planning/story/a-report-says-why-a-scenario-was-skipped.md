@@ -6,7 +6,7 @@ status: draft
 title: A report says why a scenario was skipped
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 # Story: a report says why a scenario was skipped
 
@@ -55,3 +55,7 @@ Changing what makes a scenario skip. The exit-code defect, which is its own stor
 ## Open Questions
 
 None.
+
+## Source reconciliation 2026-10-02
+
+Still actionable. Current report/2 counts.rs:112-118 has five status arrays of ScenarioId with no per-scenario reason, so the earlier report/2 counting implementation does not satisfy this request. Preserve report/1 identity parsing and released report/2 canonical bytes. A new per-scenario reason contract requires a versioned format decision, legacy-reader tests, all current Rust/Go/TypeScript producer coverage, and downstream AEP reader compatibility rather than an in-place field addition. The related skip-reason story's log portion already exists; its document portion is coordinated here. No implementation or consumer adoption is claimed by this reconciliation.

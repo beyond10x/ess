@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:41:01Z",
+  "actor": "human:timo",
+  "artifact": "story:stored-field-guards",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Finalized ess/9 allocation replaces stale ess/8; implementation e2d7e998e is ancestor of public0.51.0, rule2 non-overlap exclusion preserved",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.51.0"
+  }
+}

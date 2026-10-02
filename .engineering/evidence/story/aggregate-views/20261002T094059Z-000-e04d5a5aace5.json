@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T09:40:59Z",
+  "actor": "human:timo",
+  "artifact": "story:aggregate-views",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Retained d2 final ess-conformance.log EXIT=0; source acceptance mapped to domain/IR/projection and honest/mutant aggregate cases, including filters, both keys, row omission and rounding",
+    "reference": "local-evidence:ess-wave-20260925/d2-scratch/final/ess-conformance.log"
+  }
+}
