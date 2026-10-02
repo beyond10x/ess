@@ -12,6 +12,10 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- depends_on: story:interpreted-eventual-views
+- depends_on: story:interpreted-bindings-and-unmet-obligations
+- depends_on: story:interpreted-scenario-supplied-facts
+- depends_on: story:interpreted-trust-gate
 scope:
 - confidence: cited
   path: crates/edge/ess-cli

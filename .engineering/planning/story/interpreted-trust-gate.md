@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:interpreted-trust-gate
 kind: story
-status: draft
+status: active
 title: The interpreter is checked against both hand-written targets
 summary: Billing and oracle suites as green as hand-written, and the fault matrix still discriminates
 owner: ess
@@ -35,7 +35,10 @@ scope:
   path: suites/generated/billing/suite.json
 - confidence: cited
   path: suites/generated/oracle-fixture/suite.json
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-02T16:54:46Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-takeover", correlation: "consumer-runtime-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-02T16:54:46Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-takeover", correlation: "consumer-runtime-20261002"}
 ---
 # Story: the interpreter is checked against both hand-written targets
 
@@ -60,3 +63,9 @@ same scenarios under the interpreter as under them.
 
 A gate test running both suites under both target families and comparing, plus the fault matrix run.
 It adds no capability; it is the evidence the epic's other stories are believed on.
+
+## Complete runtime batch authorization and ownership
+
+The operator's explicit mandate, “EVERY conformance test must support all the features,” authorizes completing this existing interpreter work as part of the grouped consumer-runtime batch. The native audit identified actual implementation gaps, not intrinsic model or consumer-adapter limits: bindings/redelivery/invocation observation, ordinary typed responses, view ordering/paging/aggregates and scenario-supplied facts. The original named acceptance remains required; a passing native Runner using another Target does not deliver this story.
+
+Implementation owner: server_corrections in managed tree ess-backlog-one-time-response-20261002, after its explicit partial checkpoint. Its production ownership is interpret.rs and interpret/**, dedicated interpreter tests, and any reviewed observer/recording corrections. Coordinator owns synthesize/disclosure.rs, one_time_response/produce.rs and producer tests in carrier ess-backlog-next-20261002 after checkpoint handoff. Shared authored::compile_one policy attachment is frozen in that checkpoint; later changes require coordination. Go and TypeScript workers retain their own runtime paths. The interpreter trust comparison and fault matrix must run before claiming complete support. All work remains in the grouped PR; no additional remote gate is scheduled for intermediate checkpoints.
