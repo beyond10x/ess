@@ -1,0 +1,61 @@
+[
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "observe_events",
+      "mark_instant",
+      "observe_events",
+      "observe_events",
+      "observe_events",
+      "observe_events",
+      "observe_elapsed",
+      "observe_events",
+      "observe_events",
+      "mark_instant",
+      "observe_events",
+      "observe_events",
+      "observe_events",
+      "observe_elapsed",
+      "observe_events",
+      "observe_events",
+      "observe_events",
+      "end_scenario"
+    ],
+    "case": "window-healthy",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "required_code": "ESS-CF-DISCLOSURE",
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "observe_events",
+      "mark_instant",
+      "observe_events",
+      "observe_events",
+      "end_scenario"
+    ],
+    "case": "delayed-event",
+    "counts": {
+      "error": 0,
+      "failed": 1,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "required_code": "ESS-CF-DISCLOSURE",
+    "status": "failed"
+  }
+]
