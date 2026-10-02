@@ -32,7 +32,7 @@ scope:
   path: generated
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":6}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":6}}}
@@ -116,3 +116,9 @@ edit (epic).
 The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
 
 This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.
+
+## Verified correction to the reference premise
+
+The Fit review's earlier statement that the interpreter already executes when_related is too broad for current source. Atff128cbdb, interpret/execute.rs551–595 supports only a narrow missing input-reference path, and interpretable rejects remaining Related conditions at697–698. Coordinator actual execution of tests/fixtures/related-guard-sign-in.yaml with `ess verify conform run --target interpreted --report-format 2 --format json` produced2 passed/2 unsupported, exit1; retained carrier target/backlog-input/capability-related-guard-sign-in.json records the exact scenarios and diagnostics.
+
+The accepted generated-behavior outcome and all required/Optional/stored-via acceptance remain unchanged. Before treating native interpretation as an independent comparison for those generated behaviors, implement and verify the corresponding native related-row semantics under the complete runtime sequence, including presence/absence, precedence, typed facts and no-row-read for an absent Optional reference. verification-report:consumer-interpreter-capability-audit records the specific gaps. This correction withdraws a stale premise; it is not a decision to leave generated behavior as an obligation, and it does not waive the ess/22 coordinated dependency bundle or the actual Go1.25.10 CI evidence requirement.
