@@ -242,7 +242,7 @@ function nonEmpty(value: Node): boolean {
 // ---- input types --------------------------------------------------------------------------------
 
 type Kind =
-  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' }
+  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' | 'timestamp' }
   | { kind: 'enum'; variants: string[] }
   | { kind: 'struct'; fields: [string, Kind][] }
   | { kind: 'identity'; entity: string; base: Kind }
@@ -257,7 +257,7 @@ function identityOwner(ir: Node, type: string): string | null {
 }
 
 /**
- * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`, a `timestamp`,
  * and a type whose values are constrained: concurrent exploration does not judge an answer by this
  * model, `ess` does, so a drawn value outside the constraint is a question the target answers and the
  * checker judges.
@@ -272,6 +272,7 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
       case 'uuid':
         return { kind: ref.name };
       case 'decimal':
+      case 'timestamp':
         if (concurrent) return { kind: ref.name };
         return { kind: 'unsupported', why: `a \`${ref.name}\`` };
       default:
@@ -921,6 +922,12 @@ function drawValue(
       return rng.chance(0.5);
     case 'string':
       return rng.pick(command.pools.texts);
+    case 'timestamp': {
+      // One seeded draw selects a UTC second on a fixed date, never a target clock.
+      const second = rng.int(0, 86399);
+      const part = (value: number): string => String(value).padStart(2, '0');
+      return `2020-01-01T${part(Math.floor(second / 3600))}:${part(Math.floor(second / 60) % 60)}:${part(second % 60)}Z`;
+    }
     case 'uuid':
       return `00000000-0000-4000-8000-${String(rng.int(0, 999999)).padStart(12, '0')}`;
     case 'enum':

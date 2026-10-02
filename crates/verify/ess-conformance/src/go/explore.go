@@ -317,7 +317,7 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 	return exploreResolveAs(ir, ref, depth, false)
 }
 
-// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `decimal` and a type whose
+// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `decimal`, a `timestamp`, and a type whose
 // values are constrained: concurrent exploration does not judge an answer by this model, `ess` does,
 // so a drawn value outside the constraint is a question the target answers and the checker judges.
 func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
@@ -329,7 +329,7 @@ func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurre
 		switch name {
 		case "integer", "boolean", "string", "uuid":
 			return exploreKind{kind: name}
-		case "decimal":
+		case "decimal", "timestamp":
 			if concurrent {
 				return exploreKind{kind: name}
 			}
@@ -1176,6 +1176,10 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 		return r.Chance(0.5), nil
 	case "string":
 		return explorePick(r, command.pools.texts), nil
+	case "timestamp":
+		// One seeded draw selects a UTC second on a fixed date, never a target clock.
+		second := r.Int(0, 86399)
+		return fmt.Sprintf("2020-01-01T%02d:%02d:%02dZ", second/3600, second/60%60, second%60), nil
 	case "uuid":
 		return fmt.Sprintf("00000000-0000-4000-8000-%012d", r.Int(0, 999999)), nil
 	case "enum":
