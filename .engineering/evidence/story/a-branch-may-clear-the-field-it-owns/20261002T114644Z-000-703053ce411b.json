@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T11:46:44Z",
+  "actor": "human:timo",
+  "artifact": "story:a-branch-may-clear-the-field-it-owns",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Four cleared_set cases and the two-act cleared-field synthesis assertion pass in full package run f863ee; released guide now covers the prior documentation gap",
+    "reference": "target/backlog-input/group-packages-f863ee.log"
+  }
+}
