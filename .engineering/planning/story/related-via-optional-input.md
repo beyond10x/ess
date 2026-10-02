@@ -29,7 +29,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_optional.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -86,3 +86,7 @@ Base 0.50.0+. #287 touches `synthesize/related_guard.rs` and `related.rs`: the s
 Read-only ancestry inspection found singleton core1f131e170, release integration482bc33c2 and tag0.51.0 ancestors of current main1ff305685. feature-request-287 itself records that released core and remaining ignored cross-caller reinstall, Uuid and ordered-view scenario-withdrawal limits. Optional-input requires the landed singleton synthesis change and serialized edits to related witness arrangement; its named acceptance does not require the retained failing shapes. The coordinator therefore treats that landed core as satisfying this unit's sequencing prerequisite while preserving the broader #287 artifact as active and preserving every ignored limitation as unresolved. This is a bounded planning disposition, not a new test result or whole-story completion. The depends_on edge remains visible with this qualification.
 
 Current main's interpreter declines present related predicates; later guard-generation work must implement them or integrate a bounded reviewed equivalent. Candidate ee50829da is not landed and relies on earlier held-subject work on a74-commit line: do not import that line wholesale under this five-wave approval. Optional absence must skip both row lookup and related-branch selection, rather than fall into the unconditional decline. Merge readiness still depends on the ess/21 format bundle decision.
+
+## Precedence reconciliation for the approved serial batch
+
+The earlier "input via unchanged (step 1)" phrase preserves the early lookup/missing-row behavior. It does not override the accepted ess/21 held-state-before-related-predicate-refusal decision in story:feature-request-282, implemented first in this batch. Optional absence skips every related lookup/branch regardless of placement; required/present input lookup retains the early missing-row refusal, while present-row predicate refusal follows the held-state decision under ess/21. Below ess/21 preserve the existing supported contract. Source: this story's #282 dependency in its design and story:feature-request-282 Decisions/Acceptance. This is a coordinator clarification of the overlapping accepted decisions; implementation must prove the distinctions rather than introduce a separate order.

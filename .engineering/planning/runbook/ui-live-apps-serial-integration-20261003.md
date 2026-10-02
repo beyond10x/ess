@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 9
+revision: 12
 ---
 ## Authority and delivery
 
@@ -81,3 +81,23 @@ Implementor handed back clean source candidate4a17f69b62f53e80bda3c32cdecd79f06f
 Strict ess-synth Clippy, fmt-check, diff-check, both actual Rust1.85.1 native layouts, Go vet/gofmt, concurrent real-entry invocations and all4fixture byte comparisons exit0. Gatepass-realization executed12cases (7unit+5conformance), exit0, preserving legacy Context compatibility. Local Go is1.27.0; PR CI's specified Go lane remains required before terminal completion. Runtime pin correction is clap4.6.7/uuid1.26.1/time0.3.45; no unrelated dependency upgrade.
 
 Independent served_entry_adversary_final dispatched tests-only in the same managed unit checkout after implementor/coordinator leases ended. It receives source comparison base1ff305685 and frozen4a17f69b, measured counts and raw logs, own lease/target, prospective-case-first instructions, and the remaining second/final review budget. No next-wave implementation begins until this review/correction/integration completes. The coordinator prepared only the #282 dispatch brief. Current source is not yet declared implemented or published.
+
+## Operator cross-session ownership instruction
+
+Operator asked this session to coordinate with Codex session01a0feb8-366c-7ff2-bce6-17aa26249ee3 and explicitly reserved all ess-transports work to a third Claude session. This batch excludes ess-transports; do not change, review-as-owner, merge or release that session's work. Preserve our five-story serial scope and full ess/21 bundle hold. Source corrections and new-unit dispatch are temporarily held while establishing overlap ownership; the tests-only final review completed independently.
+
+Normal cross-thread message and CLI queue routes both refused the named ephemeral session (no rollout; ephemeral submissions unsupported). A coordination message was successfully delivered to the other active ess coordinator thread01a0fbbb-1141-7e33-8cc0-9a6184900bea, asking it to confirm/relay the supplied session and report its scope. Message supplied our branch, checkouts, five stories, held PR boundary, pending Go decoder correction and exclusive Claude ownership of ess-transports. Await actual reply; delivery is not acknowledgement. No release/transport checkout was touched.
+
+## Final review result retained; correction awaiting ownership check
+
+The final tests-only review added166lines and3cases to served_entry; all existing assertions remain. Target output:32passed1failed0ignored, exit101. Actor-alias and static HEAD/document-route boundaries passed in both Rust and Go. Union identity/order passed in Rust; generated Go compilation failed before its assertions. Exact-main CLI reproduced the same failure, and cmp showed byte-identical generated wire.go. The defect is unchanged go/http.rs:730: Optional union payload shape is declared within its presence branch and referenced afterwards.
+
+Immutable publication report recorded verbatim as review-result:served-store-and-entry-adversary-final-20261003; raw SHA256 d7d97ccecd04f94d8eac6ddc89c0a7cddaaf241c48a77cf9172b10468147f057. Explicit findings comparison against served-store-and-entry-adversary-pass-1-20261002 reports0carried,1new(pre-existing Go decoder),1resolved(older candidate memory-domain gating). The default findings selection picked historical scope reviews rather than this attack pair, so the explicit --from/--to report is retained in318scratch. No third attack is authorized; route the one correction after the cross-session scope check, then verify the preserved regressions and complete package tests. Reviewer released its lease; source remains frozen.
+
+Preliminary common-security check on integration ec636c34a3 succeeded, scanned113commits and retained signed receipt. The initial invocation lacked its trusted policy path; the retry supplied the exact policy/key paths from installed hook configuration, without changing policy. This receipt covers that preliminary head only and must be regenerated for final publication.
+
+## Cross-session contact established
+
+Coordinator01a0fbbb confirmed it owns local batch/consumer-runtime-20261002 in ess-backlog-next-20261002: #389 one-time responses, #312 isolation/mixed callers, native typed Store/caller/existence/SubjectField+Increment and RelatedField. It confirmed this session should own318/282/304/319, noted older local318/307/360 copies to reconcile, and stated it does not own releasePR398 or transports390–395. Our later conformance interpreter/synthesis edits must wait for a reviewed shared base or explicit file ownership agreement; bounded ess-synth server correction is disjoint from its current work. Both peers explicitly reserve all ess-transports work to the third Claude session.
+
+The exact operator-supplied session01a0feb8 was reached through the running local app-server's supported turn/start operation after metadata-only thread/read confirmed ephemeral=true, idle, canAcceptDirectInput=true, no parent. No config/model/permission override was used. Delivery returned turn01a0ff05-03cb-71b1-86e2-b0ab74060543 inProgress with no error; full message and response retained in assigned scratch. It carries all ownership boundaries and asks whether that session ownsPR398. This supersedes the earlier delivery failure; acknowledgement still pending.
