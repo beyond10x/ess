@@ -33,7 +33,7 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 13, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 14, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -86,3 +86,7 @@ Bot commit d1e3bed41 contains the ten frozen paths on current-main-integrated 3e
 ## Combined documentation integration correction
 
 The combined fba30d2af candidate passed ci-lint and all six projection checks. Its site build exited successfully but warned that guides/write-a-specification links to fields-and-invariants#cover-every-declared-enum-value, removed by the Boolean heading rename. Preserve that published fragment with an explicit heading id and rebuild the site before publishing the combined PR 387 head. This is a documentation compatibility correction within the existing fields-and-invariants scope.
+
+## Documentation integration result
+
+The explicit heading-id attempt was rejected by this site's MDX parser, and a separate HTML anchor still triggered its link checker. Retaining the original heading text preserves the published fragment without changing the Boolean coverage explanation. The corrected site build stage now exits zero without broken-anchor warnings (combined-anchor-site-final.log), after the same candidate's WASM/browser-lab stages passed. The combined service-contract package also passed all seven tests and formatting passed. No remote rerun was spent on either local documentation correction.
