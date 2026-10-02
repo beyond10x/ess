@@ -32,7 +32,7 @@ scope:
   path: generated
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":6}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":6}}}
@@ -110,3 +110,7 @@ Last in the epic: after story:go-generated-behaviour (Go ports), story:served-st
 `declared_behaviour.rs` and `plan.rs`) and story:related-via-stored-reference (the via it
 generates). `determined.rs` was changed by #310: base on 0.51.0. `CHANGELOG.md` is a merge-time
 edit (epic).
+
+## Serial integration precedence clarification, 2026-10-03
+
+The Decisions phrase "an input via answers at step 1" is too broad beside the accepted #282 decision. For this approved serial batch, interpret it as the early input-reference lookup/missing-row branch only. A present related-row predicate refusal follows the addressed row's held-state check under ess/21, as story:feature-request-282 explicitly requires. Stored-reference lookup still needs the subject row and follows its existence and held-state decisions. Preserve the earlier missing-related-row branch, input refusal order, Optional absence skip and nonmoving state independence. Source: story:feature-request-282 Decisions and its named acceptance controls, and this story's own acceptance of that story's precedence step. This is a coordinator reconciliation of existing accepted decisions, not an extra precedence policy or a claim of executed tests; verify it against the authoritative design after wave 2 integration.

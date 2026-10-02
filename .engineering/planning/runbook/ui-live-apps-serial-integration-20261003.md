@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 7
+revision: 9
 ---
 ## Authority and delivery
 
@@ -69,3 +69,15 @@ Coordinator inspected the three legacy assertion corrections. Caller/generation/
 The retained w4 checkout was not merely empty directories. Filesystem inspection found two stale Unix sockets under target/review-boundaries-17/authored-discovery/fixtures/181773-11: socket-config/ess-inputs.yaml and bad/socket. The creating PID181773 was absent and ss -xap showed no active matching sockets. After deleting exactly those disposable socket entries and then empty target directories, the manager's dry run reported ess-w4-ui-tui-app eligible. Exact-id gc apply reported removed; the path was verified absent. This corrects the earlier incomplete empty-directory inference. Managed archives preserve the prior states.
 
 The helper ess-serial-baseline-20261003 was also removed through managed GC after its reference outputs and executable were retained outside the checkout. The three predecessor branches unit/ui-tui-app-generator, unit/go-generated-behaviour and unit/served-view-params each passed merge-base --is-ancestor against origin/main, then git branch -d deleted exactly those branches. No unrelated checkout or branch was removed. All six recovered predecessor worktrees w2 through w7 are now retired; the separately named integration checkout and current serial unit remain active.
+
+## Concurrent remote activity observed
+
+A later read-only remote check during #318 final package testing reports main d0f22461dae326f59664bc9427efad3589641961, after unrelated integer-bounds work landed. Open PR398 is another session's release/0.52.0-20261003, titled publish ESS0.52.0 from merged consumer fixes; PR397 event-roots remains open. No0.52.0 tag was returned by this check. This updates the earlier open-PR snapshot without taking over that release or treating a release PR as publication. Our frozen #318 source still targets recorded main1ff305685; reconcile remote changes before final integration validation. No existing PR matches our serial batch branch.
+
+## Wave1 frozen candidate and final review dispatch
+
+Implementor handed back clean source candidate4a17f69b62f53e80bda3c32cdecd79f06fca1ac0 after coordinator bot commit and author/committer verification. All23 changed files, including6new generated files, were staged; private .ess-output metadata stayed ignored. Raw report SHA256 ed02ece4b4476b57bc9c8d9e21105bdbe1a3fd94e787c206789ec6a9aab45634 is retained in assigned318scratch. Package-after.exit=0; the runner's60 summary groups total404passed0failed1ignored. Before-fix full run already contained the five new controls:404executed,378passed26failed1ignored. Acceptance baseline25→30passed. The single ignored removed-record scenario is pre-existing, not counted as green.
+
+Strict ess-synth Clippy, fmt-check, diff-check, both actual Rust1.85.1 native layouts, Go vet/gofmt, concurrent real-entry invocations and all4fixture byte comparisons exit0. Gatepass-realization executed12cases (7unit+5conformance), exit0, preserving legacy Context compatibility. Local Go is1.27.0; PR CI's specified Go lane remains required before terminal completion. Runtime pin correction is clap4.6.7/uuid1.26.1/time0.3.45; no unrelated dependency upgrade.
+
+Independent served_entry_adversary_final dispatched tests-only in the same managed unit checkout after implementor/coordinator leases ended. It receives source comparison base1ff305685 and frozen4a17f69b, measured counts and raw logs, own lease/target, prospective-case-first instructions, and the remaining second/final review budget. No next-wave implementation begins until this review/correction/integration completes. The coordinator prepared only the #282 dispatch brief. Current source is not yet declared implemented or published.

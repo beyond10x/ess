@@ -57,16 +57,22 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/served.rs
 - confidence: cited
+  path: crates/generate/ess-synth/tests/declared_behaviour.rs
+- confidence: cited
   path: crates/generate/ess-synth/tests/fixtures/served-notes
 - confidence: cited
   path: crates/generate/ess-synth/tests/served_entry.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/single_crate_layout.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/synthesis.rs
 - confidence: cited
   path: generated
 - confidence: cited
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 17
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -162,11 +168,11 @@ done needs the PR's CI run, whose `test` job has Go 1.25.10, showing these tests
 
 ## Scope
 
-`crates/generate/ess-synth/src/go/{store.rs, context.rs, entry.rs (new), layout.rs, mod.rs, http.rs}`,
-`crates/generate/ess-synth/src/rust/{store.rs, context.rs, entry.rs (new), layout.rs, mod.rs, http.rs}` (`http.rs`: `--static` needs a fallback route, since Go `Serve` builds its own handler, `go/http.rs:950-956`, and Rust `serve_function` `rust/http.rs:596`),
-`crates/generate/ess-synth/tests/served_entry.rs` (new),
-`crates/generate/ess-synth/tests/fixtures/served-notes/` (new), `generated/{go,rust}/{gatepass,billing}`,
-`website/docs/guides/synthesize.md`, `website/docs/concepts/ess.md`.
+Confirmed by the implementation report for frozen candidate4a17f69b62f53e80bda3c32cdecd79f06fca1ac0 and its diff against main1ff305685. Original scope retained: ess-synth Go/Rust store, context, entry, layout, module and HTTP emitters; served_entry tests and served-notes fixture; generated Rust/Go billing and gatepass; the synthesize guide and ESS concept page.
+
+Corrections learned: generated memory implementations live under server modules, so the old candidate's authored-memory-domain gating fix is unnecessary here; both network and nonnetwork regression controls execute. Structural identity helpers live under each target's store/identity.rs. Shared served.rs computes reachable obligations, feasibility.rs allocates names, and behaviour.rs emits additive fallible context calls. Rust single.rs owns the single-crate server feature and dependency manifest. Cargo.lock and ess-synth/Cargo.toml admit the exact generated runtime versions. Tests/declared_behaviour.rs, tests/single_crate_layout.rs and tests/synthesis.rs required coordinator-reviewed exact assertion updates for those companion seams; their obligations were preserved. Typed scope entries include these confirmed paths.
+
+Five recovered controls in tests/served_entry.rs cover ordinary memory domains, default dependency-free/WASM libraries, native dependency MSRV and timestamp newtypes. Existing static control gained binary/root/API-shadow checks. The generated fixture changes were produced by official adoption from byte-exact main references and regeneration, with four fresh-reference byte comparisons; PLAN.md/plan.json remained unchanged. Go remains go1.21 and passes local Go1.27 vet; no obsolete Go1.24 restriction from the older candidate was imported. CHANGELOG remains coordinator-owned. Full report and command outputs are retained under `$HOME/.cache/uilab-todo/serial-20261003/318`; this scope confirmation is not a terminal story verdict.
 
 ## Sequencing
 
