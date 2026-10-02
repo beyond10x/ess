@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T00:14:03Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-react-live-binding",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "coordinator: infeasible inputs; two cases dropped from the test",
+    "reference": "review-result:ui-react-live-binding-adversary-pass1#finding-9",
+    "review": "review-result:ui-react-live-binding-adversary-pass1",
+    "outcome": "no-op"
+  }
+}

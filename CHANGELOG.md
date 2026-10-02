@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking for a realization of a view with parameters, and for hand-written server code**:
+  synthesized Go and Rust servers decode a view's declared parameters from the query string by
+  wire name and pass them, typed, to the view port, whose method now takes them. A missing
+  required or undecodable value is a `400` refusal; undeclared keys are ignored; queries for views
+  with parameters stay obligations. The generated Rust `http::Request` has a new public field
+  `query: String` and derives `Default`, so a hand-written `Request { … }` literal sets `query` or
+  ends with `..Default::default()`. Two parameters of one view that spell one identifier in a
+  target are refused, and a served view with a non-scalar parameter is refused (beyond10x/ess#311).
+- Served surfaces agree on what they refuse and in which words: Decimal, Uuid and Bytes values
+  and map keys admit exactly the published pattern in Go and Rust, and both answer `431` past
+  the request-head size or 100 headers. The Rust server no longer exits when a caller hangs up
+  early, and drops a connection silent for 1 s.
+
+- **Breaking for a Go realization**: `ess generate synthesize --target go` generates every command
+  behaviour and view query the plan marks generated, at parity with the Rust target, in a new
+  package `types/behaviour`: `<Entity>Storage` (`Get`, `Put`, `Delete`, `List` in a stable
+  order), `Context`, `Ports` (one field per storage port) and `New(ports) *Generated`, evaluated in
+  Rust's order, existence selection included. Entities check their invariants
+  (`BrokenInvariant()`). `<ctx>.Unimplemented` now covers owed seams only, so code that passed it
+  as the whole behaviour bundle no longer compiles; pass `behaviour.New(ports)` and implement the
+  owed seams. Package names `behaviour` and `invariant` are reserved, and a domain named like a
+  standard-library package a generated file imports gets a renamed package. A store and a server
+  entry point are not generated yet (beyond10x/ess#314).
+- The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
+
 ## [0.51.0] — 2026-10-01
 
 ### Added
@@ -15,6 +42,39 @@
   Go servers in `crates/ui/ess-ui/tests/vectors/answers.json`. `ess ui check --model` reports
   `read_params`: a read binding a parameter the view does not declare, and a required parameter
   left unbound (beyond10x/ess#311).
+- `ess generate ui --target react --model <spec>`: the generated React app reads and commands the
+  synthesized server through the binding. It emits `src/binding.ts` and a binding-driven
+  `httpAdapter`; the base URL per component comes from
+  `<meta name="ess-base-url:<component>">` (same origin when absent) and `setAuthorization`
+  sets the caller. Command answers go through `runtime/answer.ts`, a port of `classify` held to
+  the same vectors. A refusal shows on the form, confirm, action or account-menu entry that sent
+  it and keeps the draft. A bound app plays no fixture channel: live sections poll at `refresh:`
+  (5 s by default; outside 1 s to 24 h is refused). Without `--model` the project is unchanged.
+  `ess ui check --model` also binds a shell region's `does:` (beyond10x/ess#311).
+- `ess ui run --tui --path <doc> --model <spec> --base-url <url>`: the terminal renderer reads
+  and commands a synthesized server over HTTP/1.1 (`http://` only; `https://` is refused by name).
+  With more than one served component, `--base-url <component>=<url>` is repeated; the caller
+  comes only from `ESS_UI_AUTHORIZATION`. Answers go through `ess_ui::binding::classify`; a
+  refusal shows on the open form, the confirm or beside the action row and keeps the draft, and a
+  command answered committed is never sent again. A bound run plays no fixture channel and polls
+  live sections at `refresh:`. `DataAdapter::run` returns `ess_ui::binding::Answer`
+  (beyond10x/ess#311).
+- `ess generate ui --target tui --path <doc> --model <spec> --out <dir>` emits a Rust terminal
+  app crate: `Cargo.toml`, `src/main.rs` (clap), `src/binding.rs` and `src/ui.yaml`, depending on
+  `ess-ui-tui` at the generating release's tag, so generate with a released `ess`. The app takes
+  `--base-url`, `ESS_UI_AUTHORIZATION`, and `--screen-once <WxH>`, which prints one frame without
+  a terminal and exits 3 when a read on the page failed. Generation refuses to overwrite files it
+  did not write, and writes nothing when it refuses (beyond10x/ess#311).
+- `ess-ui/1`, additive: style tokens and themes (`docs/design/ui-style-tokens.md`). A document
+  may write `tokens:` (`color`, `space`, `radius`, `type`, `tone`), merged over a built-in table
+  equal to today's React stylesheet; `themes:`, each the tokens it overrides; `theme:`
+  (`default`, `chosen_by: shell.<name>`); and `tone_maps:`, named by `tone_by.tones` beside
+  `tone_by.map` on a badge and by the new `tone_by` on an icon. The loader resolves `tones` to
+  its map, and a widget parameter carrying a map name is typed `{ref: tone_map}`.
+  `ess_ui::Document::base_tokens` and `theme_tokens` return a theme's full table. `ess ui check`
+  adds `token_values`, `token_names`, `token_refs`, `theme_tokens`, `theme_choice`,
+  `tone_map_refs` and `tone_map_unused`. A reader older than this release refuses a document
+  using any of these keys rather than ignoring them. No renderer reads tokens yet.
 
 ### Changed
 

@@ -235,17 +235,16 @@ fn complete_real_fixture_inventory_keeps_versions_slots_events_effects_and_fulfi
         .set_if_present
         .contains_key("badge"));
     let admit = &visit.operations["gatepass.visit.AdmitVisitor"].outcomes[0];
-    assert!(admit.fulfills.contains_key("badge"));
+    assert_eq!(admit.set["badge"], json!("$args.input.badge"));
+    assert!(!admit.fulfills.contains_key("badge"));
     assert_eq!(admit.emits[0].payload["badge"], json!("$args.input.badge"));
     let binding = &lowered.bindings().commands()[&name("gatepass.visit.AdmitVisitor")];
-    assert_eq!(
-        binding.operation_fields[&OperationFieldCoordinate {
+    assert!(!binding
+        .operation_fields
+        .contains_key(&OperationFieldCoordinate {
             outcome: ess_domain::command::OutcomeName::new("admitted").expect("outcome"),
             field: "badge".to_owned(),
-        }]
-            .actions,
-        OperationFieldActions::Optional
-    );
+        }));
     assert!(binding.slots.values().all(|value| matches!(
         value.presence,
         BoundPresence::Required | BoundPresence::Optional
@@ -977,7 +976,7 @@ fn visit_fields() -> serde_json::Map<String, Value> {
 }
 
 #[test]
-fn admit_visitor_reuses_the_normalized_badge_for_action_and_event() {
+fn admit_visitor_reuses_the_input_badge_for_state_and_event() {
     let ir = compile_directory(&example("gatepass"));
     let plan = SynthesisPlan::of(&ir);
     let lowered = lower(
@@ -988,7 +987,7 @@ fn admit_visitor_reuses_the_normalized_badge_for_action_and_event() {
     let registry = registry(&lowered);
     let runtime = Runtime::new(&registry);
     let logical_id = json!("2fa7e9ae-9aa1-4f72-b8ce-7eb044967639");
-    let instance = EntityInstance {
+    let mut instance = EntityInstance {
         entity: "gatepass.visit.Visit".to_owned(),
         version: 1,
         id: identity::address(FieldKind::String, &logical_id).expect("identity address"),
@@ -996,19 +995,18 @@ fn admit_visitor_reuses_the_normalized_badge_for_action_and_event() {
         revision: 1,
         fields: visit_fields(),
     };
+    instance.fields.insert(
+        "badge".to_owned(),
+        json!({"serial": "previous-badge", "signature": "AQ=="}),
+    );
     let badge = json!({"serial": "badge-7", "signature": "AA=="});
     let input = json!({"visit_id": logical_id, "badge": badge});
     let prepared = selected_fulfillment(&runtime, &instance, "gatepass.visit.AdmitVisitor", &input);
-    let mut actions = preserves(&prepared);
-    actions.insert(
-        "badge".to_owned(),
-        OperationFieldAction::Set {
-            value: badge.clone(),
-        },
-    );
+    let actions = preserves(&prepared);
+    assert!(!actions.contains_key("badge"));
     let admitted = prepared
         .complete(actions)
-        .expect("badge action completes after selection")
+        .expect("input badge needs no fulfillment action")
         .into_decision()
         .expect("admission accepts");
     assert_eq!(admitted.instance.fields["badge"], badge);

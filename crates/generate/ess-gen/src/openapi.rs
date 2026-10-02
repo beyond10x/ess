@@ -558,10 +558,13 @@ fn not_granted_schema() -> Value {
 /// One view, as an operation.
 ///
 /// It exists only because the component declares that something outside the process reaches it —
-/// see [`http::routes`]. What it does *not* carry is as deliberate as what it does: no page size,
-/// no cursor, no ordering and no filter parameter, because the model states none of them. The
-/// view's filter is declared in the specification and is a property of the projection, not of the
-/// request, so a caller cannot vary it and the document does not pretend otherwise.
+/// see [`http::routes`]. Its parameters are exactly the view's declared `params:`, each a query
+/// parameter under its wire name (a paged view's page and size among them). A synthesized server
+/// decodes them and hands them to the view's port; every code target refuses a paged view, so
+/// none serves those two. What it does *not* carry is as deliberate: no
+/// cursor, no ordering and no filter parameter, because the model states none of them. The view's
+/// filter is declared in the specification and is a property of the projection, not of the
+/// request: a caller supplies the values it reads as `param.<name>`, never the predicate.
 fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
     let view = ir.view(handle);
     let domain = ir.domain(&view.domain);

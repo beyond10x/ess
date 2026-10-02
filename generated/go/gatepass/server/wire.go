@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
-// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
+// model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c
+// contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed
 // do not edit: regenerate with `ess synthesize`
 
 package server
@@ -12,6 +12,7 @@ import (
 	"example.invalid/gatepass/types/visit"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // DecodeError is a refusal at one path, with what the declaration says belongs there and what
@@ -146,9 +147,59 @@ func integerAt(value any, at string, expected string) (int64, error) {
 	}
 	held, err := number.Int64()
 	if err != nil {
-		return 0, DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", number.String())}
+		return 0, DecodeError{At: at, Expected: expected, Found: "the number " + number.String()}
 	}
 	return held, nil
+}
+
+// decimalAt is the decimal string at this path, in the published pattern: an optional -, digits
+// without a leading zero, then an optional . and digits. Refused otherwise, as the contract refuses
+// it, rather than handed on as a decimal nobody can read.
+func decimalAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	whole, fraction, fractional := strings.Cut(strings.TrimPrefix(text, "-"), ".")
+	if !digitsOnly(whole) || (len(whole) > 1 && whole[0] == '0') || (fractional && !digitsOnly(fraction)) {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// uuidAt is the UUID at this path, in the published pattern: the canonical hyphenated form, in
+// either case.
+func uuidAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	valid := len(text) == 36
+	for index := 0; valid && index < len(text); index++ {
+		switch char := text[index]; {
+		case index == 8 || index == 13 || index == 18 || index == 23:
+			valid = char == '-'
+		default:
+			valid = (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')
+		}
+	}
+	if !valid {
+		return "", DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	}
+	return text, nil
+}
+
+// digitsOnly reports whether text is one or more ASCII digits.
+func digitsOnly(text string) bool {
+	if text == "" {
+		return false
+	}
+	for index := 0; index < len(text); index++ {
+		if text[index] < '0' || text[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // bytesAt is the base64-encoded bytes at this path.
@@ -157,38 +208,61 @@ func bytesAt(value any, at string, expected string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	held, decodeErr := base64.StdEncoding.DecodeString(text)
-	if decodeErr != nil {
-		return nil, DecodeError{At: at, Expected: expected, Found: fmt.Sprintf("`%s`", text)}
+	return base64Text(text, at, expected)
+}
+
+// base64Text is base64 text as bytes, in the published pattern only: whole groups of four characters
+// of the alphabet, the last of them padded with one or two = at most — nothing unpadded, nothing
+// after padding, no whitespace (which the standard decoder would skip). The same rule and the same
+// words as the Rust target's reader.
+func base64Text(text string, at string, expected string) ([]byte, error) {
+	refused := DecodeError{At: at, Expected: expected, Found: "a string that is not base64"}
+	if len(text)%4 != 0 {
+		return nil, refused
+	}
+	body := strings.TrimRight(text, "=")
+	if len(text)-len(body) > 2 {
+		return nil, refused
+	}
+	for index := 0; index < len(body); index++ {
+		char := body[index]
+		if !((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '+' || char == '/') {
+			return nil, refused
+		}
+	}
+	held, err := base64.StdEncoding.DecodeString(text)
+	if err != nil {
+		return nil, refused
 	}
 	return held, nil
 }
 
-// keyBool reads a boolean written as an object key.
+// keyBool reads a boolean written as an object key: `true` or `false`, and nothing else.
 func keyBool(key string, at string) (bool, error) {
-	held, err := strconv.ParseBool(key)
-	if err != nil {
-		return false, DecodeError{At: at, Expected: "a key spelling true or false", Found: fmt.Sprintf("`%s`", key)}
+	switch key {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
 	}
-	return held, nil
+	return false, DecodeError{At: at, Expected: "a key spelling `true` or `false`", Found: fmt.Sprintf("the key `%s`", key)}
 }
 
-// keyInteger reads a whole number written as an object key.
+// keyInteger reads an integer written as an object key, in the published pattern: no sign but -, no
+// leading zero, and within 64 bits.
 func keyInteger(key string, at string) (int64, error) {
-	held, err := strconv.ParseInt(key, 10, 64)
-	if err != nil {
-		return 0, DecodeError{At: at, Expected: "a key spelling a whole number", Found: fmt.Sprintf("`%s`", key)}
+	digits := strings.TrimPrefix(key, "-")
+	if digitsOnly(digits) && (digits == "0" || digits[0] != '0') {
+		if held, err := strconv.ParseInt(key, 10, 64); err == nil {
+			return held, nil
+		}
 	}
-	return held, nil
+	return 0, DecodeError{At: at, Expected: "a key spelling an integer", Found: fmt.Sprintf("the key `%s`", key)}
 }
 
 // keyBytes reads base64-encoded bytes written as an object key.
 func keyBytes(key string, at string) ([]byte, error) {
-	held, err := base64.StdEncoding.DecodeString(key)
-	if err != nil {
-		return nil, DecodeError{At: at, Expected: "a key spelling base64-encoded bytes", Found: fmt.Sprintf("`%s`", key)}
-	}
-	return held, nil
+	return base64Text(key, at, "a base64 key")
 }
 
 // encodeGatepassVisitBadge writes `gatepass.visit.Badge` as JSON.
@@ -223,7 +297,7 @@ func decodeGatepassVisitBadge(value any, at string) (visit.Badge, error) {
 		return out, err
 	}
 	if found2 {
-		held3, err := textAt(member2, at2, "an RFC 3339 timestamp as a string")
+		held3, err := textAt(member2, at2, "an RFC 3339 instant")
 		if err != nil {
 			return out, err
 		}
@@ -294,7 +368,7 @@ func decodeGatepassVisitDeposit(value any, at string) (visit.Deposit, error) {
 	if err != nil {
 		return out, err
 	}
-	held1, err := textAt(member0, at0, "a decimal as a string, such as `10.50`")
+	held1, err := decimalAt(member0, at0, "a decimal string")
 	if err != nil {
 		return out, err
 	}
@@ -442,7 +516,7 @@ func encodeGatepassVisitVisitId(value visit.VisitId) any {
 // decodeGatepassVisitVisitId reads `gatepass.visit.VisitId` from JSON, or refuses at the path it was reached at.
 func decodeGatepassVisitVisitId(value any, at string) (visit.VisitId, error) {
 	var out visit.VisitId
-	held0, err := textAt(value, at, "a UUID as a string")
+	held0, err := uuidAt(value, at, "a UUID")
 	if err != nil {
 		return out, err
 	}
@@ -599,7 +673,7 @@ func decodeCommandGatepassVisitRegisterVisit(value any, at string) (visit.Regist
 	if err != nil {
 		return out, err
 	}
-	held7, err := integerAt(member6, at6, "a whole number")
+	held7, err := integerAt(member6, at6, "an integer")
 	if err != nil {
 		return out, err
 	}
@@ -608,7 +682,7 @@ func decodeCommandGatepassVisitRegisterVisit(value any, at string) (visit.Regist
 	if err != nil {
 		return out, err
 	}
-	held9, err := textAt(member8, at8, "an ISO 8601 duration as a string, such as `P30D`")
+	held9, err := textAt(member8, at8, "an ISO 8601 duration")
 	if err != nil {
 		return out, err
 	}
@@ -662,7 +736,7 @@ func decodeCommandGatepassVisitRegisterVisit(value any, at string) (visit.Regist
 	if err != nil {
 		return out, err
 	}
-	held20, err := boolAt(member19, at19, "true or false")
+	held20, err := boolAt(member19, at19, "a boolean")
 	if err != nil {
 		return out, err
 	}

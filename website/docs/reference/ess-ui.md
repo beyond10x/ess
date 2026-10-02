@@ -44,7 +44,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `enum` | `{enum: [a, b]}` | `{enum: [light, dark]}` |   |
 | `one_of` | `{one_of: [T1, T2]}` | `{one_of: [duration, expr]}` |   |
 | `record` | `{record: {field: T}}` | `{record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}` |   |
-| `ref` | `{ref: kind}` | `{ref: view}` | view, command and event resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, view, command, event]` |
+| `ref` | `{ref: kind}` | `{ref: view}` | view, command and event resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event]` |
 | `const` | `{const: value}` | `{const: ess-ui/1}` |   |
 
 ### Expressions
@@ -161,6 +161,10 @@ One document describes one frontend. It names the ESS model every view, command 
 | `channels` | map of `name` → [Channel](#channel) |   |   | live data sources |
 | `fixtures` | [FixtureIndex](#fixtureindex) |   |   | sample data so renderers run without a backend |
 | `unmapped` | list of `string` |   |   | document-level gaps found by a retrofit |
+| `tokens` | [Tokens](#tokens) |   |   | design tokens, merged over the built-in table |
+| `themes` | map of `name` → [Theme](#theme) |   |   | named looks, each the tokens it overrides |
+| `theme` | [ThemeChoice](#themechoice) |   |   | which theme is shown and the shell state that chooses it |
+| `tone_maps` | map of `name` → [ToneMap](#tonemap) |   |   | value-to-tone maps, named by `tone_by.tones` |
 
 **Example**
 
@@ -1387,9 +1391,7 @@ Written like a composite with `component` naming the widget and `args` supplying
 
 ```yaml
 component: status_badge
-args:
-  status: row.stage
-  tones: {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}
+args: {status: row.stage, tones: deal_stage}
 ```
 
 **Checks**
@@ -1683,7 +1685,7 @@ currency: args.value.currency
 
 A short value in a toned pill.
 
-For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value.
+For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`.
 
 **Properties**
 
@@ -1691,8 +1693,8 @@ For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value.
 |---|---|---|---|---|
 | `text` | `expr` |   |   | literal or expression |
 | `field` | `name` |   |   | row field shown |
-| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | fixed tone |
-| `tone_by` | record \{ `value`: `expr`, `map`: map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} |   |   | tone per value |
+| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | fixed tone, and the tone of a value `tone_by` does not map |
+| `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
 
 **Exactly one of**
 
@@ -1704,21 +1706,28 @@ For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value.
 name: badge
 primitive: badge
 text: args.status
-tone_by: {value: args.status, map: args.tones}
+tone_by: {value: args.status, tones: args.tones}
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
 
 ### icon
 
 A semantic icon with an accessible label.
 
-The renderer maps the semantic name to its icon set; a TUI shows a glyph or the label.
+The renderer maps the semantic name to its icon set; a TUI shows a glyph or the label. Its tone is fixed (`tone`) or picked from a value (`tone_by`), exactly as on a badge, so a state shown as an icon follows the same tone map as the badge showing it elsewhere.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `icon` | `string` | yes |   | semantic icon name |
-| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | colour role |
+| `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | colour role, and the tone of a value `tone_by` does not map |
+| `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
 | `label` | `string` | yes |   | accessible text |
 
 **Example**
@@ -1732,11 +1741,17 @@ label: Someone is typing
 visible: channel.ticket_chat.typing
 ```
 
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+
 ### button
 
 A button that runs one action.
 
-Use inside widgets and section children; page-level actions belong in the header.
+Use inside widgets and section children; page-level actions belong in the header. Its emphasis (`tone`) has no token group of its own: a renderer draws it from color tokens by the fixed table under Emphasis, the values the React renderer uses today, so a theme that overrides `accent` restyles every primary button. `none` draws nothing.
 
 **Properties**
 
@@ -1746,6 +1761,15 @@ Use inside widgets and section children; page-level actions belong in the header
 | `action` | [Action](#action) | yes |   | what the button does |
 | `tone` | one of: `primary` \| `secondary` \| `danger` \| `ghost` |   | `secondary` | emphasis |
 | `icon` | `string` |   |   | optional semantic icon |
+
+**Emphasis**
+
+```yaml
+primary: {fill: accent, text: on_accent, border: accent}
+secondary: {fill: surface, text: text, border: line}
+danger: {fill: danger, text: on_accent, border: danger}
+ghost: {fill: none, text: text, border: none}
+```
 
 **Example**
 
@@ -2457,6 +2481,173 @@ pages:
   invoices.list: {kind: report_page, profile: thin}
 ```
 
+## Style tokens and themes
+
+What the roles a document names look like: design tokens, themes, the theme preference and tone maps.
+
+### Tokens
+
+Design tokens — the values a renderer draws a document's roles with, in five groups.
+
+A document says what a node means, never how it looks: a badge has a tone, a text a style, a button an emphasis. Tokens say what those roles look like. Each group is a map of name to value. The built-in table below is merged under a document's `tokens:` group by group and name by name, so a document without `tokens:` looks as it always did and one that names three colors changes three. A node never names a token: a tone reaches `tone`, a text style reaches `type`, a button's emphasis reaches `color` through the table on `button`, and space and radius are read by the renderer's own stylesheet. Inside `tone`, a value is the bare name of a color. A `type` entry replaces the entry of its name whole, and a field it leaves out falls back to `body`, then to the built-in `body`. The values follow the grammar below; quote a color, since an unquoted `#` starts a YAML comment. A terminal draws no color: it draws a tone as the emphasis below, which adds no text and never uses reversed video, the mark of the cursor, and it reads no space, type or radius.
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| `color` | map of `name` → `string` |   |   | color literals by name; see the grammar |
+| `space` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `radius` | map of `name` → `string` |   |   | lengths by name, read by the renderer's stylesheet |
+| `type` | map of (one of: `body` \| `caption` \| `heading` \| `mono`) → record \{ `family`: optional `string`, `size`: optional `string`, `weight`: optional `integer` \} |   |   | family, size and weight per text style |
+| `tone` | map of (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) → record \{ `text`: `name`, `fill`: `name` \} |   |   | the color names a tone's text and fill are drawn with |
+
+**Grammar**
+
+```yaml
+color: "`#rgb`, `#rrggbb` or `#rrggbbaa` in hexadecimal digits, or `rgb(r g b / a)` with r, g and b whole numbers from 0 to 255 and a a decimal from 0 to 1; no `hsl()`, no named colors"
+length: "`0`, or a decimal followed by `px`, `rem` or `em`"
+weight: a whole number from 100 to 900 in steps of 100
+```
+
+**Builtins**
+
+```yaml
+color:
+  bg: "#f7f7f8"
+  surface: "#ffffff"
+  text: "#1c1d21"
+  muted: "#676a73"
+  line: "#dcdde1"
+  accent: "#2f5bd3"
+  info: "#2f7fd3"
+  success: "#2e8a4f"
+  warning: "#b7791f"
+  danger: "#c0392b"
+  danger_fill: "#f6d5d1"
+  success_fill: "#d7f0df"
+  warning_fill: "#f7e7c6"
+  info_fill: "#d9e4fb"
+  focus: "#eef2fd"
+  on_accent: "#fff"
+  backdrop: rgb(0 0 0 / 0.3)
+space: {xs: 0.25rem, sm: 0.5rem, md: 1rem, lg: 1.5rem}
+radius: {sm: 4px, md: 6px, lg: 8px, pill: 999px}
+type:
+  body: {family: "system-ui, sans-serif"}
+  caption: {size: 0.8rem}
+  heading: {size: 1.05rem, weight: 600}
+  mono: {family: "ui-monospace, monospace"}
+tone:
+  neutral: {text: text, fill: line}
+  info: {text: info, fill: line}
+  success: {text: success, fill: line}
+  warning: {text: warning, fill: line}
+  danger: {text: danger, fill: danger_fill}
+```
+
+**Terminal emphasis**
+
+```yaml
+neutral: bold
+info: italic
+success: bold
+warning: underlined
+danger: bold and underlined
+```
+
+**Example**
+
+```yaml
+color: {surface: "#1f2024", text: "#ecedf0", line: "#34363c", danger_fill: "#4a2420"}
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `types_structural` | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
+| `token_values` | `tokens.color.*`, `tokens.space.*`, `tokens.radius.*`, `tokens.type.*` | `{must_match: Tokens.grammar}` | error |
+| `token_names` | `tokens.type.*`, `tokens.tone.*` | `{must_be_in: [text.style, Primitive.tone]}` | error |
+| `token_refs` | `tokens.tone.*` | `{must_resolve_in: [Tokens.builtins.color, tokens.color]}` | error |
+
+### Theme
+
+A named look — the tokens it overrides.
+
+A theme holds only the values that differ, in the groups and names of `tokens:`, and is the built-in table, then `tokens:`, then its own overrides; a theme without overrides is the base values. Every theme therefore defines every token. A theme may override any group: one that overrides `space` alone is a denser look. One theme is shown at a time and themes do not combine, so a look both dark and dense is a theme of its own. An override may name only a token the built-in table or `tokens:` declares.
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| (value) | [Tokens](#tokens) |   |   | the values that differ from the base, by group and name |
+
+**Example**
+
+```yaml
+space: {xs: 0.125rem, sm: 0.25rem, md: 0.5rem, lg: 0.75rem}
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `theme_tokens` | `themes.*` | `{must: [override_a_declared_token, match_Tokens.grammar, tone_names_a_color_of_the_theme]}` | error |
+
+### ThemeChoice
+
+Which theme is shown, and the shell state the user chooses it with.
+
+`default` names the theme shown. `chosen_by` names shell state, `shell.<name>`: a state of class `preference` whose type is an enum, each variant naming a theme. A renderer shows the theme that state holds, and `default` where the shell declares no such state (a sign-in shell) or it holds no value. The user changes it like any state, with an action that `sets` it; where it is stored, how long it lives and who shares it are the state's own `store`, `scope` and `pinned`. To keep one choice across shells, each declares a state of the same name with `scope: user` in `local_storage`. A theme no variant names is not offered. A terminal never reads the choice.
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| `default` | `name` | yes |   | the theme shown where no state chooses one |
+| `chosen_by` | `expr` |   |   | `shell.<name>`: a preference state whose enum variants name themes |
+
+**Example**
+
+```yaml
+default: light
+chosen_by: shell.theme
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `theme_choice` | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
+
+### ToneMap
+
+A value-to-tone map, declared once and named by every `tone_by` that colors by it.
+
+A status written by hand at every badge can be colored two ways in two places. A tone map names it once: `tone_by: {value: row.stage, tones: deal_stage}` on a badge or an icon is resolved by the loader to that map. A widget parameter that carries a map name is typed `{ref: tone_map}`. The chain is value to tone (`tone_maps`), tone to text and fill (`Tokens.tone`), and those to color values (`Tokens.color`, per theme).
+
+**Properties**
+
+| Property | Type | Required | Default | Note |
+|---|---|---|---|---|
+| (value) | map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) |   |   | tone per value |
+
+**Example**
+
+```yaml
+lead: neutral
+qualified: info
+proposal: warning
+won: success
+lost: danger
+```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `tone_map_unused` | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+
 ## Checks
 
 What a validator checks in a document, and the construct each check applies to. Every finding names the failing node by its [NodePath](#nodepath).
@@ -2481,8 +2672,15 @@ What a validator checks in a document, and the construct each check applies to. 
 | `fixture_per_view` | [Reads](#reads) | `**.reads.view` | `{must_be_in: [fixtures.views, fixtures.derived]}` | warning |
 | `script_per_channel` | [Channel](#channel) | `channels.*` | `{must_be_in: [fixtures.scripts]}` | warning |
 | `state_resolves` | [State](#state) | `**.state.*` | `{must: resolve_to_store, refusals: PlacementProfile.resolution.refusals}` | error |
-| `types_structural` | [Type](#type) | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
+| `types_structural` | [Type](#type), [Tokens](#tokens) | `**.type` | `{must_match: type_rule, forbidden: string_holding_a_type_expression}` | error |
 | `unmapped_reported` | every node | `**` | `{matches: unmapped_marker.pattern, action: report}` | warning |
+| `token_values` | [Tokens](#tokens) | `tokens.color.*`, `tokens.space.*`, `tokens.radius.*`, `tokens.type.*` | `{must_match: Tokens.grammar}` | error |
+| `token_names` | [Tokens](#tokens) | `tokens.type.*`, `tokens.tone.*` | `{must_be_in: [text.style, Primitive.tone]}` | error |
+| `token_refs` | [Tokens](#tokens) | `tokens.tone.*` | `{must_resolve_in: [Tokens.builtins.color, tokens.color]}` | error |
+| `theme_tokens` | [Theme](#theme) | `themes.*` | `{must: [override_a_declared_token, match_Tokens.grammar, tone_names_a_color_of_the_theme]}` | error |
+| `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
+| `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+| `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
 
 ## Retrofits and lowering
 
@@ -2591,3 +2789,7 @@ Every construct with its one-line summary, chapter by chapter.
 | [StateClass](#stateclass) | [State placement](#state-placement) | The kind of a state — the key the placement profile uses. |
 | [Store](#store) | [State placement](#state-placement) | Where a state lives, with its durability, sharing, and reload/reconnect behaviour. |
 | [PlacementProfile](#placementprofile) | [State placement](#state-placement) | A default store per state class — thin, fat or hybrid. |
+| [Tokens](#tokens) | [Style tokens and themes](#style-tokens-and-themes) | Design tokens — the values a renderer draws a document's roles with, in five groups. |
+| [Theme](#theme) | [Style tokens and themes](#style-tokens-and-themes) | A named look — the tokens it overrides. |
+| [ThemeChoice](#themechoice) | [Style tokens and themes](#style-tokens-and-themes) | Which theme is shown, and the shell state the user chooses it with. |
+| [ToneMap](#tonemap) | [Style tokens and themes](#style-tokens-and-themes) | A value-to-tone map, declared once and named by every `tone_by` that colors by it. |

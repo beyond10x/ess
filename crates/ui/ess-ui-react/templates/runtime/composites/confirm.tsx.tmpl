@@ -1,6 +1,10 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, runCommand, type ActionSpec } from "../actions";
+//+bound
+import { useRef } from "react";
+import { RefusalNote, type Refusal } from "../actions";
+//-bound
 import { useScope } from "../core";
 import { useRead } from "../data";
 import { evaluate } from "../expr";
@@ -20,6 +24,12 @@ export function ConfirmView(props: {
 }): ReactNode {
   const scope = useScope();
   const [typed, setTyped] = useState("");
+//+bound
+  // A refused command is shown here, and the confirm stays open over it.
+  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
+  const sending = useRef(false);
+  const commandDone = useRef(false);
+//-bound
   const params = isObject(scope.values.params) ? scope.values.params : {};
   const references = useRead(
     props.references ? { view: props.references, params: { id: "params.id" } } : undefined,
@@ -54,6 +64,9 @@ export function ConfirmView(props: {
           <input value={typed} onChange={(event: ChangeEvent<HTMLInputElement>) => setTyped(event.target.value)} />
         </label>
       ) : null}
+//+bound
+      <RefusalNote refusal={refusal} />
+//-bound
       <div className="ui-form-actions">
         {(props.alternatives ?? []).map((action) => (
           <ActionControl key={action.name} action={action} />
@@ -69,18 +82,49 @@ export function ConfirmView(props: {
             // The action that opened this confirm runs, once; the confirm's own `does` runs too
             // when it names another command, or when no action opened it.
             const opener = scope.confirmed;
+//+bound
+            if (sending.current) {
+              return;
+            }
+            sending.current = true;
+//-bound
             void (async () => {
+              try {
+//+plain
               if (props.does && props.does !== opener?.does) {
+//-plain
+//+bound
+              if (props.does && props.does !== opener?.does && !commandDone.current) {
+//-bound
                 const row = scope.values.row;
+//+plain
                 const ok = await runCommand(scope, props.does, { ...params, ...(isObject(row) ? { id: row.id } : {}) });
+//-plain
+//+bound
+                const ok = await runCommand(scope, props.does, { ...params, ...(isObject(row) ? { id: row.id } : {}) }, false, setRefusal);
+                commandDone.current = ok;
+//-bound
                 if (!ok) {
                   return;
                 }
               }
               if (opener) {
-                await opener.run();
+//+plain
+                const ok = await opener.run();
+//-plain
+//+bound
+                const ok = await opener.run(setRefusal);
+//-bound
+                if (!ok) {
+                  return;
+                }
               }
               scope.close();
+              } finally {
+//+bound
+                sending.current = false;
+//-bound
+              }
             })();
           }}
         >

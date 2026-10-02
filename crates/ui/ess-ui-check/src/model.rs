@@ -33,9 +33,10 @@ use ess_domain::types::Primitive;
 use ess_gen::http::{self, Served};
 use ess_ui::binding::{Binding, CommandRoute, ErrorRoute, QueryParam, ViewRoute};
 use ess_ui::{
-    ActorSource, Body, Carries, Composite, Document, Expr, NavPages, NodePath, NodeRef, Paging,
-    Reads,
+    Action, ActorSource, Body, Carries, Channel, Composite, Document, Expr, NavPages, NodePath,
+    NodeRef, Paging, Reads, Region, RegionKind,
 };
+use serde_yaml::Value;
 
 use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
 use crate::{CheckError, Sink};
@@ -763,6 +764,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                     );
                 }
             }
+            NodeRef::Region(region) => region_names(path, region, &mut push),
             NodeRef::NavSection(section) => {
                 if let NavPages::Dynamic(entries) = &section.pages {
                     push(
@@ -771,22 +773,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                     );
                 }
             }
-            NodeRef::Channel(channel) => {
-                let carries = path.child("carries");
-                match &channel.carries {
-                    Carries::Events(events) => {
-                        for event in &events.events {
-                            push(carries.clone(), Kind::Event(event));
-                        }
-                    }
-                    Carries::View(live_view) => {
-                        push(carries, view(&live_view.view, Bound::Elsewhere));
-                    }
-                }
-                for command in &channel.sends {
-                    push(path.child("sends"), Kind::Command(command));
-                }
-            }
+            NodeRef::Channel(channel) => channel_names(path, channel, &mut push),
             NodeRef::Section(section) => {
                 if let Some(live) = &section.live {
                     for event in &live.on {
@@ -797,32 +784,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
             }
             NodeRef::Overlay(overlay) => body_names(path, &overlay.body, &mut push),
             NodeRef::Node(node) => body_names(path, &node.body, &mut push),
-            NodeRef::Action(action) => {
-                if let Some(command) = &action.does {
-                    push(path.clone(), Kind::Command(command));
-                }
-                if let Some(upload) = &action.upload {
-                    push(path.clone(), Kind::Command(&upload.does));
-                }
-                if let Some(export) = &action.export {
-                    push(
-                        path.clone(),
-                        view(&export.reads, Bound::Export(export.params.as_ref())),
-                    );
-                }
-                if let Some(reads) = &action.loads {
-                    if let Some(name) = &reads.view {
-                        push(
-                            path.child("loads"),
-                            Kind::View {
-                                name,
-                                bound: Bound::Read(Read::of(reads)),
-                                body: false,
-                            },
-                        );
-                    }
-                }
-            }
+            NodeRef::Action(action) => action_names(path, action, &mut push),
             NodeRef::FormGroup(group) => {
                 if let Some(command) = &group.does {
                     push(path.clone(), Kind::Command(command));
@@ -841,6 +803,98 @@ fn names(document: &Document) -> Vec<Named<'_>> {
         }
     }
     out
+}
+
+/// The commands a shell region sends: the assistant's `does:`, and each account menu entry's
+/// `does:`, named by the entry.
+fn region_names<'a>(
+    path: &NodePath,
+    region: &'a Region,
+    push: &mut impl FnMut(NodePath, Kind<'a>),
+) {
+    match region.kind {
+        RegionKind::Assistant => {
+            let commands: Vec<&str> = match region.props.get("does") {
+                Some(Value::Sequence(items)) => items.iter().filter_map(Value::as_str).collect(),
+                Some(Value::String(one)) => vec![one.as_str()],
+                _ => Vec::new(),
+            };
+            for command in commands {
+                push(path.child("props").child("does"), Kind::Command(command));
+            }
+        }
+        RegionKind::AccountMenu => {
+            let Some(Value::Sequence(entries)) = region.props.get("actions") else {
+                return;
+            };
+            for entry in entries.iter().filter_map(Value::as_mapping) {
+                let Some(command) = entry.get("does").and_then(Value::as_str) else {
+                    continue;
+                };
+                let actions = path.child("props").child("actions");
+                let at = match entry.get("name").and_then(Value::as_str) {
+                    Some(name) => actions.child(name),
+                    None => actions,
+                };
+                push(at, Kind::Command(command));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// What a channel carries, and the commands it sends.
+fn channel_names<'a>(
+    path: &NodePath,
+    channel: &'a Channel,
+    push: &mut impl FnMut(NodePath, Kind<'a>),
+) {
+    let carries = path.child("carries");
+    match &channel.carries {
+        Carries::Events(events) => {
+            for event in &events.events {
+                push(carries.clone(), Kind::Event(event));
+            }
+        }
+        Carries::View(live_view) => {
+            push(carries, view(&live_view.view, Bound::Elsewhere));
+        }
+    }
+    for command in &channel.sends {
+        push(path.child("sends"), Kind::Command(command));
+    }
+}
+
+/// What an action sends, uploads, exports and loads.
+fn action_names<'a>(
+    path: &NodePath,
+    action: &'a Action,
+    push: &mut impl FnMut(NodePath, Kind<'a>),
+) {
+    if let Some(command) = &action.does {
+        push(path.clone(), Kind::Command(command));
+    }
+    if let Some(upload) = &action.upload {
+        push(path.clone(), Kind::Command(&upload.does));
+    }
+    if let Some(export) = &action.export {
+        push(
+            path.clone(),
+            view(&export.reads, Bound::Export(export.params.as_ref())),
+        );
+    }
+    if let Some(reads) = &action.loads {
+        if let Some(name) = &reads.view {
+            push(
+                path.child("loads"),
+                Kind::View {
+                    name,
+                    bound: Bound::Read(Read::of(reads)),
+                    body: false,
+                },
+            );
+        }
+    }
 }
 
 /// A view name written outside a body's composite read, its parameters bound as `bound` says.
@@ -960,9 +1014,9 @@ impl std::error::Error for BindingError {}
 ///
 /// Refused, each at the node that causes it: a name the model does not declare or no
 /// `reached_by: network` component serves; a view parameter that is not a scalar, which no query
-/// string carries; a view the model declares with `paging:`, and a read paged by anything but
-/// the renderer (`paging:` `server`, `cursor` or `append`), since every code target refuses
-/// paging; and state placed in `server` or
+/// string carries, or is a `Binary64`, which no code target serves; a view the model declares
+/// with `paging:`, and a read paged by anything but the renderer (`paging:` `server`, `cursor`
+/// or `append`), since every code target refuses paging; and state placed in `server` or
 /// `server_session`, which the served surface does not hold.
 pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Binding, BindingError> {
     let ir = compile_sources(sources, Path::new(&document.model)).map_err(BindingError::Model)?;
@@ -1064,6 +1118,12 @@ fn read_refusals(served: &Surface, qualified: &str, bound: Bound<'_>) -> Vec<Str
              and a query string carries only scalars"
         ));
     }
+    for param in &served.unservable[qualified] {
+        refusals.push(format!(
+            "view `{qualified}` declares the parameter `{param}` at `Binary64`, and every code \
+             target refuses `Binary64` (`ess-synth/src/failure.rs`): no served surface answers it"
+        ));
+    }
     refusals
 }
 
@@ -1118,6 +1178,9 @@ struct Surface {
     commands: BTreeMap<String, (String, CommandRoute)>,
     /// Every served view's parameters that are not scalars, by the view's qualified name.
     non_scalar: BTreeMap<String, Vec<String>>,
+    /// Every served view's parameters at a scalar no code target serves (`Binary64`), by the view's
+    /// qualified name.
+    unservable: BTreeMap<String, Vec<String>>,
     /// Every served view whose model declaration carries `paging:`, which no code target serves.
     paged: BTreeSet<String>,
 }
@@ -1128,6 +1191,7 @@ impl Surface {
             views: BTreeMap::new(),
             commands: BTreeMap::new(),
             non_scalar: BTreeMap::new(),
+            unservable: BTreeMap::new(),
             paged: BTreeSet::new(),
         };
         for component in ir.components().values() {
@@ -1170,8 +1234,12 @@ impl Surface {
                         let view = ir.view(handle);
                         let mut params = Vec::new();
                         let mut non_scalar = Vec::new();
+                        let mut unservable = Vec::new();
                         for param in &view.params {
                             match scalar(ir, &param.type_ref) {
+                                Some(scalar) if scalar == Primitive::Binary64.as_str() => {
+                                    unservable.push(param.name.clone());
+                                }
                                 Some(scalar) => params.push(QueryParam {
                                     name: param.name.clone(),
                                     wire: param
@@ -1190,6 +1258,7 @@ impl Surface {
                             params,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
+                        surface.unservable.insert(handle.to_string(), unservable);
                         if view.paging.is_some() {
                             surface.paged.insert(handle.to_string());
                         }

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ess_ui::binding::{Answer, Binding};
 use ess_ui::{
     Action, ActionConfirm, Body, Columns, Composite, Document, Effect, Field, FilterBar, Form,
     GuardThen, Live, NavPages, NodePath, Overlay, Page, PagedAway, Reads, Section, TabFields,
@@ -14,7 +15,7 @@ use ess_ui::{
 use serde_yaml::{Mapping, Value};
 
 use crate::data::{DataAdapter, FixtureAdapter, ReadRequest, ReadResult};
-use crate::expr::{self, display, truthy, Resolve, Resolved};
+use crate::expr::{self, display, field_path, truthy, Resolve, Resolved};
 use crate::live::{derived_field, parse_duration, Beat, ChannelState, Played, Player, Script};
 use crate::placement::StateStore;
 use crate::profile::{self, Plan, TUI};
@@ -108,7 +109,94 @@ pub(crate) enum ReadState {
 struct CacheEntry {
     request: ReadRequest,
     state: ReadState,
+    /// When the read last answered.
+    answered: Duration,
 }
+
+/// A command that was not done, shown where the user acted.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Refused {
+    /// What sent it: `form`, `confirm`, or the name of the action.
+    pub by: String,
+    /// What the answer means to the user ([`crate::http::shown`]).
+    pub text: String,
+    /// The declared error's fields, when it has any.
+    pub payload: Option<Value>,
+    /// The effect stands though the answer is a failure (`501` with `committed: true`): the
+    /// command is done and must not be sent again.
+    pub committed: bool,
+}
+
+impl Refused {
+    /// The same refusal, sent by `by`.
+    fn by(mut self, by: &str) -> Self {
+        by.clone_into(&mut self.by);
+        self
+    }
+}
+
+/// How often each `live:` section of a bound document polls, by its node path: the served
+/// surface streams no events, so the section takes its `no_live` fallback and polls at its read's
+/// `refresh:` (5 s without one), unless it says `degrades: {no_live: refuse}`.
+fn poll_intervals(document: &Document) -> Result<BTreeMap<String, Duration>, profile::Refusal> {
+    let mut polls = BTreeMap::new();
+    for (page_name, page) in &document.pages {
+        for section in &page.sections {
+            if section.live.is_none() {
+                continue;
+            }
+            let at = NodePath::root()
+                .child("pages")
+                .child(page_name)
+                .child("sections")
+                .child(&section.name);
+            if section.common.degrades.get("no_live").map(String::as_str) == Some("refuse") {
+                return Err(profile::Refusal {
+                    path: at.child("live"),
+                    message: "the served surface streams no events, and this section's \
+                              `degrades: {no_live: refuse}` refuses to poll instead"
+                        .to_owned(),
+                });
+            }
+            let every = match body_reads(&section.body).and_then(|reads| reads.refresh.as_ref()) {
+                None => POLL,
+                Some(refresh) => {
+                    let at = at.child("reads").child("refresh");
+                    let Some(every) = parse_duration(&refresh.0) else {
+                        return Err(profile::Refusal {
+                            path: at,
+                            message: format!(
+                                "a live section bound to the served surface polls at its \
+                                 `refresh:`, and `{}` is not a whole number of ms, s, m or h \
+                                 the terminal can poll at",
+                                refresh.0
+                            ),
+                        });
+                    };
+                    if !(POLL_RANGE.0..=POLL_RANGE.1).contains(&every) {
+                        return Err(profile::Refusal {
+                            path: at,
+                            message: format!(
+                                "a live section bound to the served surface polls at its \
+                                 `refresh:`, and {} ms is outside 1 s to 24 h",
+                                every.as_millis()
+                            ),
+                        });
+                    }
+                    every
+                }
+            };
+            polls.insert(at.to_string(), every);
+        }
+    }
+    Ok(polls)
+}
+
+/// How often a bound `live:` section reads again when its read declares no `refresh:`.
+const POLL: Duration = Duration::from_secs(5);
+
+/// The shortest and the longest `refresh:` a bound `live:` section polls at.
+const POLL_RANGE: (Duration, Duration) = (Duration::from_secs(1), Duration::from_secs(24 * 3600));
 
 /// Where keyboard input goes when no overlay or prompt takes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +221,8 @@ pub(crate) struct Ui {
     pub selected: BTreeSet<String>,
     pub typed: String,
     pub pending: Vec<(String, Value)>,
+    /// The last command sent from here that was not done.
+    pub refusal: Option<Refused>,
 }
 
 /// An open overlay.
@@ -146,6 +236,8 @@ pub(crate) struct OpenOverlay {
     /// The path the overlay is drawn at when it differs from `path`: an inline confirm opened
     /// from a row is scoped under that row (`<collection>/rows/<key>/…`), as in React.
     pub drawn_at: Option<String>,
+    /// The confirm's own command was accepted: confirming again retries only `then`.
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,6 +311,12 @@ pub struct App {
     deferred: Vec<(String, Value)>,
     signed_out: bool,
     quit: bool,
+    /// The served surface the run is bound to ([`App::bound`]); `None` for a fixture run.
+    pub(crate) bound: Option<Binding>,
+    /// How often each bound `live:` section polls, by its node path.
+    polls: BTreeMap<String, Duration>,
+    /// How many commands have been sent.
+    pub(crate) commands_sent: u64,
     /// Marks of the lines being drawn, not yet placed on the screen.
     pub(crate) marks: std::cell::RefCell<Vec<Mark>>,
     /// What the last frame drew where.
@@ -250,7 +348,38 @@ impl App {
         scripts: Vec<Script>,
         options: Options,
     ) -> Result<Self, TuiError> {
+        Self::open(document, adapter, scripts, options, None)
+    }
+
+    /// Runs `document` against the served surface `binding` describes, through `adapter` (an
+    /// [`crate::HttpAdapter`] over the same binding). No fixture channel plays: the served
+    /// surface streams no events, so a `live:` section polls its read every `refresh:` (5 s
+    /// without one), refused at `<section>/reads/refresh` when that is not a duration from 1 s to
+    /// 24 h, and at `<section>/live` when the section says `degrades: {no_live: refuse}`. A
+    /// command's answer is shown as the binding declares its errors; an accepted one, or a `409`
+    /// refusal, reads every view again.
+    pub fn bound(
+        document: Document,
+        adapter: Box<dyn DataAdapter>,
+        binding: Binding,
+        options: Options,
+    ) -> Result<Self, TuiError> {
+        Self::open(document, adapter, Vec::new(), options, Some(binding))
+    }
+
+    fn open(
+        document: Document,
+        adapter: Box<dyn DataAdapter>,
+        scripts: Vec<Script>,
+        options: Options,
+        bound: Option<Binding>,
+    ) -> Result<Self, TuiError> {
         let plan = profile::check(&document, &TUI).map_err(TuiError::Refused)?;
+        let polls = if bound.is_some() {
+            poll_intervals(&document).map_err(TuiError::Refused)?
+        } else {
+            BTreeMap::new()
+        };
         let placements = crate::placement::resolve(&document).map_err(TuiError::Refused)?;
         let home = document.navigation.home.clone();
         let (user_id, account_id) = actor_ids(&document, adapter.as_ref());
@@ -286,6 +415,9 @@ impl App {
             deferred: Vec::new(),
             signed_out: false,
             quit: false,
+            bound,
+            polls,
+            commands_sent: 0,
             marks: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
         };
@@ -347,6 +479,18 @@ impl App {
     /// Empty before the first draw. Read-only: drawing again replaces it.
     pub fn regions(&self) -> Vec<Region> {
         self.regions.borrow().clone()
+    }
+
+    /// Every read the app holds whose answer was a failure, as `(view, error)` in request-key
+    /// order.
+    pub fn failed_reads(&self) -> Vec<(String, String)> {
+        self.cache
+            .values()
+            .filter_map(|entry| match &entry.state {
+                ReadState::Failed(error) => Some((entry.request.view.clone(), error.clone())),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The lifecycle state of a section of the page shown.
@@ -685,6 +829,7 @@ impl App {
 
     /// Enqueues every read the screen needs and answers those whose latency has passed.
     fn pump(&mut self) {
+        self.poll();
         for _ in 0..8 {
             let mut changed = false;
             for request in self.needed_reads() {
@@ -695,6 +840,7 @@ impl App {
                         CacheEntry {
                             request,
                             state: ReadState::Loading { since: self.now },
+                            answered: self.now,
                         },
                     );
                     changed = true;
@@ -715,6 +861,7 @@ impl App {
                     Ok(result) => ReadState::Ready(result),
                     Err(error) => ReadState::Failed(error),
                 };
+                entry.answered = self.now;
                 changed = true;
             }
             if !changed {
@@ -724,6 +871,38 @@ impl App {
         if !self.deferred.is_empty() {
             self.apply_deferred();
         }
+    }
+
+    /// Reads each shown bound `live:` section again once its interval has passed since its read
+    /// last answered. A read still in flight is not started again; one that stalls is given up by
+    /// the adapter ([`crate::http::TIMEOUT`]) and answers as failed, so the next tick reads.
+    fn poll(&mut self) {
+        if self.polls.is_empty() {
+            return;
+        }
+        let due: Vec<String> = self
+            .visible_sections()
+            .into_iter()
+            .filter_map(|(_, section)| {
+                let every = self
+                    .polls
+                    .get(&self.section_path(&section.name).to_string())?;
+                let key = self.section_request(section)?.key();
+                let entry = self.cache.get(&key)?;
+                let settled = !matches!(entry.state, ReadState::Loading { .. });
+                (settled && self.now.saturating_sub(entry.answered) >= *every).then_some(key)
+            })
+            .collect();
+        for key in due {
+            if let Some(entry) = self.cache.get_mut(&key) {
+                entry.state = ReadState::Loading { since: self.now };
+            }
+        }
+    }
+
+    /// Drops every cached read, so what the screen shows is read again.
+    fn invalidate(&mut self) {
+        self.cache.clear();
     }
 
     fn needed_reads(&self) -> Vec<ReadRequest> {
@@ -990,7 +1169,7 @@ impl App {
             .filter(|row| {
                 needle.is_empty()
                     || columns.iter().any(|field| {
-                        display(&row[field.field.as_str()])
+                        display(&field_path(row, &field.field))
                             .to_lowercase()
                             .contains(&needle)
                     })
@@ -1005,7 +1184,7 @@ impl App {
         });
         if let Some((by, descending)) = sort {
             rows.sort_by(|left, right| {
-                let order = compare(&left[by.as_str()], &right[by.as_str()]);
+                let order = compare(&field_path(left, &by), &field_path(right, &by));
                 if descending {
                     order.reverse()
                 } else {
@@ -1772,7 +1951,7 @@ impl App {
                             .into_iter()
                             .find(|(key, _)| *key == letter)
                         {
-                            self.run_action(&action, None, false);
+                            self.run_action_at(&ui, &action, None);
                         }
                     }
                     _ => {}
@@ -1806,7 +1985,7 @@ impl App {
                             .into_iter()
                             .find(|(key, _)| *key == letter)
                         {
-                            self.run_action(&action, row, false);
+                            self.run_action_at(&ui, &action, row);
                         }
                     }
                     _ => {}
@@ -1926,7 +2105,7 @@ impl App {
                     .into_iter()
                     .find(|(key, _)| *key == letter)
                 {
-                    self.run_action(&action, None, false);
+                    self.run_action_at(ui, &action, None);
                 }
             }
             KeyCode::Char(direction @ ('J' | 'K')) if moves => {
@@ -1937,17 +2116,19 @@ impl App {
                         "direction".to_owned(),
                         Value::String(if direction == 'J' { "down" } else { "up" }.into()),
                     );
-                    self.run_command(&reorder.does, &input);
+                    if let Some(refused) = self.run_command(&reorder.does, &input) {
+                        self.notify(format!("{} refused: {}", reorder.does, refused.text));
+                    }
                 }
             }
             KeyCode::Enter => {
                 if let Some((_, action)) = actions.into_iter().next() {
-                    self.run_action(&action, row, false);
+                    self.run_action_at(ui, &action, row);
                 }
             }
             KeyCode::Char(letter) => {
                 if let Some((_, action)) = actions.into_iter().find(|(key, _)| *key == letter) {
-                    self.run_action(&action, row, false);
+                    self.run_action_at(ui, &action, row);
                 }
             }
             _ => {}
@@ -2130,7 +2311,7 @@ impl App {
         ctx: &Ctx<'_>,
     ) -> Value {
         let current = self.store.get(draft, self.adapter.as_ref());
-        if let Some(value) = current.get(field) {
+        if let Some(value) = lookup(&current, field) {
             return value.clone();
         }
         form.loads
@@ -2138,7 +2319,7 @@ impl App {
             .map(|reads| self.request(reads, ctx))
             .and_then(|request| self.rows_of(&request))
             .and_then(|result| result.rows.first())
-            .map_or(Value::Null, |row| row[field].clone())
+            .map_or(Value::Null, |row| field_path(row, field))
     }
 
     fn set_field(&mut self, draft: &str, field: &str, value: Value) {
@@ -2146,7 +2327,7 @@ impl App {
         if !current.is_mapping() {
             current = Value::Mapping(Mapping::new());
         }
-        current[field] = value;
+        put(&mut current, &field.split('.').collect::<Vec<_>>(), value);
         self.store.set(draft, current, self.adapter.as_mut());
     }
 
@@ -2213,7 +2394,7 @@ impl App {
                     .into_iter()
                     .find(|(key, _)| *key == letter)
                 {
-                    self.run_action(&action, None, false);
+                    self.run_action_at(ui, &action, None);
                 }
             }
             _ => {}
@@ -2304,7 +2485,10 @@ impl App {
         };
         let mut text = match &form {
             Some(form) => display(&self.field_value(form, &draft, &field, &ctx)),
-            None => display(&self.store.get(&draft, self.adapter.as_ref())[field.as_str()]),
+            None => display(&field_path(
+                &self.store.get(&draft, self.adapter.as_ref()),
+                &field,
+            )),
         };
         match key.code {
             KeyCode::Backspace => {
@@ -2326,26 +2510,49 @@ impl App {
         };
         for field in form_fields(form, self.ui(&self.target_ui(target)).tab) {
             let value = self.field_value(form, draft, &field.field, &ctx);
-            if !value.is_null() {
-                input.insert(field.field.clone(), value);
+            let value = typed(field.field_as.as_deref(), value);
+            if value.is_null() {
+                continue;
             }
+            // `budget.limit_cents` is sent as the `limit_cents` member of `budget`.
+            let segments: Vec<&str> = field.field.split('.').collect();
+            let entry = input.entry(segments[0].to_owned()).or_insert(Value::Null);
+            put(entry, &segments[1..], value);
         }
-        if let Some(Value::String(id)) = self.overlay_params().get("id") {
-            input
-                .entry("id".to_owned())
-                .or_insert_with(|| Value::String(id.clone()));
+        if target == Target::Overlay {
+            // Like React's {...params, ...draft}, keep every resolved parameter's type and
+            // let an edited top-level draft field replace a colliding parameter.
+            let mut params = self.overlay_params();
+            params.extend(input);
+            input = params;
         }
-        self.run_command(&form.does, &input);
-        self.store.set(draft, Value::Null, self.adapter.as_mut());
         let ui = self.target_ui(target);
         self.ui_mut(&ui).editing = false;
+        // A refused submit stays on the form that sent it, with its draft. One whose effect was
+        // committed is submitted, as an accepted one is, so its draft is never sent again; its
+        // failure is still shown, on the form when it stays open.
+        let refused = self.run_command(&form.does, &input);
+        if let Some(refused) = refused.as_ref().filter(|refused| !refused.committed) {
+            self.ui_mut(&ui).refusal = Some(refused.clone().by("form"));
+            return;
+        }
+        self.ui_mut(&ui).refusal = None;
+        self.store.set(draft, Value::Null, self.adapter.as_mut());
         let closes = form
             .submit
             .as_ref()
             .and_then(|submit| submit.closes)
             .unwrap_or(true);
-        if target == Target::Overlay && closes {
+        let shut = target == Target::Overlay && closes;
+        if shut {
             self.overlay = None;
+        }
+        if let Some(committed) = refused {
+            if shut {
+                self.notify(format!("{}: {}", form.does, committed.text));
+            } else {
+                self.ui_mut(&ui).refusal = Some(committed.by("form"));
+            }
         }
     }
 
@@ -2403,33 +2610,49 @@ impl App {
                 let index = digit as usize - '1' as usize;
                 if let Some(action) = confirm.alternatives.get(index).cloned() {
                     self.overlay = None;
-                    self.run_action(&action, None, true);
+                    self.run_action_notified(&action, None, true);
                 }
             }
             _ => {}
         }
     }
 
-    /// Confirming runs the action that opened the confirm, once, whether or not the confirm
-    /// declares `does`. A confirm's own `does` runs too when it names another command, or when no
-    /// action opened it.
+    /// Runs a confirm's command, then the action it confirms. A refusal of either keeps the
+    /// confirm open and shows on it; nothing after the refused command runs.
     fn confirmed(&mut self, confirm: &ess_ui::Confirm) {
-        let open = self.overlay.take();
-        let then = open.as_ref().and_then(|open| open.then.clone());
-        if let Some(does) = &confirm.does {
-            let opener_runs_it = then
-                .as_ref()
-                .is_some_and(|(action, _)| action.does.as_deref() == Some(does.as_str()));
-            if !opener_runs_it {
-                let input = open
+        let Some(mut open) = self.overlay.take() else {
+            return;
+        };
+        let ui = format!("o:{}", open.name);
+        let mut refused = None;
+        if let Some(does) = confirm.does.as_ref().filter(|does| {
+            !open.confirmed
+                && open
+                    .then
                     .as_ref()
-                    .map(|open| open.params.clone())
-                    .unwrap_or_default();
-                self.run_command(does, &input);
+                    .is_none_or(|(action, _)| action.does.as_deref() != Some(does.as_str()))
+        }) {
+            refused = self.run_command(does, &open.params);
+            // Accepted: a retry after the action is refused sends only the action again.
+            open.confirmed = refused.as_ref().is_none_or(|refused| refused.committed);
+        }
+        if refused.is_none() {
+            if let Some((action, row)) = open.then.clone() {
+                refused = self.run_action(&action, row, true);
+                if refused.as_ref().is_some_and(|refused| refused.committed) {
+                    open.then = None;
+                    open.confirmed = true;
+                }
             }
         }
-        if let Some((action, row)) = then {
-            self.run_action(&action, row, true);
+        if let Some(refused) = refused {
+            // Back on the confirm the user acted on, unless the command moved somewhere else.
+            if self.overlay.is_none() {
+                self.overlay = Some(open);
+                self.ui_mut(&ui).refusal = Some(refused.by("confirm"));
+            } else {
+                self.notify(refused.text);
+            }
         }
     }
 
@@ -2475,10 +2698,53 @@ impl App {
         ))
     }
 
-    fn run_command(&mut self, command: &str, input: &BTreeMap<String, Value>) {
-        let message = match self.adapter.run(command, input) {
-            Ok(message) => message,
-            Err(error) => format!("{command} refused: {error}"),
+    /// Records where a command an action sent was refused: beside the action, in the view `ui`.
+    fn place_refusal(&mut self, ui: &str, action: &Action, refused: Option<Refused>) {
+        if action.does.is_some() {
+            self.ui_mut(ui).refusal = refused.map(|refused| refused.by(&action.name));
+        }
+    }
+
+    /// Sends one command. An accepted one is notified (and, bound, reads every view again);
+    /// one that was not done is returned for the caller to show where the user acted.
+    fn run_command(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Option<Refused> {
+        self.commands_sent += 1;
+        let answer = self.adapter.run(command, input);
+        if answer != Answer::Accepted {
+            // What was read is out of date when the answer says the state moved (a declared
+            // `409`) or that the effect was committed though not delivered: read it again.
+            let committed =
+                self.bound.is_some() && answer == Answer::Unfinished { committed: true };
+            if committed || self.wrong_state(command, &answer) {
+                self.invalidate();
+            }
+            let payload = match &answer {
+                Answer::Refused {
+                    payload: Some(payload),
+                    ..
+                } => Some(crate::http::to_yaml(payload)),
+                _ => None,
+            };
+            return Some(Refused {
+                by: String::new(),
+                text: crate::http::shown(self.bound.as_ref(), command, &answer),
+                payload,
+                committed: answer == Answer::Unfinished { committed: true },
+            });
+        }
+        let message = if self.bound.is_some() {
+            self.invalidate();
+            format!("{command} accepted")
+        } else {
+            let shown: Vec<String> = input
+                .iter()
+                .map(|(name, value)| format!("{name}={}", display(value)))
+                .collect();
+            if shown.is_empty() {
+                format!("{command} accepted (fixture)")
+            } else {
+                format!("{command} accepted (fixture): {}", shown.join(", "))
+            }
         };
         self.notify(message);
         // Fixture sessions: a `*.SignOut` command ends the session, so the shell's guards send
@@ -2507,6 +2773,18 @@ impl App {
             _ => {}
         }
         self.rekey();
+        None
+    }
+
+    /// Whether a refused `answer` to `command` is its declared `409`: the state it acts on moved.
+    fn wrong_state(&self, command: &str, answer: &Answer) -> bool {
+        let Answer::Refused { error, .. } = answer else {
+            return false;
+        };
+        self.bound
+            .as_ref()
+            .and_then(|binding| crate::http::error_status(binding, command, error))
+            == Some(409)
     }
 
     /// Re-keys file storage when the actor (its user or account) has changed, for instance
@@ -2540,7 +2818,14 @@ impl App {
             .collect()
     }
 
-    pub(crate) fn run_action(&mut self, action: &Action, row: Option<Value>, confirmed: bool) {
+    /// Runs an action. Its command's refusal, if it sent one that was not done, is returned for
+    /// the caller to show where the user acted.
+    pub(crate) fn run_action(
+        &mut self,
+        action: &Action,
+        row: Option<Value>,
+        confirmed: bool,
+    ) -> Option<Refused> {
         if !confirmed {
             match &action.confirm {
                 Some(ActionConfirm::Opens(name)) => {
@@ -2551,7 +2836,7 @@ impl App {
                         None,
                         Some((action.clone(), row.clone())),
                     );
-                    return;
+                    return None;
                 }
                 Some(ActionConfirm::Inline(inline)) => {
                     // The inline confirm's canonical path is its action's, `confirm/overlay`.
@@ -2565,6 +2850,9 @@ impl App {
                         .and_then(|row| row.get("id"))
                         .map(|id| BTreeMap::from([("id".to_owned(), id.clone())]))
                         .unwrap_or_default();
+                    // A freshly opened confirm starts clean, as `show_overlay` does: no typed
+                    // text and no refusal from an earlier attempt.
+                    self.uis.retain(|id, _| !id.starts_with("o:"));
                     self.overlay = Some(OpenOverlay {
                         name: format!("confirm {}", action.name),
                         path,
@@ -2572,8 +2860,9 @@ impl App {
                         params,
                         then: Some((action.clone(), row)),
                         drawn_at,
+                        confirmed: false,
                     });
-                    return;
+                    return None;
                 }
                 None => {}
             }
@@ -2591,11 +2880,11 @@ impl App {
                 })
                 .collect();
             self.go(&navigate.to, params, true);
-            return;
+            return None;
         }
         if let Some(overlay) = &action.opens {
             self.show_overlay(overlay, row.as_ref(), None, None);
-            return;
+            return None;
         }
         if let Some(does) = &action.does {
             let input = action
@@ -2605,7 +2894,10 @@ impl App {
                     self.eval(&value.0, &ctx).map(|value| (name.clone(), value))
                 })
                 .collect();
-            self.run_command(does, &input);
+            // Nothing else the action does follows a command that was not done.
+            if let Some(refused) = self.run_command(does, &input) {
+                return Some(refused);
+            }
         }
         if let Some(export) = &action.export {
             self.notify(format!(
@@ -2631,6 +2923,22 @@ impl App {
             let value = self.eval(&value.0, &ctx).unwrap_or(Value::Null);
             self.set_bound(target, value, &ctx);
         }
+        None
+    }
+
+    /// Runs an action from somewhere that has no place of its own to show a refusal (the
+    /// palette, a confirm's alternative): a refusal is notified.
+    fn run_action_notified(&mut self, action: &Action, row: Option<Value>, confirmed: bool) {
+        if let Some(refused) = self.run_action(action, row, confirmed) {
+            let command = action.does.as_deref().unwrap_or(&action.name);
+            self.notify(format!("{command} refused: {}", refused.text));
+        }
+    }
+
+    /// Runs an action offered in the view `ui`, showing a refusal of its command beside it.
+    fn run_action_at(&mut self, ui: &str, action: &Action, row: Option<Value>) {
+        let refused = self.run_action(action, row, false);
+        self.place_refusal(ui, action, refused);
     }
 
     fn show_overlay(
@@ -2691,6 +2999,7 @@ impl App {
             params,
             then,
             drawn_at: None,
+            confirmed: false,
         });
     }
 
@@ -2716,7 +3025,7 @@ impl App {
                             match item.target {
                                 PaletteTarget::Page(page, params) => self.go(&page, params, true),
                                 PaletteTarget::Action(action) => {
-                                    self.run_action(&action, None, false);
+                                    self.run_action_notified(&action, None, false);
                                 }
                             }
                         }
@@ -3022,6 +3331,58 @@ impl Resolve for Scope<'_> {
             }
             _ => Resolved::Root(Value::Null),
         }
+    }
+}
+
+/// The value at a dotted field of a draft, if the draft holds one.
+fn lookup<'a>(value: &'a Value, field: &str) -> Option<&'a Value> {
+    field
+        .split('.')
+        .try_fold(value, |at, segment| at.get(segment))
+}
+
+/// Sets `segments` inside `target` to `next`, making each level a mapping.
+fn put(target: &mut Value, segments: &[&str], next: Value) {
+    let Some((head, rest)) = segments.split_first() else {
+        *target = next;
+        return;
+    };
+    if !target.is_mapping() {
+        *target = Value::Mapping(Mapping::new());
+    }
+    put(&mut target[*head], rest, next);
+}
+
+/// A form field's text typed by its `as`, as the React renderer types it: `number` text is a
+/// number (empty is no value) and `tags` text a comma-separated list. Text that does not parse
+/// as a number is sent as typed.
+fn typed(field_as: Option<&str>, value: Value) -> Value {
+    let Value::String(text) = &value else {
+        return value;
+    };
+    match field_as {
+        Some("number") => {
+            let text = text.trim();
+            if text.is_empty() {
+                Value::Null
+            } else if let Ok(number) = text.parse::<i64>() {
+                Value::Number(number.into())
+            } else if let Some(number) =
+                text.parse::<f64>().ok().filter(|number| number.is_finite())
+            {
+                Value::Number(number.into())
+            } else {
+                value
+            }
+        }
+        Some("tags") => Value::Sequence(
+            text.split(',')
+                .map(str::trim)
+                .filter(|tag| !tag.is_empty())
+                .map(|tag| Value::String(tag.to_owned()))
+                .collect(),
+        ),
+        _ => value,
     }
 }
 

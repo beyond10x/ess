@@ -270,6 +270,34 @@ fn a_non_scalar_view_param_is_refused() {
     assert_eq!(refusals.len(), 1, "{refusals:#?}");
 }
 
+/// A `Binary64` is a scalar a query value could carry, and no code target serves one
+/// (`ess-synth/src/failure.rs`), so a read binding a view parameter of that type is refused as the
+/// servers would refuse the model.
+#[test]
+fn a_binary64_view_param_is_refused() {
+    let mut sources = gatepass_with(
+        "\n  - name: gatepass.visit.Weighed\n    source: gatepass.visit.Visit\n    \
+         consistency: eventual\n    params:\n      - name: ratio\n        type: Binary64\n      \
+         - name: building\n        type: gatepass.visit.Building\n    filter: [param.ratio > \
+         0, building == param.building]\n    fields:\n      - name: visit_id\n        type: \
+         gatepass.visit.VisitId\n",
+    );
+    // `Binary64` is admitted from `ess/2`; the example is written at `ess/1`.
+    sources[0].1 = sources[0].1.replace("format: ess/1", "format: ess/2");
+    let text = document(
+        "gatepass",
+        "fat",
+        "{kind: detail_page, title: P, params: {ratio: number, site: string}, sections: \
+         [{name: weighed, component: collection, reads: {view: visit.Weighed, params: \
+         {ratio: params.ratio, building: params.site}}}]}",
+    );
+    let refusals = refusals_of(&text, &sources);
+    let refusal = refused_at(&refusals, "pages/p/sections/weighed/reads");
+    assert!(refusal.message.contains("`ratio`"), "{refusal:?}");
+    assert!(refusal.message.contains("Binary64"), "{refusal:?}");
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+}
+
 #[test]
 fn server_held_state_is_refused_for_a_live_binding() {
     let sources = gatepass();

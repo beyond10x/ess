@@ -888,6 +888,74 @@ fn the_committed_suite_passes_the_linked_go_realization_including_unknown_instan
     let _ = std::fs::remove_dir_all(&directory);
 }
 
+/// `story:go-generated-behaviour`: the Go linker resolves exactly what `generated/go/gatepass/plan.json`
+/// owes — no more, now that the generated behaviours and queries are linked rather than written by
+/// hand — and the realization beside it implements nothing the plan generates.
+#[test]
+fn the_go_linker_owes_exactly_the_plans_obligations() {
+    let plan: serde_json::Value =
+        serde_json::from_str(include_str!("../../../generated/go/gatepass/plan.json"))
+            .expect("the committed plan parses");
+    let mut owed: Vec<(String, String)> = plan["capabilities"]
+        .as_array()
+        .expect("the plan lists capabilities")
+        .iter()
+        .filter(|planned| planned["disposition"]["disposition"] == "obligation")
+        .map(|planned| {
+            (
+                planned["kind"]
+                    .as_str()
+                    .expect("a capability kind")
+                    .replace('_', " ")
+                    .replace("behavior", "behaviour"),
+                planned["source"].as_str().expect("a source").to_owned(),
+            )
+        })
+        .collect();
+    owed.sort();
+
+    let source = include_str!("../../gatepass-go-realization/linker.go");
+    let list = source
+        .split_once("var Obligations = [][2]string{\n")
+        .and_then(|(_, rest)| rest.split_once("\n}"))
+        .map(|(list, _)| list)
+        .expect("the linker declares its obligation list");
+    let mut linked: Vec<(String, String)> = list
+        .lines()
+        .map(|line| {
+            let quoted: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
+            assert_eq!(quoted.len(), 2, "`{line}` names a capability and a source");
+            (quoted[0].to_owned(), quoted[1].to_owned())
+        })
+        .collect();
+    linked.sort();
+    assert_eq!(
+        linked, owed,
+        "the Go linker resolves exactly the plan's obligations"
+    );
+    assert_eq!(
+        owed,
+        [(
+            "command behaviour".to_owned(),
+            "gatepass.visit.RegisterVisit".to_owned()
+        )],
+        "the plan owes only the registration; everything else is generated"
+    );
+
+    let realization = include_str!("../../gatepass-go-realization/visit.go");
+    for generated in [
+        "AdmitVisitor(",
+        "SignOutVisitor(",
+        "ExpectedVisits(",
+        "VisitById(",
+    ] {
+        assert!(
+            !realization.contains(&format!(") {generated}")),
+            "the realization implements `{generated}`, which the plan generates"
+        );
+    }
+}
+
 // ---- the served surfaces ---------------------------------------------------------------------
 
 /// A running server, killed when dropped so a failing assertion leaves no process behind.

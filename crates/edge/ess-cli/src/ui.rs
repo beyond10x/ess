@@ -1,8 +1,9 @@
 //! `ess ui` and `ess generate ui`: the `crates/ui/` entry points, mounted on the command line.
 //!
 //! Each command is a thin shell over one crate's own entry point — [`ess_ui::check`], [`ess_ui_check::run`],
-//! [`ess_ui_docs::run`], [`ess_ui_tui::run`], [`ess_ui_test::run`] and [`ess_ui_react::run`] — so what the command does
-//! is what that crate does, and what it prints on a refusal is that crate's message verbatim.
+//! [`ess_ui_docs::run`], [`ess_ui_tui::run`], [`ess_ui_test::run`], [`ess_ui_react::run`] and
+//! [`ess_ui_tui::generate::generate`] — so what the command does is what that crate does, and
+//! what it prints on a refusal is that crate's message verbatim.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -19,7 +20,8 @@ pub(crate) enum Command {
     Check(ess_ui_check::CheckArgs),
     /// Render the `ess-ui/1` reference from its schema, as HTML or Markdown.
     Docs(ess_ui_docs::DocsArgs),
-    /// Run an `ess-ui/1` document, answering reads from its fixtures.
+    /// Run an `ess-ui/1` document, answering reads from its fixtures, or with `--model` reading
+    /// and commanding the HTTP surface the specification serves.
     Run(Run),
     /// Run `ess-ui-test/1` tests headless against the terminal renderer, or with `--playwright`
     /// write them as a Playwright spec for the generated React project. Exits 1 when a test fails.
@@ -51,14 +53,19 @@ pub(crate) struct Generate {
     #[arg(long, value_enum)]
     target: Target,
     #[command(flatten)]
-    react: ess_ui_react::ReactArgs,
+    project: ess_ui_react::ReactArgs,
 }
 
 /// The applications `ess generate ui` generates.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Target {
-    /// A React + TypeScript project: react and react-dom only, generated routing, built with esbuild.
+    /// A React + TypeScript project: react and react-dom only, generated routing, built with esbuild;
+    /// with `--model`, bound to the HTTP surface the specification serves.
     React,
+    /// A Rust terminal application crate: a clap command line over `ess-ui-tui`, fetched by the
+    /// Git tag of this ESS version, bound to the HTTP surface the specification serves (`--model`
+    /// is required) and run with `--base-url`.
+    Tui,
 }
 
 /// Runs an `ess ui` command.
@@ -84,7 +91,17 @@ pub(crate) fn run(command: &Command) -> ExitCode {
         },
         Command::Run(run) => {
             debug_assert!(run.tui, "clap requires `--tui`");
-            match ess_ui_tui::run(&run.document) {
+            let document = &run.document;
+            let binding = match document
+                .model
+                .as_deref()
+                .map(|model| bind(&document.path, model))
+            {
+                None => None,
+                Some(Ok(binding)) => Some(binding),
+                Some(Err(error)) => return refusal(&format!("{error:#}")),
+            };
+            match ess_ui_tui::run(document, binding.as_ref()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => refusal(&error.to_string()),
             }
@@ -99,11 +116,45 @@ pub(crate) fn run(command: &Command) -> ExitCode {
 /// Runs `ess generate ui`.
 pub(crate) fn generate(arguments: &Generate) -> ExitCode {
     match arguments.target {
-        Target::React => match ess_ui_react::run(&arguments.react) {
-            Ok(summary) => success(&summary),
-            Err(error) => refusal(&error.to_string()),
-        },
+        Target::React => {
+            let react = &arguments.project;
+            let binding = match react.model.as_deref().map(|model| bind(&react.path, model)) {
+                None => None,
+                Some(Ok(binding)) => Some(binding),
+                Some(Err(error)) => return refusal(&format!("{error:#}")),
+            };
+            match ess_ui_react::run(react, binding.as_ref()) {
+                Ok(summary) => success(&summary),
+                Err(error) => refusal(&error.to_string()),
+            }
+        }
+        Target::Tui => {
+            let project = &arguments.project;
+            let Some(model) = project.model.as_deref() else {
+                return refusal(
+                    "--target tui needs --model: the terminal app is bound to the HTTP surface \
+                     the specification serves",
+                );
+            };
+            let binding = match bind(&project.path, model) {
+                Ok(binding) => binding,
+                Err(error) => return refusal(&format!("{error:#}")),
+            };
+            match ess_ui_tui::generate::generate(&project.path, &binding, &project.out) {
+                Ok(summary) => success(&summary),
+                Err(error) => refusal(&error.to_string()),
+            }
+        }
     }
+}
+
+/// The route table the document at `document` binds to on the surface the specification at
+/// `model` serves, through `ess_ui_check::binding`.
+fn bind(document: &Path, model: &Path) -> anyhow::Result<ess_ui::binding::Binding> {
+    let loaded = ess_ui::load_path(document)
+        .map_err(|error| anyhow::anyhow!("{}: {error}", document.display()))?;
+    let (sources, _) = sources(model)?;
+    Ok(ess_ui_check::binding(&loaded, &sources)?)
 }
 
 fn success(summary: &str) -> ExitCode {
@@ -120,6 +171,13 @@ fn refusal(message: &str) -> ExitCode {
 /// specification: a directory through its `ess-inputs.yaml` when it has one, and a path naming
 /// that manifest as its directory (beyond10x/ess#262).
 fn model(path: &Path) -> anyhow::Result<ess_ui_check::Model> {
+    let (sources, path) = sources(path)?;
+    Ok(ess_ui_check::model_from_sources(&sources, path)?)
+}
+
+/// The `(label, text)` sources of a `--model`, resolved as [`model`] says, and the path a refusal
+/// names it by.
+fn sources(path: &Path) -> anyhow::Result<(Vec<(String, String)>, &Path)> {
     let path = if path
         .file_name()
         .is_some_and(|name| name == "ess-inputs.yaml")
@@ -146,5 +204,5 @@ fn model(path: &Path) -> anyhow::Result<ess_ui_check::Model> {
                 (label, input.text)
             })
             .collect();
-    Ok(ess_ui_check::model_from_sources(&sources, path)?)
+    Ok((sources, path))
 }

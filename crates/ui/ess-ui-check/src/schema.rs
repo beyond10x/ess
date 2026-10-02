@@ -59,6 +59,12 @@ pub(crate) fn capabilities() -> &'static BTreeMap<String, Capability> {
     })
 }
 
+/// The names a `Tokens` group keyed by an enum admits (`constructs.Tokens.fields.<group>`'s map
+/// key): the text styles for `type`, the tones for `tone`.
+pub(crate) fn token_names(group: &str) -> Vec<String> {
+    strings(&schema()["constructs"]["Tokens"]["fields"][group]["type"]["map"]["key"]["enum"])
+}
+
 /// `type_rule.primitives`: the lowercase type names.
 pub(crate) fn primitive_types() -> &'static BTreeSet<String> {
     static NAMES: OnceLock<BTreeSet<String>> = OnceLock::new();

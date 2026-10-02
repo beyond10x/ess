@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T04:20:29Z",
+  "actor": "human:timo",
+  "artifact": "story:go-generated-behaviour",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "ESS owner: the gatepass model gains sets: {badge}; this unit rebases on it",
+    "reference": "review-result:go-generated-behaviour-adversary-pass1#finding-1",
+    "review": "review-result:go-generated-behaviour-adversary-pass1",
+    "outcome": "escalated"
+  }
+}

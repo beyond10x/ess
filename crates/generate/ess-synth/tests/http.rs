@@ -370,7 +370,7 @@ fn review_http_payloads_use_slice_profiles_while_neutral_plans_stay_frozen() {
             );
             assert_eq!(
                 read.source_digest,
-                "f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba"
+                "7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c"
             );
         }
     }

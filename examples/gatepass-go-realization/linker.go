@@ -6,20 +6,17 @@ import (
 
 	"example.invalid/gatepass/components/passservice"
 	"example.invalid/gatepass/system"
+	"example.invalid/gatepass/types/behaviour"
 )
 
 // Obligations is every obligation the gatepass plan owes, as {capability, source} in the stubs'
-// own spelling.
+// own spelling: what is left once the generated behaviours and queries are linked.
 //
-// Held equal to `generated/go/gatepass/plan.json` by TestTheLinkersObligationListIsExactlyThePlans,
-// so a specification change that moves an obligation fails here instead of leaving the linker
-// resolving a list that no longer exists.
+// Held equal to `generated/go/gatepass/plan.json` by `the_go_linker_owes_exactly_the_plans_obligations`
+// in `examples/gatepass-realization/tests/conformance.rs`, so a specification change that moves an
+// obligation fails there instead of leaving the linker resolving a list that no longer exists.
 var Obligations = [][2]string{
-	{"command behaviour", "gatepass.visit.AdmitVisitor"},
 	{"command behaviour", "gatepass.visit.RegisterVisit"},
-	{"command behaviour", "gatepass.visit.SignOutVisitor"},
-	{"view query", "gatepass.visit.ExpectedVisits"},
-	{"view query", "gatepass.visit.VisitById"},
 }
 
 // Honest is how the honest offers name themselves in an ambiguity error.
@@ -135,7 +132,10 @@ func Link() (*Assembled, error) {
 		return nil, err
 	}
 	return &Assembled{
-		System: system.NewSystem(passservice.New(realization)),
-		Store:  store,
+		System: system.NewSystem(passservice.New(behaviour.New(behaviour.Ports{
+			VisitStorage: store,
+			Owed:         realization,
+		}))),
+		Store: store,
 	}, nil
 }

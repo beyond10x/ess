@@ -284,3 +284,111 @@ fn a_copy_action_derives_no_name() {
         "{sources:?}"
     );
 }
+
+fn strings(value: &Value) -> Vec<&str> {
+    value
+        .as_sequence()
+        .unwrap_or_else(|| panic!("not a list: {value:?}"))
+        .iter()
+        .map(|item| item.as_str().expect("a string"))
+        .collect()
+}
+
+fn keys(value: &Value) -> Vec<&str> {
+    value
+        .as_mapping()
+        .unwrap_or_else(|| panic!("not a map: {value:?}"))
+        .keys()
+        .map(|key| key.as_str().expect("a string key"))
+        .collect()
+}
+
+#[test]
+fn the_type_and_tone_token_names_are_the_text_styles_and_the_tones() {
+    let schema = schema();
+    let constructs = &schema["constructs"];
+    let tokens = &constructs["Tokens"]["fields"];
+    let styles = strings(&constructs["text"]["fields"]["style"]["type"]["enum"]);
+    let tones = strings(&constructs["Primitive"]["tone"]["enum"]);
+    assert_eq!(
+        strings(&tokens["type"]["type"]["map"]["key"]["enum"]),
+        styles
+    );
+    assert_eq!(
+        strings(&tokens["tone"]["type"]["map"]["key"]["enum"]),
+        tones
+    );
+    let builtins = &constructs["Tokens"]["builtins"];
+    let mut builtin_styles = keys(&builtins["type"]);
+    builtin_styles.sort_unstable();
+    let mut sorted_styles = styles.clone();
+    sorted_styles.sort_unstable();
+    assert_eq!(
+        builtin_styles, sorted_styles,
+        "every text style has a built-in entry"
+    );
+    let mut builtin_tones = keys(&builtins["tone"]);
+    builtin_tones.sort_unstable();
+    let mut sorted_tones = tones.clone();
+    sorted_tones.sort_unstable();
+    assert_eq!(
+        builtin_tones, sorted_tones,
+        "every tone has a built-in entry"
+    );
+}
+
+#[test]
+fn a_badge_and_an_icon_take_one_tone_by_naming_a_tone_map() {
+    let schema = schema();
+    let constructs = &schema["constructs"];
+    let badge = &constructs["badge"]["fields"]["tone_by"]["type"];
+    assert_eq!(badge, &constructs["icon"]["fields"]["tone_by"]["type"]);
+    assert_eq!(
+        badge["record"]["tones"],
+        serde_yaml::from_str::<Value>("{optional: {ref: tone_map}}").expect("YAML")
+    );
+    assert!(
+        strings(&schema["type_rule"]["constructors"]["ref"]["kinds"]).contains(&"tone_map"),
+        "`{{ref: tone_map}}` is a kind of reference"
+    );
+}
+
+#[test]
+fn the_reference_states_the_button_and_terminal_emphasis_tables() {
+    let schema = schema();
+    let constructs = &schema["constructs"];
+    let colors = keys(&constructs["Tokens"]["builtins"]["color"]);
+
+    let emphasis = &constructs["button"]["emphasis"];
+    assert_eq!(
+        keys(emphasis),
+        strings(&constructs["button"]["fields"]["tone"]["type"]["enum"])
+    );
+    for (tone, row) in emphasis.as_mapping().expect("a table") {
+        assert_eq!(keys(row), ["fill", "text", "border"], "{tone:?}");
+        for color in row.as_mapping().expect("a row").values() {
+            let color = color.as_str().expect("a color name");
+            assert!(
+                color == "none" || colors.contains(&color),
+                "{tone:?}: `{color}` is no built-in color"
+            );
+        }
+    }
+    assert_eq!(emphasis["primary"]["fill"], Value::from("accent"));
+    assert_eq!(emphasis["ghost"]["border"], Value::from("none"));
+
+    let terminal = &constructs["Tokens"]["terminal_emphasis"];
+    assert_eq!(
+        keys(terminal),
+        strings(&constructs["Primitive"]["tone"]["enum"])
+    );
+    for (tone, modifiers) in [
+        ("neutral", "bold"),
+        ("info", "italic"),
+        ("success", "bold"),
+        ("warning", "underlined"),
+        ("danger", "bold and underlined"),
+    ] {
+        assert_eq!(terminal[tone], Value::from(modifiers), "{tone}");
+    }
+}

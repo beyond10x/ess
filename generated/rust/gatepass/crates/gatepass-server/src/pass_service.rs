@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
-// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
+// model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c
+// contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed
 // do not edit: regenerate with `ess synthesize`
 
 //! The `pass-service` component of `gatepass` v1, on the wire.
@@ -45,7 +45,7 @@ pub const ROUTES: &[(&str, &str)] = &[
 /// Everything outside `runtime` is the same in every language this plan is emitted into, and
 /// `cargo xtask synth --check` starts both and compares them.
 pub const STARTUP: &[&str] = &[
-    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba\",\"contract_digest\":\"a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":28,\"obligations\":1,\"refused\":0}",
+    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c\",\"contract_digest\":\"2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":28,\"obligations\":1,\"refused\":0}",
     "{\"log\":\"ess/1\",\"event\":\"surface.serving\",\"component\":\"pass-service\",\"reached_by\":\"network\",\"transport\":\"http/1.1\",\"routes\":7,\"paths\":[{\"method\":\"GET\",\"path\":\"/docs\",\"serves\":\"documentation\",\"name\":\"docs\"},{\"method\":\"GET\",\"path\":\"/openapi.json\",\"serves\":\"contract\",\"name\":\"openapi\"},{\"method\":\"POST\",\"path\":\"/visits/commands/admit-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.AdmitVisitor\"},{\"method\":\"POST\",\"path\":\"/visits/commands/register-visit\",\"serves\":\"command\",\"name\":\"gatepass.visit.RegisterVisit\"},{\"method\":\"POST\",\"path\":\"/visits/commands/sign-out-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.SignOutVisitor\"},{\"method\":\"GET\",\"path\":\"/visits/views/by-id\",\"serves\":\"view\",\"name\":\"gatepass.visit.VisitById\"},{\"method\":\"GET\",\"path\":\"/visits/views/expected\",\"serves\":\"view\",\"name\":\"gatepass.visit.ExpectedVisits\"}]",
     "{\"log\":\"ess/1\",\"event\":\"system.ready\",\"system\":\"gatepass\",\"surfaces\":1",
 ];
@@ -76,10 +76,13 @@ fn announce(address: &std::net::SocketAddr) {
 /// [`dispatch`] checks that caller's grant before the command runs. Nothing here reads an
 /// actor from the request itself.
 ///
+/// One connection at a time: each is dropped after [`http::READ_TIMEOUT`] without a byte, or
+/// [`http::WRITE_TIMEOUT`] of a stalled write, and whatever fails on one connection — a caller
+/// that hung up before reading its answer, a reset, a failed accept — ends that connection only.
+///
 /// # Errors
 ///
-/// Anything the listener refuses: the address is taken, the port is privileged, the socket
-/// died.
+/// What binding the address refuses: the address is taken, or the port is privileged.
 pub fn serve<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<gatepass_types::actor::Caller>) -> std::io::Result<()>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
@@ -87,13 +90,25 @@ where
     let listener = std::net::TcpListener::bind(address)?;
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
-        let mut reader = std::io::BufReader::new(connection?);
-        let answer = match http::read(&mut reader) {
-            Ok(request) => dispatch(system, authenticate(&request).as_ref(), &request),
-            Err(refusal) => refusal,
+        // What fails on one connection ends that connection, never this loop: a caller that
+        // gave up before it was accepted, or before it read its answer, is that caller's affair.
+        let Ok(connection) = connection else {
+            // An accept the listener itself failed (no descriptor left) would fail again at
+            // once: pause before the next.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            continue;
+        };
+        let _ = connection.set_read_timeout(Some(http::READ_TIMEOUT));
+        let _ = connection.set_write_timeout(Some(http::WRITE_TIMEOUT));
+        let mut reader = std::io::BufReader::new(connection);
+        let (answer, refused) = match http::read(&mut reader) {
+            Ok(request) => (dispatch(system, authenticate(&request).as_ref(), &request), false),
+            Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();
-        http::write(&mut stream, &answer)?;
+        if http::write(&mut stream, &answer).is_ok() && refused {
+            http::linger(&mut stream);
+        }
     }
     Ok(())
 }

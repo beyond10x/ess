@@ -8,8 +8,8 @@
     "x-ess-provenance": {
       "system": "gatepass",
       "specification_version": "v1",
-      "source_digest": "f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba",
-      "contract_digest": "slice-sha256/2:a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c"
+      "source_digest": "7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c",
+      "contract_digest": "slice-sha256/2:2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed"
     },
     "x-ess-reached-by": "network"
   },

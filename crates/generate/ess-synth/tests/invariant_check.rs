@@ -23,8 +23,8 @@ use ess_synth::{synthesize_for, Synthesis, Target};
 /// text length, Boolean equality, truthiness of a number and of a Boolean, `all`/`any`/`not`,
 /// `Duration`, `Uuid` and `Bytes` equality, `defined` over an `Optional` aggregate and over
 /// `Json`, an `Optional` scalar, a list's count and position, `forall` and `exists` over a list
-/// and a map, a nested quantifier reading both binders, and `state`. A second entity declares
-/// `never`.
+/// and a map, a nested quantifier reading both binders, `not` around an `all` that reads an
+/// absent value, and `state`. A second entity declares `never`.
 const MODEL: &str = r#"format: ess/16
 system: demo
 version: v1
@@ -112,6 +112,7 @@ entities:
       - tags.count <= 3
       - exists: {in: tags, as: tag, that: tag >= 10}
       - forall: {in: lines, as: line, that: {exists: {in: tags, as: tag, that: tag >= line.qty}}}
+      - {not: {all: [note == x, count >= 0]}}
       - any: [state == Open, window.high < 100]
     lifecycle:
       initial: Open
@@ -262,6 +263,7 @@ fn main() {
         ("33", with(|v| v.tags = BTreeMap::from([(text("a"), 1)]))),
         ("33", with(|v| v.tags.clear())),
         ("34", with(|v| v.lines[1].qty = 11)),
+        ("35", with(|v| v.note = Some(text("x")))),
         ("none", with(|v| v.window.high = 200)),
         ("2", with(|v| { v.count = -1; v.lines[1].qty = 0; })),
     ];
@@ -272,6 +274,194 @@ fn main() {
     println!("seal {:?}", SealData { id: text("s-1") }.broken_invariant());
 }
 "#;
+
+/// The Go harness: each line is `<expected>\t<actual>`, where `<expected>` is the index of the
+/// invariant the value must be refused by, or `none`, and `<actual>` is the statement
+/// `BrokenInvariant()` answered, or `none`. The cases are the Rust harness's, one for one.
+const GO_HARNESS: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+
+	"example.invalid/demo/types/invariant"
+	"example.invalid/demo/types/ledger"
+	"example.invalid/demo/types/primitives"
+)
+
+// base satisfies every invariant. Its instants are ordered only by the instant they name: by
+// their bytes `opens` sorts after `closes`, and `starts_at` sorts before its bound.
+func base() ledger.AccountData {
+	second := "second"
+	return ledger.AccountData{
+		Id:       "a-1",
+		Count:    1,
+		Ratio:    primitives.NewDecimal("1.50"),
+		Total:    ledger.Money{Amount: primitives.NewDecimal("10.00")},
+		Active:   true,
+		Flag:     true,
+		Title:    "Title",
+		Code:     ledger.NewCode("C-1"),
+		Region:   "EU",
+		Currency: "EUR",
+		Tier:     ledger.TierBasic{},
+		StartsAt: primitives.NewTimestamp("2020-01-01T01:30:00+01:00"),
+		Window: ledger.Window{
+			Opens:  primitives.NewTimestamp("2026-01-01T01:30:00+02:00"),
+			Closes: primitives.NewTimestamp("2026-01-01T00:00:00Z"),
+			Low:    1,
+			High:   10,
+		},
+		Grace: primitives.NewDuration("PT5M"),
+		Ref:   primitives.NewUuid("6f1c0f6e-5e8a-4c3f-9f7d-2b1a0c9e8d7f"),
+		Blob:  []byte{1, 2, 3},
+		Lines: []ledger.Line{{Qty: 1}, {Qty: 2, Label: &second}},
+		Tags:  map[string]int64{"a": 10},
+	}
+}
+
+func with(change func(value *ledger.AccountData)) ledger.AccountData {
+	value := base()
+	change(&value)
+	return value
+}
+
+func text(value string) *string {
+	return &value
+}
+
+func check(holds bool, what string) {
+	if !holds {
+		fmt.Println("evaluator", what)
+		os.Exit(1)
+	}
+}
+
+// evaluator is the shared evaluator's readings the cases do not reach one by one: base64 padding,
+// exact decimal order, and instants that name no day.
+func evaluator() {
+	check(invariant.Bytes([]byte{0}) == invariant.Text("AA=="), "bytes 0")
+	check(invariant.Bytes([]byte{0xfb, 0xff}) == invariant.Text("+/8="), "bytes fbff")
+	check(invariant.Bytes([]byte{}) == invariant.Text(""), "bytes empty")
+	number := func(spelling string) invariant.Number {
+		parsed, ok := invariant.ParseNumber(spelling)
+		check(ok, spelling)
+		return parsed
+	}
+	check(number("1.50") == number("15e-1"), "1.50")
+	check(number("-0.0") == number("0"), "-0.0")
+	check(number("-2").Cmp(number("-1.5")) < 0, "-2")
+	check(number("0.001").Cmp(number("0.01")) < 0, "0.001")
+	check(number("99.999").Cmp(number("100")) < 0, "99.999")
+	check(number("-0.5").Cmp(number("0")) < 0, "-0.5")
+	_, ok := invariant.ParseNumber("1.2.3")
+	check(!ok, "1.2.3")
+	_, ok = invariant.ParseNumber("e5")
+	check(!ok, "e5")
+	check(invariant.NumberOf("x") == invariant.Absent, "x")
+	instant := func(left string, op invariant.Op, right string) invariant.Truth {
+		return invariant.Compare(invariant.Text(left), op, invariant.Text(right), true, true)
+	}
+	check(instant("2020-02-29T00:00:00Z", invariant.Lt, "2020-03-01T00:00:00Z") == invariant.True, "leap")
+	check(instant("2021-02-29T00:00:00Z", invariant.Lt, "2021-03-01T00:00:00Z") == invariant.Unknown, "no day")
+	check(instant("2020-01-01T00:00:00.5Z", invariant.Gt, "2020-01-01T00:00:00Z") == invariant.True, "fraction")
+	check(instant("2020-01-01T00:00:00+00:00", invariant.Eq, "2020-01-01T00:00:00Z") == invariant.True, "offset")
+	check(instant("soon", invariant.Eq, "soon") == invariant.True, "text")
+	check(instant("1969-12-31T23:59:59Z", invariant.Lt, "1970-01-01T00:00:00Z") == invariant.True, "epoch")
+}
+
+func main() {
+	type testCase struct {
+		expected string
+		value    ledger.AccountData
+	}
+	cases := []testCase{
+		{"none", base()},
+		{"1", with(func(v *ledger.AccountData) { v.Id = "" })},
+		{"2", with(func(v *ledger.AccountData) { v.Count = -1 })},
+		{"3", with(func(v *ledger.AccountData) { v.Ratio = primitives.NewDecimal("1.50001") })},
+		{"none", with(func(v *ledger.AccountData) { v.Ratio = primitives.NewDecimal("15e-1") })},
+		{"4", with(func(v *ledger.AccountData) { v.Ratio = primitives.NewDecimal("0.250") })},
+		{"5", with(func(v *ledger.AccountData) { v.Total.Amount = primitives.NewDecimal("0.00") })},
+		{"5", with(func(v *ledger.AccountData) { v.Total.Amount = primitives.NewDecimal("-3") })},
+		{"6", with(func(v *ledger.AccountData) { v.Window.Low = 5; v.Window.High = 4 })},
+		{"7", with(func(v *ledger.AccountData) { v.Window.Closes = primitives.NewTimestamp("2025-12-31T23:30:00Z") })},
+		{"8", with(func(v *ledger.AccountData) { v.StartsAt = primitives.NewTimestamp("2020-01-01T00:30:00+01:00") })},
+		{"9", with(func(v *ledger.AccountData) { v.Code = ledger.NewCode("A-1") })},
+		{"10", with(func(v *ledger.AccountData) { v.Tier = ledger.TierRetired{} })},
+		{"11", with(func(v *ledger.AccountData) { v.Tier = ledger.TierTrial{} })},
+		{"none", with(func(v *ledger.AccountData) { v.Tier = ledger.TierPremium{} })},
+		{"12", with(func(v *ledger.AccountData) { v.Count = 7 })},
+		{"13", with(func(v *ledger.AccountData) { v.Code = ledger.NewCode("C-0") })},
+		{"14", with(func(v *ledger.AccountData) { v.Title = "xi" })},
+		{"15", with(func(v *ledger.AccountData) { v.Code = ledger.NewCode("C-2") })},
+		{"16", with(func(v *ledger.AccountData) { v.Title = "Tops" })},
+		{"17", with(func(v *ledger.AccountData) { v.Region = "apac" })},
+		{"none", with(func(v *ledger.AccountData) { v.Region = "Us" })},
+		{"18", with(func(v *ledger.AccountData) { v.Currency = "USD" })},
+		{"19", with(func(v *ledger.AccountData) { v.Title = "Titanic!!" })},
+		{"none", with(func(v *ledger.AccountData) { v.Title = "Tiéééééé" })},
+		{"20", with(func(v *ledger.AccountData) { v.Active = false })},
+		{"21", with(func(v *ledger.AccountData) { v.Count = 0 })},
+		{"22", with(func(v *ledger.AccountData) { v.Flag = false })},
+		{"none", with(func(v *ledger.AccountData) { v.Flag = false; v.Window.Low = 0 })},
+		{"23", with(func(v *ledger.AccountData) { v.Grace = primitives.NewDuration("PT0S") })},
+		{"23", with(func(v *ledger.AccountData) { v.Ref = primitives.NewUuid("00000000-0000-0000-0000-000000000000") })},
+		{"24", with(func(v *ledger.AccountData) { v.Blob = []byte{0, 0, 0} })},
+		{"25", with(func(v *ledger.AccountData) { v.Extra = &ledger.Extra{Level: 0} })},
+		{"none", with(func(v *ledger.AccountData) { v.Extra = &ledger.Extra{Level: 2} })},
+		{"26", with(func(v *ledger.AccountData) { payload := primitives.NewJson("true"); v.Payload = &payload })},
+		{"27", with(func(v *ledger.AccountData) { v.Note = text("toolong") })},
+		{"none", with(func(v *ledger.AccountData) { v.Note = text("short") })},
+		{"28", with(func(v *ledger.AccountData) { v.Lines = nil })},
+		{"29", with(func(v *ledger.AccountData) { v.Lines[0].Qty = 101 })},
+		{"30", with(func(v *ledger.AccountData) { v.Lines[1].Qty = 0 })},
+		{"31", with(func(v *ledger.AccountData) { v.Lines[1].Label = text("") })},
+		{"32", with(func(v *ledger.AccountData) { v.Tags["b"] = 11; v.Tags["c"] = 12; v.Tags["d"] = 13 })},
+		{"33", with(func(v *ledger.AccountData) { v.Tags = map[string]int64{"a": 1} })},
+		{"33", with(func(v *ledger.AccountData) { v.Tags = map[string]int64{} })},
+		{"34", with(func(v *ledger.AccountData) { v.Lines[1].Qty = 11 })},
+		{"35", with(func(v *ledger.AccountData) { v.Note = text("x") })},
+		{"none", with(func(v *ledger.AccountData) { v.Window.High = 200 })},
+		{"2", with(func(v *ledger.AccountData) { v.Count = -1; v.Lines[1].Qty = 0 })},
+	}
+	for _, held := range cases {
+		broken, ok := held.value.BrokenInvariant()
+		if !ok {
+			broken = "none"
+		}
+		fmt.Printf("%s\t%s\n", held.expected, broken)
+	}
+	evaluator()
+	broken, ok := ledger.SealData{Id: "s-1"}.BrokenInvariant()
+	fmt.Printf("seal\t%s %v\n", broken, ok)
+}
+"#;
+
+/// Runs a Go tool in `directory` with nothing fetched from a network.
+fn go_tool(directory: &Path, tool: &str, arguments: &[&str]) -> Output {
+    let output = Command::new(tool)
+        .args(arguments)
+        .current_dir(directory)
+        .env("GOFLAGS", "-mod=mod")
+        .env("GOPROXY", "off")
+        .env("GOWORK", "off")
+        .output()
+        .expect("the Go tool runs");
+    eprintln!(
+        "{tool} {arguments:?} in {}\n{}{}",
+        directory.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+/// Where Go is, or `None` when this machine has none — said out loud, never passed silently.
+fn go() -> Option<String> {
+    let output = Command::new("go").arg("version").output().ok()?;
+    output.status.success().then(|| "go".to_owned())
+}
 
 fn ir(source: &str) -> EssIr {
     let spec = Specification::assemble([(
@@ -330,7 +520,7 @@ fn every_invariant_form_is_checked_by_the_generated_data_type() {
         .iter()
         .map(|invariant| invariant.statement.clone())
         .collect();
-    assert_eq!(statements.len(), 36, "{statements:#?}");
+    assert_eq!(statements.len(), 37, "{statements:#?}");
     let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
 
     let root = scratch("harness");
@@ -412,4 +602,134 @@ fn a_model_without_invariants_emits_no_check() {
             "`{path}` carries an invariant check for a model that declares none"
         );
     }
+}
+
+/// The model's entities without their invariants.
+fn bare_model() -> String {
+    MODEL
+        .split("    invariants:\n")
+        .enumerate()
+        .map(|(position, part)| {
+            if position == 0 {
+                part.to_owned()
+            } else {
+                part.split_once("    lifecycle:\n")
+                    .map(|(_, rest)| format!("    lifecycle:\n{rest}"))
+                    .expect("each invariant list is followed by a lifecycle")
+            }
+        })
+        .collect::<String>()
+}
+
+/// `story:go-generated-behaviour`: the Go data type of an entity declaring `invariants:` carries
+/// `BrokenInvariant() (string, bool)`, answering exactly what the Rust target's
+/// `broken_invariant` answers for the same values — the harness above holds the Rust harness's
+/// cases, one for one.
+#[test]
+fn every_invariant_form_is_checked_by_the_go_data_type() {
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the Go invariant check is unchecked here");
+        return;
+    };
+    let ir = ir(MODEL);
+    let account = ir
+        .entities()
+        .values()
+        .find(|entity| entity.name.to_string() == "demo.ledger.Account")
+        .expect("the fixture declares the account");
+    let statements: Vec<String> = account
+        .invariants
+        .iter()
+        .map(|invariant| invariant.statement.clone())
+        .collect();
+    assert_eq!(statements.len(), 37, "{statements:#?}");
+    let synthesis = synthesize_for(&ir, Target::Go).expect("the fixture synthesizes to Go");
+    let domain = &synthesis.artifacts["types/ledger/ledger.go"].contents;
+    assert!(
+        domain.contains("func (d AccountData) BrokenInvariant() (string, bool) {")
+            && domain.contains("func (d SealData) BrokenInvariant() (string, bool) {"),
+        "{domain}"
+    );
+    assert!(
+        domain.contains(
+            "// Every value satisfies `count >= 0` — checked by [AccountData.BrokenInvariant]."
+        ),
+        "{domain}"
+    );
+
+    let root = scratch("go-harness");
+    let generated = root.join("generated");
+    write(&synthesis, &generated);
+    let harness = root.join("harness");
+    std::fs::create_dir_all(&harness).unwrap();
+    std::fs::write(
+        harness.join("go.mod"),
+        "module invariantharness\n\ngo 1.21\n\nrequire example.invalid/demo v0.0.0\n\nreplace \
+         example.invalid/demo => ../generated\n",
+    )
+    .unwrap();
+    std::fs::write(harness.join("main.go"), GO_HARNESS).unwrap();
+    let unformatted = go_tool(&generated, "gofmt", &["-l", "."]);
+    let vet = go_tool(&generated, &go, &["vet", "./..."]);
+    let run = go_tool(&harness, &go, &["run", "."]);
+    let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(
+        unformatted.status.success() && unformatted.stdout.is_empty(),
+        "the generated Go is gofmt-clean"
+    );
+    assert!(vet.status.success(), "the generated Go is vet clean");
+    assert!(
+        run.status.success(),
+        "the harness builds and runs: {stdout}"
+    );
+
+    let mut lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(lines.pop(), Some("seal\tnever true"), "{stdout}");
+    let mut broken = BTreeSet::new();
+    for line in &lines {
+        let (expected, actual) = line.split_once('\t').expect("`<expected>\t<actual>`");
+        let want = if expected == "none" {
+            "none"
+        } else {
+            let index: usize = expected.parse().expect("an invariant index");
+            broken.insert(index);
+            statements[index].as_str()
+        };
+        assert_eq!(actual, want, "case `{line}`");
+    }
+    let every: BTreeSet<usize> = (1..statements.len() - 1).collect();
+    assert_eq!(
+        broken, every,
+        "every invariant but `always` and the state-reading one is broken by some case"
+    );
+}
+
+/// `story:go-generated-behaviour`: a Go model whose entities declare no invariant carries no check
+/// and no evaluator, so it keeps every byte it had.
+#[test]
+fn a_go_model_without_invariants_emits_no_check() {
+    let bare = ir(&bare_model());
+    assert!(bare
+        .entities()
+        .values()
+        .all(|entity| entity.invariants.is_empty()));
+    let synthesis = synthesize_for(&bare, Target::Go).expect("the fixture synthesizes to Go");
+    assert!(
+        !synthesis
+            .artifacts
+            .contains_key("types/invariant/invariant.go"),
+        "a model that declares no invariant carries no evaluator"
+    );
+    for (path, artifact) in &synthesis.artifacts {
+        assert!(
+            !artifact.contents.contains("BrokenInvariant")
+                && !artifact.contents.contains("types/invariant"),
+            "`{path}` carries an invariant check for a model that declares none"
+        );
+    }
+    let checked = synthesize_for(&ir(MODEL), Target::Go).expect("synthesizes to Go");
+    assert!(checked
+        .artifacts
+        .contains_key("types/invariant/invariant.go"));
 }

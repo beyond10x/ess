@@ -13,6 +13,9 @@ import { useNavigate, useParams, useSearchParams } from "./router";
 import { useActor, useRead, type ReadSpec, type ReadState } from "./data";
 import { assignable, evaluate, truthy } from "./expr";
 import { getPath, setPath, stableKey, type Json } from "./json";
+//+bound
+import type { Refusal } from "./actions";
+//-bound
 
 export type { Json } from "./json";
 
@@ -26,7 +29,12 @@ export interface Notice {
 /** The action that opened a confirm: its command, and how to run it. */
 export interface Opener {
   does?: string;
-  run(): Promise<void>;
+//+plain
+  run(): Promise<boolean>;
+//-plain
+//+bound
+  run(refused?: (refusal: Refusal | undefined) => void): Promise<boolean>;
+//-bound
 }
 
 /** What expressions read and what actions do, layered from the app down to a row. */

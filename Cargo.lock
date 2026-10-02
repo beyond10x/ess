@@ -710,6 +710,8 @@ dependencies = [
  "ess-domain",
  "ess-gen",
  "ess-primitives",
+ "ess-ui",
+ "ess-ui-check",
  "jsonschema",
  "serde",
  "serde_json",
@@ -753,6 +755,7 @@ version = "0.51.0"
 dependencies = [
  "clap",
  "ess-ui",
+ "ess-ui-check",
  "serde_json",
  "serde_yaml",
 ]
@@ -779,8 +782,10 @@ dependencies = [
  "clap",
  "crossterm",
  "ess-ui",
+ "ess-ui-check",
  "ratatui",
  "serde",
+ "serde_json",
  "serde_yaml",
  "unicode-width 0.2.0",
 ]

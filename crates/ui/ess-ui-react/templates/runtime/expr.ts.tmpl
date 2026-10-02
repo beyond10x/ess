@@ -2,7 +2,7 @@
 // name, plus `==`, `!=`, `in [..]`, `not`, `and`, `or`, literals and calls such as
 // `same_as(list)`, `matches(params)` and `actor.may(<command>)`. A bare word is its own text, so
 // `row.status == overdue` compares with the text "overdue"; a string that does not parse as an
-// expression is literal text.
+// expression, or reads no path and calls no function form, is literal text.
 
 import { getPath, isObject, stableKey } from "./json";
 
@@ -307,43 +307,47 @@ function run(ast: Ast, values: Record<string, unknown>): unknown {
   }
 }
 
-/** Evaluates an expression against the scope's values; literal text evaluates to itself. */
-export function evaluate(text: string | undefined, values: Record<string, unknown>): unknown {
-  if (text === undefined) {
-    return undefined;
-  }
-  const ast = parse(text);
-  if (ast === null || (operates(ast) && !reads(ast))) {
-    return text;
-  }
-  return run(ast, values);
-}
-
-/** Whether the expression applies an operator (`not`, `and`, `or`, `in`, `==`, `!=`). */
-function operates(ast: Ast): boolean {
-  return ast.kind === "not" || ast.kind === "binary";
-}
-
 /**
- * Whether the expression reads a path from a root or calls a function. Words joined by an
- * operator that read nothing (`Limit in cents`, `not yet sent`) are literal text, as
- * `ess ui check` classifies them.
+ * Whether an expression reads a path (`row.stage`) or calls a rooted function form
+ * (`matches(params)`, `actor.may(x)`). One that reads neither is literal text.
  */
 function reads(ast: Ast): boolean {
   switch (ast.kind) {
     case "literal":
       return false;
     case "path":
-      return isRoot(ast.segments[0]);
-    case "call":
-      return true;
+      return ast.segments.length > 1 && isRoot(ast.segments[0]);
     case "list":
       return ast.items.some(reads);
+    case "call":
+      return (ast.callee.kind === "path" && isRoot(ast.callee.segments[0])) || ast.args.some(reads);
     case "not":
       return reads(ast.operand);
     case "binary":
       return reads(ast.left) || reads(ast.right);
   }
+}
+
+/**
+ * Evaluates an expression against the scope's values. A lone literal (`false`, `42`, a quoted
+ * string) is its value; text that reads no path and calls no function form is literal text, so
+ * `Limit in cents` and `Cost (cents)` are shown as written.
+ */
+export function evaluate(text: string | undefined, values: Record<string, unknown>): unknown {
+  if (text === undefined) {
+    return undefined;
+  }
+  const ast = parse(text);
+  if (ast === null) {
+    return text;
+  }
+  if (ast.kind === "literal") {
+    return ast.value;
+  }
+  if (!reads(ast)) {
+    return text;
+  }
+  return run(ast, values);
 }
 
 /** Whether an expression names a writable path (`state.x`, `draft.y`, `shell.z`). */

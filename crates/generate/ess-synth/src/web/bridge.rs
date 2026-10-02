@@ -505,7 +505,9 @@ fn projected_method(out: &mut String, bridge: &Bridge<'_>) {
         let Some(component) = bridge.view_components.get(&view.name) else {
             continue;
         };
-        if !bridge.presents_view(&view.name) {
+        // A view with parameters answers a request that names them, and an observation names
+        // none: it is not projected rather than projected with values nobody chose.
+        if !bridge.presents_view(&view.name) || !view.params.is_empty() {
             continue;
         }
         let field = name::value_ident(&component.to_string());
@@ -607,11 +609,15 @@ fn unrealized(out: &mut String, bridge: &Bridge<'_>) {
                     );
                     continue;
                 }
+                // An owed query takes the parameters its view declares, and the stub refuses them all.
+                let params = port::view_params(layout, types, ir.view(view));
                 let _ = write!(
                     out,
-                    "\nimpl {trait_path} for Unrealized {{\n    fn {method}(&self) -> \
+                    "\nimpl {trait_path} for Unrealized {{\n    fn {method}(&self{}) -> \
                      Result<Vec<{row}>, {types}::obligation::UnmetObligation> {{\n        \
-                     {types}::{module}::obligations::Unimplemented.{method}()\n    }}\n}}\n"
+                     {types}::{module}::obligations::Unimplemented.{method}({})\n    }}\n}}\n",
+                    port::signature(&params, ""),
+                    port::arguments(&params),
                 );
             }
         }
