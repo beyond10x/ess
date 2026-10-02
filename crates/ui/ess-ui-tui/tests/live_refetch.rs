@@ -57,15 +57,16 @@ const BURST: &str = "{channel: tickets, events: [
   {at: 2150ms, event: tickets.TicketUpdated, payload: {id: tk-04, priority: high}},
   {at: 2200ms, event: tickets.TicketUpdated, payload: {id: tk-05, priority: high}}]}";
 
-/// The tickets list re-reading on every `tickets` event, with `live`, under a 300ms read
-/// latency; returns the app on the list and the reads it has made.
-fn tickets_list(test: &str, live: &str) -> (App, Rc<RefCell<Vec<String>>>) {
-    let text = std::fs::read_to_string(example_dir().join("ui.yaml")).expect("the example reads");
+/// The tickets list with `effect` as its `live`, under a 300ms read latency; returns the app on
+/// the list and the reads it has made.
+fn tickets_list(test: &str, effect: &str) -> (App, Rc<RefCell<Vec<String>>>) {
+    let example =
+        std::fs::read_to_string(example_dir().join("ui.yaml")).expect("the example reads");
     assert!(
-        text.contains(ORIGINAL_LIVE),
+        example.contains(ORIGINAL_LIVE),
         "the example's tickets list live"
     );
-    let document = ess_ui::load_str(&text.replace(ORIGINAL_LIVE, live)).expect("the document");
+    let document = ess_ui::load_str(&example.replace(ORIGINAL_LIVE, effect)).expect("the document");
     let (inner, _) =
         FixtureAdapter::load(&document, &example_dir(), None).expect("the fixtures load");
     let script = Script::parse(
