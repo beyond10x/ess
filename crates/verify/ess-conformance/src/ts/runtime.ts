@@ -3704,6 +3704,7 @@ export class ScenarioRun {
       );
       return undefined;
     }
+    if (!this.disclosureMaps(observed.map((event) => event.payload))) return undefined;
     for (const seen of observed) {
       this.remember(seen);
     }
@@ -3795,6 +3796,7 @@ export class ScenarioRun {
         }
         return this.targetError(index, `observing \`${step.event}\`: ${errorText(error)}`);
       }
+      if (!this.disclosureMaps(events.map((event) => event.payload))) return false;
       for (const event of events) {
         (this.observed[event.event] ??= []).push(event);
         this.remember(event);
