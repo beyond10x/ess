@@ -30,7 +30,7 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
     }
     if !view.params.is_empty() {
         return Err(
-            "a view parameter (`params:`), which the generated query does not receive".to_owned(),
+            "a view parameter (`params:`), which a generated query does not apply".to_owned(),
         );
     }
     let entity = ir.entity(&view.source);
@@ -98,6 +98,125 @@ fn projected(ir: &EssIr, view: &ResolvedView, entity: &ResolvedEntity) -> Result
         order(ir, entity, &ranking.field)?;
     }
     Ok(())
+}
+
+/// How one view parameter's query-string value becomes the JSON value its decoder reads
+/// (story:served-view-params).
+///
+/// A query value is text. The servers turn it into the JSON scalar the parameter's declared type
+/// is written as on the wire, then decode it with the same generated decoder a command input uses,
+/// so an enum variant, a newtype and an absent `Optional` are refused or accepted exactly as they
+/// are in a body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QueryScalar {
+    /// Written as a JSON string: `String`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, `Bytes`
+    /// (base64), and an enum's wire spelling.
+    Text,
+    /// Written as a JSON number: `Integer`. A value that is not a whole number's spelling stays
+    /// text, so the decoder names what arrived instead of a number that never did.
+    Integer,
+    /// Written as a JSON boolean: `true` or `false`, and anything else stays text.
+    Boolean,
+}
+
+/// The query-string scalar a parameter of `type_ref` is carried as, through `Optional` and
+/// newtypes; `None` for a list, a map, a struct, a union and `Json`, which no single query value
+/// carries (the same line `ess_ui_check::binding` draws).
+pub(crate) fn query_scalar(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<QueryScalar> {
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => match name {
+            Primitive::Integer => Some(QueryScalar::Integer),
+            Primitive::Boolean => Some(QueryScalar::Boolean),
+            Primitive::Json | Primitive::Binary64 => None,
+            _ => Some(QueryScalar::Text),
+        },
+        ResolvedTypeRef::Optional { of } => query_scalar(ir, of),
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => query_scalar(ir, of),
+            ResolvedBody::Enum { .. } => Some(QueryScalar::Text),
+            ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => None,
+        },
+        ResolvedTypeRef::List { .. } | ResolvedTypeRef::Map { .. } => None,
+    }
+}
+
+/// Every parameter of a view some `reached_by: network` component serves whose type no query
+/// value carries, named at the key its author wrote — refused by the targets that serve views, as
+/// `paging:` is, rather than served with a parameter no request can supply.
+pub(crate) fn refuse_unqueryable(
+    ir: &EssIr,
+    plan: &crate::SynthesisPlan,
+    target: crate::Target,
+) -> Result<(), crate::failure::TargetFailure> {
+    use crate::failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
+    let mut causes = Vec::new();
+    for component in ir.components().values() {
+        if component.reached_by != ess_domain::component::Reach::Network {
+            continue;
+        }
+        for route in ess_gen::http::routes(ir, component) {
+            let ess_gen::http::Served::View(handle) = route.serves else {
+                continue;
+            };
+            let view = ir.view(handle);
+            for param in &view.params {
+                if query_scalar(ir, &param.type_ref).is_none() {
+                    causes.push(TargetFailureCause::new(
+                        TargetFailureCode::MissingRepresentation,
+                        vec![format!("views.{}.params.{}", view.name, param.name)],
+                        "a served view's parameter is read from the query string, and a query \
+                         value carries only a scalar"
+                            .to_owned(),
+                    ));
+                }
+            }
+        }
+    }
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}
+
+/// Every pair of one view's parameters whose names a target spells as one identifier — `minHours`
+/// and `min_hours` — named at both keys, refused by that target: its query methods take the
+/// parameters as arguments, and two arguments of one name are a program that does not build.
+/// `ident` is the target's own spelling of a parameter name, before any escape it applies.
+pub(crate) fn refuse_colliding_params(
+    ir: &EssIr,
+    plan: &crate::SynthesisPlan,
+    target: crate::Target,
+    ident: impl Fn(&str) -> String,
+) -> Result<(), crate::failure::TargetFailure> {
+    use crate::failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
+    let mut causes = Vec::new();
+    for view in ir.views().values() {
+        let mut seen: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+        for param in &view.params {
+            let spelled = ident(&param.name);
+            if let Some(earlier) = seen.get(&spelled) {
+                causes.push(TargetFailureCause::new(
+                    TargetFailureCode::SymbolCollision,
+                    vec![
+                        format!("views.{}.params.{earlier}", view.name),
+                        format!("views.{}.params.{}", view.name, param.name),
+                    ],
+                    format!(
+                        "two parameters of one view are both spelled `{spelled}` in this target, \
+                         and a query method cannot take two arguments of one name"
+                    ),
+                ));
+            } else {
+                seen.insert(spelled, &param.name);
+            }
+        }
+    }
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
 }
 
 /// `true` where the plan marks this view's query generated.

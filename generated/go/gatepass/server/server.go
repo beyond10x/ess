@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
-// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
+// model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c
+// contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed
 // do not edit: regenerate with `ess synthesize`
 
 // Package server is the HTTP surface of every component the specification says is reached
@@ -104,6 +104,27 @@ func rendered(status int, body any) response {
 		return response{status: 500, contentType: mediaJSON, body: `{"refused":"the answer could not be encoded"}`}
 	}
 	return response{status: status, contentType: mediaJSON, body: string(encoded)}
+}
+
+// maxHeaders is the most headers this surface keeps from one request, as the Rust target's
+// http::MAX_HEADERS: a hundred is far past what a client and a proxy add together.
+const maxHeaders = 100
+
+// tooManyHeaders is the 431 the Rust target answers for a request past maxHeaders, word for word,
+// or nil. net/http moves Host out of the header map; it counts as one header, as it does there.
+func tooManyHeaders(request *http.Request) *response {
+	count := 0
+	if request.Host != "" {
+		count = 1
+	}
+	for _, values := range request.Header {
+		count += len(values)
+	}
+	if count <= maxHeaders {
+		return nil
+	}
+	answer := refusal(431, fmt.Sprintf("the request carries more than %d headers, which is all this surface keeps", maxHeaders))
+	return &answer
 }
 
 // readBody reads at most maxBody bytes of a request, or the refusal that says why it could not.

@@ -108,7 +108,7 @@ fn request(port: u16, method: &str, path: &str, body: &str) -> (u16, Value) {
     write!(
         stream,
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+         Authorization: Actor {RECEPTIONIST}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     )
     .expect("the request writes");
@@ -126,6 +126,10 @@ fn request(port: u16, method: &str, path: &str, body: &str) -> (u16, Value) {
         serde_json::from_str(payload).unwrap_or_else(|_| Value::String(payload.to_owned()));
     (status, payload)
 }
+
+/// The actor both realizations' `authenticate` reads from `Authorization: Actor <name>`, and the one
+/// the specification grants every command: without it every command is the standard `403`.
+const RECEPTIONIST: &str = "gatepass.visit.Receptionist";
 
 const REGISTER: &str = "/visits/commands/register-visit";
 const ADMIT: &str = "/visits/commands/admit-visitor";
@@ -290,6 +294,24 @@ fn rust_and_go_gatepass_servers_answer_every_command_identically_and_to_their_co
     }
     assert_eq!(rust_contract, go_contract, "both serve one contract");
     assert!(problems.is_empty(), "{problems:#?}");
+    // The parity is about commands that ran: no step is the standard refusal of an ungranted
+    // caller, and both registrations were accepted.
+    for (language, answers) in [("Rust", &rust_answers), ("Go", &go_answers)] {
+        let refused: Vec<&str> = answers
+            .iter()
+            .filter(|(_, status, _)| *status == 403)
+            .map(|(label, _, _)| *label)
+            .collect();
+        assert!(
+            refused.is_empty(),
+            "{language} refused {refused:?} as ungranted"
+        );
+        let registered = answers
+            .iter()
+            .filter(|(label, status, _)| label.starts_with("register") && *status == 202)
+            .count();
+        assert_eq!(registered, 2, "{language} accepts both registrations");
+    }
 }
 
 #[test]
@@ -333,12 +355,16 @@ fn the_go_gatepass_server_answers_concurrent_commands_without_a_data_race() {
                         .expect("a timeout");
                     let _ = write!(
                         stream,
-                        "POST {REGISTER} HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\
+                        "POST {REGISTER} HTTP/1.1\r\nHost: x\r\nAuthorization: Actor \
+                         {RECEPTIONIST}\r\nContent-Length: {}\r\n\
                          Connection: close\r\n\r\n{body}",
                         body.len()
                     );
                     let mut answer = String::new();
                     if stream.read_to_string(&mut answer).is_err() || answer.is_empty() {
+                        unanswered += 1;
+                    } else if !answer.starts_with("HTTP/1.1 202 ") {
+                        // Answered, but not accepted: the race would not have been run.
                         unanswered += 1;
                     }
                 }
@@ -383,7 +409,8 @@ fn the_go_gatepass_server_answers_concurrent_commands_without_a_data_race() {
     }
     assert!(
         unanswered == 0 && !stderr.contains("DATA RACE"),
-        "{unanswered} of 80 concurrent commands were never answered; {spinning} goroutines were \
+        "{unanswered} of 80 concurrent commands were never answered or not accepted; {spinning} \
+         goroutines were \
          inside System.Pump when the server was stopped; data race reported: {}",
         stderr.contains("DATA RACE")
     );

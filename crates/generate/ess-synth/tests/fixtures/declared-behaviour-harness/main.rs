@@ -131,6 +131,7 @@ fn serve(
     let request = http::Request {
         method: method.clone(),
         path: path.clone(),
+        query: String::new(),
         headers: vec![
             ("authorization".to_owned(), "Bearer harness".to_owned()),
             ("content-type".to_owned(), http::JSON.to_owned()),

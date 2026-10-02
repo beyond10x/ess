@@ -163,6 +163,7 @@ fn main() {
             let request = http::Request {
                 method: method.clone(),
                 path: path.clone(),
+                query: String::new(),
                 headers: vec![("authorization".to_owned(), "Bearer ops".to_owned())],
                 body: input.into_bytes(),
             };
@@ -196,6 +197,7 @@ fn main() {
     let request = http::Request {
         method: method.clone(),
         path: path.clone(),
+        query: String::new(),
         headers: Vec::new(),
         body: b"{\"id\":\"n\"}".to_vec(),
     };
@@ -205,6 +207,7 @@ fn main() {
     let request = http::Request {
         method: "GET".to_owned(),
         path: "/openapi.json".to_owned(),
+        query: String::new(),
         headers: Vec::new(),
         body: Vec::new(),
     };

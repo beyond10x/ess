@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T06:11:33Z",
+  "actor": "human:timo",
+  "artifact": "story:served-view-params",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction 2, verified by the coordinator",
+    "reference": "review-result:served-view-params-adversary-pass2#finding-1",
+    "review": "review-result:served-view-params-adversary-pass2",
+    "outcome": "fixed"
+  }
+}

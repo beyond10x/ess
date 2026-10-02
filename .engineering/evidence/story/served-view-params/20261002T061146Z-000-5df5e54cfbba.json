@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T06:11:46Z",
+  "actor": "human:timo",
+  "artifact": "story:served-view-params",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-synth (364 passed), -p ess-ui-check (88), -p ess-gen (283), gatepass conformance green with Go 1.27; clippy, fmt, gofmt, go vet clean at cc6f9c3d4",
+    "reference": "cc6f9c3d4"
+  }
+}

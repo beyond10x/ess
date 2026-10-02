@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking for a realization of a view with parameters, and for hand-written server code**:
+  synthesized Go and Rust servers decode a view's declared parameters from the query string by
+  wire name and pass them, typed, to the view port, whose method now takes them. A missing
+  required or undecodable value is a `400` refusal; undeclared keys are ignored; queries for views
+  with parameters stay obligations. The generated Rust `http::Request` has a new public field
+  `query: String` and derives `Default`, so a hand-written `Request { … }` literal sets `query` or
+  ends with `..Default::default()`. Two parameters of one view that spell one identifier in a
+  target are refused, and a served view with a non-scalar parameter is refused (beyond10x/ess#311).
+- Served surfaces agree on what they refuse and in which words: Decimal, Uuid and Bytes values
+  and map keys admit exactly the published pattern in Go and Rust, and both answer `431` past
+  the request-head size or 100 headers. The Rust server no longer exits when a caller hangs up
+  early, and drops a connection silent for 1 s.
+
+- **Breaking for a Go realization**: `ess generate synthesize --target go` generates every command
+  behaviour and view query the plan marks generated, at parity with the Rust target, in a new
+  package `types/behaviour`: `<Entity>Storage` (`Get`, `Put`, `Delete`, `List` in a stable
+  order), `Context`, `Ports` (one field per storage port) and `New(ports) *Generated`, evaluated in
+  Rust's order, existence selection included. Entities check their invariants
+  (`BrokenInvariant()`). `<ctx>.Unimplemented` now covers owed seams only, so code that passed it
+  as the whole behaviour bundle no longer compiles; pass `behaviour.New(ports)` and implement the
+  owed seams. Package names `behaviour` and `invariant` are reserved, and a domain named like a
+  standard-library package a generated file imports gets a renamed package. A store and a server
+  entry point are not generated yet (beyond10x/ess#314).
+- The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
+
 ## [0.51.0] — 2026-10-01
 
 ### Added

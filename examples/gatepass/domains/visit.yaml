@@ -209,6 +209,8 @@ commands:
         instance: visit_id
         emits:
           - gatepass.visit.VisitorAdmitted
+        sets:
+          badge: input.badge
         payload:
           gatepass.visit.VisitorAdmitted:
             visit_id: input.visit_id

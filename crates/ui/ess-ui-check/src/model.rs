@@ -1014,9 +1014,9 @@ impl std::error::Error for BindingError {}
 ///
 /// Refused, each at the node that causes it: a name the model does not declare or no
 /// `reached_by: network` component serves; a view parameter that is not a scalar, which no query
-/// string carries; a view the model declares with `paging:`, and a read paged by anything but
-/// the renderer (`paging:` `server`, `cursor` or `append`), since every code target refuses
-/// paging; and state placed in `server` or
+/// string carries, or is a `Binary64`, which no code target serves; a view the model declares
+/// with `paging:`, and a read paged by anything but the renderer (`paging:` `server`, `cursor`
+/// or `append`), since every code target refuses paging; and state placed in `server` or
 /// `server_session`, which the served surface does not hold.
 pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Binding, BindingError> {
     let ir = compile_sources(sources, Path::new(&document.model)).map_err(BindingError::Model)?;
@@ -1118,6 +1118,12 @@ fn read_refusals(served: &Surface, qualified: &str, bound: Bound<'_>) -> Vec<Str
              and a query string carries only scalars"
         ));
     }
+    for param in &served.unservable[qualified] {
+        refusals.push(format!(
+            "view `{qualified}` declares the parameter `{param}` at `Binary64`, and every code \
+             target refuses `Binary64` (`ess-synth/src/failure.rs`): no served surface answers it"
+        ));
+    }
     refusals
 }
 
@@ -1172,6 +1178,9 @@ struct Surface {
     commands: BTreeMap<String, (String, CommandRoute)>,
     /// Every served view's parameters that are not scalars, by the view's qualified name.
     non_scalar: BTreeMap<String, Vec<String>>,
+    /// Every served view's parameters at a scalar no code target serves (`Binary64`), by the view's
+    /// qualified name.
+    unservable: BTreeMap<String, Vec<String>>,
     /// Every served view whose model declaration carries `paging:`, which no code target serves.
     paged: BTreeSet<String>,
 }
@@ -1182,6 +1191,7 @@ impl Surface {
             views: BTreeMap::new(),
             commands: BTreeMap::new(),
             non_scalar: BTreeMap::new(),
+            unservable: BTreeMap::new(),
             paged: BTreeSet::new(),
         };
         for component in ir.components().values() {
@@ -1224,8 +1234,12 @@ impl Surface {
                         let view = ir.view(handle);
                         let mut params = Vec::new();
                         let mut non_scalar = Vec::new();
+                        let mut unservable = Vec::new();
                         for param in &view.params {
                             match scalar(ir, &param.type_ref) {
+                                Some(scalar) if scalar == Primitive::Binary64.as_str() => {
+                                    unservable.push(param.name.clone());
+                                }
                                 Some(scalar) => params.push(QueryParam {
                                     name: param.name.clone(),
                                     wire: param
@@ -1244,6 +1258,7 @@ impl Surface {
                             params,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
+                        surface.unservable.insert(handle.to_string(), unservable);
                         if view.paging.is_some() {
                             surface.paged.insert(handle.to_string());
                         }

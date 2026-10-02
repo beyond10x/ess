@@ -93,6 +93,7 @@ fn serve(
     let request = http::Request {
         method: method.clone(),
         path: path.clone(),
+        query: String::new(),
         headers: vec![("content-type".to_owned(), http::JSON.to_owned())],
         body: if method == "GET" {
             Vec::new()

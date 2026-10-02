@@ -36,7 +36,7 @@ pub fn encode_billing_email_message_id(value: &billing_types::email::MessageId, 
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_email_message_id(value: &json::Value, at: &str) -> Result<billing_types::email::MessageId, json::DecodeError> {
-    Ok(billing_types::email::MessageId(billing_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
+    Ok(billing_types::email::MessageId(billing_types::primitives::Uuid(json::uuid_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `billing.email.TemplateId` as JSON.
@@ -83,7 +83,7 @@ pub fn encode_billing_invoice_account_id(value: &billing_types::invoice::Account
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_invoice_account_id(value: &json::Value, at: &str) -> Result<billing_types::invoice::AccountId, json::DecodeError> {
-    Ok(billing_types::invoice::AccountId(billing_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
+    Ok(billing_types::invoice::AccountId(billing_types::primitives::Uuid(json::uuid_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `billing.invoice.Channel` as JSON.
@@ -173,7 +173,7 @@ pub fn encode_billing_invoice_invoice_id(value: &billing_types::invoice::Invoice
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_invoice_invoice_id(value: &json::Value, at: &str) -> Result<billing_types::invoice::InvoiceId, json::DecodeError> {
-    Ok(billing_types::invoice::InvoiceId(billing_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
+    Ok(billing_types::invoice::InvoiceId(billing_types::primitives::Uuid(json::uuid_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `billing.invoice.LineItem` as JSON.
@@ -233,7 +233,7 @@ pub fn decode_billing_invoice_money(value: &json::Value, at: &str) -> Result<bil
         amount: {
             let at0 = json::nested(at, "amount");
             let member0 = json::member_at(value, at, "amount")?;
-            billing_types::primitives::Decimal(json::text_at(member0, &at0, "a decimal string")?.to_owned())
+            billing_types::primitives::Decimal(json::decimal_at(member0, &at0, "a decimal string")?.to_owned())
         },
         currency: {
             let at1 = json::nested(at, "currency");

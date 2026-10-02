@@ -106,7 +106,7 @@ pub(super) fn module(
             .obligation_of(CapabilityKind::ViewQuery, &source)
             .is_some()
         {
-            forward_query(&mut impls, layout, &view.name);
+            forward_query(&mut impls, layout, view);
         }
     }
 
@@ -324,8 +324,10 @@ fn forward_behaviour(out: &mut String, layout: &Layout, command: &ResolvedComman
     );
 }
 
-/// Forwards one owed query to the ports.
-fn forward_query(out: &mut String, layout: &Layout, view: &QualifiedName) {
+/// Forwards one owed query to the ports, with the parameters the view declares.
+fn forward_query(out: &mut String, layout: &Layout, view: &ess_compiler::ir::ResolvedView) {
+    let params = super::port::view_params(layout, "crate", view);
+    let view = &view.name;
     let type_name = layout.type_name(view);
     let module = layout.module(layout.owner(view));
     let method = name::value_ident(&type_name);
@@ -333,8 +335,13 @@ fn forward_query(out: &mut String, layout: &Layout, view: &QualifiedName) {
         out,
         "\nimpl<P: crate::{module}::obligations::{type_name}Query> \
          crate::{module}::obligations::{type_name}Query for Generated<P> {{\n    fn \
-         {method}(&self) -> Result<Vec<crate::{module}::{type_name}>, UnmetObligation> {{\n        \
-         crate::{module}::obligations::{type_name}Query::{method}(&self.ports)\n    }}\n}}"
+         {method}(&self{}) -> Result<Vec<crate::{module}::{type_name}>, UnmetObligation> {{\n        \
+         crate::{module}::obligations::{type_name}Query::{method}(&self.ports{})\n    }}\n}}",
+        super::port::signature(&params, ""),
+        params.iter().fold(String::new(), |mut passed, (ident, _)| {
+            let _ = write!(passed, ", {ident}");
+            passed
+        }),
     );
 }
 

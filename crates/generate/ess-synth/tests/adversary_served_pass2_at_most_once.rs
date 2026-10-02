@@ -170,6 +170,7 @@ fn serve(system: &mut System, desk: &Desk, routes: &[(String, String, String)], 
     let request = http::Request {
         method: method.to_owned(),
         path: path.to_owned(),
+        query: String::new(),
         headers: Vec::new(),
         body: body.as_bytes().to_vec(),
     };
