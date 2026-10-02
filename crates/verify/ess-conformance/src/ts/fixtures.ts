@@ -87,6 +87,9 @@ export function admitFixtureSteps(steps: Node[]): void {
     }
     const groups: Record<string, Node>[] = [];
     switch (step.step) {
+      case 'expect_every_invocation':
+        groups.push(step.selecting ?? {}, step.input ?? {});
+        break;
       case 'execute_command':
       case 'expect_invocation':
         groups.push(step.input ?? {});

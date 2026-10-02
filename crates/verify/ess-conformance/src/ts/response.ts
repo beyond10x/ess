@@ -26,6 +26,7 @@ import {
   isObject,
   name,
   paddedBase64,
+  strictResponseJSON,
 } from './runtime.js';
 import type {
   AccessorField,
@@ -597,6 +598,7 @@ export function admitSubjectRow(shape: SubjectShape, row: Record<string, Node>):
 export function validateTypedFields(
   groups: AccessorField[][],
   declarations: Record<string, SelectionDeclaration>,
+  allowJson = false,
 ): void {
   const used = new Set<string>();
   for (const list of groups) {
@@ -606,7 +608,7 @@ export function validateTypedFields(
         throw new Error('duplicate/empty response field');
       }
       seen.add(field.name);
-      checkType({ declarations }, field.type, used, new Set<string>(), 0);
+      checkType({ declarations }, field.type, used, new Set<string>(), 0, allowJson);
     }
   }
   if (used.size !== Object.keys(declarations).length) {
@@ -632,13 +634,14 @@ function checkType(
   used: Set<string>,
   stack: Set<string>,
   depth: number,
+  allowJson = false,
 ): void {
   if (depth > DEPTH_LIMIT) {
     throw new Error('response type depth limit');
   }
   const [inner, optional] = accessorOptional(source);
   if (optional) {
-    checkType(observation, inner, used, stack, depth + 1);
+    checkType(observation, inner, used, stack, depth + 1, allowJson);
     return;
   }
   if (source.startsWith('Map<') && !source.startsWith('Map<String, ')) {
@@ -646,10 +649,10 @@ function checkType(
   }
   const [item, collection] = accessorCollection(source);
   if (collection) {
-    checkType(observation, item, used, stack, depth + 1);
+    checkType(observation, item, used, stack, depth + 1, allowJson);
     return;
   }
-  if (accessorPrimitive(source) && source !== 'Binary64') {
+  if ((allowJson && source === 'Json') || (accessorPrimitive(source) && source !== 'Binary64')) {
     return;
   }
   const body = owned(observation.declarations, source);
@@ -715,7 +718,7 @@ function checkType(
         throw new Error('unknown response declaration');
     }
     for (const child of children) {
-      checkType(observation, child, used, stack, depth + 1);
+      checkType(observation, child, used, stack, depth + 1, allowJson);
     }
   } finally {
     stack.delete(source);
@@ -935,26 +938,21 @@ interface EncodedResult {
  * that cannot be written — a NaN, a function — is not a typed wire value and is refused here
  * rather than compared later as whatever it degraded into.
  */
-export function snapshotResponseResult(result: CommandResult): CommandResult {
+export function snapshotResponseResult(
+  result: CommandResult,
+  enforceResultBudget = true,
+): CommandResult {
   let raw: string;
   try {
     raw = goMarshal(commandResultShape(result));
   } catch {
     throw new Error('response result is not a typed wire value');
   }
-  if (ENCODER.encode(raw).length > BYTE_LIMIT) {
+  // Direct returns apply their native payload-only budget at the typed observation.
+  if (enforceResultBudget && ENCODER.encode(raw).length > BYTE_LIMIT) {
     throw new Error('response result byte limit');
   }
-  const decoded = JSON.parse(raw, function reviveTokens(
-    _key: string,
-    value: unknown,
-    context?: { source?: string },
-  ): unknown {
-    if (typeof value === 'number' && typeof context?.source === 'string') {
-      return new JsonNumber(context.source);
-    }
-    return value;
-  } as (key: string, value: unknown) => unknown) as EncodedResult;
+  const decoded = strictResponseJSON(raw) as EncodedResult;
   return {
     response: decoded.Response,
     outcome: decoded.Outcome,
