@@ -21,6 +21,15 @@ export function ChartView(props: {
   const series = props.series ?? [];
   const numbers = rows.flatMap((row) => series.map((name) => Number(display(row, name)) || 0));
   const max = Math.max(1, ...numbers);
+  // An x label is cut to its slot with an ellipsis (styles.css); the title shows it in full.
+  const xLabel = (row: unknown) => {
+    const text = formatValue(display(row, x));
+    return (
+      <span className="ui-chart-x-label" title={text}>
+        {text}
+      </span>
+    );
+  };
   let body: ReactNode;
   if (kind === "table" || props.degrades?.no_charts === "table" && typeof SVGElement === "undefined") {
     body = null;
@@ -28,16 +37,25 @@ export function ChartView(props: {
     const width = 100;
     const step = rows.length > 1 ? width / (rows.length - 1) : width;
     body = (
-      <svg viewBox={`0 0 ${width} 50`} className="ui-chart-svg" role="img" aria-label={series.join(", ")}>
-        {series.map((name, index) => (
-          <polyline
-            key={name}
-            className={`ui-series-${index}`}
-            fill="none"
-            points={rows.map((row, at) => `${at * step},${50 - ((Number(display(row, name)) || 0) / max) * 48}`).join(" ")}
-          />
-        ))}
-      </svg>
+      <>
+        <svg viewBox={`0 0 ${width} 50`} className="ui-chart-svg" role="img" aria-label={series.map(seriesLabel).join(", ")}>
+          {series.map((name, index) => (
+            <polyline
+              key={name}
+              className={`ui-series-${index}`}
+              fill="none"
+              points={rows.map((row, at) => `${at * step},${50 - ((Number(display(row, name)) || 0) / max) * 48}`).join(" ")}
+            />
+          ))}
+        </svg>
+        <div className="ui-chart-x">
+          {rows.map((row, at) => (
+            <span key={at} className="ui-chart-x-slot">
+              {xLabel(row)}
+            </span>
+          ))}
+        </div>
+      </>
     );
   } else {
     body = (
@@ -49,10 +67,10 @@ export function ChartView(props: {
                 key={name}
                 className={`ui-bar ui-series-${index}`}
                 style={{ height: `${((Number(display(row, name)) || 0) / max) * 100}%` }}
-                title={`${name}: ${formatValue(display(row, name))}`}
+                title={`${seriesLabel(name)}: ${formatValue(display(row, name))}`}
               />
             ))}
-            <span className="ui-bar-label">{formatValue(display(row, x))}</span>
+            {xLabel(row)}
           </div>
         ))}
       </div>
@@ -64,9 +82,9 @@ export function ChartView(props: {
         <table className="ui-table">
           <thead>
             <tr>
-              <th>{x}</th>
+              <th>{seriesLabel(x)}</th>
               {series.map((name) => (
-                <th key={name}>{name}</th>
+                <th key={name}>{seriesLabel(name)}</th>
               ))}
             </tr>
           </thead>
@@ -82,7 +100,23 @@ export function ChartView(props: {
           </tbody>
         </table>
       )}
-      {series.length > 0 ? <figcaption>{series.join(" · ")}</figcaption> : null}
+      {series.length > 0 ? (
+        <figcaption>
+          <ul className="ui-chart-legend">
+            {series.map((name, index) => (
+              <li key={name} className="ui-legend-item">
+                <span className={`ui-swatch ui-series-${index}`} aria-hidden="true" />
+                {seriesLabel(name)}
+              </li>
+            ))}
+          </ul>
+        </figcaption>
+      ) : null}
     </figure>
   );
+}
+
+/** A field's label: its name with `_` read as a space, as a column heading shows it. */
+function seriesLabel(field: string): string {
+  return field.replace(/_/g, " ");
 }

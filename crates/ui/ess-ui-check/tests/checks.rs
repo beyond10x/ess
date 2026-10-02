@@ -148,6 +148,62 @@ fn nav_resolves() {
 }
 
 #[test]
+fn nav_unique() {
+    let pages = (
+        "pages",
+        "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}]}, \
+          q: {kind: detail_page, title: Q, sections: [{name: summary, reads: t.ById}]}}",
+    );
+    let twice_in_one = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p, q, p]}]}",
+        ),
+    ]);
+    let finding = trips(&twice_in_one, "nav_unique", "navigation/sections/all/pages");
+    assert!(finding.message.contains("`p`"), "{finding:?}");
+    let across_two = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p]}, {name: more, pages: [q, p]}]}",
+        ),
+    ]);
+    trips(&across_two, "nav_unique", "navigation/sections/more/pages");
+    let once = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p]}, {name: more, pages: [q]}]}",
+        ),
+    ]);
+    assert!(tripped(&report(&once), "nav_unique").is_empty());
+}
+
+#[test]
+fn shell_refs() {
+    let text = page(
+        "{kind: detail_page, title: P, shell: nowhere, sections: [{name: summary, reads: t.ById}]}",
+    );
+    let finding = trips(&text, "shell_refs", "pages/p/shell");
+    assert!(finding.message.contains("nowhere"), "{finding:?}");
+    assert!(tripped(&report(&doc(&[])), "shell_refs").is_empty());
+}
+
+#[test]
+fn page_outlet() {
+    let text = doc(&[("shells", "{app: {regions: {menu: {kind: navigation}}}}")]);
+    let finding = trips(&text, "page_outlet", "shells/app");
+    assert!(finding.message.contains("`p`"), "{finding:?}");
+    let unused = doc(&[(
+        "shells",
+        "{app: {regions: {main: {kind: page_outlet}}}, bare: {regions: {menu: {kind: navigation}}}}",
+    )]);
+    assert!(tripped(&report(&unused), "page_outlet").is_empty());
+}
+
+#[test]
 fn page_reachable() {
     let text = doc(&[(
         "pages",
@@ -341,6 +397,51 @@ fn a_chain_of_2000_widgets_is_checked_in_under_5_seconds() {
     assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
 }
 
+/// `w0` uses `w1` twice, `w1` uses `w2` twice, …: `2^depth` widget bodies once expanded.
+fn doubling_widgets(depth: usize) -> String {
+    let mut widgets = String::from("{");
+    for index in 0..depth {
+        let next = index + 1;
+        let _ = write!(
+            widgets,
+            "w{index}: {{summary: W, body: [{{name: a, component: w{next}}}, \
+             {{name: b, component: w{next}}}]}}, "
+        );
+    }
+    let _ = write!(
+        widgets,
+        "w{depth}: {{summary: W, body: [{{name: leaf, primitive: text, text: T}}]}}}}"
+    );
+    doc(&[
+        ("widgets", &widgets),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById, \
+              children: [{name: use, component: w0}]}]}}",
+        ),
+    ])
+}
+
+#[test]
+fn a_widget_doubling_at_each_of_64_levels_is_refused_in_under_5_seconds() {
+    let started = std::time::Instant::now();
+    let report = report(&doubling_widgets(64));
+    let took = started.elapsed();
+    let finding = trips_in(
+        &report,
+        "widget_expands",
+        "pages/p/sections/summary/children/use",
+    );
+    assert!(finding.message.contains("exceeds"), "{finding:?}");
+    assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
+}
+
+#[test]
+fn a_widget_doubling_at_each_of_8_levels_is_checked_clean() {
+    let report = report(&doubling_widgets(8));
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
 #[test]
 fn primitive_props() {
     let both = page(
@@ -470,6 +571,269 @@ fn unmapped_reported() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
+// ── style: tokens, themes, the theme choice, tone maps ──────────────────────────────────────
+
+/// No finding of `id` at `path`.
+fn clean_at(report: &Report, id: &str, path: &str) {
+    let found: Vec<&Finding> = tripped(report, id)
+        .into_iter()
+        .filter(|finding| finding.path == path)
+        .collect();
+    assert!(
+        found.is_empty(),
+        "unexpected `{id}` at `{path}`: {found:#?}"
+    );
+}
+
+/// The base page with a badge whose tone is picked by `tone_by`.
+fn badge_page(tone_by: &str) -> String {
+    format!(
+        "{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: t.ById, \
+         children: [{{name: state, primitive: badge, field: state, tone_by: {tone_by}}}]}}]}}}}"
+    )
+}
+
+/// A shell whose `theme` state is `state`.
+fn theme_shell(state: &str) -> String {
+    format!("{{app: {{regions: {{main: {{kind: page_outlet}}}}, state: {{theme: {state}}}}}}}")
+}
+
+const THEME_STATE: &str =
+    "{type: {enum: [light, dark]}, class: preference, store: local_storage, pinned: true, default: light}";
+
+#[test]
+fn token_values() {
+    let text = doc(&[(
+        "tokens",
+        "{color: {surface: 'hsl(0 0% 100%)', ink: red, short: '#12345', four: '#abcd', \
+         bright: 'rgb(256 0 0 / 1)', opaque: 'rgb(0 0 0)', ok: '#a1b2c3', veil: 'rgb(0 0 0 / 0.3)', \
+         hex8: '#a1b2c3d4', tiny: '#fff'}, \
+         space: {md: 1rem, big: 2, wide: 3vw, none: 0, half: 0.5em}, \
+         radius: {sm: 4px, odd: 4, neg: -4px}, \
+         type: {heading: {size: large, weight: 650}, body: {weight: 1000}, caption: {weight: 300, size: 0.8rem}}}",
+    )]);
+    let written = report(&text);
+    for path in [
+        "tokens/color/surface",
+        "tokens/color/ink",
+        "tokens/color/short",
+        "tokens/color/four",
+        "tokens/color/bright",
+        "tokens/color/opaque",
+        "tokens/space/big",
+        "tokens/space/wide",
+        "tokens/radius/odd",
+        "tokens/radius/neg",
+        "tokens/type/heading/size",
+        "tokens/type/heading/weight",
+        "tokens/type/body/weight",
+    ] {
+        trips_in(&written, "token_values", path);
+    }
+    for path in [
+        "tokens/color/ok",
+        "tokens/color/veil",
+        "tokens/color/hex8",
+        "tokens/color/tiny",
+        "tokens/space/md",
+        "tokens/space/none",
+        "tokens/space/half",
+        "tokens/radius/sm",
+        "tokens/type/caption/weight",
+        "tokens/type/caption/size",
+    ] {
+        clean_at(&written, "token_values", path);
+    }
+
+    // The built-in table, restated as a document's `tokens:`, is in its own grammar.
+    let schema: serde_yaml::Value = serde_yaml::from_str(ess_ui::SCHEMA).expect("schema");
+    let builtins = serde_yaml::to_string(&schema["constructs"]["Tokens"]["builtins"])
+        .expect("the built-in table writes");
+    let mut restated = doc(&[]);
+    restated.push_str("tokens:\n");
+    for line in builtins.lines() {
+        let _ = writeln!(restated, "  {line}");
+    }
+    let restated = report(&restated);
+    assert!(errors(&restated).is_empty(), "{:#?}", restated.findings);
+}
+
+#[test]
+fn token_names() {
+    let text = doc(&[(
+        "tokens",
+        "{type: {subtitle: {size: 1rem}, heading: {size: 1.2rem}}, \
+         tone: {critical: {text: danger, fill: danger_fill}, danger: {text: danger, fill: danger_fill}}}",
+    )]);
+    let report = report(&text);
+    trips_in(&report, "token_names", "tokens/type/subtitle");
+    trips_in(&report, "token_names", "tokens/tone/critical");
+    clean_at(&report, "token_names", "tokens/type/heading");
+    clean_at(&report, "token_names", "tokens/tone/danger");
+}
+
+#[test]
+fn token_refs() {
+    let text = doc(&[(
+        "tokens",
+        "{color: {alarm: '#ff0000'}, \
+         tone: {danger: {text: alarm, fill: blood}, info: {text: info, fill: line}}}",
+    )]);
+    let report = report(&text);
+    let finding = trips_in(&report, "token_refs", "tokens/tone/danger/fill");
+    assert!(finding.message.contains("blood"), "{finding:?}");
+    clean_at(&report, "token_refs", "tokens/tone/danger/text");
+    clean_at(&report, "token_refs", "tokens/tone/info/text");
+    clean_at(&report, "token_refs", "tokens/tone/info/fill");
+}
+
+#[test]
+fn theme_tokens() {
+    let text = doc(&[
+        ("tokens", "{color: {brand: '#123456'}}"),
+        (
+            "themes",
+            "{light: {}, dark: {color: {surface: '#1f2024', brand: '#654321', glow: '#ffffff', \
+             text: crimson}, space: {huge: 3rem, md: 1}, radius: {sm: 2px}, \
+             type: {subtitle: {size: 1rem}, heading: {weight: 50}}, \
+             tone: {danger: {text: danger, fill: abyss}, info: {text: brand, fill: line}}}}",
+        ),
+    ]);
+    let report = report(&text);
+    for path in [
+        "themes/dark/color/glow",
+        "themes/dark/color/text",
+        "themes/dark/space/huge",
+        "themes/dark/space/md",
+        "themes/dark/type/subtitle",
+        "themes/dark/type/heading/weight",
+        "themes/dark/tone/danger/fill",
+    ] {
+        trips_in(&report, "theme_tokens", path);
+    }
+    for path in [
+        "themes/dark/color/surface",
+        "themes/dark/color/brand",
+        "themes/dark/radius/sm",
+        "themes/dark/tone/info/text",
+    ] {
+        clean_at(&report, "theme_tokens", path);
+    }
+    assert!(
+        tripped(&report, "token_values").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+}
+
+#[test]
+fn theme_choice() {
+    let themes = ("themes", "{light: {}, dark: {color: {surface: '#1f2024'}}}");
+    let fine = doc(&[
+        ("shells", &theme_shell(THEME_STATE)),
+        themes,
+        ("theme", "{default: light, chosen_by: shell.theme}"),
+    ]);
+    let report_fine = report(&fine);
+    assert!(
+        tripped(&report_fine, "theme_choice").is_empty(),
+        "{:#?}",
+        report_fine.findings
+    );
+    let named = doc(&[
+        ("types", "{Look: {enum: [light, dark]}}"),
+        (
+            "shells",
+            &theme_shell("{type: Look, class: preference, default: dark}"),
+        ),
+        themes,
+        ("theme", "{default: light, chosen_by: shell.theme}"),
+    ]);
+    assert!(tripped(&report(&named), "theme_choice").is_empty());
+
+    trips(
+        &doc(&[("theme", "{default: light}")]),
+        "theme_choice",
+        "theme",
+    );
+    trips(
+        &doc(&[themes, ("theme", "{default: sepia}")]),
+        "theme_choice",
+        "theme/default",
+    );
+    for chosen_by in ["state.theme", "shell.theme.mode", "shell.palette"] {
+        let text = doc(&[
+            ("shells", &theme_shell(THEME_STATE)),
+            themes,
+            (
+                "theme",
+                &format!("{{default: light, chosen_by: {chosen_by}}}"),
+            ),
+        ]);
+        trips(&text, "theme_choice", "theme/chosen_by");
+    }
+    for (state, path) in [
+        (
+            "{type: {enum: [light, dark]}, class: component_state}",
+            "shells/app/state/theme",
+        ),
+        (
+            "{type: boolean, class: preference}",
+            "shells/app/state/theme/type",
+        ),
+        (
+            "{type: {enum: [light, sepia]}, class: preference}",
+            "shells/app/state/theme/type",
+        ),
+        (
+            "{type: {enum: [light, dark]}, class: preference, default: sepia}",
+            "shells/app/state/theme/default",
+        ),
+    ] {
+        let text = doc(&[
+            ("shells", &theme_shell(state)),
+            themes,
+            ("theme", "{default: light, chosen_by: shell.theme}"),
+        ]);
+        trips(&text, "theme_choice", path);
+    }
+}
+
+#[test]
+fn tone_map_refs() {
+    let text = doc(&[
+        ("tone_maps", "{job_state: {Done: success}}"),
+        ("pages", &badge_page("{value: row.state, tones: ghost}")),
+    ]);
+    let finding = trips(
+        &text,
+        "tone_map_refs",
+        "pages/p/sections/summary/children/state/tone_by/tones",
+    );
+    assert!(finding.message.contains("ghost"), "{finding:?}");
+    let fine = doc(&[
+        ("tone_maps", "{job_state: {Done: success}}"),
+        ("pages", &badge_page("{value: row.state, tones: job_state}")),
+    ]);
+    let report = report(&fine);
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
+#[test]
+fn tone_map_unused() {
+    let text = doc(&[
+        (
+            "tone_maps",
+            "{job_state: {Done: success}, deal_stage: {won: success}}",
+        ),
+        ("pages", &badge_page("{value: row.state, tones: job_state}")),
+    ]);
+    let report = report(&text);
+    trips_in(&report, "tone_map_unused", "tone_maps/deal_stage");
+    clean_at(&report, "tone_map_unused", "tone_maps/job_state");
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
 // ── rules the schema states outside `checks.list` ───────────────────────────────────────────
 
 #[test]
@@ -491,6 +855,53 @@ fn layer_rules() {
          {name: loose, primitive: text, text: T}]}",
     );
     trips(&text, "layer_rules", "pages/p/sections/loose");
+}
+
+#[test]
+fn enum_values() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+         {name: rows, component: collection, reads: t.Rows, \
+          columns: [{field: state, as: tag}, {field: stage, as: badge}, {field: owner, as: 'UNMAPPED: unknown'}]}, \
+         {name: totals, component: chart, chart: donut, reads: t.Totals}, \
+         {name: bars, component: chart, chart: bar, reads: t.Totals}, \
+         {name: logo, component: record, reads: t.ById, \
+          children: [{name: pic, primitive: image, src: row.logo, alt: Logo, fit: stretch}, \
+                     {name: rule, primitive: divider, orientation: diagonal}]}]}",
+    );
+    let report = report(&text);
+    let finding = trips_in(
+        &report,
+        "enum_values",
+        "pages/p/sections/rows/columns/state",
+    );
+    assert!(
+        finding.message.contains("`tag`") && finding.message.contains("badge"),
+        "{finding:?}"
+    );
+    trips_in(&report, "enum_values", "pages/p/sections/totals");
+    trips_in(&report, "enum_values", "pages/p/sections/logo/children/pic");
+    trips_in(
+        &report,
+        "enum_values",
+        "pages/p/sections/logo/children/rule",
+    );
+    let reported: Vec<&str> = tripped(&report, "enum_values")
+        .iter()
+        .map(|finding| finding.path.as_str())
+        .collect();
+    assert_eq!(reported.len(), 4, "{reported:?}");
+}
+
+#[test]
+fn icon_tone_map_values_are_checked_like_badge_values() {
+    let text = page("{kind: detail_page, title: P, sections: [{name: summary, component: record, reads: t.ById, children: [{name: mark, primitive: icon, icon: star, label: Star, tone_by: {value: row.state, map: {open: misspelled}}}]}]}");
+    let checked = report(&text);
+    trips_in(
+        &checked,
+        "enum_values",
+        "pages/p/sections/summary/children/mark",
+    );
 }
 
 #[test]
@@ -568,6 +979,28 @@ fn model_report(pages: &str, channels: &str) -> Report {
 
 const QUIET: &str = "{}";
 
+/// A graph editor's `edges.reads` is a read like the graph's own: its view must be in the model
+/// and answered by a fixture.
+#[test]
+fn a_graph_edge_read_is_checked_like_the_graph_read() {
+    let pages =
+        "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: stock.Items}, \
+                 {name: graph, component: graph_editor, reads: stock.Items, \
+                 nodes: {key: item_id, label: label}, \
+                 edges: {reads: {view: stock.Missing}, from: from_id, to: to_id}}]}}";
+    let report = model_report(pages, QUIET);
+    trips_in(
+        &report,
+        "view_in_model",
+        "pages/p/sections/graph/edges/reads",
+    );
+    trips_in(
+        &report,
+        "fixture_per_view",
+        "pages/p/sections/graph/edges/reads",
+    );
+}
+
 #[test]
 fn view_in_model() {
     let report = model_report(
@@ -611,6 +1044,80 @@ fn event_in_model() {
     let carried = trips_in(&report, "event_in_model", "channels/stock/carries");
     assert!(carried.message.contains("stock.ItemSold"), "{carried:?}");
     trips_in(&report, "view_in_model", "channels/lens/carries");
+}
+
+#[test]
+fn type_in_model() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, \
+          params: {item: ItemId, full: shop.stock.ItemId, text: String, other: NoSuchTypeId, \
+                   many: {list: NoSuchRow}}, \
+          sections: [{name: summary, reads: stock.Items}]}}",
+        QUIET,
+    );
+    let other = trips_in(&report, "type_in_model", "pages/p/params/other");
+    assert!(other.message.contains("NoSuchTypeId"), "{other:?}");
+    trips_in(&report, "type_in_model", "pages/p/params/many");
+    assert_eq!(tripped(&report, "type_in_model").len(), 2, "{report:#?}");
+    let declared = doc(&[
+        ("model", "shop"),
+        ("types", "{Window: {enum: [day, week]}}"),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, params: {window: Window}, \
+              sections: [{name: summary, reads: stock.Items}]}}",
+        ),
+    ]);
+    let report = report_with(&declared, Some(&model()), &Options::default());
+    assert!(tripped(&report, "type_in_model").is_empty(), "{report:#?}");
+}
+
+#[test]
+fn field_in_model() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, sections: [\
+          {name: summary, component: collection, reads: stock.Items, \
+           columns: [label, item_id, sandbox_bogus], \
+           row_actions: [{name: add, does: stock.AddItem, bind: {label: row.label, lable: row.label}}, \
+                         {name: peek, opens: nowhere_needed, visible: row.labelX == x}]}, \
+          {name: entry, component: form, does: stock.AddItem, fields: [label, resolutoin]}, \
+          {name: one, component: record, reads: stock.Items, fields: [label, labl]}]}}",
+        QUIET,
+    );
+    let at = |suffix: &str| format!("pages/p/sections/{suffix}");
+    let column = trips_in(
+        &report,
+        "field_in_model",
+        &at("summary/columns/sandbox_bogus"),
+    );
+    assert!(column.message.contains("shop.stock.Items"), "{column:?}");
+    let bind = trips_in(&report, "field_in_model", &at("summary/row_actions/add"));
+    assert!(bind.message.contains("`lable`"), "{bind:?}");
+    let visible = trips_in(&report, "field_in_model", &at("summary/row_actions/peek"));
+    assert!(visible.message.contains("labelX"), "{visible:?}");
+    let input = trips_in(&report, "field_in_model", &at("entry/fields/resolutoin"));
+    assert!(input.message.contains("shop.stock.AddItem"), "{input:?}");
+    trips_in(&report, "field_in_model", &at("one/fields/labl"));
+    assert_eq!(
+        tripped(&report, "field_in_model").len(),
+        5,
+        "{:#?}",
+        tripped(&report, "field_in_model")
+    );
+}
+
+#[test]
+fn overlay_params() {
+    let text = page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}], \
+         overlays: {edit: {kind: drawer, component: record, \
+           reads: {view: t.ById, params: {id: params.item_id}}, \
+           params: {item_id: row.id, iten_id: row.id}}}}",
+    );
+    let report = report(&text);
+    let finding = trips_in(&report, "overlay_params", "pages/p/overlays/edit");
+    assert!(finding.message.contains("`params.iten_id`"), "{finding:?}");
+    assert_eq!(tripped(&report, "overlay_params").len(), 1, "{report:#?}");
 }
 
 #[test]
@@ -913,4 +1420,132 @@ fn a_document_file_is_checked_relative_to_its_directory() {
         "{:#?}",
         report.findings
     );
+}
+
+/// The fixture model with an enum: every item sits on a `shop.stock.Shelf` (Top, Middle,
+/// Bottom), which `AddItem` takes and the `Items` view shows.
+fn shelf_model() -> Model {
+    let read = |file: &str| {
+        std::fs::read_to_string(crate_dir().join("tests/fixtures/model").join(file))
+            .unwrap_or_else(|error| panic!("{file}: {error}"))
+    };
+    let stock = read("domains/stock.yaml")
+        .replace(
+            "    of: Uuid\n",
+            "    of: Uuid\n  - name: shop.stock.Shelf\n    kind: enum\n    variants: [Top, Middle, Bottom]\n",
+        )
+        .replace(
+            "      - name: label\n        type: String\n",
+            "      - name: label\n        type: String\n      - name: shelf\n        type: shop.stock.Shelf\n",
+        );
+    let sources = [
+        ("system.yaml", read("system.yaml")),
+        ("components.yaml", read("components.yaml")),
+        ("domains/stock.yaml", stock),
+        ("domains/audit.yaml", read("domains/audit.yaml")),
+    ]
+    .map(|(label, text)| (label.to_owned(), text));
+    model_from_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"))
+}
+
+fn shelf_report(sections: &str) -> Report {
+    let text = doc(&[
+        ("model", "shop"),
+        (
+            "pages",
+            &format!("{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: stock.Items}}, {sections}]}}}}"),
+        ),
+    ]);
+    report_with(&text, Some(&shelf_model()), &Options::default())
+}
+
+/// beyond10x/ess#351, #358, #364: a `group_by`, an aggregate's `field` and a `label_from` name
+/// row fields of their views.
+#[test]
+fn row_fields() {
+    let report = shelf_report(
+        "{name: list, component: collection, reads: stock.Items, group_by: aisle, \
+          columns: [{field: item_id, label_from: {view: stock.Items, field: title}}, \
+                    {field: label, label_from: {view: stock.Items, field: label, key: label}}]}, \
+         {name: tally, component: metric, reads: stock.Items, aggregate: sum, field: weight}",
+    );
+    trips_in(&report, "row_fields", "pages/p/sections/list/group_by");
+    trips_in(
+        &report,
+        "row_fields",
+        "pages/p/sections/list/columns/item_id/label_from/field",
+    );
+    trips_in(&report, "row_fields", "pages/p/sections/tally/field");
+    // The default key, `id`, is no row field of `Items` either: its identity is `item_id`.
+    trips_in(
+        &report,
+        "row_fields",
+        "pages/p/sections/list/columns/item_id/label_from/key",
+    );
+    assert_eq!(tripped(&report, "row_fields").len(), 4, "{report:#?}");
+}
+
+/// beyond10x/ess#351, #330: a `group_order` over an enum field, and a form choice's fixed
+/// options for an enum input, hold the model's variants.
+#[test]
+fn model_enum_values() {
+    let report = shelf_report(
+        "{name: list, component: collection, reads: stock.Items, group_by: shelf, \
+          group_order: [Top, Floor]}, \
+         {name: add, component: form, does: stock.AddItem, \
+          fields: [label, {field: shelf, as: choice, choice: {component: choice, options: [Top, Middle]}}]}, \
+         {name: fine, component: collection, reads: stock.Items, group_by: shelf, group_order: [Bottom, Top]}",
+    );
+    let order = trips_in(
+        &report,
+        "model_enum_values",
+        "pages/p/sections/list/group_order",
+    );
+    assert!(order.message.contains("`Floor`"), "{order:#?}");
+    let options = trips_in(
+        &report,
+        "model_enum_values",
+        "pages/p/sections/add/fields/shelf/choice/options",
+    );
+    assert!(options.message.contains("`Bottom`"), "{options:#?}");
+    assert_eq!(
+        tripped(&report, "model_enum_values").len(),
+        2,
+        "{report:#?}"
+    );
+}
+
+/// beyond10x/ess#358: `aggregate` needs `reads`, and a `field` unless it counts.
+#[test]
+fn metric_aggregate() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+          {name: a, component: metric, from: channel.c.n, aggregate: count}, \
+          {name: b, component: metric, reads: t.All, aggregate: avg}, \
+          {name: c, component: metric, reads: t.All, field: amount}, \
+          {name: d, component: metric, reads: t.All, aggregate: count}, \
+          {name: e, component: metric, reads: t.All, aggregate: max, field: amount}]}",
+    ));
+    trips_in(&report, "metric_aggregate", "pages/p/sections/a/aggregate");
+    trips_in(&report, "metric_aggregate", "pages/p/sections/b/aggregate");
+    trips_in(&report, "metric_aggregate", "pages/p/sections/c/field");
+    assert_eq!(tripped(&report, "metric_aggregate").len(), 3, "{report:#?}");
+}
+
+/// beyond10x/ess#351: `group_order` and `show_empty_groups` order the groups of `group_by`.
+#[test]
+fn group_order() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+          {name: a, component: collection, reads: t.All, group_order: [x]}, \
+          {name: b, component: collection, reads: t.All, group_by: s, show_empty_groups: true}, \
+          {name: c, component: collection, reads: t.All, group_by: s, group_order: [x], show_empty_groups: true}]}",
+    ));
+    trips_in(&report, "group_order", "pages/p/sections/a");
+    trips_in(
+        &report,
+        "group_order",
+        "pages/p/sections/b/show_empty_groups",
+    );
+    assert_eq!(tripped(&report, "group_order").len(), 2, "{report:#?}");
 }

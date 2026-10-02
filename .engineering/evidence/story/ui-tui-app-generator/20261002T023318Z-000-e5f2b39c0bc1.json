@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-02T02:33:18Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-tui-app-generator",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "correction 1",
+    "reference": "review-result:ui-tui-app-generator-adversary-pass1#finding-5",
+    "review": "review-result:ui-tui-app-generator-adversary-pass1",
+    "outcome": "fixed"
+  }
+}

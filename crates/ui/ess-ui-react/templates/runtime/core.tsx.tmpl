@@ -13,6 +13,9 @@ import { useNavigate, useParams, useSearchParams } from "./router";
 import { useActor, useRead, type ReadSpec, type ReadState } from "./data";
 import { assignable, evaluate, truthy } from "./expr";
 import { getPath, setPath, stableKey, type Json } from "./json";
+//+bound
+import type { Refusal } from "./actions";
+//-bound
 
 export type { Json } from "./json";
 
@@ -23,12 +26,25 @@ export interface Notice {
   tone: "info" | "success" | "danger";
 }
 
+/** The action that opened a confirm: its command, and how to run it. */
+export interface Opener {
+  does?: string;
+//+plain
+  run(): Promise<boolean>;
+//-plain
+//+bound
+  run(refused?: (refusal: Refusal | undefined) => void): Promise<boolean>;
+//-bound
+}
+
 /** What expressions read and what actions do, layered from the app down to a row. */
 export interface Scope {
   values: Record<string, unknown>;
   set(path: string, value: unknown): void;
-  open(overlay: string, params?: Record<string, unknown>): void;
+  open(overlay: string, params?: Record<string, unknown>, opener?: Opener): void;
   close(): void;
+  /** The action a confirm open here confirms; confirming runs it. */
+  confirmed?: Opener;
   notify(message: string, tone?: Notice["tone"]): void;
   navigate(href: string): void;
   pick?: (value: unknown) => void;
@@ -362,6 +378,7 @@ function Skeleton(props: { style: "skeleton" | "spinner" | "none" }): ReactNode 
 export function SectionFrame(props: {
   "data-ui-path": string;
   name: string;
+  title?: string;
   data?: ReadState;
   states?: SectionStates;
   load?: "eager" | "on_visible" | "on_demand";
@@ -433,6 +450,7 @@ export function SectionFrame(props: {
           data-status={data?.status ?? "ready"}
           data-profile={props.profile}
         >
+          {props.title ? <h2 className="ui-section-title">{props.title}</h2> : null}
           {mark === "badge" || mark === "both" ? <span className="ui-stale-badge">stale</span> : null}
           {data?.newCount ? <span className="ui-new-count">{data.newCount} new</span> : null}
           {body}

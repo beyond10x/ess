@@ -84,7 +84,7 @@ struct Opts {
     degrades: BTreeMap<String, String>,
     /// The enclosing section or overlay frame already carries this path.
     framed: bool,
-    /// The field keying rows (`live.match` of the section).
+    /// The field keying rows: the section's `reads.key`, else its `live.match` (#320).
     row_key: Option<String>,
     /// The row key a choice takes each option's value from (the form field it picks for).
     choice_value: Option<String>,
@@ -124,7 +124,19 @@ pub(crate) struct Gen<'d> {
     locals: Vec<BTreeSet<String>>,
     /// Component names of the file being written.
     components: BTreeSet<String>,
+    /// The project is bound to a served surface, which streams nothing: a `live:` section polls.
+    bound: bool,
 }
+
+/// How often a bound `live:` section reads again when its read declares no `refresh:` duration.
+const POLL_MS: u64 = 5000;
+
+/// The shortest `refresh:` a bound `live:` section may poll at; shorter is refused.
+const MIN_POLL_MS: u64 = 1000;
+
+/// The longest `refresh:` a bound `live:` section may poll at (24 h), well inside the 2^31 - 1 ms
+/// a browser timer holds; longer is refused.
+const MAX_POLL_MS: u64 = 24 * 3_600_000;
 
 /// `constructs.PlacementProfile.profiles.<profile>.defaults` of the schema this crate was built
 /// with: the store each profile gives each state class.
@@ -219,7 +231,7 @@ fn nav_label(name: &str, page: Option<&Page>) -> String {
 }
 
 impl<'d> Gen<'d> {
-    pub(crate) fn new(doc: &'d Document) -> Self {
+    pub(crate) fn new(doc: &'d Document, bound: bool) -> Self {
         Self {
             doc,
             types: Types::new(&doc.types),
@@ -233,6 +245,7 @@ impl<'d> Gen<'d> {
             section_profile: None,
             locals: Vec::new(),
             components: BTreeSet::new(),
+            bound,
         }
     }
 
@@ -729,6 +742,13 @@ impl<'d> Gen<'d> {
             opts.choice_value = Some(field.field.clone());
             self.node(&at.child("choice"), node, &opts)
         });
+        let label_from = field.label_from.as_ref().map(|label_from| {
+            ts::object([
+                ("view", Some(ts::string(&label_from.view))),
+                ("field", Some(ts::string(&label_from.field))),
+                ("key", quoted(label_from.key.as_ref())),
+            ])
+        });
         ts::object([
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("field", Some(ts::string(&field.field))),
@@ -738,6 +758,7 @@ impl<'d> Gen<'d> {
             ("sortable", field.sortable.then(|| "true".to_owned())),
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
+            ("labelFrom", label_from),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
         ])
@@ -975,7 +996,22 @@ impl<'d> Gen<'d> {
                     .opt("item", item)
                     .opt("reorder", reorder)
                     .opt("groupBy", quoted(c.group_by.as_ref()))
-                    .opt("rowKey", opts.row_key.as_ref().map(|key| ts::string(key)))
+                    .opt(
+                        "groupOrder",
+                        (!c.group_order.is_empty()).then(|| strings(&c.group_order)),
+                    )
+                    .opt(
+                        "showEmptyGroups",
+                        c.show_empty_groups.then(|| "true".to_owned()),
+                    )
+                    .opt(
+                        "rowKey",
+                        c.reads
+                            .as_ref()
+                            .and_then(|reads| reads.key.as_ref())
+                            .or(opts.row_key.as_ref())
+                            .map(|key| ts::string(key)),
+                    )
                     .opt("degrades", Self::degrades(opts))
                     .render()
             }
@@ -1186,6 +1222,11 @@ impl<'d> Gen<'d> {
                         m.format.as_ref().and_then(variant).map(|f| ts::string(&f)),
                     )
                     .opt("label", quoted(m.label.as_ref()))
+                    .opt(
+                        "aggregate",
+                        m.aggregate.map(|kind| ts::string(kind.as_str())),
+                    )
+                    .opt("field", quoted(m.field.as_ref()))
                     .render()
             }
             Composite::Chart(c) => {
@@ -1243,7 +1284,9 @@ impl<'d> Gen<'d> {
                         "nodes",
                         g.nodes.as_ref().map(|nodes| {
                             ts::object([
-                                ("kindBy", Some(ts::string(&nodes.kind_by))),
+                                ("key", quoted(nodes.key.as_ref())),
+                                ("label", quoted(nodes.label.as_ref())),
+                                ("kindBy", quoted(nodes.kind_by.as_ref())),
                                 ("opens", quoted(nodes.opens.as_ref())),
                             ])
                         }),
@@ -1252,6 +1295,7 @@ impl<'d> Gen<'d> {
                         "edges",
                         g.edges.as_ref().map(|edges| {
                             ts::object([
+                                ("reads", edges.reads.as_ref().and_then(Self::reads)),
                                 ("from", Some(ts::string(&edges.from))),
                                 ("to", Some(ts::string(&edges.to))),
                                 ("kindBy", quoted(edges.kind_by.as_ref())),
@@ -1468,12 +1512,17 @@ impl<'d> Gen<'d> {
             let use_scope = self.import("runtime/core", "useScope");
             let evaluate = self.import("runtime/expr", "evaluate");
             lines.push(format!("const __outer = {use_scope}();"));
+            // Params are values passed by the opener: `row` is the row the opener ran on.
+            lines.push(
+                "const __opener = { ...__outer.values, row: __outer.values.opener_row };"
+                    .to_owned(),
+            );
             let params: Vec<String> = overlay
                 .params
                 .iter()
                 .map(|(key, value)| {
                     format!(
-                        "{}: {evaluate}({}, __outer.values)",
+                        "{}: {evaluate}({}, __opener)",
                         ts::key(key),
                         ts::string(&value.0)
                     )
@@ -1700,6 +1749,102 @@ impl<'d> Gen<'d> {
     }
 
     #[allow(clippy::too_many_lines)] // one component, one hook per concern
+    /// How often a bound `live:` section polls, in milliseconds: no served surface streams, so the
+    /// section takes its `no_live` fallback, polling unless it says `refuse`. Its read's
+    /// `refresh:` is the interval (5 s without one) and must be a duration from 1 s to 24 h; one
+    /// the generator cannot read as a duration is refused, never replaced by the default.
+    fn poll_interval(&mut self, at: &NodePath, section: &Section) -> u64 {
+        let fallback = section
+            .common
+            .degrades
+            .get("no_live")
+            .map_or("poll", String::as_str);
+        if fallback == "refuse" {
+            self.refuse(
+                &at.child("live"),
+                "the served surface streams no events, and this section's \
+                 `degrades: {no_live: refuse}` refuses to poll instead",
+            );
+        }
+        let Some(refresh) =
+            Self::section_reads(&section.body).and_then(|reads| reads.refresh.as_ref())
+        else {
+            return POLL_MS;
+        };
+        let at = at.child("reads").child("refresh");
+        let Some(every) = millis(&refresh.0) else {
+            self.refuse(
+                &at,
+                &format!(
+                    "a live section bound to the served surface polls at its `refresh:`, and `{}` \
+                     is not a whole number of ms, s, m or h this generator can poll at",
+                    refresh.0
+                ),
+            );
+            return POLL_MS;
+        };
+        if !(MIN_POLL_MS..=MAX_POLL_MS).contains(&every) {
+            self.refuse(
+                &at,
+                &format!(
+                    "a live section bound to the served surface polls at its `refresh:`, and \
+                     {every} ms is outside 1 s to 24 h"
+                ),
+            );
+        }
+        every
+    }
+
+    /// What a reading section shows: `__read`, or `__data` when it is live — polled in a bound
+    /// project, played from its channel otherwise.
+    fn live_data(
+        &mut self,
+        lines: &mut Vec<String>,
+        page: &Page,
+        at: &NodePath,
+        section: &Section,
+    ) -> &'static str {
+        let Some(live) = &section.live else {
+            return "__read";
+        };
+        if self.bound {
+            let every = self.poll_interval(at, section);
+            let use_poll = self.import("runtime/data", "usePoll");
+            lines.push(format!("const __data = {use_poll}(__read, {every});"));
+            return "__data";
+        }
+        let use_live = self.import("runtime/live", "useLive");
+        let session = match self.session_expr(at, Some(page), &live.channel) {
+            Some(session) => {
+                let evaluate = self.import("runtime/expr", "evaluate");
+                format!(", {evaluate}({}, __scope.values)", ts::string(&session))
+            }
+            None => String::new(),
+        };
+        lines.push(format!(
+            "const __data = {use_live}(__read, {}{session});",
+            Self::live_literal(live)
+        ));
+        "__data"
+    }
+
+    /// `frame` with the section's `states:`, and the action its empty state offers.
+    fn with_states(&mut self, mut frame: El, at: &NodePath, section: &Section) -> El {
+        if let Some(states) = &section.states {
+            frame = frame.expr("states", Self::states_literal(states));
+            if let Some(action) = states
+                .empty
+                .as_ref()
+                .and_then(|empty| empty.action.as_ref())
+            {
+                let control =
+                    self.action_control(&at.child("states").child("empty").child("action"), action);
+                frame = frame.expr("emptyAction", control);
+            }
+        }
+        frame
+    }
+
     fn section_component(&mut self, name: &str, page: &Page, at: &NodePath, section: &Section) {
         let mut lines = Vec::new();
         self.section_profile = section.profile.as_ref().and_then(variant);
@@ -1707,7 +1852,8 @@ impl<'d> Gen<'d> {
         let reads = Self::section_reads(&section.body).and_then(Self::reads);
         let mut frame = El::new(&self.import("runtime/core", "SectionFrame"))
             .path(&at.to_string())
-            .expr("name", ts::string(&section.name));
+            .expr("name", ts::string(&section.name))
+            .opt("title", quoted(section.title.as_ref()));
         if let Some(reads) = &reads {
             let use_scope = self.import("runtime/core", "useScope");
             let trigger = self.import("runtime/core", "useLoadTrigger");
@@ -1736,23 +1882,7 @@ impl<'d> Gen<'d> {
             lines.push(format!(
                 "const __read = {use_read}({reads}, __scope.values, {enabled});"
             ));
-            let data = if let Some(live) = &section.live {
-                let use_live = self.import("runtime/live", "useLive");
-                let session = match self.session_expr(at, Some(page), &live.channel) {
-                    Some(session) => {
-                        let evaluate = self.import("runtime/expr", "evaluate");
-                        format!(", {evaluate}({}, __scope.values)", ts::string(&session))
-                    }
-                    None => String::new(),
-                };
-                lines.push(format!(
-                    "const __data = {use_live}(__read, {}{session});",
-                    Self::live_literal(live)
-                ));
-                "__data"
-            } else {
-                "__read"
-            };
+            let data = self.live_data(&mut lines, page, at, section);
             frame = frame
                 .expr("data", data)
                 .expr("active", "__active")
@@ -1761,19 +1891,8 @@ impl<'d> Gen<'d> {
                 frame = frame.expr("load", ts::string(&load));
             }
         }
-        if let Some(states) = &section.states {
-            frame = frame.expr("states", Self::states_literal(states));
-            if let Some(action) = states
-                .empty
-                .as_ref()
-                .and_then(|empty| empty.action.as_ref())
-            {
-                let control =
-                    self.action_control(&at.child("states").child("empty").child("action"), action);
-                frame = frame.expr("emptyAction", control);
-            }
-        }
-        frame = frame
+        frame = self
+            .with_states(frame, at, section)
             .opt(
                 "degrades",
                 (!section.common.degrades.is_empty())
@@ -1800,10 +1919,7 @@ impl<'d> Gen<'d> {
             selection_state: Self::selection_state(page, section),
             degrades: section.common.degrades.clone(),
             framed: true,
-            row_key: section
-                .live
-                .as_ref()
-                .and_then(|live| live.match_field.clone()),
+            row_key: section.row_key().map(str::to_owned),
             choice_value: None,
         };
         if let Body::Composite(Composite::Form(form)) = &section.body {
@@ -1851,7 +1967,7 @@ impl<'d> Gen<'d> {
                             ),
                             (
                                 "href",
-                                Some(format!("{href}({}, {{}})", ts::string(target))),
+                                Some(format!("{href}({}, __params)", ts::string(target))),
                             ),
                         ])
                     }),
@@ -1875,9 +1991,10 @@ impl<'d> Gen<'d> {
             .opt("total", quoted(header.total.as_ref()))
             .opt("filters", quoted(header.filters.as_ref()))
             .opt("switchTo", switch_to)
+            // A bound project holds no channel open, so its header shows no live state.
             .opt(
                 "live",
-                (!header.live.is_empty()).then(|| strings(&header.live)),
+                (!header.live.is_empty() && !self.bound).then(|| strings(&header.live)),
             )
             .opt("help", help)
             .opt("actions", (!actions.is_empty()).then(|| fragment(actions)))
@@ -2047,15 +2164,18 @@ impl<'d> Gen<'d> {
             .as_ref()
             .map(|h| h.live.clone())
             .unwrap_or_default();
+        // A bound project's live sections poll, and hold no channel open.
         live.extend(
             page.sections
                 .iter()
+                .filter(|_| !self.bound)
                 .filter_map(|s| s.live.as_ref().map(|l| l.channel.clone())),
         );
         let scanned = format!("{}\n{hosted}", self.hoisted.join("\n"));
         let channels = self.channels_used(&scanned, &live);
         let mut extra = vec![("params".to_owned(), "__params".to_owned())];
-        if !channels.is_empty() {
+        // A bound project runs no channel; `channel.*` reads nothing there.
+        if !channels.is_empty() && !self.bound {
             let use_channels = self.import("runtime/live", "useChannels");
             // The same values the page's scope layer gives its sections: params and page state.
             let page_values = ts::object([
@@ -2332,7 +2452,7 @@ impl<'d> Gen<'d> {
         let scanned = format!("{}\n{hosted}", self.hoisted.join("\n"));
         let channels = self.channels_used(&scanned, &[]);
         let mut extra = Vec::new();
-        if !channels.is_empty() {
+        if !channels.is_empty() && !self.bound {
             let use_channels = self.import("runtime/live", "useChannels");
             let sessions = self.sessions(&at, None, &channels, "{}");
             lines.push(format!(

@@ -141,6 +141,13 @@ impl Screen {
             .collect()
     }
 
+    /// Whether the node at `path` is drawn reversed (the tab or row shown as current), when it
+    /// was drawn at all.
+    pub fn reversed(&self, path: &str) -> Option<bool> {
+        let region = self.region(path)?;
+        Some(self.cells(region.area).any(|cell| cell.reversed))
+    }
+
     fn cells(&self, area: ratatui::layout::Rect) -> impl Iterator<Item = &Cell> {
         let (x, width) = (usize::from(area.x), usize::from(area.width));
         self.lines

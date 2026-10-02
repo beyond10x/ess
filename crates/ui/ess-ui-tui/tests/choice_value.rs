@@ -52,7 +52,7 @@ impl DataAdapter for Recording {
     fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
         self.inner.read(request)
     }
-    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Result<String, String> {
+    fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
         self.sent
             .borrow_mut()
             .push((command.to_owned(), input.clone()));

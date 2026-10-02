@@ -220,6 +220,17 @@ pub struct Document {
     /// Document-level gaps found by a retrofit.
     #[serde(default)]
     pub unmapped: Vec<String>,
+    /// Design tokens, merged over the built-in table ([`Document::base_tokens`]).
+    #[serde(default)]
+    pub tokens: Tokens,
+    /// Named looks, each the tokens it overrides ([`Document::theme_tokens`]).
+    #[serde(default)]
+    pub themes: BTreeMap<String, Tokens>,
+    /// Which theme is shown, and the shell state that chooses it.
+    pub theme: Option<ThemeChoice>,
+    /// Value-to-tone maps, named by `tone_by.tones`.
+    #[serde(default)]
+    pub tone_maps: BTreeMap<String, ToneMap>,
 }
 
 /// Whose grants decide what is visible.
@@ -694,6 +705,8 @@ const NODE_COMMON_KEYS: &[&str] = &["name", "state", "visible", "degrades", "unm
 pub struct Section {
     /// Node name among the page's sections.
     pub name: String,
+    /// The heading shown above the section, where it has one (beyond10x/ess#281).
+    pub title: Option<String>,
     /// State, visibility, degrades and unmapped notes of the section.
     pub common: NodeCommon,
     /// How channel events change the rows.
@@ -716,6 +729,7 @@ pub struct Section {
 #[serde(deny_unknown_fields)]
 struct SectionFrame {
     name: String,
+    title: Option<String>,
     #[serde(default)]
     state: BTreeMap<String, State>,
     visible: Option<Expr>,
@@ -734,6 +748,7 @@ struct SectionFrame {
 
 const SECTION_FRAME_KEYS: &[&str] = &[
     "name",
+    "title",
     "state",
     "visible",
     "degrades",
@@ -752,8 +767,16 @@ impl<'de> Deserialize<'de> for Section {
         let (frame, rest) = split(mapping, SECTION_FRAME_KEYS);
         let frame: SectionFrame = from_mapping(frame).map_err(D::Error::custom)?;
         let body = Body::from_mapping(rest, false).map_err(D::Error::custom)?;
+        // A `live` block without `match` matches events by the read's `key` (#320).
+        let mut live = frame.live;
+        if let Some(live) = live.as_mut() {
+            if live.match_field.is_none() {
+                live.match_field = body.reads().and_then(|reads| reads.key.clone());
+            }
+        }
         Ok(Self {
             name: frame.name,
+            title: frame.title,
             common: NodeCommon {
                 name: None,
                 state: frame.state,
@@ -761,7 +784,7 @@ impl<'de> Deserialize<'de> for Section {
                 degrades: frame.degrades,
                 unmapped: frame.unmapped,
             },
-            live: frame.live,
+            live,
             load: frame.load,
             depends_on: frame.depends_on,
             states: frame.states,
@@ -769,6 +792,17 @@ impl<'de> Deserialize<'de> for Section {
             profile: frame.profile,
             body,
         })
+    }
+}
+
+impl Section {
+    /// The field this section's rows are keyed by, where the document names one: its read's
+    /// `key`, else its `live.match`. A renderer keys by `id` when this is `None`.
+    pub fn row_key(&self) -> Option<&str> {
+        self.body
+            .reads()
+            .and_then(|reads| reads.key.as_deref())
+            .or_else(|| self.live.as_ref()?.match_field.as_deref())
     }
 }
 
@@ -917,6 +951,14 @@ pub enum Body {
 }
 
 impl Body {
+    /// The read of a composite body, where it has one; a widget's reads are in its expanded body.
+    pub fn reads(&self) -> Option<&Reads> {
+        match self {
+            Self::Composite(composite) => composite.reads(),
+            Self::Widget(_) | Self::Primitive(_) => None,
+        }
+    }
+
     fn from_mapping(rest: Mapping, allow_primitive: bool) -> Result<Self, String> {
         let component = rest.get("component").cloned();
         let has_primitive = rest.contains_key("primitive");
@@ -972,6 +1014,26 @@ pub enum Composite {
     References(References),
 }
 
+impl Composite {
+    /// The view this composite reads, where it reads one.
+    pub fn reads(&self) -> Option<&Reads> {
+        match self {
+            Self::Collection(c) => c.reads.as_ref(),
+            Self::Record(c) => c.reads.as_ref(),
+            Self::Metric(c) => c.reads.as_ref(),
+            Self::Chart(c) => Some(&c.reads),
+            Self::Board(c) => Some(&c.reads),
+            Self::GraphEditor(c) => Some(&c.reads),
+            Self::References(c) => Some(&c.reads),
+            Self::Form(_)
+            | Self::Choice(_)
+            | Self::FilterBar(_)
+            | Self::Confirm(_)
+            | Self::RichText(_) => None,
+        }
+    }
+}
+
 /// Rows of a view with columns, sorting, paging, selection and row actions.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1004,6 +1066,12 @@ pub struct Collection {
     pub reorder: Option<Reorder>,
     /// Field rows are grouped under.
     pub group_by: Option<String>,
+    /// The order groups are shown in; values not listed follow, in the order they first appear.
+    #[serde(default)]
+    pub group_order: Vec<String>,
+    /// Shows a heading for every `group_order` value, even one no row falls under.
+    #[serde(default)]
+    pub show_empty_groups: bool,
 }
 
 /// The columns of a collection.
@@ -1501,6 +1569,39 @@ pub struct Metric {
     pub format: Option<MetricFormat>,
     /// Caption.
     pub label: Option<String>,
+    /// Computes the value over every row of the read instead of reading one.
+    pub aggregate: Option<MetricAggregate>,
+    /// The row field `aggregate` reads; `count` needs none.
+    pub field: Option<String>,
+}
+
+/// What a metric computes over the rows of its read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricAggregate {
+    /// The number of rows.
+    Count,
+    /// The sum of a field.
+    Sum,
+    /// The least value of a field.
+    Min,
+    /// The greatest value of a field.
+    Max,
+    /// The mean of a field.
+    Avg,
+}
+
+impl MetricAggregate {
+    /// The aggregate as the document spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::Sum => "sum",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::Avg => "avg",
+        }
+    }
 }
 
 /// Metric display format.
@@ -1589,7 +1690,7 @@ pub struct BoardLayout {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraphEditor {
-    /// The graph.
+    /// The graph: its nodes, and its edges too unless `edges.reads` names their own view.
     pub reads: Reads,
     /// Node kind field and edit overlay.
     pub nodes: Option<GraphNodes>,
@@ -1610,8 +1711,12 @@ pub struct GraphEditor {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraphNodes {
+    /// Field identifying a node, which edge endpoints name (`id` when absent).
+    pub key: Option<String>,
+    /// Field a node is labelled by (`label`, `name`, then the key when absent).
+    pub label: Option<String>,
     /// Field choosing the node kind.
-    pub kind_by: String,
+    pub kind_by: Option<String>,
     /// Edit overlay.
     pub opens: Option<String>,
 }
@@ -1620,6 +1725,8 @@ pub struct GraphNodes {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraphEdges {
+    /// The edges, from a view of their own; absent, they are rows of the graph's `reads`.
+    pub reads: Option<Reads>,
     /// Source field.
     pub from: String,
     /// Target field.
@@ -1855,8 +1962,12 @@ pub struct Badge {
 pub struct ToneBy {
     /// The value.
     pub value: Expr,
-    /// Value to tone; an expression inside a widget declaration, a map once expanded.
+    /// Value to tone: written as `map:`, or the `tone_maps` entry the loader resolved `tones:`
+    /// to; an expression inside a widget declaration, a map once expanded.
     pub map: Value,
+    /// The `tone_maps` entry `map` was resolved from, when it was written as `tones:` (the
+    /// unbound `args.<param>` inside a widget declaration). No renderer needs to read it.
+    pub tones: Option<String>,
 }
 
 /// A semantic icon.
@@ -1867,6 +1978,8 @@ pub struct Icon {
     pub icon: String,
     /// Colour role.
     pub tone: Option<Tone>,
+    /// Tone per value, as on a badge.
+    pub tone_by: Option<ToneBy>,
     /// Accessible text.
     pub label: String,
 }
@@ -1983,8 +2096,29 @@ pub struct Field {
     pub visible: Option<Expr>,
     /// Bind to UI state instead of the command input.
     pub binds: Option<Expr>,
+    /// Shows a field of a related view, matched by this field's value, instead of the value.
+    pub label_from: Option<LabelFrom>,
     /// Author remark.
     pub note: Option<String>,
+}
+
+/// A field of a related view shown in place of a key (`Field.label_from`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LabelFrom {
+    /// The related view, read once without params.
+    pub view: String,
+    /// The field of its row that is shown.
+    pub field: String,
+    /// The field of its row the key matches; `id` when absent.
+    pub key: Option<String>,
+}
+
+impl LabelFrom {
+    /// The field of the related row the key matches.
+    pub fn key(&self) -> &str {
+        self.key.as_deref().unwrap_or("id")
+    }
 }
 
 /// One tab of a form or record.
@@ -2056,6 +2190,10 @@ pub struct Reads {
     pub placeholder: Option<String>,
     /// Fixture file answering the placeholder.
     pub fixture: Option<String>,
+    /// The field that identifies a row: rows, row paths and row actions are keyed by it, and a
+    /// `live` block without `match` matches events by it. Absent: the section's `live.match`,
+    /// else `id` (beyond10x/ess#320).
+    pub key: Option<String>,
     /// View params bound to state.
     #[serde(default)]
     pub params: BTreeMap<String, Expr>,
@@ -2371,7 +2509,7 @@ pub struct Live {
     pub on: Vec<String>,
     /// What an event does to the rows.
     pub effect: Effect,
-    /// Row identity field.
+    /// Row identity field; the loader fills it from the read's `key` when absent.
     #[serde(rename = "match")]
     pub match_field: Option<String>,
     /// Drop events that fail the condition.
@@ -2511,6 +2649,87 @@ pub enum Store {
     #[serde(untagged)]
     Unmapped(UnmappedMarker),
 }
+
+// ── style ────────────────────────────────────────────────────────────────────────────────────
+
+/// One token value as written: a color, a length or a weight. It is read as its text, so that a
+/// value outside its group's grammar is a finding of `ess ui check` (`token_values`,
+/// `theme_tokens`) rather than a load error. A bare number (`0`, `600`) is read as its text, and
+/// an empty value as the empty string: an unquoted `#` starts a YAML comment, so `surface: #fff`
+/// is empty.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TokenValue(pub String);
+
+impl<'de> Deserialize<'de> for TokenValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match Value::deserialize(deserializer)? {
+            Value::String(text) => Ok(Self(text)),
+            Value::Number(number) => Ok(Self(number.to_string())),
+            Value::Bool(flag) => Ok(Self(flag.to_string())),
+            Value::Null => Ok(Self(String::new())),
+            other => Err(D::Error::custom(format!(
+                "a token value is a scalar, not {other:?}"
+            ))),
+        }
+    }
+}
+
+/// Design tokens in five groups, each a map of name to value: a document's `tokens:`, a theme's
+/// overrides, and the built-in table ([`Tokens::builtin`]) both are merged over.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Tokens {
+    /// Color literals by name.
+    #[serde(default)]
+    pub color: BTreeMap<String, TokenValue>,
+    /// Lengths by name.
+    #[serde(default)]
+    pub space: BTreeMap<String, TokenValue>,
+    /// Lengths by name.
+    #[serde(default)]
+    pub radius: BTreeMap<String, TokenValue>,
+    /// `type`: family, size and weight per text style.
+    #[serde(default, rename = "type")]
+    pub typography: BTreeMap<String, TypeToken>,
+    /// The text and fill color names per tone.
+    #[serde(default)]
+    pub tone: BTreeMap<String, ToneToken>,
+}
+
+/// The type of one text style.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeToken {
+    /// Font family list.
+    pub family: Option<String>,
+    /// A length.
+    pub size: Option<TokenValue>,
+    /// 100 to 900 in steps of 100.
+    pub weight: Option<TokenValue>,
+}
+
+/// The colors one tone is drawn with, each the name of a color token.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToneToken {
+    /// Text color.
+    pub text: String,
+    /// Fill color.
+    pub fill: String,
+}
+
+/// Which theme is shown.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeChoice {
+    /// The theme shown where no state chooses one.
+    pub default: String,
+    /// The shell state (`shell.<name>`) whose value names the theme shown.
+    pub chosen_by: Option<Expr>,
+}
+
+/// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`.
+pub type ToneMap = BTreeMap<String, Tone>;
 
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 

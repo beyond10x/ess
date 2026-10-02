@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T03:02:20Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-tui-app-generator",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-ui-tui and -p ess-cli --test generate_ui_tui --test ui_commands and both adversary files green; clippy -D warnings, fmt, cli-reference --check clean at 9e90031bd",
+    "reference": "9e90031bd"
+  }
+}

@@ -169,3 +169,15 @@ fn the_reference_page_states_the_rule() {
         "the reference page states the rule"
     );
 }
+
+/// `expect_command` holds the input to the same typed rule in the spec as in the terminal: an
+/// object by the fields it names, at any depth, with dotted names reaching into objects.
+#[test]
+fn an_expected_command_input_is_matched_with_its_types_in_the_spec() {
+    let spec = spec(&[
+        "open: partners.list",
+        "expect_command: {command: partners.CreatePartner, input: {limits.cents: 7500, name: '7500', tags: [a]}}",
+    ]);
+    let wanted = "expect(commands).toContainEqual(expect.objectContaining({ command: \"partners.CreatePartner\", input: expect.objectContaining({\"limits\":expect.objectContaining({\"cents\":7500}),\"name\":\"7500\",\"tags\":[\"a\"]}) }));";
+    assert!(spec.contains(wanted), "{wanted}\n\n{spec}");
+}

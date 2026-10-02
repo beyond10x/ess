@@ -51,11 +51,14 @@ pub(crate) fn refusal(text: &str, error: &LoadError, sink: &mut Sink) {
 fn classify(message: &str) -> &'static str {
     if message.contains("(names_unique)") {
         "names_unique"
+    } else if message.contains("names no entry of `tone_maps`") {
+        "tone_map_refs"
     } else if message.contains("names no overlay") || message.contains("`same_as` chains") {
         "same_as_resolves"
     } else if message.contains("names neither a member of the composite union nor a widget")
         || message.contains("of widget `")
         || message.contains("so a widget of that name could never be used")
+        || message.contains("widget expansion exceeds")
         || (message.starts_with("widget `")
             && (message.contains("contains itself")
                 || message.contains("has no param")

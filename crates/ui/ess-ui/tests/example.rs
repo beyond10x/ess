@@ -110,6 +110,7 @@ fn widget_instances_carry_their_expanded_body() {
     };
     let tone_by = badge.tone_by.as_ref().expect("the badge is toned by value");
     assert_eq!(tone_by.value.0, "row.stage");
+    assert_eq!(tone_by.tones.as_deref(), Some("deal_stage"));
     assert_eq!(tone_by.map["won"], Value::from("success"));
 }
 
@@ -145,6 +146,19 @@ fn constructs_used(document: &Document) -> BTreeSet<String> {
     }
     if document.fixtures.is_some() {
         mark("FixtureIndex");
+    }
+    // A theme's overrides are written in the shape of `tokens:`.
+    if !document.tokens.is_empty() || document.themes.values().any(|theme| !theme.is_empty()) {
+        mark("Tokens");
+    }
+    if !document.themes.is_empty() {
+        mark("Theme");
+    }
+    if document.theme.is_some() {
+        mark("ThemeChoice");
+    }
+    if !document.tone_maps.is_empty() {
+        mark("ToneMap");
     }
     if document.placement_profile == ess_ui::PlacementProfile::Hybrid
         && document.pages.values().any(|page| page.profile.is_some())

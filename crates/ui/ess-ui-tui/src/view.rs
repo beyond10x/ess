@@ -23,10 +23,10 @@ use ess_ui::{
 };
 
 use crate::app::{
-    bar_items, board_rows, columns_of, form_fields, graph_collection, references_collection, App,
-    BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
+    aggregate, bar_items, board_rows, columns_of, form_fields, graph_collection, group_names,
+    references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
 };
-use crate::expr::{display, truthy};
+use crate::expr::{display, field_path, truthy};
 
 const NAV_WIDTH: u16 = 26;
 const SPARKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -63,6 +63,14 @@ struct SectionBlock {
     title: String,
     lines: Vec<Line<'static>>,
     marks: Vec<Mark>,
+}
+
+/// What a refusal shown in a view was sent by.
+#[derive(Clone, Copy)]
+enum Refusing<'a> {
+    Form,
+    Confirm,
+    Actions(&'a [ess_ui::Action]),
 }
 
 /// The cells inside a bordered block.
@@ -194,9 +202,11 @@ impl App {
             page.title.clone().unwrap_or_else(|| self.page.clone()),
             self.location()
         );
+        // A bound run holds no channel open, so its top bar shows no live state.
         let live: Vec<String> = page
             .header
             .as_ref()
+            .filter(|_| self.bound.is_none())
             .map(|header| header.live.clone())
             .unwrap_or_default()
             .iter()
@@ -484,7 +494,12 @@ impl App {
             .feeding_channels(section)
             .iter()
             .any(|channel| self.channel_status(channel) == "stale");
-        let mut title = format!(" {} ", section.name);
+        // The name stays first in the border, where a reader of the screen finds the section; the
+        // heading follows it (#281).
+        let mut title = match &section.title {
+            Some(heading) => format!(" {} · {heading} ", section.name),
+            None => format!(" {} ", section.name),
+        };
         if stale {
             let mark = section
                 .states
@@ -625,7 +640,14 @@ impl App {
         for mark in &mut marks {
             mark.line += 2;
         }
-        self.region(open.path.to_string(), None, area, None);
+        self.region(
+            open.drawn_at
+                .clone()
+                .unwrap_or_else(|| open.path.to_string()),
+            None,
+            area,
+            None,
+        );
         self.place_marks(marks, inner(area));
         frame.render_widget(Clear, area);
         frame.render_widget(
@@ -747,26 +769,14 @@ impl App {
                     .or_else(|| place.ctx.row.cloned())
                     .unwrap_or(Value::Null);
                 let mut lines = Vec::new();
+                let shown = self.labelled(&record.fields, &row);
                 for field in &record.fields {
-                    lines.push(labelled(field, &cell(field, &row)));
+                    lines.push(labelled(field, &cell(field, &shown)));
                 }
-                if !record.tabs.is_empty() {
-                    let tab = self.ui(place.ui).tab;
-                    lines.push(tab_line(
-                        record
-                            .tabs
-                            .iter()
-                            .map(|tab| tab.label.clone().unwrap_or_else(|| tab.name.clone())),
-                        tab,
-                    ));
-                    if let Some(TabFields::Fields(fields)) =
-                        record.tabs.get(tab).and_then(|tab| tab.fields.as_ref())
-                    {
-                        for field in fields {
-                            lines.push(labelled(field, &cell(field, &row)));
-                        }
-                    }
-                }
+                let tab = self
+                    .ui(place.ui)
+                    .tab
+                    .min(record.tabs.len().saturating_sub(1));
                 let inner = Place {
                     ctx: Ctx {
                         row: Some(&row),
@@ -775,10 +785,42 @@ impl App {
                     record: false,
                     ..*place
                 };
+                if !record.tabs.is_empty() {
+                    self.mark_tabs(&record.tabs, place, lines.len());
+                    lines.push(tab_line(
+                        record
+                            .tabs
+                            .iter()
+                            .map(|tab| tab.label.clone().unwrap_or_else(|| tab.name.clone())),
+                        tab,
+                    ));
+                    let current = record.tabs.get(tab);
+                    if let Some(TabFields::Fields(fields)) =
+                        current.and_then(|tab| tab.fields.as_ref())
+                    {
+                        let shown = self.labelled(fields, &row);
+                        for field in fields {
+                            lines.push(labelled(field, &cell(field, &shown)));
+                        }
+                    }
+                    // A tab's nested node draws below its fields, as the generated app shows it.
+                    if let (Some(current), Some(ess_ui::TabForm::Node(node))) =
+                        (current, current.and_then(|tab| tab.form.as_ref()))
+                    {
+                        let path = place.path.child("tabs").child(&current.name).child("form");
+                        let nested = Place {
+                            path: &path,
+                            ..inner
+                        };
+                        lines.extend(self.body_lines(&node.body, &nested));
+                    }
+                }
                 for node in &record.item {
                     lines.extend(self.node_lines(node, &inner));
                 }
-                lines.extend(self.action_hint(&record.actions, &inner.ctx));
+                let actions = record_actions(record, tab);
+                lines.extend(self.action_hint(&actions, &inner.ctx));
+                lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&actions)));
                 lines
             }
             Composite::Form(form) => self.form_lines(form, place),
@@ -825,6 +867,7 @@ impl App {
                 let row = rows.get(cursor);
                 let ctx = Ctx { row, ..place.ctx };
                 lines.extend(self.action_hint(&board.item_actions, &ctx));
+                lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&board.item_actions)));
                 lines
             }
             Composite::GraphEditor(editor) => {
@@ -839,6 +882,7 @@ impl App {
                 for mark in self.marks.borrow_mut().iter_mut().skip(before) {
                     mark.line += editor.toolbar.len();
                 }
+                lines.extend(self.graph_edge_lines(editor, &collection, place));
                 lines
             }
             Composite::RichText(text) => {
@@ -935,6 +979,33 @@ impl App {
         }
     }
 
+    /// The refusal of the last command sent from the view `ui`, when `by` sent it: `form`,
+    /// `confirm`, or one of `actions`.
+    fn refusal_lines(&self, ui: &str, by: Refusing<'_>) -> Vec<Line<'static>> {
+        let Some(refused) = self.ui(ui).refusal else {
+            return Vec::new();
+        };
+        let sent = match by {
+            Refusing::Form => refused.by == "form",
+            Refusing::Confirm => refused.by == "confirm",
+            Refusing::Actions(actions) => actions.iter().any(|action| action.name == refused.by),
+        };
+        if !sent {
+            return Vec::new();
+        }
+        let mut lines = vec![Line::styled(format!("✗ {}", refused.text), bold())];
+        if let Some(Value::Mapping(fields)) = &refused.payload {
+            let fields: Vec<String> = fields
+                .iter()
+                .map(|(name, value)| format!("{}: {}", display(name), display(value)))
+                .collect();
+            if !fields.is_empty() {
+                lines.push(Line::from(format!("  {}", fields.join(" · "))));
+            }
+        }
+        lines
+    }
+
     fn action_hint(&self, actions: &[ess_ui::Action], ctx: &Ctx<'_>) -> Vec<Line<'static>> {
         let keyed = self.action_keys(actions, ctx);
         if keyed.is_empty() {
@@ -995,10 +1066,16 @@ impl App {
         );
         let record_cells = table || collection.item.is_empty();
         let mut lines = Vec::new();
+        // Each row as shown: a `label_from` column holds its label (beyond10x/ess#364).
+        let shown_rows: Vec<Value> = rows
+            .iter()
+            .map(|row| self.labelled(&columns, row))
+            .collect();
         let widths: Vec<usize> = columns
             .iter()
             .map(|field| {
-                rows.iter()
+                shown_rows
+                    .iter()
                     .map(|row| cell(field, row).width())
                     .chain(std::iter::once(label_of(field).width()))
                     .max()
@@ -1013,17 +1090,24 @@ impl App {
             Some(ess_ui::Columns::Selectable(_)) => Some(format!("columns/all/{}", field.name)),
             _ => None,
         };
-        let key_field = place
-            .ctx
-            .section
-            .and_then(|name| {
-                self.page_def()
-                    .sections
-                    .iter()
-                    .find(|section| section.name == name)
+        // The collection's own read names its key first (an overlay or a widget holds one), then
+        // the section it is placed in (#320).
+        let key_field = collection
+            .reads
+            .as_ref()
+            .and_then(|reads| reads.key.clone())
+            .or_else(|| {
+                place
+                    .ctx
+                    .section
+                    .and_then(|name| {
+                        self.page_def()
+                            .sections
+                            .iter()
+                            .find(|section| section.name == name)
+                    })
+                    .and_then(|section| section.row_key().map(str::to_owned))
             })
-            .and_then(|section| section.live.as_ref())
-            .and_then(|live| live.match_field.clone())
             .unwrap_or_else(|| "id".to_owned());
         // Where each column starts in a table line: after the two-cell selection mark, columns
         // are padded to their width and separated by two cells.
@@ -1059,12 +1143,32 @@ impl App {
             lines.push(Line::styled(format!("  {}", header.join("  ")), bold()));
         }
         let mut group = None;
+        // The groups in the order they are shown, and how many of them are already drawn: a
+        // declared group no row falls under is drawn, empty, where it stands in that order.
+        let groups = group_names(collection, &all);
+        let mut drawn = 0;
+        let empty_heading = |name: &str, lines: &mut Vec<Line<'static>>| {
+            if let Some(by) = &collection.group_by {
+                if collection.show_empty_groups
+                    && !all.iter().any(|row| display(&row[by.as_str()]) == name)
+                {
+                    lines.push(Line::styled(format!("── {by}: {name} ──"), bold()));
+                    lines.push(Line::styled("  (none)", dim()));
+                }
+            }
+        };
         // Each recorded row: its key, its line and its data.
         let mut recorded: Vec<(String, usize, &Value)> = Vec::new();
         for (index, row) in rows.iter().enumerate() {
             if let Some(by) = &collection.group_by {
                 let current = display(&row[by.as_str()]);
                 if group.as_ref() != Some(&current) {
+                    if let Some(at) = groups.iter().position(|name| *name == current) {
+                        for name in groups.get(drawn..at).unwrap_or_default() {
+                            empty_heading(name, &mut lines);
+                        }
+                        drawn = drawn.max(at + 1);
+                    }
                     lines.push(Line::styled(format!("── {by}: {current} ──"), bold()));
                     group = Some(current);
                 }
@@ -1072,14 +1176,17 @@ impl App {
             let selected = state.selected.contains(&display(&row["id"]));
             let mark = if selected { "✓ " } else { "  " };
             let text = if cards {
-                let mut parts: Vec<String> = columns.iter().map(|field| cell(field, row)).collect();
+                let mut parts: Vec<String> = columns
+                    .iter()
+                    .map(|field| cell(field, &shown_rows[index]))
+                    .collect();
                 parts.retain(|part| !part.is_empty());
                 parts.join(" · ")
             } else {
                 columns
                     .iter()
                     .zip(&widths)
-                    .map(|(field, width)| pad(&cell(field, row), *width))
+                    .map(|(field, width)| pad(&cell(field, &shown_rows[index]), *width))
                     .collect::<Vec<_>>()
                     .join("  ")
             };
@@ -1097,7 +1204,7 @@ impl App {
                 } else {
                     columns
                         .iter()
-                        .map(|field| cell(field, row))
+                        .map(|field| cell(field, &shown_rows[index]))
                         .collect::<Vec<_>>()
                         .join("  ")
                 };
@@ -1113,7 +1220,7 @@ impl App {
                 recorded.push((key.clone(), lines.len(), row));
                 let mut x = 2;
                 for (field, (width, start)) in columns.iter().zip(widths.iter().zip(&starts)) {
-                    let shown = cell(field, row);
+                    let shown = cell(field, &shown_rows[index]);
                     let (at, cells) = if cards {
                         if shown.is_empty() {
                             continue;
@@ -1144,6 +1251,11 @@ impl App {
                 truncate(&format!("{mark}{text}"), place.width),
                 style,
             ));
+        }
+        if collection.group_by.is_some() && state.page.min(pages - 1) + 1 == pages {
+            for name in groups.get(drawn..).unwrap_or_default() {
+                empty_heading(name, &mut lines);
+            }
         }
         let row = rows.get(cursor);
         let row_ctx = Ctx { row, ..place.ctx };
@@ -1218,6 +1330,7 @@ impl App {
             );
         }
         lines.extend(self.action_hint(&collection.row_actions, &row_ctx));
+        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.row_actions)));
         let bulk = crate::app::bulk_keys(&collection.bulk_actions);
         if !bulk.is_empty() {
             let offered: Vec<String> = bulk
@@ -1235,6 +1348,7 @@ impl App {
                 format!("{} selected: {}", state.selected.len(), offered.join(" · "))
             };
             lines.push(Line::styled(line, dim()));
+            lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.bulk_actions)));
         }
         lines
     }
@@ -1251,7 +1365,11 @@ fn browser_label(action: &ess_ui::Action) -> String {
 
 /// One cell of a row, drawn by the field's `as`.
 fn cell(field: &Field, row: &Value) -> String {
-    let value = &row[field.field.as_str()];
+    cell_value(field, &field_path(row, &field.field))
+}
+
+/// A field's value, drawn by the field's `as`.
+fn cell_value(field: &Field, value: &Value) -> String {
     match field.field_as.as_deref() {
         _ if value.is_null() => String::new(),
         Some("badge") => format!("[{}]", display(value)),
@@ -1354,14 +1472,7 @@ impl App {
                     format!("‹{}› of {}", display(&value), options.join("/"))
                 }
                 Some("file") => format!("path: {}", display(&value)),
-                _ => cell(
-                    field,
-                    &Value::Mapping(
-                        [(field.field.clone().into(), value.clone())]
-                            .into_iter()
-                            .collect(),
-                    ),
-                ),
+                _ => cell_value(field, &value),
             };
             let current = place.focused && index == state.item;
             let editing = current && state.editing;
@@ -1394,9 +1505,12 @@ impl App {
             format!("[ {label} ] ctrl-s · enter edits · tab next field"),
             dim(),
         ));
+        lines.extend(self.refusal_lines(place.ui, Refusing::Form));
         lines.extend(self.action_hint(&form.actions, &place.ctx));
+        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&form.actions)));
         for group in &form.groups {
             lines.extend(self.action_hint(&group.actions, &place.ctx));
+            lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&group.actions)));
         }
         if let Some(result) = &form.result {
             lines.extend(self.node_lines(result, place));
@@ -1581,6 +1695,7 @@ impl App {
             let label = alternative.label.as_ref().unwrap_or(&alternative.name);
             let _ = write!(buttons, "   [{}] {label}", index + 1);
         }
+        lines.extend(self.refusal_lines(place.ui, Refusing::Confirm));
         lines.push(Line::from(buttons));
         lines
     }
@@ -1606,6 +1721,11 @@ impl App {
                         value = row[key].clone();
                     }
                 }
+            }
+        } else if let (Some(reads), Some(kind)) = (&metric.reads, metric.aggregate) {
+            let request = self.request(reads, &place.ctx);
+            if let Some(result) = self.rows_of(&request) {
+                value = aggregate(kind, metric.field.as_deref(), &result.rows);
             }
         } else if let Some(reads) = &metric.reads {
             let request = self.request(reads, &place.ctx);
@@ -1641,6 +1761,52 @@ impl App {
             spans.push(Span::styled(" [stale]", reversed()));
         }
         spans
+    }
+
+    /// The edges of a graph whose edges have a read of their own, one line each, as
+    /// `<from node label> → <to node label>`, after its node collection.
+    fn graph_edge_lines(
+        &self,
+        editor: &ess_ui::GraphEditor,
+        nodes: &ess_ui::Collection,
+        place: &Place<'_>,
+    ) -> Vec<Line<'static>> {
+        let Some(edges) = editor.edges.as_ref() else {
+            return Vec::new();
+        };
+        let Some(reads) = &edges.reads else {
+            return Vec::new();
+        };
+        let Some(result) = self.rows_of(&self.request(reads, &place.ctx)) else {
+            return vec![Line::styled("edges loading…", dim())];
+        };
+        let spec = editor.nodes.as_ref();
+        let key = spec.and_then(|n| n.key.as_deref()).unwrap_or("id");
+        let label = spec.and_then(|n| n.label.as_deref()).unwrap_or("label");
+        let node_rows = nodes
+            .reads
+            .as_ref()
+            .and_then(|reads| self.rows_of(&self.request(reads, &place.ctx)))
+            .map(|result| result.rows.clone())
+            .unwrap_or_default();
+        let end = |row: &Value, field: &str| {
+            let wanted = display(&row[field]);
+            node_rows
+                .iter()
+                .find(|node| display(&node[key]) == wanted)
+                .map(|node| display(&node[label]))
+                .filter(|text| !text.is_empty())
+                .unwrap_or(wanted)
+        };
+        let mut lines = vec![Line::styled("edges", dim())];
+        for row in &result.rows {
+            let mut text = format!("  {} → {}", end(row, &edges.from), end(row, &edges.to));
+            if let Some(kind) = &edges.kind_by {
+                let _ = write!(text, " [{}]", display(&row[kind.as_str()]));
+            }
+            lines.push(Line::from(text));
+        }
+        lines
     }
 
     #[allow(clippy::too_many_lines)] // sparkline, table and metric forms
@@ -1869,6 +2035,43 @@ fn labelled(field: &Field, value: &str) -> Line<'static> {
         Span::styled(format!("{} ", pad(&label_of(field), 16)), dim()),
         Span::raw(value.to_owned()),
     ])
+}
+
+/// The actions a record offers on the tab shown: its own, then the tab's `form` when that is an
+/// action. Drawing and key handling read the same list, so a hint's key runs its action.
+pub(crate) fn record_actions(record: &ess_ui::Record, tab: usize) -> Vec<ess_ui::Action> {
+    let mut actions = record.actions.clone();
+    if let Some(ess_ui::TabForm::Action(action)) =
+        record.tabs.get(tab).and_then(|tab| tab.form.as_ref())
+    {
+        actions.push((**action).clone());
+    }
+    actions
+}
+
+impl App {
+    /// Records each tab of a section's or an overlay's own record at `<path>/tabs/<name>`, on
+    /// the tab line drawn at `line` ([`tab_line`]).
+    fn mark_tabs(&self, tabs: &[ess_ui::Tab], place: &Place<'_>, line: usize) {
+        if !place.record {
+            return;
+        }
+        let mut x = 0;
+        for tab in tabs {
+            let label = tab.label.clone().unwrap_or_else(|| tab.name.clone());
+            let width = label.width() + 2;
+            self.mark(Mark {
+                path: format!("{}/tabs/{}", place.path, tab.name),
+                row: None,
+                line,
+                height: 1,
+                x,
+                width: Some(width),
+                text: Some(label),
+            });
+            x += width + 1;
+        }
+    }
 }
 
 fn tab_line(labels: impl Iterator<Item = String>, current: usize) -> Line<'static> {

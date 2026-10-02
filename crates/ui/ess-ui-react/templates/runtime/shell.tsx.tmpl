@@ -6,6 +6,9 @@ import { hrefFor, pageAt } from "../routes";
 import { useNotices, useScope } from "./core";
 import { dataAdapter, invalidate } from "./data";
 import { evaluate, truthy } from "./expr";
+//+bound
+import { RefusalNote, runCommand, type Refusal } from "./actions";
+//-bound
 
 /** The frame of one shell. */
 export function ShellFrame(props: { "data-ui-path": string; children?: ReactNode }): ReactNode {
@@ -133,6 +136,10 @@ export interface MenuEntry {
 export function AccountMenu(props: { actions: MenuEntry[] }): ReactNode {
   const scope = useScope();
   const [open, setOpen] = useState(false);
+//+bound
+  // A refused entry's command is shown under the menu, which has closed.
+  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
+//-bound
   const actor = scope.values.actor as { name?: unknown } | undefined;
   return (
     <div className="ui-account">
@@ -151,12 +158,17 @@ export function AccountMenu(props: { actions: MenuEntry[] }): ReactNode {
                   if (entry.opens) {
                     scope.open(entry.opens);
                   } else if (entry.does) {
+//+plain
                     void dataAdapter()
                       .send(entry.does, {})
                       .then(() => {
                         invalidate();
                         scope.notify(`${entry.does} done`, "success");
                       });
+//-plain
+//+bound
+                    void runCommand(scope, entry.does, {}, false, setRefusal);
+//-bound
                   }
                 }}
               >
@@ -166,6 +178,9 @@ export function AccountMenu(props: { actions: MenuEntry[] }): ReactNode {
           ))}
         </ul>
       ) : null}
+//+bound
+      <RefusalNote refusal={refusal} />
+//-bound
     </div>
   );
 }
@@ -181,12 +196,18 @@ export function Assistant(props: { does: string[] }): ReactNode {
       onSubmit={(event: { preventDefault(): void }) => {
         event.preventDefault();
         if (command && text) {
+//+plain
           void dataAdapter()
             .send(command, { prompt: text })
             .then(() => {
               invalidate();
               scope.notify(`${command} sent`, "success");
             });
+//-plain
+//+bound
+          // A refusal is a notice: the prompt has gone.
+          void runCommand(scope, command, { prompt: text });
+//-bound
           setText("");
         }
       }}

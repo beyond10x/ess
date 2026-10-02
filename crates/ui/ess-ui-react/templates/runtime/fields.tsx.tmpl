@@ -3,7 +3,9 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "./core";
 import { display, formatValue, ScopeLayer, useScope } from "./core";
+import { useRead } from "./data";
 import { evaluate, truthy } from "./expr";
+import { getPath, isObject } from "./json";
 
 /** A field as the document declares it, with its node path. */
 export interface FieldSpec {
@@ -17,6 +19,48 @@ export interface FieldSpec {
   binds?: string;
   note?: string;
   choice?: ReactNode;
+  labelFrom?: LabelFrom;
+}
+
+/** A field of a related view shown in place of a key: the row whose `key` (default `id`) equals it. */
+export interface LabelFrom {
+  view: string;
+  field: string;
+  key?: string;
+}
+
+/** The label `labelFrom` gives `value` among the related `rows`; the value itself when none matches. */
+export function lookupLabel(rows: readonly unknown[], labelFrom: LabelFrom, value: unknown): unknown {
+  const key = (labelFrom.key ?? "id").split(".");
+  const related = rows.find((row) => String(getPath(row, key) ?? "") === String(value ?? ""));
+  const label = related === undefined ? undefined : getPath(related, labelFrom.field.split("."));
+  return label === undefined || label === null ? value : label;
+}
+
+/**
+ * Reads each related view the fields label from, once, and returns how a row is shown: each
+ * `labelFrom` field holds its label. Actions and the scope keep the row's own values.
+ */
+export function useLabelled(fields: readonly FieldSpec[]): (row: unknown) => unknown {
+  const scope = useScope();
+  const views = [...new Set(fields.flatMap((field) => (field.labelFrom ? [field.labelFrom.view] : [])))];
+  const rows = new Map<string, readonly unknown[]>();
+  for (const view of views) {
+    // The views come from the document, so every render calls the same hooks in the same order.
+    rows.set(view, useRead({ view }, scope.values).rows);
+  }
+  return (row) => {
+    if (views.length === 0 || !isObject(row)) {
+      return row;
+    }
+    const shown: Record<string, unknown> = { ...row };
+    for (const field of fields) {
+      if (field.labelFrom) {
+        shown[field.field] = lookupLabel(rows.get(field.labelFrom.view) ?? [], field.labelFrom, row[field.field]);
+      }
+    }
+    return shown;
+  };
 }
 
 /** The heading of a field. */

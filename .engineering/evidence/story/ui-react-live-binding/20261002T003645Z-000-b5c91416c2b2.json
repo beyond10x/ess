@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T00:36:45Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-react-live-binding",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-ui-react -p ess-ui-check -p ess-ui-test (220 passed) and -p ess-cli --test ui_commands (15); clippy -D warnings, fmt, cli-reference --check clean at c0811a7eb85",
+    "reference": "c0811a7eb85"
+  }
+}

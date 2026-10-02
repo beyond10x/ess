@@ -4,7 +4,7 @@ import { ActionControl, type ActionSpec } from "../actions";
 import { ScopeLayer, useData, useScope } from "../core";
 import type { ReadSpec } from "../data";
 import { evaluate, truthy } from "../expr";
-import { FieldValue, Tabs, fieldLabel, type FieldSpec, type TabSpec } from "../fields";
+import { FieldValue, Tabs, fieldLabel, useLabelled, type FieldSpec, type TabSpec } from "../fields";
 
 /** One row shown as labelled fields. */
 export function RecordView(props: {
@@ -18,6 +18,7 @@ export function RecordView(props: {
   const scope = useScope();
   const data = useData(props.reads);
   const row = data ? data.rows[0] : scope.values.row;
+  const labelled = useLabelled([...(props.fields ?? []), ...(props.tabs ?? []).flatMap((tab) => tab.fields ?? [])]);
   const list = (fields: FieldSpec[]) => (
     <dl className="ui-record-fields">
       {fields
@@ -26,7 +27,7 @@ export function RecordView(props: {
           <div key={field.name}>
             <dt>{fieldLabel(field)}</dt>
             <dd>
-              <FieldValue field={field} row={row} />
+              <FieldValue field={field} row={labelled(row)} />
             </dd>
           </div>
         ))}
