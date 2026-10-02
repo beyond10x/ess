@@ -136,7 +136,7 @@ fn go_gives_the_reference_verdict_for_every_caller_mode() {
             Mode::AnyoneEdits => assert_eq!(wrong, [FORBIDDEN], "{verdicts:?}"),
             Mode::OnlyTheFirstCallerEdits => assert!(!wrong.is_empty(), "{verdicts:?}"),
             Mode::CannotAuthenticate => assert!(
-                !wrong.is_empty() && wrong.iter().all(|id| verdicts[*id] == "skipped"),
+                !wrong.is_empty() && wrong.iter().all(|id| verdicts[*id] == "unsupported"),
                 "{verdicts:?}"
             ),
         }

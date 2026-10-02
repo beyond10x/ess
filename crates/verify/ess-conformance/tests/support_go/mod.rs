@@ -24,7 +24,7 @@ use std::cell::RefCell;
 
 /// What one `go test` run of the emitted package came to.
 pub struct GoRun {
-    /// Every scenario's verdict — `passed`, `failed` or `skipped` — read from the run's report/2.
+    /// Every scenario's precise status, read from the run's report/2.
     /// Empty when the run published none, which is what a suite refused at admission leaves.
     pub outcomes: BTreeMap<String, String>,
     /// `go test`'s own output, for a diagnostic.
@@ -556,8 +556,7 @@ pub fn not_passed(verdicts: &BTreeMap<String, String>) -> Vec<&str> {
         .collect()
 }
 
-/// Every scenario's verdict from the Rust reference runner, in the Go report's words: a scenario
-/// the target could not answer is `skipped` there, and one the run could not execute is `failed`.
+/// Every scenario's verdict from the Rust reference runner, preserving report/2 categories.
 pub fn rust_outcomes<T: ConformanceTarget>(
     suite: &ConformanceSuite,
     target: &T,
@@ -585,8 +584,9 @@ fn verdicts(report: ess_conformance::ConformanceReport) -> BTreeMap<String, Stri
         .map(|result| {
             let status = match result.status {
                 Status::Passed => "passed",
-                Status::Failed | Status::Error => "failed",
-                Status::Unsupported => "skipped",
+                Status::Failed => "failed",
+                Status::Error => "error",
+                Status::Unsupported => "unsupported",
             };
             (result.scenario.to_string(), status.to_owned())
         })

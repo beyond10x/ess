@@ -551,7 +551,7 @@ mod entity_setup_execution {
             );
             assert_eq!(
                 output.status.success(),
-                matches!(behavior, "good" | "unsupported" | "absent-capability"),
+                behavior == "good",
                 "{behavior}: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
@@ -562,7 +562,6 @@ mod entity_setup_execution {
             .unwrap();
             let expected = match behavior {
                 "good" => "passed",
-                "unsupported" | "absent-capability" => "inconclusive",
                 _ => "failed",
             };
             assert_eq!(report["execution_status"], expected, "{behavior}: {report}");
@@ -571,12 +570,11 @@ mod entity_setup_execution {
                 ess_conformance::CountReport::from_json(&report.to_string(), &admitted).unwrap();
             let checked_status = match behavior {
                 "good" => ess_conformance::CountStatus::Passed,
-                "unsupported" | "absent-capability" => ess_conformance::CountStatus::Inconclusive,
                 _ => ess_conformance::CountStatus::Failed,
             };
             assert_eq!(checked.execution_status(), checked_status);
             if matches!(behavior, "unsupported" | "absent-capability") {
-                assert_eq!(report["counts"]["skipped"], 2);
+                assert_eq!(report["counts"]["unsupported"], 2);
                 assert_eq!(report["counts"]["passed"], 0);
                 assert_ne!(report["conformance_status"], "passed");
             }

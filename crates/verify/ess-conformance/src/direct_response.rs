@@ -219,17 +219,3 @@ pub(crate) fn admit(suite: &crate::ConformanceSuite) -> Result<(), crate::Admiss
     }
     Ok(())
 }
-
-pub(crate) fn refuse_generation(
-    suite: &crate::ConformanceSuite,
-    target: &str,
-) -> Result<(), crate::AdmissionError> {
-    if used_by(suite) {
-        return Err(crate::AdmissionError::new(
-            "UnsupportedTarget",
-            "$suite",
-            format!("{target} does not execute direct response observations; use the Rust runner"),
-        ));
-    }
-    Ok(())
-}

@@ -3,7 +3,7 @@
 //!
 //! The target is `tests/absent_input.rs`'s, recorded once and replayed to the Go runtime: every
 //! mode the Rust suite tells apart, the Go runtime tells apart the same way. A Go target that does
-//! not implement `AbsentInputTarget` skips exactly the one scenario that needs it.
+//! not implement `AbsentInputTarget` reports exactly the required scenario as unsupported.
 
 mod support_go;
 
@@ -194,7 +194,7 @@ fn go_gives_the_reference_verdict_for_every_absent_input_mode() {
         (Mode::Correct, vec![]),
         (Mode::ReadsAbsentAsEmpty, vec![(ID, "failed")]),
         (Mode::AcceptsAbsent, vec![(ID, "failed")]),
-        (Mode::CannotOmit, vec![(ID, "skipped")]),
+        (Mode::CannotOmit, vec![(ID, "unsupported")]),
     ] {
         let verdicts = support_go::assert_parity(
             &format!("absent-{mode:?}").to_lowercase(),
@@ -210,10 +210,9 @@ fn go_gives_the_reference_verdict_for_every_absent_input_mode() {
     }
 }
 
-/// A Go target without `AbsentInputTarget` skips the one scenario that sends no input, as a Rust
-/// target keeping the method's default reports it unsupported — never passed, never the suite.
+/// Both runtimes report the missing required method as unsupported on its own scenario.
 #[test]
-fn a_go_target_without_the_absent_input_method_skips_only_that_scenario() {
+fn a_go_target_without_the_absent_input_method_reports_that_scenario_unsupported() {
     let (rust, replayed) = support_go::compare_with(
         "absent-bare",
         &suite(),
@@ -230,7 +229,7 @@ fn a_go_target_without_the_absent_input_method_skips_only_that_scenario() {
         "{}",
         replayed.go.log
     );
-    assert_eq!(replayed.go.outcomes[ID], "skipped");
+    assert_eq!(replayed.go.outcomes[ID], "unsupported");
     assert!(
         replayed
             .go

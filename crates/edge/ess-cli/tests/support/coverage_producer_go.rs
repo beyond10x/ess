@@ -122,7 +122,7 @@ pub(super) fn export(directory: &Path, plan: &Value, structures: &BTreeMap<Strin
     let mut executed = 0;
     for instance in list(&plan["requested_report_instances"])
         .iter()
-        .filter(|i| i["producer_profile"] == "go-scenario-status/1")
+        .filter(|i| i["producer_profile"] == "go-scenario-status/2")
     {
         let input = &structures[text(&instance["structure"])];
         let out = directory.join(text(&instance["id"]));
