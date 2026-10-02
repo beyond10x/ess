@@ -39,7 +39,9 @@
 
 mod accessor;
 mod behaviour;
+mod context;
 mod entity;
+mod entry;
 mod http;
 mod invariant;
 mod items;
@@ -51,6 +53,7 @@ mod port;
 mod reading;
 mod refusal;
 mod selection;
+mod store;
 mod system;
 
 use std::cell::RefCell;
@@ -373,6 +376,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         &refusals,
         &mut covered,
     ));
+    artifacts.extend(entry::artifacts(ir, plan, &layout, &seams));
 
     assert_bijection(plan, &refusals, &seams, &covered, &stubbed);
 

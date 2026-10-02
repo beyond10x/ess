@@ -173,6 +173,19 @@ pub(crate) fn relayout(
                 server = true;
                 ("src/server.rs".to_owned(), "crate::server".to_owned())
             }
+            Destination::Server if file.starts_with("bin/") => {
+                // A binary is a separate crate even in the one-package layout.
+                let library = Layout::crate_ident(&ir.system().segments().join("-"));
+                let binary_paths = paths
+                    .iter()
+                    .map(|(name, path)| (name.clone(), path.replacen("crate", &library, 1)))
+                    .collect();
+                out.push(Artifact::new(
+                    format!("src/{file}"),
+                    rewrite(&contents, "crate", &binary_paths),
+                ));
+                continue;
+            }
             Destination::Server => (format!("src/server/{file}"), "crate::server".to_owned()),
         };
         let contents = if std::path::Path::new(&path)
@@ -225,8 +238,8 @@ fn ports_module(
     Artifact::new("src/ports.rs", out)
 }
 
-/// The crate's manifest: its own workspace root, zero dependencies, and the `server` feature when
-/// there is an HTTP surface to put behind it.
+/// The crate's manifest: its own workspace root, with executable dependencies gated behind
+/// `server` when there is an HTTP surface.
 fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
     let mut out = plan.provenance.commented_for("#", &plan.regenerate());
     let _ = write!(
@@ -244,9 +257,16 @@ fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
         ir.version().get()
     );
     if server {
-        out.push_str("\n[features]\nserver = []\n");
+        out.push_str("\n[features]\nserver = [\"dep:clap\", \"dep:uuid\", \"dep:time\"]\n");
     }
-    out.push_str("\n[dependencies]\n\n[workspace]\n");
+    out.push_str("\n[dependencies]\n");
+    if server {
+        out.push_str("clap = { version = \"4.6.7\", features = [\"derive\"], optional = true }\nuuid = { version = \"1.26.1\", features = [\"v4\"], optional = true }\ntime = { version = \"0.3.55\", features = [\"formatting\"], optional = true }\n");
+        for component in super::http::served(ir) {
+            let _ = writeln!(out, "\n[[bin]]\nname = \"{}-server\"\npath = \"src/bin/{}-server.rs\"\nrequired-features = [\"server\"]", component.name, component.name);
+        }
+    }
+    out.push_str("\n[workspace]\n");
     Artifact::new("Cargo.toml", out)
 }
 
