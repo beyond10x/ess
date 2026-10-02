@@ -168,15 +168,20 @@ fn a_survivor_against_the_interpreter_is_a_survivor_against_the_billing_referenc
         .collect();
     assert!(!order_flip.is_empty(), "billing has an order-flip mutant");
     for entry in order_flip {
-        assert_eq!(
-            entry.verdict,
-            Verdict::Inconclusive,
-            "decision F2: {} is killed on the reference by scenarios the interpreter did not \
-             execute, so it is inconclusive, not survived: {:?}",
-            entry.id,
-            entry.excluded
-        );
-        assert!(entry.excluded.as_ref().is_some_and(|it| !it.is_empty()));
+        assert_eq!(entry.verdict, Verdict::Killed, "{}", entry.id);
+        assert_eq!(entry.excluded, None);
+        let expected = reference
+            .mutants
+            .iter()
+            .find(|it| it.id == entry.id)
+            .unwrap();
+        assert_eq!(entry.killers, expected.killers, "{}", entry.id);
+        assert!(entry
+            .killers
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|id| id == "billing.invoice.IssueInvoice/outcome/issued"));
     }
 }
 

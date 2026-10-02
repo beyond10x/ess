@@ -20,7 +20,6 @@ use ess_conformance::mutate::{
 use ess_conformance::reference::{Billing, Oracle};
 use ess_conformance::report::Status;
 use ess_conformance::runner::Runner;
-use ess_conformance::scenario::ScenarioStep;
 use ess_conformance::target::ConformanceTarget;
 use ess_conformance::AdmittedSuite;
 use ess_domain::spec::RawSpecFile;
@@ -334,7 +333,7 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
 /// The oracle fixture's survivors. None.
 const ORACLE_SURVIVORS: &[(&str, Why)] = &[];
 
-/// The oracle fixture's twenty mutants. `from-drop/…cancel/Held` is stillborn for the reason
+/// The oracle fixture's twenty-one mutants. `from-drop/…cancel/Held` is stillborn for the reason
 /// `ESS-ENTITY-011` gives: `cancel` is `Held`'s only way out, so dropping it strands the state.
 const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
     (
@@ -426,6 +425,11 @@ const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
         "oracle.order.PlaceOrder/outcome/rejected",
     ),
     (
+        "sets-retarget/oracle.order.PlaceOrder/accepted/contact",
+        Verdict::Killed,
+        "oracle.order.AmendOrder/outcome/amended",
+    ),
+    (
         "transition-to/oracle.order.Order.cancel",
         Verdict::Stillborn,
         "ESS-ENTITY-011",
@@ -455,7 +459,7 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("guard-connective", 0),
             ("guard-negate", 2),
             ("order-flip", 0),
-            ("sets-retarget", 0),
+            ("sets-retarget", 1),
             ("transition-to", 3),
         ]),
         "{}",
@@ -464,6 +468,9 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
     pinned_verdicts(&report, ORACLE_VERDICTS);
     pinned_survivors(&report, ORACLE_SURVIVORS);
     assert_eq!(report.implementation, "oracle-reference");
+    assert_eq!(report.counts.mutants, 21);
+    assert_eq!(report.counts.killed, 11);
+    assert_eq!(report.counts.stillborn, 10);
 }
 
 // ---- P1-3: a killer is a failed scenario of that mutant's own suite -------------------------------
@@ -550,62 +557,23 @@ fn a_faulty_baseline_is_refused_with_the_failing_scenarios() {
     assert_eq!(not_passed, &expected);
 }
 
-/// The interpreter executes commands and not yet views or bindings, so it answers every scenario
-/// needing one `unsupported`.
-///
-/// Rewritten twice. For `story:interpreted-command-execution` the premise became the interpreter
-/// holding the unchanged model, as `ess verify conform mutate --target interpreted` runs it, and
-/// the audit was refused with `ESS-MUTATE-001`. Since issue #210 an `unsupported` baseline scenario
-/// is not red: the audit scores every mutant on the rest, and lists as not scored exactly the
-/// scenarios that need something the interpreter does not derive.
+/// The fixed original model answers every generated baseline and mutant scenario just as the
+/// independent Billing reference does, including view ordering and bindings.
 #[test]
-fn the_interpreted_target_scores_past_what_it_does_not_interpret() {
+fn the_interpreted_target_matches_the_complete_billing_mutation_audit() {
     let (files, texts) = example("billing");
     let ir = mutate::compile(files.clone(), &texts).unwrap();
     let report = mutate::audit(&files, &texts, MutantClass::ALL, || {
         Interpreted::for_model(ir.clone())
     })
-    .unwrap_or_else(|refusal| panic!("an unsupported baseline scenario is not red: {refusal}"));
-    assert!(report
-        .baseline
-        .not_scored
-        .iter()
-        .all(|it| it.status == mutate::NotScoredStatus::Unsupported));
-    let not_passed: Vec<String> = report
-        .baseline
-        .not_scored
-        .iter()
-        .map(|it| it.scenario.clone())
-        .collect();
-
-    let mut suite = ess_conformance::synthesize(&ir).suite;
-    suite.select_fresh_format();
-    let needs_more: Vec<String> = suite
-        .scenarios
-        .iter()
-        .filter(|(_, scenario)| {
-            !scenario.steps.iter().all(|step| {
-                matches!(
-                    step,
-                    ScenarioStep::ExecuteCommand { .. }
-                        | ScenarioStep::ConfigureExternalOutcome { .. }
-                        | ScenarioStep::ExpectOutcome { .. }
-                        | ScenarioStep::ExpectError { .. }
-                        | ScenarioStep::ExpectNoError
-                        | ScenarioStep::ExpectEvent { .. }
-                        | ScenarioStep::ExpectNoEvent { .. }
-                        | ScenarioStep::ExpectNoEvents
-                        | ScenarioStep::CaptureInstance { .. }
-                )
-            })
-        })
-        .map(|(id, _)| id.to_string())
-        .collect();
-    assert!(!needs_more.is_empty() && needs_more.len() < suite.scenarios.len());
-    assert_eq!(
-        not_passed, needs_more,
-        "exactly the scenarios needing a view or a binding are not scored"
-    );
+    .unwrap();
+    let reference = mutate::audit(&files, &texts, MutantClass::ALL, Billing::new).unwrap();
+    assert!(report.baseline.not_scored.is_empty());
+    assert_eq!(report.baseline.scenarios, 32);
+    assert_eq!(report.baseline, reference.baseline);
+    assert_eq!(report.counts, reference.counts);
+    assert_eq!(report.mutants, reference.mutants);
+    pinned_verdicts(&report, BILLING_VERDICTS);
 }
 
 // ---- P1-5: two audits, identical bytes ----------------------------------------------------------

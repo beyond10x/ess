@@ -1,26 +1,5 @@
-//! Adversary pass 1 against `story:interpreted-target-selection`.
-//!
-//! Two claims the unit made about itself, driven against the code the same unit wrote.
-//!
-//! 1. The public source-capability block in `website/docs/status/where-this-stands.md` is generated
-//!    from `ess verify conform run --help` by `crates/edge/ess-xtask/src/support.rs:334,568` and
-//!    compared back by `cargo xtask support --check`, which `task check` runs
-//!    (`Taskfile.yml:165-170,204`). Adding a `--target` value without updating that row is drift the
-//!    unit's package-scoped gate cannot see.
-//! 2. `crates/verify/ess-conformance/src/interpret.rs` states, of the target it adds: "selecting
-//!    this target cannot make a suite green, and a run against it exits non-zero today and will keep
-//!    doing so until interpretation actually decides something." That is a claim about every suite,
-//!    and the runner decides a run's verdict from its scenarios
-//!    (`crates/verify/ess-conformance/src/report.rs:566-578`), of which an admitted suite may hold
-//!    none. `website/docs/guides/verify/runners.md:206-207` documents `[]` as an explicit
-//!    selection of no scenarios, so a zero-scenario admitted suite is a state the documented
-//!    workflow reaches.
-//!
-//! Round 1 answered both. The sentence quoted in (2) no longer reads that way: `interpret.rs` now
-//! qualifies the claim to suites holding at least one scenario and names the empty-suite verdict as
-//! the runner's, target-independent behaviour. The second case below keeps the adversary's
-//! construction and still executes it, and asserts the corrected claim plus the cross-target
-//! control that establishes whose behaviour the exception is.
+//! Actual Billing execution is distinct from the runner's vacuous empty-suite verdict.
+//! The support matrix must also list every offered target.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -118,23 +97,9 @@ fn run_suite(suite: &Path, target: &str) -> (serde_json::Value, Option<i32>) {
     (report, output.status.code())
 }
 
-/// Selecting the interpreted target cannot produce a passing conformance report.
-///
-/// The claim this pins is `interpret.rs`'s, as corrected in round 1: a run over a suite holding **at
-/// least one** scenario comes back `failed` and exits non-zero, because §28 makes every unsupported
-/// obligation fail conformance.
-///
-/// The adversary that wrote this case asserted the sentence's original, unqualified form and found
-/// the hole: an admitted suite may hold **no** scenarios (`admission.rs:103-145` imposes no lower
-/// bound, and `runners.md:206-207` documents `[]` as a selection somebody can ask for),
-/// and `ConformanceReport::verdict(&[])` is `Passed`. The empty-suite half of this case is kept and
-/// still executed, and the assertion on it is now the true one — pinned **across targets**, because
-/// that is the fact that decides whose defect it is: `billing` reports `passed` and exits 0 for the
-/// same file. A vacuous suite is vacuously conformant for every implementation, which is a property
-/// of `report.rs:566-578` and not a capability the interpreter has. Making an empty suite refuse
-/// would change `billing` and `oracle-fixture` too and is not this story's to do.
+/// A complete real run passes; an empty run remains vacuously green across targets.
 #[test]
-fn a_run_against_the_interpreted_target_is_never_green() {
+fn real_interpreted_execution_and_empty_suite_verdicts_are_distinct() {
     let committed = root().join("suites/generated/billing/suite.json");
     let text = fs::read_to_string(&committed).expect("the committed billing suite");
     let mut suite: serde_json::Value =
@@ -147,19 +112,16 @@ fn a_run_against_the_interpreted_target_is_never_green() {
         "the committed suite is the non-empty half of this case"
     );
 
-    // The claim itself: a suite with scenarios in it is never green against this target.
     let (report, code) = run_suite(&committed, "interpreted");
-    assert_eq!(
-        report["status"], "failed",
-        "interpret.rs claims a suite holding at least one scenario cannot come back green: {report:#}"
-    );
-    assert_eq!(
-        code,
-        Some(1),
-        "and that such a run exits non-zero — 1 for failed, not 3 for error: {report:#}"
-    );
+    assert_eq!(report["status"], "passed", "{report:#}");
+    assert_eq!(code, Some(0));
+    let scenarios = report["scenarios"].as_array().expect("executed scenarios");
+    assert_eq!(scenarios.len(), 33);
+    assert!(scenarios
+        .iter()
+        .all(|scenario| scenario["status"] == "passed"));
 
-    // The exception the adversary found, pinned where it belongs: at the runner, not at the target.
+    // The empty-suite control belongs at the runner, not at the target.
     suite["scenarios"] = serde_json::json!({});
     let path =
         Path::new(env!("CARGO_TARGET_TMPDIR")).join("interpreted-adversary-empty-suite.json");
