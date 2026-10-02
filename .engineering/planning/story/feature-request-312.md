@@ -53,7 +53,7 @@ scope:
   path: crates/verify/ess-diff/src/impact.rs
 - confidence: inferred
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 28
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T21:59:23Z", actor: "human:timo", revision: 16, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T21:59:24Z", actor: "human:timo", revision: 17, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -118,3 +118,11 @@ Implementation owner scope_aggregate in a new managed tree from carrier4bc5660e4
 Cited by source assessment62f0b66bf64367b708969c923be116556fe7b683c99dd6f7ebb29a1847c5d8b2: scenario.rs SuiteProvenance369–403 and suite format registry; synthesize/caller.rs18–27,161–223,574–685 and grant.rs197–277; Go runtime closed provenance3981 and TypeScript runtime5834; runner.rs431–465 and report.rs552; tests/adversary_287_pass1.rs512–638; existing caller_values and coverage transport tests. New docs/design/scenario-initial-state-and-cross-caller-witnesses.md is inferred as the binding design home and must be written before production code.
 
 Exact CLI and browser display entry points are to be established before edits. Add their precise paths to the handoff and report discoveries to root for machine scope. No CountReport/2 field, source syntax or source diff projection changes. Reuse unreleased suite34–35 by the recorded decision. Required fixture/old-reader/actual-target mutation and all supported language execution tests travel with the implementation. Target factories/hooks own logical isolation and must preserve unrelated physical data. Builds use only this worker's idle synthesis cache, jobs2/debug0/incremental0 and external TMPDIR; pause below8GiB. Independent review and final integration evidence are required; no component PR or remote gate.
+
+## Reviewed core integrated, remaining caller-sensitive synthesis
+
+Owner bot commit c3556bf49ed0a5372536c210c3e24a5d35833a7d is integrated as 13e40c33f9. Frozen reviewed source daf8d1c7f42c8ddd455bc9b7944000c66dde6e99900e23c1ef66c27d704d640f; independent pass2 and pass3 approvals retained as consumer-initial-state-pass2 and consumer-initial-state-pass3. Owner measured34 focused native/Go/TS/WASM tests,2 CLI/Firefox tests,2 strict TypeScript packaging checks, final live Go/TS parity1/0; scoped lint/fmt exit0. Go parity used installed Go1.27.0-X:nodwarf5, not the pinned gate compiler. Report retained in owner target/backlog-input/312-implementation-report.md SHA55110c33037cf257a5af0c444f326228cce26f84c6591aa4b326113c65e434d2.
+
+First review caused actual source correction for attribute-free and attributed caller-insensitive same-command arrangements. Caller-sensitive upsert remains unfinished, so no claim that the full finding or story is resolved. Root owns canonical producer regeneration, format expectation migration and integrated checks. Full story stays active through remaining acceptance.
+
+Owner read-only continuation brief target/backlog-input/312-hybrid-continuation-brief.md SHA45c153c7cc6f7ed127a3ba03dc263dc25f606463f6f56384ad2d805de32bc85b identifies a narrow caller-valued hybrid when all rewritten First/Second conditions compare equal. General caller-sensitive guards require separate arrangement and acting command interpretations per invocation: evaluate First creation eligibility with First input/absent-or-related facts, then Second acting eligibility against the actual typed First-created row. Changing actor bytes after selecting an outcome is not acceptable. Root requests concrete full-remaining design/scoping before authorizing further production edits; this is continuation of existing story acceptance, not a reduced acceptance set.
