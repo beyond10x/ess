@@ -356,7 +356,7 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 33;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 35;
 
 /// The oldest suite major the generated runners execute only under an explicit
 /// `ESS_REPORT_FORMAT=2`: `/5` through `/7` and `/8` onwards, the two gates in `Run` / `runWith`.
@@ -426,7 +426,7 @@ pub(crate) fn report_format_requirement(
 
 fn runtime() -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("runtime.go"),
         include_str!("reading.go"),
         include_str!("response.go"),
@@ -435,6 +435,7 @@ fn runtime() -> String {
         include_str!("prerequisites.go"),
         include_str!("one_time.go"),
         include_str!("one_time_identity.go"),
+        include_str!("one_time_execution.go"),
         include_str!("../../../../specify/ess-domain/src/reading/coordinate.go")
     )
 }

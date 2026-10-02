@@ -1,6 +1,8 @@
 //! Actual generated Go callbacks, compared with the native frozen suite contracts.
 mod support_go;
+mod support_go_one_time;
 mod support_go_prerequisite;
+mod support_one_time;
 
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::{
@@ -148,7 +150,11 @@ func TestOneTimeAdmission(t *testing.T){
 func TestOneTimeIdentifierGrammar(t *testing.T){
  raw,err:=os.ReadFile(os.Getenv("PARITY_IDENTIFIER_GRAMMAR"));if err!=nil{t.Fatal(err)}
  var vectors [][]any;if err=json.Unmarshal(raw,&vectors);err!=nil{t.Fatal(err)};if len(vectors)!=13{t.Fatal("identifier vectors changed")}
- for _,vector:=range vectors{expected:=vector[0].(bool);written:=vector[1].(string);_,err:=oneTimeCellIdentity(written);if (err==nil)!=expected{t.Errorf("%s: admission=%v expected=%v",written,err==nil,expected)}}
+ for _,vector:=range vectors{expected:=vector[0].(bool);written:=vector[1].(string);_,err:=oneTimeCellIdentity(written);if (err==nil)!=expected || (scenarioIdentity(written)==nil)!=expected{t.Errorf("%s: policy identity admission=%v, coverage identity admission=%v, expected=%v",written,err==nil,scenarioIdentity(written)==nil,expected)}}
+}
+func TestOneTimeFullAdmission(t *testing.T){
+ root:=os.Getenv("PARITY_ADMISSION_VECTORS");entries,err:=os.ReadDir(root);if err!=nil{t.Fatal(err)}
+ for _,entry:=range entries{t.Run(entry.Name(),func(t *testing.T){raw,err:=os.ReadFile(root+"/"+entry.Name());if err!=nil{t.Fatal(err)};_,err=admitRunInput(string(raw));expected:=len(entry.Name())>=6&&entry.Name()[:6]=="valid-";if (err==nil)!=expected{t.Fatalf("native admission=%v, actual runtime admission=%v: %v",expected,err==nil,err)}})}
 }
 func TestProducerBoundaries(t *testing.T){
  suite,err:=admitRunInput(suiteJSON);if err!=nil{t.Fatal(err)}
@@ -353,6 +359,400 @@ fn explicit_skipped_and_legacy_report_boundaries_keep_their_categories() {
 
 fn driver() -> String {
     DRIVER.replace("\"net\")", "\"net\"; \"bytes\")")
+}
+
+fn one_time_driver() -> String {
+    let driver = driver().replace(" if result!=nil{", r#"
+ if method=="execute" && os.Getenv("PARITY_ORPHAN_ERROR")!="" {
+  var value map[string]json.RawMessage; if err=json.Unmarshal(response.Ok,&value);err!=nil{return err}
+  if len(firstOneTime)==0 {
+   var fields map[string]json.RawMessage; if err=json.Unmarshal(value["Response"],&fields);err!=nil{return err}; firstOneTime=fields["secret"]
+  }else{
+   value["ErrorPayload"],err=json.Marshal(map[string]json.RawMessage{"copied":firstOneTime});if err!=nil{return err};response.Ok,err=json.Marshal(value);if err!=nil{return err}
+  }
+ }
+ if result!=nil{"#);
+    format!(
+        "{}\n{}",
+        driver,
+        r#"
+var firstOneTime json.RawMessage
+func(parityTarget) MarkInstant(mark InstantMark)error{return call("mark",mark,nil)}
+func(parityTarget) ObserveElapsed(request ElapsedRequest)(value ElapsedObservation,err error){err=call("elapsed",request,&value);return}
+"#
+    )
+}
+
+#[test]
+fn orphan_error_payload_is_still_an_actual_disclosure_surface() {
+    // Native DeclaredErrorValue cannot represent this malformed pairing. The Go adapter
+    // mutant copies a real earlier returned field into ErrorPayload with an empty name.
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-execution");
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())
+            .unwrap();
+    let mut expected = manifest
+        .into_iter()
+        .find(|case| case["case"] == "healthy")
+        .unwrap();
+    expected["status"] = json!("failed");
+    expected["counts"]["passed"] = json!(0);
+    expected["counts"]["failed"] = json!(1);
+    expected["case"] = json!("adapter-orphan-error-payload");
+    let path = root.join("healthy.json");
+    let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let directory = support_go::package(
+        "one-time-orphan-error",
+        admitted.suite(),
+        &[("parity_test.go", &one_time_driver())],
+    );
+    let host = support_go_one_time::Host::start(support_one_time::Mode::Healthy);
+    let result = support_go::go_test(
+        &directory,
+        "TestParity",
+        &[
+            ("PARITY_ADDRESS", &host.address),
+            ("PARITY_DOCUMENT", path.to_str().unwrap()),
+            ("PARITY_ORPHAN_ERROR", "1"),
+        ],
+    );
+    let snapshot = host.stop();
+    check_one_time_execution(&directory, &expected, &admitted, &result, &snapshot).unwrap();
+}
+
+#[test]
+fn go_executes_the_frozen_one_time_observer_protocol_controls() {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-execution");
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest.len(), support_one_time::Mode::ALL.len());
+    let mut directory = None;
+    let mut failures = Vec::new();
+    for case in manifest {
+        let name = case["case"].as_str().unwrap();
+        let mode: support_one_time::Mode = serde_json::from_value(case["case"].clone()).unwrap();
+        let (expected, code) = mode.expected();
+        assert_eq!(case["status"], serde_json::to_value(expected).unwrap());
+        assert_eq!(case["required_code"], code);
+        let path = root.join(case["suite"].as_str().unwrap());
+        let bytes = std::fs::read_to_string(&path).unwrap();
+        let admitted = AdmittedSuite::from_json(&bytes).unwrap();
+        assert_eq!(
+            serde_json::to_value(admitted.suite()).unwrap(),
+            serde_json::to_value(support_one_time::admitted(mode).suite()).unwrap()
+        );
+        if let Err(error) = ess_conformance::go::emit(admitted.suite()) {
+            failures.push(format!(
+                "{name}: emitter refusal before target callbacks: {error}"
+            ));
+            continue;
+        }
+        let directory = directory.get_or_insert_with(|| {
+            support_go::package(
+                "one-time-live",
+                admitted.suite(),
+                &[("parity_test.go", &one_time_driver())],
+            )
+        });
+        let host = support_go_one_time::Host::start(mode);
+        let result = support_go::go_test(
+            directory,
+            "TestParity",
+            &[
+                ("PARITY_ADDRESS", &host.address),
+                ("PARITY_DOCUMENT", path.to_str().unwrap()),
+            ],
+        );
+        let snapshot = host.stop();
+        if let Err(error) =
+            check_one_time_execution(directory, &case, &admitted, &result, &snapshot)
+        {
+            failures.push(format!("{name}: {error}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn malformed_one_time_documents_refuse_before_any_target_callback() {
+    let admitted = support_one_time::admitted(support_one_time::Mode::Healthy);
+    let directory = support_go::package(
+        "one-time-full-admission",
+        admitted.suite(),
+        &[("parity_test.go", &one_time_driver())],
+    );
+    for fixture_dir in ["one-time-response", "one-time-response-identifiers"] {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(fixture_dir);
+        let admission = support_go::go_test(
+            &directory,
+            "TestOneTimeFullAdmission",
+            &[("PARITY_ADMISSION_VECTORS", root.to_str().unwrap())],
+        );
+        assert!(admission.success, "{}", admission.log);
+        for entry in std::fs::read_dir(root).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if entry.file_name().to_string_lossy().starts_with("valid-") {
+                continue;
+            }
+            assert!(AdmittedSuite::from_json(&std::fs::read_to_string(&path).unwrap()).is_err());
+            let host = support_go_one_time::Host::start(support_one_time::Mode::Healthy);
+            let result = support_go::go_test(
+                &directory,
+                "TestParity",
+                &[
+                    ("PARITY_ADDRESS", &host.address),
+                    ("PARITY_DOCUMENT", path.to_str().unwrap()),
+                ],
+            );
+            let snapshot = host.stop();
+            assert!(
+                !result.success,
+                "invalid document executed: {}",
+                path.display()
+            );
+            assert!(result.outcomes.is_empty());
+            assert!(
+                snapshot.trace.is_empty(),
+                "invalid document reached callbacks: {:?}",
+                snapshot.trace
+            );
+        }
+    }
+}
+
+#[test]
+fn go_one_time_observation_bounds_match_the_shared_native_resources() {
+    use support_go_one_time::resources::ResourceMode;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let manifest: Vec<Value> = serde_json::from_str(
+        &std::fs::read_to_string(root.join("one-time-resources.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest.len(), ResourceMode::ALL.len());
+    let path = root.join("one-time-execution/view.json");
+    let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let directory = support_go::package(
+        "one-time-resources",
+        admitted.suite(),
+        &[("parity_test.go", &one_time_driver())],
+    );
+    for (mode, mut expected) in ResourceMode::ALL.into_iter().zip(manifest) {
+        assert_eq!(serde_json::to_value(mode).unwrap(), expected["case"]);
+        assert_eq!(
+            serde_json::to_value(mode.expected()).unwrap(),
+            expected["status"]
+        );
+        let payload = serde_json::to_string(&mode.rows()).unwrap();
+        assert_eq!(json!(payload.len()), expected["canonical_payload_bytes"]);
+        expected["counts"].as_object_mut().unwrap().remove("total");
+        expected["required_code"] = json!(if mode.expected()
+            == ess_conformance::report::Status::Passed
+        {
+            "ESS-CF-DISCLOSURE"
+        } else {
+            "ESS-CF-TARGET"
+        });
+        let host = support_go_one_time::Host::resource(mode);
+        let result = support_go::go_test(
+            &directory,
+            "TestParity",
+            &[
+                ("PARITY_ADDRESS", &host.address),
+                ("PARITY_DOCUMENT", path.to_str().unwrap()),
+            ],
+        );
+        let snapshot = host.stop();
+        check_one_time_execution(&directory, &expected, &admitted, &result, &snapshot).unwrap();
+    }
+}
+
+#[test]
+fn go_keeps_each_marked_field_exemption_at_its_exact_position() {
+    use support_go_one_time::field_controls::{self, FieldMode};
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-fields");
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())
+            .unwrap();
+    let path = root.join("suite.json");
+    let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(admitted.suite(), field_controls::admitted().suite());
+    assert_eq!(manifest.len(), FieldMode::ALL.len());
+    let directory = support_go::package(
+        "one-time-fields",
+        admitted.suite(),
+        &[("parity_test.go", &one_time_driver())],
+    );
+    for (mode, mut expected) in FieldMode::ALL.into_iter().zip(manifest) {
+        assert_eq!(serde_json::to_value(mode).unwrap(), expected["case"]);
+        assert_eq!(
+            serde_json::to_value(mode.expected()).unwrap(),
+            expected["status"]
+        );
+        expected["counts"].as_object_mut().unwrap().remove("total");
+        let host = support_go_one_time::Host::fields(mode);
+        let result = support_go::go_test(
+            &directory,
+            "TestParity",
+            &[
+                ("PARITY_ADDRESS", &host.address),
+                ("PARITY_DOCUMENT", path.to_str().unwrap()),
+            ],
+        );
+        let snapshot = host.stop();
+        check_one_time_execution(&directory, &expected, &admitted, &result, &snapshot).unwrap();
+    }
+}
+
+#[test]
+fn go_executes_the_original_suite35_coverage_input_and_parent_inventory() {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-coverage");
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())
+            .unwrap();
+    let path = root.join("input.json");
+    let input = AdmittedInput::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        input
+            .selected()
+            .suite()
+            .provenance
+            .suite_version
+            .to_string(),
+        "ess-conformance/35"
+    );
+    let directory = support_go::package_input(
+        "one-time-coverage",
+        &input,
+        &[("parity_test.go", &one_time_driver())],
+    );
+    for mut expected in manifest {
+        let mode: support_one_time::Mode =
+            serde_json::from_value(expected["case"].clone()).unwrap();
+        expected["counts"].as_object_mut().unwrap().remove("total");
+        let host = support_go_one_time::Host::start(mode);
+        let result = support_go::go_test(
+            &directory,
+            "TestParity",
+            &[
+                ("PARITY_ADDRESS", &host.address),
+                ("PARITY_DOCUMENT", path.to_str().unwrap()),
+            ],
+        );
+        let snapshot = host.stop();
+        check_one_time_execution(&directory, &expected, input.selected(), &result, &snapshot)
+            .unwrap();
+    }
+}
+
+#[test]
+fn go_repeated_event_windows_keep_one_operation_start_and_final_scans() {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-windows");
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest.len(), 2);
+    let path = root.join("suite.json");
+    let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let directory = support_go::package(
+        "one-time-windows",
+        admitted.suite(),
+        &[("parity_test.go", &one_time_driver())],
+    );
+    for mut expected in manifest {
+        let mode: support_one_time::Mode =
+            serde_json::from_value(expected["case"].clone()).unwrap();
+        expected["counts"].as_object_mut().unwrap().remove("total");
+        let host = support_go_one_time::Host::start(mode);
+        let result = support_go::go_test(
+            &directory,
+            "TestParity",
+            &[
+                ("PARITY_ADDRESS", &host.address),
+                ("PARITY_DOCUMENT", path.to_str().unwrap()),
+            ],
+        );
+        let snapshot = host.stop();
+        check_one_time_execution(&directory, &expected, &admitted, &result, &snapshot).unwrap();
+    }
+}
+
+fn check_one_time_execution(
+    directory: &std::path::Path,
+    case: &Value,
+    admitted: &AdmittedSuite,
+    result: &support_go::GoRun,
+    snapshot: &support_go_one_time::Snapshot,
+) -> Result<(), String> {
+    let name = case["case"].as_str().unwrap();
+    let expected = case["status"].as_str().unwrap();
+    let raw = std::fs::read_to_string(directory.join("report.json"))
+        .map_err(|error| format!("no report: {error}; {}", result.log))?;
+    for value in snapshot
+        .plaintexts
+        .iter()
+        .map(String::as_str)
+        .chain([support_one_time::FIRST])
+    {
+        if !value.is_empty() && (raw.contains(value) || result.log.contains(value)) {
+            return Err("observed plaintext escaped in report or diagnostic".into());
+        }
+    }
+    let report: Value = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+    ess_conformance::counts::CountReport::from_json(&raw, admitted)
+        .map_err(|error| format!("invalid execution binding: {error}"))?;
+    if report["producer_profile"] != "go-scenario-status/2" {
+        return Err("one-time execution used a legacy status profile".into());
+    }
+    let mut counts = report["counts"].clone();
+    if counts.as_object_mut().unwrap().remove("total") != Some(json!(1)) || counts != case["counts"]
+    {
+        return Err(format!(
+            "wrong counts: {counts}, expected {}",
+            case["counts"]
+        ));
+    }
+    let id = admitted
+        .suite()
+        .scenarios
+        .keys()
+        .next()
+        .unwrap()
+        .to_string();
+    if result.outcomes.len() != 1 || result.outcomes.get(&id).map(String::as_str) != Some(expected)
+    {
+        return Err(format!(
+            "wrong exact outcomes: {:?}; {}",
+            result.outcomes, result.log
+        ));
+    }
+    if serde_json::to_value(&snapshot.trace).unwrap() != case["callback_trace"] {
+        return Err(format!(
+            "wrong callback trace: {:?}, expected {}",
+            snapshot.trace, case["callback_trace"]
+        ));
+    }
+    if !result.log.contains(case["required_code"].as_str().unwrap())
+        || result.success != (expected == "passed")
+    {
+        return Err(format!("wrong diagnostic code or exit: {}", result.log));
+    }
+    eprintln!(
+        "one-time case={name} suite={} id={id} counts={counts} trace={:?} calls={} exit_success={}",
+        admitted.suite().provenance.suite_version,
+        snapshot.trace,
+        snapshot.calls,
+        result.success
+    );
+    Ok(())
 }
 
 fn compare_report(
@@ -904,6 +1304,31 @@ fn go_prepares_the_frozen_disclosure_identity_grammar_and_bindings() {
         eprintln!("{}", result.log);
         assert!(result.success, "{}", result.log);
     }
+}
+
+#[test]
+fn old_coverage_refusals_keep_native_disclosure_identity_grammar() {
+    let input = direct(true);
+    let mut document: Value = serde_json::from_str(input.selected().original_json()).unwrap();
+    document["coverage"]["refused"] = json!([{
+        "origin":"generated", "scenario":"library.api.Read/disclosure/returned/value/origin/as/anonymous",
+        "subject":{"kind":"command","name":"library.api.Read"}, "source":null,
+        "code":"ESS-SYNTH-001", "message":"candidate could not be arranged",
+        "effect":"candidate_not_emitted", "retained":null,"scope":"in_scope","needs":[]
+    }]);
+    document["coverage"]["counts"]["refused"] = json!(1);
+    let raw = document.to_string();
+    AdmittedSuite::from_json(&raw).expect("refused IDs carry grammar, not executable vocabulary");
+    let directory = input.package("old-refusal-identity", &[("parity_test.go", &driver())]);
+    let vectors = directory.join("vectors");
+    std::fs::create_dir_all(&vectors).unwrap();
+    std::fs::write(vectors.join("valid-old-refused-disclosure-id.json"), raw).unwrap();
+    let result = support_go::go_test(
+        &directory,
+        "TestOneTimeFullAdmission",
+        &[("PARITY_ADMISSION_VECTORS", vectors.to_str().unwrap())],
+    );
+    assert!(result.success, "{}", result.log);
 }
 
 #[test]

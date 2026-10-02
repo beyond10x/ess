@@ -87,9 +87,9 @@ func suiteReference(value any) error {
 
 // newestSuiteMajor is the highest `ess-conformance/N` this runtime reads.
 //
-// The generator refuses the direct-response majors (/28 and /29) before it writes a package, so
-// every major the synthesizer writes for a Go package is at most this one.
-const newestSuiteMajor = 33
+// Keep this aligned with the emitter's capability boundary. New majors require admission,
+// execution and report parity; changing this number alone supplies none of those semantics.
+const newestSuiteMajor = 35
 
 // suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
 // Each major implies every major below it, so one number answers every "does this suite carry X"
@@ -1266,6 +1266,9 @@ type CommandResult struct {
 	Outcome string
 	// Error is the declared error it refused with, empty when it did not.
 	Error string
+	// ErrorPayload is the actual declared-error payload, including undeclared keys. Empty
+	// preserves legacy adapters; callers using unkeyed CommandResult literals must add it.
+	ErrorPayload map[string]Node
 	// Consistency is a token a later read_your_writes query may demand, empty when the target has
 	// no such token.
 	Consistency string
@@ -1545,6 +1548,7 @@ type Suite struct {
 	original   string
 	document   map[string]any
 	coverage   map[string]any
+	oneTime    map[string]*oneTimeTrace
 }
 
 // Provenance says which specification this suite came from.
@@ -1732,7 +1736,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /33 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /35 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1763,7 +1767,11 @@ func Run(t *testing.T, newTarget func() Target) {
 	// target that cannot name itself fails the run here, with that message, rather than leaving a
 	// report that says nothing about what was tested.
 	identity, err := newTarget().Identity()
-	if err != nil {
+	if len(suite.oneTime) != 0 {
+		// Identity is observed before captures exist. Successful metadata can contain a
+		// value disclosed later too, so protected reports never carry target strings.
+		identity = Identity{Name: "one-time-protected-target", Version: ""}
+	} else if err != nil {
 		t.Fatalf("the target does not name itself: %v", err)
 	}
 
@@ -1791,6 +1799,7 @@ func Run(t *testing.T, newTarget func() Target) {
 				status:              statusPassed,
 				continuedAssertions: suiteMajor(suite.Provenance.SuiteVersion) >= 28,
 				preciseStatuses:     config.version == "2",
+				disclosure:          newOneTimeCaptures(suite.oneTime[id]),
 			}
 			returned := false
 			defer func() {
@@ -1961,7 +1970,7 @@ type subjectSnapshot struct {
 
 type run struct {
 	fixtures    map[string]Node
-	t           *testing.T
+	t           oneTimeLogger
 	target      Target
 	harness     *Harness
 	correlation string
@@ -2008,13 +2017,21 @@ type run struct {
 	status string
 	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
 	// A Goexit or panic inside teardown cannot complete the earlier step's verdict.
-	callbacksComplete   bool
-	continuedAssertions bool
-	preciseStatuses     bool
-	directResponseMode  bool
+	callbacksComplete     bool
+	continuedAssertions   bool
+	preciseStatuses       bool
+	directResponseMode    bool
+	disclosure            *oneTimeCaptures
+	disclosureStopped     bool
+	disclosureUnavailable bool
 }
 
 func (r *run) execute(id string, scenario Scenario) {
+	if r.disclosure != nil {
+		r.t = protectedOneTimeLogger{r.t}
+		r.directResponseMode = true
+		defer r.disclosureComplete()
+	}
 	for _, step := range scenario.Steps {
 		if step.DirectResponse != nil {
 			r.directResponseMode = true
@@ -2055,8 +2072,9 @@ func (r *run) execute(id string, scenario Scenario) {
 			r.t.Errorf("end: %v", err)
 		}
 	}()
+	defer r.disclosureFinal()
 
-	if scenario.Purpose != "" {
+	if r.disclosure == nil && scenario.Purpose != "" {
 		r.t.Log(scenario.Purpose)
 	}
 	for index, step := range scenario.Steps {
@@ -2070,7 +2088,10 @@ func (r *run) execute(id string, scenario Scenario) {
 				return
 			}
 		}
-		if !r.step(index, step) {
+		if !r.step(index, step) || r.disclosureStopped {
+			return
+		}
+		if !r.disclosureWindows(index, scenario) {
 			return
 		}
 	}
@@ -2089,6 +2110,9 @@ func (r *run) logCount(index int, event, when string) (int, bool) {
 	}
 	if err != nil {
 		return 0, r.targetFailure(index, err, "target callback")
+	}
+	if !r.disclosureObserved(observed) {
+		return 0, false
 	}
 	count := 0
 	for _, seen := range observed {
@@ -2250,6 +2274,9 @@ func (r *run) executeCommand(index int, step Step) bool {
 
 // remember records an occurrence for the whole scenario, without recording one twice.
 func (r *run) remember(event ObservedEvent) {
+	if !r.disclosureMaps([]map[string]Node{event.Payload}) {
+		return
+	}
 	for _, held := range r.seen {
 		if held.Event == event.Event && equal(held.Payload, event.Payload) {
 			return
@@ -2266,7 +2293,7 @@ func (r *run) expectOutcome(index int, step Step) bool {
 		return r.fail(index, "`%s` was refused as not granted to `%s`, and the specification says `%s`", step.Outcome.Command, orNone(r.last.NotGrantedActor), step.Outcome.Outcome)
 	}
 	if r.last.Outcome != step.Outcome.Outcome {
-		return r.fail(
+		return r.assertionFailure(
 			index,
 			"`%s` took `%s`, and the specification says `%s`",
 			step.Outcome.Command, orNone(r.last.Outcome), step.Outcome.Outcome,
@@ -2374,6 +2401,9 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 			return r.targetFailure(index, err, "target callback")
 		}
 		// Remembered for the whole scenario, where an `observed` value reads it, and nowhere else:
+		if !r.disclosureObserved(events) {
+			return false
+		}
 		// `expect_event`, `expect_no_event` and `capture_instance` read only the last command's
 		// direct events, as ess_conformance::runner reads them.
 		for _, event := range events {
@@ -2460,6 +2490,9 @@ func (r *run) queryView(index int, step Step) bool {
 		return r.targetFailure(index, err, "target callback")
 	}
 	r.lastView = result
+	if !r.disclosureRows(result.Rows) {
+		return false
+	}
 	r.queried = step.View
 	return true
 }
@@ -2539,6 +2572,9 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 				return r.targetFailure(index, err, "target callback")
 			}
 			r.lastView = result
+			if !r.disclosureRows(result.Rows) {
+				return false
+			}
 			r.queried = step.View
 		}
 		held, reason, undecidable := r.decide(index, step)
@@ -2993,6 +3029,9 @@ func (r *run) fail(index int, format string, args ...any) bool {
 // needs a new field in a new format, which is `story:a-report-says-why-a-scenario-was-skipped`.
 func (r *run) skip(format string, args ...any) {
 	r.recordStatus(statusUnsupported)
+	if r.disclosure != nil {
+		format, args = "ESS-CF-TARGET: protected unavailable observation", nil
+	}
 	if r.preciseStatuses {
 		r.t.Fatalf(format, args...)
 		return
@@ -3888,6 +3927,10 @@ func name(value any, kebab bool) error {
 	return nil
 }
 func scenarioIdentity(id string) error {
+	if parts := strings.Split(id, "/"); len(parts) > 1 && parts[1] == "disclosure" {
+		_, err := oneTimeCellIdentity(id)
+		return err
+	}
 	p := strings.Split(id, "/")
 	valid := false
 	q := func(s string) bool { return qualifiedName.MatchString(s) }
@@ -3948,7 +3991,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
-		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /33")
+		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /35")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3969,9 +4012,6 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		return suite, fmt.Errorf("scenarios must be an object")
 	}
 	for id, scenario := range scenarios {
-		if err := scenarioIdentity(id); err != nil {
-			return suite, err
-		}
 		// An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17.
 		if strings.HasSuffix(id, "/aggregate") && major < 16 {
 			return suite, fmt.Errorf("aggregate views require suite/16 or /17")
@@ -3984,8 +4024,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
 			return suite, fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
 		}
-		s, err := closed(scenario, "purpose steps source", "")
+		s, err := closed(scenario, "purpose steps source", "one_time_response")
 		if err != nil {
+			return suite, err
+		}
+		policy, err := admitOneTimeTrace(s, major)
+		if err != nil {
+			return suite, err
+		}
+		if err := admitOneTimeCell(id, s, policy, major); err != nil {
 			return suite, err
 		}
 		purpose, err := text(s["purpose"])
@@ -4083,6 +4130,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err == nil {
 		err = decodeExactSuiteSteps(&suite)
 	}
+	if err == nil {
+		err = attachOneTimePolicies(&suite)
+	}
 	return suite, err
 }
 func executionSuite(suite Suite) (Suite, error) {
@@ -4104,6 +4154,9 @@ func executionSuite(suite Suite) (Suite, error) {
 		if err := decodeExactSuiteSteps(&suite); err != nil {
 			return Suite{}, err
 		}
+	}
+	if err := attachOneTimePolicies(&suite); err != nil {
+		return Suite{}, err
 	}
 	return suite, nil
 }
@@ -7723,7 +7776,7 @@ func predicateNeedsLosslessReader(value any) bool {
 	return false
 }
 
-// ---- suite/22 through /33 ----------------------------------------------------------------------
+// ---- suite/22 through /35 ----------------------------------------------------------------------
 //
 // The constructs 0.37.0 and 0.38.0 added to the suite vocabulary (beyond10x/ess#188). Each runs
 // the way ess_conformance::runner runs it. A construct a given target cannot answer skips that one
@@ -7835,6 +7888,11 @@ func (r *run) executeCommandWithoutInput(index int, step Step) bool {
 
 // took records what a command did, for the assertions that read it.
 func (r *run) took(index int, command string, result CommandResult) bool {
+	if r.disclosure != nil {
+		if code := r.disclosure.command(command, result); code != "" {
+			return r.disclosureViolation(code)
+		}
+	}
 	if result.Response != nil {
 		var err error
 		if r.directResponseMode {
