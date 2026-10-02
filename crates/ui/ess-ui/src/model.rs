@@ -1589,7 +1589,7 @@ pub struct BoardLayout {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraphEditor {
-    /// The graph.
+    /// The graph: its nodes, and its edges too unless `edges.reads` names their own view.
     pub reads: Reads,
     /// Node kind field and edit overlay.
     pub nodes: Option<GraphNodes>,
@@ -1610,8 +1610,12 @@ pub struct GraphEditor {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraphNodes {
+    /// Field identifying a node, which edge endpoints name (`id` when absent).
+    pub key: Option<String>,
+    /// Field a node is labelled by (`label`, `name`, then the key when absent).
+    pub label: Option<String>,
     /// Field choosing the node kind.
-    pub kind_by: String,
+    pub kind_by: Option<String>,
     /// Edit overlay.
     pub opens: Option<String>,
 }
@@ -1620,6 +1624,8 @@ pub struct GraphNodes {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraphEdges {
+    /// The edges, from a view of their own; absent, they are rows of the graph's `reads`.
+    pub reads: Option<Reads>,
     /// Source field.
     pub from: String,
     /// Target field.

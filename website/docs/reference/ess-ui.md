@@ -1237,15 +1237,15 @@ degrades: {no_free_layout: stack}
 
 Nodes and edges of a model, editable on a canvas.
 
-For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. A renderer without a canvas falls back to a collection of nodes.
+For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. `reads` holds the nodes, and the edges too unless `edges.reads` names a view of their own; `nodes.key` is the field edge endpoints name and `nodes.label` the field a node shows. A renderer without a canvas falls back to a collection of nodes.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `reads` | [Reads](#reads) | yes |   | the graph |
-| `nodes` | record \{ `kind_by`: `name`, `opens`: optional name of an [overlay](#overlay) \} |   |   | node kind field and edit overlay |
-| `edges` | record \{ `from`: `name`, `to`: `name`, `kind_by`: optional `name` \} |   |   | edge endpoints and kind |
+| `reads` | [Reads](#reads) | yes |   | the nodes, and the edges unless they have their own read |
+| `nodes` | record \{ `key`: optional `name`, `label`: optional `name`, `kind_by`: optional `name`, `opens`: optional name of an [overlay](#overlay) \} |   |   | node key (default id), label and kind fields, and edit overlay |
+| `edges` | record \{ `reads`: optional [Reads](#reads), `from`: `name`, `to`: `name`, `kind_by`: optional `name` \} |   |   | edge read, endpoint fields (node keys) and kind |
 | `node_actions` | list of [Action](#action) |   |   | context menu of a node |
 | `edge_actions` | list of [Action](#action) |   |   | context menu of an edge |
 | `toolbar` | list of [Node](#node) |   |   | named nodes above the canvas, left to right |

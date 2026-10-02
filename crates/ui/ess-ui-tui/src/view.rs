@@ -839,6 +839,7 @@ impl App {
                 for mark in self.marks.borrow_mut().iter_mut().skip(before) {
                     mark.line += editor.toolbar.len();
                 }
+                lines.extend(self.graph_edge_lines(editor, &collection, place));
                 lines
             }
             Composite::RichText(text) => {
@@ -1641,6 +1642,52 @@ impl App {
             spans.push(Span::styled(" [stale]", reversed()));
         }
         spans
+    }
+
+    /// The edges of a graph whose edges have a read of their own, one line each, as
+    /// `<from node label> → <to node label>`, after its node collection.
+    fn graph_edge_lines(
+        &self,
+        editor: &ess_ui::GraphEditor,
+        nodes: &ess_ui::Collection,
+        place: &Place<'_>,
+    ) -> Vec<Line<'static>> {
+        let Some(edges) = editor.edges.as_ref() else {
+            return Vec::new();
+        };
+        let Some(reads) = &edges.reads else {
+            return Vec::new();
+        };
+        let Some(result) = self.rows_of(&self.request(reads, &place.ctx)) else {
+            return vec![Line::styled("edges loading…", dim())];
+        };
+        let spec = editor.nodes.as_ref();
+        let key = spec.and_then(|n| n.key.as_deref()).unwrap_or("id");
+        let label = spec.and_then(|n| n.label.as_deref()).unwrap_or("label");
+        let node_rows = nodes
+            .reads
+            .as_ref()
+            .and_then(|reads| self.rows_of(&self.request(reads, &place.ctx)))
+            .map(|result| result.rows.clone())
+            .unwrap_or_default();
+        let end = |row: &Value, field: &str| {
+            let wanted = display(&row[field]);
+            node_rows
+                .iter()
+                .find(|node| display(&node[key]) == wanted)
+                .map(|node| display(&node[label]))
+                .filter(|text| !text.is_empty())
+                .unwrap_or(wanted)
+        };
+        let mut lines = vec![Line::styled("edges", dim())];
+        for row in &result.rows {
+            let mut text = format!("  {} → {}", end(row, &edges.from), end(row, &edges.to));
+            if let Some(kind) = &edges.kind_by {
+                let _ = write!(text, " [{}]", display(&row[kind.as_str()]));
+            }
+            lines.push(Line::from(text));
+        }
+        lines
     }
 
     #[allow(clippy::too_many_lines)] // sparkline, table and metric forms
