@@ -9,7 +9,7 @@
 //
 // Storage is a port: one interface per entity, get, put and delete of a snapshot by
 // identity, and list where a generated query reads every row. ess generates the interface
-// and never a store. Context is the other port: the caller's attributes, every identity and
+// and ephemeral storage for network-reached systems. Context is the other port: the caller's attributes, every identity and
 // value the model says the implementation assigns, and the answer to each `external:` branch.
 // Owed is every behaviour and query the plan still owes, which [Generated] forwards to.
 //
@@ -29,7 +29,7 @@ import (
 
 // VisitStorage is where `gatepass.visit.Visit` is stored — a port the implementor provides.
 //
-// Keyed by the identity `visit_id`. ess generates this interface and never an implementation of it.
+// Keyed by the identity `visit_id`. Network-reached systems also get an optional in-memory implementation.
 type VisitStorage interface {
 	// Get is the instance with this identity and true, or false where none is stored.
 	Get(identity visit.VisitId) (visit.VisitSnapshot, bool)

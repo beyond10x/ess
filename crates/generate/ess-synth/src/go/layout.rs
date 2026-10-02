@@ -37,8 +37,8 @@ pub const MODULE_HOST: &str = "example.invalid";
 /// component package may take: Go spells an import by its last path element, so a domain package
 /// `sort` and the standard `sort` would be one name twice in any file importing both.
 const STANDARD_IMPORTS: &[&str] = &[
-    "base64", "big", "bytes", "embed", "fmt", "http", "io", "json", "net", "reflect", "sort",
-    "strconv", "strings", "sync", "time", "utf8",
+    "base64", "big", "bytes", "embed", "flag", "fmt", "http", "io", "json", "net", "os", "rand",
+    "reflect", "sort", "strconv", "strings", "sync", "time", "utf8",
 ];
 
 /// One Go package of the generated module.

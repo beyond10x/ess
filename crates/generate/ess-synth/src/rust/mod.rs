@@ -31,7 +31,9 @@
 mod accessor;
 mod actor;
 pub(crate) mod behaviour;
+mod context;
 mod entity;
+mod entry;
 pub(crate) mod feasibility;
 pub(crate) mod http;
 mod invariant;
@@ -44,6 +46,7 @@ pub(crate) mod port;
 mod reading;
 mod selection;
 pub(crate) mod single;
+mod store;
 pub(crate) mod system;
 pub(crate) mod wire;
 
@@ -167,13 +170,17 @@ fn emitted(
     }
     artifacts.extend(obligation_module);
     artifacts.extend(actor::module(ir, &layout, provenance));
+    let mut runtime = behaviour::Uses::default();
     artifacts.extend(behaviour::module(
         ir,
         plan,
         &layout,
         provenance,
         &mut covered,
+        &mut runtime,
     ));
+    artifacts.extend(store::module(ir, plan, &layout, &runtime));
+    artifacts.extend(entry::binaries(ir, plan, &layout, &runtime));
     let domains: Vec<QualifiedName> = layout.modules().map(|(domain, _)| domain.clone()).collect();
     for domain in &domains {
         artifacts.push(domain_module(
@@ -300,6 +307,9 @@ fn crate_manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artif
         ir.version(),
         ir.version().get()
     );
+    if !http::served(ir).is_empty() && behaviour::used(ir) {
+        out.push_str("\n[features]\nmemory = [\"dep:uuid\", \"dep:time\"]\n\n[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nuuid = { version = \"=1.23.3\", features = [\"v4\"], optional = true }\ntime = { version = \"=0.3.41\", features = [\"formatting\"], optional = true }\n");
+    }
     Artifact::new(format!("crates/{}/Cargo.toml", layout.package()), out)
 }
 
@@ -351,9 +361,15 @@ fn lib_module(
     }
     if behaviour::used(ir) {
         modules.push("behaviour".to_owned());
+        if !http::served(ir).is_empty() {
+            modules.push("memory".to_owned());
+        }
     }
     modules.sort();
     for module in modules {
+        if module == "memory" {
+            out.push_str("#[cfg(all(feature = \"memory\", not(target_arch = \"wasm32\")))]\n");
+        }
         let _ = writeln!(out, "pub mod {module};");
     }
     Artifact::new(format!("crates/{}/src/lib.rs", layout.package()), out)

@@ -11,7 +11,7 @@
 // there is nothing for one to check: this module has exactly one dependency and it is a directory.
 module example.invalid/gatepass-realization
 
-go 1.21
+go 1.24
 
 require example.invalid/gatepass v0.0.0
 

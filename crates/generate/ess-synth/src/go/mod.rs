@@ -39,7 +39,9 @@
 
 mod accessor;
 mod behaviour;
+mod context;
 mod entity;
+mod entry;
 mod http;
 mod invariant;
 mod items;
@@ -51,6 +53,7 @@ mod port;
 mod reading;
 mod refusal;
 mod selection;
+mod store;
 mod system;
 
 use std::cell::RefCell;
@@ -288,6 +291,7 @@ impl<'a> Emit<'a> {
 /// If what was emitted is not exactly what the plan marks generated *minus* what this target
 /// refused — a defect in this crate, and the one lie neither the plan nor the target report may be
 /// allowed to tell.
+#[allow(clippy::too_many_lines)] // The target's single ordered emission pass.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
     crate::failure::input_absent(ir, plan, crate::Target::Go)?;
@@ -308,7 +312,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     let mut stubbed: BTreeSet<Capability> = BTreeSet::new();
 
     let mut artifacts = vec![
-        module_file(&layout, provenance),
+        module_file(&layout, provenance, !http::served(ir, &refusals).is_empty()),
         primitives_package(&layout, provenance, json::used(ir)),
     ];
     if let Some(helper) = reading::helper(ir, &layout, provenance) {
@@ -341,13 +345,21 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
             &mut stubbed,
         ));
     }
+    let mut runtime = behaviour::Uses::default();
     artifacts.extend(behaviour::package(
         ir,
         &layout,
         &seams,
         provenance,
         &mut covered,
+        &mut runtime,
     ));
+    if !http::served(ir, &refusals).is_empty() {
+        artifacts.extend(store::package(ir, &layout, provenance, &runtime));
+        artifacts.extend(entry::binaries(
+            ir, plan, &layout, &refusals, &runtime, &seams,
+        ));
+    }
     for component in ir.components().values() {
         artifacts.extend(port::component_package(
             ir,
@@ -649,9 +661,10 @@ fn grant_table_weakening(ir: &EssIr) -> Option<TargetWeakening> {
 }
 
 /// The module file at the generated root.
-fn module_file(layout: &Layout, provenance: &Provenance) -> Artifact {
+fn module_file(layout: &Layout, provenance: &Provenance, served: bool) -> Artifact {
     let mut out = provenance.commented_for("//", REGENERATE);
-    let _ = write!(out, "\nmodule {}\n\ngo {GO_VERSION}\n", layout.module());
+    let version = if served { "1.24" } else { GO_VERSION };
+    let _ = write!(out, "\nmodule {}\n\ngo {version}\n", layout.module());
     Artifact::new("go.mod", out)
 }
 

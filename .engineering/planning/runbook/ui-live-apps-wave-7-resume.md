@@ -6,7 +6,7 @@ status: draft
 title: Resume ui-live-apps wave 7 after the Claude session limit
 relations:
 - informed_by: story:served-store-and-entry
-revision: 2
+revision: 5
 ---
 ## Continuation
 
@@ -50,3 +50,15 @@ Verified predecessor story states on main: ui-react-live-binding, ui-tui-live-bi
 Retained predecessor trees: ess-w4-ui-tui-app (ignored target), ess-w5-go-behaviour (ignored target), ess-w6-view-params (ignored target and examples/billing-web/Cargo.lock). No source changes are reported in them; ignored contents need preservation or verified disposal before cleanup. The active unit still uses the separate ess-w5-go cache, which must not be removed.
 
 Documentation preparation: npm --prefix website ci exited 0 using Node 22.23.2 and npm 12.0.2, with website/.npmrc allow-git=root unchanged. website/node_modules occupies 549 MiB and is this continuation's disposable build dependency. Logs are under the assigned w7s-codex scratch. Disk settled near 21 GiB free; the 10 GiB floor remains.
+
+## Fixture ownership recovery
+
+Direct current-source regeneration refused the legacy unowned generated fixture directories. No ownership metadata was fabricated and no fixture was deleted to bypass admission. The coordinator created managed tree ess-w7-base-generator at exact base b4da64e38b770fe74103409fe1fef7ae6ca214f4 to build that generator and produce settled references for the official generate output adopt command. Its path is ~/.local/state/worktree/trees/b10x/ess/ess-w7-base-generator; lease codex-resume-459ab620-base; separate disposable target ~/.cache/uilab-todo/w7s-codex/base-generator-target; logs base-generator-build.*. Debug information and incremental compilation are disabled, with two build jobs. The tree has no source edits and is retired after reference generation/adoption. Current candidate outputs are separately retained under w7s-codex/regenerated/{rust,go}/{billing,gatepass}. The 10 GiB free-disk floor applies to both builds.
+
+Documentation validation completed: task site-build exit 0; WASM browser boundary 21 claims and deterministic lab run 28 steps over 64 rows; Docusaurus build successful. Full raw log is w7s-codex/site-build.log. Ignored disposable outputs are website/node_modules, website/build, website/.docusaurus, website/static/lab/billing_web_realized.wasm, examples/billing-web/target and its generated Cargo.lock. Billing regeneration must be inspected before this check is relied on; executable changes require revalidation.
+
+Fixture ownership recovery completed: exact-base CLI build exit 0; all four base reference generations, official adoptions and owned candidate regenerations exit 0. Each generated source tree matched the independent candidate scratch tree byte-for-byte (excluding private ownership state). Private task-created .ess-output directories were moved intact to w7s-codex/retained-fixture-ownership/{rust,go}-{billing,gatepass}, preserving the repository's source-only fixture contract. No fixture files were manually replaced. The base generator process and its child compilers had stopped; cargo clean removed its separate 1.2 GiB build cache. Exact managed GC dry-run marked ess-w7-base-generator eligible and exact-id apply removed it after releasing the coordinator lease. Base references and logs remain in assigned scratch for review. Billing Rust regeneration changes comments only, so the completed site-build remains valid.
+
+## Validator compatibility
+
+CI Planning store workflow pinned AEP 0.62.0, while the installed and used writer is 0.68.0. Read-only inspection of PR #387 run 37006394257 demonstrated the exact incompatibility: 0.62 rejects transitions[*].executor as unknown, making otherwise-present artifacts disappear from its graph. Raw log retained as w7s-codex/pr387-planning-readonly.log. This unit must record a completion transition with the current writer, so .github/workflows/planning.yml now pins the verified published AEP 0.68.0 release (2026-09-30). No installed tool upgrade was applied. This is coordinator-owned validation compatibility, not takeover of PR #387. Local AEP validation uses the same version. task ci-lint exited 0; the only subsequent workflow edit is that validator version pin.

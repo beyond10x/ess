@@ -988,6 +988,9 @@ fn surface_file(
 
     dispatch(&mut body, ir, &routes, &rows, &system, &exported);
 
+    emit.import("os");
+    body = static_serve(&body, &exported, &system, grants);
+
     for route in &routes {
         match route.serves {
             Served::Command(handle) => {
@@ -1030,6 +1033,23 @@ fn surface_file(
         ),
         &body,
     )
+}
+
+/// Keep the original authentication seam while adding an opt-in, contained static fallback.
+fn static_serve(body: &str, exported: &str, system: &str, grants: bool) -> String {
+    let parameter = if grants {
+        ", authenticate func(*http.Request) *Caller"
+    } else {
+        ""
+    };
+    let argument = if grants { ", authenticate" } else { "" };
+    let original =
+        format!("func Serve{exported}(system *{system}, address string{parameter}) error {{");
+    let replacement = format!("{original}\n\treturn Serve{exported}WithStatic(system, address{argument}, \"\")\n}}\n\n// Serve{exported}WithStatic serves files only for paths outside the API route table.\nfunc Serve{exported}WithStatic(system *{system}, address string{parameter}, directory string) error {{\n\tvar files http.Handler\n\tif directory != \"\" {{\n\t\troot, err := os.OpenRoot(directory)\n\t\tif err != nil {{\n\t\t\treturn err\n\t\t}}\n\t\tdefer root.Close()\n\t\tfiles = http.FileServerFS(root.FS())\n\t}}");
+    let body = body.replacen(&original, &replacement, 1);
+    let dispatch_line = format!("answer := dispatch{exported}(system,");
+    let fallback = format!("if files != nil {{\n\t\t\tapi := false\n\t\t\tfor _, route := range Routes{exported} {{\n\t\t\t\tif route[1] == request.URL.Path {{\n\t\t\t\t\tapi = true\n\t\t\t\t\tbreak\n\t\t\t\t}}\n\t\t\t}}\n\t\t\tif !api {{\n\t\t\t\tfiles.ServeHTTP(writer, request)\n\t\t\t\treturn\n\t\t\t}}\n\t\t}}\n\t\t{dispatch_line}");
+    body.replacen(&dispatch_line, &fallback, 1)
 }
 
 /// The route match: one arm per path, and one arm for everything else.

@@ -15,6 +15,10 @@ relations:
 - depends_on: story:served-view-params
 scope:
 - confidence: cited
+  path: .github/workflows/planning.yml
+- confidence: cited
+  path: Cargo.lock
+- confidence: cited
   path: crates/generate/ess-synth/src/go/behaviour.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/go/context.rs
@@ -40,21 +44,29 @@ scope:
   path: crates/generate/ess-synth/src/rust/layout.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/mod.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/ess-synth/src/rust/single.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/store.rs
 - confidence: cited
+  path: crates/generate/ess-synth/tests/declared_behaviour.rs
+- confidence: cited
   path: crates/generate/ess-synth/tests/fixtures/served-notes
 - confidence: cited
+  path: crates/generate/ess-synth/tests/json_primitive.rs
+- confidence: cited
   path: crates/generate/ess-synth/tests/served_entry.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/single_crate_layout.rs
+- confidence: cited
+  path: examples/gatepass-go-realization/go.mod
 - confidence: cited
   path: generated
 - confidence: cited
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 12
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
@@ -163,3 +175,7 @@ story:related-guard-behaviour: both regenerate `generated/` and edit `synthesize
 `CHANGELOG.md` is a merge-time edit (epic).
 
 Recovery scope check (2026-10-02): the implementor read generated/rust/gatepass/crates/gatepass-types/src/primitives.rs:33 and found Uuid is a local string newtype; the earlier Decisions phrase "the uuid crate the generated types use" was an incorrect assumption. The entry runtime may use the uuid crate to mint v4 values and construct the existing wrapper, preserving its public representation. crates/generate/ess-synth/src/go/behaviour.rs:166 and rust/behaviour.rs:177 already collect the actual Context and storage uses privately. Reuse that metadata for store/context generation; both files are now cited typed scope. rust/single.rs is inferred scope until the generated entry's single-crate relayout is verified. No behavioral semantics are delegated to a new traversal. Concurrent PR #387 edits the emitters and generated fixtures; reconcile its eventual merge before publishing this unit.
+
+Runtime dependency correction (2026-10-02): go vet on the generated consumer found os.OpenRoot requires Go 1.24 while the generated go.mod still declared 1.21. Network-server output now declares Go 1.24 so rooted static-file access retains filesystem confinement; output without a served network component stays on Go 1.21. The coordinator accepted this bounded dependency change; documentation and the merge-time changelog name it. Local and CI Go toolchains exceed the minimum. acceptance-2.log preserves the failing stdversion check, and the corrected run must pass go vet as well as build and runtime scenarios.
+
+Confirmed scope corrections (2026-10-02): rust/single.rs is now cited, exercised by the generated single-crate server. Existing tests declared_behaviour.rs, json_primitive.rs and single_crate_layout.rs replace obsolete exact no-store/empty-dependency assertions with positive optional-memory and dependency-boundary checks. Root Cargo.lock records the added optional runtime dependencies; time is pinned to 0.3.41 for generated Rust 1.85 compatibility, requiring its transitive lock entries to move from the prior root time 0.3.55 selection. examples/gatepass-go-realization/go.mod raises its minimum from 1.21 to 1.24 to consume the newly generated served module; offline tidy changes only that directive. Go storage is emitted in types/behaviour/memory.go, using the existing behavior package rather than adding a distinct store package; ports remain unchanged. The coordinator accepted these concrete scope corrections. No plan or capability classification changes in the regenerated fixtures.

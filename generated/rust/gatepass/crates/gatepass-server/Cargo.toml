@@ -11,5 +11,6 @@ edition = "2021"
 
 [dependencies]
 gatepass-system = { path = "../gatepass-system" }
-gatepass-types = { path = "../gatepass-types" }
+gatepass-types = { path = "../gatepass-types", features = ["memory"] }
 pass-service = { path = "../pass-service" }
+clap = { version = "4", features = ["derive"] }

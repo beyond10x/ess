@@ -304,6 +304,7 @@ fn module_idents(ir: &EssIr, single_crate: bool) -> BTreeMap<QualifiedName, Stri
             || (json && module == "json")
             || (actor && module == super::actor::MODULE)
             || (behaviour && module == "behaviour")
+            || (behaviour && !super::http::served(ir).is_empty() && module == "memory")
             || (single_crate && super::single::ROOT_MODULES.contains(&module.as_str()))
         {
             module.push_str("_domain");

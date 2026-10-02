@@ -130,11 +130,10 @@ fn the_plan_generates_every_fully_declared_command_and_the_view_query() {
     }
     assert!(
         !behaviour.contents.contains("impl Unimplemented")
-            && !synthesis
-                .artifacts
-                .values()
-                .any(|artifact| artifact.contents.contains("impl TicketStorage for")),
-        "ess generates the storage trait, never a store"
+            && synthesis.artifacts["crates/desk-types/src/memory.rs"]
+                .contents
+                .contains("impl crate::behaviour::TicketStorage for TicketStorage"),
+        "the served fixture keeps its storage trait and gets an optional in-memory implementation"
     );
     let domain = &synthesis.artifacts["crates/desk-types/src/ticket.rs"].contents;
     assert!(
@@ -620,13 +619,9 @@ fn the_go_target_generates_every_behaviour_the_plan_marks_generated() {
         "nothing is owed, so nothing is forwarded:\n{behaviour}"
     );
     assert!(
-        !synthesis.artifacts.values().any(|artifact| artifact
-            .contents
-            .contains("TicketStorage = ")
-            || artifact
-                .contents
-                .contains(") Put(snapshot ticket.TicketSnapshot) {")),
-        "ess generates the storage interface, never a store"
+        !behaviour.contains("TicketStorage = ")
+            && synthesis.artifacts["types/behaviour/memory.go"].contents.contains("func (s *InMemoryTicketStorage) Put(snapshot ticket.TicketSnapshot) {"),
+        "the served fixture keeps its storage interface and gets an optional in-memory implementation"
     );
     let domain = &synthesis.artifacts["types/ticket/ticket.go"].contents;
     assert!(

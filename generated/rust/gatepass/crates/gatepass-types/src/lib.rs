@@ -19,6 +19,8 @@
 
 pub mod actor;
 pub mod behaviour;
+#[cfg(all(feature = "memory", not(target_arch = "wasm32")))]
+pub mod memory;
 pub mod obligation;
 pub mod primitives;
 pub mod visit;

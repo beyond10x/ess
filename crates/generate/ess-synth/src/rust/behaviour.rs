@@ -5,7 +5,7 @@
 //! behaviour bundle take this one unchanged, and an implementor who wants a different behaviour
 //! still writes their own bundle. Everything the specification leaves to the implementor is a
 //! port `P` supplies: one storage trait per entity (get, put and delete a snapshot by identity —
-//! ess generates the trait and never a store) and one context trait (the caller's attributes, the
+//! served systems also get an optional in-memory implementation) and one context trait (the caller's attributes, the
 //! identities and values the model says the implementation assigns, and the answer to an
 //! `external:` branch, forced or decided). Every behaviour and query the plan still owes is
 //! forwarded to `P`, so `Generated<P>` is a complete bundle.
@@ -62,6 +62,7 @@ pub(super) fn module(
     layout: &Layout,
     provenance: &Provenance,
     covered: &mut BTreeSet<Capability>,
+    runtime: &mut Uses,
 ) -> Option<Artifact> {
     if !used(ir) {
         return None;
@@ -126,6 +127,7 @@ pub(super) fn module(
     out.push_str(GENERATED);
     out.push_str(&impls);
     helpers(&mut out, &uses);
+    *runtime = uses;
     Some(Artifact::new(
         format!("crates/{}/src/behaviour.rs", layout.package()),
         out,
@@ -138,7 +140,7 @@ const HEADER: &str = "
 //! lists as generated, written against ports the implementor supplies.
 //!
 //! Storage is a port: one trait per entity, get, put and delete of a snapshot by identity. ess
-//! generates the trait and never a store. `Context` is the other port: the caller's attributes,
+//! also generates ephemeral storage for network-reached systems. `Context` is the other port: the caller's attributes,
 //! every identity and value the model says the implementation assigns, and the answer to each
 //! `external:` branch. [`Generated`] implements every generated `…Behavior` trait over those ports
 //! and forwards every behaviour and query the plan still owes to them, so it is a complete bundle
@@ -174,17 +176,17 @@ impl<P> Generated<P> {
 
 /// What the generated impls asked of the ports and of the helpers, collected while rendering.
 #[derive(Default)]
-struct Uses {
+pub(super) struct Uses {
     /// Entities whose storage trait some behaviour or query uses.
-    storages: BTreeSet<QualifiedName>,
+    pub(super) storages: BTreeSet<QualifiedName>,
     /// Entities whose rows some generated query lists: their storage trait carries `list`.
-    listed: BTreeSet<QualifiedName>,
+    pub(super) listed: BTreeSet<QualifiedName>,
     /// Caller attribute methods: name → returned type.
-    callers: BTreeMap<String, (String, String)>,
+    pub(super) callers: BTreeMap<String, (String, String)>,
     /// Assigned-value methods: name → returned type.
-    generates: BTreeMap<String, (String, String)>,
+    pub(super) generates: BTreeMap<String, (String, String)>,
     /// Some behaviour asks the context about an `external:` branch.
-    external: bool,
+    pub(super) external: bool,
     /// Helper functions used, by name.
     helpers: BTreeSet<&'static str>,
 }
@@ -199,7 +201,7 @@ struct Bounds {
 /// The storage trait name of each entity: `<Type>Storage`, or — where two entities of different
 /// domains share a type name — every one spelled from its full name, so adding an entity never
 /// renames another's trait.
-fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
+pub(super) fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
     let short: BTreeMap<QualifiedName, String> = ir
         .entities()
         .keys()
@@ -249,7 +251,7 @@ fn storage_trait(
     let _ = writeln!(
         out,
         "\n/// Where `{entity}` is stored — a port the implementor provides.\n///\n/// Keyed by the \
-         identity `{}`. ess generates this trait and never an implementation of it.\npub trait {} \
+         identity `{}`. Network-reached systems also get an optional in-memory implementation.\npub trait {} \
          {{\n    /// The instance with this identity, or `None` where none is stored.\n    \
          fn get(&self, identity: &{identity}) -> Option<{snapshot}>;\n\n    /// Stores this \
          instance under its identity, replacing what was held.\n    fn put(&mut self, snapshot: \

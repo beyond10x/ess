@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 )
 
 // The contract this surface answers and the prose the same model produced, byte for byte as
@@ -82,6 +83,20 @@ func announcePassService(address *net.TCPAddr) {
 // command checks that caller's grant before it runs. Nothing here reads an actor from the
 // request itself.
 func ServePassService(system *system.System, address string, authenticate func(*http.Request) *Caller) error {
+	return ServePassServiceWithStatic(system, address, authenticate, "")
+}
+
+// ServePassServiceWithStatic serves files only for paths outside the API route table.
+func ServePassServiceWithStatic(system *system.System, address string, authenticate func(*http.Request) *Caller, directory string) error {
+	var files http.Handler
+	if directory != "" {
+		root, err := os.OpenRoot(directory)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		files = http.FileServerFS(root.FS())
+	}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -92,6 +107,19 @@ func ServePassService(system *system.System, address string, authenticate func(*
 	}
 	announcePassService(bound)
 	return http.Serve(listener, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if files != nil {
+			api := false
+			for _, route := range RoutesPassService {
+				if route[1] == request.URL.Path {
+					api = true
+					break
+				}
+			}
+			if !api {
+				files.ServeHTTP(writer, request)
+				return
+			}
+		}
 		answer := dispatchPassService(system, authenticate(request), request)
 		answer.write(writer)
 	}))

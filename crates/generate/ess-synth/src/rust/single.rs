@@ -148,6 +148,18 @@ pub(crate) fn relayout(
             .get(package)
             .unwrap_or_else(|| panic!("`{package}` has no place in the single crate"));
         let contents = header(&artifact.contents);
+        if let Some(binary) = file.strip_prefix("bin/") {
+            let crate_name = Layout::crate_ident(&ir.system().segments().join("-"));
+            let binary_paths = paths
+                .iter()
+                .map(|(from, to)| (from.clone(), to.replacen("crate", &crate_name, 1)))
+                .collect();
+            out.push(Artifact::new(
+                format!("src/bin/{binary}"),
+                rewrite(&contents, &crate_name, &binary_paths),
+            ));
+            continue;
+        }
         let (path, own) = match destination {
             Destination::Types if file == "lib.rs" => {
                 root = Some(contents);
@@ -244,9 +256,16 @@ fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
         ir.version().get()
     );
     if server {
-        out.push_str("\n[features]\nserver = []\n");
+        out.push_str("\n[features]\nserver = [\"dep:clap\", \"memory\"]\nmemory = [\"dep:uuid\", \"dep:time\"]\n");
     }
-    out.push_str("\n[dependencies]\n\n[workspace]\n");
+    out.push_str("\n[dependencies]\n");
+    if server {
+        out.push_str("clap = { version = \"4\", features = [\"derive\"], optional = true }\n\n[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nuuid = { version = \"=1.23.3\", features = [\"v4\"], optional = true }\ntime = { version = \"=0.3.41\", features = [\"formatting\"], optional = true }\n");
+        for component in super::http::served(ir) {
+            let _ = write!(out, "\n[[bin]]\nname = \"{}-server\"\npath = \"src/bin/{}-server.rs\"\nrequired-features = [\"server\"]\n", component.name, component.name);
+        }
+    }
+    out.push_str("\n[workspace]\n");
     Artifact::new("Cargo.toml", out)
 }
 

@@ -262,7 +262,22 @@ fn issue_224_rust_names_json_value_at_every_position() {
     assert!(json.contains("pub enum Value {"), "{json}");
     assert!(json.contains("pub fn push_value("), "{json}");
     let manifest = artifact(&synthesis, "crates/demo-types/Cargo.toml");
-    assert!(manifest.ends_with("[dependencies]\n"), "{manifest}");
+    assert!(
+        manifest.contains("[dependencies]\n\n[features]\n"),
+        "semantic types keep an empty unconditional dependency table: {manifest}"
+    );
+    assert!(
+        manifest.contains("memory = [\"dep:uuid\", \"dep:time\"]")
+            && manifest
+                .lines()
+                .filter(|line| line.starts_with("uuid =") || line.starts_with("time ="))
+                .all(|line| line.contains("optional = true")),
+        "the native demo runtime is explicitly optional: {manifest}"
+    );
+    assert!(
+        !manifest.contains("serde"),
+        "Json remains the generated value type: {manifest}"
+    );
 
     let module = artifact(&synthesis, "crates/demo-types/src/docs.rs");
     for position in [

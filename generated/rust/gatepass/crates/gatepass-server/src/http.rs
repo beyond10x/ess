@@ -376,3 +376,52 @@ pub fn reason(status: u16) -> &'static str {
         _ => "Unknown",
     }
 }
+
+/// Writes a static file beneath the configured canonical root, including binary assets.
+///
+/// # Errors
+/// Returns an error only when the client connection cannot be written.
+pub fn write_static(stream: &mut std::net::TcpStream, root: &std::path::Path, request: &Request) -> std::io::Result<()> {
+    use std::io::Write as _;
+    if request.method != "GET" && request.method != "HEAD" {
+        return write(stream, &method_not_allowed("GET, HEAD"));
+    }
+    let mut decoded = Vec::new();
+    let mut bytes = request.path.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte == b'%' {
+            let pair = bytes.next().zip(bytes.next()).and_then(|(a, b)| {
+                let a = char::from(a).to_digit(16)?;
+                let b = char::from(b).to_digit(16)?;
+                Some((a * 16 + b) as u8)
+            });
+            let Some(byte) = pair else { return write(stream, &Response::refusal(400, "invalid path encoding")); };
+            decoded.push(byte);
+        } else { decoded.push(byte); }
+    }
+    let Ok(path) = String::from_utf8(decoded) else { return write(stream, &Response::refusal(400, "invalid path encoding")); };
+    if path.contains('\\') || path.contains('\0') || path.split('/').any(|part| part == "..") {
+        return write(stream, &Response::refusal(403, "path is outside the static directory"));
+    }
+    let mut file = root.join(path.trim_start_matches('/'));
+    if file.is_dir() { file.push("index.html"); }
+    let file = match file.canonicalize() {
+        Ok(file) if file.starts_with(root) && file.is_file() => file,
+        _ => return write(stream, &Response::refusal(404, "static file not found")),
+    };
+    let Ok(body) = std::fs::read(&file) else { return write(stream, &Response::refusal(404, "static file not found")); };
+    let content_type = match file.extension().and_then(|extension| extension.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json") => "application/json",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("wasm") => "application/wasm",
+        _ => "application/octet-stream",
+    };
+    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())?;
+    if request.method != "HEAD" { stream.write_all(&body)?; }
+    Ok(())
+}

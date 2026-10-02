@@ -87,6 +87,21 @@ pub fn serve<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServ
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    serve_with_static(system, address, authenticate, None)
+}
+
+/// Serves the surface with an optional static directory for paths outside its route table.
+///
+/// # Errors
+/// Returns a listener or static-directory error.
+pub fn serve_with_static<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<gatepass_types::actor::Caller>, static_directory: Option<&std::path::Path>) -> std::io::Result<()>
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
+    let static_directory = static_directory.map(std::fs::canonicalize).transpose()?;
+    if static_directory.as_ref().is_some_and(|path| !path.is_dir()) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "static root is not a directory"));
+    }
     let listener = std::net::TcpListener::bind(address)?;
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
@@ -102,7 +117,15 @@ where
         let _ = connection.set_write_timeout(Some(http::WRITE_TIMEOUT));
         let mut reader = std::io::BufReader::new(connection);
         let (answer, refused) = match http::read(&mut reader) {
-            Ok(request) => (dispatch(system, authenticate(&request).as_ref(), &request), false),
+            Ok(request) => {
+                if let Some(root) = &static_directory {
+                    if !ROUTES.iter().any(|(_, path)| *path == request.path) {
+                        let _ = http::write_static(reader.get_mut(), root, &request);
+                        continue;
+                    }
+                }
+                (dispatch(system, authenticate(&request).as_ref(), &request), false)
+            },
             Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();

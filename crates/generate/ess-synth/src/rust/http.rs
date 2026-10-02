@@ -164,9 +164,10 @@ pub(super) fn server_crate(
         Artifact::new(
             format!("crates/{package}/src/http.rs"),
             format!(
-                "{}{}{}",
+                "{}{}{}{}",
                 provenance.commented_for("//", REGENERATE),
                 HTTP,
+                STATIC,
                 if serves_params(ir) { QUERY } else { "" }
             ),
         ),
@@ -263,8 +264,17 @@ fn manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     dependencies.push(layout.system_package().to_owned());
     dependencies.sort();
     for dependency in dependencies {
-        let _ = writeln!(out, "{dependency} = {{ path = \"../{dependency}\" }}");
+        let feature = if dependency == layout.package() && super::behaviour::used(ir) {
+            ", features = [\"memory\"]"
+        } else {
+            ""
+        };
+        let _ = writeln!(
+            out,
+            "{dependency} = {{ path = \"../{dependency}\"{feature} }}"
+        );
     }
+    out.push_str("clap = { version = \"4\", features = [\"derive\"] }\n");
     Artifact::new(format!("crates/{package}/Cargo.toml"), out)
 }
 
@@ -638,6 +648,9 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
         }
     );
     out.push_str(&where_clause(server));
+    let authentication = if grants { ", authenticate" } else { "" };
+    let _ = write!(out, "{{\n    serve_with_static(system, address{authentication}, None)\n}}\n\n/// Serves the surface with an optional static directory for paths outside its route table.\n///\n/// # Errors\n/// Returns a listener or static-directory error.\npub fn serve_with_static{angled}(system: &mut {system_crate}::System{angled}, address: &str{}, static_directory: Option<&std::path::Path>) -> std::io::Result<()>\n", if grants { format!(", authenticate: impl Fn(&http::Request) -> Option<{}::actor::Caller>", server.types) } else { String::new() });
+    out.push_str(&where_clause(server));
     out.push_str(&if grants {
         SERVE_BODY.replace(
             "dispatch(system, &request)",
@@ -693,7 +706,11 @@ fn where_clause(server: &Server<'_>) -> String {
 }
 
 /// The listener's body, which no specification changes.
-const SERVE_BODY: &str = r"{
+const SERVE_BODY: &str = r#"{
+    let static_directory = static_directory.map(std::fs::canonicalize).transpose()?;
+    if static_directory.as_ref().is_some_and(|path| !path.is_dir()) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "static root is not a directory"));
+    }
     let listener = std::net::TcpListener::bind(address)?;
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
@@ -709,7 +726,15 @@ const SERVE_BODY: &str = r"{
         let _ = connection.set_write_timeout(Some(http::WRITE_TIMEOUT));
         let mut reader = std::io::BufReader::new(connection);
         let (answer, refused) = match http::read(&mut reader) {
-            Ok(request) => (dispatch(system, &request), false),
+            Ok(request) => {
+                if let Some(root) = &static_directory {
+                    if !ROUTES.iter().any(|(_, path)| *path == request.path) {
+                        let _ = http::write_static(reader.get_mut(), root, &request);
+                        continue;
+                    }
+                }
+                (dispatch(system, &request), false)
+            },
             Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();
@@ -719,7 +744,7 @@ const SERVE_BODY: &str = r"{
     }
     Ok(())
 }
-";
+"#;
 
 /// The generic parameter list `System` carries, as this crate has to spell it.
 fn generic_list(server: &Server<'_>) -> String {
@@ -1744,6 +1769,57 @@ fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
 
 /// What the `http` module adds where a served view declares parameters: the query string read as
 /// the object those parameters' decoder reads (story:served-view-params).
+const STATIC: &str = r#"
+/// Writes a static file beneath the configured canonical root, including binary assets.
+///
+/// # Errors
+/// Returns an error only when the client connection cannot be written.
+pub fn write_static(stream: &mut std::net::TcpStream, root: &std::path::Path, request: &Request) -> std::io::Result<()> {
+    use std::io::Write as _;
+    if request.method != "GET" && request.method != "HEAD" {
+        return write(stream, &method_not_allowed("GET, HEAD"));
+    }
+    let mut decoded = Vec::new();
+    let mut bytes = request.path.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte == b'%' {
+            let pair = bytes.next().zip(bytes.next()).and_then(|(a, b)| {
+                let a = char::from(a).to_digit(16)?;
+                let b = char::from(b).to_digit(16)?;
+                Some((a * 16 + b) as u8)
+            });
+            let Some(byte) = pair else { return write(stream, &Response::refusal(400, "invalid path encoding")); };
+            decoded.push(byte);
+        } else { decoded.push(byte); }
+    }
+    let Ok(path) = String::from_utf8(decoded) else { return write(stream, &Response::refusal(400, "invalid path encoding")); };
+    if path.contains('\\') || path.contains('\0') || path.split('/').any(|part| part == "..") {
+        return write(stream, &Response::refusal(403, "path is outside the static directory"));
+    }
+    let mut file = root.join(path.trim_start_matches('/'));
+    if file.is_dir() { file.push("index.html"); }
+    let file = match file.canonicalize() {
+        Ok(file) if file.starts_with(root) && file.is_file() => file,
+        _ => return write(stream, &Response::refusal(404, "static file not found")),
+    };
+    let Ok(body) = std::fs::read(&file) else { return write(stream, &Response::refusal(404, "static file not found")); };
+    let content_type = match file.extension().and_then(|extension| extension.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json") => "application/json",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("wasm") => "application/wasm",
+        _ => "application/octet-stream",
+    };
+    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())?;
+    if request.method != "HEAD" { stream.write_all(&body)?; }
+    Ok(())
+}
+"#;
+
 const QUERY: &str = r#"
 /// How one declared parameter's query value is written as JSON before its decoder reads it.
 ///

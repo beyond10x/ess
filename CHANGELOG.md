@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Synthesized Go and Rust network components get an in-memory store and a server executable
+  with `--listen`, `--callers` and `--static`. Caller resolution defaults to none;
+  `actor-header` explicitly selects a demonstration caller. Static files share the API origin.
+  Stores list rows in identity order and lose them on restart; the context supplies random v4
+  UUIDs and clock timestamps. Unresolved behaviour or context requirements are named startup
+  refusals. Existing storage, context and transport ports remain available to realizations
+  (beyond10x/ess#318). Generated Go network servers require Go 1.24 for rooted static-file access;
+  output without a network server retains its Go 1.21 minimum.
+
 ### Changed
 
 - **Breaking for a realization of a view with parameters, and for hand-written server code**:
@@ -25,8 +36,7 @@
   (`BrokenInvariant()`). `<ctx>.Unimplemented` now covers owed seams only, so code that passed it
   as the whole behaviour bundle no longer compiles; pass `behaviour.New(ports)` and implement the
   owed seams. Package names `behaviour` and `invariant` are reserved, and a domain named like a
-  standard-library package a generated file imports gets a renamed package. A store and a server
-  entry point are not generated yet (beyond10x/ess#314).
+  standard-library package a generated file imports gets a renamed package (beyond10x/ess#314).
 - The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
 
 ## [0.51.0] — 2026-10-01

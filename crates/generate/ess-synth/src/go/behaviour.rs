@@ -7,7 +7,7 @@
 //! signature of the seam its bounded context already declares, so every component port that takes
 //! a behaviour bundle takes a `*Generated` unchanged. Everything the specification leaves to the
 //! implementor is a port in `behaviour.Ports`: one storage interface per entity (get, put, delete
-//! and, where a query reads it, list — ess generates the interface and never a store), one context
+//! and, where a query reads it, list — served systems also get an in-memory implementation), one context
 //! interface (the caller's attributes, the values the model says the implementation assigns, and
 //! the answer to an `external:` branch), and `Owed`, every behaviour and query the plan still owes,
 //! which `Generated` forwards to.
@@ -163,17 +163,17 @@ impl Seams {
 
 /// What the generated methods asked of the ports and of the helpers, collected while rendering.
 #[derive(Default)]
-struct Uses {
+pub(super) struct Uses {
     /// Entities whose storage interface some method uses.
-    storages: BTreeSet<QualifiedName>,
+    pub(super) storages: BTreeSet<QualifiedName>,
     /// Entities whose rows some generated query lists: their storage interface carries `List`.
-    listed: BTreeSet<QualifiedName>,
+    pub(super) listed: BTreeSet<QualifiedName>,
     /// Caller attribute methods: name → (returned type, attribute).
-    callers: BTreeMap<String, (String, String)>,
+    pub(super) callers: BTreeMap<String, (String, String)>,
     /// Assigned-value methods: name → (returned type, the type as the model spells it).
-    generates: BTreeMap<String, (String, String)>,
+    pub(super) generates: BTreeMap<String, (String, String)>,
     /// Some method asks the context about an `external:` branch.
-    external: bool,
+    pub(super) external: bool,
     /// Helpers used, by name.
     helpers: BTreeSet<&'static str>,
 }
@@ -185,6 +185,7 @@ pub(super) fn package(
     seams: &Seams,
     provenance: &Provenance,
     covered: &mut BTreeSet<Capability>,
+    runtime: &mut Uses,
 ) -> Option<Artifact> {
     if seams.generated.is_empty() {
         return None;
@@ -258,7 +259,7 @@ pub(super) fn package(
                generated, written against\n// ports the implementor supplies.\n//\n// Storage is \
                a port: one interface per entity, get, put and delete of a snapshot by\n// \
                identity, and list where a generated query reads every row. ess generates the \
-               interface\n// and never a store. Context is the other port: the caller's \
+               interface\n// and ephemeral storage for network-reached systems. Context is the other port: the caller's \
                attributes, every identity and\n// value the model says the implementation \
                assigns, and the answer to each `external:` branch.\n// Owed is every behaviour \
                and query the plan still owes, which [Generated] forwards to.\n//\n// A refusal \
@@ -267,6 +268,7 @@ pub(super) fn package(
                declared\n// branch answers it), or — as `entity invariant` — the declared outcome \
                would leave an\n// entity breaking an invariant.\n//\n// Every port a generated method reads must be set: a nil field of [Ports] is a nil-pointer\n// panic at the first call that reads it.\n";
     let body = rename_helpers(&body, &reserved);
+    *runtime = uses;
     Some(emit.file(provenance, doc, &body))
 }
 
@@ -382,7 +384,7 @@ fn rename_helpers(body: &str, reserved: &BTreeSet<String>) -> String {
 
 /// The storage interface name of each entity: `<Type>Storage`, or — where two entities of
 /// different domains share a type name — every one spelled from its full name.
-fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
+pub(super) fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
     let short: BTreeMap<QualifiedName, String> = ir
         .entities()
         .keys()
@@ -430,8 +432,7 @@ fn storage_interface(
     let _ = writeln!(
         out,
         "\n// {} is where `{entity}` is stored — a port the implementor provides.\n//\n// Keyed by \
-         the identity `{}`. ess generates this interface and never an implementation of \
-         it.\ntype {} interface {{\n\t// Get is the instance with this identity and true, or \
+         the identity `{}`. Network-reached systems also get an optional in-memory implementation.\ntype {} interface {{\n\t// Get is the instance with this identity and true, or \
          false where none is stored.\n\tGet(identity {identity}) ({snapshot}, bool)\n\n\t// Put \
          stores this instance under its identity, replacing what was held.\n\tPut(snapshot \
          {snapshot})\n\n\t// Delete removes the instance with this identity.\n\tDelete(identity \

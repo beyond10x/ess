@@ -7,7 +7,7 @@
 //! lists as generated, written against ports the implementor supplies.
 //!
 //! Storage is a port: one trait per entity, get, put and delete of a snapshot by identity. ess
-//! generates the trait and never a store. `Context` is the other port: the caller's attributes,
+//! also generates ephemeral storage for network-reached systems. `Context` is the other port: the caller's attributes,
 //! every identity and value the model says the implementation assigns, and the answer to each
 //! `external:` branch. [`Generated`] implements every generated `…Behavior` trait over those ports
 //! and forwards every behaviour and query the plan still owes to them, so it is a complete bundle
@@ -22,7 +22,7 @@ use crate::obligation::UnmetObligation;
 
 /// Where `gatepass.visit.Visit` is stored — a port the implementor provides.
 ///
-/// Keyed by the identity `visit_id`. ess generates this trait and never an implementation of it.
+/// Keyed by the identity `visit_id`. Network-reached systems also get an optional in-memory implementation.
 pub trait VisitStorage {
     /// The instance with this identity, or `None` where none is stored.
     fn get(&self, identity: &crate::visit::VisitId) -> Option<crate::visit::VisitSnapshot>;

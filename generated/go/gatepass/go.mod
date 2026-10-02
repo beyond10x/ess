@@ -5,4 +5,4 @@
 
 module example.invalid/gatepass
 
-go 1.21
+go 1.24

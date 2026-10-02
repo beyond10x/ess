@@ -1,0 +1,67 @@
+format: ess/18
+system: notes
+version: v1
+domain: notes.notes
+entities:
+  - name: notes.notes.Note
+    identity: {name: id, type: Uuid}
+    fields:
+      - {name: title, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Archived]
+      terminal: [Archived]
+      transitions:
+        - {name: archive, from: [Open], to: Archived}
+actors:
+  - name: notes.notes.Writer
+    may: [notes.notes.AddNote, notes.notes.ArchiveNote]
+events:
+  - name: notes.notes.NoteAdded
+    fields:
+      - {name: id, type: Uuid}
+      - {name: title, type: String}
+  - name: notes.notes.NoteArchived
+    fields:
+      - {name: id, type: Uuid}
+errors:
+  - name: notes.notes.NotFound
+  - name: notes.notes.AlreadyArchived
+commands:
+  - name: notes.notes.AddNote
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: added
+        creates: notes.notes.Note
+        instance: id
+        sets: {title: input.title}
+        emits: [notes.notes.NoteAdded]
+        payload:
+          notes.notes.NoteAdded: {id: {generated: true}, title: input.title}
+  - name: notes.notes.ArchiveNote
+    input:
+      - {name: id, type: Uuid}
+    outcomes:
+      - name: archived
+        moves: notes.notes.Note.archive
+        instance: id
+        emits: [notes.notes.NoteArchived]
+        payload:
+          notes.notes.NoteArchived: {id: input.id}
+      - {name: missing, unknown_instance: true, error: notes.notes.NotFound}
+      - {name: archived-already, wrong_state: true, error: notes.notes.AlreadyArchived}
+views:
+  - name: notes.notes.Notes
+    source: notes.notes.Note
+    consistency: eventual
+    fields:
+      - {name: id, type: Uuid}
+      - {name: title, type: String}
+      - {name: state, type: notes.notes.Note.State}
+components:
+  - component: notes
+    owns: {domains: [notes.notes]}
+    accepts: {commands: [notes.notes.AddNote, notes.notes.ArchiveNote]}
+    publishes: {events: [notes.notes.NoteAdded, notes.notes.NoteArchived]}
+    reached_by: network

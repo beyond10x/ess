@@ -10,3 +10,10 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
+
+[features]
+memory = ["dep:uuid", "dep:time"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+uuid = { version = "=1.23.3", features = ["v4"], optional = true }
+time = { version = "=0.3.41", features = ["formatting"], optional = true }

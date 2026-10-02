@@ -10,8 +10,10 @@ Synthesis follows one rule: **what the specification fully determines is generat
 determine is an obligation.** It generates the part of an implementation that was never yours to
 write — types, typestate lifecycles, component ports, one transport, and the behaviour of every
 command and the query of every view whose outcome the specification spells out — and hands back
-everything it cannot determine as a **named obligation**. Storage is not generated: a generated
-behaviour reads and writes through ports you provide.
+everything it cannot determine as a **named obligation**. A generated behaviour reads and writes
+through storage ports. For a component reached by network, the Rust and Go targets also provide an
+in-memory implementation and a server executable; a durable store remains an implementation of
+those same ports.
 
 ```shell-session
 $ ess generate synthesize --path examples/billing --target rust --out out/
@@ -64,14 +66,15 @@ would have closed. What is lost is the compiler closing the question, not the pr
 
 | Target | Emits | Dependencies |
 |---|---|---|
-| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, generated behaviours and view queries over storage and context ports, one HTTP transport | none |
-| `go` | a Go module with the same system | standard library only |
+| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, generated behaviours and view queries over storage and context ports, one HTTP transport; network-reached systems also get an in-memory runtime and server executables | server executables use `clap`; the in-memory context uses `uuid` and `time` |
+| `go` | a Go module with the same system | standard library only; Go 1.24 or newer for a network server, Go 1.21 otherwise |
 | `web` | a WebAssembly bridge over the Rust target plus a page built at load time from an emitted `catalog.json` — no model is typed into its HTML | no build tool, no `wasm-bindgen` |
 | `clap` | a command tree, shell completion support and a dispatcher with `Handler` seams for components declaring command-line reach and a CLI grammar | `clap` and `clap_complete` 4 |
 
 Clap emits grammar rather than another type layer. Its handlers receive `clap::ArgMatches`; the
 unimplemented handler names the obligation and refuses. The generated dependencies support parsing
-and completion, so the Rust target's zero-dependency boundary does not apply to Clap. See the
+and completion. The Rust target's generated types and behaviour ports remain usable without a
+server executable; its network runtime adds the dependencies listed above. See the
 [Clap emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/clap/mod.rs)
 and [handler/completion tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs).
 
@@ -199,8 +202,9 @@ Everything the specification leaves open is a port, and the ports are yours to p
 | storage, one trait per entity a generated behaviour or query reads or writes (`InvoiceStorage`) | `get`, `put` and `delete` of a snapshot by identity, and `list` of every stored snapshot |
 | `Context`, where a generated behaviour asks it anything | the caller's attributes, every identity and value the specification says the implementation assigns (a created identity, `{generated: true}`), and whether each `external:` branch is taken |
 
-ESS generates each port's trait and never an implementation of it: where instances live stays
-yours. `P` also supplies every behaviour and query the plan still owes, and `Generated<P>` forwards
+ESS generates each port's trait. For network-reached systems it also emits an ephemeral in-memory
+implementation; implementations needing durable storage supply their own. `P` also supplies every
+behaviour and query the plan still owes, and `Generated<P>` forwards
 them, so it is a complete bundle. To replace one generated behaviour, write a bundle that
 implements that trait and delegates the rest to a `Generated`. `PLAN.md` names the same ports in
 its **Ports — yours to provide** section.
@@ -238,6 +242,49 @@ for every component port. Each package's `Unimplemented` stub covers only what t
 seams of one module whose Go method names coincide cannot both be methods of one type: none of
 them is, each generated one keeps its seam owed, and `TARGET.md` names the weakening. See the
 [generated behaviour tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/declared_behaviour.rs).
+
+## Run a generated server
+
+A component with `reached_by: network` gets a server executable as well as its existing transport
+library. Go puts it in `cmd/<component>-server/main.go`; Rust puts it in the server crate's
+`src/bin/<component>-server.rs`. The executable assembles the generated system with an in-memory
+store. Rows are listed in identity order, and restarting the process loses them.
+
+For example, the repository's
+[served-notes fixture](https://github.com/beyond10x/ess/tree/main/crates/generate/ess-synth/tests/fixtures/served-notes)
+has a fully determined `notes` component:
+
+```shell-session
+$ ess generate synthesize --path crates/generate/ess-synth/tests/fixtures/served-notes --target go --out out/notes-go
+$ go -C out/notes-go run ./cmd/notes-server --listen 127.0.0.1:8080 --callers actor-header
+```
+
+The Rust equivalent is:
+
+```shell-session
+$ ess generate synthesize --path crates/generate/ess-synth/tests/fixtures/served-notes --target rust --out out/notes-rust
+$ cargo run --manifest-path out/notes-rust/Cargo.toml --bin notes-server -- --listen 127.0.0.1:8080 --callers actor-header
+```
+
+Both executables accept the same options:
+
+| Option | Behaviour |
+|---|---|
+| `--listen <address>` | Defaults to `127.0.0.1:8080`. Port `0` requests an available port; the startup record reports the bound address. |
+| `--callers none` | The default: resolves no caller, so commands protected by actor grants answer `403 not granted`. |
+| `--callers actor-header` | Demonstration mode: resolves `Authorization: Actor <name>` against the model's actors. The startup message identifies this mode. |
+| `--static <directory>` | Serves files alongside the API, including `index.html` at `/`, so a generated web app can call the server from the same origin. |
+
+`actor-header` lets the caller name an actor; it does not authenticate that person. A realization
+that authenticates callers supplies its own function to the existing transport API. Static files
+do not change the API's routes, grants or refusals, and the server adds no CORS policy.
+
+The generated context supplies random v4 UUIDs and timestamps from the system clock. It cannot
+provide caller attributes, external decisions or arbitrary assigned values. The executable
+refuses to start and names those requirements, or any behaviour or query still owed by the
+assembled system. For example, gatepass still owes `gatepass.visit.RegisterVisit`; its generated
+entry point cannot replace the linked gatepass realization. Storage and context ports remain
+available to implementations that supply these answers.
 
 ## Entity invariants are checked
 
@@ -321,9 +368,11 @@ instead and fails the denied scenarios. See the
 
 * **What the specification cannot determine is not generated.** A decision or an algorithm the
   specification does not spell out is an obligation, and a command with one such outcome is an
-  obligation as a whole. Storage is a port you provide; ESS never generates a store.
+  obligation as a whole. Generated network servers have an ephemeral store; durable storage is a
+  port you provide, and restarting the generated in-memory server loses its rows.
 * **Obligations are plan entries, not records** a task can own and evidence can close. Nothing
   blocks that extension; it is listed on the [roadmap](../status/roadmap.md#not-scheduled) as not
   scheduled.
-* **The demonstration is not a deployment**: plain HTTP, no auth, no TLS, one connection at a time,
-  no `servers` block because the model has no URL.
+* **The generated server is a development runtime**: plain HTTP, ephemeral storage and no TLS.
+  Its optional actor header is a demonstration caller selector. A deployment supplies its own
+  authentication and storage; the model supplies no URL for an OpenAPI `servers` block.
