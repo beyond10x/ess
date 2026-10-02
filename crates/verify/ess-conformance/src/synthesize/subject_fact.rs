@@ -4069,21 +4069,21 @@ pub(super) fn prepare(
         found == Found::BeforeRow,
         &mut arrangement,
     )?;
-    let after = outcome
-        .subject
-        .as_ref()
-        .and_then(|own| own.effect.transition())
-        .map_or_else(
+    // A stored-field guard changes how the row is arranged, not whether deletion leaves one.
+    let after = match outcome.subject.as_ref().map(|own| &own.effect) {
+        Some(ResolvedEffect::Deletes) => None,
+        effect => Some(effect.and_then(ResolvedEffect::transition).map_or_else(
             || arrangement.state.clone(),
             |transition| transition.to.clone(),
-        );
+        )),
+    };
     Ok((
         Setup {
             steps: arrangement.steps,
             instance: Some(arrangement.instance),
             bound,
             source: arrangement.source,
-            after: Some(after),
+            after,
             before: Some(arrangement.state),
             settled: arrangement.settled,
         },
