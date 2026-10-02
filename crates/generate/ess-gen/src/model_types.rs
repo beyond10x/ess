@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
-use ess_compiler::refs::DeclaredTypeRef;
+use ess_compiler::ir::{ResolvedBody, ResolvedEvent, ResolvedType, ResolvedTypeRef};
+use ess_compiler::refs::{DeclaredTypeRef, EventRef};
 use ess_compiler::EssIr;
 use serde_json::Value;
 
@@ -33,9 +33,15 @@ pub struct ModelTypes {
 
 impl ModelTypes {
     /// Close explicitly selected roots through checked type handles and preserve wire mapping.
+    ///
+    /// A root names a declared type or an event (beyond10x/ess#393). An event's payload is selected
+    /// as a struct of its fields under the event's own name and wire names, annotated
+    /// `x-ess-kind: event-payload`, so a producer library holds the exact object a published event
+    /// carries without the model declaring those fields twice.
     pub fn select(ir: &EssIr, roots: &BTreeSet<String>) -> Result<Self, Vec<ModelTypeError>> {
         let mut errors = BTreeSet::new();
-        let mut selected = BTreeMap::new();
+        let mut selected: BTreeMap<_, ResolvedType> = BTreeMap::new();
+        let mut events = BTreeSet::new();
         if roots.is_empty() {
             errors.insert(ModelTypeError {
                 name: String::new(),
@@ -44,23 +50,32 @@ impl ModelTypes {
             });
         }
         for root in roots {
-            let Some(declared) = ir
+            let declared = if let Some(declared) = ir
                 .types()
                 .values()
                 .find(|item| item.name.to_string() == *root)
-            else {
+            {
+                declared.clone()
+            } else if let Some(event) = ir
+                .events()
+                .values()
+                .find(|item| item.name.to_string() == *root)
+            {
+                events.insert(event.name.clone());
+                event_payload(event)
+            } else {
                 errors.insert(ModelTypeError {
                     name: root.clone(),
                     rule: "unknown_root",
-                    detail: "no resolved model type has this qualified name".to_owned(),
+                    detail: "no resolved model type or event has this qualified name".to_owned(),
                 });
                 continue;
             };
-            selected.insert(declared.name.clone(), declared);
             for handle in types::reachable(ir, types::body_leaves(&declared.body)) {
                 let reached = ir.named_type(handle);
-                selected.insert(reached.name.clone(), reached);
+                selected.insert(reached.name.clone(), reached.clone());
             }
+            selected.insert(declared.name.clone(), declared);
         }
         for declared in selected.values() {
             if let ResolvedBody::Struct { fields, .. } = &declared.body {
@@ -84,11 +99,13 @@ impl ModelTypes {
             return Err(errors.into_iter().collect());
         }
         let provenance = ProvenanceMint::new(ir)
-            .of_seeds(
-                selected
-                    .keys()
-                    .map(|name| DeclaredTypeRef::new(name.clone()).into()),
-            )
+            .of_seeds(selected.keys().map(|name| {
+                if events.contains(name) {
+                    EventRef::new(name.clone()).into()
+                } else {
+                    DeclaredTypeRef::new(name.clone()).into()
+                }
+            }))
             .provenance;
         let mut binary64 = BTreeSet::new();
         for item in selected.values() {
@@ -100,11 +117,12 @@ impl ModelTypes {
             definitions: selected
                 .values()
                 .map(|item| {
-                    (
-                        item.name.to_string(),
-                        serde_json::to_value(types::body(item))
-                            .expect("typed schema nodes serialize"),
-                    )
+                    let mut definition = serde_json::to_value(types::body(item))
+                        .expect("typed schema nodes serialize");
+                    if events.contains(&item.name) {
+                        definition["x-ess-kind"] = Value::from("event-payload");
+                    }
+                    (item.name.to_string(), definition)
                 })
                 .collect(),
             newtypes: selected
@@ -153,6 +171,19 @@ impl ModelTypes {
             "{}\n",
             serde_json::to_string_pretty(&document).expect("typed selection serializes")
         )
+    }
+}
+
+/// An event's payload as a struct of its fields, under the event's name and naming.
+fn event_payload(event: &ResolvedEvent) -> ResolvedType {
+    ResolvedType {
+        name: event.name.clone(),
+        body: ResolvedBody::Struct {
+            fields: event.fields.clone(),
+            invariants: Vec::new(),
+        },
+        naming: event.naming.clone(),
+        reading: None,
     }
 }
 
