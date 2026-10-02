@@ -497,6 +497,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-component/1`, `ess-component-ir/1` | [0.13.0][r13] | A deliverable component and its compiled form. |
 | `ess-release-bundle/1` | [0.13.0][r13] | Independently released runtime and chart releases, bundled. |
 | `ess-types-report/3` | [0.19.0][r19] | Structural target accounting for a generated type library. The family's first published version is `/3`. |
+| `ess-types-report/4` | Unreleased | Typed event/type roots for event-bearing standalone data libraries. |
 | `ess-normalization-target/1` | [0.19.0][r19] | A normalization library report. `ess-normalization-target/2` and `ess-normalization-target/3`, introduced in [0.20.0][r20], report format-3 recipes and format-4, 5 and 6 recipes respectively. |
 | `ess-openapi-import/1`, `ess-openapi-service-subset/1` | [0.20.0][r20] | An OpenAPI import envelope, and the fixed import profile it names. |
 | `ess-conformance-input/1`, `ess-conformance-replay/1` | [0.21.0][r21] | A retained original suite and its parents, and a paired browser replay. |
