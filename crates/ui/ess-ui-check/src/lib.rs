@@ -109,10 +109,13 @@ const fn rule(id: &'static str) -> Check {
 pub const CHECKS: &[Check] = &[
     schema_check("names_unique", Severity::Error),
     schema_check("nav_resolves", Severity::Error),
+    schema_check("nav_unique", Severity::Error),
     schema_check("page_reachable", Severity::Error),
     schema_check("opens_resolves", Severity::Error),
     schema_check("same_as_resolves", Severity::Error),
     schema_check("page_refs", Severity::Error),
+    schema_check("shell_refs", Severity::Error),
+    schema_check("page_outlet", Severity::Error),
     schema_check("channel_refs", Severity::Error),
     schema_check("section_refs", Severity::Error),
     schema_check("layout_complete", Severity::Warning),

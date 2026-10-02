@@ -7,7 +7,7 @@ use std::path::Path;
 use ess_ui::{
     Action, ActionConfirm, Body, Composite, Document, FixtureIndex, GuardThen, Header, Located,
     NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, PlacementProfile, Primitive,
-    Profile, Reads, State, StateClass, Store, TabFields, TypeExpr, WidgetUse,
+    Profile, Reads, RegionKind, State, StateClass, Store, TabFields, TypeExpr, WidgetUse,
 };
 use serde_yaml::Value;
 
@@ -25,6 +25,7 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     };
     checker.navigation(sink);
     checker.pages(sink);
+    checker.shells(sink);
     checker.declared_types(sink);
     checker.widget_cycles(&located, sink);
     for node in &located {
@@ -113,12 +114,25 @@ impl Checker<'_> {
                 format!("the home page `{}` names no page", navigation.home),
             );
         }
+        let mut entries: BTreeMap<&str, String> = BTreeMap::new();
         for section in &navigation.sections {
             let here = at.child("sections").child(&section.name).child("pages");
             match &section.pages {
                 NavPages::Fixed(pages) => {
                     for page in pages {
                         resolve(sink, &here, page);
+                        if let Some(first) = entries.get(page.as_str()) {
+                            sink.push(
+                                "nav_unique",
+                                &here,
+                                format!(
+                                    "`{page}` is already listed in navigation section `{first}`; \
+                                     a page is listed once"
+                                ),
+                            );
+                        } else {
+                            entries.insert(page, section.name.clone());
+                        }
                     }
                 }
                 NavPages::Dynamic(entries) => resolve(sink, &here, &entries.page),
@@ -142,6 +156,46 @@ impl Checker<'_> {
     }
 
     // ── page_refs, section_refs, layout_complete, types_structural on params ─────────────────
+
+    // ── shell_refs, page_outlet ──────────────────────────────────────────────────────────────
+
+    fn shells(&self, sink: &mut Sink) {
+        let mut rendered: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for (name, page) in &self.document.pages {
+            if self.document.shells.contains_key(&page.shell) {
+                rendered.entry(page.shell.as_str()).or_default().push(name);
+            } else {
+                sink.push(
+                    "shell_refs",
+                    &NodePath::root().child("pages").child(name).child("shell"),
+                    format!("`{}` names no shell", page.shell),
+                );
+            }
+        }
+        for (shell, pages) in rendered {
+            let regions = &self.document.shells[shell].regions;
+            let outlet = regions.values().any(|region| {
+                matches!(
+                    region.kind,
+                    RegionKind::PageOutlet | RegionKind::Unmapped(_)
+                )
+            });
+            if !outlet {
+                sink.push(
+                    "page_outlet",
+                    &NodePath::root().child("shells").child(shell),
+                    format!(
+                        "no region of shell `{shell}` is a `page_outlet`, so {} cannot show",
+                        pages
+                            .iter()
+                            .map(|page| format!("`{page}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                );
+            }
+        }
+    }
 
     fn pages(&self, sink: &mut Sink) {
         for (name, page) in &self.document.pages {

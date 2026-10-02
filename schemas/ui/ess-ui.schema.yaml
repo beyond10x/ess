@@ -1480,10 +1480,13 @@ checks:
   list:
     - {id: names_unique,        subject: "every node", must: unique_name_among_siblings, severity: error}
     - {id: nav_resolves,        subject: ["navigation.sections[].pages[]", "navigation.hidden[]", navigation.home], must_resolve: {ref: page}, severity: error}
+    - {id: nav_unique,          subject: "navigation.sections[].pages[]", must: list_each_page_once, severity: error}
     - {id: page_reachable,      subject: "pages.*", must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"], severity: error}
     - {id: opens_resolves,      subject: "**.opens", must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays], severity: error}
     - {id: same_as_resolves,    subject: "**.same_as", must_resolve: {ref: overlay}, severity: error}
     - {id: page_refs,           subject: ["**.navigate.to", "**.to.to", "pages.*.switch_to[]", "shells.*.guards[].then.redirect"], must_resolve: {ref: page}, severity: error}
+    - {id: shell_refs,          subject: "pages.*.shell", must_resolve: {ref: shell}, severity: error}
+    - {id: page_outlet,         subject: "shells.* a page renders in", must: have_a_region_of_kind_page_outlet, severity: error}
     - {id: channel_refs,        subject: ["**.live.channel", "**.header.live[]", "channel.<name> inside expr"], must_resolve: {ref: channel}, severity: error}
     - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]"], must_resolve_in: [page.sections], severity: error}
     - {id: layout_complete,     subject: "pages.*.layout", must: place_every_section_once, severity: warning}

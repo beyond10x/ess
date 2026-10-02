@@ -338,6 +338,12 @@ preload:
 guards: [{name: signed_in, when: not actor.signed_in, then: {redirect: auth.sign_in}}]
 ```
 
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `page_outlet` | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
+
 ### Region
 
 One named area of a shell.
@@ -605,6 +611,7 @@ overlays: {edit: {kind: drawer, component: form, same_as: partners.list.edit}}
 |---|---|---|---|
 | `page_reachable` | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
 
 ### PageLayout
 
@@ -2451,10 +2458,13 @@ What a validator checks in a document, and the construct each check applies to. 
 |---|---|---|---|---|
 | `names_unique` | every node | `every node` | `{must: unique_name_among_siblings}` | error |
 | `nav_resolves` | [Navigation](#navigation) | `navigation.sections[].pages[]`, `navigation.hidden[]`, `navigation.home` | `{must_resolve: {ref: page}}` | error |
+| `nav_unique` | every node | `navigation.sections[].pages[]` | `{must: list_each_page_once}` | error |
 | `page_reachable` | [Page](#page) | `pages.*` | `{must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"]}` | error |
 | `opens_resolves` | [Action](#action) | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `same_as_resolves` | [overlay](#overlay) | `**.same_as` | `{must_resolve: {ref: overlay}}` | error |
 | `page_refs` | [Action](#action), [link](#link), [Page](#page), [Guard](#guard) | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `shell_refs` | [Page](#page) | `pages.*.shell` | `{must_resolve: {ref: shell}}` | error |
+| `page_outlet` | [Shell](#shell) | `shells.* a page renders in` | `{must: have_a_region_of_kind_page_outlet}` | error |
 | `channel_refs` | [Live](#live), [header](#header) | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
 | `section_refs` | [header](#header), [Section](#section), [PageLayout](#pagelayout) | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]` | `{must_resolve_in: [page.sections]}` | error |
 | `layout_complete` | [PageLayout](#pagelayout) | `pages.*.layout` | `{must: place_every_section_once}` | warning |

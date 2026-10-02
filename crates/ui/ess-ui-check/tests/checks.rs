@@ -148,6 +148,62 @@ fn nav_resolves() {
 }
 
 #[test]
+fn nav_unique() {
+    let pages = (
+        "pages",
+        "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}]}, \
+          q: {kind: detail_page, title: Q, sections: [{name: summary, reads: t.ById}]}}",
+    );
+    let twice_in_one = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p, q, p]}]}",
+        ),
+    ]);
+    let finding = trips(&twice_in_one, "nav_unique", "navigation/sections/all/pages");
+    assert!(finding.message.contains("`p`"), "{finding:?}");
+    let across_two = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p]}, {name: more, pages: [q, p]}]}",
+        ),
+    ]);
+    trips(&across_two, "nav_unique", "navigation/sections/more/pages");
+    let once = doc(&[
+        pages,
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, pages: [p]}, {name: more, pages: [q]}]}",
+        ),
+    ]);
+    assert!(tripped(&report(&once), "nav_unique").is_empty());
+}
+
+#[test]
+fn shell_refs() {
+    let text = page(
+        "{kind: detail_page, title: P, shell: nowhere, sections: [{name: summary, reads: t.ById}]}",
+    );
+    let finding = trips(&text, "shell_refs", "pages/p/shell");
+    assert!(finding.message.contains("nowhere"), "{finding:?}");
+    assert!(tripped(&report(&doc(&[])), "shell_refs").is_empty());
+}
+
+#[test]
+fn page_outlet() {
+    let text = doc(&[("shells", "{app: {regions: {menu: {kind: navigation}}}}")]);
+    let finding = trips(&text, "page_outlet", "shells/app");
+    assert!(finding.message.contains("`p`"), "{finding:?}");
+    let unused = doc(&[(
+        "shells",
+        "{app: {regions: {main: {kind: page_outlet}}}, bare: {regions: {menu: {kind: navigation}}}}",
+    )]);
+    assert!(tripped(&report(&unused), "page_outlet").is_empty());
+}
+
+#[test]
 fn page_reachable() {
     let text = doc(&[(
         "pages",
