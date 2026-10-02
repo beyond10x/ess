@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-browser-that-answered-http-once-is-still-a-slow-start
 kind: story
-status: active
+status: implemented
 title: A browser that answered HTTP once is still a slow start
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/edge/ess-cli/tests/browser_startup_slow_serve_boundary.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T11:44:58Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T11:44:58Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T13:29:04Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":2}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 # A browser that answered HTTP once is still a slow start
 

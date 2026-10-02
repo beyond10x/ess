@@ -23,7 +23,7 @@ scope:
   path: crates/ui/ess-ui-test/src/playwright.rs
 - confidence: cited
   path: crates/ui/ess-ui-test/tests/playwright.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
@@ -88,3 +88,11 @@ After story:ui-react-plain (shares `main.tsx`, `index.html`, README) and story:u
 Before story:ui-tui-live-binding (both edit `ess-cli/src/ui.rs`). The server under test is the Rust
 gatepass realization, which story:go-generated-behaviour does not touch. `CHANGELOG.md` is a
 merge-time edit (epic).
+
+## Accepted live-binding delivery reconciliation, 2026-10-02
+
+## Accepted live-binding delivery reconciliation, 2026-10-02
+
+Independent source/acceptance audit by scope_boolean found every enumerated acceptance item complete for ui-react-live-binding, ui-tui-live-binding, ui-tui-app-generator and served-view-params. The accepted redesign uses model-derived routes, explicit authorization and base URLs, polling or named no_live refusal, and HTTP-only TUI support. No SSE/WebSocket transport or private adopter replay is claimed.
+
+Retained actual execution: React live_binding11, TUI http_adapter5, generated TUI3, CLI live-run3, served-view-params8 passed with no failed/ignored cases. Their adversarial suites also passed. Full audit identifies each assertion and source/log location in ess-backlog-served-entry-20261002/target/backlog-input/311-acceptance-reconciliation.md; its own new execution count is0. The current PR387 full Gate atad45061626 passed all workspace tests and merged as1ff305685 with the identical tree. These stories are delivered on main; a release after0.51.0 is still pending.

@@ -32,7 +32,7 @@ scope:
   path: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_stored_reference.rs
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:55Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
@@ -64,3 +64,9 @@ As story:related-via-optional-input, plus `ess-conformance/src/synthesize/relate
 ## Sequencing
 
 After story:feature-request-282, #287 and story:related-via-optional-input (shares `related_guard.rs` in `ess-domain` and `ess-conformance`); inside the ess/21 bundle. Takes over acceptance line 1 of story:related-guard-vocabulary-aligns (relation `informed_by`). `CHANGELOG.md` is a merge-time edit (epic).
+
+## Source version allocation, 2026-10-02
+
+The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
+
+This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.

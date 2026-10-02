@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-385
 kind: story
-status: active
+status: implemented
 title: Generated behavior guidance states the canonical guard precedence
 refs:
 - provider: github
@@ -21,10 +21,11 @@ scope:
   path: crates/generate/ess-synth/tests/declared_behaviour.rs
 - confidence: cited
   path: crates/specify/ess-service-contract/tests/service_contract.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:37:08Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:37:08Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-02T13:29:00Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 

@@ -19,7 +19,7 @@ scope:
   path: crates/edge/ess-cli/tests/ui_run_live.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:51Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":4}}}
@@ -71,3 +71,11 @@ Accept, redesigned.
 After story:ui-binding-contract and story:ui-react-live-binding (the edge orders the shared
 `ess-cli/src/ui.rs`). The Go server runs against the TUI in uilab's example, after
 story:served-store-and-entry. `CHANGELOG.md` is a merge-time edit (epic).
+
+## Accepted live-binding delivery reconciliation, 2026-10-02
+
+## Accepted live-binding delivery reconciliation, 2026-10-02
+
+Independent source/acceptance audit by scope_boolean found every enumerated acceptance item complete for ui-react-live-binding, ui-tui-live-binding, ui-tui-app-generator and served-view-params. The accepted redesign uses model-derived routes, explicit authorization and base URLs, polling or named no_live refusal, and HTTP-only TUI support. No SSE/WebSocket transport or private adopter replay is claimed.
+
+Retained actual execution: React live_binding11, TUI http_adapter5, generated TUI3, CLI live-run3, served-view-params8 passed with no failed/ignored cases. Their adversarial suites also passed. Full audit identifies each assertion and source/log location in ess-backlog-served-entry-20261002/target/backlog-input/311-acceptance-reconciliation.md; its own new execution count is0. The current PR387 full Gate atad45061626 passed all workspace tests and merged as1ff305685 with the identical tree. These stories are delivered on main; a release after0.51.0 is still pending.
