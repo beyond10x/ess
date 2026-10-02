@@ -32,7 +32,7 @@ scope:
   path: generated
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":6}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":6}}}
@@ -110,3 +110,9 @@ Last in the epic: after story:go-generated-behaviour (Go ports), story:served-st
 `declared_behaviour.rs` and `plan.rs`) and story:related-via-stored-reference (the via it
 generates). `determined.rs` was changed by #310: base on 0.51.0. `CHANGELOG.md` is a merge-time
 edit (epic).
+
+## Source version allocation, 2026-10-02
+
+The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
+
+This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.

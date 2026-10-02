@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T13:29:02Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-288",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR387 exact head ad45061626; all four test shards and Gate passed, merged as1ff305685 with identical tree",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/37009794833"
+  }
+}

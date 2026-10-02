@@ -29,7 +29,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_optional.rs
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -80,3 +80,9 @@ Cited: `ess-domain/src/command/related_guard.rs` (parsing, type check :501, form
 Base 0.50.0+. #287 touches `synthesize/related_guard.rs` and `related.rs`: the synthesis half waits for it. #310, #306: none. Within ess/21: story 1 before #285 or in its unit (shared `related_value.rs`); story 2 after #282 (owns the precedence step); #283 and family F's row-set form edit the same files: one at a time. `ess-gen/src/openapi.rs` (`:1155`, "when present" wording) is also edited by story:served-view-params (`:560-564` comment): different regions, whichever lands second rebases.
 
 `CHANGELOG.md` is a merge-time edit (epic).
+
+## Source version allocation, 2026-10-02
+
+The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
+
+This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.

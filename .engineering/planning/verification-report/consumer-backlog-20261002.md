@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 17
+revision: 19
 ---
 ## Intake
 
@@ -528,3 +528,90 @@ These are specific ready-to-scope, accepted-to-implement, and decision-required 
 ## PR387 verified merge
 
 Merged2026-10-02T13:27:46Z by app/b10x-bot as1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036. Tree0c8693cea107f7ffef46319f70d27e1eb87a2917 equals tested headad45061626; first parentb4da64e is its ancestor. All15 reported checks passed. Refreshed GitHub intake now has49 open issues; all ten closing references are closed. Three browser-startup stories are also implemented. The private consumer adapter for347 remains unverified. No new release is claimed.
+
+# Explorer, authoring and reference backlog audit
+
+Read-only audit, 2026-10-02. Source: `ess-backlog-next-20261002` at `455a6afb4d5ad309f178f6744143ee0dc0af8f46`, unchanged and clean at completion. Canonical stories are in `ess-consumer-backlog-20261002/.engineering/planning/story/`; story references below use that store, not the source tree's potentially older copy. GitHub issue bodies/state were read; all six remain OPEN. Own test/build executions: **0**. Named tests below are inspected source evidence, not fresh passing runs. No implementation, planning or GitHub mutations.
+
+## #221 — existing-row conditions in exploration
+
+**Disposition: actionable adopted gap; implement with #223.** The earlier draft-status prose is superseded by the explicit coordinator adoption in `feature-request-221.md:53-63`. Accepted scope includes `existing_instance`, `unknown_instance`, `subject_state`, `subject_field`, `subject_predicate`, and `state_change`, following `docs/design/cross-record-and-stored-field-guards.md`. Related conditions stay explicitly excluded; `input_absent` is optional. No new source or suite format is required by this decision.
+
+The current exclusion is real: `crates/verify/ess-conformance/src/go/explore.go:614-619` and `src/ts/explore.ts:475-489` admit only when, otherwise, wrong_state, external and external_when. Existing state-model machinery is reusable, not completion: Go `exploreDecide` at `explore.go:930` finds an addressed row and implements input-refusal-first/wrong-state selection, but a missing addressed row still becomes ambiguity at `:973`; identity draws already reuse known identities with probability 0.8 at `:1156` (TS `:907`). Expanding only the whitelist would therefore produce incorrect decisions.
+
+Existing meaningful precedent: `tests/explore_guards_first.rs:253` (`a_target_in_entity_runtime_order_passes_and_reaches_every_branch`) and `:285` (`a_target_out_of_entity_runtime_order_is_caught`) run both language lanes and discriminate precedence. These do not exercise the excluded conditions.
+
+**Next action:** implement condition admission, row-fact selection and honest unsupported-condition reporting together in both explorers. Add seeded cross-language cases for existing/missing identity, matching/nonmatching stored field and predicate, state-held/state-change/no-change, and an input refusal overlapping a stored condition; honest targets must reach the new outcomes and condition-ignoring targets must disagree. Keep named related exclusions. Combine the changed seed contract/release note with #223. No missing operator decision identified.
+
+Issue: https://github.com/beyond10x/ess/issues/221
+
+## #223 — field-specific text boundaries and examples
+
+**Disposition: actionable adopted gap in the same explorer batch.** `feature-request-223.md:56-65` adopts per-input-field pools, text examples and n−1/n/n+1 rune lengths at that field's `.count` literals, plus Integer and enum examples. Both languages ship together and document changed seed replay. List generation and text-invariant support are excluded; byte-length #233 is separate.
+
+Current Go `explorePools` and `exploreLiterals` (`src/go/explore.go:457-519`) remain command-wide: strings enter one text pool; numeric literals and neighbors enter only the integer pool, so a count boundary cannot create a long string. Defaults remain `{"", "a", "b"}` at `:149`; TS has the same defaults at `src/ts/explore.ts:147`. Examples already exist in resolved IR (`crates/specify/ess-compiler/src/ir.rs:1228-1230`), but are not read by this pool builder. Text count itself is already rune count (`src/go/predicate.go:857-873`): that is a shipped semantic foundation, not boundary generation.
+
+**Next action:** share the #221 test/model setup and implement pools keyed by field/path in both lanes. Named regressions should cover a 12-rune boundary, two fields with different boundaries (no accidental pool mixing), a multibyte text example, and Integer/enum examples; assert generated values and Go/TS draw parity, not merely a nonempty history. Retain bounded input-generation behavior for huge/negative boundary values and document any named refusal instead of unbounded allocation. That is an implementation safety detail to resolve against existing explorer bounds, not a reason to reopen the adopted design.
+
+Issue: https://github.com/beyond10x/ess/issues/223
+
+## #222 — contradictory authored input/outcome claims
+
+**Disposition: actionable adopted authoring defect, independent of new format syntax.** `feature-request-222.md:61-76` adopts validation of literal input selecting another outcome/error, three-valued evaluation, refusal-first/declaration-order precedence, and silence for unevaluable/opaque-instance/stored/related/external facts. Diagnostic numbering is explicitly the next free ESS-AUTHOR code, not the issue's original 038. Current codes 037–040 are already assigned in `src/authored.rs:1484-1501`; 041 is the next free code in the inspected enum, subject to reservation when implementation starts.
+
+`src/authored.rs:2094-2135` resolves input, configures external outcomes, emits ExecuteCommand and validates the claimed outcome's name; it does not decide the literal input against competing guards. Existing ESS-AUTHOR-037 handling at `:2202` concerns external-answer obligations, not this contradiction. `src/decision.rs:27-43,49-70` supplies the reusable condition/three-valued decision seam; callers must not treat the input predicate extracted from a subject-state condition as the complete condition. `docs/design/input-guard-overlap-precedence.md:24-42` supplies already-adopted ordering.
+
+Shipped evaluator coverage must be retained: `tests/enum_presence_guard.rs:427,432,462,509` checks guard agreement, refusal witnesses, a presence-ignoring mutant and interpreted corners for #280. It does not make authored validation reject a contradictory claim.
+
+**Next action:** add one bounded authored-validation change plus diagnostic/docs inventories. Red cases: the issue's ExpiredCode input claiming signed-in; a wrong error claim; and overlapping refusal/acceptance/default in reversed declaration orders. Controls: matching claim accepted, enum plus presence interpreted consistently, and each unevaluable dependency silent. Validate/author should reject the contradiction before execution; runtime runners remain unchanged. No new semantic approval is needed.
+
+Issue: https://github.com/beyond10x/ess/issues/222
+
+## #273 — identity-valued event assertions
+
+**Disposition: actionable accepted defect; retain authoring, synthesis and browser integration as one unit.** Canonical `feature-request-273.md:68-78` adopts instance-valued ExpectEventValues at suite /18 or later and browser support; it explicitly supersedes the older idea of narrowing `fixtures::used_by`.
+
+Both defect sites remain. `src/authored.rs:2721-2758` only routes `Written::Fixture` through dynamic values; instance references enter `literals`, which refuses them at `:3319-3349`. `tests/authored.rs:1544` actively asserts the old whole-field refusal; `tests/authored_structured_instances.rs:583` asserts nested references are refused by position. These tests will need deliberate expectation changes consistent with the accepted typed-reference scope, retaining mistyped/unbound controls. `src/synthesize.rs:5452-5464,5515-5535` produces literal payload values and omits instance-valued input/expression results. Shape coverage is not a value assertion.
+
+Useful shipped machinery exists: Rust `src/runner.rs:1713`, Go `src/go/runtime.go:2086`, and TS `src/ts/runtime.ts:3120` handle ExpectEventValues. `src/fixtures.rs:226-233` truthfully marks that vocabulary; `src/scenario.rs:201-203` raises the suite version. However, current `src/web.rs:297-303` still rejects every suite for which `fixtures::used_by` is true. Prior browser work has not completed this prerequisite. Actual independently provisioned fixtures can remain refused while instance-valued event assertions become replayable; do not weaken the suite-version predicate to obtain browser admission.
+
+**Next action:** route typed event instance references through existing resolution, preserve determined identity values during synthesis, and implement the accepted browser distinction. Require authored and synthesized dropped-identity mutants, honest strict Passed targets, input/subject/related identity cases, wrong identity type/unbound controls, suite-version admission, and browser replay of instance-valued assertions. Do not expand into independent fixture provisioning or arbitrary identity guessing. No unresolved design approval; missing evidence is the implementation's red/green and cross-runner/browser coverage.
+
+Issue: https://github.com/beyond10x/ess/issues/273
+
+## #282 — lifecycle plus related-row guard precedence
+
+**Disposition: accepted coordinated ess/21 work, not an unapproved precedence question.** `feature-request-282.md:36-38` selects a fixed order: related predicate refusals after subject held-state step 4 and before accepting step 5; no author-declared precedence. Validation, synthesis and interpreter must agree. `.engineering/waves/downstream-gaps.md:40-46` schedules accepted syntax changes together in ess/21, including this story and family F. Current public precedence clarification does not implement that future admission.
+
+The old refusal remains explicit in `crates/specify/ess-domain/src/command/related_guard.rs:260-278,293-310`: subject predicate/state/change/wrong-state/existence conditions are other selection authorities, and a mixed command is refused as unstated precedence. Existing `tests/related_guard.rs:303` intentionally preserves this refusal for the current format. Related-row lifecycle state itself already shipped in ess/20 (`:397,418,449,470` tests), which is a different capability: reading the related row's state does not admit a command combining its own lifecycle with that row's guard.
+
+**Next action:** implement behind ess/21 as part of the accepted coordinated format carrier, retaining old-format refusal. Run both issue reductions (Objective/PausedSwitch and Deploy/Release) plus competing held-state/related-refusal cases through validation, synthesis and interpreter, with declaration-order reversals proving fixed precedence. Coordinate with accepted stored-reference guard work dependent on #282 and the remaining bundle migrations; no new operator decision is needed. The blocker to an isolated fast PR is the already-adopted format coordination and absent implementation/evidence, not uncertainty over the selected order.
+
+Issue: https://github.com/beyond10x/ess/issues/282
+
+## #285 — Optional and chained related-value reads
+
+**Disposition: one shipped fragment plus accepted ess/21 remainder.** `feature-request-285.md:36-38` adopts Optional-reference traversal yielding Optional/absent values and list-valued `via` chains with Optional-aware hops. View joins are explicitly declined. The same coordinated format rule applies.
+
+The issue's one-hop Optional copied group-key fragment has concrete coverage: `tests/aggregate_related_key.rs:398` (`an_optional_key_copied_from_a_related_row_is_run_with_its_absent_group`), `tests/adversary_257_pass1.rs:431`, and `tests/adversary_257_pass2.rs:621,735,762,795` exercise optional values and absent groups through a required related reference. This substantiates shipped #257 functionality, not completion of the whole request.
+
+Remaining traversal is expressly unsupported: `crates/specify/ess-domain/src/command/related_value.rs:1-31` models one string-valued Subject/Input hop; `:63-69` requires an identity always present and excludes Optional wrappers. `tests/adversary_257_pass1.rs:501` still requires chained copied keys to be refused naming the source. An Optional copied value and an Optional reference to the source row are different seams.
+
+**Next action:** retain the current one-hop controls, then implement accepted Optional-aware reference resolution and list-valued chains in the ess/21 bundle, aligned with related-reference guard work rather than adding view joins. Required cases: issue CostEntry→Objective→Initiative→outcome_id; absent intermediate reference yields absent copied value; present intermediate reference copies the correct value; aggregate groups include the absent key; old formats refuse new syntax; mistyped/ambiguous hops give named refusals. Re-run the consumer reduction to reconcile the old ESS-SYNTH-017 report rather than closing the whole issue on #257's tests. No outstanding choice among the issue's proposed alternatives remains.
+
+Issue: https://github.com/beyond10x/ess/issues/285
+
+## Concrete implementation groups
+
+1. **Explorer #221+#223:** one paired Go/TS behavior and seed-contract change, no new format.
+2. **Authored contradiction #222:** small independent validation/diagnostic unit; serialize edits to authored.rs with #273 if sharing a tree.
+3. **Event identity #273:** authoring+synthesis+browser+suite-version evidence together, using existing /18+ vocabulary.
+4. **Coordinated ess/21:** #282+#285 join the already-adopted family F/related-reference/syntax carrier. Keep their named cases individually reviewable; do not split the format admission or treat the broader carrier as a new decision request.
+
+None of the six issues is wholly completed by the inspected tree. No runtime claim was inferred from a test name or changelog alone.
+
+## Accepted live-binding delivery reconciliation, 2026-10-02
+
+Independent source/acceptance audit by scope_boolean found every enumerated acceptance item complete for ui-react-live-binding, ui-tui-live-binding, ui-tui-app-generator and served-view-params. The accepted redesign uses model-derived routes, explicit authorization and base URLs, polling or named no_live refusal, and HTTP-only TUI support. No SSE/WebSocket transport or private adopter replay is claimed.
+
+Retained actual execution: React live_binding11, TUI http_adapter5, generated TUI3, CLI live-run3, served-view-params8 passed with no failed/ignored cases. Their adversarial suites also passed. Full audit identifies each assertion and source/log location in ess-backlog-served-entry-20261002/target/backlog-input/311-acceptance-reconciliation.md; its own new execution count is0. The current PR387 full Gate atad45061626 passed all workspace tests and merged as1ff305685 with the identical tree. These stories are delivered on main; a release after0.51.0 is still pending.
