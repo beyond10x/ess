@@ -231,3 +231,12 @@ fn one_time_unsupported_is_value_free_and_not_a_skip() {
         Some("ESS-CF-TARGET"),
     );
 }
+
+#[test]
+fn one_time_successful_identity_never_enters_persisted_counts() {
+    check(
+        Mode::IdentitySuccess,
+        Status::Passed,
+        Some("ESS-CF-DISCLOSURE"),
+    );
+}

@@ -30,6 +30,7 @@ pub enum Mode {
     WindowUnsupported,
     WindowShort,
     WindowHealthy,
+    IdentitySuccess,
 }
 
 pub struct Service {
@@ -63,7 +64,7 @@ impl Service {
 }
 
 impl Mode {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Healthy,
         Self::Retry,
         Self::DirectEvent,
@@ -83,12 +84,14 @@ impl Mode {
         Self::WindowUnsupported,
         Self::WindowShort,
         Self::WindowHealthy,
+        Self::IdentitySuccess,
     ];
     pub fn expected(self) -> (Status, &'static str) {
         match self {
             Self::Healthy
             | Self::ConstrainedHealthy
             | Self::IdentityError
+            | Self::IdentitySuccess
             | Self::WindowHealthy => (Status::Passed, "ESS-CF-DISCLOSURE"),
             Self::Error => (Status::Error, "ESS-CF-TARGET"),
             Self::Unsupported
@@ -106,6 +109,9 @@ impl ConformanceTarget for Service {
         self.observed("identity");
         if matches!(self.mode, Mode::IdentityError) {
             return Err(TargetError::unavailable(FIRST, FIRST));
+        }
+        if matches!(self.mode, Mode::IdentitySuccess) {
+            return Ok(ImplementationIdentity::new(FIRST, FIRST));
         }
         Ok(ImplementationIdentity::new("one-time-controls", "1"))
     }
