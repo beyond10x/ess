@@ -15,7 +15,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/optional-recursive-rust.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T23:37:29Z", actor: "agent:codex-ekr-knowledge", revision: 4, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-02T23:37:30Z", actor: "agent:codex-ekr-knowledge", revision: 5, decided_on: {"recorded":{"approval":1}}}
@@ -49,3 +49,7 @@ Cited: crates/generate/ess-synth/src/rust/layout.rs, items.rs, feasibility.rs an
 ## Verification
 
 Retain failing baseline, fresh generated workspace/crate compilation, nested JSON roundtrip, accessors, shared Web codec coverage, acyclic byte preservation, unsupported cycle controls, List/Map controls and determinism. Run package tests/Clippy/format. CI owns the full PR gate under AGENTS.md; release remains subject to required checks and artifacts.
+
+## Adopter compilation follow-up
+
+Root's actual amended EKR synthesis with the candidate CLI succeeded (24 files), but fresh cargo check exited 101 with 76 parse errors: generated src/views.rs:9,11,13 contains bare multiline domain documentation after the first //! prefix. This is a reachable adopter compilation defect, not a fixture-only claim. The minimal emitter regression covers line-prefixing of system/domain/component/type/field/outcome prose. Scope stays inside crates/generate/ess-synth. This fix is required for the accepted prerequisite's fresh compilation outcome; retain red/green output and rerun the real EKR generated crate after correction.

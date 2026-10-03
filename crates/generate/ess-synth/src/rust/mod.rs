@@ -64,6 +64,11 @@ use self::layout::Layout;
 /// nothing: it must build outside this repository, from exactly the bytes committed.
 const EDITION: &str = "2021";
 
+/// Keeps authored prose inside its Rust line comment, preserving single-line output exactly.
+fn doc_text(text: &str, marker: &str) -> String {
+    text.replace('\n', &format!("\n{marker} "))
+}
+
 /// Everything the generated module renderers need to agree on, carried once.
 pub(crate) struct Emit<'a> {
     /// The resolved model.
@@ -320,7 +325,7 @@ fn lib_module(
     );
     if let Some(summary) = ir.summary() {
         out.push_str("//!\n");
-        let _ = writeln!(out, "//! {}", summary.trim());
+        let _ = writeln!(out, "//! {}", doc_text(summary.trim(), "//!"));
     }
     out.push_str(
         "//!\n//! Generated, not written: the specification is the source of truth, and the door \
@@ -431,11 +436,11 @@ fn domain_module(
     let _ = writeln!(
         out,
         "//! {} — `{domain}`.",
-        resolved.naming.display_or(domain)
+        doc_text(resolved.naming.display_or(domain), "//!")
     );
     if let Some(summary) = &resolved.naming.summary {
         out.push_str("//!\n");
-        let _ = writeln!(out, "//! {}", summary.trim());
+        let _ = writeln!(out, "//! {}", doc_text(summary.trim(), "//!"));
     }
     out.push_str(
         "//!\n//! Everything this bounded context declares that the synthesis plan marks \
