@@ -7,7 +7,7 @@ use ess_compiler::EssIr;
 use ess_primitives::node::Node;
 use std::collections::BTreeMap;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Issued {
     next: usize,
     values: Vec<String>,
@@ -41,7 +41,7 @@ pub(super) fn response(
     }) else {
         return Ok(None);
     };
-    if !outcome.returns || outcome.error.is_some() {
+    if outcome.error.is_some() || (!outcome.returns && !super::response::required(outcome)) {
         return Ok(None);
     }
     for _ in 0..512 {
@@ -54,11 +54,11 @@ pub(super) fn response(
         let mut response = BTreeMap::new();
         let mut chosen = Vec::<String>::new();
         for field in &spec.response {
-            let base = crate::witness::fields(ir, std::slice::from_ref(field), distinction)
-                .ok()
-                .and_then(|mut fields| fields.remove(&field.name));
+            let base = super::response::base(ir, field, distinction, 0);
             if !outcome.one_time_response.contains(&field.name) {
-                response.insert(field.name.clone(), base.ok_or_else(unsupported)?);
+                if let Some(value) = ordinary_field(ir, field, base)? {
+                    response.insert(field.name.clone(), value);
+                }
                 continue;
             }
             let candidates = base
@@ -128,9 +128,31 @@ pub(super) fn response(
         }
         issued.bytes += bytes;
         issued.values.extend(new);
+        super::response::validate(ir, spec, &response).map_err(|_| unsupported())?;
         return Ok(Some(response));
     }
     Err(unsupported())
+}
+
+fn ordinary_field(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedField,
+    value: Option<Node>,
+) -> Result<Option<Node>, TargetError> {
+    if value.is_some() {
+        return Ok(value);
+    }
+    crate::input::bind(
+        ir,
+        std::slice::from_ref(field),
+        &BTreeMap::new(),
+        crate::input::Completeness::Total,
+    )
+    .map_err(|_| unsupported())?;
+    Ok(
+        (field.naming.presence == Some(ess_domain::types::Presence::NullWhenAbsent))
+            .then_some(Node::Null),
+    )
 }
 
 fn string_candidates(

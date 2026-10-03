@@ -51,6 +51,7 @@ mod command;
 pub mod execute;
 mod facts;
 mod protected;
+mod response;
 mod setup;
 mod views;
 
@@ -217,7 +218,8 @@ impl ConformanceTarget for Interpreted {
                 Externals::Withheld
             }
         };
-        let mut steps = execute::in_context(
+        let mut responses = response::Authority::native(&scenario.issued);
+        let mut steps = execute::responding(
             model,
             &scenario.store,
             request.command.name(),
@@ -227,6 +229,7 @@ impl ConformanceTarget for Interpreted {
             },
             &externals,
             &execute::Generated::Counter,
+            &mut responses,
         )
         .map_err(|why| refusal(observation.clone(), &why))?;
         if steps.len() != 1 {
@@ -248,8 +251,11 @@ impl ConformanceTarget for Interpreted {
             ));
         }
         let step = steps.remove(0);
+        let prepared = responses
+            .finish(model, &step)
+            .map_err(|why| refusal(observation, &why))?;
         drop(scenario);
-        self.complete_command(&request.command, &request.correlation, step)
+        self.complete_command(&request.command, &request.correlation, step, prepared)
     }
 
     fn execute_command_without_input(
@@ -269,7 +275,7 @@ impl ConformanceTarget for Interpreted {
             caller.as_ref(),
         )
         .map_err(|why| refusal(observation, &why))?;
-        self.complete_command(&request.command, &request.correlation, step)
+        self.complete_command(&request.command, &request.correlation, step, None)
     }
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
