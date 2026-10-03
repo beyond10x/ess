@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -45,3 +45,9 @@ No413B implementation, new seeds/provenance,42/43 adoption, primitive arithmetic
 Failing base tests and corrected tests prove MAX, MIN, padded-bound and widest-negative-magnitude arithmetic never yield a falsely complete set; a finite limit2 CAS fixture executes ordinary create/advance0/advance1, observes2, rejects stale expectation and exhausts at2 without EstablishEntity; and the shared related-counter regression plus existing counter/subject-input/precedence suites preserve healthy and decisive faulty-target behavior.
 
 Keep honest extreme-state refusals after A; A does not promise zero refusals or extreme-state reachability. Preserve unchanged suite bytes where output is unaffected, current fresh provenance and old-format refusals. Required exact controls, strict scoped lint, owning formatting, affected tests and independent whole-unit review precede serial integration. Initial production author grant is source-only; no compiler lane or implementation acceptance is inferred from design approval.
+
+## Production implementation boundary
+
+The expected arithmetic baseline is measured red at required MAX/MIN window bounds (3pass/2fail), while the full counter_limit baseline now passes17/17 on unchanged production after a test-only hash-formatting compile correction. Source freeze2b7d64232621c327024b418597767a6e198154e162cdf5efc8c8b8c7bca45d47a preserves all arithmetic tests and original production bytes. Retain both failed logs; the initial compiler error was not a finite-CAS semantic verdict.
+
+The external owner may now implement only the approved arithmetic-completeness correction in subject_fact.rs and scoped regression assertions in counter_limit.rs. Every required negation/padded-bound computation must propagate None on arithmetic failure rather than omit a bound and report a partial reachable set as complete. Preserve numeric semantics, search budgets, honest extreme-state refusal, shared-related behavior, finite-CAS arrangement/outcomes and canonical unaffected bytes. No seed capability, additional format, production state setter or unrelated CAS/input/guard change. Full affected proof and independent whole-unit review remain required before serial integration. Source edits may proceed while root verifies the disjoint authored/aggregate test unit; compiler custody is separately granted.
