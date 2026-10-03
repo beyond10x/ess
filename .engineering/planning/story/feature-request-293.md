@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-293
 kind: story
-status: draft
+status: active
 title: Explorer excludes every command with an Optional input (and every command with an unknown_instance branch)
 tags:
 - feature-request
@@ -23,7 +23,10 @@ scope:
   path: crates/verify/ess-conformance/tests/support_explore_optional_unknown
 - confidence: inferred
   path: docs/design/explorer-optional-unknown.md
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-03T02:13:06Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-03T02:13:06Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 ---
 ## Outcome
 
@@ -156,3 +159,11 @@ Toolchain: rustc 1.98.1, Go 1.27.0-X:nodwarf5, Node 22.23.2, TypeScript 6.0.3. T
 Accept, redesigned: lift the two explicit exclusions only with recursive typed Optional absence/presence, deliberate known/fresh subject draws, source-selected unknown-instance behavior, and preserved shrink/replay/concurrent semantics. No new syntax, format or target callback authority. This accepts the need; exact production authorization follows independent review of the design supplement.
 
 The proposed supplement implementation-design.md has SHA256 50f0e84dfde4f5ba2060646d5cb2d4c632070c17a6dcf41bc872cf8c6a9f21ad. Root has read it and assigned independent review. It scopes two existing Go/TypeScript explorer assets plus focused Rust-driven tests; unresolved details must be settled with compiled source fixtures, particularly subjectless branch precedence and absence propagation. Story remains draft while design review runs; no worker is implementing this unit yet.
+
+## Binding design and implementation authorization
+
+Root adopts docs/design/explorer-optional-unknown.md, exact SHA256591e84c819d732fa99e6ade907b99df24a08f6cab0bc6d8c631dae9fd08497b3, under the user's standing full-backlog/all-features authorization. This adoption supersedes the candidate status printed in the immutable reviewed document. Design pass2 report9c45363bddf6a29b854813b0b4bf3a3da2abd2f91aaab37a11ab790ae0cb7639 approves with findings[] and zero reviewer executions. The earlier arrangement/expected-outcome finding is fixed in the design, not yet in production.
+
+The internal Choice keeps original external arrangement distinct from the resolved terminal outcome throughout setup, effects, trace, replay, shrinking and accounting. Known absence must remain known through payload, stored rows, views and invariants; concurrent fresh identities mean absent only in the prefix snapshot. Recursive Optional wrapping, known/fresh draw selection, actual unknown-instance creation/refusal, same-fault replay and actual Go/TypeScript concurrent history boundary are mandatory acceptance. No new feature fence, source syntax, suite/history/report format or target API.
+
+Production authorization is limited to the existing two explorer assets and their focused Rust-driven tests/support directory in typed scope. A managed worker starts from the runtime carrier plus this binding document. Preserve original actual probe red and add repository red before source changes. Stop only to resolve a concretely named semantic or scope gap; routine implementation choices need no operator approval. All new committed executable code is Rust; existing Go/TypeScript runtime assets retain their repository convention. Root owns AEP, independent review, source integration and grouped publication. No separate PR or remote gate.

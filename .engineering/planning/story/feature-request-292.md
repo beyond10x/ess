@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-292
 kind: story
-status: draft
+status: active
 title: 'check-history: a generated Timestamp makes every history uncheckable (check.model-undetermined, exit 2)'
 tags:
 - feature-request
@@ -12,7 +12,53 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/tests/check_history.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/facts.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/predicate.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/caller.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/existence.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/history
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/history.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/related.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/set_effects.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/subject.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/values.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/linearize/generated.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/generated_history_values.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/linearizability.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
+- confidence: inferred
+  path: docs/design/generated-history-values.md
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
+- {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 ---
 ## Outcome
 
@@ -181,3 +227,15 @@ Root has read candidate 292-generated-history-executor-design.md, SHA256 ac79aaa
 The proposal retains one actual executor control flow behind private concrete/history contexts. Path-level abstract values preserve known presence, absence, shape and siblings, with no sentinel Nodes. An additive defaulted FactSource presence observation permits shared Kleene evaluation. Actual reads/writes and validation use private history authority; copies and known overwrites preserve precision. Cross-row access merges interacting search partitions rather than refusing the commands. Unresolved alternatives prevent a false violation, while a fully proven explanation remains valid; view reachability retains incompleteness separately. Recorded outcomes cannot select the implementation branch or manufacture generated data.
 
 Independent review is assigned before source edits. Proposed staged units A through D comprise one completion bundle: genuine early/late red, private value/executor integration, related/set/search/view integration, actual CLI and regression verification. Expected scope includes two primitive files and the native interpreter/history modules, materially larger than the rejected five-file shortcut. Any implementation must audit direct Store/Node bypasses and preserve ordinary native execution. No story completion or source release is claimed.
+
+## Binding executor design and implementation authorization
+
+Root adopts docs/design/generated-history-values.md SHA256a84c7962f5d6f78fc7b1b66b6d02fd8ffeba701aa0ce8c94ff9581d2b10233fc under standing full-backlog/all-features authorization. This adoption supersedes candidate-status prose in the immutable reviewed document. Independent pass2 report85b1d7f86a9652057e29c6eca0cb75753fd566f7c18a6dfcfd6679f9a325a654 approves with findings[] and zero reviewer executions. Both review blockers are fixed in the design; production remains unchanged.
+
+Explicitly approve the additive defaulted FactSource observed_presence method in the two primitive files, private abstract history values/store/context integrated into the actual executor control flow, complete transfer/reader audit, proof-separated generated feasibility, shared interacting history partition and acknowledged-client barrier, and unresolved search/reach alternatives. Public native generation/Store/Step behavior remains concrete. Never use a witness or expected outcome as recorded generated authority. Do not implement the rejected blanket preflight-refusal design.
+
+Scope permits narrow crate-private boundary exports in interpret.rs, reusable existing typed validation/fact access in input.rs and existing witness helper visibility in witness.rs only if required by the adopted mechanism. These are not permission to change compiler/source admission or witness semantics. Report the exact helper delta before freezing. Other production surfaces and new private modules are recorded in typed scope; all executable changes are Rust.
+
+Staged A through D are one completion bundle: establish real early/late regression red; implement abstract facts and actual executor transfer/control flow; integrate related/set/search/view authority and admitted source controls; execute CLI0/1/2/3 and complete focused neighbors/review. The pass1 affects.moves fixture suggestion was inadmissible and is corrected by the preserved pass2 report; the revised when_related/affected-row source must compile before it counts as evidence. No partial source approval or issue closure at the first Model refusal.
+
+Implementation is assigned to an isolated managed worker after its current bounded aggregate design review. Initial source/test work may proceed, but compilation waits for an explicitly free cache; nested response worker currently owns synthesis and293 owns servers. Maintain jobs1/debug0/incremental0, external TMPDIR and8GiB floor. Root alone owns AEP, independent source approval, integration and the held delivery branch. No extra PR, push or remote full gate.

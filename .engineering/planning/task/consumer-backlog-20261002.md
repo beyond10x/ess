@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 42
+revision: 43
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -376,3 +376,13 @@ Issue292 actual probe locally fixes the old inert Timestamp failure but produces
 PR402 latest read remains OPEN at9e15e08e9f0201e06bddc268934c3f96a92e5482, with CI still progressing; known contradictory-bound correction remains absent in that source. Release owner retains correction/tag authority; no0.52release claim. Last issue inventory53 is not an unfixed-ticket count. Full package/release verification and remaining accepted bundle work are still outstanding.
 
 All goal work remains active. AEP writes are root-only and validation returns valid with retained historical warning output. No managed tree was retired; unit/source/evidence remains retained until bot publication or explicit archive proof permits lifecycle cleanup.
+
+## Runtime continuation checkpoint
+
+Frozen58-source handoff is explicitly acknowledged by the sole shared integrator; source/evidence remain retained pending their published-integration verification. Release398 is separate and gates running per owner; no held ess21 source or additional PR.
+
+Native response remains independently reviewed/integrated046db8a680. Nested response worker now reports real native/Go/strict-TypeScript/WASM green matrix plus old-reader refusal; exact final freeze and independent source adversary remain pending. Treat worker counts as owner evidence until root review.
+
+292 and293 completed two independent design passes each. Binding doc commits are86b4a994481f4391f7f38cc2677cdc493ca20404 (history) and6727e07363877925aa6a0f2bb1cb47b08d2348e3 (explorer); both author/committer bot. The raw reviewed bytes are preserved; AEP records explicit adoption superseding candidate-status prose. Stories are active. Managed ess-explorer-optional-unknown-20261003 starts6727, owns servers cache. Managed ess-generated-history-values-20261003 starts86b4, production awaits real regression red and an available cache; no third concurrent build is authorized. Staged history A-D remain one required unit, not a first-refusal completion.
+
+Root current-source aggregate probe independently establishes named red for direct/copied group parameters and state-only grouping; matching copied-key control passes. Combined aggregate design remains draft under independent review, with a newly identified precondition-prefix authority concern to resolve before implementation. Browser product execution and remaining full-feature backlog stay open. No issue closed or release declared from this checkpoint.
