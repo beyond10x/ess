@@ -7,7 +7,7 @@ title: Observe nested response mappings across every conformance runtime
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -28,3 +28,9 @@ Inspect existing typed path vocabulary before choosing representation. Do not re
 ## Scope
 
 Inferred response.rs, synthesize.rs, scenario/admission modules, Go/TypeScript response runtime assets and generation entry points, corresponding parity/WASM tests. Root must record exact typed scope and binding design after the red-capable probe and coordinate overlapping synthesize.rs with312 and the serial282/304 owner.
+
+## Scope inspection, 2026-10-03
+
+Read-only report SHA256 2bd62ad5b85e0001b5cd6bb45889d3463bfea378448dd849f8a421dc3264c371 confirms immediate-only mappings. Prefer explicit destination segment arrays; never reinterpret existing dotted keys. Existing AccessorPlan limits paths to three segments and cannot cover the admitted32-level construction grammar unchanged. Decide between an additive omitted collection and a separate closed DTO after an actual red-capable source probe. Preserve old bytes, exact invocation association, Optional leaf semantics, whole-value equality and historical admission. Full-root declarations must not accidentally reject source-admitted Binary64 or non-String-map generated siblings; choose a structural path certificate or explicitly implement the required profile support with parity. No version is reserved. Synthesis recursion appears containable in response.rs without touching the concurrently owned synthesize.rs; this is source inspection, not execution evidence.
+
+Browser web.rs currently refuses every response-bearing suite and its player navigates declarations only. This separate required gap is recorded as browser-response-conformance. Actual standalone WASM Runner execution does not close the browser product acceptance. Both remain required full-backlog work.
