@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T06:44:13Z",
+  "actor": "human:timo",
+  "artifact": "story:nested-increment-previous-location",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Frozen CLI nested previous-location probe: one failure; top-level variation fails; nested literal control passes; run.json SHA256 0a98d78de1940081773f75878db3d03a4d29278739e063ce64745854a67b9388"
+  }
+}

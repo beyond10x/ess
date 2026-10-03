@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T06:46:17Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-292",
+  "kind": "story",
+  "revision": 25,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Focused generated-history feasibility matrix52 passed0failed exit0; feasibility-bounded-matrix-first.log SHA25665003eedd9064dee6ea2214bdb1d8ca5f719286f6acdca8db7e871ae26003a59; remaining phase controls pending"
+  }
+}

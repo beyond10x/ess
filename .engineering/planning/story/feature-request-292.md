@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -371,3 +371,11 @@ Source-only language audit increment-language-disposition-review.md SHA256 eef82
 No compilation or execution is claimed by this audit. Complete feasibility repairs first, then admit the supplied source and prove the copy and arithmetic over every source-domain member with bounded typed validation. Keep derived domain and provenance; never pick a witness, discard invalid alternatives, or turn a valid transition into observed value authority. Required controls include partial/overflow domains, undeclared and nonmechanical crossing rejection, repeated increments and later observation-sensitive branches. Existing story scope already includes the private history value/proof surfaces; any additional scope must be recorded before edits.
 
 The audit separately suspects nested increment lookup reads an unrelated top-level same-name field. This is not legitimate evidence for safe transfer. An independent admission/execution probe is required before classifying that potential existing native defect. It must not silently broaden the current implementation or redefine source semantics.
+
+## Bounded feasibility matrix and admitted widening source
+
+The ongoing private proof-budget/context implementation passed the focused generated-history matrix: 52 passed, zero failed/ignored, exit0. Root independently read the terminal output and rehashed feasibility-bounded-matrix-first.log SHA256 65003eedd9064dee6ea2214bdb1d8ca5f719286f6acdca8db7e871ae26003a59. This includes the actual deep-Struct/Optional false-verdict regressions, productive recursive union in both label orders, recursive Optional/List/Map terminating bases, and a valid finite witness despite another unresolved candidate. Work/cache-order and False-dominant child-validation controls are still in progress; an unused-helper warning remains. This is not a complete phase, lint or package-check receipt.
+
+Root independently ran the frozen CLI's source validation for the proposed mechanical widening source. The audit's first Copy/Advance definitions lacked observable events and were refused as empty_change; those original bytes and logs are retained. Adding a Changed event carrying only input counter_id to each update makes the source valid with exit0. Corrected widening-model.yaml SHA256 83b8f0de517be2245c7abc7097fc431285e82e0edad7579eb527e6badfb1471e; widening-validate.log 0a3b0f16e8c9baaf52b8b8b07e954f15a39aaf604237b23280a3ba445df7f60c in private ess-nested-increment-probe-20261003. This proves source admission only, not history transfer correctness. The owner has the fixture for the next phase after feasibility is complete.
+
+The separate nested lookup issue is now reproduced and tracked as story:nested-increment-previous-location, draft, dependent on this story solely for shared-file sequencing. It must not become a positive control for bounded unknown arithmetic or expand current source work implicitly.
