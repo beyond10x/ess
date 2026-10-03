@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 30
+revision: 32
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -14,9 +14,13 @@ Operator direction on 2026-10-03: finish the remaining full bundle, integrate to
 
 ## Current facts
 
-ESS 0.52.0 is published at main commit 4d6a4ecafc0feb4e11e4bee777b19c7351fa3647. Gates provenance and bot publishing are fixed and verified. PR410 closed406-409. They are not remaining blockers. The integration branch remains batch/ui-live-apps-complete-20261003 in managed tree ess-w7-server-public, starting this continuation at5827f3bf2c654ce9c88e0ca3aab1668c5728463b. Its newer served-entry318 implementation and reviewed correction are retained. The runtime carrier remains c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9 with60 selected source commits; the four frozen handoff manifests, rather than all ancestry, define the import. Canonical backlog planning remains in ess-consumer-backlog-20261002 at acb88e97d3c99587c3b0a501314ce35d73fa4f3b. Private untracked review originals must never be staged.
+The integration branch is batch/ui-live-apps-complete-20261003 in managed tree ess-w7-server-public. Current source checkpoint9f35a2d5d includes all60 selected runtime changes, retained #318, separately merged protocol PR411 via mergee6357a9e1, regenerated projections and examples672603099, and independently reviewed #292 with all three prospective review tests. Bot author and committer are verified. No bundle PR, merge, issue closure or new release has occurred in this continuation.
 
-The historical name ess/21 bundle is a delivery boundary. Its later source-version allocation moved coordinated syntax to ess/22 while one-time responses use ess/21. Before activation reconcile actual compiler/IR/suite readers and binding designs; never infer a format number from the bundle nickname.
+The source nickname ess/21 bundle is a delivery boundary: source21 remains the one-time-response allocation and coordinated accepted additions use source22. The canonical backlog carrier ess-consumer-backlog-20261002 retains intake evidence; reconciled integration stories292 and nested-increment now own their execution evidence. Private untracked originals are never staged.
+
+Combined pre-history build/generation/format and actual interpreted billing33, related-copy6, related-guard9 and subject-copy12 scenarios pass with no skipped/unsupported/error results. Those report/2 files explicitly retain inconclusive coverage status; they are execution results, not a whole-product conformance certificate. Common Gates passed at3e7db9aab over196 commits; rerun on the final candidate.
+
+The full #292 independent review approved exactcae6187ec plus154 test lines: history56, library109, neighbors132, primitive2, CLI1 with8 invocations and strict scoped lint. Record review-result:generated-history-complete-20261003-r1 holds the exact publication report. Combined-byte history verification is the first step of the following nested-correction unit.
 
 ## Ordered route to main
 
@@ -126,11 +130,11 @@ The current resource contract is the final October handoff below: one ESS compil
 
 ## Immediate next action
 
-Combined checkpoint48d5cc77b contains current released main, all60 selected runtime source deltas, the two companion designs, newer318 and the reconciled timestamp dependency. Rust1.98.1 locked/offline CLI+xtask build completed successfully in2m20s; task fmt-check and common Gates also passed. The schema has been regenerated from the combined RawSpecFile. These results do not yet prove generated-model/server or full runtime acceptance.
+The nested-increment worker owns the sole ESS compiler lane in managed tree ess-history-review-final-20261003, repurposed after finished history review onto unit/nested-increment-location-20261003 at9f35a2d5d. Exact prior review tests remain on review/generated-history-final-20261003 at20cadc51a and are already integrated. Its exclusive existing target cache is reused; raw evidence remains in separate immutable review scratch. The worker first verifies the integrated history56 tests, then measures and fixes nested-location regressions under the accepted story/design. Live browser acceptance remains due after actual browser-product composition; no legacy replay substitute is accepted.
 
-292 now owns the serial compiler lane for its corrected strict-lint and strengthened regression reruns. Its early-Unknown and widening/increment defects have measured red-to-green evidence; final reruns and full-candidate independent review remain due.282 has all eight regression controls prepared and receives the lane after292. Root regenerates derived output, completes combined checks and maintains the exact issue ledger.
+#282 retains its clean prospective test checkpoint803383acc on unit/serial-related-precedence-20261003. It receives the updated integration base and compiler lane after the Batch A nested correction. It may perform read-only preparation for #304 while waiting. Root owns binding design, AEP, integration, generated reconciliation and publishing.
 
-Transport-dependent aggregate acceptance and391 remain reserved to Claude under the operator's explicit assignment; the ownership-transfer question is pending. Other independent work proceeds. No separate unit PR and no partial bundle merge are planned.
+The operator answered the transport handoff question: “dont care, just integrate”. Root is discovering Claude-owned #391 and binding-completion candidates across current branches and retained evidence without another handoff question. This authorizes integration; it does not make uncommitted or unverified work complete. All original deferrals stay visible and open. Continue serial units through the complete A–I bundle, then one bot PR and verified release.
 
 ## Current resource contract from final handoff
 
