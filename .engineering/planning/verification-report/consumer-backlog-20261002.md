@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 32
+revision: 33
 ---
 ## Current reconciliation, 2026-10-03
 
@@ -22,9 +22,9 @@ Only PR398 and PR402 are open. PR402 at1b2ed5857 consolidates390/392/395 and394 
 | #391 | No canonical story yet; intake obligation retained | Third session owns transport scope; specific issue acceptance still needs verification against402. |
 | #390 | No canonical story yet; intake obligation retained | Third session; consolidated PR402. Reconcile its owner record after merge; do not duplicate implementation. |
 | #389 | No canonical story yet; intake obligation retained | Fast lane in held ess21 bundle; native/Go/TS/WASM work local. All-feature acceptance and final gate pending. |
-| #363 | No canonical story yet; intake obligation retained | Root intake: minimal reproduction and seven-question fit review pending. No implementation or completion claim. |
-| #362 | No canonical story yet; intake obligation retained | Root intake: minimal reproduction and seven-question fit review pending. No implementation or completion claim. |
-| #361 | No canonical story yet; intake obligation retained | Root intake: minimal reproduction and seven-question fit review pending. No implementation or completion claim. |
+| #363 | story:feature-request-363 (draft) | Minimal0.51.0 probe and seven-question fit review recorded. Separate filtered views synthesize6scenarios/0refusals; combined-measure gap requires design. No implementation claim. |
+| #362 | story:feature-request-362 (draft) | Minimal0.51.0 probe and seven-question fit review recorded. Validating source lacks its aggregate scenario with one precise synthesis refusal. No implementation claim. |
+| #361 | story:feature-request-361 (draft) | Minimal0.51.0 probe and seven-question fit review recorded. Validating source lacks its aggregate scenario with one precise synthesis refusal. No implementation claim. |
 | #360 | No canonical story yet; intake obligation retained | Reviewed local source; transfer on shared carrier and integrated checks pending. |
 | #354 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
 | #347 | No canonical story yet; intake obligation retained | Runner evidence exists; private consumer execution remains unverified. |
@@ -786,3 +786,7 @@ Confirmed missing observation primitive. docs/design/concurrent-history-conforma
 The request needs a reviewed capability and history contract before implementation: distinguish restarting a process while preserving durable state from resetting a scenario; establish process incarnation and completion/failure evidence; decide which creating identities must remain unique against retained rows and how reads witness persistence; define unarrangeable identities/views and unavailable target capability; preserve model state across the restart step in explorers. All runtimes must execute the admitted primitive consistently, with unknown/older formats refusing it. A counter-reset mutant plus healthy durable issuer must distinguish this from an ordinary two-create test, including timeout/failed restart and no-capability controls. Do not allocate a new suite/history major until that contract is closed and coordinated with389.
 
 Issue389 explicitly reports restart/concurrency as intrinsic unsupported coverage today; that disclosure is not delivery of297. This remains planned capability work with a binding-design prerequisite. Source audit only; own new test/build executions0.
+
+## Aggregate intake probes, 2026-10-03
+
+Installed0.51.0 lightweight brand-free probes isolate361(group parameter) as ESS-SYNTH-017 and362(state-only group) as ESS-SYNTH-016: each validates and synthesizes5scenarios/1refusal. Declared wrong_state avoids unrelated refusal noise.363conditional count proposed where syntax is rejected; existing filtered count/sum idiom validates and synthesizes6scenarios/0refusals. This is source/synthesis evidence, not target execution. Stories361/362/363 now retain complete fit reviews, decisions and required acceptance; no issue closed. Private probe source hashes and precise planner citations are in each story.
