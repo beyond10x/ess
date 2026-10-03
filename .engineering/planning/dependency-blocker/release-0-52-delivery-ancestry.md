@@ -7,7 +7,7 @@ title: Gates refuses GitHub update-branch ancestry in the release candidate
 relations:
 - blocks: task:release-0-52-0-20261003
 withholds: verification
-revision: 2
+revision: 3
 ---
 ## Observed refusal
 
@@ -26,3 +26,9 @@ The delivery-policy/tooling owner must supply an approved way to establish the r
 ## Authorized resolution
 
 The operator explicitly approved implementing and independently reviewing Gates support for bot-created GitHub update-branch provenance, preserving existing checks and main history. Gates story:github-update-branch-provenance owns the fix. The blocker remains open until the reviewed delivered tool verifies the original refused candidate ancestry through the same Gates path.
+
+## Reviewed source repair delivered, tool release still held
+
+Gates PR beyond10x/gates#27 merged through b10x-bot at 47c0686c6f635d4d2760bc3a36b3f7974797d323. Its tree matches reviewed candidate abe6b942d979dbed160111e2e3c3bc908b7f12f9. Final local gate passed 143 tests with seven existing ignored; required remote checks passed. Independent adversary found no issues; guard-removal mutation caught the removed check.
+
+The 0.1.12 static binary is built but unpublished. A required privacy scan refused private-identifiers at line 4177, diagnosed as a three-byte match in executable .text. No tool adoption, policy exception, scanner bypass, tag or release followed. The exact held binary SHA256 is d5c1663a2962828b2ba77dcafaf74f965cf84aead1b95becfd19ed0b591f4bd6. Operator disposition of that refusal and verified tool delivery are still required before retrying the original ESS publication.
