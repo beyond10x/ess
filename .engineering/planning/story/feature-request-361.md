@@ -10,7 +10,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+revision: 6
 ---
 ## Outcome
 
@@ -67,3 +67,11 @@ Private retained current-probe Rust source SHA256a9cfb9c1206ead4a5358ea156b11c13
 Root executed the retained current-source Rust probe binary without compiling, using copied private fixture inputs and adding a declared Open precondition to the state-only aggregate source. Binary SHA256 fb597026674fde8b15c53453370832d7b967803fcc4bc75f93424e210bbcc6aa is retained in the owned servers cache. New source SHA256 66f6384d45d4b883eda2738aa6df644b40c6f2e80bd003a7d8bdbadce08095d1 declares demo.work.Open with team=seeded and cents=17. Source admission succeeds. All five emitted state-case scenarios begin with that exact ExecuteCommand and its expected opened outcome, verified by an independent jq assertion. Thus this composition is admitted source and retained setup, not a hypothetical syntax example. It creates an aggregate source row before the scenario's own arrangement.
 
 The current aggregate remains absent with ESS-SYNTH-016. The unchanged full probe still ends at its named AGGREGATE_GROUP_SELECTION_GAP assertion, terminal 101; no target query was executed and no healthy-target failure is claimed. Original intake and prior current-source red evidence remain unchanged. New private evidence under ess-aggregate-intake-20261003/precondition-probe/run: run.log SHA256 cbcffc5efbf262158c8eb744d9f193f6e0d89a41712cfb317d94b352eb8d7e4e; state suite c3c358f21e049a7d4f03019b8b77b104ec90e8d273c5d54b382d3972552015dd; terminal receipt 39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c. This strengthens the existing independent design finding: Empty only precedes setup, and exact observations require the complete retained command prefix and its subsequent effects. A revision is being developed before any implementation authorization.
+
+## Complete query-time inventory direction
+
+Read-only source proposal aggregate-group-selection-revision-proposal.md, SHA256 9f3d2556b354af6f8c37e02fcff7a16d62f33f88ff088c394d68c277f84b3bd9, confirms that Arrangement describes one row and cannot supply a complete inventory for instances, affects or binding-invoked effects. The original two-file design is insufficient. Root accepts the direction of preparing aggregate actions/query intents, selecting the exact existing precondition prefix once, installing fixture/time authority, then evaluating each query cut over the complete store. Reuse the accepted #292 shared executor/value semantics through a scenario-specific adapter; history candidate inputs and expected outcomes do not become conformance authority. No overlapping source edit is authorized before agreeing the shared interface and integrator's synthesis waves.
+
+Dynamic fixture/observed-dependent grouping or totals remain part of this same completion bundle. Existing ScenarioValue, static Counts and literal ChangedBy cannot express all such results. A concrete closed aggregate-result observation design is being drafted, with actual occurrence capture, causal query cuts, exact arithmetic and every runtime required. No format is adopted, no version pair is reserved, and no new implementation has been dispatched by this direction record. Static-only support must not be reported as completion of the general feature; a blanket precondition refusal would not fix the reviewed defect. Generated stored values with no independent source-observable authority remain an information boundary requiring a truthful named gap rather than fabricated expected values.
+
+Retained source-specific proposal includes prefix truncation, known/generated identity distinction, cross-row old-store effects, fixture key merging, same-event multiple occurrence captures, source binding completion and legacy compatibility controls. The proposal itself executed zero builds/tests/probes. Root's earlier admitted precondition probe is separate actual evidence. Draft dynamic authority must resolve exact scope/resource/compatibility questions and undergo independent review before production edits; the original design review finding is not yet marked fixed.

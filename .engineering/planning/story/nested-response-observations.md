@@ -44,7 +44,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_nested_response/values.rs
 - confidence: inferred
   path: docs/design/nested-response-observations.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -110,3 +110,13 @@ Nested response owner freezes13source/test files against5c5aeaf795 as patch9e87d
 Independent reviewer approves the exact frozen 13-file patch 9e87ddaef39cd06666bd962763e18a8fe633d5f037a2fb45c4058a16d23631be with no findings. Immutable report SHA256 791952b2d62dd4c59387eace5e957c303126a47ff7177675c25a7c3997489261 is recorded as review-result:consumer-nested-response-implementation-pass1. Review executions are zero cargo builds and zero generated-runtime/test-binary executions. One isolated installed-Node regex check disproved a proposed terminal-newline admission mismatch; that hypothesis was withdrawn and its unexecuted Rust test remains only in private scratch. No reviewer test or production edits remain in the source tree.
 
 The report cited the earlier owner report d081106ee23776fbc929d7461739b24c0aeb74d8c049e541af1ff359c0963c14; root separately reconciles the owner's final report 8c622ff51baa2fa9dc4a420a342cdb1405197cc2f4ce531603cea72660cfd689 against the same unchanged frozen source. Strict all-target Clippy and repository formatter succeeded. The final post-correction WASM recheck remains queued because shared available disk is below the temporary 12 GiB build-start floor. Prior WASM success is retained, not mislabelled as this final rerun. Source approval does not remove that remaining verification requirement. No commit, integration, release or browser-product completion is claimed.
+
+## Final WASM and local source integration
+
+Root ran the final post-correction actual WASM test on the exact independently approved nested source: cargo test --locked --offline -p ess-synth --test nested_response_wasm -- --nocapture. Terminal exit 0, one test passed, none failed or ignored. Actual independent response/event/generated-sibling modes and pre-callback malformed admission executed. Log SHA256 cfd160b3f6faf7b57603178a7d682a8ba97b2924f50416bea8ff4c9f534fa913; terminal receipt 9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa. The previous owner report remains frozen; this receipt supersedes its historical WASM hold. Synthesis-cache lease was released and handed exclusively to history #292 after terminal completion.
+
+Exact source was committed as worker 103381711f9b427f490b4503611da75601939d31 and transferred without conflict to root carrier d4dc8d3f57359e84b176f043ba6607613040b003. Both have bot author/committer and identical 13-file binary patch SHA256 9e87ddaef39cd06666bd962763e18a8fe633d5f037a2fb45c4058a16d23631be. Existing three carrier documentation edits remain untouched. No PR, push or release action occurred.
+
+The new frozen runtime-source-handoff-nested-addendum-20261003.md has SHA256 c269b5d7faf5cb66ca0a7569da051766f9333764eb54fcb7e9b67e97c98b7d2e and lives beside the two acknowledged carrier handoffs. It proposes appending d4dc8d3f573 to the existing 58 source commits, plus companion binding-document commit 6f007d2db2b9184a7b523d65c58cfe5ccde3a5cc outside that source count. Preserve all original exclusions and dependencies, no wholesale merge and no partial bundle. Both earlier acknowledged handoff hashes verify unchanged. This addendum is prepared locally; no integrator receipt or published integration has been observed for it. All handoff source/evidence remain retained until explicit published-integration verification.
+
+Bounded unit checks are not a full new crate/workspace/release gate. Affected-crate checks must cover the eventual grouped candidate before publication. Product browser response, history, explorer and aggregates remain separate required work. Story remains active pending shared integration and full completion; no claim that the full backlog or release is complete.
