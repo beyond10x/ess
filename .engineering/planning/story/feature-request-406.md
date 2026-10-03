@@ -20,9 +20,13 @@ relations:
 - decomposes: epic:message-contract-clients
 scope:
 - confidence: cited
+  path: Cargo.lock
+- confidence: cited
   path: crates/edge/ess-cli/src/client.rs
 - confidence: cited
   path: crates/edge/ess-cli/src/model_types.rs
+- confidence: cited
+  path: crates/generate/schema-contract/Cargo.toml
 - confidence: cited
   path: crates/generate/schema-contract/src/realize.rs
 - confidence: cited
@@ -43,7 +47,7 @@ scope:
   path: docs/design/types-only-realizations.md
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T08:11:43Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-03T08:11:43Z", actor: "human:timo", revision: 5}
