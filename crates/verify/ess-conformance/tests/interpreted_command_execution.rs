@@ -467,6 +467,18 @@ fn issue_282_acceptance_first_source() -> String {
     )
 }
 
+fn issue_282_external_source() -> String {
+    issue_282_source()
+        .replace(
+            "  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its held state., fields: []}\n",
+            "  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its held state., fields: []}\n  - {name: demo.release.ProviderDeclined, summary: The provider declines publication., fields: []}\n",
+        )
+        .replace(
+            "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n",
+            "      - name: provider-declined\n        external: the provider declines publication\n        error: demo.release.ProviderDeclined\n      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n",
+        )
+}
+
 fn issue_282_model(source: &str) -> EssIr {
     let raw = RawSpecFile::parse(source).unwrap_or_else(|error| panic!("{error}\n{source}"));
     let specification = Specification::assemble([(Source::new("issue-282.yaml"), raw)])
@@ -702,4 +714,144 @@ fn issue_282_nonmoving_acceptance_keeps_its_state_independence() {
         "demo.release.PublishRelease/inspected"
     );
     assert_eq!(inspected.next, store, "preserves leaves the row unchanged");
+}
+
+#[test]
+fn issue_282_open_external_keeps_its_nonmoving_alternative_beside_wrong_state() {
+    let source = issue_282_source()
+        .replace(
+            "  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its held state., fields: []}\n",
+            "  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its held state., fields: []}\n  - {name: demo.release.ProviderDeclined, summary: The provider declines publication., fields: []}\n",
+        )
+        .replace(
+            "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n",
+            "      - name: provider-declined\n        external: the provider declines publication\n        error: demo.release.ProviderDeclined\n      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n",
+        );
+    let ir = issue_282_model(&source);
+    let (store, candidate) = issue_282_create(
+        &ir,
+        &Store::default(),
+        "demo.release.ProposeCandidate",
+        "demo.release.CandidateProposed",
+    );
+    let store = issue_282_accept(&ir, &store, &candidate);
+    let (store, release) = issue_282_create(
+        &ir,
+        &store,
+        "demo.release.DraftRelease",
+        "demo.release.ReleaseDrafted",
+    );
+    let published = issue_282_step(
+        &ir,
+        &store,
+        "demo.release.PublishRelease",
+        &issue_282_input(&release, &candidate),
+    );
+
+    let outcomes: BTreeSet<String> = execute(
+        &ir,
+        &published.next,
+        &name("demo.release.PublishRelease"),
+        &issue_282_input(&release, &candidate),
+        &Externals::Open,
+    )
+    .expect("the open provider preserves every model-selected alternative")
+    .into_iter()
+    .map(|step| issue_282_outcome(&step))
+    .collect();
+    assert_eq!(
+        outcomes,
+        BTreeSet::from([
+            "demo.release.PublishRelease/provider-declined".to_owned(),
+            "demo.release.PublishRelease/wrong-state".to_owned(),
+        ]),
+        "the nonmoving provider refusal remains possible while a withheld provider reaches the moving branch's wrong_state"
+    );
+}
+
+#[test]
+fn issue_282_open_external_does_not_bypass_related_refusal_from_an_allowed_state() {
+    let ir = issue_282_model(&issue_282_external_source());
+    let (store, candidate) = issue_282_create(
+        &ir,
+        &Store::default(),
+        "demo.release.ProposeCandidate",
+        "demo.release.CandidateProposed",
+    );
+    let (store, release) = issue_282_create(
+        &ir,
+        &store,
+        "demo.release.DraftRelease",
+        "demo.release.ReleaseDrafted",
+    );
+
+    let outcomes: BTreeSet<String> = execute(
+        &ir,
+        &store,
+        &name("demo.release.PublishRelease"),
+        &issue_282_input(&release, &candidate),
+        &Externals::Open,
+    )
+    .expect("the open provider preserves the source-22 precedence phases")
+    .into_iter()
+    .map(|step| issue_282_outcome(&step))
+    .collect();
+    assert_eq!(
+        outcomes,
+        BTreeSet::from(["demo.release.PublishRelease/not-accepted".to_owned()]),
+        "the related refusal still precedes every eligible branch once the subject may move"
+    );
+}
+
+#[test]
+fn issue_282_forced_and_withheld_externals_keep_their_own_subject_authority() {
+    let ir = issue_282_model(&issue_282_external_source());
+    let (store, candidate) = issue_282_create(
+        &ir,
+        &Store::default(),
+        "demo.release.ProposeCandidate",
+        "demo.release.CandidateProposed",
+    );
+    let store = issue_282_accept(&ir, &store, &candidate);
+    let (store, release) = issue_282_create(
+        &ir,
+        &store,
+        "demo.release.DraftRelease",
+        "demo.release.ReleaseDrafted",
+    );
+    let published = issue_282_step(
+        &ir,
+        &store,
+        "demo.release.PublishRelease",
+        &issue_282_input(&release, &candidate),
+    );
+    let input = issue_282_input(&release, &candidate);
+
+    let withheld = execute(
+        &ir,
+        &published.next,
+        &name("demo.release.PublishRelease"),
+        &input,
+        &Externals::Withheld,
+    )
+    .expect("the withheld provider leaves the moving fallback to its subject authority");
+    assert_eq!(withheld.len(), 1);
+    assert_eq!(
+        issue_282_outcome(&withheld[0]),
+        "demo.release.PublishRelease/wrong-state"
+    );
+
+    let forced = execute(
+        &ir,
+        &published.next,
+        &name("demo.release.PublishRelease"),
+        &input,
+        &Externals::Forced("provider-declined".parse().expect("an outcome name")),
+    )
+    .expect("the forced nonmoving provider answer does not acquire the fallback's held state");
+    assert_eq!(forced.len(), 1);
+    assert_eq!(
+        issue_282_outcome(&forced[0]),
+        "demo.release.PublishRelease/provider-declined"
+    );
 }

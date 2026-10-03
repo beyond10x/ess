@@ -551,7 +551,7 @@ fn responding_core(
     }
     let orders_present_related_refusal = orders_present_related_refusal(ir, spec);
     if orders_present_related_refusal {
-        if let Some(step) = subject_refusal_before_present_related(
+        if let Some(steps) = subject_refusals_before_present_related(
             ir,
             spec,
             store,
@@ -563,7 +563,7 @@ fn responding_core(
             generated,
             responses,
         )? {
-            return Ok(vec![step]);
+            return Ok(steps);
         }
     }
     let selected = select(
@@ -617,7 +617,7 @@ fn orders_present_related_refusal(ir: &EssIr, spec: &ResolvedCommand) -> bool {
     clippy::too_many_arguments,
     reason = "the preflight shares the command execution's existing authorities"
 )]
-fn subject_refusal_before_present_related(
+fn subject_refusals_before_present_related(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &State,
@@ -628,7 +628,7 @@ fn subject_refusal_before_present_related(
     held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
     generated: &Generated,
     responses: &mut super::response::Authority,
-) -> Result<Option<Transition>, Undetermined> {
+) -> Result<Option<Vec<Transition>>, Undetermined> {
     let after_related = select(
         spec,
         facts,
@@ -640,7 +640,7 @@ fn subject_refusal_before_present_related(
         false,
         false,
     )?;
-    selected_subject_refusal(ir, spec, store, input, generated, responses, &after_related)
+    selected_subject_refusals(ir, spec, store, input, generated, responses, &after_related)
 }
 
 /// The branches `facts` select under `externals`, in the declared precedence
@@ -822,11 +822,13 @@ fn is_present_related_refusal(outcome: &ResolvedOutcome) -> bool {
         )
 }
 
-/// The addressed-row existence or held-state answer selected before a present-related predicate
-/// refusal (ess/22, beyond10x/ess#282). `selected` is the branch or branches the later
-/// accepting/external step would take with those refusals omitted. A nonmoving branch therefore
-/// remains state-independent once its addressed row exists.
-fn selected_subject_refusal(
+/// The addressed-row existence or held-state answers selected before a present-related predicate
+/// refusal (ess/22, beyond10x/ess#282). `selected` is the complete alternative set the later
+/// accepting/external step would take with those refusals omitted. Each alternative keeps its own
+/// subject authority: an invalid moving branch becomes the lifecycle refusal while an independent
+/// nonmoving or external branch remains possible beside it. If every selected alternative may act,
+/// selection continues to the present-related refusal phase without preparing any response.
+fn selected_subject_refusals(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &State,
@@ -834,31 +836,74 @@ fn selected_subject_refusal(
     generated: &Generated,
     responses: &mut super::response::Authority,
     selected: &[&ResolvedOutcome],
-) -> Result<Option<Transition>, Undetermined> {
+) -> Result<Option<Vec<Transition>>, Undetermined> {
+    let mut refusals = Vec::with_capacity(selected.len());
     for outcome in selected {
-        let Some(subject) = &outcome.subject else {
-            continue;
-        };
-        if subject.effect == ResolvedEffect::Creates {
+        refusals.push(selected_subject_refusal(
+            ir, spec, store, input, generated, responses, outcome,
+        )?);
+    }
+    if refusals.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+
+    let mut steps = Vec::with_capacity(selected.len());
+    let mut unmatched = Vec::new();
+    for (outcome, refusal) in selected.iter().copied().zip(refusals) {
+        if let Some(step) = refusal {
+            if !steps.contains(&step) {
+                steps.push(step);
+            }
             continue;
         }
-        let ResolvedInstance::Supplied { field } = &subject.instance else {
-            continue;
-        };
-        let identity = input.get(&field.name).ok_or_else(|| {
-            Undetermined::Request(format!(
-                "`{}` names its subject in `{}`, and the input has none",
-                spec.name, field.name
-            ))
-        })?;
-        let entity = ir.entity(&subject.entity);
-        let Some(held) = store.instance_typed(&entity.name, identity) else {
-            return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
-        };
-        if let ResolvedEffect::Moves { transition } = &subject.effect {
-            if !transition.from.contains(&held.state) {
-                return wrong_state(ir, spec, store, input, Some(held)).map(Some);
-            }
+        match take(ir, spec, outcome, store, input, generated, responses) {
+            Ok(Ok(step)) if !steps.contains(&step) => steps.push(step),
+            Ok(Ok(_)) => {}
+            Ok(Err(why)) => unmatched.push(format!("`{}`: {why}", branch(spec, outcome))),
+            Err(Undetermined::Request(why)) if input.operation.is_some() => unmatched.push(why),
+            Err(why) => input.defer(why)?,
+        }
+    }
+    if steps.is_empty() {
+        return Err(Undetermined::Request(format!(
+            "no branch the model allows is described by the given values — {}",
+            unmatched.join("; ")
+        )));
+    }
+    Ok(Some(steps))
+}
+
+fn selected_subject_refusal(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    outcome: &ResolvedOutcome,
+) -> Result<Option<Transition>, Undetermined> {
+    let Some(subject) = &outcome.subject else {
+        return Ok(None);
+    };
+    if subject.effect == ResolvedEffect::Creates {
+        return Ok(None);
+    }
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return Ok(None);
+    };
+    let identity = input.get(&field.name).ok_or_else(|| {
+        Undetermined::Request(format!(
+            "`{}` names its subject in `{}`, and the input has none",
+            spec.name, field.name
+        ))
+    })?;
+    let entity = ir.entity(&subject.entity);
+    let Some(held) = store.instance_typed(&entity.name, identity) else {
+        return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
+    };
+    if let ResolvedEffect::Moves { transition } = &subject.effect {
+        if !transition.from.contains(&held.state) {
+            return wrong_state(ir, spec, store, input, Some(held)).map(Some);
         }
     }
     Ok(None)

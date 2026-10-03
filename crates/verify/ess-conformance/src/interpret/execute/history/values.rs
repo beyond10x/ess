@@ -1,5 +1,5 @@
 //! Values whose implementation-owned content was not recorded by an outcome-only history.
-use super::super::{EssIr, Node, ResolvedBody, ResolvedTypeRef, Undetermined, input};
+use super::super::{input, EssIr, Node, ResolvedBody, ResolvedTypeRef, Undetermined};
 use ess_compiler::ir::ResolvedField;
 use ess_domain::types::Primitive;
 use std::collections::{BTreeMap, BTreeSet};
@@ -257,7 +257,8 @@ fn validate_at(
     }
     match value.concrete() {
         Ok(Some(known)) => {
-            return input::validate_typed_value(ir, declared, &known).map_err(Undetermined::Request);
+            return input::validate_typed_value(ir, declared, &known)
+                .map_err(Undetermined::Request);
         }
         Ok(None) => {
             let field = ResolvedField {
