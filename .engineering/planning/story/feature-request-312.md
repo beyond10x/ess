@@ -20,8 +20,14 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/transcript-target-go.go
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/support_go/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
+- confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 21
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -143,3 +149,7 @@ Fresh remaining-seven execution completed82/83 with sole unchanged upsert_by_exi
 Bounded next unit under the existing parity obligation: exact generated runtime resources src/go/runtime.go and src/ts/runtime.ts plus one new Rust integration test tests/read_your_writes_runtime_parity.rs, all under crates/verify/ess-conformance. Test-only preparation first, actual generated Go/TypeScript and native baseline before production change. Preserve support_go callback strictness and all existing upsert modes. No new source/suite/report format; no persisted shape or canonical generated suite byte change. Missing-token command followed by query/expect-view yields Failed without a read, while query/snapshot retains native Error; do not collapse both into an early failure. Positive controls must prove the exact nonempty token reaches one read, no-prior-write Current remains admitted, eventual reads remain Current, and prior successful read state cannot survive a subsequent missing-token command. Cover current and an admitted historical suite through owning helpers rather than string rewriting. All controls execute actual targets, with no skip or unsupported substitute. Preserve existing diagnostics/disclosure and old-format behavior. Broader runtime or helper defects return to root before expanding scope.
 
 Acceptance requires measured red-to-green controls, unchanged full upsert_by_existence_go matrix, affected parity/native execution neighbors, strict scoped lint/format, and independent whole-unit review before integration. The authored/aggregate fixture candidate4f6af5ef is a separate reviewed unit with all6owned tests green; its82/83 run is not promoted to whole-run green. Full affected-package validation remains due on the refreshed combined candidate after the missing-token correction.
+
+## Missing-token test observation scope amendment
+
+The first preparation audit found existing Go transcript requests record only view parameters, and the reusable TypeScript Rust bridge hardcodes Current while discarding AtLeast. Exact foreign token observation is an acceptance requirement, so it is not replaced with status-only parity. Author may additionally change the existing test-only support_go/mod.rs and fixtures/transcript-target-go.go to record and compare consistency, and support_typescript_prerequisite/mod.rs if needed to parse and record the already-forwarded AtLeast field. These three helper paths join the previous exact3path unit, for6maximum; no new standalone script or public transport/report shape. The TypeScript upper(request) bridge already forwards that field; a JavaScript driver change is not inherently required. A test-local Rust server/target may instead supply the same observation without the optional third helper edit. Preserve current transcript strictness and add a decisive dropped/altered-token detection control. Existing helpers' affected parity neighbors remain required. Production runtime changes still await actual baseline evidence.
