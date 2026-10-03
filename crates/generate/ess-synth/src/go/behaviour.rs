@@ -2231,11 +2231,26 @@ impl<'a> Writer<'a> {
     /// The value one source fills its field with. `before` names the held data before the outcome
     /// and its entity, where the branch holds a row.
     // One arm per value source the model declares, each rendering its own expression.
-    #[allow(clippy::too_many_lines)]
     fn value(
         &mut self,
         field: &ResolvedPayloadField,
         before: Option<(&str, &ResolvedEntity)>,
+    ) -> String {
+        let previous = before.and_then(|(row, entity)| {
+            std::iter::once(&entity.identity)
+                .chain(&entity.fields)
+                .any(|stored| stored.name == field.target)
+                .then(|| format!("{row}.{}", Self::data_member(entity, &field.target)))
+        });
+        self.value_at(field, before, previous)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn value_at(
+        &mut self,
+        field: &ResolvedPayloadField,
+        before: Option<(&str, &ResolvedEntity)>,
+        previous: Option<String>,
     ) -> String {
         let target = &field.target_type;
         match &field.value {
@@ -2307,12 +2322,13 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Literal { value } => self.literal(target, value),
             ResolvedPayloadValue::Generated => self.assigned(target),
             ResolvedPayloadValue::Cleared => "nil".to_owned(),
-            ResolvedPayloadValue::Increment { by } => {
-                let (row, entity) =
-                    before.expect("the plan admits `{increment:}` only on a held row");
-                let read = format!("{row}.{}", Self::data_member(entity, &field.target));
-                self.increment(target, &read, by)
-            }
+            ResolvedPayloadValue::Increment { by } => self.increment(
+                target,
+                previous
+                    .as_deref()
+                    .expect("the plan admits `{increment:}` only on a held row"),
+                by,
+            ),
             ResolvedPayloadValue::InputOrGenerated {
                 field: source,
                 otherwise,
@@ -2352,10 +2368,34 @@ impl<'a> Writer<'a> {
                 else {
                     unreachable!("the plan admits a struct source only for a struct")
                 };
+                // A structured event payload may have the same name and shape as an Optional
+                // stored field without reading that field. Only an increment consumes the value
+                // at the corresponding previous path; delaying the guard until that is true
+                // keeps output-only structures independent of the held row.
+                let previous = previous
+                    .filter(|_| increments_previous(&field.value))
+                    .map(|read| {
+                        if target.is_optional() {
+                            self.uses.helpers.insert("undeclared");
+                            self.lines.open(&format!("if {read} == nil {{"));
+                            self.lines.push(&format!(
+                                "return nil, undeclared({})",
+                                go_string(&self.command.name.to_string())
+                            ));
+                            self.lines.close("}");
+                        }
+                        read
+                    });
                 let mut rendered = Vec::new();
                 for member in members {
                     let value = match fields.iter().find(|source| source.target == member.name) {
-                        Some(source) => self.value(source, before),
+                        Some(source) => self.value_at(
+                            source,
+                            before,
+                            previous.as_ref().map(|read| {
+                                format!("{read}.{}", items::member_ident(members, &member.name))
+                            }),
+                        ),
                         None => "nil".to_owned(),
                     };
                     rendered.push(format!(
@@ -2473,6 +2513,17 @@ fn reads_subject(value: &ResolvedPayloadValue) -> bool {
         ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::Increment { .. } => true,
         ResolvedPayloadValue::Struct { fields } => {
             fields.iter().any(|field| reads_subject(&field.value))
+        }
+        _ => false,
+    }
+}
+
+/// Whether one value source needs the value at its own target path before the outcome.
+fn increments_previous(value: &ResolvedPayloadValue) -> bool {
+    match value {
+        ResolvedPayloadValue::Increment { .. } => true,
+        ResolvedPayloadValue::Struct { fields } => {
+            fields.iter().any(|field| increments_previous(&field.value))
         }
         _ => false,
     }
