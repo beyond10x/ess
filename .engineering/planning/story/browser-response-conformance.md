@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -244,3 +244,11 @@ Implementation may proceed in isolated ess-browser-conformance-product-20261003 
 Binding design follow-up commit 6b15cceb7cef5e1897056d0e9b0da9fc7f76e204 adds a finite inventory of 65,536 distinct Run nonces per module with no eviction. Validate frame and loaded handle, then consume the new nonce before installation factory or target callbacks, retaining it even if installation/execution fails. Duplicate reuse remains invalid; a new nonce at capacity returns resource_limit before callbacks. Release/selection never clear the inventory. Continuation requires a fresh worker/module and full Load. Current binding document SHA256 a0b8d60aee3fb42f334877a2a3abdd0346dacbe7fc3d3db690f72a74656f1890. This is a bounded design clarification, not a measured resource profile or execution result.
 
 Owner has authored the scoped source/product/assets, independent fixture and admission/execution tests but has started no compiler or browser execution for this unit. Compilation remains held during the release owner's final check; the newly idle servers cache has not been handed to this worker. Rust formatting parsed source; it is not a build or test result. Original ordinary/coverage browser product reds remain the acceptance baseline.
+
+## Uncompiled source checkpoint and first validation step
+
+Owner checkpoint during the release compilation hold: authored source now includes independent healthy/fault direct responses, nested observations, protected-value controls, binding order controls, and a controlled timer installation with tick/busy/pending/drop/read/stop state sharing the execution clock. Ordinary and coverage routes are represented in the proposed matrix. Original coverage restoration retains the module nonce inventory; Load/Select transitions serialize; navigation is bounded per declaration step; duplicate control-JSON keys are rejected in the proposed implementation.
+
+This is owner-reported source progress, not executed acceptance. The owner explicitly paused further fixture expansion after accumulating roughly 2,700 new lines across product/ABI/assets and independent fixtures. Scoped rustfmt syntax and whitespace checks pass; compiler, emitted-host, browser, resource-bound and complete capability-matrix execution evidence remains zero. No build cache or browser process is owned by this unit.
+
+Next action after explicit release/cache clearance is a single-job check of ess-conformance and the exact browser test target on the authorized existing cache, then correction and actual execution before adding remaining matrix rows. The full all-feature acceptance remains required. This checkpoint grants no compilation clearance and does not freeze or transfer the unfinished source. story:feature-request-389 now has a depends_on edge to this story so its completion cannot lose this product execution requirement.

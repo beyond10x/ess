@@ -16,6 +16,7 @@ relations:
 - depends_on: story:interpreted-bindings-and-unmet-obligations
 - depends_on: story:interpreted-scenario-supplied-facts
 - depends_on: story:interpreted-trust-gate
+- depends_on: story:browser-response-conformance
 scope:
 - confidence: cited
   path: crates/edge/ess-cli
@@ -37,7 +38,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -191,3 +192,23 @@ Coordinator review found that raw key/text lengths plus ad hoc node increments u
 Accepted exact semantics: canonical compact JSON UTF-8 length at most 1,048,576 bytes inclusive; number spelling follows the native typed JSON authority. Members are each object entry or array element counted once, with no additional charge for an object's key. The root value has depth zero and every child value adds one, with depth at most 128 inclusive. Apply the limits to each response object and declared-error fields object, and to aggregate arrays of view rows or observed event payload objects. Limits must not reset for every row or event. Validate depth and member count before a bounded counting writer; do not allocate unbounded serialized plaintext to discover an overflow.
 
 Exact boundary, escaped-control-character, numeric and wrapper controls must be shared with both ports. Typed protocol identifiers and correlation metadata remain outside these declared JSON payload surfaces. Captured values, target error messages and identity failures must still never enter persisted evidence. Root owns independent review; native owner implements and freezes the resource vectors.
+
+## Current acceptance audit and integration conditions
+
+Read-only acceptance reconciliation at runtime carrier c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9, 2026-10-03. This section supersedes earlier stage-status prose, not the accepted contract or historical evidence. No new compiler, test, browser, remote gate or target execution occurred during this audit.
+
+| Required surface | Current source/evidence | Remaining completion condition |
+|---|---|---|
+| Source declaration, forbidden flows, compatibility and projections | Frozen source b4b113e9a, 40066842c, c9a9dcbff and d213671dd; reviews consumer-one-time-contract-stage1, consumer-one-time-projections and consumer-one-time-identifiers. Source/IR/suite authority is included in the held handoff. | Regenerate projections and verify the combined integration candidate; preservation or a truthful implementation-generator refusal is not evidence of conformance runtime execution. |
+| Stateful generated witnesses: origin, retry, rotation, actor reads and subsequent observations | Producer composition d2b8827ec; review consumer-one-time-producer-composition records the actual producer 17/0 and native guard 1/0 controls after its independently reproduced SubjectState defect. | Preserve the complete source-derived witness inventory on final integration. Finite witnesses do not prove unbounded non-disclosure. |
+| Native observer and interpreted responses | Frozen observer f9b938343, interpreter ff128cbdb and later native response 046db8a680. The native-response addendum records 192 focused integrated passes, including one_time_contract 7, one_time_execution 21 and one_time_generation 17. | These are bounded earlier executions, not a complete current-carrier package result. Preserve issuance/rotation, ordinary and declared-error payloads, event windows, keys/substrings, all prior captures and value-free diagnostics in final checks. |
+| Generated Go | Source 967b30345 and follow-ups. Review consumer-one-time-go-observer-final records identical-test baseline 14 passed/9 failed then 23/0, including the corrected orphan ErrorPayload observation. | Complete affected-package and integrated parity checks on the final combined source. |
+| Generated TypeScript | Source 7cac52891, 862183e48 and follow-ups. Review consumer-one-time-typescript-event-batch records its two real callback regressions red, then 28 dedicated plus four runtime tests green after bounding the whole returned batch. | Complete affected-package and integrated parity checks on the final combined source. |
+| WASM library/bridge | Source a862b261a; review consumer-one-time-wasm-final records one test exercising 43 shared cases. Current one_time_wasm.rs:204 builds a WASM Runner, emits bridge.js and invokes its driver with Command::new("node") at line227. The small unmarked source supplies transport; marked fixture bytes are admitted inside WASM. | This proves that measured WASM route, not Firefox product execution, marked-source web generation, arbitrary installations or the full browser product matrix. Keep those claims distinct even though the harness label says actual browser execution. |
+| Actual CLI-emitted browser products | Existing one_time_browser controls prove policy display/refusal only. story:browser-response-conformance records actual ordinary/coverage Firefox product reds and owns the replacement execution route. Its authored implementation remains uncompiled/unexecuted under the release hold. | Required dependency: actual emitted host build and Firefox healthy/fault execution for ordinary and coverage products, protected values, exact statuses/counts, original-byte admission before callbacks, and value-free DOM/log/download/errors. Shared library or Node tests cannot discharge this cell. |
+| Interpreted target prerequisites | Existing four dependencies remain canonical. Review consumer-native-interpreter records actual 33 Billing and 34 Oracle scenarios plus sixteen fault comparisons and focused 99/0 at its frozen scope; later source corrections remain in the held carrier. | Verify those exact named acceptance controls after final source integration; do not schedule duplicate interpreter implementations merely because the stories remain active. |
+| Delivery | Original 58-source manifests acknowledged; nested/explorer addenda extend selected source to 60. All source/evidence remains local and retained. | Sole integrator verifies transfer into batch/ui-live-apps-complete-20261003, reconciles excluded documentation and overlap, then runs required combined gates. No partial ess/21 PR or release, and no completion inferred from the separate 0.52 release candidate. |
+
+Restart, response-loss receipt and concurrency primitives are not implemented by serial retry tests. The accepted finite-boundary disclosure remains explicit; the separate restart request #297 remains outstanding in the full backlog. Observer bound controls do not measure the browser product's new proposed memory/nonce/frame limits.
+
+Disposition: #389 remains active and fast-lane. The concrete missing browser execution is now a typed depends_on edge to the existing browser story. No duplicate story, lifecycle completion, new source-format allocation or remote write is warranted by this reconciliation.
