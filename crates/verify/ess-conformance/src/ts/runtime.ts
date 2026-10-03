@@ -3798,7 +3798,10 @@ export class ScenarioRun {
 
   expectNoEvent(index: number, step: Step): boolean {
     if ((this.observed[step.event] ?? []).length > 0) {
-      return this.fail(index, `ESS-CF-NO-EVENT: \`${step.event}\` was emitted, and this branch does not emit it`);
+      return this.fail(
+        index,
+        `ESS-CF-NO-EVENT: \`${step.event}\` was emitted, and this branch does not emit it`,
+      );
     }
     return true;
   }

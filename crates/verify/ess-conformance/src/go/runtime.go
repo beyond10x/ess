@@ -4884,7 +4884,7 @@ func admitStep(value any, major int) error {
 			if tag == "expect_direct_response" {
 				_, err = admitDirectResponse(v)
 			} else {
-				err = admitResponse(v)
+				err = admitResponse(v, major)
 			}
 		case "check":
 			err = admitPeriodic(v)
