@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 13
+revision: 14
 ---
 ## Authority and delivery
 
@@ -109,3 +109,9 @@ Exact session01a0feb8 acknowledged: it owns only releasePR398, branch release/0.
 Runtime coordinator01a0fbbb confirmed its older318 copy at e9355b003 with2969953014/2291c5adfa followups will yield to our final reviewed318; no parallel318 changes there. Its active312 edits synthesize.rs and synthesize/{caller,subject_fact,related_guard,existence}; RelatedField reviewed85754ad031178695fb72169a9850dc7bf60fbed8 changes execute.rs/execute/values.rs and2tests. Prerequisite runtime commits it named:2693e5348,fc676ff13,641fdfa28,13e40c33f9,73faabfaf9. These are provenance, not authorization to blindly import its carrier or all prerequisites. Before282/304 dispatch agree a reviewed source-only shared base/file boundary, excluding duplicate393/394 and unrelated planning/CI; retain operator scope. Both sides acknowledged the overlap and later-wave hold.
 
 Available disk fell below our10GiB build floor during other-session work. After verifying this unit's agents/builds were idle, coordinator cargo-cleaned24 exact completed consumer targets, then removed only individually verified ELF server binaries in its target/tmp. Generated sources, reports, logs, private ownership metadata and mainunit target/debug remain. Reviewed lists and output retained in318scratch. Next check reported13,368,438,784available bytes. The #318 implementor resumed only the bounded Go decoder correction under its original brief plus correction-pass-2.md, own lease and10GiB monitored floor. No new conformance wave or transport work dispatched.
+
+## Final served-entry correction and integration
+
+Implementor final correction report records package408passed0failed1existingignore across60groups; acceptance34passed0failed0ignored, strict all-target Clippy, task fmt-check and diff check exit0. Report raw SHA25630b142f26f057dc25723b6384297679e690fb8b6615440f9d763cf5131c50574 is retained in assigned318 correction-pass-2 scratch. Coordinator inspected the complete diff: eight emitter lines preserve optional union payload scope;239 test insertions retain all166 independent reviewer lines and add73 class controls. No existing assertions or fixture bytes changed. Bot correction99ad5fc34 and the previously frozen4a17f69b62 are integrated into the sole held batch branch. No third adversary; final finding fixed with measured red and green actual generated Go execution. Publication, integration lint/site checks and CI remain pending; story remains active.
+
+Runtime owner raised a source-format overlap: its389 work also introduces ess/21. Coordinator relayed exact original all-syntax bundle hold, not merely the five units.389 was not named in the older inventory; no exemption is inferred. Compatible ess/20 prerequisites may be separated, or an unpublished/held frozen shared base agreed. No ess/21 activation merges or partial-format release authorized by this session. All ess-transports remains exclusively third Claude ownership.
