@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T17:29:12Z",
+  "actor": "human:timo",
+  "artifact": "story:nested-increment-previous-location",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:nested-increment-implementation-20261003-r1",
+    "reference": "git:7cba6e0fc3b1c047a8f4318f02e60c0cece1ca59:crates/verify/ess-conformance/src/ts/runtime.test.ts:377",
+    "review": "review-result:nested-increment-implementation-20261003-r1",
+    "outcome": "fixed"
+  }
+}
