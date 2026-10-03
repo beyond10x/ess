@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 ---
 ## Outcome
 
@@ -48,3 +48,7 @@ Every applicable named control in docs/design/mutation-scope-and-known-failures.
 - crates/edge/ess-cli/ CLI definitions, mutation/run/report wiring and actual CLI tests (inferred entry points; locate exact modules before edits).
 - crates/verify/ess-conformance/tests/ and generated Go/TypeScript acceptance (cited runtime/report contracts).
 - docs/design/mutation-scope-and-known-failures.md and affected website guides/references (cited design).
+
+## Design review revisions
+
+The first independent review required three corrections, now specified in docs/design/mutation-scope-and-known-failures.md. Component mutant selection remains changed-scenario based; whole-system refusal deltas cannot attribute a mutant. Selected commands without executable scenarios are explicit unavailable obligations outside the mutant denominator. Manifest4 collects exact-suite-bound report2 only; legacy report1 remains confined to legacy manifests. Known-failure declarations bind a separate public build digest, supplied by the execution host before target calls, using closed ess-conformance-execution/1 sidecars for external collected reports. Protected one-time target identity stays redacted. This supersedes the earlier name/version-only assumption and adds the explicit execution-context format/cost. Native executable identity and generated/external host provenance require changed-build and private-sentinel controls. The proposal still requires its final independent design review before implementation dispatch.

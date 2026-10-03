@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T17:33:22Z",
+  "actor": "human:timo",
+  "artifact": "component-design:aggregate-observation-integration-boundary",
+  "kind": "component-design",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:aggregate-causal-design-20261003-r1",
+    "reference": "docs/design/binding-causal-observation.md#closed-optional-target-capability",
+    "review": "review-result:aggregate-causal-design-20261003-r1",
+    "outcome": "fixed"
+  }
+}

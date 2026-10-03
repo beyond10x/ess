@@ -7,7 +7,7 @@ title: Aggregate observation source ownership and shared execution dependencies
 relations:
 - designs: story:feature-request-361
 - designs: story:feature-request-362
-revision: 3
+revision: 4
 ---
 ## Purpose
 
@@ -39,21 +39,25 @@ Go emission concatenates embedded files in go/mod.rs::runtime; TypeScript emissi
 
 ## Proposed file ownership
 
-This inventory records hooks and anticipated files, not a dispatch to all owners at once.
+This inventory binds the source surfaces for aggregate observation, including the actual receipt producers. It is not a concurrent dispatch. Root serializes shared edits after binding and browser implementation freezes. The exact producer/synchronization contract is docs/design/binding-causal-observation.md, Receipt producers and adapter ownership.
 
 | Surface | Paths | Evidence / owner |
 | --- | --- | --- |
-| Finalized program producer | src/synthesize.rs; src/synthesize/aggregate.rs | Cited existing ordering/planner; aggregate owner plus shared integrator coordination. |
-| Persisted vocabulary and early admission | src/scenario.rs; src/admission.rs; src/lib.rs | Cited existing hooks; closed DTO/major selection must be fully bound first. |
-| Native model/program module | src/aggregate_observation.rs and src/aggregate_observation/ | Inferred new module; producer, original-byte reader, checked RawSpecFile reconstruction and semantic re-projection. |
-| Shared execution child adapter | src/interpret/execute.rs; src/interpret/execute/aggregate.rs | Inferred new adapter and parent registration after #292 freeze; private row/address access needs explicit design. |
-| Native runtime and disclosure | src/runner.rs; src/runner/disclosure.rs; src/aggregate.rs | Cited existing state/query/disclosure/arithmetic hooks; no duplicate native command executor. |
-| Generated runtimes/packaging | src/go/mod.rs; src/go/runtime.go; src/ts/mod.rs; src/ts/runtime.ts | Cited packaging and expectation readers; new helper paths need exact scope before editing. |
-| Focused Rust tests | tests/aggregate_observation_admission.rs; tests/aggregate_observation_execution.rs; tests/support_aggregate_observation/ | Inferred independent model roundtrip, malformed-byte and actual healthy/fault target corpus. |
-| Actual WASM | crates/generate/ess-synth/tests/aggregate_observation_wasm.rs | Inferred test using the existing actual WASM execution route. |
-| Full browser | Existing browser-response-conformance product/fixture scope, after owner freeze | Inferred test reuse; library WASM alone is insufficient. No parallel edit to that worker's tree. |
+| Finalized program producer | ess-conformance/src/synthesize.rs; src/synthesize/aggregate.rs | Existing planner/order; root finalization plus aggregate implementor. |
+| Persisted vocabulary/admission | ess-conformance/src/scenario.rs; src/admission.rs; src/lib.rs | Existing closed step reader; new suite38/39 checked here. |
+| Checked semantic observer | ess-conformance/src/aggregate_observation.rs and child modules | New original-byte reader, checked source reconstruction/reprojection. |
+| Expected-state executor | ess-conformance/src/interpret/execute.rs; src/interpret/execute/aggregate.rs | Separate narrow child adapter after #292; actual caller/provider authority, no expected outcome input. |
+| Actual native receipt producer | ess-conformance/src/interpret.rs and actual execute/publish/store children | Existing scenario RefCell; causal implementor adds observation at actual execution transitions, separate from expected-state computation. |
+| Discoverable optional capability | ess-conformance/src/target.rs; src/runner.rs | Four default Unsupported methods on ConformanceTarget; no additional Runner generic bound, no double execution. |
+| Disclosure and query association | ess-conformance/src/runner/disclosure.rs; src/runner.rs; src/aggregate.rs | Retain private aligned rows/inventory and value-free failures. |
+| Rust/Go generated dispatch receipt producers | ess-synth/src/rust/system.rs; src/go/system.rs | Existing logs/cursor alone are insufficient; causal implementor records occurrences, attempts, actual results, retries and children at real dispatch boundaries. |
+| Rust/Go observed transaction stores | ess-synth/src/rust/store.rs; src/go/store.rs | Existing stores lack commit positions; causal implementor adds shared command transaction coordinator, staged writes/events and immutable snapshots. |
+| Generated capability/session adapters | ess-synth/src/rust/causal.rs; src/go/causal.rs and owning module packaging | New modules implement session lifecycle, seal/closure/read under the same store coordinator and actual service forwarding. |
+| Go/TypeScript runner adapters | ess-conformance/src/go/mod.rs; src/go/runtime.go; src/ts/mod.rs; src/ts/runtime.ts | Existing packaging/readers; optional four-operation discovery, no unsupported fallback execution. |
+| WASM/full browser capability | ess-synth/src/web/bridge.rs; src/web/page.rs; browser-response-conformance product adapter | Existing installed generated system and exports; forward versioned private observation to same actual system, never a shadow service. Coordinate with browser owner before edits. |
+| Native and actual generated tests | ess-conformance/tests/aggregate_observation_admission.rs; tests/aggregate_observation_execution.rs; tests/support_aggregate_observation/; ess-synth/tests/aggregate_observation_wasm.rs and actual service/browser fixtures | New focused controls plus actual producer fault seams. Library WASM alone cannot satisfy browser acceptance. |
 
-Paths beginning src/ or tests/ above are relative to crates/verify/ess-conformance. Compiler/domain remain dependencies, not implicitly editable ownership. New executable harness files are Rust. Existing generated-language runtime assets retain their established repository role. Source, evidence and format docs remain in the single held bundle; no additional delivery PR.
+Crate prefixes identify crates/verify/ess-conformance or crates/generate/ess-synth; subsequent src paths in a row stay relative to that crate. New module names are explicit prospective allocations, not claims that files exist. Compiler/domain remain dependencies with separately coordinated ownership. Every new executable harness is Rust; existing generated Go/TypeScript product assets retain their established role. No second PR or transport-address scope expansion is authorized by this inventory.
 
 ## Missing binding completion authority
 

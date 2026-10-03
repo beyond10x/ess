@@ -30,14 +30,18 @@ refuse the whole model; a relevant cycle must actually terminate before a comple
 
 ## Closed optional target capability
 
-Add a separate optional `CausalBindingTarget` capability, not fields silently appended to existing
-command results or invocation observations. Rust target methods default to Unsupported without
-performing the requested action; Go uses a separate optional interface and TypeScript uses an
-explicitly checked optional capability. Existing adapters continue their original operations.
+Add an optional causal capability with four default methods directly on Rust `ConformanceTarget`:
+`begin_causal_observation`, `execute_causal_operation`, `query_causal_cut` and
+`end_causal_observation`. Each takes a closed typed request and returns its closed typed result.
+All defaults return Unsupported without performing the requested action. `Runner<T:
+ConformanceTarget>` can therefore invoke them without a new bound, trait downcast or specialization.
+Do not append fields to existing command results or invocation observations. Go uses a separate
+optional interface with the same four operations; TypeScript checks an optional capability object
+implementing all four. Existing adapters continue their original operations.
 Required aggregate fixtures implement this capability; an adapter lacking it cannot pass a
 binding-affected exact aggregate scenario. No capability is demanded when relevance is empty.
 
-The capability has three operations with closed typed requests/results:
+The capability has four operations with closed typed requests/results:
 
 1. **Begin observation.** Bind correlation, admitted aggregate-contract digest, finalized program
    digest and the ordered relevant binding identities. It returns an opaque observation-session
@@ -57,6 +61,22 @@ The capability has three operations with closed typed requests/results:
    within the existing runner deadline; timeout is a non-passing observation. A deadline is never
    evidence of completion. The response binds the query step, view/params, source roots, contract
    and program digests, so it cannot be attached to a different query or a stale program.
+4. **End observation.** Close the session handle, reject further operations, clear private retained
+   inventories/snapshots and return a close acknowledgement. Closing does not mark pending work
+   complete. Target scenario teardown still owns cancellation/isolation of in-flight execution.
+
+After ordinary fixture provisioning and successful `begin_scenario`, and before any scenario
+setup or command that contributes a root, the runner opens one observation session if the
+finalized program has nonempty relevance. A begin refusal ends this scenario non-passing before
+its commands execute. Every relevant finalized source operation, including setup, then goes
+through execute_causal_operation exactly once. It returns the ordinary result used by the existing
+runner checks; no second ordinary execution is allowed on either success or failure. There is no
+fallback to execute_command if an observed execution returns Unsupported or loses its receipt.
+The query step receives the rows directly from query_causal_cut. The runner calls end exactly
+once on every exit after a successful begin, before ordinary scenario teardown, including failure,
+timeout and budget exhaustion. End failure is non-passing and cannot replace an earlier failure
+with success. With empty relevance none of these methods is called. A partially implemented Go/TS
+capability is unsupported at begin, before any execution.
 
 The normal query target callback does not subsequently fetch different live rows for this check.
 The rows and causal inventory share one snapshot receipt. A read-your-writes requirement includes
@@ -125,6 +145,57 @@ if an adapter cannot guarantee that isolation or account for those writes, Compl
 This is maintained execution metadata at the real dispatcher, not a runner instruction that
 drains a queue or synthesizes missing results. The completion inventory cannot be filled from the
 aggregate program's predicted values. Healthy/fault adapter tests must exercise the race seams.
+
+## Receipt producers and adapter ownership
+
+The existing publication/invocation vectors and delivery cursor are insufficient receipt sources.
+The following production changes belong to the causal adapter unit, after binding semantics and
+the separate browser owner have frozen their shared files. None is supplied by a test-only trace.
+
+- `crates/generate/ess-synth/src/rust/system.rs` and `go/system.rs` generate the occurrence ID
+  allocator at real event publication, parent root/attempt association, relevant child registration
+  before dispatch, the attempt record immediately before the bound command-port call, and its
+  actual result immediately after return. They retain retry obligations across held queues and
+  delays, and register escalation occurrences before making the original obligation terminal.
+  Taking the ordinary public logs never removes the private session inventory.
+- `rust/store.rs` and `go/store.rs` in that crate generate the observed store adapter. Every port
+  participating in an observed scenario shares one session transaction coordinator. Observed
+  commands acquire it once around the whole command, stage all writes/events, commit them together
+  with one monotonically allocated command-effect position, and register direct events/children
+  before releasing it. A put/delete does not independently mint a command commit. Refusals with
+  no writes record no-write; partial or unknown commit fails observation. Existing arbitrary
+  custom storage ports that cannot supply this transaction protocol remain explicitly unsupported.
+- New `rust/causal.rs` and `go/causal.rs` generator modules own the optional session adapter and
+  generated query-cut implementation. Under that same coordinator, query_cut seals roots, checks
+  terminal closure, then copies the relevant typed store snapshot and inventory. Query projection
+  reads that immutable copy, retaining the commit position and original caller/consistency token;
+  rows and inventory are never fetched in two unrelated live reads. It cannot acknowledge an
+  eventual external projection without its actual synchronization token. Rust uses exclusive
+  session ownership/locking and Go uses the shared session mutex; direct component access that
+  would bypass the coordinator is prohibited while an observed session owns those stores.
+- `crates/verify/ess-conformance/src/interpret.rs` and its execution child adapter provide the
+  native interpreter's actual dispatcher/session state under the existing scenario RefCell
+  boundary. Record at its real execute/publish/store transitions; do not run a second model to
+  fabricate implementation receipts. The independent expected-state adapter remains separate
+  and consumes the actual receipt inputs/results, never its own desired outcomes.
+- `crates/generate/ess-synth/src/web/bridge.rs` exposes the generated Rust session capability
+  through explicitly versioned ess-binding-observation/1 dispatch requests. `web/page.rs` and the
+  generated TypeScript target connect that capability to the full browser conformance product.
+  The bridge uses the same installed generated system/store session, never an independent shadow
+  service. Private payloads travel only through the runner's protected observation channel and
+  retained state; ordinary page results, DOM, console and persisted reports remain value-free.
+  WASM tests execute these exports; browser tests execute the actual page/target path as well.
+- `ess-conformance/src/target.rs`, `runner.rs`, `go/runtime.go` and `ts/runtime.ts` discover/use the
+  capability and retain its aligned result. Rust/Go generated service harness adapters forward to
+  the actual generated session API. If an HTTP adapter exposes the capability, it uses the closed
+  versioned envelope and the same correlation/access authority as its target; no new unauthenticated
+  operational endpoint is introduced. Unsupported old HTTP adapters execute no fallback command.
+
+All these paths are explicit ownership additions; coordinator serialization resolves overlap with
+ordinary stores, binding execution and browser work. Independent tests must locate each field's
+producing call site and plant faults there, including a transaction-boundary race, log draining,
+two queued retries and direct-store bypass. Tests that manufacture an already-complete inventory
+cannot satisfy the actual adapter acceptance below.
 
 ## Admission, versions and disclosure
 

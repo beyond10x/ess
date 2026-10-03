@@ -47,7 +47,7 @@ scope:
   path: crates/verify/ess-conformance/tests/value_expressions.rs
 - confidence: inferred
   path: docs/design/value-expressions.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T15:59:29Z", actor: "human:timo", revision: 8, executor: "agent:codex-ess-bundle-resume-20261003"}
 - {from: "proposed", to: "active", at: "2026-10-03T15:59:29Z", actor: "human:timo", revision: 9, executor: "agent:codex-ess-bundle-resume-20261003"}
@@ -165,3 +165,9 @@ At operator release-handoff request, root inspected exact main e68684efb6a4ac220
 The operator's accepted remaining-bundle plan explicitly includes this correction in Batch A and authorizes implementation and verification. Its binding design is now recorded in docs/design/value-expressions.md E3. The read-only scope report was measured against integration 3e7db9aab and frozen history candidate cae6187ec; report SHA256 6b9b9e32281d4c31f965b459fb1d2b68ade8f7a3a65d1e67cb50e74c83cd5762. The retained original story body came from ess-consumer-backlog-20261002 revision4; this integration copy owns subsequent execution and review evidence. The canonical intake copy was not changed.
 
 No decomposition panel is needed for this single existing correction story. Source-based scoping is not execution evidence. Affected package tests, strict lint, fault-sensitive controls and independent review precede unit integration. The complete task check and actual live browser acceptance remain required before the final bundle release; they may run once the pending browser product is composed, consistent with the repository's local/CI gate split. This scheduling clarification does not waive either acceptance obligation. Preserve one integration branch and one PR.
+
+## Reviewed local implementation
+
+The complete implementation candidate 7cba6e0fc3b1c047a8f4318f02e60c0cece1ca59, based on integrated history9f35a2d5d, passed independent full source review2of2 with no findings. Review1's two defects were fixed in the real generated-value emitters and TypeScript test syntax; the independent208-line prospective test patch remains unchanged (SHA2567fb1ef8faf131445af096b85dd627b4c9a74f9b2201129b9ac2161091cea39f1).
+
+Fresh reviewer proof: declared-behaviour20/20 with actual Rust warnings-denied compilation, Go build and150 generated port/HTTP scenarios; focused conformance78/78; TypeScript runtime239/239 plus both configured typechecks with no skip; domain8/compiler1; strict scoped Clippy, formatting and diff checks. Publication report SHA256f9fafc3059af6cc74590c4d19a0a2362a0c27dd4c2154305ec759750266bfb4a. The story remains active until the separately assigned ordinary/coverage browser composition and final bundle gates execute; this evidence does not close an issue or release.

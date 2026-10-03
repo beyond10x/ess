@@ -69,9 +69,22 @@ inequality use their reversal arm. Existing strictness swaps retain their IDs.
 
 #236 uses the existing `synthesize_for` component admission on both baseline and each mutant.
 An emitted mutant is in scope if its component suite differs from the component baseline in a
-scenario body, scenario presence or synthesis-refusal inventory. This includes cross-domain
-commands the component accepts. Owned-domain filtering is incorrect. Refusal changes cannot be
-discarded as out of scope merely because synthesis produced no executable scenario for them.
+scenario body or scenario presence. This includes cross-domain commands the component accepts.
+Owned-domain filtering is incorrect. `synthesize_for` deliberately preserves whole-system
+refusals; comparing that inventory cannot establish component scope. Keep those global facts
+visible separately, without adding unrelated mutants to the selected component's denominator.
+
+For scoring an already in-scope mutant, use only refusal keys naming a scenario present in the
+union of its baseline and mutant component suites. Other refusals are reported as unscoped facts,
+not scored gained refusals. If a selected component has no executable scenario for a command
+site it accepts, report that source site separately as unavailable with reason
+`selected_command_without_scenario` when a synthesis refusal names that command/outcome. This is
+an explicit incomplete audit obligation, not an in-scope mutant or a kill. Match typed semantic
+command/outcome references from synthesis, not prefixes parsed from diagnostic prose. A refusal
+that cannot be attributed remains a global fact and cannot alone make a mutant in scope. Exercise
+both other-component-only refusal changes and a selected command refused before any scenario is
+emitted. This preserves #236's changed-scenario mutant selection while making its incompleteness
+visible separately.
 For unavailable sites, retain the site when its command belongs to the component's accepted
 command set; otherwise record it as out of scope. This selection grants no evidence of execution.
 
@@ -89,15 +102,22 @@ The intended ESS behavior and ordinary suite stay unchanged. Required fields are
 - `spec_digest`, the admitted baseline specification digest;
 - `suite_digest`, the digest of the exact original baseline suite bytes under suite admission;
 - `implementation`, the exact nonempty implementation identity used by the observed report;
+- `implementation_build`, the SHA-256 identity of the public implementation build, supplied by
+  the execution host before target execution and independently of this declaration;
 - `failures`, a nonempty list of `{scenario, reason, tracking}` records in scenario ID order.
 
 Scenario IDs are exact, with no wildcard, prefix, command-wide or outcome-wide matching. Reason
 and tracking are nonempty user-authored strings; the latter names a repair issue or equivalent
 record and is never fetched. Unknown fields, duplicate keys/IDs, invalid digests, unknown scenario
-IDs and mismatched spec/suite/implementation identity refuse before scoring. The identity string
-must include the build identity chosen by the runner; the declaration is an explicit caller claim,
-not remote attestation. Direct targets use their full name and version rather than the legacy
-mutation report's name-only identity. A target upgrade requires refreshing the declaration.
+IDs and mismatched spec/suite/implementation identity refuse before scoring. The public build
+identity is separate from the report's implementation label. Protected one-time runners keep
+their fixed label and empty version: never restore arbitrary target-returned text. Direct built-in
+targets use the SHA-256 of the running ESS executable, computed before target execution. External
+hosts supply the SHA-256 of their immutable target build through explicit execution-context
+configuration, before any target call. Never derive it from a private value, a target response, or
+by copying the declaration's value. This is declared host execution provenance, not remote
+attestation; the runner remains responsible for truthfully identifying its target just as it is
+responsible for its result. A mismatched build refuses even when the safe label matches.
 
 After ordinary report validation, every listed scenario must currently be Failed. A passing entry
 is stale and refuses; Error, Unsupported, Skipped or absent entries refuse. Every unlisted failure
@@ -122,7 +142,7 @@ that a report was written, regardless of verdict; declaration/admission failure 
 neither result. This is an explicit redesign of #296's suggested strict-mode waiver.
 
 Write the separate closed `ess-known-failure-accounting/1` document with original report-byte,
-suite-byte and declaration-byte digests; exact implementation identity; spec digest; matched
+suite-byte and declaration-byte digests; exact implementation identity and build; spec digest; matched
 known-failed IDs/reasons/tracking; unexpected-failed IDs; and the original terminal counts. Its
 known-failed count is a subset of Failed, never added to Passed or subtracted from total. It has
 no conformance-passed field. Its validator rechecks all identities and the partition against the
@@ -130,15 +150,29 @@ original report and declaration. Validate all inputs before writing outputs; cre
 must not overwrite one another or any input. A write failure is failure, never a success receipt.
 
 Generated Go/TypeScript runners keep their ordinary failed reports and process status. Their
-results can be accounted through the existing `report --suite --results` route; no environment
-variable makes a failing runner pass. Native run and external report must produce equivalent
-accounting for the same scenario statuses and identities. Browser conformance truth is unchanged.
+results can be accounted through `report --suite --results`; no environment variable makes a
+failing runner pass. External `report` additionally requires `--implementation-build <sha256>`
+and `--execution-context-out FILE` whenever known-failure accounting is requested. The build value
+comes from the host's public build artifact, not from target identity callbacks. Native run and
+external report must produce equivalent accounting for the same statuses, labels and build
+provenance. Browser conformance truth and one-time identity redaction are unchanged.
+
+Persist host execution provenance in a separate closed `ess-conformance-execution/1` sidecar:
+format, exact original report-byte digest, exact suite-byte digest, report implementation label
+and implementation_build. There are no values, timestamps, free-text host fields or commands.
+The runner freezes the build identity before its first target invocation; it binds the report
+digest after producing the ordinary report. Generated Go/TypeScript runners accept an explicit
+pre-execution public build digest and execution-context output path, validating both before
+execution. The Rust external-report CLI creates the same envelope from its explicit caller claim.
+Unknown/duplicate fields and invalid/mismatched digests refuse. A context file is not an attestation
+of a remote binary; consumers must trust the result-producing host, as for the ordinary report.
+Tests must show protected response/identity sentinels and their hashes cannot enter this envelope.
 
 ## Mutation scoring and persistence
 
 `mutate --target` accepts `--known-failing FILE`. `mutate --emit` also accepts it: validate static
 suite identity/IDs, copy its original bytes into the new emission directory, and record that
-declaration's digest/path and implementation identity in the manifest. No matching current failure
+declaration's digest/path, implementation label and implementation_build in the manifest. No matching current failure
 is claimed until execution. `--collect` uses that manifest-bound declaration. If supplied a file
 again, it must match the recorded original bytes; refusing an unbound late declaration prevents
 quietly changing the audit contract after observing mutant reports. Legacy manifest/1–3 refuse
@@ -157,7 +191,15 @@ baseline scenario IDs, while changed-body comparison uses the existing typed sui
 The current valid-suite, gained-refusal and dead-guard rules remain in force after eligibility is
 applied. Missing mutant reports remain Inconclusive. Baseline report admission precedes scoring;
 all reports must identify the same implementation, and each report must match its own emitted
-suite. The scorer must not compare a mutant's spec digest to the unmutated declaration digest.
+suite. Manifest/4 collection requires report/2, which admits the exact suite-byte digest; report/1
+is accepted only with legacy manifest/1–3 semantics. Test a stale report with unchanged spec,
+scenario IDs and counts but different suite bodies. When a declaration is bound, each baseline
+and mutant report additionally requires its host-produced execution/1 sidecar, conventionally
+`execution.json` beside `report.json`. Admission checks the exact report bytes, that report's
+suite, and the same implementation_build as the manifest/declaration. Missing or mismatched
+baseline context refuses; a missing mutant context is Inconclusive and can never produce a kill.
+Direct execution creates equivalent private context facts. The scorer must not compare a mutant's
+spec digest to the unmutated declaration digest.
 
 Coordinate all new persisted mutation fields in manifest/4 and report/4, already needed by #236.
 Record scope, sorted out-of-scope IDs/counts, unavailable sites, declaration identity, known-failed
