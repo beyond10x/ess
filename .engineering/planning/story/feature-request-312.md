@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -73,3 +73,13 @@ The retained full-run baseline (SHA39076a45b7c1c2ec1883b78230ec1b24818e367352c2e
 Next bounded source assignment is only execution.rs and faults.rs: admit the exact fresh or intentionally mutated suite through AdmittedSuite, run it through run_admitted, and inspect the actual report/diagnostics. Preserve custom Runner clock/configuration, all32 tests, deterministic whole-report equality, exact diagnostic and faulty-target assertions. The faults helper should use the admitted path for every current suite rather than only Retry. This changes test callers, never the production legacy refusal; existing genuine suite4/report1 controls remain authority for old readers. Do not relabel a fresh suite as legacy, fabricate results, filter failures or loosen counts. If exact admission or real execution exposes another defect, retain the result and return to root before widening scope.
 
 Required acceptance: both full binaries32/32 with zero ignored, strict scoped lint, owning formatting/diff, and independent whole-unit review before integration. All original source/helper and byte-determinism obligations stay intact. This records a ready bounded correction under the existing accepted312 test scope; root dispatches an available existing worker and serial compiler custody separately. It is not implementation evidence.
+
+## Reviewed remaining migration integration
+
+Five-file report migration9203115b533eb9cb00530d0c436b1320ea4ef8e9 is integrated502bf1a75b471742c2680c00e552f7b84d80be66 after immutable review-result:remaining-report-compatibility-312-20261003-r1 approved. Author50/50 plus genuinelegacy1/1; reviewer independently50/50 plus all10 sibling tests, each terminal0/zero ignored. Exact reviewed patchSHA0e4cbdf33d04259aaa921cca01d4d68d0c8c967e1494ff45169e1a3840fac31e and independent logSHAbedb6ceb929b0da0ea3d87fe3da42c5f88b136bf9ea7e235d91cb3b70c3e0f90 retained.
+
+Two-file candidate37f600cdf579d462c0009c17aa76e7d51ce72355 is integrated4ecd55469 after review-result:copied-field-and-response-inventory-20261003-r1 approved. Both author and reviewer native8/8+3/3 passed, strict scoped lint and the author's exact-file format invocation passed. Independent logSHAfe8b7fe8c0296367a8b904c00f26c841d9c60b1636a2050dfbbd088029bfdc57; reviewed patchSHAfbe9afaa4c2ed770d10ddef34a2f7323cb1ce1e2429ce2194f7fd626aba4801e. The exact3 promoted/rolled-back/finished interpreter witnesses and whole native report pass; all copy/branch mutants remain. Audited parser inventory is13field+4fact=17, stale patterns0. No production code changed in these compatibility units.
+
+Latest bot fetch confirms main e07f55a9b13000a6931d842d5534d906b6e9202d is an ancestor. Integrated repository task fmt-check on4ecd55469 with Rust1.98.1 FAILED: task exit201, cargo-fmt child exit1. Its sole source difference is subject_guard_copied_field.rs import ordering, because the unit's standalone rustfmt invocation did not match the repository package formatting settings. The root prematurely recorded a pass before inspecting the terminal result: evidence20261003T205407Z-000-aa6d70315aec is an inaccurate assertion, retained unchanged and explicitly superseded by the corrective evidence record. It cannot satisfy acceptance. The earlier prose claiming integrated formatter success is replaced by this correction. Repository formatting remains pending, and the original failed log remains unchanged.
+
+The repository formatter intentionally excludes byte-pinned generated projections. This observed import-order failure is separate from the earlier cargo-fmt-all generated Billing/Gatepass differences; neither is rewritten as a pass. All remaining baseline failures and final bundle checks stay open.
