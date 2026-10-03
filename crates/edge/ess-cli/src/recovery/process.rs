@@ -240,6 +240,12 @@ pub struct Outcome {
     pub launched: bool,
     /// The exit code, when the child was reaped with one.
     pub status: Option<i32>,
+    /// The terminating Unix signal observed when reaping the child, if available.
+    ///
+    /// This does not identify who sent the signal. A deadline remains `timed_out` even when
+    /// its subsequent reap observes the signal used to kill the owned child. Always absent
+    /// on non-Unix platforms, and when no terminating signal was observed.
+    pub signal: Option<i32>,
     /// Whether the bound elapsed before the child settled.
     pub timed_out: bool,
     /// Bounded captured stdout.
@@ -262,6 +268,19 @@ impl Outcome {
         } else {
             ProcessDisposition::Indeterminate
         }
+    }
+}
+
+fn terminating_signal(status: std::process::ExitStatus) -> Option<i32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = status;
+        None
     }
 }
 
@@ -313,6 +332,7 @@ pub fn run(mut command: Command, limit: usize, bound: Duration) -> Admitted<Outc
             return Ok(Outcome {
                 launched: false,
                 status: None,
+                signal: None,
                 timed_out: false,
                 stdout: Vec::new(),
                 stderr: format!("{error}").into_bytes(),
@@ -336,10 +356,11 @@ pub fn run(mut command: Command, limit: usize, bound: Duration) -> Admitted<Outc
     loop {
         if Instant::now() >= deadline {
             let _ = child.kill();
-            let _ = child.wait();
+            let signal = child.wait().ok().and_then(terminating_signal);
             return Ok(Outcome {
                 launched: true,
                 status: None,
+                signal,
                 timed_out: true,
                 stdout: stdout
                     .recv_timeout(Duration::from_secs(1))
@@ -354,6 +375,7 @@ pub fn run(mut command: Command, limit: usize, bound: Duration) -> Admitted<Outc
                 return Ok(Outcome {
                     launched: true,
                     status: status.code(),
+                    signal: terminating_signal(status),
                     timed_out: false,
                     stdout: stdout
                         .recv_timeout(Duration::from_secs(5))
