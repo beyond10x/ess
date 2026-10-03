@@ -263,6 +263,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-transport", 1, Some("0.52.0")),
     ("ess-transport-ir", 1, Some("0.52.0")),
     ("ess-client-report", 1, Some("0.52.0")),
+    ("ess-protospec", 1, None),
+    ("ess-prototrace", 1, None),
     ("ess-build", 1, Some("0.9.0")),
     ("ess-build-ir", 1, Some("0.9.0")),
     ("ess-runtime", 1, Some("0.9.0")),

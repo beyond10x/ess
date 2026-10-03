@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Experimental `ess-protospec/1` models finite communicating peers, typed scalar messages,
+  bounded channels, logical timers and safety properties. `ess specify protocol` validates and
+  compiles the sidecar; `ess verify protocol` simulates, replays observations and explores a
+  declared finite scheduling profile. Native Rust adapters keep implementation observations
+  distinct from model traces, with explicit inconclusive results for missing evidence or exhausted
+  bounds. [Runnable examples](examples/protocols/README.md) cover terminal-response flushing and
+  an RFC 3261 rejection with a lost ACK; existing ESS and conformance-suite formats are unchanged.
+
 ## [0.52.0] — 2026-10-03
 
 ### Added

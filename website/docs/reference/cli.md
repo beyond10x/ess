@@ -409,6 +409,31 @@ Accepted by every `ess` command, in any position.
 
 Author a system, resolve what it says, and inspect the result
 
+#### `ess specify protocol validate`
+
+Validate an experimental ess-protospec/1 protocol document
+
+```text
+ess specify protocol validate [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+
+#### `ess specify protocol compile`
+
+Write canonical admitted protocol JSON (create-new output only)
+
+```text
+ess specify protocol compile [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+
 #### `ess specify cli`
 
 Validate a typed CLI presentation binding against its selected ESS model
@@ -1256,6 +1281,46 @@ ess generate deployment reconcile [OPTIONS] --path <PATH> --cache <CACHE>
 ### `ess verify`
 
 Hold an implementation, or a later revision, to what a system says
+
+#### `ess verify protocol run`
+
+Simulate an unambiguous action sequence; this is model evidence, not target conformance
+
+```text
+ess verify protocol run [OPTIONS] --path <PATH> --actions <ACTIONS>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--actions` | `<ACTIONS>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+
+#### `ess verify protocol replay`
+
+Check an exact ess-prototrace/1 observation record against its model
+
+```text
+ess verify protocol replay [OPTIONS] --path <PATH> --trace <TRACE>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--trace` | `<TRACE>` | yes |  |  |
+
+#### `ess verify protocol explore`
+
+Explore bounded schedules with optional finite typed input witnesses
+
+```text
+ess verify protocol explore [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--inputs` | `<INPUTS>` | no |  |  |
 
 #### `ess verify bindings`
 

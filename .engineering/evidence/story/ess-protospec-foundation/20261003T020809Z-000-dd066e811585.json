@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T02:08:09Z",
+  "actor": "human:timo",
+  "artifact": "story:ess-protospec-foundation",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Affected-crate cargo test batches (546 integration targets), unit/doc suites, task ci-lint, task site-build, final conformance Clippy and CLI examples; see retained command logs",
+    "reference": "target/protospec-evidence/README.md"
+  }
+}

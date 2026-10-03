@@ -15,6 +15,7 @@ mod model_types;
 mod normalize;
 mod observed_bindings;
 mod output_ownership;
+mod protocol;
 mod release_evidence;
 mod requires;
 mod schema;
@@ -108,6 +109,11 @@ enum Command {
 /// `ess specify`: an authored system becomes a validated, resolved IR — `crates/specify/`.
 #[derive(Debug, Subcommand)]
 enum SpecifyAreaCommand {
+    /// Validate or compile experimental communicating protocol models.
+    Protocol {
+        #[command(subcommand)]
+        command: protocol::Specify,
+    },
     /// Validate a typed CLI presentation binding against its selected ESS model.
     Cli(cli_binding::Input),
     /// Existing specification verbs retain their flat spellings.
@@ -304,6 +310,11 @@ enum GenerateCommand {
 /// `ess verify`: an implementation held to the specification — `crates/verify/`.
 #[derive(Debug, Subcommand)]
 enum VerifyCommand {
+    /// Simulate, replay or explore an experimental communicating protocol model.
+    Protocol {
+        #[command(subcommand)]
+        command: protocol::Verify,
+    },
     /// Verify declared implementation bindings against scoped Kubernetes observations.
     Bindings(observed_bindings::Args),
     /// Generate or execute a semantic conformance suite.
@@ -1336,6 +1347,7 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Specify { command } => match command {
+            SpecifyAreaCommand::Protocol { command } => protocol::specify(&command),
             SpecifyAreaCommand::Cli(input) => cli_binding::validate(&input),
             SpecifyAreaCommand::Other(command) => specify_area(command),
         },
@@ -1430,6 +1442,7 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
 /// `ess verify …`, and the same verbs spelled flat.
 fn verify_area(command: VerifyCommand) -> Result<ExitCode> {
     match command {
+        VerifyCommand::Protocol { command } => protocol::verify(&command),
         VerifyCommand::Bindings(args) => observed_bindings::run(&args),
         VerifyCommand::Conform { command } => conform(command),
         VerifyCommand::Diff { from, to, format } => diff(&from, &to, format),
@@ -5100,8 +5113,10 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 75;
-    const AREA_ONLY_LEAVES: [&[&str]; 8] = [
+    const AREA_LEAVES: usize = 80;
+    const AREA_ONLY_LEAVES: [&[&str]; 10] = [
+        &["specify", "protocol", "validate"],
+        &["specify", "protocol", "compile"],
         &["specify", "cli"],
         &["generate", "cli"],
         &["generate", "ui"],
