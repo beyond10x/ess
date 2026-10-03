@@ -105,3 +105,39 @@ fn an_integer_constant_stays_a_runtime_obligation() {
         "the constant is not discharged by the native type: {obligations}"
     );
 }
+
+const NEWTYPE_SOURCE: &str = r"format: ess/20
+system: probe
+version: v1
+domains: [probe.meter]
+domain: probe.meter
+types:
+  - name: probe.meter.ItemVersion
+    kind: newtype
+    of: Integer
+    invariants:
+      - value == 2
+  - name: probe.meter.Item
+    kind: struct
+    fields:
+      - {name: version, type: probe.meter.ItemVersion}
+";
+
+#[test]
+fn a_bounded_integer_newtype_wraps_a_native_width() {
+    let plan =
+        Plan::from_model(&model::selection(NEWTYPE_SOURCE, &["probe.meter.Item"])).expect("plan");
+    let rust = plan.rust("probe-meter").expect("rust").declarations;
+    let go = plan
+        .go("probemeter", "example.com/probemeter")
+        .expect("go")
+        .declarations;
+    assert!(
+        rust.contains("pub struct ProbeMeterItemVersion(pub i32);"),
+        "{rust}"
+    );
+    assert!(
+        go.contains("type ProbeMeterItemVersion struct {\n\tValue int32\n}"),
+        "{go}"
+    );
+}
