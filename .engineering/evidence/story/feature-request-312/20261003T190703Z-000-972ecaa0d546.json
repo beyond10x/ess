@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:07:03Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Ongoing full affected run at 226af8bfe: old suite26/27 assertions versus fresh34/35, invalid legacy relabel with empty provenance, report1 test helper panics on suite34, and missing ESS_TYPES_NODE environment; complete inventory and baseline classification pending",
+    "reference": "local-evidence:ess21-completion/282/full-affected-refreshed.log"
+  }
+}

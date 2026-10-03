@@ -10,7 +10,7 @@ relations:
 - designs: story:feature-request-244
 - designs: story:feature-request-237
 - designs: story:feature-request-200
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "in_review", at: "2026-10-03T18:53:42Z", actor: "human:timo", revision: 2}
 ---
@@ -27,3 +27,9 @@ Root must revise all five before the second and final full design review. No com
 ## Coordinator revision for final review
 
 The revised complete proposal is `docs/design/expression-family-source22.md`. Review1 findings are addressed at their stated seams: (1) a distinct non-serializable/non-evaluable lexical AST with resolved-only IR/suite/digest fields, (2) persisted typed UTF-8 selectors and same-name-field/direct-binding compatibility, (3) exact wider Integer intermediates with max/min fault controls, (4) an explicit per-command decision instant throughout native/generated/browser execution and versioned history2 observation, and (5) typed distinct-key equality plus Decimal/Timestamp/large-Integer and finite Boolean/enum controls in every required lane. The revision reserves suite40/41 and history2; old envelopes and unsupported external Entity Runtime lowering remain explicit. These are coordinator design choices pending the second and final independent design review, not verified implementation.
+
+## Final design review and coordinator receipt correction
+
+Independent design review2 at `159a21d7f` resolved four review1 findings but identified one remaining A3 blocker: no typed path carried the exact decision instant through a failed/indeterminate completion to the recorder. The exact report is preserved in `review-result:expression-family-source22-20261003-r2` (publication SHA256 `22f3ffc3f5e72ae2832fed45377712e789230d929a47a7528950c85fc70bd3e6`).
+
+The coordinator correction in the design binds `RecordedCommandCompletion { answer, decision_time }`, compatible recorded target/interleaved methods with default None, Atomic forwarding once, per-Pending receipt authority and recorder persistence before the answer/error split. It specifies actual returned/indeterminate/out-of-order/retained-retry and corrupted-clock controls. Two full design-review passes are exhausted. This correction is not independently approved; the exact receipt seam must pass independent implementation review and actual execution before A3 or its dependent row-set time obligations close. Keep this design in_review pending that proof rather than claiming approval from the coordinator edit.

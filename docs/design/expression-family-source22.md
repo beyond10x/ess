@@ -1,7 +1,9 @@
 # Family F expressions (source `ess/22`)
 
-Status: coordinator revision after independent design review 1; final review is pending. This is
-not an implementation, acceptance result, or shipped-support claim. The initial proposal was based
+Status: coordinator correction after two independent design reviews. Review2's remaining receipt
+boundary is corrected below, but this last correction has not been independently re-reviewed;
+its exact seam must pass independent implementation review before A3 closes. This is not an
+implementation, acceptance result, or shipped-support claim. The initial proposal was based
 on `d35eafecf8b4ec5ff26ced16de969d4435baa7ee`; the coordinator rechecked execution/history seams at
 `d75824465`. The immutable initial review is
 `review-result:expression-family-source22-20261003-r1`.
@@ -265,6 +267,66 @@ frozen selection instant. The existing Operation entity in `models/concurrent-hi
 field; regenerate its schema and Go/TypeScript writers through their owning generators. This is
 separate from nominal clock-reading evidence for observed payload members and does not reinterpret
 `observe_clock_reading` as a current-time source.
+
+### Typed decision receipt from execution to recording
+
+Do not add an unversioned field to `SemanticCommandResult` or fetch time from a target's shared
+"last command" cell after execution. Add a separate in-process typed completion value:
+
+```rust
+struct RecordedCommandCompletion {
+    answer: Result<SemanticCommandResult, TargetError>,
+    decision_time: Option<DecisionInstant>, // parsed Timestamp captured by this command edge
+}
+```
+
+This receipt is not a new public serialized result envelope. Only the history2 operation field
+persists its clock fact. `DecisionInstant` wraps the already validated UTC Timestamp representation
+and retains its precision; arbitrary strings and monotonic counter coordinates cannot construct it
+without validation. An absent instant means no observed decision time, not an inferred epoch.
+
+Add `ConformanceTarget::execute_command_recorded(request) -> RecordedCommandCompletion` with a
+compatibility default that calls existing `execute_command(request)` exactly once and wraps its
+answer with `decision_time: None`, including errors. An actual A3 adapter overrides the recorded
+method and invokes the same command core as its ordinary method. That core returns its frozen
+instant alongside the result; discarding the receipt for an ordinary caller cannot cause another
+execution. The recorded method must not implement itself as execute-then-read-clock. The receipt
+survives any post-decision transport/observation error, so `Err` may legitimately carry `Some(time)`;
+an error before the command reaches the decision edge carries no invented time.
+
+Keep existing `Interleaved::complete(pending)` source-compatible and add
+`complete_recorded(pending) -> RecordedCommandCompletion`, whose default wraps `complete` once with
+no time. `Atomic` overrides this method to call the target's recorded command method exactly once.
+An A3-capable interleaved adapter carries the actual decision receipt in that operation's `Pending`
+state until completion, including errors. It does not recover it from whichever operation happened
+to finish last. The owning `InFlight.index` associates that receipt with the reserved Operation,
+preserving invocation order even when completions arrive out of order.
+
+`Recording::complete` consumes this receipt and writes its optional instant into the reserved
+operation **before** branching on `answer`. `Ok` still writes Returned, outcome and the existing
+monotonic return coordinate. `Err` still writes Indeterminate with no returned_at/outcome, but keeps
+any captured decision_time. This is metadata-preserving error handling, not a fabricated successful
+answer. `record`, injected/fault-session recording and subsequent Go/TypeScript explorer recorders
+must use the same typed boundary. No recorder reads a UTC clock or normalizes an omitted receipt
+into evidence. The existing clock-free defaults continue to produce unchanged history1 bytes.
+
+Retained idempotent-result delivery with no new decision returns no fresh decision_time. The
+original operation keeps its own captured instant, and the retry's `retry_of` remains the identity
+link; neither the adapter nor recorder copies the original instant into a supposedly new decision.
+If a retry actually re-enters command decision, its own receipt carries the one reading from that
+decision. Existing retained-result semantic checking remains the authority on whether replay was
+correct; the time receipt cannot make a duplicate effect legitimate.
+
+Required controls record actual native and generated adapter execution through `Atomic` and a
+non-atomic `Interleaved` fixture. Cover a returned result, failure before decision, failure after
+decision, out-of-order completion of two distinct clock readings, missing evidence, and retained
+retry. Require the exact same captured value in the operation and a provider read count of one
+(zero for the clock-free retained delivery). Reread-at-completion, recorder-wall substitution,
+wrong-Pending association, dropped error metadata and copied retry time are separate faults. The
+indeterminate test includes a later observed effect/read that requires that operation to have taken
+effect, so omitting it from a legal history search cannot accidentally hide the time corruption.
+Check both semantic result/error truth and history verdict; do not accept a clock receipt alone as
+proof that the command's branch or effects were right.
 
 The format2 reader validates each present value as the existing Timestamp UTC-instant domain,
 rejects explicit null, duplicate fields and unknown fields, and retains full supported precision.
@@ -625,5 +687,7 @@ typed text operands last as the runbook specifies. Shared predicate/IR/runtime w
 serially. Required observation/history model/schema/writer updates accompany A3 before it closes;
 later filtered-related acceptance cannot claim current-time support until this evidence is green.
 
-This revision binds the occurrence-clock and history2 contract as part of A3 for final independent
-review. It does not defer that authority to an implementor or count the prior refusal as acceptance.
+This coordinator correction binds the occurrence-clock, typed completion receipt and history2
+contract as part of A3. Both full design-review passes are exhausted. The receipt correction remains
+an explicit independent implementation-review obligation; neither a design edit nor the previous
+named refusal is behavior acceptance.
