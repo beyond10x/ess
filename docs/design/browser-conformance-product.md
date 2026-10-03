@@ -201,6 +201,12 @@ Handle 0 is invalid; other handles are non-reused within a worker. On u32 exhaus
 worker. Requests are serialized. Run's nonce plus selected digest gives the Ids namespace also
 supplied to the installation; reject nonce reuse in the same worker. Fresh worker/page uses a
 fresh cryptographic nonce. Reset changes presentation generation, never actual target state.
+After validating the Run frame and loaded handle, consume a new nonce before any installation
+factory or target callback. Retain consumed nonces for the module's lifetime, including when
+installation or execution subsequently fails. The inventory admits at most 65,536 distinct Run
+nonces and never evicts entries. A duplicate remains invalid after failure; a new nonce at capacity
+returns `resource_limit` before callbacks. Continuing requires a fresh worker/module and full Load,
+not an automatic reset or nonce reuse. Release and selection do not clear the inventory.
 Explicit cancellation terminates the worker and yields aborted/cleanup-unconfirmed, no CountReport.
 Worker watchdog is the same terminal distinction. No unsupported async target protocol is implied.
 
@@ -228,6 +234,7 @@ measurements show the profile cannot process its own advertised bounds.
 | One ABI response | 64 MiB | Includes exact reports plus sanitized display, with checked cumulative accounting. |
 | Linear memory maximum | 512 MiB (8,192 WASM pages) | Leaves room above wire size for parsing, compiler IR, runner and outputs; not a proven worst-case multiplier. |
 | Live capabilities/workers | One Loaded object and one worker per page | Select atomically replaces the capability; no unbounded retained modules. |
+| Accepted Run nonces | 65,536 distinct nonces per module, no eviction | Consumed before callbacks, including failed runs; exhaustion requires a fresh worker/module and full Load. |
 | Rendered DOM | 2,000 visible tree nodes, 200 cards per page | Pagination/virtualization preserves accessible full data; never semantic truncation. |
 | Safe error text | 512 UTF-8 bytes | Closed categories/locations only; no raw errors. |
 | Worker wall watchdog | 300 seconds per Run | A broken clock/host must terminate; normal Runner timing remains authoritative within it. |
