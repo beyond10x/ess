@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T01:10:21Z",
+  "actor": "agent:codex-ekr-knowledge",
+  "artifact": "release-plan:optional-recursive-rust-052",
+  "kind": "release-plan",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task test-xtask and task site-build passed after refreshing the standalone fuzz lock, README install version and source-support workspace version for 0.52.0; full local gate still pending"
+  }
+}
