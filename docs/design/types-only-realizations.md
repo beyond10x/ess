@@ -44,6 +44,15 @@ Publish the checked schema selection alongside the library and report. Neither t
 selection nor its output changes the model language or yet binds an ESS field to an
 imported schema root; that connection requires its own checked identity contract.
 
+A root may also name an event (beyond10x/ess#393). The event's payload is selected as
+a struct of its fields under the event's own qualified name, display name and wire
+names, annotated `x-ess-kind: event-payload`, with the closure of the types its fields
+reach. Its `type`, `properties`, `required` and `additionalProperties` are the ones the
+event's JSON Schema projection publishes, so a producer library holds exactly the
+object the event carries and the model declares those fields once. `--all-events`
+selects every event payload and may be combined with `--all-types`; `--root` beside
+either `--all-*` selector is refused.
+
 ## Shared Structural Plan
 
 A language-neutral, in-memory plan owns selected roots, component identities,
@@ -91,6 +100,13 @@ field with an integer literal on its right (`>=`, `>`, `<=`, `<`, `==`) publishe
 `==` on a field that may be absent or `null` publishing `minimum` and `maximum`
 instead of `const`. `x-ess-invariants` is still published verbatim; every other
 invariant shape stays an annotation only.
+
+A newtype of `Integer` gets the same keywords on its own definition from invariants
+over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes
+`const: 2`, `value >= 0` and `value < 1000` publish `minimum: 0` and `maximum: 999`.
+The realizer then wraps the native width: Rust `pub struct X(pub i32);`, Go
+`type X struct { Value int32 }`. An event field typed with such a newtype carries the
+constant even though an event declares no invariants of its own.
 
 ## Target Accounting
 

@@ -1,0 +1,44 @@
+//! A JetStream `Transport` over `async-nats` for the generated publisher. Its own crate, so the
+//! publisher resolves and builds without a NATS dependency.
+
+/// Publishes through a JetStream context and waits for the stream's acknowledgement.
+///
+/// The publisher calls it from its own flusher thread. Called on a Tokio worker thread (a
+/// `publish_*_now` or `flush` inside async code), it moves off the worker with `block_in_place`,
+/// which needs the multi-threaded runtime.
+pub struct JetStreamTransport {
+    context: ::async_nats::jetstream::Context,
+    runtime: ::tokio::runtime::Handle,
+}
+
+impl JetStreamTransport {
+    /// A transport over `context`, running its futures on `runtime`.
+    pub fn new(context: ::async_nats::jetstream::Context, runtime: ::tokio::runtime::Handle) -> Self {
+        Self { context, runtime }
+    }
+}
+
+impl ::CORE::Transport for JetStreamTransport {
+    type Error = String;
+
+    fn publish(&self, subject: &str, payload: &[u8]) -> ::std::result::Result<(), String> {
+        let context = self.context.clone();
+        let subject = subject.to_owned();
+        let payload = payload.to_vec();
+        let publish = async move {
+            let acknowledgement = context
+                .publish(subject, payload.into())
+                .await
+                .map_err(|error| error.to_string())?;
+            acknowledgement
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        };
+        if ::tokio::runtime::Handle::try_current().is_ok() {
+            ::tokio::task::block_in_place(|| self.runtime.block_on(publish))
+        } else {
+            self.runtime.block_on(publish)
+        }
+    }
+}

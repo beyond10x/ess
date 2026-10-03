@@ -381,6 +381,7 @@ fn the_generate_area_help_offers_the_verbs_options_and_the_areas_subcommands() {
             "ui",
             "output",
             "types",
+            "client",
             "synthesize",
             "project",
             "schema",

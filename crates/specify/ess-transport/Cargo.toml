@@ -1,0 +1,21 @@
+[package]
+name = "ess-transport"
+description = "Event transport bindings of an exact executable system specification: broker, subject, stream and envelope."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ess-compiler.workspace = true
+ess-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

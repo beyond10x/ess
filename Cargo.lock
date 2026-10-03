@@ -477,8 +477,10 @@ dependencies = [
  "ess-kubernetes",
  "ess-openapi",
  "ess-primitives",
+ "ess-publisher",
  "ess-realization",
  "ess-synth",
+ "ess-transport",
  "ess-ui",
  "ess-ui-check",
  "ess-ui-docs",
@@ -635,6 +637,7 @@ dependencies = [
  "ess-compiler",
  "ess-domain",
  "ess-primitives",
+ "ess-transport",
  "jsonschema",
  "pulldown-cmark",
  "serde",
@@ -680,6 +683,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ess-publisher"
+version = "0.52.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-gen",
+ "ess-transport",
+ "schema-contract",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ess-realization"
 version = "0.52.0"
 dependencies = [
@@ -715,6 +731,17 @@ dependencies = [
  "jsonschema",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ess-transport"
+version = "0.52.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

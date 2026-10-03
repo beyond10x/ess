@@ -1,0 +1,23 @@
+[package]
+name = "ess-publisher"
+description = "Generated Go and Rust event publishers from a component and its ess-transport/1 binding."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ess-compiler.workspace = true
+ess-domain.workspace = true
+ess-transport.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+ess-gen.workspace = true
+schema-contract.workspace = true
+
+[lints]
+workspace = true
