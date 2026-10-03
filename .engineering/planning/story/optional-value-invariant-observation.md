@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/optional_value_invariants.rs
-revision: 9
+revision: 10
 ---
 ## Outcome
 
@@ -106,3 +106,11 @@ The scoper changed and executed nothing. The mixed-position red is root executio
 List/Map/Union remain required parts of the full all-features objective, not accepted permanent exclusions. The initial Optional scope does not claim to cover them. Source inspection found native runner::row_facts currently publishes sequence presence only, while generated Go/TypeScript predicate fact projectors additionally publish counts/elements. Typed input map projection uses values in key order, whereas untyped runtime maps are flattened by member; input quantifier support therefore does not establish view-observation parity. Union path resolution and first-variant witness generation need variant-aware design. These are source-grounded concerns, not executed cross-runtime red/green results. Their implementation needs an explicit expanded or sibling scope before dispatch; recording them does not discharge full feature support.
 
 For Optional, holds_at proves some row exists, not that the constrained value is present. Binding design must handle cleared/generated/converted values, filters, shared rows and eventual consistency without an absence-only pass. Existing Contains/Excludes might establish nonvacuity for identifiable arrangements; general sufficiency and compatibility are not established. Browser acceptance depends on the separately owned full execution product; declaration navigation or library WASM alone cannot prove it.
+
+## Complete wrapped-position design candidate awaiting review
+
+The existing read-only scoper produced a private complete wrapped-position design candidate, wrapped-value-invariant-design-candidate.md SHA256 c0956c68e84c40fa7b6797808dd08cef8d1aee4977b67514bfe5e408d3e8191e, reading this story revision 9 and runtime c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9. Root rehashed it and read the proposed direction, scope and remaining decisions. No production source, AEP state, compiler or target execution was changed by that scoping work. The prior mixed-position root red remains unchanged.
+
+The candidate proposes a closed typed ValueInvariants view expectation, preserving historical Satisfies semantics, with universal checks for every reached constrained value plus explicit actual nonvacuity. It covers Optional/List/Map/Union and recursive schema graph sites, source-preserving arrangement goals, per-position truthful refusal inventory and a cross-runtime independent healthy/fault matrix. This is materially wider than the earlier Optional-only inferred scope. It is a candidate for review, not an adopted binding design, new format reservation or source implementation authorization.
+
+Root must still decide recursive site/back-edge identity, witness attribution where a view has no unique selector, exact format compatibility/allocation, shared byte/work budgets and DTO ordering, and browser bridge integration. No held version is assumed amendable merely from its number or release timing. Existing source refusals are not permanent feature exclusions; listing them without the required actual cross-runtime observations would not complete the user's all-feature requirement. Store scope will be expanded only after a coherent reviewed design is adopted, before production edits.
