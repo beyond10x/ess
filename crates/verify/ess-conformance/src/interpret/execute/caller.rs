@@ -124,6 +124,19 @@ impl FactSource for Facts<'_> {
         self.source(path)
             .is_some_and(|(source, path)| source.present(&path))
     }
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.source(path).map_or(Some(false), |(source, path)| {
+            source.observed_presence(&path)
+        })
+    }
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        self.source(path)
+            .and_then(|(source, path)| source.observe(&path))
+    }
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        self.source(path)
+            .and_then(|(source, path)| source.cardinality(&path))
+    }
     fn scales(&self) -> &Scales {
         self.base.scales()
     }

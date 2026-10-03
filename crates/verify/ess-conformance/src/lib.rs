@@ -213,3 +213,6 @@ pub use target::{
     SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
 };
 pub use witness::WitnessGap;
+
+/// Bounded protocol execution and trace conformance.
+pub mod protocol;

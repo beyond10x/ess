@@ -88,3 +88,6 @@ pub use system::{FormatVersion, SystemSpec};
 pub use types::{Field, NamedType, Primitive, TypeBody, TypeRef, TypeRegistry};
 pub use view::{AssertionStyle, Consistency, EntityFields, ViewSpec};
 pub mod reading;
+
+/// Experimental communicating protocol contracts.
+pub mod protocol;

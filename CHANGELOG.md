@@ -11,6 +11,14 @@
   dependency-free default and WASM support; the native server dependencies support Rust 1.85
   (beyond10x/ess#318, beyond10x/ess#314).
 
+- Experimental `ess-protospec/1` models finite communicating peers, typed scalar messages,
+  bounded channels, logical timers and safety properties. `ess specify protocol` validates and
+  compiles the sidecar; `ess verify protocol` simulates, replays observations and explores a
+  declared finite scheduling profile. Native Rust adapters keep implementation observations
+  distinct from model traces, with explicit inconclusive results for missing evidence or exhausted
+  bounds. [Runnable examples](examples/protocols/README.md) cover terminal-response flushing and
+  an RFC 3261 rejection with a lost ACK; existing ESS and conformance-suite formats are unchanged.
+
 ### Changed
 
 - Generated behaviour contexts expose fallible companion methods, so an unavailable context

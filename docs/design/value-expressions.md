@@ -64,6 +64,26 @@ number is a non-zero integer for an `Integer` target and a decimal literal (E1 g
 over a required (non-`Optional`) numeric target. Synthesis asserts `before + n` where the
 arrangement determined `before`.
 
+For a nested `sets:` mapping, the previous location is the full sequence of target fields:
+`packet: {amount: {increment: 1}}` reads `packet.amount`, never a top-level `amount`.
+Each read uses the immutable pre-outcome snapshot, including when two nested structs share a
+leaf name. The recursive resolved payload already carries this ancestry; no path member or new
+source, IR, or suite format is introduced by preserving it through evaluation and generation.
+Unlike increment, `{subject: amount}` still explicitly names a top-level subject field.
+
+Required struct parents and present Optional struct parents can supply the previous value.
+An absent parent supplies no value: native execution cannot publish the transition and generated
+behavior returns its existing unmet-obligation result before storage mutation. No zero, new parent,
+or same-named top-level fallback is inferred. Optional numeric leaves remain refused, as do nested
+mappings through List, Map, Enum, or Union parents.
+
+Native execution, history checking, and synthesis retain exact Integer and Decimal arithmetic.
+An unknown history leaf transfers only when its complete domain proves the exact arithmetic and
+target constraints; an unresolved parent remains undetermined. Generated Rust and Go retain their
+Integer-only increment support. Recursive target planning must mark a nested Decimal increment
+as an obligation rather than emit unsupported arithmetic. Existing generated-target obligations
+for newtypes over structs remain explicit.
+
 `{generated: true}` is admitted in `sets:`: the implementation decides the new value. Synthesis
 makes no claim about the field after the outcome, so preservation no longer asserts the old value.
 

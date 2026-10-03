@@ -13,6 +13,7 @@ components:
         - desk.ticket.Comment
         - desk.ticket.DeleteTicket
         - desk.ticket.Escalate
+        - desk.ticket.ForgetStats
     publishes:
       events:
         - desk.ticket.TicketOpened
@@ -22,4 +23,5 @@ components:
         - desk.ticket.TicketCommented
         - desk.ticket.TicketDeleted
         - desk.ticket.Escalated
+        - desk.ticket.StatsForgotten
     reached_by: network

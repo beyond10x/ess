@@ -287,6 +287,9 @@ func command(sys *system.System, name string, input map[string]any) (any, error)
 	case "desk.ticket.ReopenTicket":
 		answer, refusal := service.ReopenTicket(ticket.ReopenTicket{TicketId: ticketID(input["ticket_id"])})
 		taken, unmet = answer, errorOf(refusal)
+	case "desk.ticket.ForgetStats":
+		answer, refusal := service.ForgetStats(ticket.ForgetStats{TicketId: ticketID(input["ticket_id"])})
+		taken, unmet = answer, errorOf(refusal)
 	case "desk.ticket.Reprioritize":
 		answer, refusal := service.Reprioritize(ticket.Reprioritize{
 			TicketId: ticketID(input["ticket_id"]),

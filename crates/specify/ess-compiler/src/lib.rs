@@ -57,3 +57,6 @@ pub use graph::{DependencyEdge, DependencyRelation, ImpactClass, Reach, Semantic
 pub use ir::EssIr;
 pub use refs::EssSemanticRef;
 pub use resolve::compile;
+
+/// Admission and identity of experimental protocol contracts.
+pub mod protocol;

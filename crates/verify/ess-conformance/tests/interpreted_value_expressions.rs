@@ -233,14 +233,16 @@ fn overflowing_and_constrained_increments_leave_every_field_unchanged() {
             "{error}"
         );
         assert_eq!(rows(&target), before);
-        assert!(target
-            .observe_events(EventObservationRequest {
-                event: "demo.values.Updated".parse().unwrap(),
-                correlation: correlation(),
-                deadline: Deadline::at(Timestamp::from_epoch_millis(0))
-            })
-            .unwrap()
-            .is_empty());
+        assert_eq!(
+            target
+                .observe_events(EventObservationRequest {
+                    event: "demo.values.Updated".parse().unwrap(),
+                    correlation: correlation(),
+                    deadline: Deadline::at(Timestamp::from_epoch_millis(0))
+                })
+                .unwrap(),
+            Vec::new()
+        );
     }
 }
 
@@ -256,14 +258,16 @@ fn an_at_rest_invariant_failure_publishes_neither_partial_writes_nor_events() {
     let error = update(&target, &id).unwrap_err();
     assert!(error.to_string().contains("invariant"), "{error}");
     assert_eq!(rows(&target), before);
-    assert!(target
-        .observe_events(EventObservationRequest {
-            event: "demo.values.Updated".parse().unwrap(),
-            correlation: correlation(),
-            deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
-        })
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        target
+            .observe_events(EventObservationRequest {
+                event: "demo.values.Updated".parse().unwrap(),
+                correlation: correlation(),
+                deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+            })
+            .unwrap(),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -306,7 +310,7 @@ fn a_wrong_state_error_reads_the_typed_identity_from_the_addressed_row() {
     let refused = invoke(&closed.next);
     assert_eq!(refused.error.unwrap().fields["order_id"], id);
     assert_eq!(refused.next, closed.next);
-    assert!(refused.events.is_empty());
+    assert_eq!(refused.events, Vec::new());
 }
 
 #[test]
@@ -321,4 +325,293 @@ fn negative_integer_and_positive_decimal_increments_are_exact() {
     let row = &rows(&target)[0];
     assert_eq!(row["count"], number(-7));
     assert_eq!(row["score"], decimal("0.75"));
+}
+
+const NESTED_INCREMENT: &str = r"format: ess/20
+system: demo
+version: v1
+domain: demo.nested
+types:
+  - name: demo.nested.Packet
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+entities:
+  - name: demo.nested.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields:
+TOP_FIELD      - {name: packet, type: demo.nested.Packet}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: demo.nested.Advanced, fields: []}
+commands:
+  - name: demo.nested.Advance
+    input: [{name: counter_id, type: Uuid}]
+    outcomes:
+      - name: advanced
+        updates: demo.nested.Counter
+        instance: counter_id
+        sets: {packet: {amount: VALUE_SOURCE}}
+        emits: [demo.nested.Advanced]
+views:
+  - name: demo.nested.Counters
+    source: demo.nested.Counter
+    consistency: read_your_writes
+    fields:
+      - {name: counter_id, type: Uuid}
+TOP_VIEW      - {name: packet, type: demo.nested.Packet}
+";
+
+fn nested_increment_source(top_level: bool, literal_control: bool) -> String {
+    NESTED_INCREMENT
+        .replace(
+            "TOP_FIELD",
+            if top_level {
+                "      - {name: amount, type: Integer}\n"
+            } else {
+                ""
+            },
+        )
+        .replace(
+            "TOP_VIEW",
+            if top_level {
+                "      - {name: amount, type: Integer}\n"
+            } else {
+                ""
+            },
+        )
+        .replace(
+            "VALUE_SOURCE",
+            if literal_control {
+                "101"
+            } else {
+                "{increment: 1}"
+            },
+        )
+}
+
+#[test]
+fn nested_increment_reads_its_full_pre_outcome_path() {
+    for (top_level, top_amount, literal_control) in [
+        (false, None, false),
+        (true, Some(3), false),
+        (true, Some(8), false),
+        (true, Some(3), true),
+    ] {
+        let source = nested_increment_source(top_level, literal_control);
+        let specification = Specification::assemble([(
+            Source::new("nested.yaml"),
+            RawSpecFile::parse(&source).expect("the nested model parses"),
+        )])
+        .expect("the nested increment is admitted without leaf-name fallback");
+        let target = Interpreted::for_model(
+            compile(&specification, &SourceMap::new()).expect("the nested model compiles"),
+        );
+        target
+            .begin_scenario(&ScenarioContext::new(
+                "demo.nested/authored/increment".parse().unwrap(),
+                correlation(),
+            ))
+            .unwrap();
+        let id = Node::Text("00000000-0000-4000-8000-000000000292".into());
+        let mut fields = BTreeMap::from([(
+            "packet".into(),
+            Node::Map(BTreeMap::from([("amount".into(), number(100))])),
+        )]);
+        if let Some(amount) = top_amount {
+            fields.insert("amount".into(), number(amount));
+        }
+        target
+            .establish_entity(EntitySetupRequest {
+                entity: "demo.nested.Counter".parse().unwrap(),
+                identity: id.clone(),
+                fields,
+                state: "Active".parse().unwrap(),
+                correlation: correlation(),
+            })
+            .unwrap();
+        target
+            .execute_command(SemanticCommandRequest {
+                command: "demo.nested.Advance".parse().unwrap(),
+                actor: None,
+                caller: None,
+                input: BTreeMap::from([("counter_id".into(), id)]),
+                correlation: correlation(),
+            })
+            .unwrap();
+        let row = &target
+            .query_view(SemanticViewRequest {
+                view: "demo.nested.Counters".parse().unwrap(),
+                params: BTreeMap::new(),
+                consistency: QueryConsistency::Current,
+                correlation: correlation(),
+                deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+            })
+            .unwrap()
+            .rows[0];
+        assert_eq!(
+            row["packet"],
+            Node::Map(BTreeMap::from([("amount".into(), number(101))])),
+            "top={top_amount:?}, literal={literal_control}"
+        );
+        if let Some(amount) = top_amount {
+            assert_eq!(row["amount"], number(amount));
+        }
+    }
+}
+
+const NESTED_INCREMENT_SHAPES: &str = r"format: ess/20
+system: demo
+version: v1
+domain: demo.shapes
+types:
+  - name: demo.shapes.Leaf
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+  - name: demo.shapes.Outer
+    kind: struct
+    fields: [{name: nested, type: demo.shapes.Leaf}]
+entities:
+  - name: demo.shapes.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields:
+      - {name: left, type: demo.shapes.Leaf}
+      - {name: right, type: demo.shapes.Leaf}
+      - {name: outer, type: demo.shapes.Outer}
+      - {name: maybe, type: 'Optional<demo.shapes.Leaf>'}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: demo.shapes.Advanced, fields: []}
+commands:
+  - name: demo.shapes.Advance
+    input: [{name: counter_id, type: Uuid}]
+    outcomes:
+      - name: advanced
+        updates: demo.shapes.Counter
+        instance: counter_id
+        sets:
+          left: {amount: {increment: 1}}
+          right: {amount: {increment: 2}}
+          outer: {nested: {amount: {increment: 3}}}
+          maybe: {amount: {increment: 4}}
+        emits: [demo.shapes.Advanced]
+views:
+  - name: demo.shapes.Counters
+    source: demo.shapes.Counter
+    consistency: read_your_writes
+    fields:
+      - {name: counter_id, type: Uuid}
+      - {name: left, type: demo.shapes.Leaf}
+      - {name: right, type: demo.shapes.Leaf}
+      - {name: outer, type: demo.shapes.Outer}
+      - {name: maybe, type: 'Optional<demo.shapes.Leaf>'}
+";
+
+fn nested_map(amount: i64) -> Node {
+    Node::Map(BTreeMap::from([("amount".into(), number(amount))]))
+}
+
+#[test]
+fn deeper_and_same_leaf_nested_increments_are_independent_and_optional_absence_is_atomic() {
+    let specification = Specification::assemble([(
+        Source::new("shapes.yaml"),
+        RawSpecFile::parse(NESTED_INCREMENT_SHAPES).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&specification, &SourceMap::new()).unwrap();
+    let id = Node::Text("00000000-0000-4000-8000-000000000293".into());
+
+    let run = |maybe: Option<i64>| {
+        let target = Interpreted::for_model(ir.clone());
+        target
+            .begin_scenario(&ScenarioContext::new(
+                "demo.shapes/authored/increment".parse().unwrap(),
+                correlation(),
+            ))
+            .unwrap();
+        let mut fields = BTreeMap::from([
+            ("left".into(), nested_map(100)),
+            ("right".into(), nested_map(200)),
+            (
+                "outer".into(),
+                Node::Map(BTreeMap::from([("nested".into(), nested_map(300))])),
+            ),
+        ]);
+        if let Some(amount) = maybe {
+            fields.insert("maybe".into(), nested_map(amount));
+        }
+        target
+            .establish_entity(EntitySetupRequest {
+                entity: "demo.shapes.Counter".parse().unwrap(),
+                identity: id.clone(),
+                fields,
+                state: "Active".parse().unwrap(),
+                correlation: correlation(),
+            })
+            .unwrap();
+        (target, id.clone())
+    };
+
+    let (present, id) = run(Some(400));
+    present
+        .execute_command(SemanticCommandRequest {
+            command: "demo.shapes.Advance".parse().unwrap(),
+            actor: None,
+            caller: None,
+            input: BTreeMap::from([("counter_id".into(), id)]),
+            correlation: correlation(),
+        })
+        .unwrap();
+    let row = &present
+        .query_view(SemanticViewRequest {
+            view: "demo.shapes.Counters".parse().unwrap(),
+            params: BTreeMap::new(),
+            consistency: QueryConsistency::Current,
+            correlation: correlation(),
+            deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+        })
+        .unwrap()
+        .rows[0];
+    assert_eq!(row["left"], nested_map(101));
+    assert_eq!(row["right"], nested_map(202));
+    assert_eq!(
+        row["outer"],
+        Node::Map(BTreeMap::from([("nested".into(), nested_map(303))]))
+    );
+    assert_eq!(row["maybe"], nested_map(404));
+
+    let (absent, id) = run(None);
+    let before = absent
+        .query_view(SemanticViewRequest {
+            view: "demo.shapes.Counters".parse().unwrap(),
+            params: BTreeMap::new(),
+            consistency: QueryConsistency::Current,
+            correlation: correlation(),
+            deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+        })
+        .unwrap()
+        .rows;
+    let error = absent
+        .execute_command(SemanticCommandRequest {
+            command: "demo.shapes.Advance".parse().unwrap(),
+            actor: None,
+            caller: None,
+            input: BTreeMap::from([("counter_id".into(), id)]),
+            correlation: correlation(),
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("maybe.amount"), "{error}");
+    let after = absent
+        .query_view(SemanticViewRequest {
+            view: "demo.shapes.Counters".parse().unwrap(),
+            params: BTreeMap::new(),
+            consistency: QueryConsistency::Current,
+            correlation: correlation(),
+            deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+        })
+        .unwrap()
+        .rows;
+    assert_eq!(
+        after, before,
+        "an absent Optional parent publishes no write"
+    );
 }

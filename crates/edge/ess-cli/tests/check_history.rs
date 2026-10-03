@@ -90,6 +90,118 @@ fn code(output: &Output) -> Option<i32> {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one table-driven CLI contract keeps all four public status classes together"
+)]
+fn generated_history_decisions_preserve_cli_statuses_zero_one_two_and_three() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = r#"
+format: ess/18
+system: demo
+version: v1
+domain: demo.sessions
+entities:
+  - name: demo.sessions.Session
+    identity: {name: session_id, type: Uuid}
+    fields: [{name: login_at, type: Timestamp}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: demo.sessions.Started, fields: [{name: session_id, type: Uuid}]}
+commands:
+  - name: demo.sessions.Start
+    outcomes:
+      - name: started
+        creates: demo.sessions.Session
+        instance: session_id
+        sets: {login_at: {generated: true}}
+        emits: [demo.sessions.Started]
+        payload: {demo.sessions.Started: {session_id: {generated: true}}}
+  - name: demo.sessions.Inspect
+    input: [{name: session_id, type: Uuid}]
+    outcomes:
+      - name: early
+        when_subject: {predicate: 'login_at < "2021-01-01T00:00:00Z"'}
+        preserves: demo.sessions.Session
+        instance: session_id
+      - {name: late, preserves: demo.sessions.Session, instance: session_id}
+"#;
+    for known in [false, true] {
+        let source = if known {
+            source
+                .replace("type: Timestamp", "type: Integer")
+                .replace("login_at: {generated: true}", "login_at: 0")
+                .replace("login_at < \"2021-01-01T00:00:00Z\"", "login_at < 1")
+        } else {
+            source.to_owned()
+        };
+        let specification = Specification::assemble([(
+            Source::new("generated.yaml"),
+            RawSpecFile::parse(&source).unwrap(),
+        )])
+        .unwrap();
+        let ir = compile(&specification, &SourceMap::new()).unwrap();
+        let digest = ess_conformance::scenario::SuiteProvenance::of(&ir).spec_digest;
+        let path = directory.path().join("generated.yaml");
+        std::fs::write(&path, &source).unwrap();
+        for (outcome, budget, expected) in [
+            (None, 100, 0),
+            (Some("early"), 100, if known { 0 } else { 2 }),
+            (Some("late"), 100, if known { 1 } else { 2 }),
+            (Some("early"), 1, 3),
+        ] {
+            let mut operations = vec![serde_json::json!({
+                "operation_id":"00000000-0000-4000-8000-000000000201", "client":0,
+                "command":"demo.sessions.Start", "subject_key":"00000000-0000-4000-8000-00000000c0de",
+                "invoked_at":1, "returned_at":2, "completion":"Returned", "outcome":"started"
+            })];
+            if let Some(outcome) = outcome {
+                operations.push(serde_json::json!({
+                    "operation_id":"00000000-0000-4000-8000-000000000202", "client":0,
+                    "command":"demo.sessions.Inspect", "subject_key":"00000000-0000-4000-8000-00000000c0de",
+                    "invoked_at":3, "returned_at":4, "completion":"Returned", "outcome":outcome
+                }));
+            }
+            let document = serde_json::json!({
+                "format":"ess-history/1", "history_id":"00000000-0000-4000-8000-00000000f292",
+                "spec_digest":digest, "seed":0, "clients":1, "operations":operations
+            });
+            let recorded = directory.path().join("history.json");
+            std::fs::write(&recorded, serde_json::to_vec(&document).unwrap()).unwrap();
+            let output = ess(&[
+                "verify",
+                "conform",
+                "check-history",
+                "--path",
+                path.to_str().unwrap(),
+                "--history",
+                recorded.to_str().unwrap(),
+                "--budget",
+                &budget.to_string(),
+            ]);
+            eprintln!(
+                "generated history CLI: known={known}, outcome={outcome:?}, budget={budget}, exit={:?}",
+                code(&output)
+            );
+            assert_eq!(
+                code(&output),
+                Some(expected),
+                "known={known}, outcome={outcome:?}, budget={budget}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if expected == 2 {
+                assert!(
+                    String::from_utf8_lossy(&output.stderr).contains("check.model-undetermined"),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn a_linearizable_register_history_exits_0() {
     let output = ess(&[
         "verify",

@@ -297,6 +297,25 @@ pub fn bind(
     }
 }
 
+/// Project one actually observed value into an existing fact store at its declared path.
+/// Private execution contexts use this for known leaves without passing an incomplete abstract
+/// object through concrete input validation.
+pub(crate) fn project_observed(
+    ir: &EssIr,
+    kind: &ResolvedTypeRef,
+    value: &Node,
+    path: &FactPath,
+    facts: &mut FactStore,
+) -> Result<(), ShapeErrors> {
+    let mut errors = Vec::new();
+    project(ir, kind, value, path, 0, facts, &mut errors);
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(ShapeErrors(errors))
+    }
+}
+
 /// Whether a member of type `type_ref` may be left out: an `Optional`, through any newtype over one
 /// (beyond10x/ess#205). The rule `ess-domain` admits a precondition literal by, so a member it lets
 /// a literal omit is one this reader accepts omitted.
@@ -342,12 +361,328 @@ pub fn validate_entity_setup(
     fields.push(declared.identity.clone());
     let mut supplied = values.clone();
     supplied.insert(declared.identity.name.clone(), identity.clone());
-    let mut facts = TypedFacts::new(ir, &fields, setup_fields(ir, &fields, &supplied, 0)?);
+    let budget = ProofBudget::native();
+    let (fields_facts, mut unresolved) =
+        setup_fields(ir, &fields, &supplied, 0, &budget).map_err(|error| error.to_string())?;
+    let mut facts = TypedFacts::new(ir, &fields, fields_facts);
     facts.set(
         FactPath::new("state").expect("static path"),
         FactValue::Text(state.to_string()),
     );
-    setup_invariants(&declared.invariants, &facts)
+    retain_validation(
+        &mut unresolved,
+        setup_invariants(&declared.invariants, &facts, &budget, 1),
+    )
+    .map_err(|error| error.to_string())?;
+    unresolved.map_or(Ok(()), |error| Err(error.to_string()))
+}
+
+/// A failed complete validation is distinct from a validation the evaluator could not finish.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ValidationFailure {
+    Invalid(String),
+    Unresolved(String),
+}
+
+/// Shared, ephemeral proof-search allowance. Native validation has no new work limit.
+pub(crate) struct ProofBudget {
+    remaining: std::cell::Cell<Option<usize>>,
+    witness_candidates: std::cell::Cell<usize>,
+}
+
+impl ProofBudget {
+    pub(crate) fn new(work: usize) -> Self {
+        Self {
+            remaining: std::cell::Cell::new(Some(work)),
+            witness_candidates: std::cell::Cell::new(64),
+        }
+    }
+    fn native() -> Self {
+        Self {
+            remaining: std::cell::Cell::new(None),
+            witness_candidates: std::cell::Cell::new(64),
+        }
+    }
+    pub(crate) fn witness_candidate(&self) -> Option<()> {
+        let remaining = self.witness_candidates.get().checked_sub(1)?;
+        self.witness_candidates.set(remaining);
+        self.charge(1).ok()
+    }
+    pub(crate) fn charge(&self, work: usize) -> Result<(), ValidationFailure> {
+        if let Some(remaining) = self.remaining.get() {
+            let Some(next) = remaining.checked_sub(work) else {
+                self.remaining.set(Some(0));
+                return Err(ValidationFailure::Unresolved(
+                    "generated-domain proof work exhausted".into(),
+                ));
+            };
+            self.remaining.set(Some(next));
+        }
+        Ok(())
+    }
+    pub(crate) fn exhausted(&self) -> bool {
+        self.remaining.get() == Some(0)
+    }
+    pub(crate) fn type_ref(&self, kind: &ResolvedTypeRef) -> Result<(), ValidationFailure> {
+        if self.remaining.get().is_none() {
+            return Ok(());
+        }
+        self.charge(16)?;
+        match kind {
+            ResolvedTypeRef::Declared { name } => {
+                for segment in name.name().segments() {
+                    self.charge(1 + segment.len())?;
+                }
+            }
+            ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => self.type_ref(of)?,
+            ResolvedTypeRef::Map { value, .. } => self.type_ref(value)?,
+            ResolvedTypeRef::Primitive { .. } => {}
+        }
+        Ok(())
+    }
+    // Preflight the existing concrete projector before it allocates facts/errors. Charge the
+    // actual representation walk, declaration widths and possible path/name copies; native
+    // projection keeps its existing behavior and does not consume a proof allowance.
+    fn projection(
+        &self,
+        ir: &EssIr,
+        kind: &ResolvedTypeRef,
+        value: &Node,
+        depth: usize,
+        path_bytes: usize,
+    ) -> Result<(), ValidationFailure> {
+        if self.remaining.get().is_none() {
+            return Ok(());
+        }
+        self.charge(1 + path_bytes)?;
+        if depth > MAX_TYPE_DEPTH {
+            return Ok(());
+        }
+        self.type_ref(kind)?;
+        match kind {
+            ResolvedTypeRef::Optional { of } if !matches!(value, Node::Null) => {
+                self.projection(ir, of, value, depth + 1, path_bytes)?;
+            }
+            ResolvedTypeRef::List { of } => {
+                if let Node::Seq(values) = value {
+                    for child in values {
+                        self.charge(32)?;
+                        self.projection(ir, of, child, depth + 1, path_bytes.saturating_add(21))?;
+                    }
+                }
+            }
+            ResolvedTypeRef::Map { value: of, .. } => {
+                if let Node::Map(values) = value {
+                    for child in values.values() {
+                        self.charge(32)?;
+                        self.projection(ir, of, child, depth + 1, path_bytes.saturating_add(21))?;
+                    }
+                }
+            }
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => {
+                    self.projection(ir, of, value, depth + 1, path_bytes)?;
+                }
+                ResolvedBody::Enum { variants } => {
+                    for variant in variants {
+                        self.charge(1 + variant.name().len())?;
+                    }
+                }
+                ResolvedBody::Struct { fields, .. } => {
+                    if let Node::Map(values) = value {
+                        self.charge(fields.len().saturating_mul(values.len()))?;
+                        for field in fields {
+                            let child_bytes = path_bytes.saturating_add(1 + field.name.len());
+                            self.charge(child_bytes)?;
+                            if let Some(child) = values.get(&field.name) {
+                                self.projection(
+                                    ir,
+                                    &field.type_ref,
+                                    child,
+                                    depth + 1,
+                                    child_bytes,
+                                )?;
+                            } else {
+                                self.charge(MAX_TYPE_DEPTH + 1)?;
+                            }
+                        }
+                    }
+                }
+                ResolvedBody::Union { .. } => {}
+            },
+            ResolvedTypeRef::Primitive { .. } => {
+                self.value(value)?;
+            }
+            ResolvedTypeRef::Optional { .. } => {}
+        }
+        Ok(())
+    }
+    #[allow(
+        clippy::items_after_statements,
+        reason = "the private recursive walker is scoped to this budgeted value preflight"
+    )]
+    pub(crate) fn value(&self, value: &Node) -> Result<usize, ValidationFailure> {
+        if self.remaining.get().is_none() {
+            return Ok(1);
+        }
+        fn walk(
+            budget: &ProofBudget,
+            value: &Node,
+            depth: usize,
+        ) -> Result<usize, ValidationFailure> {
+            budget.charge(1)?;
+            if depth > MAX_TYPE_DEPTH + 1 {
+                return Err(ValidationFailure::Unresolved(
+                    "proof value depth exhausted".into(),
+                ));
+            }
+            let mut size = 1_usize;
+            match value {
+                Node::Text(text) => {
+                    budget.charge(text.len())?;
+                    size += text.len();
+                }
+                Node::Map(values) => {
+                    for (key, value) in values {
+                        budget.charge(key.len())?;
+                        size = size
+                            .checked_add(key.len())
+                            .and_then(|n| n.checked_add(walk(budget, value, depth + 1).ok()?))
+                            .ok_or_else(|| {
+                                ValidationFailure::Unresolved("proof value work exhausted".into())
+                            })?;
+                    }
+                }
+                Node::Seq(values) => {
+                    for value in values {
+                        size = size
+                            .checked_add(walk(budget, value, depth + 1)?)
+                            .ok_or_else(|| {
+                                ValidationFailure::Unresolved("proof value work exhausted".into())
+                            })?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(size)
+        }
+        walk(self, value, 0)
+    }
+    pub(crate) fn predicate(
+        &self,
+        predicate: &ess_primitives::predicate::Predicate,
+        width: usize,
+    ) -> Result<(), ValidationFailure> {
+        use ess_primitives::predicate::{Operand, Predicate};
+        if self.remaining.get().is_none() {
+            return Ok(());
+        }
+        let literal = |value: &FactValue| self.charge(value.as_text().map_or(1, str::len));
+        let path = |value: &FactPath| -> Result<(), ValidationFailure> {
+            for segment in value.segments() {
+                self.charge(segment.len())?;
+            }
+            Ok(())
+        };
+        self.charge(1)?;
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    self.predicate(child, width)?;
+                }
+            }
+            Predicate::Not(child) => self.predicate(child, width)?,
+            Predicate::Compare { left, right, .. } => {
+                for operand in [left, right] {
+                    match operand {
+                        Operand::Fact(value) => path(value)?,
+                        Operand::Literal(value) => literal(value)?,
+                    }
+                }
+            }
+            Predicate::Truthy(value) | Predicate::Defined(value) => path(value)?,
+            Predicate::AnyOf { path: read, values }
+            | Predicate::NoneOf { path: read, values }
+            | Predicate::FoldMatch {
+                path: read, values, ..
+            } => {
+                path(read)?;
+                for value in values {
+                    literal(value)?;
+                }
+            }
+            Predicate::TextMatch {
+                path: read, value, ..
+            } => {
+                path(read)?;
+                literal(value)?;
+            }
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                path(&quantified.over)?;
+                self.charge(quantified.bind.len())?;
+                for _ in 0..width {
+                    self.predicate(&quantified.body, width)?;
+                }
+            }
+            Predicate::Always | Predicate::Never => {}
+        }
+        self.charge(width)
+    }
+}
+
+impl std::fmt::Display for ValidationFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Invalid(detail) | Self::Unresolved(detail) => formatter.write_str(detail),
+        }
+    }
+}
+
+impl From<String> for ValidationFailure {
+    fn from(detail: String) -> Self {
+        Self::Invalid(detail)
+    }
+}
+
+impl From<&str> for ValidationFailure {
+    fn from(detail: &str) -> Self {
+        Self::Invalid(detail.into())
+    }
+}
+
+impl ValidationFailure {
+    fn at(self, name: &str) -> Self {
+        match self {
+            Self::Invalid(detail) => Self::Invalid(format!("{name}: {detail}")),
+            Self::Unresolved(detail) => Self::Unresolved(format!("{name}: {detail}")),
+        }
+    }
+
+    fn shape(errors: &ShapeErrors) -> Self {
+        if errors
+            .0
+            .iter()
+            .any(|error| !matches!(error, ShapeError::TooDeep { .. }))
+        {
+            Self::Invalid(errors.to_string())
+        } else {
+            Self::Unresolved(errors.to_string())
+        }
+    }
+}
+
+fn retain_validation(
+    unresolved: &mut Option<ValidationFailure>,
+    result: Result<(), ValidationFailure>,
+) -> Result<(), ValidationFailure> {
+    match result {
+        Err(error @ ValidationFailure::Invalid(_)) => Err(error),
+        Err(error) => {
+            unresolved.get_or_insert(error);
+            Ok(())
+        }
+        Ok(()) => Ok(()),
+    }
 }
 
 fn setup_fields(
@@ -355,32 +690,70 @@ fn setup_fields(
     fields: &[ResolvedField],
     values: &BTreeMap<String, Node>,
     depth: usize,
-) -> Result<FactStore, String> {
-    let facts =
-        bind(ir, fields, values, Completeness::Total).map_err(|errors| errors.to_string())?;
+    budget: &ProofBudget,
+) -> Result<(FactStore, Option<ValidationFailure>), ValidationFailure> {
+    for field in fields {
+        budget.charge(1 + field.name.len())?;
+    }
+    for (key, value) in values {
+        budget.charge(key.len())?;
+        budget.value(value)?;
+    }
+    budget.charge(fields.len().saturating_mul(values.len()))?;
     for field in fields {
         if let Some(value) = values.get(&field.name) {
-            setup_value(ir, &field.type_ref, value, depth + 1)
-                .map_err(|detail| format!("{}: {detail}", field.name))?;
+            budget.projection(ir, &field.type_ref, value, 0, field.name.len())?;
+        } else {
+            budget.charge(MAX_TYPE_DEPTH + 1)?;
         }
     }
-    Ok(facts)
+    let facts = bind(ir, fields, values, Completeness::Total)
+        .map_err(|errors| ValidationFailure::shape(&errors))?;
+    let mut unresolved = None;
+    for field in fields {
+        if let Some(value) = values.get(&field.name) {
+            match setup_value(ir, &field.type_ref, value, depth + 1, budget) {
+                Ok(()) => {}
+                Err(error @ ValidationFailure::Invalid(_)) => return Err(error.at(&field.name)),
+                Err(error) => {
+                    unresolved.get_or_insert_with(|| error.at(&field.name));
+                }
+            }
+            if budget.exhausted() {
+                return Err(unresolved.unwrap_or_else(|| {
+                    ValidationFailure::Unresolved("proof work exhausted".into())
+                }));
+            }
+        }
+    }
+    Ok((facts, unresolved))
 }
 
 fn setup_invariants(
     invariants: &[ess_domain::entity::Invariant],
     facts: &dyn FactSource,
-) -> Result<(), String> {
+    budget: &ProofBudget,
+    width: usize,
+) -> Result<(), ValidationFailure> {
+    let mut unresolved = None;
     for invariant in invariants {
+        budget.predicate(&invariant.predicate, width)?;
         let truth = invariant.predicate.evaluate(facts);
-        if truth != Truth::True {
-            return Err(format!(
+        let failure = || {
+            format!(
                 "invariant `{}` is {truth:?}; setup requires True",
                 invariant.statement
-            ));
+            )
+        };
+        match truth {
+            Truth::False => return Err(ValidationFailure::Invalid(failure())),
+            Truth::Unknown => {
+                unresolved.get_or_insert_with(|| ValidationFailure::Unresolved(failure()));
+            }
+            Truth::True => {}
         }
     }
-    Ok(())
+    unresolved.map_or(Ok(()), Err)
 }
 
 /// Check one concrete value against its declared type and nested invariants.
@@ -391,7 +764,25 @@ pub(crate) fn validate_typed_value(
     kind: &ResolvedTypeRef,
     value: &Node,
 ) -> Result<(), String> {
-    setup_value(ir, kind, value, 0)
+    setup_value(ir, kind, value, 0, &ProofBudget::native()).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+pub(crate) fn validate_typed_value_proof(
+    ir: &EssIr,
+    kind: &ResolvedTypeRef,
+    value: &Node,
+) -> Result<(), ValidationFailure> {
+    validate_typed_value_bounded(ir, kind, value, &ProofBudget::new(16_384))
+}
+
+pub(crate) fn validate_typed_value_bounded(
+    ir: &EssIr,
+    kind: &ResolvedTypeRef,
+    value: &Node,
+    budget: &ProofBudget,
+) -> Result<(), ValidationFailure> {
+    setup_value(ir, kind, value, 0, budget)
 }
 
 fn setup_value(
@@ -399,55 +790,93 @@ fn setup_value(
     kind: &ResolvedTypeRef,
     value: &Node,
     depth: usize,
-) -> Result<(), String> {
+    budget: &ProofBudget,
+) -> Result<(), ValidationFailure> {
+    budget.charge(1)?;
     if depth > MAX_TYPE_DEPTH {
-        return Err(format!("setup type expansion exceeds {MAX_TYPE_DEPTH}"));
+        return Err(ValidationFailure::Unresolved(format!(
+            "setup type expansion exceeds {MAX_TYPE_DEPTH}"
+        )));
     }
     match kind {
         ResolvedTypeRef::Optional { of } => {
             if matches!(value, Node::Null) {
                 Ok(())
             } else {
-                setup_value(ir, of, value, depth + 1)
+                setup_value(ir, of, value, depth + 1, budget)
             }
         }
-        ResolvedTypeRef::Primitive { name } if *name == Primitive::Json => Ok(()),
-        ResolvedTypeRef::Primitive { name } => primitive_value(*name, value)
-            .map(|_| ())
-            .ok_or_else(|| format!("value does not hold {name}")),
+        ResolvedTypeRef::Primitive { name } if *name == Primitive::Json => {
+            budget.value(value).map(|_| ())
+        }
+        ResolvedTypeRef::Primitive { name } => {
+            budget.value(value)?;
+            primitive_value(*name, value)
+                .map(|_| ())
+                .ok_or_else(|| ValidationFailure::Invalid(format!("value does not hold {name}")))
+        }
         ResolvedTypeRef::List { of } => {
+            budget.value(value)?;
             let Node::Seq(values) = value else {
                 return Err("expected a list".into());
             };
-            for child in values {
-                setup_value(ir, of, child, depth + 1)?;
+            let mut unresolved = None;
+            for (index, child) in values.iter().enumerate() {
+                retain_validation(
+                    &mut unresolved,
+                    setup_value(ir, of, child, depth + 1, budget),
+                )?;
+                if budget.exhausted() && index + 1 < values.len() {
+                    return Err(ValidationFailure::Unresolved(
+                        "proof work exhausted before all list elements were validated".into(),
+                    ));
+                }
             }
-            Ok(())
+            unresolved.map_or(Ok(()), Err)
         }
         ResolvedTypeRef::Map { key, value: of } => {
+            budget.value(value)?;
             let Node::Map(values) = value else {
                 return Err("expected a map".into());
             };
-            for (spelling, child) in values {
+            let mut unresolved = None;
+            for (index, (spelling, child)) in values.iter().enumerate() {
                 setup_map_key(*key, spelling)?;
-                setup_value(ir, of, child, depth + 1)?;
+                retain_validation(
+                    &mut unresolved,
+                    setup_value(ir, of, child, depth + 1, budget),
+                )?;
+                if budget.exhausted() && index + 1 < values.len() {
+                    return Err(ValidationFailure::Unresolved(
+                        "proof work exhausted before all map entries were validated".into(),
+                    ));
+                }
             }
-            Ok(())
+            unresolved.map_or(Ok(()), Err)
         }
         ResolvedTypeRef::Declared { name } => {
             let declared = ir.named_type(name);
-            setup_body(ir, &declared.name, &declared.body, value, depth + 1)
+            for segment in declared.name.segments() {
+                budget.charge(1 + segment.len())?;
+            }
+            setup_body(ir, &declared.name, &declared.body, value, depth + 1, budget)
         }
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one match keeps every resolved type body under the same bounded validator"
+)]
 fn setup_body(
     ir: &EssIr,
     name: &ess_domain::QualifiedName,
     body: &ResolvedBody,
     value: &Node,
     depth: usize,
-) -> Result<(), String> {
+    budget: &ProofBudget,
+) -> Result<(), ValidationFailure> {
+    let width = budget.value(value)?;
     match body {
         ResolvedBody::Newtype {
             of,
@@ -455,28 +884,34 @@ fn setup_body(
             prefix,
             invariants,
         } => {
-            setup_value(ir, of, value, depth)?;
+            let mut unresolved = None;
+            retain_validation(&mut unresolved, setup_value(ir, of, value, depth, budget))?;
             if let (Some(prefix), Some(text)) = (prefix, value.as_text()) {
+                budget.charge(prefix.len())?;
                 if !text.starts_with(prefix.as_str()) {
                     return Err(format!(
                         "{text:?} does not start with {prefix:?}, the prefix of {name}"
-                    ));
+                    )
+                    .into());
                 }
             }
             // Before the invariants: every character of a text is one of the declared alphabet's
             // (`docs/design/string-alphabet-and-length.md`, section 1).
             if let (Some(alphabet), Some(text)) = (alphabet, value.as_text()) {
+                budget.charge(text.len().saturating_mul(alphabet.len()))?;
                 if let Some(outside) = text
                     .chars()
                     .find(|character| !alphabet.contains(*character))
                 {
                     return Err(format!(
                         "{outside:?} in {text:?} is not in the alphabet of {name}"
-                    ));
+                    )
+                    .into());
                 }
             }
             let mut facts = FactStore::new();
             let mut errors = Vec::new();
+            budget.projection(ir, of, value, 0, "value".len())?;
             project(
                 ir,
                 of,
@@ -487,23 +922,49 @@ fn setup_body(
                 &mut errors,
             );
             if !errors.is_empty() {
-                return Err(format!("newtype facts unavailable: {errors:?}"));
+                return Err(
+                    ValidationFailure::shape(&ShapeErrors(errors)).at("newtype facts unavailable")
+                );
             }
             let wrapped = [ResolvedField {
                 name: "value".to_owned(),
-                type_ref: of.clone(),
+                type_ref: {
+                    budget.type_ref(of)?;
+                    of.clone()
+                },
                 naming: ess_domain::name::Naming::default(),
             }];
-            setup_invariants(invariants, &TypedFacts::new(ir, &wrapped, facts))
+            retain_validation(
+                &mut unresolved,
+                setup_invariants(
+                    invariants,
+                    &TypedFacts::new(ir, &wrapped, facts),
+                    budget,
+                    width,
+                ),
+            )?;
+            unresolved.map_or(Ok(()), Err)
         }
         ResolvedBody::Struct { fields, invariants } => {
             let Node::Map(values) = value else {
                 return Err("expected a struct mapping".into());
             };
-            let facts = setup_fields(ir, fields, values, depth)?;
-            setup_invariants(invariants, &TypedFacts::new(ir, fields, facts))
+            let (facts, mut unresolved) = setup_fields(ir, fields, values, depth, budget)?;
+            retain_validation(
+                &mut unresolved,
+                setup_invariants(
+                    invariants,
+                    &TypedFacts::new(ir, fields, facts),
+                    budget,
+                    width,
+                ),
+            )?;
+            unresolved.map_or(Ok(()), Err)
         }
         ResolvedBody::Enum { variants } => {
+            for variant in variants {
+                budget.charge(1 + variant.name().len())?;
+            }
             if value
                 .as_text()
                 .is_some_and(|value| variants.iter().any(|variant| variant == value))
@@ -527,7 +988,7 @@ fn setup_body(
                 return Err("a union holds exactly its tag and payload".into());
             }
             let payload = values.get(content).ok_or("missing union payload")?;
-            setup_value(ir, selected, payload, depth)
+            setup_value(ir, selected, payload, depth, budget)
         }
     }
 }

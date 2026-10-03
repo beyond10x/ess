@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T16:57:20Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-267",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:binding-arrangement-drop-design-20261003-r1",
+    "reference": "docs/design/binding-arrangement-and-drop.md#round-1-finding-2",
+    "review": "review-result:binding-arrangement-drop-design-20261003-r1",
+    "outcome": "fixed"
+  }
+}

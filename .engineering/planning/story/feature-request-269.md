@@ -12,6 +12,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
+- depends_on: story:feature-request-268
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen/src/asyncapi.rs
@@ -49,7 +50,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
 - confidence: inferred
   path: docs/design/binding-delivery-guarantees.md
-revision: 28
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -59,8 +60,11 @@ A binding's failure policy may differ per refusal of the bound command.
 
 ## Acceptance
 
-- `on_failure` accepts a map keyed by refusal outcome with a default (`{wrong_state: drop, at-limit: escalate, default: …}`); validate refuses a key the bound command does not declare.
-- Synthesis witnesses each entry; generated Rust and Go dispatch apply it.
+- Source22 admits policy-keyed selectors: drop/retry/escalate, each with outcomes or except, with list shorthand for positive drop/unbounded retry. Escalation still requires emits; retry retains attempts/final. Exactly one explicit except fallback covers untyped failures. The complete normative grammar is docs/design/conditional-binding-failure-policies.md.
+- Resolve outcome/error aliases before checking disjoint/exhaustive refusal coverage. Unknown names, accepting outcomes, selector overlap and invalid final subsets refuse. No condition-kind-keyed map or implicit fallback is admitted. Old universal policies preserve bytes and behavior.
+- Actual refusal chooses the policy after every attempt; mixed refusals never reset total retry budget. False binding conditions remain zero-invocation skips. Drop/escalate/final/exhaustion all terminate as specified.
+- Synthesis witnesses each forceable selected refusal and named runtime controls exercise mixed-refusal and untyped-failure paths. Required native/generated Rust/generated Go and native/Go/TS suite controls kill incorrect policy, omission, extra retry and duplicate-escalation behavior. Unsupported is not successful acceptance.
+- Typed IR, diff14 vocabulary, old-reader controls, projections and full acceptance names are bound in docs/design/conditional-binding-failure-policies.md. Independent design review precedes implementation.
 
 ## Origin
 
@@ -88,3 +92,15 @@ Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), 
 ## Decisions
 
 - **accept, redesigned (coordinator, 2026-09-30; the downstream answered the blocker: direct callers must still see the refusal):** the binding's failure policy may name refusals of the bound command the way `retry.final` already does (by outcome or by error, BC:87-89), with `except:` as in `outcome_groups:`, e.g. `on_failure: {escalate: {except: [<outcome>]}, drop: [<outcome>]}`; no map keyed by condition kinds such as `wrong_state`, and no mixing of outcome names with the policy keywords. Its syntax ships in the same format version as #229 and #268.
+
+## Current coordinated binding contract
+
+For the operator-authorized remaining bundle, docs/design/conditional-binding-failure-policies.md resolves the pending binding syntax, presence proof, observation, refusal alias, fallback and retry decisions. Source22 is the shared syntax allocation. New zero-invocation suite vocabulary uses ordinary36/inventory37; new predicate/refusal-policy diff kinds use diff14. Existing source21, held suites34/35, universal policies and unchanged projections retain their meanings/bytes. Historical illustrative syntax and scope doubts are superseded by that explicit contract. Independent design review is pending; this paragraph is not implementation evidence.
+
+## Design revision 2
+
+Review-result:conditional-binding-design-20261003-r1 is answered in docs/design/conditional-binding-failure-policies.md. Refusal policies apply only after a valid mapped input reaches the command port, where every logical attempt is counted once before the call. Untyped port failures consume this budget. Pre-input mapping/host/selection failures are explicit obligations with zero attempts and no policy/retry/escalation, avoiding an unadvanceable budget and fabricated escalation input. Escalation uses the actual complete failed input and the existing typed host builder; builder failure neither publishes nor reenters retry. Named controls cover these boundaries. Story268's Outcome/title now promise event-payload conditioning, not indistinguishable source-outcome selection. All three design findings are fixed; second independent design review remains due, implementation remains pending.
+
+## Current design disposition
+
+Final independent design reviews at aec396fe6 approved the arrangement/drop contract and the conditional/per-refusal contract (review-result:binding-arrangement-drop-design-20261003-r2 and review-result:conditional-binding-design-20261003-r2). All four and three first-round findings, respectively, were fixed. The matching docs/design pages now bind implementation. Prior pending-design wording is historical; implementation, decisive target controls and independent source review are still required. Serial #266 -> #267 -> #268/#194 -> #269 order and the one bundle PR remain unchanged.
