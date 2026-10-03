@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 28
+revision: 29
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -283,3 +283,11 @@ Read-only current-source audit confirms that imported runtime changes supply pre
 Next unit282: managed ess-serial-282-20261003; branch unit/serial-related-precedence-20261003; base48d5cc77b38f919381d04830475ff6ea4959289f; own target inside its managed tree; scratch local-evidence:ess21-completion/282. Its persisted brief assigns the eight existing controls, source22 admission and only necessary scoped files. It begins source/design/test preparation while292 verifies; first compilation follows compiler handback and root combined-source generation. No production correction precedes its observed regression. Root owns all AEP, generated outputs and serial integration. Collaboration-tool implementor loads the aep:implementing procedure; no native plugin-agent type is claimed.
 
 Remote refresh: main remains4d6a4ecaf and50issues are open. The separately owned protocol PR411 at eb65f174399b9c03272d5849d958735c1ec1236b has four test shards running; other listed checks are successful. Coordinator sent the other session an ownership/merge coordination message. No claim of acknowledgment, merge, or inclusion yet. Transport ownership clarification is pending with the operator; aggregate binding-cut authority remains open.
+
+## Fresh-context continuation and complete history review
+
+Operator explicitly resumed the full A–J bundle through one integration PR and verified release. Source inventory at3726b9db8 is unchanged. Canonical292 acceptance remains in the consumer-backlog store, active revision30; the integration store's draft mirror is not its authority. All18 final history files matched the preserved checksum manifest. Coordinator froze candidatecae6187ecf1d3a5c98fed636beb7a2174e1d1e80 with both bot identities verified, from base86b4a994481f4391f7f38cc2677cdc493ca20404.
+
+Full-candidate review pass1 assigned to fresh Sol/high worker in managed ess-history-review-final-20261003 at that exact candidate; its build target is tree-local target, scratch local-evidence:ess21-completion/history-review-final. Reviewer starts source inspection/test preparation while root regenerates combined outputs, then receives the sole compiler lane. Original292 source and assigned synthesis cache are retained idle. Existing282 implementor resumed its prepared dirty tree under original persisted brief, source-only until lane handback. No restart or duplicate implementation.
+
+Current main was remotely verified e07f55a9b13000a6931d842d5534d906b6e9202d;411 merged there. Root will integrate that independently merged change before combined checks. Measured free space16.9GB and available RAM38.7GB; current12GiB compiler-start floor remains. Connectors has no GitHub adapter; use authorized read-only gh and bot Gates writes after reporting capability gap. No transport reassignment or issue closure.
