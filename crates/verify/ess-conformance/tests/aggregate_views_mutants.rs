@@ -6,6 +6,8 @@
 //! must fail exactly the scenarios the page says catch it, and the implementation as specified must
 //! pass all of them. The Go lane runs the same suite against a Go port of the target (correct, and
 //! one mutant); the TypeScript lane must refuse the suite before any callback.
+mod support_versions;
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,6 +19,7 @@ use ess_compiler::{
 };
 use ess_conformance::{
     report::{ConformanceStatus, Status},
+    scenario::ScenarioInitialState,
     synthesize::synthesize,
     target::*,
     AdmittedSuite, ConformanceSuite, Runner,
@@ -37,7 +40,16 @@ fn suite() -> ConformanceSuite {
     let raw = RawSpecFile::parse(METRICS).unwrap();
     let spec = Specification::assemble([(Source::new("metrics.yaml"), raw)]).unwrap();
     let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap();
-    synthesize(&ir).suite
+    let suite = synthesize(&ir).suite;
+    assert_eq!(
+        suite.provenance.suite_version.to_string(),
+        "ess-conformance/34"
+    );
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+    suite
 }
 
 /// One defect an implementation of the three views could have.
@@ -422,19 +434,14 @@ fn admission_documents(suite: &ConformanceSuite, root: &std::path::Path) -> std:
     let ordinary = AdmittedSuite::from_suite(suite).unwrap();
     std::fs::write(
         docs.join("ordinary-14.json"),
-        ordinary
-            .original_json()
-            .replace("\"ess-conformance/16\"", "\"ess-conformance/14\""),
+        support_versions::legacy_json(ordinary.original_json(), 14),
     )
     .unwrap();
     let unscoped = unscoped_coverage();
     for major in [11, 15, 17] {
         std::fs::write(
             docs.join(format!("coverage-{major}.json")),
-            unscoped.replace(
-                "\"ess-conformance/17\"",
-                &format!("\"ess-conformance/{major}\""),
-            ),
+            support_versions::legacy_json(&unscoped, major),
         )
         .unwrap();
     }
@@ -545,8 +552,20 @@ fn unscoped_coverage() -> String {
     let ir = compile(&spec, &SourceMap::new()).unwrap();
     let input = ess_conformance::coverage_build::build(&ir, &[], Scope::System, Origins::Generated)
         .unwrap();
+    assert_eq!(
+        input
+            .selected()
+            .suite()
+            .provenance
+            .suite_version
+            .to_string(),
+        "ess-conformance/35"
+    );
+    assert_eq!(
+        input.selected().suite().provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
     let original = input.selected().original_json().to_owned();
-    assert!(original.contains("\"ess-conformance/17\""), "{original}");
     assert!(original.contains("ESS-SYNTH-016"), "{original}");
     original
 }
