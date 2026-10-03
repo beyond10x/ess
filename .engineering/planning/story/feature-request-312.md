@@ -27,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -179,3 +179,11 @@ Root consumed this baseline and authorized the two bounded production runtime co
 The two-resource treatment passed all five new controls after a retained first treatment still classified missing snapshots as Failed rather than Error. Current34 and historical32 native/generated matrices now execute green; full acceptance remains pending. The unchanged Go parity neighbor exposed a separate test bridge defect in go_generates_structured_value_suites_32_and_33: healthy nativePassed versus generatedFailed. The current combined neighbor run remains in flight, so no aggregate result is claimed here.
 
 Root read-only inspection identifies tests/support_go_prerequisite/mod.rs: its structured target delegates the interpreter, which returns a real token, but execute dispatch drops result.consistency from response JSON; query dispatch hardcodes Current. The corrected runtime honestly refuses that weakened read. Add only this seventh helper path to the bounded unit: preserve the actual Consistency response field and decode exact AtLeast/Current requests, retaining all healthy/faulty target behavior and assertions. Test observation must distinguish omitted/altered tokens; no invented successful token or production weakening is authorized. Preserve the observed neighbor failure and rerun the complete unchanged Go parity target and applicable helper users after correction. Whole affected package and independent review still precede final acceptance.
+
+## RYW author freeze and independent review
+
+Bot candidate48fdc424f0cdee1b101fd168fb82177caef0f3e4 is frozen over0b98f1bb60fd28b9d9e1a75e8fa8b8f157a0a8de, exactly7paths; complete patchSHA1032adc6995166399c4cd8ec73c952c91df8ec8409f1cc90e7399e5841609b01 and source-manifestSHAc1fe386bda0b92d9a34dec35fdae3ff259bbaff9f442b523813df48264109936. Root verified both bot identities and consumed handoffSHAe0e87a6cdda16aff0b8fdba59d0aaf46d439889ac37a93baed1d7164ee9a0c2b. Whole independent review1 of maximum2 is dispatched; no integration or approval yet.
+
+Actual treatment: new5tests pass current34/historical32 matrices and exact-token faults (logSHA6050e12a64e5e44cda203977edeff162c5e2cf2f551e5a30688ab1bcb0c80f12). Unchanged execution12, faults20, TypeScript parity28 and upsert1 pass (combinedlogSHA088d58b25e47f02af5de7b7244d11bd6dc32d5cb1b52e2ae32444eee82a0578a retains the original Go22/23 bridge failure). Complete corrected Go parity23/23 passes, logSHAe0812cb2466406984ec23d2d587aa7b4fefc0329e3a1f8c051019a9fc9f4c100. Strict six-target Clippy passes, logSHA6d8d86ccb1f2280aa1addd956683fb8e6a1a201d2785d68095d536f389d8dd09; formatting/whitespace pass. Final test-only clone_into allocation-style correction follows runtime evidence and is compiled by green strict lint; no exact-final-source runtime rerun is claimed for that semantic-equivalent edit.
+
+The fresh disk guard briefly withheld lint. All completed unit target bytes were archived and tar-compared before root-reviewed owning package cleanup: archiveSHA52c2d408f1c100d3ef424eaa93ec502828c11c66cab529ca83a396c21ee3bf88; actualcleanSHA c0e2df9ae122773a8f393eca055c38567f93aeb9d5c7a880b685924e40386f41,43files305.4MiB. The six original tested binaries remain recoverable in this archive; current live paths are absent. Shared Go cache remains untouched. Compiler lane returned and author lease ended. Full combined package/browser/final release obligations remain open.
