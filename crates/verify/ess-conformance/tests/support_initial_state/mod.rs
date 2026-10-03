@@ -178,6 +178,24 @@ try{await runWith(scope,target,readFileSync(file,'utf8'));if(failed)process.exit
 ";
 
 pub fn wasm(suite: &ess_conformance::AdmittedSuite) -> Value {
+    wasm_case(
+        suite,
+        super::ItemCase::Values,
+        &[
+            super::Fault::None,
+            super::Fault::KeysByCaller,
+            super::Fault::OnlyFirstCaller,
+            super::Fault::CannotIsolate,
+        ],
+    )
+}
+
+#[allow(clippy::too_many_lines)] // Keep the actual WASM build, bridge and fault matrix together.
+pub fn wasm_case(
+    suite: &ess_conformance::AdmittedSuite,
+    case: super::ItemCase,
+    faults: &[super::Fault],
+) -> Value {
     use std::fmt::Write as _;
     use std::{fs, path::Path, process::Command};
     let root = super::support_go::directory("initial-state-wasm");
@@ -209,6 +227,29 @@ pub fn wasm(suite: &ess_conformance::AdmittedSuite) -> Value {
         .split("#[test]")
         .next()
         .unwrap();
+    let case = match case {
+        super::ItemCase::Values => 0,
+        super::ItemCase::InputGuard => 1,
+        super::ItemCase::RelatedGuard => 2,
+        super::ItemCase::OptionalIdentity => 3,
+    };
+    let faults: Vec<_> = faults
+        .iter()
+        .map(|fault| match fault {
+            super::Fault::None => 0,
+            super::Fault::KeysByCaller => 1,
+            super::Fault::OnlyFirstCaller => 2,
+            super::Fault::CannotIsolate => 3,
+            super::Fault::HardcodedPrincipal => 4,
+            super::Fault::StaleCallerGuard => 6,
+            other => panic!("unmapped WASM fault {other:?}"),
+        })
+        .collect();
+    fs::write(
+        root.join("cases.json"),
+        serde_json::to_vec(&json!({"item_case":case,"faults":faults})).unwrap(),
+    )
+    .unwrap();
     fs::write(
         root.join("src/lib.rs"),
         format!("#![allow(dead_code, unused_imports)]\n{source}\n{WASM_HOST}"),
@@ -256,7 +297,8 @@ pub fn wasm(suite: &ess_conformance::AdmittedSuite) -> Value {
 import {readFileSync} from 'node:fs';import {open} from './bridge.mjs';
 const module=await open(readFileSync(process.argv[2]));
 const suite=readFileSync('suite.json','utf8');
-console.log(JSON.stringify([0,1,2,3].map(fault=>module.request({suite,fault}))));
+const cases=JSON.parse(readFileSync('cases.json','utf8'));
+console.log(JSON.stringify(cases.faults.map(fault=>module.request({suite,fault,item_case:cases.item_case}))));
 ",
     )
     .unwrap();
@@ -279,8 +321,9 @@ thread_local! {
  let answer=INPUT.with(|held| {
   let request:serde_json::Value=serde_json::from_slice(&held.borrow()).unwrap();
   let suite=AdmittedSuite::from_json(request["suite"].as_str().unwrap()).unwrap();
-  let fault=match request["fault"].as_u64().unwrap(){0=>Fault::None,1=>Fault::KeysByCaller,2=>Fault::OnlyFirstCaller,_=>Fault::CannotIsolate};
-  let target=plant(fault);
+  let fault=match request["fault"].as_u64().unwrap(){0=>Fault::None,1=>Fault::KeysByCaller,2=>Fault::OnlyFirstCaller,3=>Fault::CannotIsolate,4=>Fault::HardcodedPrincipal,6=>Fault::StaleCallerGuard,_=>unreachable!()};
+  let case=match request["item_case"].as_u64().unwrap(){0=>ItemCase::Values,1=>ItemCase::InputGuard,2=>ItemCase::RelatedGuard,3=>ItemCase::OptionalIdentity,_=>unreachable!()};
+  let target=item_plant(fault,case);
   let report=Runner::for_suite(suite.suite()).run_admitted(&suite,&target);
   let count=ess_conformance::counts::CountReport::from_run(&report,&suite).unwrap();
   let codes:std::collections::BTreeSet<_>=report.scenarios.iter().flat_map(|s|s.diagnostics()).map(|d|d.code.as_str()).collect();

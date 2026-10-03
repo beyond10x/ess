@@ -268,6 +268,17 @@ enum Fault {
     OnlyFirstCaller,
     /// Cannot establish the suite's declared scenario namespace.
     CannotIsolate,
+    HardcodedPrincipal,
+    StaleCallerGuard,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+enum ItemCase {
+    #[default]
+    Values,
+    InputGuard,
+    RelatedGuard,
+    OptionalIdentity,
 }
 
 type CallTrace = BTreeMap<String, Vec<(String, Node, Node)>>;
@@ -287,6 +298,7 @@ struct Plant {
     scenario: RefCell<String>,
     calls: RefCell<CallTrace>,
     first_caller: RefCell<Option<Node>>,
+    item_case: ItemCase,
 }
 
 fn outcome(command: &CommandRef, name: &str) -> OutcomeRef {
@@ -357,6 +369,12 @@ impl ConformanceTarget for Plant {
         ))
         .unwrap();
         let command = request.command.clone();
+        if command.to_string().starts_with("demo.items.") {
+            return Ok(self.item(&request, &caller).with_consistency(token));
+        }
+        if command.to_string() == "demo.desk.Open" {
+            return Ok(self.desk(&request, &caller).with_consistency(token));
+        }
         if command.to_string() == "demo.plant.CancelJob" {
             let Some(job_id) = request.input.get("job_id").cloned() else {
                 return Ok(SemanticCommandResult::undeclared().with_consistency(token));
@@ -450,8 +468,10 @@ impl ConformanceTarget for Plant {
     }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let rows = match request.view.to_string().as_str() {
-            "demo.plant.Switches" => self.rows(&self.switches.borrow()),
-            "demo.plant.Jobs" => self.rows(&self.jobs.borrow()),
+            "demo.plant.Switches" | "demo.items.ItemDetails" | "demo.desk.SessionDetails" => {
+                self.rows(&self.switches.borrow())
+            }
+            "demo.plant.Jobs" | "demo.items.SlotDetails" => self.rows(&self.jobs.borrow()),
             other => panic!("no view {other}"),
         };
         Ok(SemanticViewResult::of(rows))
@@ -471,6 +491,174 @@ impl ConformanceTarget for Plant {
 }
 
 impl Plant {
+    fn desk(
+        &self,
+        request: &SemanticCommandRequest,
+        caller: &BTreeMap<String, Node>,
+    ) -> SemanticCommandResult {
+        let principal = &caller["principal"];
+        let command = &request.command;
+        self.calls
+            .borrow_mut()
+            .entry(self.scenario.borrow().clone())
+            .or_default()
+            .push((
+                command.to_string(),
+                request.input["team"].clone(),
+                principal.clone(),
+            ));
+        let mut first = self.first_caller.borrow_mut();
+        let first = first.get_or_insert_with(|| principal.clone());
+        if self.fault == Fault::OnlyFirstCaller && first != principal {
+            return SemanticCommandResult::undeclared();
+        }
+        if request.input["bulk"] == Node::Bool(false) {
+            let identity = text(&format!("session-{}", self.minted.get()));
+            let row_key = if self.fault == Fault::KeysByCaller {
+                format!("{}/{}", key(principal), key(&identity))
+            } else {
+                key(&identity)
+            };
+            self.switches.borrow_mut().insert(
+                row_key,
+                BTreeMap::from([
+                    ("session_id".into(), identity.clone()),
+                    ("team".into(), request.input["team"].clone()),
+                    ("note".into(), principal.clone()),
+                    ("on_hold".into(), Node::Bool(false)),
+                    ("state".into(), text("Open")),
+                ]),
+            );
+            SemanticCommandResult::took(outcome(command, "opened")).emitting(
+                ObservedEvent::new("demo.desk.SessionOpened".parse().unwrap())
+                    .with("session_id", identity)
+                    .with("team", request.input["team"].clone()),
+            )
+        } else {
+            let mut count = 0_u32;
+            for (row_key, row) in self.switches.borrow_mut().iter_mut() {
+                if row["team"] == request.input["team"]
+                    && (self.fault != Fault::KeysByCaller
+                        || row_key.starts_with(&format!("{}/", key(principal))))
+                {
+                    row.insert("note".into(), request.input["note"].clone());
+                    count += 1;
+                }
+            }
+            SemanticCommandResult::took(outcome(command, "noted")).emitting(
+                ObservedEvent::new("demo.desk.TeamNoted".parse().unwrap())
+                    .with("team", request.input["team"].clone())
+                    .with(
+                        "noted",
+                        serde_json::from_value(serde_json::json!(count)).unwrap(),
+                    ),
+            )
+        }
+    }
+    fn item(
+        &self,
+        request: &SemanticCommandRequest,
+        caller: &BTreeMap<String, Node>,
+    ) -> SemanticCommandResult {
+        let command = &request.command;
+        let principal = &caller["principal"];
+        let mut first = self.first_caller.borrow_mut();
+        let first = first.get_or_insert_with(|| principal.clone());
+        let booking = command.to_string() == "demo.items.BookSlot";
+        let field = if booking { "slot_id" } else { "item_id" };
+        let generated = text(&format!("generated-{}", self.minted.get()));
+        let identity = request
+            .input
+            .get(field)
+            .filter(|value| !matches!(value, Node::Null))
+            .unwrap_or(&generated);
+        self.calls
+            .borrow_mut()
+            .entry(self.scenario.borrow().clone())
+            .or_default()
+            .push((command.to_string(), identity.clone(), principal.clone()));
+        if self.fault == Fault::OnlyFirstCaller && first != principal {
+            return SemanticCommandResult::undeclared();
+        }
+        let guarded_principal = if self.fault == Fault::StaleCallerGuard {
+            &*first
+        } else {
+            principal
+        };
+        let bad_principal = matches!(
+            self.item_case,
+            ItemCase::InputGuard | ItemCase::RelatedGuard
+        ) && (!booking || self.item_case == ItemCase::RelatedGuard)
+            && request.input.get("label") != Some(guarded_principal);
+        if bad_principal && !booking {
+            return error(command, "bad-principal", "demo.items.SlotTaken");
+        }
+        let identity_key = if self.fault == Fault::KeysByCaller {
+            format!("{}/{}", key(principal), key(identity))
+        } else {
+            key(identity)
+        };
+        let stored_key = self.storage_key(&identity_key);
+        let mut rows = if booking {
+            self.jobs.borrow_mut()
+        } else {
+            self.switches.borrow_mut()
+        };
+        let row = rows.get(&stored_key);
+        if booking && row.is_some() {
+            return error(command, "already-booked", "demo.items.SlotTaken");
+        }
+        if self.item_case == ItemCase::RelatedGuard && booking {
+            let item = &request.input["item_id"];
+            let item_key = if self.fault == Fault::KeysByCaller {
+                format!("{}/{}", key(principal), key(item))
+            } else {
+                key(item)
+            };
+            if !self
+                .switches
+                .borrow()
+                .contains_key(&self.storage_key(&item_key))
+            {
+                return error(command, "no-item", "demo.items.SlotTaken");
+            }
+        }
+        if bad_principal {
+            return error(command, "bad-principal", "demo.items.SlotTaken");
+        }
+        let selected = if booking {
+            "booked"
+        } else if row.is_some() {
+            "updated"
+        } else {
+            "created"
+        };
+        let label = if self.fault == Fault::HardcodedPrincipal {
+            first.clone()
+        } else {
+            principal.clone()
+        };
+        rows.insert(
+            stored_key,
+            BTreeMap::from([
+                (field.into(), identity.clone()),
+                ("label".into(), label.clone()),
+            ]),
+        );
+        SemanticCommandResult::took(outcome(command, selected)).emitting(
+            ObservedEvent::new(
+                if booking {
+                    "demo.items.SlotBooked"
+                } else {
+                    "demo.items.ItemStored"
+                }
+                .parse()
+                .unwrap(),
+            )
+            .with(field, identity.clone())
+            .with("label", label),
+        )
+    }
     fn storage_key(&self, key: &str) -> String {
         if self.namespaced {
             format!("{}/{key}", self.scenario.borrow())
@@ -555,6 +743,14 @@ fn failed(suite: &ConformanceSuite, plant: &Plant) -> Vec<(String, Status)> {
 fn plant(fault: Fault) -> Plant {
     Plant {
         fault,
+        ..Plant::default()
+    }
+}
+
+fn item_plant(fault: Fault, item_case: ItemCase) -> Plant {
+    Plant {
+        fault,
+        item_case,
         ..Plant::default()
     }
 }
@@ -864,21 +1060,35 @@ mod support_initial_state;
 #[test]
 #[allow(clippy::too_many_lines)] // Compare the two actual foreign runtimes against one native run.
 fn live_go_and_typescript_match_native_shared_row_and_isolation_verdicts() {
-    use ess_conformance::counts::CountReport;
-    use std::process::Command;
     let model = ir(&with_id(
         "{name: demo.plant.SwitchId, kind: newtype, of: Uuid}",
     ));
     let suite = synthesize(&model).suite;
-    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    live_foreign(
+        &suite,
+        &[
+            Fault::None,
+            Fault::KeysByCaller,
+            Fault::OnlyFirstCaller,
+            Fault::CannotIsolate,
+        ],
+        plant,
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+fn live_foreign(suite: &ConformanceSuite, faults: &[Fault], make: impl Fn(Fault) -> Plant) {
+    use ess_conformance::counts::CountReport;
+    use std::process::Command;
+    let admitted = AdmittedSuite::from_suite(suite).unwrap();
     let directory = support_go::package(
         "initial-state",
-        &suite,
+        suite,
         &[("live_test.go", support_initial_state::GO)],
     );
     let typescript = directory.join("typescript");
     std::fs::create_dir_all(&typescript).unwrap();
-    for artifact in ess_conformance::ts::emit(&suite).unwrap() {
+    for artifact in ess_conformance::ts::emit(suite).unwrap() {
         let path = typescript.join(artifact.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, artifact.contents).unwrap();
@@ -902,14 +1112,9 @@ fn live_go_and_typescript_match_native_shared_row_and_isolation_verdicts() {
         String::from_utf8_lossy(&output.stderr)
     );
     std::fs::write(package.join("live.mjs"), support_initial_state::TS).unwrap();
-    for fault in [
-        Fault::None,
-        Fault::KeysByCaller,
-        Fault::OnlyFirstCaller,
-        Fault::CannotIsolate,
-    ] {
-        let target = plant(fault);
-        let native = Runner::for_suite(&suite).run_admitted(&admitted, &target);
+    for &fault in faults {
+        let target = make(fault);
+        let native = Runner::for_suite(suite).run_admitted(&admitted, &target);
         let expected: serde_json::Value = serde_json::from_str(
             &CountReport::from_run(&native, &admitted)
                 .unwrap()
@@ -917,7 +1122,7 @@ fn live_go_and_typescript_match_native_shared_row_and_isolation_verdicts() {
                 .unwrap(),
         )
         .unwrap();
-        let host = support_initial_state::Host::start(plant(fault));
+        let host = support_initial_state::Host::start(make(fault));
         let go = support_go::go_test(&directory, "TestLive", &[("PARITY_ADDRESS", &host.address)]);
         let observed: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(directory.join("report.json")).unwrap())
@@ -936,7 +1141,7 @@ fn live_go_and_typescript_match_native_shared_row_and_isolation_verdicts() {
             .log
             .contains("Requires an empty logical modeled-instance/event/invocation namespace"));
         let go_target = host.stop();
-        let host = support_initial_state::Host::start(plant(fault));
+        let host = support_initial_state::Host::start(make(fault));
         let report = directory.join("typescript-report.json");
         let output = Command::new("node")
             .arg("live.mjs")
@@ -1154,12 +1359,12 @@ fn upsert_updated_witness_crosses_callers_between_create_and_update() {
 }
 
 #[test]
-fn caller_sensitive_same_command_gap_is_explicit_without_false_mixed_claim() {
+fn caller_sensitive_same_command_duplicate_identity_crosses_callers() {
     let synthesis = synthesize(&ir(&with_id(
         "{name: demo.plant.SwitchId, kind: newtype, of: Uuid}",
     )));
     let id = "demo.plant.InstallSwitch/outcome/already-installed";
-    assert!(synthesis.notes.iter().any(
+    assert!(!synthesis.notes.iter().any(
         |note| matches!(note,Note::CrossCallerUnwitnessed {scenario,..} if scenario.to_string()==id)
     ));
     assert!(!synthesis.notes.iter().any(
@@ -1168,17 +1373,347 @@ fn caller_sensitive_same_command_gap_is_explicit_without_false_mixed_claim() {
 }
 
 #[test]
-fn caller_valued_upsert_records_the_remaining_per_invocation_witness_gap() {
+fn caller_valued_upsert_crosses_callers_per_invocation() {
+    assert_caller_upsert(false);
+}
+
+#[test]
+fn caller_guarded_upsert_uses_each_invocations_own_guard() {
+    assert_caller_upsert(true);
+}
+
+fn assert_caller_upsert(guarded: bool) {
+    use ess_conformance::ScenarioStep;
     let original =
         include_str!("../../../specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml");
     let source=original.replace("format: ess/16","format: ess/18")
         .replace("  - {name: demo.items.Admin, may: [demo.items.PutItem, demo.items.BookSlot]}",
             "  - {name: demo.items.Admin, attributes: [{name: principal, type: demo.items.Label}], may: [demo.items.PutItem, demo.items.BookSlot]}")
         .replace("label: input.label","label: {caller: principal}");
+    let source = if guarded {
+        source.replace("      - name: updated", "      - {name: bad-principal, when: label != caller.principal, error: demo.items.SlotTaken}\n      - name: updated")
+    } else {
+        source
+    };
     let synthesis = synthesize(&ir(&source));
     assert!(synthesis
         .suite
         .scenarios
         .contains_key(&"demo.items.PutItem/outcome/updated".parse().unwrap()));
-    assert!(synthesis.notes.iter().any(|note|matches!(note,Note::CrossCallerUnwitnessed {scenario,..} if scenario.to_string()=="demo.items.PutItem/outcome/updated")));
+    let scenario =
+        &synthesis.suite.scenarios[&"demo.items.PutItem/outcome/updated".parse().unwrap()];
+    let calls: Vec<_> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand {
+                command,
+                caller,
+                input,
+                ..
+            } if command.to_string() == "demo.items.PutItem" => Some((caller, input)),
+            _ => None,
+        })
+        .collect();
+    assert!(calls.len() >= 2);
+    assert_ne!(
+        calls[0].0, calls[1].0,
+        "first creates and second acts on the same row"
+    );
+    if guarded {
+        for (caller, input) in calls {
+            assert_eq!(
+                input["label"],
+                ess_conformance::ScenarioValue::literal(caller["principal"].clone())
+            );
+        }
+    }
+    assert!(!synthesis.notes.iter().any(|note|matches!(note,Note::CrossCallerUnwitnessed {scenario,..} if scenario.to_string()=="demo.items.PutItem/outcome/updated")));
+}
+
+fn item_source(case: ItemCase) -> String {
+    let original =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml");
+    let source = original.replace("format: ess/16", "format: ess/18")
+        .replace("  - {name: demo.items.Admin, may: [demo.items.PutItem, demo.items.BookSlot]}",
+            "  - {name: demo.items.Admin, attributes: [{name: principal, type: demo.items.Label}], may: [demo.items.PutItem, demo.items.BookSlot]}")
+        .replace("label: input.label", "label: {caller: principal}");
+    if case == ItemCase::OptionalIdentity {
+        return source.replace("      - {name: slot_id, type: demo.items.ItemId}\n      - {name: label, type: demo.items.Label}\n    outcomes:", "      - {name: slot_id, type: Optional<demo.items.ItemId>}\n      - {name: label, type: demo.items.Label}\n    outcomes:")
+            .replace("slot_id: input.slot_id, label:", "slot_id: {input: slot_id, else: {generated: true}}, label:");
+    }
+    if case == ItemCase::Values {
+        return source;
+    }
+    let source = source.replace("      - name: updated", "      - {name: bad-principal, when: label != caller.principal, error: demo.items.SlotTaken}\n      - name: updated");
+    if case == ItemCase::InputGuard {
+        return source;
+    }
+    source.replace("entities:\n", "  - {name: demo.items.SlotId, kind: newtype, of: String}\nentities:\n")
+        .replace("slot_id, type: demo.items.ItemId", "slot_id, type: demo.items.SlotId")
+        .replace("  - name: demo.items.BookSlot\n    input:\n", "  - name: demo.items.BookSlot\n    input:\n      - {name: item_id, type: demo.items.ItemId}\n")
+        .replace("      - name: booked", "      - {name: bad-principal, when: label != caller.principal, error: demo.items.SlotTaken}\n      - {name: no-item, when_related: {via: input.item_id, exists: false}, error: demo.items.SlotTaken}\n      - name: booked")
+}
+
+#[test]
+fn caller_upserts_execute_actual_source_guards_and_effects() {
+    for case in [
+        ItemCase::Values,
+        ItemCase::InputGuard,
+        ItemCase::RelatedGuard,
+        ItemCase::OptionalIdentity,
+    ] {
+        let synthesis = synthesize(&ir(&item_source(case)));
+        assert!(
+            synthesis.refusals.is_empty(),
+            "{case:?}: {:?}",
+            synthesis.refusals
+        );
+        let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+        let target = item_plant(Fault::None, case);
+        let run = Runner::for_suite(&synthesis.suite).run_admitted(&admitted, &target);
+        let failures: Vec<_> = run
+            .scenarios
+            .iter()
+            .filter(|scenario| scenario.status != Status::Passed)
+            .collect();
+        assert!(
+            failures.is_empty(),
+            "{case:?}: {failures:#?}; refusals: {:?}",
+            synthesis.refusals
+        );
+        let failed = failed(&synthesis.suite, &item_plant(Fault::KeysByCaller, case));
+        assert!(!failed.is_empty(), "{case:?}: partitioned rows must fail");
+    }
+}
+
+fn item_faults(case: ItemCase) -> Vec<Fault> {
+    let mut faults = vec![
+        Fault::None,
+        Fault::KeysByCaller,
+        Fault::OnlyFirstCaller,
+        Fault::HardcodedPrincipal,
+        Fault::CannotIsolate,
+    ];
+    if matches!(case, ItemCase::InputGuard | ItemCase::RelatedGuard) {
+        faults.push(Fault::StaleCallerGuard);
+    }
+    faults
+}
+
+#[test]
+fn caller_upsert_go_and_typescript_match_actual_native_outcomes() {
+    for case in [
+        ItemCase::Values,
+        ItemCase::InputGuard,
+        ItemCase::RelatedGuard,
+        ItemCase::OptionalIdentity,
+    ] {
+        let suite = synthesize(&ir(&item_source(case))).suite;
+        for fault in item_faults(case)
+            .into_iter()
+            .filter(|fault| *fault != Fault::None)
+        {
+            assert!(
+                !failed(&suite, &item_plant(fault, case)).is_empty(),
+                "{case:?} {fault:?} escaped"
+            );
+        }
+        live_foreign(&suite, &item_faults(case), |fault| item_plant(fault, case));
+    }
+}
+
+#[test]
+fn caller_upsert_wasm_matches_actual_native_outcomes() {
+    for case in [
+        ItemCase::Values,
+        ItemCase::InputGuard,
+        ItemCase::RelatedGuard,
+        ItemCase::OptionalIdentity,
+    ] {
+        let suite = synthesize(&ir(&item_source(case))).suite;
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        let faults = item_faults(case);
+        let observed = support_initial_state::wasm_case(&admitted, case, &faults);
+        for (index, fault) in faults.into_iter().enumerate() {
+            let target = item_plant(fault, case);
+            let native = Runner::for_suite(&suite).run_admitted(&admitted, &target);
+            let count = ess_conformance::counts::CountReport::from_run(&native, &admitted).unwrap();
+            let expected: serde_json::Value =
+                serde_json::from_str(&count.to_canonical_json().unwrap()).unwrap();
+            assert_eq!(
+                observed[index]["report"]["counts"], expected["counts"],
+                "{case:?} {fault:?}"
+            );
+            assert_eq!(
+                observed[index]["report"]["outcomes"], expected["outcomes"],
+                "{case:?} {fault:?}"
+            );
+            let codes: std::collections::BTreeSet<_> = native
+                .scenarios
+                .iter()
+                .flat_map(ess_conformance::ScenarioResult::diagnostics)
+                .map(|d| d.code.as_str())
+                .collect();
+            assert_eq!(
+                observed[index]["codes"],
+                serde_json::to_value(codes).unwrap(),
+                "{case:?} {fault:?}"
+            );
+            assert_eq!(
+                observed[index]["calls"],
+                target.calls.borrow().len(),
+                "{case:?} {fault:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn caller_sensitive_set_command_arranges_under_another_invocation() {
+    use ess_conformance::ScenarioStep;
+    let synthesis = synthesize(&ir(&caller_set_source()));
+    let scenario = &synthesis.suite.scenarios[&"demo.desk.Open/outcome/noted".parse().unwrap()];
+    let calls: Vec<_> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand {
+                command,
+                caller,
+                input,
+                ..
+            } if command.to_string() == "demo.desk.Open" => Some((caller, &input["bulk"])),
+            _ => None,
+        })
+        .collect();
+    let creator = calls
+        .iter()
+        .find(|(_, bulk)| **bulk == ess_conformance::ScenarioValue::literal(Node::Bool(false)))
+        .unwrap()
+        .0;
+    let acting = calls
+        .iter()
+        .find(|(_, bulk)| **bulk == ess_conformance::ScenarioValue::literal(Node::Bool(true)))
+        .unwrap()
+        .0;
+    assert_ne!(
+        creator, acting,
+        "source-admitted set command must cross callers on its actual arranged rows"
+    );
+    assert!(synthesis.notes.iter().any(|note| matches!(note,
+        Note::CrossCallerUnswapped { scenario, .. } if scenario.to_string() == "demo.desk.Open/outcome/noted"
+    )), "the reversed set count cannot compose with rows retained from the first run");
+}
+
+fn caller_set_source() -> String {
+    let source = include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects.yaml");
+    let mut raw: serde_yaml::Value = serde_yaml::from_str(source).unwrap();
+    raw["format"] = "ess/18".into();
+    raw["actors"][0]["attributes"] =
+        serde_yaml::from_str("[{name: principal, type: demo.desk.Note}]").unwrap();
+    let commands = raw["commands"].as_sequence_mut().unwrap();
+    let mut bulk = commands
+        .iter()
+        .find(|command| command["name"].as_str() == Some("demo.desk.NoteTeam"))
+        .unwrap()["outcomes"][0]
+        .clone();
+    bulk["when"] = "bulk == true".into();
+    let creating = &mut commands[0];
+    creating["input"]
+        .as_sequence_mut()
+        .unwrap()
+        .push(serde_yaml::from_str("{name: bulk, type: Boolean}").unwrap());
+    creating["outcomes"][0]["when"] = "bulk == false".into();
+    creating["outcomes"][0]["sets"]["note"] = serde_yaml::from_str("{caller: principal}").unwrap();
+    creating["outcomes"].as_sequence_mut().unwrap().push(bulk);
+    serde_yaml::to_string(&raw).unwrap()
+}
+
+fn caller_set_suite() -> ConformanceSuite {
+    let mut suite = synthesize(&ir(&caller_set_source())).suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string() == "demo.desk.Open/outcome/noted");
+    assert_eq!(suite.scenarios.len(), 1);
+    suite
+}
+
+#[test]
+fn caller_set_effect_executes_against_actual_shared_rows() {
+    let suite = caller_set_suite();
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let run = Runner::for_suite(&suite).run_admitted(&admitted, &plant(Fault::None));
+    let diagnostics: Vec<_> = run
+        .scenarios
+        .iter()
+        .flat_map(ess_conformance::ScenarioResult::diagnostics)
+        .collect();
+    assert!(
+        diagnostics.is_empty(),
+        "healthy shared set target must pass: {diagnostics:#?}"
+    );
+    assert!(!failed(&suite, &plant(Fault::KeysByCaller)).is_empty());
+}
+
+#[test]
+fn caller_set_go_and_typescript_match_actual_native_outcomes() {
+    let suite = caller_set_suite();
+    let faults = [
+        Fault::None,
+        Fault::KeysByCaller,
+        Fault::OnlyFirstCaller,
+        Fault::CannotIsolate,
+    ];
+    for fault in &faults[1..] {
+        assert!(
+            !failed(&suite, &plant(*fault)).is_empty(),
+            "{fault:?} escaped"
+        );
+    }
+    live_foreign(&suite, &faults, plant);
+}
+
+#[test]
+fn caller_set_wasm_matches_actual_native_outcomes() {
+    let suite = caller_set_suite();
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let faults = [
+        Fault::None,
+        Fault::KeysByCaller,
+        Fault::OnlyFirstCaller,
+        Fault::CannotIsolate,
+    ];
+    let observed = support_initial_state::wasm_case(&admitted, ItemCase::Values, &faults);
+    for (index, fault) in faults.into_iter().enumerate() {
+        let target = plant(fault);
+        let native = Runner::for_suite(&suite).run_admitted(&admitted, &target);
+        let count = ess_conformance::counts::CountReport::from_run(&native, &admitted).unwrap();
+        let expected: serde_json::Value =
+            serde_json::from_str(&count.to_canonical_json().unwrap()).unwrap();
+        assert_eq!(
+            observed[index]["report"]["counts"], expected["counts"],
+            "{fault:?}"
+        );
+        assert_eq!(
+            observed[index]["report"]["outcomes"], expected["outcomes"],
+            "{fault:?}"
+        );
+        let codes: std::collections::BTreeSet<_> = native
+            .scenarios
+            .iter()
+            .flat_map(ess_conformance::ScenarioResult::diagnostics)
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(
+            observed[index]["codes"],
+            serde_json::to_value(codes).unwrap(),
+            "{fault:?}"
+        );
+        assert_eq!(
+            observed[index]["calls"],
+            target.calls.borrow().len(),
+            "{fault:?}"
+        );
+    }
 }

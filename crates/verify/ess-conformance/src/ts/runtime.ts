@@ -3792,13 +3792,13 @@ export class ScenarioRun {
     }
     return this.fail(
       index,
-      `\`${step.event}\` was emitted, and no instance of it carried ${describe(step.payload ?? {})}`,
+      `ESS-CF-PAYLOAD: \`${step.event}\` was emitted, and no instance of it carried ${describe(step.payload ?? {})}`,
     );
   }
 
   expectNoEvent(index: number, step: Step): boolean {
     if ((this.observed[step.event] ?? []).length > 0) {
-      return this.fail(index, `\`${step.event}\` was emitted, and this branch does not emit it`);
+      return this.fail(index, `ESS-CF-NO-EVENT: \`${step.event}\` was emitted, and this branch does not emit it`);
     }
     return true;
   }
@@ -3932,7 +3932,7 @@ export class ScenarioRun {
     if (rows.length !== 1)
       return this.fail(
         index,
-        `subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
+        `ESS-CF-VIEW: subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
       );
     if (shape !== undefined) {
       try {

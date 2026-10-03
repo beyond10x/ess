@@ -84,6 +84,55 @@ impl Who {
     }
 }
 
+/// The interpretation that supplied an invocation's guards, inputs and effects.
+#[derive(Clone, Copy)]
+pub(super) enum InvocationPhase {
+    Arrange,
+    Act,
+}
+
+/// Arrangements and acting commands may read the same source under different credentials.
+/// Keep both whole commands: a creator must satisfy its own competing guards.
+pub(super) struct InvocationModels<'a> {
+    pub arrangement: &'a EssIr,
+    pub acting: &'a EssIr,
+    credentials: Option<(&'a EssIr, &'a Callers, Who)>,
+}
+
+impl<'a> InvocationModels<'a> {
+    pub fn plain(ir: &'a EssIr) -> Self {
+        Self {
+            arrangement: ir,
+            acting: ir,
+            credentials: None,
+        }
+    }
+
+    /// Stamp a block while the planner still knows its role. Previously stamped nested blocks
+    /// keep their role; in particular a stored-field boundary contains both phases.
+    pub fn mark(&self, phase: InvocationPhase, steps: &mut [ScenarioStep]) {
+        let Some((ir, callers, first)) = self.credentials else {
+            return;
+        };
+        let who = match phase {
+            InvocationPhase::Arrange => first,
+            InvocationPhase::Act => first.other(),
+        };
+        for step in steps {
+            if matches!(step, ScenarioStep::ExecuteCommand { caller, .. } | ScenarioStep::ExecuteCommandWithoutInput { caller, .. } if !caller.is_empty())
+            {
+                continue;
+            }
+            mark(ir, callers, &|_| who, step);
+        }
+    }
+
+    pub fn mark_run(&self, run: &mut super::Run) {
+        self.mark(InvocationPhase::Arrange, &mut run.setup);
+        self.mark(InvocationPhase::Act, &mut run.invoke);
+    }
+}
+
 /// The two callers: for each actor that declares attributes, one value per attribute, each.
 ///
 /// Held per actor, because two actors may declare one attribute name at different types for
@@ -234,7 +283,7 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             whole.suite.scenarios.insert(id, scenario);
         }
     }
-    cross_single_command(ir, &callers, &reading, &mut whole);
+    cross_single_command(ir, &callers, &mut whole);
     // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
     // the model's; the suite names the model it came from, the one a target and an adapter digest
     // (beyond10x/ess#216).
@@ -246,66 +295,88 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
 }
 
 /// Upserts and duplicate-identity controls arrange and act with the same command name.
-fn cross_single_command(
-    ir: &EssIr,
-    callers: &Callers,
-    reading: &BTreeSet<QualifiedName>,
-    whole: &mut Synthesis,
-) {
-    for (id, scenario) in &mut whole.suite.scenarios {
-        let Some(command) = under_test(id).and_then(|name| name.parse::<QualifiedName>().ok())
-        else {
-            continue;
-        };
-        let commands: Vec<_> = scenario
-            .steps
-            .iter()
-            .filter_map(|step| match step {
-                ScenarioStep::ExecuteCommand { command, .. }
-                | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => Some(command.name()),
-                _ => None,
-            })
-            .collect();
-        if commands.len() < 2
-            || commands.iter().any(|name| **name != command)
-            || callers.for_command(ir, Who::First, &command)
-                == callers.for_command(ir, Who::Second, &command)
+fn cross_single_command(ir: &EssIr, callers: &Callers, whole: &mut Synthesis) {
+    let first = ir.with_commands_rewritten(|command| {
+        written(
+            ir,
+            command,
+            &callers.for_command(ir, Who::First, &command.name),
+        )
+    });
+    let second = ir.with_commands_rewritten(|command| {
+        written(
+            ir,
+            command,
+            &callers.for_command(ir, Who::Second, &command.name),
+        )
+    });
+    let forward = InvocationModels {
+        arrangement: &first,
+        acting: &second,
+        credentials: Some((ir, callers, Who::First)),
+    };
+    let backward = InvocationModels {
+        arrangement: &second,
+        acting: &first,
+        credentials: Some((ir, callers, Who::Second)),
+    };
+    for command in ir.commands().keys() {
+        if callers.for_command(ir, Who::First, command)
+            == callers.for_command(ir, Who::Second, command)
         {
             continue;
         }
-        if reading.contains(&command) {
-            whole.notes.push(Note::CrossCallerUnwitnessed {
-                scenario: id.clone(), reason: "same-command arrangement and action read caller values; a mixed invocation assignment cannot reuse a single-caller outcome witness",
-            });
-            continue;
+        let mixed = super::synthesize_invocations(&forward, Focus::About(command));
+        let reversed = super::synthesize_invocations(&backward, Focus::About(command));
+        for refusal in &mixed.refusals {
+            let Some(id) = &refusal.scenario else {
+                continue;
+            };
+            if about(id, command)
+                && whole.suite.scenarios.contains_key(id)
+                && !mixed.suite.scenarios.get(id).is_some_and(crosses_callers)
+            {
+                whole.notes.push(Note::CrossCallerUnwitnessed {
+                    scenario: id.clone(),
+                    reason: format!(
+                        "the mixed invocation planner retained the ordinary outcome: {}",
+                        refusal.cause
+                    ),
+                });
+            }
         }
-        let original = scenario.clone();
-        mark_invocations(ir, callers, scenario, Who::First);
-        let mut reversed = original;
-        mark_invocations(ir, callers, &mut reversed, Who::Second);
-        if let Err(reason) = append_independent(ir, scenario, &reversed) {
-            whole.notes.push(Note::CrossCallerUnswapped {
-                scenario: id.clone(),
-                reason,
+        for (id, mut scenario) in mixed.suite.scenarios {
+            if !about(&id, command) || !crosses_callers(&scenario) {
+                continue;
+            }
+            whole.notes.retain(|note| {
+                !matches!(note,
+                    Note::UnswappedCallers { scenario, .. }
+                    | Note::CrossCallerUnswapped { scenario, .. }
+                    | Note::CrossCallerUnwitnessed { scenario, .. } if scenario == &id
+                )
             });
-        }
-    }
-}
-
-fn mark_invocations(ir: &EssIr, callers: &Callers, scenario: &mut ConformanceScenario, first: Who) {
-    let mut ordinal = 0;
-    for step in &mut scenario.steps {
-        if matches!(
-            step,
-            ScenarioStep::ExecuteCommand { .. } | ScenarioStep::ExecuteCommandWithoutInput { .. }
-        ) {
-            mark(
-                ir,
-                callers,
-                &|_| if ordinal == 0 { first } else { first.other() },
-                step,
+            if let Some(again) = reversed.suite.scenarios.get(&id) {
+                if let Err(reason) = append_independent(ir, &mut scenario, again) {
+                    whole.notes.push(Note::CrossCallerUnswapped {
+                        scenario: id.clone(),
+                        reason,
+                    });
+                }
+            } else {
+                whole.notes.push(Note::CrossCallerUnswapped { scenario: id.clone(), reason: "the reversed caller interpretation cannot arrange this source-selected outcome" });
+            }
+            whole
+                .refusals
+                .retain(|refusal| refusal.scenario.as_ref() != Some(&id));
+            whole.refusals.extend(
+                mixed
+                    .refusals
+                    .iter()
+                    .filter(|refusal| refusal.scenario.as_ref() == Some(&id))
+                    .cloned(),
             );
-            ordinal += 1;
+            whole.suite.scenarios.insert(id, scenario);
         }
     }
 }
@@ -775,12 +846,20 @@ pub(super) fn under_test(id: &ScenarioId) -> Option<String> {
     }
 }
 
-/// Whether a run asserts something that depends on every row a view holds rather than on the
-/// rows it made: a view expectation over an aggregate view (a count or sum per group), or one that
-/// counts, ranks or positions rows. Appended after the first run, such an expectation would be
+/// Whether a run observes all matching rows: a set effect, an aggregate view (a count or sum per
+/// group), or a view expectation that counts, ranks or positions rows. Appended after the first run, such an expectation would be
 /// read over both runs' rows and its absolute figures would be the first run's plus its own.
 fn reads_every_row(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
     steps.iter().any(|step| {
+        if let ScenarioStep::ExpectOutcome { outcome } = step {
+            return ir.commands().values().any(|command| {
+                command.name.to_string() == outcome.command.to_string()
+                    && command.outcomes.iter().any(|branch| {
+                        branch.name == outcome.outcome
+                            && (branch.instances.is_some() || !branch.affects.is_empty())
+                    })
+            });
+        }
         let (ScenarioStep::ExpectView {
             view, expectation, ..
         }
@@ -968,7 +1047,12 @@ impl<'a> Identities<'a> {
         let mut creating = BTreeMap::new();
         let mut types = BTreeSet::new();
         for command in ir.commands().values() {
-            let fields = super::identity_inputs(command);
+            let fields: BTreeSet<String> = command
+                .outcomes
+                .iter()
+                .filter_map(super::existence::identity_input)
+                .map(str::to_owned)
+                .collect();
             if fields.is_empty() {
                 continue;
             }
@@ -1033,7 +1117,7 @@ impl<'a> Identities<'a> {
                 .collect();
             for (name, value) in input {
                 if let ScenarioValue::Literal { value } = value {
-                    if fields.contains(name) {
+                    if fields.contains(name) && !matches!(value, Node::Null) {
                         sent.push(Sent {
                             command: creating,
                             field: name,
@@ -1232,11 +1316,9 @@ fn key(value: &Node) -> String {
 /// `value` with every identity `drawn` names replaced by its fresh value, wherever the serialized
 /// run carries it: in an input, an event payload, a view row or an expectation.
 ///
-/// Every identity replaced is a witness the suite chose for that input alone, so a text equal to it
-/// anywhere in the run is that identity, under whatever name the model copies it — an event field
-/// that echoes it, a stored field a view shows, another command's input. A number or a Boolean is
-/// not so particular (a count, a position or another input may equal it), so one is replaced only
-/// under a name `keys` declares at an identity input's type.
+/// Replace values only under names declared at an identity's type or derived from its source.
+/// A String witness can equal a schema field name (`item_id`); rewriting that metadata would make
+/// a capture read a nonexistent event field. Counts and unrelated scalar fields likewise stay put.
 fn redraw(
     value: &mut serde_json::Value,
     keys: &BTreeSet<String>,
@@ -1267,12 +1349,9 @@ fn redraw_under(
         serde_json::Value::Array(items) => items
             .iter_mut()
             .for_each(|inner| redraw_under(inner, typed, keys, drawn)),
-        serde_json::Value::String(_) => {
-            if let Some(new) = drawn.get(&value.to_string()) {
-                *value = new.clone();
-            }
-        }
-        serde_json::Value::Number(_) | serde_json::Value::Bool(_) => {
+        serde_json::Value::String(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::Bool(_) => {
             if typed {
                 if let Some(new) = drawn.get(&value.to_string()) {
                     *value = new.clone();
@@ -1442,6 +1521,26 @@ views:
         let synthesis = super::super::synthesize(ir);
         UNFOCUSED.set(false);
         (synthesis, WHOLE.get())
+    }
+
+    #[test]
+    fn a_source_owned_outcome_keeps_its_mixed_arrangement_explanation() {
+        let synthesis = super::super::synthesize(&compiled(NOTES));
+        assert!(
+            synthesis.notes.iter().any(|note| matches!(note,
+                Note::CrossCallerUnwitnessed { scenario, reason }
+                    if scenario.to_string() == "demo.notes.CloseNote/outcome/closed"
+                        && reason.contains("mixed")
+            )),
+            "the source-owned accepting outcome must not silently claim a mixed witness"
+        );
+        assert!(
+            synthesis
+                .suite
+                .scenarios
+                .contains_key(&"demo.notes.CloseNote/outcome/forbidden".parse().unwrap()),
+            "the other caller's source-selected refusal remains executable"
+        );
     }
 
     #[test]

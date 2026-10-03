@@ -2349,7 +2349,7 @@ func (r *run) expectEvent(index int, step Step) bool {
 	// carrying the wrong value" are two different repairs.
 	for _, event := range r.observed[step.Event] {
 		if reason := payloadCarries(event.Payload, step.Payload); reason != "" {
-			return r.assertionFailure(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "ESS-CF-PAYLOAD: `%s` was emitted, and %s", step.Event, reason)
 		}
 		// The declared fields, and what each holds. Asserting only that the event arrived would
 		// pass an implementation that published it empty.
@@ -2384,7 +2384,7 @@ func payloadCarries(payload, want map[string]Node) string {
 
 func (r *run) expectNoEvent(index int, step Step) bool {
 	if len(r.observed[step.Event]) > 0 {
-		return r.fail(index, "`%s` was emitted, and this branch does not emit it", step.Event)
+		return r.fail(index, "ESS-CF-NO-EVENT: `%s` was emitted, and this branch does not emit it", step.Event)
 	}
 	return true
 }
@@ -2531,7 +2531,7 @@ func (r *run) snapshotSubject(index int, step Step) bool {
 		}
 	}
 	if len(rows) != 1 {
-		return r.fail(index, "subject snapshot %s matched %d rows, want exactly one", step.View, len(rows))
+		return r.fail(index, "ESS-CF-VIEW: subject snapshot %s matched %d rows, want exactly one", step.View, len(rows))
 	}
 	encoded, err := json.Marshal(rows[0])
 	if err != nil {
