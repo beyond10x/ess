@@ -14,6 +14,245 @@ use ess_synth::{synthesize_for, Target};
 
 const MODEL: &str = include_str!("fixtures/served-notes/system.yaml");
 
+#[test]
+fn adversary_ambiguous_actor_aliases_never_choose_a_grant() {
+    let ir = combined(MODEL, "domain: notebook.other\nactors:\n  - name: notebook.other.Writer\n    may: [notebook.notes.ArchiveNote]\n");
+    for target in [Target::Rust, Target::Go] {
+        let root = emitted_ir(&ir, target, "adversary-actor-alias");
+        let executable = build_at(&root, target, "notebook", "notes", &[]);
+        let server = Server::start(&executable, true, None);
+        for actor in ["Writer", "notebook.other.Writer", "writer", "Writer extra"] {
+            assert_eq!(
+                server
+                    .json(
+                        "POST",
+                        "/notes/commands/add-note",
+                        Some(actor),
+                        serde_json::json!({"note_id": 1, "text": "denied"})
+                    )
+                    .0,
+                403,
+                "{target:?}: {actor}"
+            );
+        }
+        assert_eq!(
+            server
+                .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+                .1["rows"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            server
+                .json(
+                    "POST",
+                    "/notes/commands/add-note",
+                    Some("notebook.notes.Writer"),
+                    serde_json::json!({"note_id": 1, "text": "qualified"})
+                )
+                .0,
+            202
+        );
+        assert_eq!(
+            server
+                .json(
+                    "POST",
+                    "/notes/commands/archive-note",
+                    Some("notebook.other.Writer"),
+                    serde_json::json!({"note_id": 1})
+                )
+                .0,
+            202
+        );
+        assert_eq!(
+            server
+                .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+                .1["rows"][0]["state"],
+            "Archived"
+        );
+        let default = Server::start(&executable, false, None);
+        assert_eq!(
+            default
+                .json(
+                    "POST",
+                    "/notes/commands/add-note",
+                    Some("notebook.notes.Writer"),
+                    serde_json::json!({"note_id": 2, "text": "denied"})
+                )
+                .0,
+            403
+        );
+    }
+}
+
+#[test]
+fn adversary_union_identity_orders_tags_then_typed_payloads() {
+    let text = MODEL.replace("  - {name: notebook.notes.NoteId, kind: newtype, of: Integer}", "  - name: notebook.notes.NoteId\n    kind: union\n    tag: kind\n    variants:\n      zulu: Integer\n      alpha: Optional<Integer>\n");
+    for target in [Target::Rust, Target::Go] {
+        let executable = build(&text, target, "adversary-union-identity");
+        let server = Server::start(&executable, true, None);
+        for (id, text) in [
+            (serde_json::json!({"kind":"zulu", "value": i64::MAX}), "max"),
+            (serde_json::json!({"kind":"alpha", "value": 10}), "ten"),
+            (serde_json::json!({"kind":"alpha", "value": 2}), "old"),
+            (serde_json::json!({"kind":"alpha", "value": null}), "absent"),
+            (serde_json::json!({"kind":"zulu", "value": i64::MIN}), "min"),
+            (serde_json::json!({"kind":"alpha", "value": 2}), "two"),
+        ] {
+            assert_eq!(
+                server
+                    .json(
+                        "POST",
+                        "/notes/commands/add-note",
+                        Some("Writer"),
+                        serde_json::json!({"note_id": id, "text": text})
+                    )
+                    .0,
+                202,
+                "{target:?}: {text}"
+            );
+        }
+        let rows = server
+            .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+            .1;
+        let labels: Vec<_> = rows["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(labels, ["absent", "two", "ten", "min", "max"], "{target:?}");
+        assert_eq!(
+            server
+                .json(
+                    "POST",
+                    "/notes/commands/archive-note",
+                    Some("Writer"),
+                    serde_json::json!({"note_id": {"kind":"alpha", "value": 2}})
+                )
+                .0,
+            202
+        );
+        let rows = server
+            .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+            .1;
+        assert_eq!(rows["rows"][0]["state"], "Active");
+        assert_eq!(rows["rows"][1]["state"], "Archived");
+        assert_eq!(rows["rows"][2]["state"], "Active");
+    }
+}
+
+#[test]
+fn optional_union_payloads_keep_named_and_collection_values_in_scope() {
+    let text = MODEL.replace(
+        "  - {name: notebook.notes.NoteId, kind: newtype, of: Integer}",
+        r"  - name: notebook.notes.NoteId
+    kind: union
+    tag: kind
+    variants:
+      nominal: Optional<notebook.notes.Number>
+      record: Optional<notebook.notes.Payload>
+      list: Optional<List<Integer>>
+      map: Optional<Map<String, Integer>>
+  - {name: notebook.notes.Number, kind: newtype, of: Integer}
+  - name: notebook.notes.Payload
+    kind: struct
+    fields:
+      - {name: count, type: Integer}",
+    );
+    let executable = build(&text, Target::Go, "optional-union-payloads");
+    let server = Server::start(&executable, true, None);
+    for (label, value) in [
+        ("nominal", serde_json::json!(7)),
+        ("record", serde_json::json!({"count": 7})),
+        ("list", serde_json::json!([7, 8])),
+        ("map", serde_json::json!({"seven": 7})),
+    ] {
+        for (identity, suffix) in [
+            (serde_json::json!({"kind": label}), "missing"),
+            (serde_json::json!({"kind": label, "value": null}), "null"),
+            (
+                serde_json::json!({"kind": label, "value": value}),
+                "present",
+            ),
+        ] {
+            assert_eq!(
+                server.json(
+                    "POST",
+                    "/notes/commands/add-note",
+                    Some("Writer"),
+                    serde_json::json!({"note_id": identity, "text": format!("{label}-{suffix}")}),
+                ).0,
+                202,
+                "{label}-{suffix}",
+            );
+        }
+    }
+    let (status, answer) = server.json("GET", "/notes/views/notes", None, serde_json::Value::Null);
+    assert_eq!(status, 200);
+    let rows = answer["rows"].as_array().unwrap();
+    assert_eq!(
+        rows.len(),
+        8,
+        "missing and null denote the same absent payload"
+    );
+    for (label, value) in [
+        ("nominal", serde_json::json!(7)),
+        ("record", serde_json::json!({"count": 7})),
+        ("list", serde_json::json!([7, 8])),
+        ("map", serde_json::json!({"seven": 7})),
+    ] {
+        let absent = rows
+            .iter()
+            .find(|row| row["text"] == format!("{label}-null"))
+            .unwrap();
+        assert!(absent["note_id"]["value"].is_null());
+        let present = rows
+            .iter()
+            .find(|row| row["text"] == format!("{label}-present"))
+            .unwrap();
+        assert_eq!(present["note_id"]["value"], value);
+    }
+}
+
+#[test]
+fn adversary_static_head_and_document_routes_keep_their_contracts() {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "served-entry-adversary-static-{}",
+        std::process::id()
+    ));
+    let public = root.join("public");
+    std::fs::create_dir_all(public.join("nested")).unwrap();
+    std::fs::write(public.join("nested/index.html"), "nested page").unwrap();
+    std::fs::write(public.join("openapi.json"), "shadow document").unwrap();
+    std::fs::write(root.join("private.html"), "outside").unwrap();
+    #[cfg(unix)]
+    {
+        std::fs::create_dir_all(public.join("escape")).unwrap();
+        std::os::unix::fs::symlink(root.join("private.html"), public.join("escape/index.html"))
+            .unwrap();
+    }
+    for target in [Target::Rust, Target::Go] {
+        let server = Server::start(binary(target), false, Some(&public));
+        assert_eq!(
+            server.request("HEAD", "/nested/", None, ""),
+            (200, Vec::new()),
+            "{target:?}"
+        );
+        assert_eq!(
+            server.request("GET", "/nested/?v=1", None, ""),
+            (200, b"nested page".to_vec()),
+            "{target:?}"
+        );
+        assert_eq!(server.request("POST", "/nested/", None, "").0, 405);
+        let (status, document) = server.json("GET", "/openapi.json", None, serde_json::Value::Null);
+        assert_eq!(status, 200);
+        assert_eq!(document["openapi"], "3.1.0");
+        assert_eq!(server.request("POST", "/openapi.json", None, "").0, 405);
+        #[cfg(unix)]
+        assert_eq!(server.request("GET", "/escape/", None, "").0, 404);
+    }
+}
+
 fn model(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap();
     let spec = Specification::assemble([(Source::new("served-notes.yaml"), raw)]).unwrap();
