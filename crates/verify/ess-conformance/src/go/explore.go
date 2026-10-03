@@ -299,8 +299,9 @@ type exploreKind struct {
 }
 
 type exploreField struct {
-	name string
-	kind exploreKind
+	name     string
+	kind     exploreKind
+	presence string
 }
 
 func exploreIdentityOwner(ir map[string]any, name string) string {
@@ -323,6 +324,13 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
 	if depth > 32 {
 		return exploreKind{kind: "unsupported", why: "nested too deeply"}
+	}
+	if ref["kind"] == "optional" {
+		base := exploreResolveAs(ir, exploreObject(ref["of"]), depth+1, concurrent)
+		if base.kind == "unsupported" {
+			return base
+		}
+		return exploreKind{kind: "optional", base: &base}
 	}
 	if ref["kind"] == "primitive" {
 		name := exploreString(ref["name"])
@@ -377,7 +385,7 @@ func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurre
 			if kind.kind == "unsupported" {
 				return kind
 			}
-			fields = append(fields, exploreField{name: exploreString(field["name"]), kind: kind})
+			fields = append(fields, exploreField{name: exploreString(field["name"]), kind: kind, presence: exploreString(exploreObject(field["naming"])["presence"])})
 		}
 		return exploreKind{kind: "struct", fields: fields}
 	default:
@@ -622,7 +630,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		for _, outcome := range outcomes {
 			kind := exploreObject(exploreObject(outcome)["condition"])["kind"]
 			if reason == "" && kind != "when" && kind != "otherwise" && kind != "wrong_state" &&
-				kind != "external" && kind != "external_when" {
+				kind != "external" && kind != "external_when" && kind != "unknown_instance" {
 				reason = fmt.Sprintf("outcome `%v` has a `%v` condition", exploreObject(outcome)["name"], exploreUndefined(kind))
 			}
 		}
@@ -647,7 +655,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			if undrawable == "" && kind.kind == "unsupported" {
 				undrawable = fmt.Sprintf("input `%v` is %s", field["name"], kind.why)
 			}
-			inputs = append(inputs, exploreField{name: exploreString(field["name"]), kind: kind})
+			inputs = append(inputs, exploreField{name: exploreString(field["name"]), kind: kind, presence: exploreString(exploreObject(field["naming"])["presence"])})
 		}
 		guards := map[string]predicate{}
 		ordered := []predicate{}
@@ -858,11 +866,31 @@ func exploreLiteral(ir map[string]any, text any, ref map[string]any) (Node, bool
 	}
 }
 
+func exploreOptionalType(ir, ref map[string]any) bool {
+	for depth := 0; depth <= 32; depth++ {
+		if ref["kind"] == "optional" {
+			return true
+		}
+		if ref["kind"] != "declared" {
+			return false
+		}
+		body := exploreObject(exploreObject(exploreObject(ir["types"])[exploreString(ref["name"])])["body"])
+		if body["kind"] != "newtype" {
+			return false
+		}
+		ref = exploreObject(body["of"])
+	}
+	return false
+}
+
 func exploreValue(ir map[string]any, value map[string]any, input Row, ref map[string]any) (Node, int) {
 	switch value["kind"] {
 	case "input_field":
 		found, ok := exploreReadPath(map[string]any(input), fmt.Sprint(value["field"]))
 		if !ok {
+			if exploreOptionalType(ir, exploreObject(value["type_ref"])) {
+				return nil, exploreDetermined
+			}
 			return nil, exploreUndetermined
 		}
 		return found, exploreDetermined
@@ -877,6 +905,56 @@ func exploreValue(ir map[string]any, value map[string]any, input Row, ref map[st
 	default:
 		return nil, exploreUndetermined
 	}
+}
+
+// Typed absence is knowledge; only genuinely unknown model fields are skipped.
+func exploreValueAgrees(ir map[string]any, ref, naming map[string]any, expected, actual Node, present bool, depth int) bool {
+	if depth > 32 {
+		return false
+	}
+	if ref["kind"] == "optional" {
+		if expected == nil {
+			switch naming["presence"] {
+			case "null_when_absent":
+				return present && actual == nil
+			case "omitted_when_absent":
+				return !present
+			default:
+				return !present || actual == nil
+			}
+		}
+		return exploreValueAgrees(ir, exploreObject(ref["of"]), nil, expected, actual, present, depth+1)
+	}
+	if ref["kind"] == "declared" {
+		body := exploreObject(exploreObject(exploreObject(ir["types"])[exploreString(ref["name"])])["body"])
+		if body["kind"] == "newtype" {
+			return exploreValueAgrees(ir, exploreObject(body["of"]), naming, expected, actual, present, depth+1)
+		}
+		if body["kind"] == "struct" && exploreObject(expected) != nil {
+			if !present || exploreObject(actual) == nil {
+				return false
+			}
+			names := map[string]bool{}
+			for _, item := range exploreList(body["fields"]) {
+				names[exploreString(exploreObject(item)["name"])] = true
+			}
+			for name := range exploreObject(actual) {
+				if !names[name] {
+					return false
+				}
+			}
+			for _, item := range exploreList(body["fields"]) {
+				field := exploreObject(item)
+				name := exploreString(field["name"])
+				got, has := exploreObject(actual)[name]
+				if !exploreValueAgrees(ir, exploreObject(field["type_ref"]), exploreObject(field["naming"]), exploreObject(expected)[name], got, has, depth+1) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return present && equal(expected, actual)
 }
 
 // exploreDecision is what the model says one step may take. For `take`, outcome is the ordinary
@@ -900,6 +978,30 @@ func exploreSupplied(command *exploreCommand) map[string]any {
 		}
 	}
 	return nil
+}
+
+func exploreUnknown(command *exploreCommand) map[string]any {
+	for _, item := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(item)
+		if exploreObject(outcome["condition"])["kind"] == "unknown_instance" {
+			return outcome
+		}
+	}
+	return nil
+}
+
+func exploreTerminal(command *exploreCommand, outcome map[string]any, input Row, model *exploreModel) map[string]any {
+	subject := exploreObject(outcome["subject"])
+	instance := exploreObject(subject["instance"])
+	if instance["from"] == "supplied" {
+		id, _ := exploreReadPath(map[string]any(input), exploreString(exploreObject(instance["field"])["name"]))
+		if model.find(exploreString(subject["entity"]), id) == nil {
+			if missing := exploreUnknown(command); missing != nil {
+				return missing
+			}
+		}
+	}
+	return outcome
 }
 
 func exploreFrom(outcome map[string]any) []string {
@@ -978,7 +1080,7 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 			return exploreDecision{kind: "take", outcome: outcome}
 		}
 	}
-	if supplied != nil && record == nil {
+	if supplied != nil && record == nil && exploreUnknown(command) == nil {
 		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
 	}
 	// orExternal is what a step may take where no ordinary branch can be: the eligible external
@@ -1068,7 +1170,7 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		}
 		return orExternal(exploreDecision{kind: "ambiguous", names: names})
 	}
-	return exploreDecision{kind: "take", outcome: selected, externals: externals}
+	return exploreDecision{kind: "take", outcome: exploreTerminal(command, selected, input, model), externals: externals}
 }
 
 // exploreEligible is the external branches of a command this input and subject make eligible, in
@@ -1101,14 +1203,19 @@ func exploreEligible(command *exploreCommand, outcomes []map[string]any, source 
 // exploreChoices is the branches a step may take: the ordinary one, unless an earlier arrangement
 // of this command may still hold and an external branch is eligible, then every eligible external
 // branch the target has not refused to arrange.
-func exploreChoices(s *exploreSession, command *exploreCommand, decision exploreDecision) []map[string]any {
-	choices := []map[string]any{}
+type exploreChoice struct {
+	arrangement string
+	expected    map[string]any
+}
+
+func exploreChoices(s *exploreSession, command *exploreCommand, decision exploreDecision, input Row) []exploreChoice {
+	choices := []exploreChoice{}
 	if decision.outcome != nil && (!s.forced[command.name] || len(decision.externals) == 0) {
-		choices = append(choices, decision.outcome)
+		choices = append(choices, exploreChoice{expected: decision.outcome})
 	}
 	for _, outcome := range decision.externals {
 		if _, refused := s.p.unarrangeable[command.name+"/"+fmt.Sprint(outcome["name"])]; !refused {
-			choices = append(choices, outcome)
+			choices = append(choices, exploreChoice{arrangement: fmt.Sprint(outcome["name"]), expected: exploreTerminal(command, outcome, input, s.model)})
 		}
 	}
 	return choices
@@ -1145,12 +1252,22 @@ type exploreStep struct {
 	refs    []exploreRef
 	// external is the external branch arranged for this step, or empty for the ordinary branch.
 	external string
+	fresh    []exploreRef
 }
 
 var errExploreNoRecord = errors.New("no record")
 
+type exploreAbsentValue struct{}
+
+var exploreAbsent = exploreAbsentValue{}
+
 func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model *exploreModel, path string, mustExist bool, refs *[]exploreRef) (Node, error) {
 	switch kind.kind {
+	case "optional":
+		if r.Chance(0.5) {
+			return exploreAbsent, nil
+		}
+		return exploreDraw(*kind.base, r, command, model, path, mustExist, refs)
 	case "identity":
 		known := model.of(kind.entity)
 		if mustExist {
@@ -1191,7 +1308,11 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 			if err != nil {
 				return nil, err
 			}
-			value[field.name] = drawn
+			if _, absent := drawn.(exploreAbsentValue); !absent {
+				value[field.name] = drawn
+			} else if field.presence != "omitted_when_absent" {
+				value[field.name] = nil
+			}
 		}
 		return value, nil
 	default:
@@ -1210,19 +1331,48 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 	}
 	input := Row{}
 	refs := []exploreRef{}
+	fresh := []exploreRef{}
 	for _, field := range command.inputs {
 		kind := field.kind
 		if field.name == instance && kind.kind != "identity" {
 			base := kind
 			kind = exploreKind{kind: "identity", entity: entity, base: &base}
 		}
-		value, err := exploreDraw(kind, r, command, model, field.name, field.name == instance, &refs)
+		var value Node
+		var err error
+		if field.name == instance && exploreUnknown(command) != nil {
+			if len(model.of(entity)) > 0 && r.Chance(0.5) {
+				value, err = exploreDraw(kind, r, command, model, field.name, true, &refs)
+			} else {
+				base := kind
+				if kind.kind == "identity" {
+					base = *kind.base
+				}
+				err = errExploreNoRecord
+				for attempt := 0; attempt < exploreAttempts; attempt++ {
+					ignored := []exploreRef{}
+					drawn, problem := exploreDraw(base, r, command, model, field.name, false, &ignored)
+					_, absent := drawn.(exploreAbsentValue)
+					if problem == nil && !absent && model.find(entity, drawn) == nil {
+						value, err = drawn, nil
+						fresh = append(fresh, exploreRef{path: field.name, entity: entity})
+						break
+					}
+				}
+			}
+		} else {
+			value, err = exploreDraw(kind, r, command, model, field.name, field.name == instance, &refs)
+		}
 		if err != nil {
 			return nil
 		}
-		input[field.name] = value
+		if _, absent := value.(exploreAbsentValue); !absent {
+			input[field.name] = value
+		} else if field.presence != "omitted_when_absent" {
+			input[field.name] = nil
+		}
 	}
-	return &exploreStep{command: command.name, input: input, refs: refs}
+	return &exploreStep{command: command.name, input: input, refs: refs, fresh: fresh}
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -1301,7 +1451,14 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			}
 			target := exploreString(field["target"])
 			actual, present := event.Payload[target]
-			if !equal(expected, actual) {
+			var naming map[string]any
+			for _, item := range exploreList(exploreObject(exploreObject(ir["events"])[event.Event])["fields"]) {
+				declared := exploreObject(item)
+				if declared["name"] == target {
+					naming = exploreObject(declared["naming"])
+				}
+			}
+			if !exploreValueAgrees(ir, exploreObject(field["target_type"]), naming, expected, actual, present, 0) {
 				return &exploreDisagreement{kind: "payload", detail: fmt.Sprintf("event %d `%s`.%s is %s, the specification says %s", index, event.Event, target, exploreRender(actual, present), exploreRender(expected, true))}, nil
 			}
 		}
@@ -1351,6 +1508,8 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 				target := exploreString(set["target"])
 				if state == exploreDetermined {
 					record.fields[target] = value
+				} else if state == exploreCleared {
+					record.fields[target] = nil
 				} else {
 					delete(record.fields, target)
 				}
@@ -1364,7 +1523,7 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 	return exploreInvariants(s), nil
 }
 
-func exploreAgree(view map[string]any, identity string, rows []Row, expected []*exploreRecord) *exploreDisagreement {
+func exploreAgree(ir, view map[string]any, identity string, rows []Row, expected []*exploreRecord) *exploreDisagreement {
 	name := exploreString(view["name"])
 	if len(rows) != len(expected) {
 		return &exploreDisagreement{kind: "view-rows", detail: fmt.Sprintf("`%s` holds %d row(s), the specification says %d", name, len(rows), len(expected))}
@@ -1394,7 +1553,15 @@ func exploreAgree(view map[string]any, identity string, rows []Row, expected []*
 					continue
 				}
 				got, present := row[field]
-				if !equal(want, got) {
+				var declared map[string]any
+				for _, item := range exploreList(view["fields"]) {
+					candidate := exploreObject(item)
+					if candidate["name"] == field {
+						declared = candidate
+						break
+					}
+				}
+				if !exploreValueAgrees(ir, exploreObject(declared["type_ref"]), exploreObject(declared["naming"]), want, got, present, 0) {
 					value, has := row[identity]
 					return &exploreDisagreement{kind: "view-field", detail: fmt.Sprintf("`%s`.%s of %s is %s, the specification says %s", name, field, exploreRender(value, has), exploreRender(got, present), exploreRender(want, true))}
 				}
@@ -1463,7 +1630,7 @@ func exploreViews(s *exploreSession, token string) *exploreDisagreement {
 				}
 				return &exploreDisagreement{kind: "target", detail: fmt.Sprintf("reading `%s`, the target threw %s", name, err.Error())}
 			}
-			problem = exploreAgree(view, exploreString(exploreObject(entity["identity"])["name"]), answer.Rows, expected)
+			problem = exploreAgree(ir, view, exploreString(exploreObject(entity["identity"])["name"]), answer.Rows, expected)
 			if problem == nil {
 				break
 			}
@@ -1510,6 +1677,54 @@ type exploreFound struct {
 	kind     string
 	message  string
 	executed []*exploreStep
+}
+
+func exploreHasOptional(kind exploreKind) bool {
+	if kind.kind == "optional" {
+		return true
+	}
+	if kind.base != nil && exploreHasOptional(*kind.base) {
+		return true
+	}
+	for _, field := range kind.fields {
+		if exploreHasOptional(field.kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func exploreSameFailure(p *explorePlan, original, replayed *exploreFound) bool {
+	if original.kind != replayed.kind {
+		return false
+	}
+	if len(original.executed) == 0 || len(replayed.executed) == 0 {
+		return false
+	}
+	last := original.executed[len(original.executed)-1]
+	next := replayed.executed[len(replayed.executed)-1]
+	strict := false
+	for _, command := range p.commands {
+		if command.name != last.command {
+			continue
+		}
+		strict = exploreUnknown(command) != nil
+		for _, field := range command.inputs {
+			strict = strict || exploreHasOptional(field.kind)
+		}
+	}
+	if !strict {
+		return true
+	}
+	if last.command != next.command || last.external != next.external || len(last.fresh) != len(next.fresh) {
+		return false
+	}
+	for index, ref := range last.fresh {
+		if ref.path != next.fresh[index].path || ref.entity != next.fresh[index].entity {
+			return false
+		}
+	}
+	return strings.Split(original.message, " (step ")[0] == strings.Split(replayed.message, " (step ")[0]
 }
 
 func exploreDescribe(found *exploreDisagreement, index int, step *exploreStep) string {
@@ -1608,19 +1823,24 @@ func exploreReplay(p *explorePlan, newTarget func() Target, trace []*exploreStep
 		if !resolvable {
 			continue
 		}
-		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external}
+		for _, ref := range recorded.fresh {
+			id, _ := exploreReadPath(input, ref.path)
+			if s.model.find(ref.entity, id) != nil {
+				resolvable = false
+			}
+		}
+		if !resolvable {
+			continue
+		}
+		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external, fresh: recorded.fresh}
 		decision := exploreDecide(command, step.input, s.model)
 		if decision.kind != "take" {
 			continue
 		}
 		var outcome map[string]any
-		for _, choice := range exploreChoices(s, command, decision) {
-			name := ""
-			if exploreIsExternal(choice) {
-				name = fmt.Sprint(choice["name"])
-			}
-			if name == step.external {
-				outcome = choice
+		for _, choice := range exploreChoices(s, command, decision, step.input) {
+			if choice.arrangement == step.external {
+				outcome = choice.expected
 				break
 			}
 		}
@@ -1716,7 +1936,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 				p.exclude(command.name, decision.reason)
 				continue
 			}
-			choices := exploreChoices(s, command, decision)
+			choices := exploreChoices(s, command, decision, step.input)
 			if len(choices) == 0 {
 				if len(decision.names) > 0 {
 					ambiguous[command.name+": "+strings.Join(decision.names, ", ")] = true
@@ -1727,8 +1947,8 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			if len(choices) > 1 {
 				outcome = explorePick(r, choices)
 			}
-			if exploreIsExternal(outcome) {
-				step.external = fmt.Sprint(outcome["name"])
+			if outcome.arrangement != "" {
+				step.external = outcome.arrangement
 				arranging, unsupported := exploreArrange(s, command, step.external)
 				if unsupported != nil {
 					p.unarrangeable[command.name+"/"+step.external] = "the target cannot arrange it: " + unsupported.reason
@@ -1740,14 +1960,14 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 					break
 				}
 			}
-			disagreement, unsupported := explorePerform(s, command, step, outcome)
+			disagreement, unsupported := explorePerform(s, command, step, outcome.expected)
 			if unsupported != nil {
 				p.exclude(command.name, "the target does not expose it: "+unsupported.reason)
 				continue
 			}
 			executed++
 			trace = append(trace, step)
-			reached[command.name+"/"+fmt.Sprint(outcome["name"])] = true
+			reached[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
 			if disagreement != nil {
 				found = &exploreFound{kind: disagreement.kind, message: exploreDescribe(disagreement, len(trace)-1, step), executed: append([]*exploreStep{}, trace...)}
 				break
@@ -1834,7 +2054,7 @@ func exploreShrink(p *explorePlan, newTarget func() Target, seed int, trace []*e
 			if err != nil {
 				return nil, err
 			}
-			if again != nil && again.kind == found.kind {
+			if again != nil && exploreSameFailure(p, found, again) {
 				current = candidate
 				shortest = again
 				removed = true
