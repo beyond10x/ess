@@ -548,7 +548,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                     .map_err(|error| field.error("InvalidReplay", error.to_string()))?;
             }
             "response" if matches!(tag, "expect_response_payload" | "expect_direct_response") => {
-                response_observation(field, tag == "expect_direct_response")?;
+                response_observation(field, tag == "expect_direct_response", major)?;
             }
             "left" | "right" if tag == "expect_reading_order" => {
                 let reference: crate::reading::ReadingReference = serde_json::from_str(&field.raw)
@@ -592,17 +592,56 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     Ok(())
 }
 
-fn response_observation(field: &Json, direct: bool) -> Result<(), AdmissionError> {
+fn response_observation(field: &Json, direct: bool, major: u32) -> Result<(), AdmissionError> {
     if direct {
         field
             .decode_checked_depth::<crate::direct_response::Observation>()
             .map(|_| ())
             .map_err(|error| field.error("InvalidResponse", error.to_string()))
     } else {
+        if field.object()?.contains_key("nested") {
+            if major < 34 {
+                return Err(field.error(
+                    "UnsupportedVocabulary",
+                    "nested response authority requires suite/34 or /35",
+                ));
+            }
+            nested_response_metadata(field)?;
+        }
         serde_json::from_str::<crate::response::Observation>(&field.raw)
             .map(|_| ())
             .map_err(|error| field.error("InvalidResponse", error.to_string()))
     }
+}
+
+/// Check original names before the general field reader can normalize naming aliases.
+fn nested_response_metadata(field: &Json) -> Result<(), AdmissionError> {
+    let root = field.object()?;
+    for key in ["fields", "targets"] {
+        if let Some(fields) = root.get(key) {
+            for item in fields.array()? {
+                let member = item.closed(
+                    &["name", "type"],
+                    if key == "fields" { &["presence"] } else { &[] },
+                )?;
+                if let Some(presence) = member.get("presence") {
+                    if !matches!(presence.text()?, "null_when_absent" | "omitted_when_absent") {
+                        return Err(presence.error("InvalidPresence", presence.text()?));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(declarations) = root.get("declarations") {
+        for declaration in declarations.object()?.values() {
+            if let Some(fields) = declaration.object()?.get("fields") {
+                for item in fields.array()? {
+                    item.closed(&["name", "type"], &[])?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Check the model even when synthesis would omit unsupported fields or whole scenarios.
@@ -617,6 +656,13 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         .flat_map(|scenario| &scenario.steps)
     {
         if let ScenarioStep::ExpectResponsePayload { response } = step {
+            if response.nested.is_some() && suite.provenance.suite_version.major() < 34 {
+                return Err(AdmissionError::new(
+                    "UnsupportedVocabulary",
+                    "$suite",
+                    "nested response authority requires suite/34 or /35",
+                ));
+            }
             if suite.provenance.suite_version.major() < 8 {
                 return Err(AdmissionError::new(
                     "UnsupportedVocabulary",
