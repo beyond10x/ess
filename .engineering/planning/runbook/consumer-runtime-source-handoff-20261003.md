@@ -6,7 +6,7 @@ status: draft
 title: Frozen source handoff to the shared ESS integration branch
 relations:
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 # Frozen runtime source handoff, 2026-10-03
 
@@ -113,3 +113,17 @@ Carrier evidence SHA256: response-integrated-tests.log a8cfdc77f76745efc3baf11fe
 Source tree ess-interpreted-response-values-20261003 remains retained on fix/interpreted-response-values-20261003 with local-only bot commit and review evidence. Root carrier ess-backlog-next-20261002 holds the integrated source on batch/consumer-runtime-20261002. The shared coordinator remains sole owner of batch/ui-live-apps-complete-20261003 and its eventual PR. The source handoff remains local and unacknowledged: cross-session MCP delivery still fails at its endpoint, so no receipt is inferred. No remote gate or component PR was started.
 
 Full ess21 bundle hold remains. Nested response observation probe is independently recorded: healthy37/37 and unequal37/38 and38/37 all pass, while receipt=null fails. Native response execution fixes do not close that observer defect, browser product support, retained replay, or the full consumer backlog. PR402 remains open at9e15e08e9f0201e06bddc268934c3f96a92e5482; refreshed read shows CI progressing, not final Gate success, and unchanged source still lacks the reviewed contradictory-bound correction. Release owner retains that blocker.
+
+## Integrator coordination refresh, 2026-10-03
+
+The integrator reiterated one held ess/21 branch, batch/ui-live-apps-complete-20261003, with no partial PR or merge. Root provided the already-frozen 57-commit runtime manifest plus actual-response046db8a680 addendum (58 selected source commits) and exact local artifact links in the active conversation. Their SHA256 values remain69fde33220abb186d262f0a77b41844dc4da676096956f96c51e75e29f182cfa andfa5a3ae3bcab3677629cd7a4598813a43fa1befc46240b78a81f96e67ff467a7. Reverification agrees. Do not merge the carrier wholesale; original exclusions and narrow318 overlaps apply.
+
+A new direct bridge send still failed at transport; no delivery acknowledgment is inferred. The latest explicit owner message says release398 is consolidated with merged402 and owner-approved403, with403 to close superseded. Its candidate5a5ac7f74 is frozen and full gates are running. It contains no held ess/21 source. This is owner-provided coordination, not root proof of final Gate or release. All transport development remains the third session's. Nested responses,292,293 and the remaining runtime/aggregate/browser work remain unfinished follow-up units for the same integration carrier, not additional delivery PRs.
+
+## Explicit integrator receipt, 2026-10-03
+
+Integrator01a0fc77 explicitly confirmed reading and retaining both frozen handoff files at their exact SHA256 values69fde33220abb186d262f0a77b41844dc4da676096956f96c51e75e29f182cfa andfa5a3ae3bcab3677629cd7a4598813a43fa1befc46240b78a81f96e67ff467a7. All58 selected source commits through046db8a6805 and overlap/exclusion directions are recorded in their shared runbook revision19. This receipt supersedes the earlier unacknowledged state; it is not proof of transfer, validation or published integration.
+
+Native source transfer/verification follows release completion; dependent waves remain held until it passes. No wholesale carrier merge, partial ess21 release or duplicate PR. Root retains every source tree and retained evidence until the integrator explicitly verifies published integration. New local units remain follow-ups on the same carrier.
+
+Owner reports PR398 published at5a5ac7f74,403 closed superseded,402 merged; full local/remote release gates running. No final Gate, tag or artifact success is inferred from that coordination message.

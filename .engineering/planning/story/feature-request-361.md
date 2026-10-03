@@ -10,7 +10,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -45,3 +45,11 @@ The previously missing copied-key reproduction is now measured with installed ES
 This isolates parameter/group-key composition from copied related-row arrangement itself. It does not yet prove actual target execution or runtime parity. Direct-key prior probe and copied-key current probe both need healthy, ignored-parameter, wrong-group, wrong-related-row and wrong-grouping targets in the implementation unit.
 
 Private ess-aggregate-intake-20261003 retains exact sources/logs/exit files and suites. Param sourcea5dfc886c5f85136416c3060ed7082f861722fbc892ba819d9ac3683bdf546d8; control source5eaa14e5e234058b348c6b33896e476847fa23b03cb217fb3a89178bf099d9be; param suited2b3a586e85dba699bdf970b4c053e5a9f51ac2d982ea537bec3d842f8171649; control suited0fa56905123610dd442d14a484778d1dd3227146fb230c6e0bbd5f16d49e6d5. No production, format, PR or gate change. Story remains draft until exact parameter/group arrangement design and scoped implementation are recorded; this completes the missing intake probe, not the defect.
+
+## Combined aggregate design candidate
+
+Root has inspected actual planner state and retained aggregate-group-selection-design.md SHA25693bac2e2a70b38933cbca97bc09603e0a54c4998bd9974f58961800ef8850e81 as a private candidate for361 and362 together. It is source analysis only, not implementation or new execution evidence.
+
+The candidate separates group selection from non-group scoping, preserves tuples/related identity bindings, arranges actual reached rows, then evaluates the full source filter independently for each query. Typed Empty initial-state authority must reach the planner before exact unscoped observations; the current late final provenance selection is insufficient by itself. It asserts exact admitted group counts/aggregate values and observable distractors, with valid nonmatching selections only where the source domain permits them. State-only and Optional absent groups receive exact observations under that same authority, while historical admitted suites retain their contract.
+
+Deleting the two refusals alone would overwrite group values and reuse the wrong query's admission flags. New tests must first assert the missing aggregate on the current source, then execute independent healthy/mutant targets in every runtime. Existing unrelated type/filter/identity pattern limitations and browser product execution remain explicit backlog work. Proposed production scope is aggregate.rs plus a narrow initial-state initialization in synthesize.rs; that shared file requires sequencing with the integrator's282/304 work. No source edits or production worker assignment yet; independent review is pending.
