@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T14:39:05Z",
+  "actor": "human:timo",
+  "artifact": "story:ess-protospec-foundation",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CI correction after integrating main 4d6a4ecaf: failing-first published-family regression; all 21 docs tests, task projection-check, full task test-xtask, task fmt-check, strict ess-xtask Clippy with Rust 1.98.1 and task site-build passed.",
+    "reference": "target/protospec-evidence/ci-fix"
+  }
+}

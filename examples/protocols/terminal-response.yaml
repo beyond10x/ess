@@ -1,0 +1,58 @@
+format: ess-protospec/1
+name: terminal-response
+bounds: {max_steps: 16, max_states: 256, max_time_ms: 1000}
+participants:
+  - name: caller
+    initial: ready
+    states: [ready, pending, complete]
+    inputs: [{name: finish, fields: []}]
+    transitions:
+      - name: request-close
+        from: ready
+        to: pending
+        trigger: {kind: input, name: finish}
+        effects:
+          - kind: send
+            channel: requests
+            message: finish
+            exchange: {kind: literal, value: exchange-1}
+            logical: {kind: literal, value: request-1}
+            payload: {}
+      - name: resolve-once
+        from: pending
+        to: complete
+        trigger: {kind: receive, channel: responses, message: finished}
+        effects: [{kind: emit, name: resolved}]
+  - name: responder
+    initial: open
+    states: [open, queued, flushed, closed]
+    inputs: [{name: transport_flushed, fields: []}, {name: close, fields: []}]
+    transitions:
+      - name: queue-final-response
+        from: open
+        to: queued
+        trigger: {kind: receive, channel: requests, message: finish}
+        effects:
+          - kind: send
+            channel: responses
+            message: finished
+            exchange: {kind: literal, value: exchange-1}
+            logical: {kind: literal, value: response-1}
+            payload: {}
+      - name: observe-flush
+        from: queued
+        to: flushed
+        trigger: {kind: input, name: transport_flushed}
+        effects: [{kind: flush, channel: responses}]
+      - name: close-after-flush
+        from: flushed
+        to: closed
+        trigger: {kind: input, name: close}
+        effects: [{kind: close}]
+messages: [{name: finish, fields: []}, {name: finished, fields: []}]
+channels:
+  - {name: requests, from: caller, to: responder, ordering: fifo, capacity: 2, loss: false, duplication: false}
+  - {name: responses, from: responder, to: caller, ordering: fifo, capacity: 2, loss: false, duplication: false}
+properties:
+  - {kind: flush_before_close, name: flush-before-close, participant: responder, channel: responses}
+  - {kind: event_count, name: resolve-once, participant: caller, event: resolved, max: 1}
