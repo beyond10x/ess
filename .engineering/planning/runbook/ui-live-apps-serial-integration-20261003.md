@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 14
+revision: 15
 ---
 ## Authority and delivery
 
@@ -115,3 +115,11 @@ Available disk fell below our10GiB build floor during other-session work. After 
 Implementor final correction report records package408passed0failed1existingignore across60groups; acceptance34passed0failed0ignored, strict all-target Clippy, task fmt-check and diff check exit0. Report raw SHA25630b142f26f057dc25723b6384297679e690fb8b6615440f9d763cf5131c50574 is retained in assigned318 correction-pass-2 scratch. Coordinator inspected the complete diff: eight emitter lines preserve optional union payload scope;239 test insertions retain all166 independent reviewer lines and add73 class controls. No existing assertions or fixture bytes changed. Bot correction99ad5fc34 and the previously frozen4a17f69b62 are integrated into the sole held batch branch. No third adversary; final finding fixed with measured red and green actual generated Go execution. Publication, integration lint/site checks and CI remain pending; story remains active.
 
 Runtime owner raised a source-format overlap: its389 work also introduces ess/21. Coordinator relayed exact original all-syntax bundle hold, not merely the five units.389 was not named in the older inventory; no exemption is inferred. Compatible ess/20 prerequisites may be separated, or an unpublished/held frozen shared base agreed. No ess/21 activation merges or partial-format release authorized by this session. All ess-transports remains exclusively third Claude ownership.
+
+## Minimum-PR integration directive
+
+Operator clarified: "the goal is to have the least amount of PRs - organize with that other session, work on a integration branch - also note the PRs currently veriying". No PR was created for this branch. Coordinator proposed to runtime owner01a0fbbb one shared held integration branch, batch/ui-live-apps-complete-20261003, and one eventual PR covering both the approved five units and the reconciled full ess/21 runtime work; coordinator alone integrates while unit owners retain their scopes. This proposal awaits explicit peer acknowledgement and exact frozen candidate inventory. Do not open a separate runtime prerequisite PR or our own duplicate PR. Preserve the original full-bundle merge hold; new directive consolidates delivery, not format scope.
+
+Fresh GitHub read at this checkpoint:399 transport has four test shards in progress and its completed checks successful;401 integer-newtype bounds has Checks/planning/build archives/output-ownership in progress, docs/common checks successful.398 release remains separately owned, with Checks/Test2/Test3/Gate failed on its published head. Preserve ongoing verification; no reset, replacement or mutation of these PRs by this coordinator. Upcoming client publishers remains third Claude ownership; release owner01a0feb8 has been asked to coordinate its minimum-PR boundary and relay the directive. These observations are time-specific, not final CI verdicts.
+
+Local integration validation: task ci-lint exit0 on728734b61; subsequent0e00f6720 changes only two AEP evidence files, source diff exit0. task site-build exit0 on0e00f6720, including actual WASM/browser lab and Docusaurus. Exact logs/exits retained in assigned serial scratch delivery/verification. Common check at0e00f6720 passed, scanned120commits; branch publish exit0. Both owned check process groups exited, clean unit checkout verified. No source release or full workspace CI completion claimed.44 completed test executables were removed by exact reviewed owned paths after package completion; all source and evidence retained. Unit checkout retained for CI followups, next owner coordinator; integration checkout remains active for shared candidate reconciliation.
