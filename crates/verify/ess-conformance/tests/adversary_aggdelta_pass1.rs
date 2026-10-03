@@ -10,6 +10,8 @@
 //!   `count_distinct` — the change names only the first two.
 //! * `CompletedTotals` (`eventual`, `state == Completed`): `count` and a required `sum`, with a
 //!   refuted row the filter must leave out.
+mod support_versions;
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -513,15 +515,28 @@ fn an_eventual_view_that_catches_up_late_passes_its_change() {
 #[test]
 fn a_change_under_any_older_ordinary_label_is_unsupported_vocabulary() {
     let original = aggregate_suite().to_canonical_json().unwrap();
+    let legacy_26 = support_versions::legacy_json(&original, 26);
+    AdmittedSuite::from_json(&legacy_26)
+        .unwrap_or_else(|error| panic!("the change is admitted at its original /26: {error}"));
+    let mut probe: serde_json::Value = serde_json::from_str(&original).unwrap();
+    for scenario in probe["scenarios"].as_object_mut().unwrap().values_mut() {
+        scenario["steps"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|step| step["expectation"]["expect"] == "changed_by");
+    }
+    let probe = serde_json::to_string(&probe).unwrap();
     for older in [16, 20, 22, 24] {
-        let text = original.replace(
-            "\"ess-conformance/26\"",
-            &format!("\"ess-conformance/{older}\""),
-        );
-        assert_ne!(text, original);
+        let text = support_versions::legacy_json(&probe, older);
+        assert_ne!(text, probe);
         let error = AdmittedSuite::from_json(&text).expect_err("a change needs suite/26");
         assert_eq!(
             error.issues[0].reason, "UnsupportedVocabulary",
+            "/{older}: {error}"
+        );
+        assert_eq!(
+            error.issues[0].path,
+            "$suite.scenarios.metrics.session.CompletedTotals/aggregate.steps[0].expectation",
             "/{older}: {error}"
         );
     }
