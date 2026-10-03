@@ -739,7 +739,8 @@ fn decode_value(
     match type_ref {
         ResolvedTypeRef::Primitive { name } => decode_primitive(surface, *name, value, at),
         ResolvedTypeRef::Declared { name } => {
-            format!("decode_{}({value}, {at})?", ident(name.name()))
+            let decoded = format!("decode_{}({value}, {at})?", ident(name.name()));
+            surface.layout().reference_value(name.name(), decoded)
         }
         ResolvedTypeRef::Optional { of } => format!(
             "if matches!({value}, json::Value::Null) {{ None }} else {{ Some({}) }}",

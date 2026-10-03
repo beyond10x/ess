@@ -887,6 +887,11 @@ fn size_cycles(inventory: &mut Inventory, ir: &EssIr) {
             }
             ResolvedBody::Struct { fields, .. } => {
                 for field in fields {
+                    if super::layout::optional_self(&field.type_ref, &declared.name) {
+                        // The checked layout boxes references to this exact self-recursive
+                        // struct. Do not erase any other edge: broader cycles remain refused.
+                        continue;
+                    }
                     if let Some(target) = size_reference(&field.type_ref) {
                         edges.push((target, format!("{}.{}", declared.name, field.name)));
                     }

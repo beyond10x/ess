@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T01:57:48Z",
+  "actor": "human:timo",
+  "artifact": "correctness-blocker:release-0-52-contradictory-integer-bounds",
+  "kind": "correctness-blocker",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Exact validator regressions: red 8/2 to green 10/0; ess-gen 303/0; independent permutation suite 12/0; package Clippy and formatting exit 0",
+    "reference": "b4b74139b1f71212677a280dddfa525ad32c6eb6"
+  }
+}

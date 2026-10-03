@@ -1668,11 +1668,10 @@ impl Writer<'_> {
                 }
                 let built = format!(
                     "{} {{ {} }}",
-                    self.layout.absolute_type(&ResolvedTypeRef::Declared {
-                        name: declared.clone()
-                    }),
+                    declared_path(self.layout, declared.name()),
                     rendered.join(", ")
                 );
+                let built = self.layout.reference_value(declared.name(), built);
                 if target.is_optional() {
                     format!("Some({built})")
                 } else {

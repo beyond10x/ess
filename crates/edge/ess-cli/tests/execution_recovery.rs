@@ -2545,6 +2545,12 @@ fn only_a_definite_spawn_refusal_is_not_launched() {
     )
     .expect("a spawn refusal is an outcome, not an error");
     assert!(!refused.launched);
+    assert_eq!(refused.status, None);
+    assert!(!refused.timed_out);
+    assert!(
+        format!("{refused:?}").contains("signal: None"),
+        "{refused:?}"
+    );
     assert_eq!(refused.disposition(), ProcessDisposition::NotLaunched);
 
     let mut acknowledged = Command::new(env!("CARGO_BIN_EXE_ess-recovery-fake"));
@@ -2553,16 +2559,57 @@ fn only_a_definite_spawn_refusal_is_not_launched() {
         .expect("the fixture artifact runs");
     assert_eq!(outcome.disposition(), ProcessDisposition::Acknowledged);
     assert_eq!(outcome.status, Some(0));
+    assert!(!outcome.timed_out);
+    assert!(
+        format!("{outcome:?}").contains("signal: None"),
+        "{outcome:?}"
+    );
 
     let mut nonzero = Command::new(env!("CARGO_BIN_EXE_ess-recovery-fake"));
     nonzero.arg("unsupported-operation");
     let outcome = run(nonzero, OUTPUT_LIMIT, Duration::from_secs(30))
         .expect("a started child that exits nonzero is an outcome");
     assert!(outcome.launched);
+    assert!(outcome.status.is_some_and(|code| code != 0), "{outcome:?}");
+    assert!(!outcome.timed_out);
+    assert!(
+        format!("{outcome:?}").contains("signal: None"),
+        "{outcome:?}"
+    );
     assert_eq!(
         outcome.disposition(),
         ProcessDisposition::Indeterminate,
         "a started call that exits nonzero may have run; it is not a non-launch"
+    );
+}
+
+/// A self-signaling Rust child gives an observed signal, not a guessed cause or a timeout.
+#[cfg(unix)]
+#[test]
+fn externally_signaled_child_reports_signal() {
+    const CHILD: &str = "ESS_RECOVERY_SIGNAL_CHILD";
+    let signal = rustix::process::Signal::TERM;
+    if std::env::var_os(CHILD).is_some() {
+        rustix::process::kill_process(rustix::process::getpid(), signal)
+            .expect("the child signals itself");
+        panic!("SIGTERM must terminate the fixture child");
+    }
+    let mut command = Command::new(std::env::current_exe().expect("the test executable"));
+    command
+        .args([
+            "--exact",
+            "externally_signaled_child_reports_signal",
+            "--nocapture",
+        ])
+        .env(CHILD, "1");
+    let outcome = run(command, OUTPUT_LIMIT, Duration::from_secs(30))
+        .expect("a signaled child is an outcome");
+    assert!(outcome.launched && !outcome.timed_out, "{outcome:?}");
+    assert_eq!(outcome.status, None, "{outcome:?}");
+    assert_eq!(outcome.disposition(), ProcessDisposition::Indeterminate);
+    assert!(
+        format!("{outcome:?}").contains(&format!("signal: Some({})", signal.as_raw())),
+        "the diagnostic must name the observed signal: {outcome:?}"
     );
 }
 
@@ -2595,6 +2642,14 @@ fn a_timeout_reaps_the_owned_child_and_remains_indeterminate() {
     );
     assert!(outcome.launched && outcome.timed_out);
     assert_eq!(outcome.status, None);
+    #[cfg(unix)]
+    assert!(
+        format!("{outcome:?}").contains(&format!(
+            "signal: Some({})",
+            rustix::process::Signal::KILL.as_raw()
+        )),
+        "timeout remains distinct even when its reap observes SIGKILL: {outcome:?}"
+    );
     assert_eq!(outcome.disposition(), ProcessDisposition::Indeterminate);
 }
 
@@ -2629,7 +2684,7 @@ fn an_effect_before_failure_and_a_lost_acknowledgement_are_both_indeterminate() 
         ]);
         let outcome =
             run(command, OUTPUT_LIMIT, Duration::from_secs(30)).expect("the child is an outcome");
-        assert_eq!(outcome.status, expected_status, "{fault}");
+        assert_eq!(outcome.status, expected_status, "{fault}: {outcome:?}");
         assert_eq!(
             outcome.disposition(),
             ProcessDisposition::Indeterminate,

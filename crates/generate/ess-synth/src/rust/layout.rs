@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_compiler::ir::{EssIr, ResolvedTypeRef};
+use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedTypeRef};
 use ess_domain::component::ComponentName;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -44,6 +44,8 @@ pub struct Layout {
     code_aliases: BTreeMap<QualifiedName, String>,
     /// Package name per component, keyed by the component's name.
     component_packages: BTreeMap<ComponentName, String>,
+    /// Named structs whose exact optional-self edge needs indirection at every reference site.
+    boxed_structs: BTreeSet<QualifiedName>,
 }
 
 impl Layout {
@@ -85,6 +87,17 @@ impl Layout {
         }
         let code_aliases = crate::code_aliases(ir);
         let entity_snapshots = entity_snapshots(ir, &owners, &code_aliases);
+        let boxed_structs = ir
+            .types()
+            .values()
+            .filter(|declared| match &declared.body {
+                ResolvedBody::Struct { fields, .. } => fields
+                    .iter()
+                    .any(|field| optional_self(&field.type_ref, &declared.name)),
+                _ => false,
+            })
+            .map(|declared| declared.name.clone())
+            .collect();
         Self {
             package,
             system_package,
@@ -94,6 +107,7 @@ impl Layout {
             entity_snapshots,
             code_aliases,
             component_packages,
+            boxed_structs,
         }
     }
 
@@ -206,6 +220,28 @@ impl Layout {
         }
     }
 
+    /// Whether a named type's use sites carry indirection. Declaration paths stay unboxed.
+    pub fn boxed_reference(&self, declared: &QualifiedName) -> bool {
+        self.boxed_structs.contains(declared)
+    }
+
+    /// Carries a freshly constructed declaration in the representation its references use.
+    pub fn reference_value(&self, declared: &QualifiedName, value: String) -> String {
+        if self.boxed_reference(declared) {
+            format!("std::boxed::Box::new({value})")
+        } else {
+            value
+        }
+    }
+
+    fn representation(&self, declared: &QualifiedName, path: String) -> String {
+        if self.boxed_reference(declared) {
+            format!("std::boxed::Box<{path}>")
+        } else {
+            path
+        }
+    }
+
     /// A resolved type reference as a Rust type, spelled absolutely — `crate::module::Type` for
     /// every declared name — for the modules that belong to no bounded context, like the root
     /// `obligation` module.
@@ -214,11 +250,12 @@ impl Layout {
             ResolvedTypeRef::Primitive { name } => primitive(*name).to_owned(),
             ResolvedTypeRef::Declared { name } => {
                 let declared = name.name();
-                format!(
+                let path = format!(
                     "crate::{}::{}",
                     self.module(self.owner(declared)),
                     self.type_name(declared)
-                )
+                );
+                self.representation(declared, path)
             }
             ResolvedTypeRef::Optional { of } => format!("Option<{}>", self.absolute_type(of)),
             ResolvedTypeRef::List { of } => format!("Vec<{}>", self.absolute_type(of)),
@@ -234,7 +271,9 @@ impl Layout {
     pub fn rust_type(&self, type_ref: &ResolvedTypeRef, from: &QualifiedName) -> String {
         match type_ref {
             ResolvedTypeRef::Primitive { name } => primitive(*name).to_owned(),
-            ResolvedTypeRef::Declared { name } => self.reference(name.name(), from),
+            ResolvedTypeRef::Declared { name } => {
+                self.representation(name.name(), self.reference(name.name(), from))
+            }
             ResolvedTypeRef::Optional { of } => format!("Option<{}>", self.rust_type(of, from)),
             ResolvedTypeRef::List { of } => format!("Vec<{}>", self.rust_type(of, from)),
             ResolvedTypeRef::Map { key, value } => format!(
@@ -244,6 +283,13 @@ impl Layout {
             ),
         }
     }
+}
+
+/// The bounded recursion form admitted by this target; wrappers and other cycle shapes remain
+/// the feasibility check's responsibility rather than being incidentally admitted by boxing.
+pub(super) fn optional_self(reference: &ResolvedTypeRef, owner: &QualifiedName) -> bool {
+    matches!(reference, ResolvedTypeRef::Optional { of }
+        if matches!(of.as_ref(), ResolvedTypeRef::Declared { name } if name.name() == owner))
 }
 
 /// One module identifier per bounded context, collision-free by rule rather than by luck.

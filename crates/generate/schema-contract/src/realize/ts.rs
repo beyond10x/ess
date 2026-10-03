@@ -5,7 +5,9 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
-use super::{finding, Finding, Node, Plan, Realization, Shape, TargetConfiguration, UnionMode};
+use super::{
+    finding, Finding, IntegerWidth, Node, Plan, Realization, Shape, TargetConfiguration, UnionMode,
+};
 
 pub(super) fn emit(plan: &Plan) -> Realization {
     let mut report = plan.report(TargetConfiguration::Typescript);
@@ -35,10 +37,13 @@ fn render(node: &Node, plan: &Plan, obligations: &mut BTreeSet<Finding>) -> Stri
         Shape::Never => "never".to_owned(),
         Shape::Null => "null".to_owned(),
         Shape::Boolean => "boolean".to_owned(),
-        Shape::String => "string".to_owned(),
-        Shape::Number | Shape::Integer => {
-            obligations.insert(finding(&node.pointer, "json_number_precision", "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"));
-            if matches!(node.shape, Shape::Integer) {
+        Shape::String | Shape::Timestamp => "string".to_owned(),
+        Shape::SizedInteger(_) | Shape::Number | Shape::Integer => {
+            // Every `i32` is a JavaScript number exactly; an `i64` or an unbounded number is not.
+            if !matches!(node.shape, Shape::SizedInteger(IntegerWidth::I32)) {
+                obligations.insert(finding(&node.pointer, "json_number_precision", "TypeScript number cannot retain arbitrary JSON numeric precision; validate representability before decoding"));
+            }
+            if matches!(node.shape, Shape::Integer | Shape::SizedInteger(_)) {
                 obligations.insert(finding(
                     &node.pointer,
                     "integer",

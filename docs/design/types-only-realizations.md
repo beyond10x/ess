@@ -44,6 +44,15 @@ Publish the checked schema selection alongside the library and report. Neither t
 selection nor its output changes the model language or yet binds an ESS field to an
 imported schema root; that connection requires its own checked identity contract.
 
+A root may also name an event (beyond10x/ess#393). The event's payload is selected as
+a struct of its fields under the event's own qualified name, display name and wire
+names, annotated `x-ess-kind: event-payload`, with the closure of the types its fields
+reach. Its `type`, `properties`, `required` and `additionalProperties` are the ones the
+event's JSON Schema projection publishes, so a producer library holds exactly the
+object the event carries and the model declares those fields once. `--all-events`
+selects every event payload and may be combined with `--all-types`; `--root` beside
+either `--all-*` selector is refused.
+
 ## Shared Structural Plan
 
 A language-neutral, in-memory plan owns selected roots, component identities,
@@ -68,6 +77,37 @@ Conditional object/array constraints without an explicit type need a conditional
 mapping, not an inferred narrowing to that type. Defaults and formats remain
 annotations; they do not enable coercion or infer integer storage widths.
 
+### Bounded model integers (beyond10x/ess#394)
+
+A bound is not a format. For **model input only**, an integer node whose `minimum`
+and `maximum` both lie in `i32` is realized as Rust `i32` and Go `int32`; both in
+`i64`, as `i64` and `int64`. An integer `const` (from an invariant such as
+`version == 2`) is realized at the width of its value, and the constant itself stays
+a named runtime obligation: a literal term beside `integer` would be an intersection
+no native target maps. An integer with one bound or none keeps the exact JSON-number
+carrier, because the model names no width and none is invented. `minimum` and
+`maximum` remain runtime-constraint obligations in the report even where the width
+already enforces them, so the report never claims a narrower bound is discharged.
+TypeScript keeps `number`; an `i32` drops the precision obligation, an `i64` keeps it.
+
+Bundle input is unchanged: an imported OpenAPI or JSON Schema document with both
+bounds keeps its exact-number carrier, so the generated API of an existing bundle
+adopter does not move.
+
+The keywords come from `ess-gen`: a struct invariant comparing a top-level `Integer`
+field with an integer literal on its right (`>=`, `>`, `<=`, `<`, `==`) publishes
+`minimum`, `maximum` or `const` on that property, the tighter bound winning, and
+`==` on a field that may be absent or `null` publishing `minimum` and `maximum`
+instead of `const`. `x-ess-invariants` is still published verbatim; every other
+invariant shape stays an annotation only.
+
+A newtype of `Integer` gets the same keywords on its own definition from invariants
+over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes
+`const: 2`, `value >= 0` and `value < 1000` publish `minimum: 0` and `maximum: 999`.
+The realizer then wraps the native width: Rust `pub struct X(pub i32);`, Go
+`type X struct { Value int32 }`. An event field typed with such a newtype carries the
+constant even though an event declares no invariants of its own.
+
 ## Target Accounting
 
 The output report `ess-types-report/3` names the source and typed input identity,
@@ -86,6 +126,31 @@ Patterns, numerical bounds, integer checks, array cardinality and uniqueness,
 exact object closure and exclusive unions are still checked by JSON Schema.
 Runtime aliases, flattening, coercion and external dispatch absent from the source
 remain unimplemented rather than guessed. No implicit root discriminator is added.
+
+### Producer-facing model libraries (beyond10x/ess#406–#409)
+
+Four rules apply to **model input only**; bundle input keeps its output byte for byte, so no
+existing bundle adopter's API moves.
+
+- **Timestamps are native.** A `string` with `format: date-time` from a model `Timestamp` is
+  realized as Go `time.Time` and Rust `EssTimestamp(pub time::OffsetDateTime)`, both RFC 3339 on
+  the wire. Native serialization preserves the timestamp value and numeric offset, while it may
+  normalize the spelling (for example, fractional seconds `.500` become `.5`). It does not
+  preserve the original JSON string byte for byte. A string that is not RFC 3339 is refused at
+  decode. The Rust library then depends on
+  `time` (`=0.3.55`, features `formatting` and `parsing`), the version this workspace already
+  locks, so the offline gate can build it; `chrono` was not chosen for that reason.
+- **Anonymous shapes are named by position.** The name is the owning declaration followed by each
+  pointer step (`properties/<field>` → the field in UpperCamelCase, `items` → `Item`,
+  `additionalProperties` → `Value`, `prefixItems/N` → `PositionN`, `anyOf|oneOf|allOf/N` →
+  `VariantN`): Go `UsageRecordedUsage` for a `List<Measurement>` field. A positional name that is
+  already allocated falls back to the hash-derived `EssShape<hex>`, so a collision never refuses.
+- **A newtype fixed to one integer carries it.** Where a newtype's `const` is an integer (from
+  `value == N`), Rust emits `pub const VALUE` and `Default`, Go emits `const <Name>Value` and
+  `New<Name>()`. The constant is still a runtime obligation in the report.
+- **Short names are opt-in.** `--names short` on `ess generate types` and `ess generate client`
+  declares each component under the last segment of its qualified name and refuses
+  (`short_name_collision`) when two selected components share one. Bundle input refuses the flag.
 
 ## Language Mappings
 
