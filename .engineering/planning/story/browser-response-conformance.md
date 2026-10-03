@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 20
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -330,3 +330,17 @@ Root independently ran the same retained regression-probe.mjs (SHA256 feea687aa2
 Green BiDi hash 2fed8379dc5f348a8102e9c7b4991edea9531fcb6661a97d862635c408d64171. Before/after assets, exact common probe, DOM, BiDi, HTTP and process receipts remain in private ess-browser-stale-result-review-20261003. Both root-owned Firefox processes terminated and their recorded PIDs were verified absent. No compiler or worker-owned site/cache was used.
 
 Persistent Rust test completed_output_is_cleared_when_coverage_selection_or_runtime_changes now covers intended Run/Select/Run/Restore/Run/Reconnect, identity changes, three report successes and six URL revocations, but remains uncompiled and unexecuted while #292 owns the lane. This bounded actual-asset green does not close final product review or the persistent regression obligation. Owner's browser-remaining-capabilities.md SHA256 c82af597232c28e05de2dafcc9b47c17190f528b6e513fc462f9e7cb9964ce8f records every remaining family with concrete existing independent target/vector reuse and gaps. In-flight stale completion, identity echoes, lineage, all remaining Runner semantics, disclosure/trap/abort, real WASM resource boundaries, neighbors and strict lint remain required.
+
+## Next source-only response value-form family
+
+While #292 owns the compilation lane, the existing browser owner is authorized to author one next source-only family within the already accepted browser_response_conformance.rs and independent fixtures/browser-target/src/lib.rs scope. Cover Optional absence versus null and presence policy, List order and duplicate preservation, exact adjacent integers above 2^53 and nested combinations. Actual compiler admission and independent healthy/fault native plus ordinary/coverage Firefox execution remain mandatory; authoring assertions alone supplies no evidence.
+
+Reuse existing response vectors and the independently implemented fixture, with wrong presence/order/dedup/value mutations. Do not read expected suite outputs into target behavior, substitute Interpreter, broaden into transport, introduce a new API or edit unscoped modules. Retain complete report parity and the pending stale-output persistent regression. No compiler, browser or test start, cache reacquisition, source commit, PR or publication is authorized by this source-only step. The compiler cache may be handed back later at servers target/native-build; the existing browser-wasm cache and all retained evidence remain untouched.
+
+## Response forms authored and focused lane resumed
+
+The next response-value family is authored in the two existing scoped Rust test files, uncompiled and unexecuted at this checkpoint. Seven source commands cover optional absence, explicit null, permitted absence/null equivalence, present exact integer, both explicit presence policies, and nested ordered lists with duplicates and adjacent integers 9007199254740993 and 9007199254740994. Six independent installation faults exercise policy violation, reorder, deduplication, adjacent-value corruption and missing present response. Intended matrix: seven scenarios across seven modes on both browser routes, with complete native/browser report and run byte parity. These are pending assertions, not measured counts.
+
+Retained response-value-forms-authored.md digest 86e8a4f3587497116a98e1cf72200808283aef8b99764845b46085262e1b7c0f; source checkpoint digest 1e1b97f3b240f862edc741d89d374300895e0451a1953967890a30b89d7291ab. The prior stale-output fix remains unchanged at player digest 236720ab7c97b71efb3a40bcc3194e8fa05b73000d219d629a140381cd33c837.
+
+After the history CLI terminal result released the compiler lane, the browser worker was cleared to reacquire its cache lease and run scoped cargo check, completed_output_is_cleared_when_coverage_selection_or_runtime_changes, then optional_presence_and_nested_ordered_values_execute_in_both_browser_routes sequentially. Native cache path is target/native-build; WASM keeps its separate existing target/browser-wasm. The 12,884,901,888-byte pre-start floor, one job, debug disabled, incremental disabled and external temporary directory remain required. No cleanup, broader matrix, commit or publication was authorized by this handback.

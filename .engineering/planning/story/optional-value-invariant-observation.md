@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/optional_value_invariants.rs
-revision: 10
+revision: 11
 ---
 ## Outcome
 
@@ -114,3 +114,11 @@ The existing read-only scoper produced a private complete wrapped-position desig
 The candidate proposes a closed typed ValueInvariants view expectation, preserving historical Satisfies semantics, with universal checks for every reached constrained value plus explicit actual nonvacuity. It covers Optional/List/Map/Union and recursive schema graph sites, source-preserving arrangement goals, per-position truthful refusal inventory and a cross-runtime independent healthy/fault matrix. This is materially wider than the earlier Optional-only inferred scope. It is a candidate for review, not an adopted binding design, new format reservation or source implementation authorization.
 
 Root must still decide recursive site/back-edge identity, witness attribution where a view has no unique selector, exact format compatibility/allocation, shared byte/work budgets and DTO ordering, and browser bridge integration. No held version is assumed amendable merely from its number or release timing. Existing source refusals are not permanent feature exclusions; listing them without the required actual cross-runtime observations would not complete the user's all-feature requirement. Store scope will be expanded only after a coherent reviewed design is adopted, before production edits.
+
+## Review direction for complete wrapped obligations
+
+Root has requested a concrete second private design candidate before independent review or binding adoption. Keep the proposed typed expectation and universal checking of all applicable observed values, paired with an actual occurrence witness. The semantic subject remains the nominal invariant type at a view position, as current ScenarioId::ValueInvariant documents; it does not silently become a claim about every arranged row's provenance.
+
+For a view without a source-proved unique selector, use an explicit any-observed-occurrence witness claim rather than a blanket absence-of-identity refusal. Where identity or a unique query selector is source-proved, bind the occurrence to that arranged row with a separate closed witness form. Neither form may infer uniqueness or confuse observed-value coverage with row-provenance proof. The revised candidate must make both forms and their admission rules exact.
+
+Keep the held 34/35 authority unchanged for this independent feature. Root's local source inspection finds current main e68684ef supports suite majors 1 through 33 and held runtime c2c4f01c6 supports 1 through 35. The next pair 36/37 is a design proposal only, pending exact catalog/scope adoption; no format has been reserved or implemented here. The revised candidate must resolve finite recursive site/back-edge identity, canonical DTO and Map ordering rules, quantifier scope, source-arrangement versus observed authority, and truthful resource-exhaustion inventory. Resource limits must be justified against existing profiles, not chosen as an arbitrary narrower feature subset. This direction is not source implementation authorization; all new cross-runtime behavior still needs actual admitted healthy/fault evidence.
