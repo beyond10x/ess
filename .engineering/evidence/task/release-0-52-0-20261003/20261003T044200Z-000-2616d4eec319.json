@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T04:42:00Z",
+  "actor": "human:timo",
+  "artifact": "task:release-0-52-0-20261003",
+  "kind": "task",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Local task check and task site-build both exited 0 on e68684efb6a4ac22052c77d3ed8292fd44f9ace5; check log SHA256 949920adfa37c81f1a1182c5632c758604719330a46821670a097233c08726a1; site log SHA256 a41fb4900f775a6ed774acf532b9aab339a8b3c894541c232634e5d39c509224"
+  }
+}

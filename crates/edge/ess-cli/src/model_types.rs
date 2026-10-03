@@ -26,9 +26,34 @@ pub struct Args {
     all_events: bool,
     #[command(flatten)]
     options: crate::schema_bundle::TypeOptions,
+    /// How declarations are named: the qualified model name, or its last segment.
+    #[arg(long, value_enum, default_value_t = Names::Qualified)]
+    names: Names,
     /// Library destination, outside the specification input tree.
     #[arg(long)]
     out: PathBuf,
+}
+
+/// How generated declarations are named (beyond10x/ess#409).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Names {
+    /// The qualified model name, every segment kept: `MeteringItemsUsageRecorded`.
+    Qualified,
+    /// The last segment, refused where two selected declarations would share one: `UsageRecorded`.
+    Short,
+}
+
+impl Names {
+    /// Rename the plan's declarations if short names were asked for.
+    pub fn apply(
+        self,
+        plan: schema_contract::realize::Plan,
+    ) -> Result<schema_contract::realize::Plan, schema_contract::realize::Refused> {
+        match self {
+            Self::Qualified => Ok(plan),
+            Self::Short => plan.with_short_names(),
+        }
+    }
 }
 
 pub fn run(args: &Args) -> Result<ExitCode> {
@@ -51,7 +76,9 @@ pub fn run(args: &Args) -> Result<ExitCode> {
             return Ok(ExitCode::from(1));
         }
     };
-    let plan = schema_contract::realize::Plan::from_model(&selection)?;
+    let plan = args
+        .names
+        .apply(schema_contract::realize::Plan::from_model(&selection)?)?;
     let mut files = crate::schema_bundle::type_files(&plan, &args.options)?;
     files.insert("source.schema.json".to_owned(), selection.to_json());
     let destination = crate::resolve_output_directory(&args.out)?;

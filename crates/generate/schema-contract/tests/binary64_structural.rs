@@ -152,10 +152,10 @@ fn complete_non_binary64_output_maps_remain_identical() {
             output
         });
     assert_eq!(
-        digest, "486169764dc08f5e133f44a59c06fa0912dad2aaf389ee9ff5e6801c95592ca6",
-        "complete old output map SHA-256 frozen at c4ba992, refrozen for beyond10x/ess#394: the \
-         fixture invariant `score >= 0` now publishes `minimum`, a runtime obligation in both \
-         reports; `score` keeps its exact-number type"
+        digest, "1783cb022e838cd25ba90f0dbadb0674de513970f974ef904b8e360a98972852",
+        "complete old output map SHA-256 frozen at c4ba992, refrozen for beyond10x/ess#394 (`score >= 0` \
+         publishes `minimum`) and for beyond10x/ess#406/#407 (model `Timestamp` is native, model \
+         anonymous shapes are named by position; bundle output keeps its hash names)"
     );
 }
 

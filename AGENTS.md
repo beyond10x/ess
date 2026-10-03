@@ -135,7 +135,8 @@ the collected source and the Atlas-generated façade owns the project redirect.
 Before pushing a release tag, run `task check` and `task site-lab` on the commit being tagged.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, WASM/browser-lab correctness checks and native
-packaging concurrently at that exact commit, then publishes only after all succeed. It skips the
+packaging concurrently at that exact commit, then retains a read-only preparation artifact only
+after all succeed. It skips the
 gate only when a green `Gate` already covers the tagged bytes. "Green" means the newest `Gate`
 check-run GitHub Actions recorded on a commit is a completed success. The gate is skipped when
 **either** of these holds:
@@ -155,17 +156,17 @@ bytes the tagged bytes. The ancestry makes the head's `Gate` a test of those byt
 only when the base was already in the head. So tag the merge commit of an up-to-date pull request
 as soon as it lands; there is no need to wait for `main`'s run. That pull-request `Gate` ran the
 narrowed feature-off build (above), and `main`'s run of the full one is still in flight when
-such a release publishes. `release.yml`'s `prior-gate` step is the implementation, and
+such a preparation runs. `release.yml`'s `prior-gate` step is the implementation, and
 `ci_lanes.rs` runs it against real Git histories.
 
 The four archives are usually built before the tag exists. `.github/workflows/package.yml` runs
 on every `queue/**` push and packages the commit when its workspace version has a dated changelog
-section and no tag yet. The release's `prebuilt` step publishes that run's archives only when
+section and no tag yet. The release's `prebuilt` step uses that run's archives only when
 all of these hold: it is a successful `package.yml` push run of a `queue/` branch, at the tagged
 commit, and it still holds all four `release-<target>` artifacts unexpired. Anything else, including
-an API failure, calls `package.yml` from the release and builds them there. Either way the publish
-job checks the four names and `SHA256SUMS` and runs the Linux x86_64 binary's `--version` against
-the tag. `ci_lanes.rs` runs the `prebuilt` step against canned API answers.
+an API failure, calls `package.yml` from the release and builds them there. Either way the
+preparation job checks the four names and `SHA256SUMS` and runs the Linux x86_64 binary's
+`--version` against the tag. `ci_lanes.rs` runs the `prebuilt` step against canned API answers.
 
 Compile caches are saved only by `main` and pull-request runs (`save-if` on every
 `Swatinem/rust-cache` step, held by `ci_lanes.rs`). A queue branch or a tag saves under a scope
@@ -175,8 +176,20 @@ that no later run can restore. A manual dispatch saves none: a release backfill 
 The Intel macOS archive is cross-compiled on the Apple Silicon `macos-15` runner and smoke-run
 there under Rosetta; `lipo -archs` names the architecture that was built. Archive names and
 `SHA256SUMS` are unchanged. Site rendering remains a documentation-validation gate; ordinary
-source releases do not wait for it. New GitHub Releases stay draft until all archives and
-checksums are uploaded.
+source releases do not wait for it.
+
+Public CI has read-only GitHub permissions and never creates or edits a Release. A successful
+`Release preparation` run uploads one artifact named `ess-release-<tag>-<commit>`, containing the
+four archives under `dist/`, `dist/SHA256SUMS` and `notes.md`. From a trusted operator environment,
+the coordinator reads the successful run and its exact head commit, resolves the annotated tag to
+that same commit, and downloads only that exact artifact through
+`b10x-gates gh --repo . --repository beyond10x/ess -- ...`. Before publication, verify that the
+artifact contains exactly the four target archives, checksums and notes, run
+`sha256sum --check SHA256SUMS`, and smoke-run the Linux x86_64 archive's `ess --version` against the
+tag. Through the same bot-authenticated wrapper, create or reconcile a draft Release on that exact
+tag, upload the four archives and `SHA256SUMS`, verify every remote asset, then make the draft
+public. Never use raw `gh` for these writes and never place the App credential in this repository or
+its workflows.
 
 Release completion means the exact tag, required release checks, published GitHub Release and
 required assets are verified. A pushed tag awaiting those checks is queued. Atlas observes release
@@ -185,7 +198,7 @@ locks or snapshots, promote consumer pins, release the shared docs runtime or re
 part of releasing ESS. Report documentation as pending unless publication was verified. A failure
 in that background work does not undo a successful ESS release.
 
-After cutting a release, and after any release run that fails:
+After cutting a release, and after any release preparation that fails:
 
 ```console
 task release-status
@@ -193,7 +206,8 @@ task release-status
 
 It asks the remote and GitHub whether every pushed version tag is on `origin/main` and has a
 release behind it, and fails while one is not. `.github/workflows/release-record.yml` runs it after
-every release run and daily.
+the bot publishes, after failed preparation, and daily. A successful preparation waits for bot
+publication instead of immediately claiming that the final release record failed.
 
 **A change to `RawSpecFile` is not finished until `cargo xtask schema` has run.**
 `schemas/generated/ess.schema.json` is a projection of that type like any other, and

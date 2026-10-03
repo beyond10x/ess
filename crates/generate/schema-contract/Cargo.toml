@@ -44,6 +44,8 @@ jsonschema = { version = "0.52.1", default-features = false }
 [dev-dependencies]
 ess-compiler.workspace = true
 ess-domain.workspace = true
+# Generated timestamp fixtures build offline; fetch their optional macro dependency too.
+time = { version = "=0.3.55", features = ["formatting", "parsing", "macros"] }
 
 [lints]
 workspace = true

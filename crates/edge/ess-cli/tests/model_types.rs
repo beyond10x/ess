@@ -41,6 +41,52 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn short_names_reach_the_generate_types_cli_and_the_default_stays_qualified() {
+    let fixture = Fixture::new();
+    for (directory, names, expected) in [
+        (
+            "qualified",
+            &[][..],
+            [
+                "SampleDataChoice",
+                "SampleDataId",
+                "SampleDataMode",
+                "SampleDataRecord",
+            ],
+        ),
+        (
+            "short",
+            &["--names", "short"][..],
+            ["Choice", "Id", "Mode", "Record"],
+        ),
+    ] {
+        let mut args = vec![
+            "--root",
+            "sample.data.Record",
+            "--target",
+            "typescript",
+            "--out",
+            directory,
+        ];
+        args.extend_from_slice(names);
+        let output = fixture.run(&args);
+        assert!(output.status.success(), "{output:?}");
+        let report: Value = serde_json::from_slice(
+            &fs::read(fixture.0.join(directory).join("types-report.json")).unwrap(),
+        )
+        .unwrap();
+        let mut declarations: Vec<&str> = report["declarations"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|value| value.as_str().unwrap())
+            .collect();
+        declarations.sort_unstable();
+        assert_eq!(declarations, expected, "{report}");
+    }
+}
+
+#[test]
 fn each_target_retains_the_same_model_selection_and_distinct_input_provenance() {
     let fixture = Fixture::new();
     for (target, extension, native) in [

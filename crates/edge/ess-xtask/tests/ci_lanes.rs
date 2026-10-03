@@ -1054,6 +1054,86 @@ fn prior_gate_step(release: &Value) -> &Value {
         .expect("resolve looks for a prior Gate")
 }
 
+/// A public workflow may inspect GitHub to reuse exact prior evidence, but release publication is
+/// an organization-bot operation from the trusted coordinator. The preparation run therefore has
+/// no write permission and carries no `gh release` mutation that would use `github.token` as
+/// `github-actions[bot]`.
+#[test]
+fn release_preparation_has_no_publication_authority_or_command() {
+    let release = yaml(".github/workflows/release.yml");
+    let source =
+        fs::read_to_string(workspace_root().join(".github/workflows/release.yml")).unwrap();
+    let mut write_permissions = Vec::new();
+    let mut inspect = |scope: &str, permissions: &Value| {
+        if let Some(access) = permissions.as_str() {
+            if access == "write-all" {
+                write_permissions.push(format!("{scope}: {access}"));
+            }
+        }
+        for (name, access) in permissions.as_mapping().into_iter().flatten() {
+            let access = text(access);
+            if access == "write" || access == "write-all" {
+                write_permissions.push(format!("{scope}.{}: {access}", text(name)));
+            }
+        }
+    };
+    inspect("workflow", &release["permissions"]);
+    for (id, job) in release["jobs"].as_mapping().into_iter().flatten() {
+        inspect(&format!("job.{}", text(id)), &job["permissions"]);
+    }
+    assert!(
+        write_permissions.is_empty(),
+        "the public release workflow retains write permissions: {write_permissions:?}"
+    );
+    let mutations: Vec<&str> = ["gh release create", "gh release edit", "gh release upload"]
+        .into_iter()
+        .filter(|command| source.contains(command))
+        .collect();
+    assert!(
+        mutations.is_empty(),
+        "the public release workflow still publishes with the Actions token: {mutations:?}"
+    );
+}
+
+/// The trusted coordinator consumes one successful artifact, so its name must bind the resolved
+/// tag and commit and its contents must be exactly the checked archives, checksums and notes. The
+/// upload action is the same pinned revision already admitted by `package.yml`.
+#[test]
+fn release_preparation_retains_an_exact_tag_and_commit_artifact() {
+    let release = yaml(".github/workflows/release.yml");
+    assert_eq!(text(&release["name"]), "Release preparation");
+    let steps = release["jobs"]["release"]["steps"]
+        .as_sequence()
+        .expect("release preparation steps");
+    let upload = steps
+        .iter()
+        .find(|step| {
+            text(&step["uses"])
+                == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+        })
+        .expect("release preparation uploads no retained artifact");
+    assert_eq!(
+        text(&upload["with"]["name"]),
+        "ess-release-${{ needs.resolve.outputs.tag }}-${{ needs.resolve.outputs.commit }}"
+    );
+    let paths = text(&upload["with"]["path"]);
+    let actual: BTreeSet<&str> = paths
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .collect();
+    assert_eq!(
+        actual,
+        BTreeSet::from([
+            "dist/ess-${{ needs.resolve.outputs.tag }}-*.tar.gz",
+            "dist/SHA256SUMS",
+            "notes.md",
+        ]),
+        "the retained release artifact does not contain exactly the verified files"
+    );
+    assert_eq!(text(&upload["with"]["if-no-files-found"]), "error");
+}
+
 #[test]
 fn a_release_reuses_a_green_gate_on_the_exact_tagged_commit_and_otherwise_runs_it() {
     let ci = yaml(".github/workflows/ci.yml");
@@ -1712,6 +1792,10 @@ fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives()
         .find(|run| run.contains("SHA256SUMS"))
         .expect("the release writes SHA256SUMS");
     assert!(publish.contains("\"$archive_count\" != 4"), "{publish}");
+    assert!(
+        publish.contains("-type f -name \"*.tar.gz\""),
+        "the release counts only expected-looking names and could retain another archive: {publish}"
+    );
     assert!(
         publish.contains("sha256sum *.tar.gz > SHA256SUMS"),
         "{publish}"

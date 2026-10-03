@@ -37,7 +37,7 @@ fn render(node: &Node, plan: &Plan, obligations: &mut BTreeSet<Finding>) -> Stri
         Shape::Never => "never".to_owned(),
         Shape::Null => "null".to_owned(),
         Shape::Boolean => "boolean".to_owned(),
-        Shape::String => "string".to_owned(),
+        Shape::String | Shape::Timestamp => "string".to_owned(),
         Shape::SizedInteger(_) | Shape::Number | Shape::Integer => {
             // Every `i32` is a JavaScript number exactly; an `i64` or an unbounded number is not.
             if !matches!(node.shape, Shape::SizedInteger(IntegerWidth::I32)) {

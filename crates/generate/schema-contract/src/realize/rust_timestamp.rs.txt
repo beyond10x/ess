@@ -1,0 +1,36 @@
+/// An RFC 3339 date-time (beyond10x/ess#406). The wire spelling is RFC 3339, read and written
+/// through `time`'s well-known format, so an offset and fractional seconds survive a round trip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EssTimestamp(pub ::time::OffsetDateTime);
+
+impl EssTimestamp {
+    /// The current instant, in UTC.
+    pub fn now_utc() -> Self {
+        Self(::time::OffsetDateTime::now_utc())
+    }
+}
+
+impl From<::time::OffsetDateTime> for EssTimestamp {
+    fn from(value: ::time::OffsetDateTime) -> Self {
+        Self(value)
+    }
+}
+
+impl ::serde::Serialize for EssTimestamp {
+    fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let text = self
+            .0
+            .format(&::time::format_description::well_known::Rfc3339)
+            .map_err(::serde::ser::Error::custom)?;
+        serializer.serialize_str(&text)
+    }
+}
+
+impl<'de> ::serde::Deserialize<'de> for EssTimestamp {
+    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = <::std::string::String as ::serde::Deserialize>::deserialize(deserializer)?;
+        ::time::OffsetDateTime::parse(&text, &::time::format_description::well_known::Rfc3339)
+            .map(Self)
+            .map_err(::serde::de::Error::custom)
+    }
+}

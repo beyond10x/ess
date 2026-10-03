@@ -36,6 +36,16 @@
 
 ### Changed
 
+- **Breaking for generated model data libraries**: timestamps use Go `time.Time` and Rust
+  `EssTimestamp(time::OffsetDateTime)` with RFC 3339 wire values and native spelling
+  normalization. Anonymous shapes use positional names with a deterministic collision fallback;
+  integer-constant newtypes expose constants and default constructors. `ess generate types`
+  and `ess generate client` accept `--names short`, refusing ambiguous short names. Imported
+  schema bundle output is unchanged (beyond10x/ess#406, beyond10x/ess#407,
+  beyond10x/ess#408, beyond10x/ess#409).
+- Release CI prepares verified artifacts with read-only permissions; the organization bot
+  publishes the verified release from the trusted delivery environment.
+
 - **Breaking for generated model data libraries with bounded integers**: top-level integer
   invariants publish JSON Schema bounds, and Rust/Go libraries use signed 32- or 64-bit fields
   when both bounds fit that width. One-sided and unbounded integers retain their exact-number
@@ -69,6 +79,9 @@
 
 ### Fixed
 
+- Recovery process diagnostics retain the observed Unix termination signal separately from
+  timeout and exit status. Failure assertions print the complete outcome without guessing
+  which actor sent a signal; non-Unix platforms report no signal.
 - Contradictory integer equality invariants stay unsatisfiable in generated JSON Schema
   for required fields and integer newtypes, independent of declaration order. Optional
   fields retain their existing null and absence semantics.

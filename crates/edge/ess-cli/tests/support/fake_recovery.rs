@@ -1093,6 +1093,7 @@ fn settle(shared: &Shared, index: usize, effect: impl Fn(&Shared)) -> Outcome {
     let acknowledged = Outcome {
         launched: true,
         status: Some(0),
+        signal: None,
         timed_out: false,
         stdout: Vec::new(),
         stderr: Vec::new(),
@@ -1105,6 +1106,7 @@ fn settle(shared: &Shared, index: usize, effect: impl Fn(&Shared)) -> Outcome {
         Some(HelmFault::NotLaunched) => Outcome {
             launched: false,
             status: None,
+            signal: None,
             timed_out: false,
             stdout: Vec::new(),
             stderr: b"spawn refused".to_vec(),
@@ -1112,6 +1114,7 @@ fn settle(shared: &Shared, index: usize, effect: impl Fn(&Shared)) -> Outcome {
         Some(HelmFault::StartedNoEffect) => Outcome {
             launched: true,
             status: Some(1),
+            signal: None,
             timed_out: false,
             stdout: Vec::new(),
             stderr: b"started and failed before any effect".to_vec(),
@@ -1121,6 +1124,7 @@ fn settle(shared: &Shared, index: usize, effect: impl Fn(&Shared)) -> Outcome {
             Outcome {
                 launched: true,
                 status: Some(1),
+                signal: None,
                 timed_out: false,
                 stdout: Vec::new(),
                 stderr: b"started, changed the target, then failed".to_vec(),
@@ -1131,6 +1135,7 @@ fn settle(shared: &Shared, index: usize, effect: impl Fn(&Shared)) -> Outcome {
             Outcome {
                 launched: true,
                 status: None,
+                signal: None,
                 timed_out: false,
                 stdout: Vec::new(),
                 stderr: b"acknowledgement lost".to_vec(),
@@ -1141,6 +1146,7 @@ fn settle(shared: &Shared, index: usize, effect: impl Fn(&Shared)) -> Outcome {
             Outcome {
                 launched: true,
                 status: None,
+                signal: None,
                 timed_out: true,
                 stdout: Vec::new(),
                 stderr: b"timed out".to_vec(),
