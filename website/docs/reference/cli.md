@@ -743,6 +743,7 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--names` | `<NAMES>` | no | `qualified` | How declarations are named: the qualified model name, or its last segment. One of `qualified`, `short`. |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 
 #### `ess generate client`
@@ -761,6 +762,7 @@ ess generate client [OPTIONS] --component <COMPONENT> --transport <TRANSPORT> --
 | `--target` | `<TARGET>` | yes |  | The language to generate. One of `rust`, `go`. |
 | `--package` | `<PACKAGE>` | yes |  | Native package identity |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--names` | `<NAMES>` | no | `qualified` | How declarations are named: the qualified model name, or its last segment. One of `qualified`, `short`. |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 
 #### `ess generate synthesize`
