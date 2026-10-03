@@ -14,12 +14,18 @@
   operations, transport seams and optional NATS JetStream adapters. `ess-client-report/1`
   records generated operations and application obligations. At-least-once delivery remains
   explicitly unsupported (beyond10x/ess#395).
-- Model-based type generation accepts an event payload as a root, retaining its reachable
-  named types without introducing another authored format (beyond10x/ess#393).
 - Integer field bounds declared by supported invariants are projected into JSON Schema.
   Model-based Go and Rust type generation selects native integer widths for complete ranges;
   incomplete ranges retain exact-number types. Integer newtypes carry their own bounds and
   constants in schemas and generated native types (beyond10x/ess#394).
+- Rust synthesis represents a struct's direct optional self-reference through deterministic
+  boxed references, shared by declarations, constructors, accessors and wire codecs. Both Rust
+  layouts and the shared Web codec support it; unsupported recursive layouts still refuse.
+  Existing acyclic generated artifacts and serialized names remain unchanged
+  (beyond10x/ess#400).
+- `ess generate types --root` accepts an event and selects its payload plus referenced types.
+  `--all-events` selects all event payloads and can be combined with `--all-types`
+  (beyond10x/ess#393).
 
 - `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
   and terminal semantics after live effects and before local paging. Filters never reach the
@@ -29,6 +35,12 @@
   (beyond10x/ess#365). Older readers refuse the new read key.
 
 ### Changed
+
+- **Breaking for generated model data libraries with bounded integers**: top-level integer
+  invariants publish JSON Schema bounds, and Rust/Go libraries use signed 32- or 64-bit fields
+  when both bounds fit that width. One-sided and unbounded integers retain their exact-number
+  representation; imported schema bundles are unchanged. Bounds and constants remain explicit
+  runtime validation obligations (beyond10x/ess#394).
 
 - **Breaking for a realization of a view with parameters, and for hand-written server code**:
   synthesized Go and Rust servers decode a view's declared parameters from the query string by
@@ -66,6 +78,10 @@
   Boolean outcomes, bindings and response expectations from the consumer defect batch.
 - Browser runner startup reports failures, isolates concurrent invocations and cleans up its
   process resources consistently.
+- Generated Rust documentation prefixes every line and escapes standalone carriage returns,
+  so compiler-admitted multiline descriptions produce compilable source. Successful LF and
+  CRLF output stays byte-identical; source text and wire semantics are unchanged
+  (beyond10x/ess#400).
 
 ## [0.51.0] — 2026-10-01
 

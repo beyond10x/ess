@@ -85,18 +85,21 @@ fn lib_module(
     let _ = writeln!(
         out,
         "//! {} — the `{}` component of `{}` {}.",
-        component
-            .naming
-            .display
-            .as_deref()
-            .unwrap_or(&component.name.to_string()),
+        super::doc_text(
+            component
+                .naming
+                .display
+                .as_deref()
+                .unwrap_or(&component.name.to_string()),
+            "//!",
+        ),
         component.name,
         ir.system(),
         ir.version()
     );
     if let Some(summary) = &component.naming.summary {
         out.push_str("//!\n");
-        let _ = writeln!(out, "//! {}", summary.trim());
+        let _ = writeln!(out, "//! {}", super::doc_text(summary.trim(), "//!"));
     }
     out.push_str(
         "//!\n//! The component's outer surface exactly as the specification declares it: \
@@ -154,11 +157,14 @@ fn port_struct(
          that compiles and refuses, in the type system,\n/// everything not yet \
          implemented.\npub struct {port}<B> {{\n    behaviors: B,\n    outbox: \
          Vec<PublishedEvent>,\n}}",
-        component
-            .naming
-            .display
-            .as_deref()
-            .unwrap_or(&component.name.to_string()),
+        super::doc_text(
+            component
+                .naming
+                .display
+                .as_deref()
+                .unwrap_or(&component.name.to_string()),
+            "///",
+        ),
     );
 
     let bounds = bound_list(ir, layout, component, types);

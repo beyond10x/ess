@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T00:41:41Z",
+  "actor": "agent:codex-ekr-knowledge",
+  "artifact": "story:optional-recursive-rust",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Implementor handoff and unchanged adversary harness",
+    "reference": "candidate126c2b3905d0f4279086b9d3030096147955dfec; package380 passed 0 failed 1 pre-existing ignored; strict Clippy/fmt/ci-lint and actual EKR compilation pass; public adversary recheck3 passed; integrated release checks pending"
+  }
+}
