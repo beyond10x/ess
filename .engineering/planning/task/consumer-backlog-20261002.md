@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 37
+revision: 40
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -320,3 +320,39 @@ RelatedField frozen patch1bc0bccde4892209ef65ee8b76581910ababcba9acc187771590159
 Latest CLI regenerated billing33, gatepass17 and oracle34 scenarios to exact producer bytes, with0/5/6 explicit refusals respectively; each generator exited0. Canonical suite files now carry initial-state metadata, and their README replaces the nonexistent cargo xtask suite command with actual CLI commands. Caller-sensitive312 continuation remains active with measured compiled reds, native target witnesses and no expansion to compiler-rejected source syntax.
 
 No new remote gate or publication was triggered by this continuation. Source0.51.0 remains the last verified release. Full backlog disposition, complete affected-package checks and agreed release candidate remain outstanding.
+
+## Full ess/21 hold clarified
+
+Serial coordinator relayed the exact operator boundary: Keep the existing ess/21 bundle; hold this PR until the remaining bundle work is ready. Its original downstream-gaps record says every accepted syntax change there lands together:282,283,285,286,268/194,269,200,related-record-effects,F225/228/233/237/244a. This is broader than its immediate five serial units.389 was not named in that older list; no exemption for independently shipping source21 is inferred.
+
+Root runtime carrier includes source21 activation and one-time-response IR dependencies. Therefore it is not independently releasable merely by removing318/393/394. Preserve source and reviewed commits, finish runtime work, and prepare a frozen local/held base for coordinated stacking only after exact source dependency reconciliation. Do not merge/release that source21 base until the full bundle boundary is satisfied. A separately landable ess20-compatible prerequisite subset would require actual dependency proof; none is claimed yet.318 remains solely in the serial owner's held bundle, transport390–395 remains with the third session, and release398 remains its owner's separate operator hold awaiting transport. No remote gate or publication is authorized by this clarification alone.
+
+Planning publication correction: bot refused two newly created review records because each named an absolute local path. Immutable originals remain local/unpublished and unstaged in the planning tree. Reviewer reissued publication copies with identical scope/verdict/evidence and repository-relative carriers; committed safe copies as994abfb9c after the same bot gate passed. Original record names consumer-312-migration-pass2 and consumer-312-typescript-migration must not be accidentally staged later. Publication copies end in -publication. No policy exception, record rewrite or scanner bypass was used.
+
+## Shared integration and release boundary, 2026-10-03
+
+One held integration branch carries the runtime work and the serial five-unit work: batch/ui-live-apps-complete-20261003. Its coordinator is the sole source/PR integrator; this session owns runtime units and the canonical consumer backlog. No separate runtime PR, no whole merge of batch/consumer-runtime-20261002, and no replacement transport PR. Transfer only an exact reviewed source manifest, excluding older318 copies and unlanded duplicate393/394 work; preserve changes already on main.
+
+The full ess/21 hold remains binding, including the accepted syntax bundle listed in the earlier checkpoint. The five immediate serial units are not the entire release boundary. Source21-dependent389 remains in that held bundle. PR398 has a separate owner and consumes the transport batch after its own required checks; it does not silently acquire the held ess/21 changes.
+
+Fresh read-only GitHub inventory records53 open issues. This is an intake count, not53 proven unfixed defects. PR402 at1b2ed5857ab60fd4b55ccee1a041df6b546f124d now consolidates transport390/392, publisher395 and integer-newtype394 work. Its CI is running. Superseded399/401 are closed unmerged. PR397 merged393 atf5be9eafd3190e05e4cc053f260112cfc634e7d5. PR398 remains open with its earlier failed Gate. No release or new passing Gate is claimed.
+
+Current private source snapshots: target/backlog-input/open-issues-20261003-current.json and open-prs-20261003-current.json. Connectors reports only Confluence, GitLab and Jira adapters; the reported GitHub capability gap requires the authorized read-only gh fallback. No GitHub write occurred.
+
+Runtime continuation:312 final candidate a4638d2c404f715012290675f851f6720e53c2d9c24b9888bcfb2fbdbaba2bcb is under independent review. Owner reports101 passing tests across eight binaries, with one exact stale version assertion excluded in its older tree; root already migrated that assertion to34 in8b3f128a0 and must run it after integration. Four caller unit tests also passed. The two-line caller_fresh_identity assertion migration is explicitly authorized and typed in the story scope; successful mixed replacement removes obsolete caller notes, while failed reversal retains its concrete explanation. Final lint/report pending.
+
+Native response unit reports17 passing changed integration tests, including actual legacy payload/union execution, staged invariant rollback and exact integers beyond2^53. Declaration-only witness fallback is still being validated; no expectation-based generation is permitted. Independent review and source commit remain pending.
+
+Nested observer inspection finds immediate-only response relationships and a separate browser blanket refusal. Both remain required work. Nested representation/profile decisions need an actual red probe; preserve old dotted-key meaning, source-admitted construction depth and unrelated generated siblings. Companion browser story must require a real product execution route, not merely standalone WASM parity.
+
+New issue400 has a draft fit review and actual installed0.51.0 probes: named enum wire labels and recursive standalone Rust types both round-trip through a real codec (two tests passed); component generation still refuses recursive layout. No blanket issue completion or implementation claim follows. Issues361/362/363 still need minimal reproductions and completed fit reviews; they remain explicit intake obligations and are not silently deferred or treated as fixed by312.
+
+Untracked private immutable migration reviews remain intentionally excluded from publication: consumer-312-migration-pass2 and consumer-312-typescript-migration. Their safe publication copies are already committed. Stage exact planning paths only.
+
+## Recovery and release-blocker update
+
+All three implementation/review workers became terminal with service usage-limit errors. Root recovered completed312botcommit18f4248ce, imported9e8894b7f and verified migrated stored_field_guards15/0. Native response saved work is preserved; root repaired lint and measured131focused tests green, with independent review and integrated one-time neighbors still pending. No build remains running in these root-owned trees at this checkpoint. Shared free space reached the8GiB floor; no new heavy build starts until capacity is recovered.
+
+Exact57-commit runtime transfer is recorded in runbook:consumer-runtime-source-handoff-20261003, excluding older318, duplicate393/394, planning, CI and the unrelated child-signal correction. Hash listedf37f0b34fe1fe259f8199bf27729b31218530ca233bef0daa5de5703f6e7de, frozen carrier9e8894b7f. Shared coordinator remains sole integrator. Two cross-session message attempts failed with local MCP transport errors; no receipt or completed handoff is claimed. The durable local runbook is ready for the coordinator to consume.
+
+Separate release coordinator relayed an exact402 correctness blocker: real JSONSchema audit on1b2ed5857 runs10cases,8pass2fail; contradictory required integer Eq and newtype Eq accept the last value. Optional null/absence and range controls pass. Existing reviewed1c4e6149 semantics are absent in the shared apply_bound. Release owner independently inspected logs and owns the blocker record/correction route. This root did not rerun that audit or change transport source. Release remains blocked even if current CI passes.

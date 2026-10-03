@@ -6,8 +6,76 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 31
+revision: 33
 ---
+## Current reconciliation, 2026-10-03
+
+This section supersedes the historical intake/status table below. Fresh read-only inventory has 53 open GitHub issues, not 53 proven unfixed defects. AEP status alone proves neither source completion nor release. Every listed issue remains in scope until source, tests, disposition and release boundary are reconciled.
+
+Only PR398 and PR402 are open. PR402 at1b2ed5857 consolidates390/392/395 and394 newtype bounds; CI is running. PR399/401 closed unmerged. PR397 merged393 atf5be9eafd. PR398 retains its earlier failed Gate and separate release owner. One additional shared held ess/21 integration PR is planned, not opened by this session; batch/ui-live-apps-complete-20261003 is the sole integration carrier. No runtime-only PR.
+
+| Open issue | Canonical AEP mapping | Ownership and next evidence |
+|---|---|---|
+| #400 | No canonical story yet; intake obligation retained | Draft fit review: standalone codec idioms pass two actual probes; recursive component layout remains open. |
+| #395 | No canonical story yet; intake obligation retained | Third session; consolidated PR402. Reconcile its owner record after merge; do not duplicate implementation. |
+| #392 | No canonical story yet; intake obligation retained | Third session; consolidated PR402. Reconcile its owner record after merge; do not duplicate implementation. |
+| #391 | No canonical story yet; intake obligation retained | Third session owns transport scope; specific issue acceptance still needs verification against402. |
+| #390 | No canonical story yet; intake obligation retained | Third session; consolidated PR402. Reconcile its owner record after merge; do not duplicate implementation. |
+| #389 | No canonical story yet; intake obligation retained | Fast lane in held ess21 bundle; native/Go/TS/WASM work local. All-feature acceptance and final gate pending. |
+| #363 | story:feature-request-363 (draft) | Minimal0.51.0 probe and seven-question fit review recorded. Separate filtered views synthesize6scenarios/0refusals; combined-measure gap requires design. No implementation claim. |
+| #362 | story:feature-request-362 (draft) | Minimal0.51.0 probe and seven-question fit review recorded. Validating source lacks its aggregate scenario with one precise synthesis refusal. No implementation claim. |
+| #361 | story:feature-request-361 (draft) | Minimal0.51.0 probe and seven-question fit review recorded. Validating source lacks its aggregate scenario with one precise synthesis refusal. No implementation claim. |
+| #360 | No canonical story yet; intake obligation retained | Reviewed local source; transfer on shared carrier and integrated checks pending. |
+| #354 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #347 | No canonical story yet; intake obligation retained | Runner evidence exists; private consumer execution remains unverified. |
+| #330 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #328 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #319 | No canonical story yet; intake obligation retained | Serial integration coordinator owns implementation; source transfer must preserve its newer318 work. |
+| #318 | No canonical story yet; intake obligation retained | Serial integration coordinator owns implementation; source transfer must preserve its newer318 work. |
+| #314 | No canonical story yet; intake obligation retained | Behavior/query portion on main; store/entry acceptance follows318. Keep issue open. |
+| #312 | No canonical story yet; intake obligation retained | Runtime owner: reviewed core plus frozen general continuation under independent review; integrated regression pending. |
+| #307 | No canonical story yet; intake obligation retained | Reviewed local source; transfer on shared carrier and integrated checks pending. |
+| #304 | No canonical story yet; intake obligation retained | Serial integration coordinator owns implementation; source transfer must preserve its newer318 work. |
+| #299 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #297 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #296 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #295 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #294 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #293 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #292 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #290 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #286 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #285 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #284 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #283 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #282 | No canonical story yet; intake obligation retained | Serial integration coordinator owns implementation; source transfer must preserve its newer318 work. |
+| #273 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #269 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #268 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #267 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #266 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #244 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #237 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #236 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #233 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #231 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #229 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #228 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #225 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #223 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #222 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #221 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #212 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #200 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #197 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+| #194 | No canonical story yet; intake obligation retained | Retain existing fit/design record; verify implementation and evidence before disposition. |
+
+Additional required runtime gaps without their own GitHub issue: interpreted-response-values (active), nested-response-observations (draft), browser-response-conformance (draft), retained replay and remaining capability-audit findings. The all-features requirement applies; standalone WASM execution is not browser product completion.
+
+Existing explicit design deferrals197,244b and231part2 remain recorded decisions, not completed fixes. The full ess21 accepted syntax bundle remains held together; immediate five-unit progress does not clear that boundary.
+
+## Historical observations (retained)
+
 ## Intake
 
 Observed 2026-10-02: 82 open issues; 161 nonterminal AEP stories, of which 87 have no structured GitHub reference. Inclusion in intake is not a completion claim. The source set must be refreshed before completion.
@@ -718,3 +786,7 @@ Confirmed missing observation primitive. docs/design/concurrent-history-conforma
 The request needs a reviewed capability and history contract before implementation: distinguish restarting a process while preserving durable state from resetting a scenario; establish process incarnation and completion/failure evidence; decide which creating identities must remain unique against retained rows and how reads witness persistence; define unarrangeable identities/views and unavailable target capability; preserve model state across the restart step in explorers. All runtimes must execute the admitted primitive consistently, with unknown/older formats refusing it. A counter-reset mutant plus healthy durable issuer must distinguish this from an ordinary two-create test, including timeout/failed restart and no-capability controls. Do not allocate a new suite/history major until that contract is closed and coordinated with389.
 
 Issue389 explicitly reports restart/concurrency as intrinsic unsupported coverage today; that disclosure is not delivery of297. This remains planned capability work with a binding-design prerequisite. Source audit only; own new test/build executions0.
+
+## Aggregate intake probes, 2026-10-03
+
+Installed0.51.0 lightweight brand-free probes isolate361(group parameter) as ESS-SYNTH-017 and362(state-only group) as ESS-SYNTH-016: each validates and synthesizes5scenarios/1refusal. Declared wrong_state avoids unrelated refusal noise.363conditional count proposed where syntax is rejected; existing filtered count/sum idiom validates and synthesizes6scenarios/0refusals. This is source/synthesis evidence, not target execution. Stories361/362/363 now retain complete fit reviews, decisions and required acceptance; no issue closed. Private probe source hashes and precise planner citations are in each story.

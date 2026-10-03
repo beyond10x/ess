@@ -60,12 +60,14 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/caller_fresh_identity.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/support_versions/mod.rs
 - confidence: cited
   path: crates/verify/ess-diff/src/impact.rs
 - confidence: inferred
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 36
+revision: 38
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T21:59:23Z", actor: "human:timo", revision: 16, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T21:59:24Z", actor: "human:timo", revision: 17, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -230,3 +232,9 @@ Disk pressure is shared with unrelated sessions. Root removed only completed own
 Root committed the independently reviewed migration and canonical suites as8b3f128a0 in batch/consumer-runtime-20261002. Final TypeScript review fc5161f89dbe4c185ace8d68cf7ec200c16d760995555c017e6e553866bb4f55 approves80341f5e5269c087cd8c4dd817ce2b16f3c9a409a14f5c5a77030a380195ca8e with no findings and reviewer executions0. One behavior-neutral unit-pattern spelling correction in one_time_recording accompanies the measured strict-lint fix. Final cargo clippy -p ess-conformance --all-targets --locked -- -D warnings exited0; scoped formatting and diff checks exited0. RelatedField integrationeaf7fde99a remains independently reviewed and its21 tests passed in rootgroup3.
 
 This is a local integration checkpoint. No branch published, no required full-package/release gate waived, no source release claimed. Native response story is active with explicit transaction authority and scope; nested observer story remains draft required work. General caller-sensitive312 is still being finalized across native/Go/TS/WASM and will be reviewed separately. Current primary tree remains untouched; integration tree retains only pre-existing dirty changelog/one-time-response documentation after this source commit.
+
+## General invocation continuation integrated
+
+Exact final patch a4638d2c404f715012290675f851f6720e53c2d9c24b9888bcfb2fbdbaba2bcb independently approved, findings empty, reviewer executions0; report9fd21cede3eab7f2f3f736ae38bad9d59575053ea978db63081e1310d384994d. Worker bot commit18f4248ce745e704cfe9cd312ad9b91bf3070520 matches that patch exactly. Root imported as9e8894b7f28d4ae7c02cb6e3144ce7022f06e0cf, preserving bot author and committer. Owner final focused run105passed0failed excluded one stale format assertion in its older base. Root then ran the complete migrated stored_field_guards binary on the integrated source:15passed0failed0filtered, exit0, including that exact assertion. Evidence: runtime carrier target/backlog-input/312-integrated-stored-guards.log and .exit. These overlapping focused counts are not a full-package or backlog total.
+
+Worker processes are terminal following service usage limits. Completed source and review are preserved; root continues integration and validation. Shared source-only transfer and final affected-package/gate verification remain outstanding. No issue closure, remote gate or release is claimed.
