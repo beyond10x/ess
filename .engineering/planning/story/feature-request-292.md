@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 28
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -399,3 +399,11 @@ Private ess-nested-increment-probe-20261003: widening-observed-model.yaml SHA256
 ## Ordinary control report import limitation
 
 The actual attempt to import widening-report.json with its exact widening-suite.json through AEP0.68.0 failed with exit1: `error: MissingField at $suite.coverage: required field absent`. The ordinary suite/34 carries no coverage field; the execution report truthfully declares unknown coverage and inconclusive conformance. No report or suite was rewritten to satisfy the importer, and no replacement asserted evidence record was used to evade this refusal. The11 known-value execution results and exact original hashes remain in the story's concrete-control section and private receipts. This import limitation does not establish a failing ESS execution or full conformance evidence.
+
+## Terminal suffix correction handed to integrator
+
+The independent exact-zero-budget suffix finding was reproduced against unchanged production:8 private tests,4 passed/4 failed, exit101. All four new List/Map cases failed because an unchecked suffix returned Ok; sufficient-budget Invalid and fully completed exact-budget Valid controls passed first. The narrow correction tracks the child index and returns Unresolved only when exhaustion leaves an unvisited suffix. Current source passes8 private tests and52 generated-history tests, exits0, no warnings. Root independently verified all18 current source hashes and read the terminal results. Independent correction review is still pending; no review_outcome fixed or full-unit acceptance is recorded.
+
+Private implementation report feasibility-suffix-correction-report.md SHA256 c72da8918035e3c0a32387dd14d0cf64fc2cbee94b83d9d7f764ab9d0c041dfc; source manifest e9be947fbd92f95b37d0dab6914bfcb5cd25d5f54681db6e5f9dee8b6f9cbb16; complete source archive8c20d15d58b2dd5d460486030256f11b118772bb3e493a329cd148836e8abcfa; production delta51b6fa7a28bf428baf01f4380435c34d730316aa6d6da391d5d64d540d7aeb27. Red log24a726a4b1102906e69aca903e5d537e2c8de26c991e88dec653ec820cbe6435; green2543ae0cae545e3da153c090a6358dd7162e2f776e3770f30c2896a224a9e3e9; matrix031e1cdc739b60e1a1dfc3f2847f88202debb4aec60e5e6b3bfd6377e08daaae.
+
+User directed handoff to session01a0fc77-da4d-7490-a045-41c09aecdb4e. All worker processes are terminal and both owned source/synthesis leases were explicitly released, exits0; separate handoff-lease-release-addendum.md SHA25635fb1497016ab22f978003e3dd4624da7c3a6e908f19855d4c34245edabb0d38 supersedes lease-held statements in frozen reports. Receiver must acquire own leases. No further semantic edits, builds, commits or publication occur in this worker. Abstract early-Unknown precision, widening/derived-domain increment proof and final scoped validation remain outstanding.

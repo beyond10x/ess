@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/interpret/execute/values.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
-revision: 3
+revision: 4
 ---
 ## Outcome
 
@@ -66,3 +66,7 @@ Hypotheses after the first admitted red: wrong top-level lookup; update not appl
 ## Scope
 
 Cited implementation seams in held source: command/value_expression.rs check_increment/existing_subject_field; compiler resolve.rs nested payload lowering; interpret/execute.rs nested location; interpret/execute/values.rs increment; synthesize.rs increment expectation; ess-synth/src/rust/behaviour.rs Increment. Tests and binding-design paths are inferred. Go/TypeScript and browser exact paths need final impact scoping before dispatch. Do not edit these concurrently with #292.
+
+## Exact-main source risk audit
+
+At operator release-handoff request, root inspected exact main e68684efb6a4ac22052c77d3ed8292fd44f9ace5. Its domain checker still invokes existing_subject_field using the nested leaf name at value_expression.rs:727. Rust generated Increment still formats the whole before row plus field.target at rust/behaviour.rs:1546; synthesize.rs:6202 reads before.get(field.target) for the expected increment. These source seams match the location error diagnosed in held runtime and establish a concrete main compiler/generator/expectation risk. No main executable was built or executed for this audit. Main retains the older interpreter that does not derive these executions, so the held-runtime observed4/9 results are not claimed as main-native results. Receiving integrator should reproduce generated-main behavior before deciding the release disposition; no main or source patch was made by this handoff.
