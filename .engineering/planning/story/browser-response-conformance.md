@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -360,3 +360,9 @@ Private receipt roots retain completed-output-lifecycle-5-1375160 and response-v
 Final bounded lifecycle/value-form report SHA256 fc356ac893e233aea0684289e8bfcc97f42d561f36d120d58e2ccf66be63e4cf; complete evidence inventory SHA256 d168159a1fbcf2692d3c9686e83f50a260e0ae2c88f840d380dc83212e197104. Root independently verified all 410 inventory entries with terminal exit 0, in addition to comparing fourteen complete native/browser report and run pairs. Source checkpoint remains 1e1b97f3b240f862edc741d89d374300895e0451a1953967890a30b89d7291ab, with no source repair during this phase.
 
 The owner reports all owned processes terminal, zero cache users, leases refreshed and 28,101,144,576 free bytes at phase end. Further browser starts remain held while the history owner uses its original synthesis cache. The browser owner is performing independent read-only wrapped-invariant design review, not adding implementation or new evidence claims.
+
+## Next source-only retained response and identity family
+
+After completing the independent wrapped-invariant v2 review, the existing browser owner may author the next bounded response family in the already scoped browser_response_conformance.rs and fixtures/browser-target/src/lib.rs. Cover retained invocation/result replay and response-owned creation identity with distinct repeated identities, grounded in existing retained_replay.rs and response/one-time identity vectors. The independent target must own state and replay records, not read expected assertions or use Interpreter. Include healthy behavior and faults that return a stale/wrong replay result, repeat or misassociate creation identity, and expose any required response/event correspondence through actual semantic callbacks.
+
+This phase is source-only while the history owner retains the sole compilation lane. No compiler, browser, tests, cache lease reacquisition, source commit or publication is authorized here. Preserve previous nine focused browser-test results and frozen source/evidence; new assertions remain unexecuted until actual source admission and ordinary/coverage native/browser runs. Retain exact report/run byte parity and callback/isolation checks in the authored test. Update the private capability inventory so measured response forms and persistent stale-output coverage are distinguished from remaining families. A later resource handback will schedule actual validation; source authoring alone closes no acceptance item.

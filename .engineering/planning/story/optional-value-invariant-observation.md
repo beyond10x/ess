@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/optional_value_invariants.rs
-revision: 12
+revision: 13
 ---
 ## Outcome
 
@@ -128,3 +128,9 @@ Keep the held 34/35 authority unchanged for this independent feature. Root's loc
 The private complete wrapped-invariant design v2 is frozen at SHA256 ca56df7e4687bd8e4402afe8380cff3c647a91b5c785e355652ac13d128c63c3. V1 remains unchanged. Root read the complete candidate. It specifies closed any_observed_occurrence and arranged_row witnesses, projected-identity/identity-query selector admission, finite typed path sites and recursive edge/site pairs, exact canonical identity, typed facts and quantifier context, deterministic work accounting and incomplete-inventory refusal. Ordinary 36/coverage 37 remain proposed only; held 34/35 are unchanged and no format is reserved.
 
 The browser implementor now independently reviews the candidate against actual held runtime and browser bridge source, focusing concrete semantic contradictions, pre-callback admission, resource determinism, internal incomplete marker and exact integration seams. This read-only review runs beside the history owner's sole compilation lane. No wrapped-invariant production change or scope expansion is authorized until review and binding adoption. Required actual native/Go/TS/WASM/product-browser healthy/fault acceptance remains unchanged; the candidate is not executed support.
+
+## Corrected v3 awaits independent finding verification
+
+Candidate v3 is frozen at SHA256 7d68859b7b16edc3ee0e0448229353e45ee06c59e8b79b25e6e65fbbfebddf39. Root read its complete diff against reviewed v2. It adds normalized semantic numeric work spelling, explicit logical shape/observation/fact/predicate event charges independent of physical passes, and custom Serialize refusal plus constructor/field-copy/coverage/mutation/CLI/emitter audit for incomplete inventories. The actual browser Loaded/Runner/presentation seams and existing Rust browser test/fixture files replace the obsolete proposed new browser harness. Provenance checking remains explicitly separate from authenticating every assertion DTO against IR.
+
+The original independent reviewer will re-review the three WVI-D2 findings after its bounded source-only browser authoring checkpoint. V1 and v2 remain immutable. This is not production implementation authorization, a format reservation, review-outcome clearance or executed all-runtime support. The browser dependency and shared source sequencing remain explicit; the next implementation wave must reconcile actual overlapping witness/reader source and the full held bundle before dispatch.

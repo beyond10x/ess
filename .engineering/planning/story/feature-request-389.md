@@ -38,7 +38,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -212,3 +212,11 @@ Read-only acceptance reconciliation at runtime carrier c2c4f01c6cfe99c6a16db5670
 Restart, response-loss receipt and concurrency primitives are not implemented by serial retry tests. The accepted finite-boundary disclosure remains explicit; the separate restart request #297 remains outstanding in the full backlog. Observer bound controls do not measure the browser product's new proposed memory/nonce/frame limits.
 
 Disposition: #389 remains active and fast-lane. The concrete missing browser execution is now a typed depends_on edge to the existing browser story. No duplicate story, lifecycle completion, new source-format allocation or remote write is warranted by this reconciliation.
+
+## Measured browser progress without full disclosure completion
+
+The browser dependency has advanced beyond the earlier uncompiled checkpoint. story:browser-response-conformance now records nine authored test functions that each passed focused execution, not one complete suite/gate invocation. Actual CLI-emitted ordinary and coverage products executed in Firefox through the exact emitted Rust host and independent Installation. Measured subsets include direct/nested responses, protected retry and event leakage, order/periodic behavior, original-byte refusal, persistent completed-output lifecycle, and optional/list/exact-integer response forms. Root independently checked the retained raw reports and matching native/browser bytes for the latest fourteen value-form executions and all 410 entries in its evidence inventory (d168159a1fbcf2692d3c9686e83f50a260e0ae2c88f840d380dc83212e197104).
+
+This changes the actual-browser cell from no execution to partial measured feature coverage. It does not complete #389 or imply all protected disclosure paths passed. View/error leakage, retained replay/response-owned identity, fixture/isolation controls, failure/trap/abort surfaces, real WASM resource boundaries and remaining Runner capabilities are still listed explicitly by the browser owner. The next retained-response/identity family is source-only while the history worker owns the compiler lane; its assertions remain unexecuted. Full integrated package checks, independent final review and sole-integrator transfer remain required.
+
+#389 remains active and fast-lane. Preserve all native/Go/TS/WASM source and evidence, keep the browser dependency, and do not create a partial delivery PR. The separate 0.52 source candidate remains untagged under publication-identity and delivery-ancestry blockers; its green gates do not include or release this held bundle.
