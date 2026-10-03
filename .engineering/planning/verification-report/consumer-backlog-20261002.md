@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 33
+revision: 34
 ---
 ## Current reconciliation, 2026-10-03
 
@@ -790,3 +790,17 @@ Issue389 explicitly reports restart/concurrency as intrinsic unsupported coverag
 ## Aggregate intake probes, 2026-10-03
 
 Installed0.51.0 lightweight brand-free probes isolate361(group parameter) as ESS-SYNTH-017 and362(state-only group) as ESS-SYNTH-016: each validates and synthesizes5scenarios/1refusal. Declared wrong_state avoids unrelated refusal noise.363conditional count proposed where syntax is rejected; existing filtered count/sum idiom validates and synthesizes6scenarios/0refusals. This is source/synthesis evidence, not target execution. Stories361/362/363 now retain complete fit reviews, decisions and required acceptance; no issue closed. Private probe source hashes and precise planner citations are in each story.
+
+## Remote source refresh, 2026-10-03
+
+Fresh read-only GitHub state supersedes earlier402-open checkpoints. PR402 merged at2026-10-03T01:23:23Z as2f554561bef25125a93a1fb1d6517d50cb24ed20 from9e15e08e9f0201e06bddc268934c3f96a92e5482. Its required Gate completedSUCCESS at01:22:03Z. Issues390,392and395 closed with the merge; current open inventory is50, not an unfixed-ticket count. Source merge is not release proof. Latest published nondraft GitHub Release remains0.51.0, published2026-10-02T03:20:46Z.
+
+Open PR403 is independently owned on fix/ekr-rust-generation at5f8fbe3f1d04a41dd93626a65500c959089850da, titled Support optional recursive Rust contracts and prepare ESS0.52.0; it claims Fixes400. Its Checks job failed; exact check-run annotations name task projection-check exit1 (job exit201). Other test shards were still running when read. Owner-reported380ess-synth tests, strict package checks and actual amended consumer contract compilation are PR evidence, not executions performed by this coordinator. No duplicate400implementation is dispatched from our draft.
+
+PR398 remains open at published e88442ef6d4f88fd1b23d502b9adc57c7c7b1484; its owner's local branch advanced to c0abe1a0202d5b57f7d1fe491256ac5884a52b28 by merging402. That active owner's tree is untouched. Shared bundle integrator is locally9270e0e54c961e6dde2b20a1c5b4ad8429cb2f48; its newer commits are planning evidence, not runtime transfer. Root's attempts to notify both owners still fail through the cross-session MCP endpoint; no ACK is claimed.
+
+The contradictory-bound release finding is not cleared by402's green Gate. Exact merged402source apply_bound still assigns const=latest for repeated required equality, and403's older type projection does likewise. Retained actual10-case audit remains8pass2fail on402candidate with both declaration orders; the canonical correction1c4e6149a47588311b920f7501c680ab3581ab5a must be reconciled onto the selected release tree and rerun by the release owner. This is a release correctness blocker with recorded evidence, not an inferred gate failure.
+
+Delivery recommendation: keep the independent400source candidate, reconcile it with merged transport and the reviewed equality correction, and select one final0.52release candidate. PR398 and403 both carry release metadata; do not trigger duplicate release/full-gate paths. Root does not close or rewrite another live owner's PR without coordination. The held ess21 consumer bundle is separate and stays held; neither external PR closes our all-feature conformance work.
+
+Retained reads in canonical target/backlog-input: pr402-latest.json, pr403-latest.json, pr403-checks-annotations.json, open-issues-20261003-continuation.json. Connector discovery confirms only Confluence/GitLab/Jira adapters, so read-only gh was the reported fallback. No remote write, rerun, dispatch, tag or release action was performed.

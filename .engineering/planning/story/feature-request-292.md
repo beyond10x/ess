@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 ---
 ## Outcome
 
@@ -167,3 +167,9 @@ Probe source4ba1382349dafbb6f0c5e19811093f2264795e1dc97b5f9c1ea1a4950a76e3b1; ac
 Accept, redesigned: preserve checkability of histories with inert implementation-generated fields and conservatively refuse outcome dependencies on unrecorded generated data with the existing model-undetermined authority refusal. Native concrete Interpreted execution genuinely owns its generated values and must retain its behavior. Do not change source syntax/history format or treat a chosen witness as an observation. The checker's existing bounded-input approximation remains documented; this decision strengthens the specific generated-value boundary requested by the issue, without claiming the probe independently proves a stronger theorem than that documented checker contract.
 
 Implementation mechanism remains under bounded design review: prefer the smallest sound history-specific dependency refusal, using private provenance/abstract state only where necessary. Cover value copies, known overwrite, nested/optional presence, increments, invariant/guard/related/set-selector reads and nonselected fallbacks. Do not close the issue merely because one creation checks. Story remains draft until exact scope/binding design and genuine red regression are ready; no production implementation dispatched yet.
+
+## Design review direction, 2026-10-03
+
+Read-only candidate292-generated-history-design-candidate.md SHAfe9d01464748d7f5e57e1d164636a11afcb75c34bee98d68c398a132d3e46f43 proposes top-level provenance plus an all-branch pre-execution dependency audit. Root rejects that candidate as the final implementation: false conjuncts, earlier refusal branches, known siblings and cross-row/set combinations would gain blanket refusals despite not necessarily depending on unrecorded data. That would narrow the user's full-feature target to an easier subset.
+
+Preserve this candidate as a considered alternative. Revised design must route private history provenance through actual execution/read seams, preserve Kleene predicate and selection precedence, track nested known/unknown value and presence, and permit known overwrite/clear/sibling reads. Related/set effects require actual row provenance and sound history partition handling, not a blanket feature ban. Refuse only genuinely unresolved value-dependent obligations; do not use a guessed value as fact. Existing concrete native execution and public generation behavior remain required. Exact larger scope and staged acceptance are being assessed before independent review or production authorization.
