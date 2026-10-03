@@ -48,6 +48,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/singleton.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
@@ -63,7 +65,7 @@ scope:
   path: crates/verify/ess-diff/src/impact.rs
 - confidence: inferred
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 32
+revision: 36
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T21:59:23Z", actor: "human:timo", revision: 16, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T21:59:24Z", actor: "human:timo", revision: 17, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -206,3 +208,25 @@ Root records this design and authorizes production work before edits. Implement 
 ## Coordinator acceptance
 
 Accepted continuation of existing active story under the full-backlog mandate. Owner recover_312 resumes its managed initial-state tree from c3556bf49; root is migrating fixtures in the integration tree, so owner must not edit canonical fixtures or unrelated format-only tests. Implementation scope is the five synthesis modules above, existing adversary_287_pass1 and support_initial_state runtime tests, and the binding initial-state design page. Root records any additional cited helper scope before source expansion. Phase distinction must remain explicit through auxiliary invocations and must not be recovered from command name/ordinal. Retain a real compiler-admitted red for every source family before production edits, then the actual four-runtime matrix and independent review. Existing semantic composition restrictions remain precise notes, not an excuse to omit the requested mixed first witness. No new PR, remote gate or release in this unit; root owns AEP, integration and publication. All committed executable source Rust; existing generated-runtime templates remain in their established languages. Existing bounded build/cache lease and 8GiB floor rules apply.
+
+## Admitted same-command set-effect witness
+
+The continuation established a compiled source-level counterexample, rather than extending scope for rejected syntax. In set-effects.yaml, Open accepts bulk:Boolean. opened when bulk==false creates Session and stores caller.principal; noted when bulk==true updates the filtered team set from input.note. Current synthesis gives the creating Open and the bulk-action Open the same principal-262144. Exact paired witness caller_sensitive_set_command_arranges_under_another_invocation fails. Owner log312-general-target3.log SHA d709d07f3752f280fa92c58a97d6e58d2a2e041b16e69869f52328db3150ca84 preserves the admitted failing case.
+
+Extend the existing First-arrangement/Second-action design to synthesize/set_effects.rs. Scope is its context/enumeration, direct ExecuteCommand seam and setup blocks: reuse typed phase authority and the First-owned creator requirements, never infer role from command name or step ordinal. Preserve existing set-effect guard selection, source admission, filter and write semantics. Test the actual creation/action pair, both directions, and retain existing healthy/fault runtime witnesses. This is continuation of story312, not a new syntax feature. Caller-valued bulk writes and when_related+unknown_instance combinations rejected by the compiler remain excluded; record the exact semantic refusals, do not invent support for them.
+
+## Continued migration and cross-runtime evidence
+
+Expanded migration patchf7cf54eef26b27f6e00c74b62323cd9f0ceec3660604d61c3a05b8c4da764ce8 independently approved by recover_caller, findings empty, reviewer executions0; report44343b9342f17e48c7d549a20c2399051bcd5046f76df34cb9437e16a7283e9e. Own accessor correction is separately independently approved by root, not self-reviewed. Immutable review artifacts retain both initial finding and correction. Canonical suites and README are included; TS parity correction is separately frozen80341f5e5269c087cd8c4dd817ce2b16f3c9a409a14f5c5a77030a380195ca8e for final review.
+
+Observed integration logs under ess-backlog-next-20261002/target/backlog-input: group3 baseline18passed15failed, corrected40passed0failed across9 binaries including21RelatedField tests; group4 completed33passed0failed across4 binaries. count_reports11/0 and Go runtime parity23/0 passed. TypeScript initial4/24 was stale version, legacy metadata and missing installed Node types; first correction27/1 exposed an old deep-fixture no-op version replacement, then typed provenance rewrite preserved the depth witness. Final TS parity28/0 exit0 with ESS_TYPES_NODE pointing at the already installed definitions. Latest distinct targeted groups total135passing cases, not a full-package or full-backlog count. Scoped fmt exit0. Strict all-target lint found one existing ignored-unit-pattern in one_time_recording; exact spelling corrected from _:() to ():(), rerun pending.
+
+Caller-sensitive312 continuation established admitted same-command creation/bulk-action red and now owns bounded set_effects.rs phase context. Extended actual WASM matrix passed. Exact Go/TS diagnostic comparison exposed missing ESS-CF-NO-EVENT and ESS-CF-VIEW prefixes in the exercised no-event/snapshot-multiple-row branches; bounded existing runtime-template correction approved within story's cited go/ts scope. No broad diagnostic or source-admission change authorized. Frozen final caller matrix/review remains pending.
+
+Disk pressure is shared with unrelated sessions. Root removed only completed own ess-cli compiler outputs958MiB. Worker reclaimed exact verified idle served-entry target/debug and target/tmp allocated4.64GiB, retaining/hash-verifying64 evidence files and archiving scratch logs. No worktree/source/other-session output deleted. Cargo-clean refused the older cache's missing CACHEDIR.TAG; exact prior-authorized compiler directories were inspected and cleaned as disposable storage, not lifecycle retirement. Observed free space recovered to roughly16GiB.
+
+## Migration committed locally
+
+Root committed the independently reviewed migration and canonical suites as8b3f128a0 in batch/consumer-runtime-20261002. Final TypeScript review fc5161f89dbe4c185ace8d68cf7ec200c16d760995555c017e6e553866bb4f55 approves80341f5e5269c087cd8c4dd817ce2b16f3c9a409a14f5c5a77030a380195ca8e with no findings and reviewer executions0. One behavior-neutral unit-pattern spelling correction in one_time_recording accompanies the measured strict-lint fix. Final cargo clippy -p ess-conformance --all-targets --locked -- -D warnings exited0; scoped formatting and diff checks exited0. RelatedField integrationeaf7fde99a remains independently reviewed and its21 tests passed in rootgroup3.
+
+This is a local integration checkpoint. No branch published, no required full-package/release gate waived, no source release claimed. Native response story is active with explicit transaction authority and scope; nested observer story remains draft required work. General caller-sensitive312 is still being finalized across native/Go/TS/WASM and will be reviewed separately. Current primary tree remains untouched; integration tree retains only pre-existing dirty changelog/one-time-response documentation after this source commit.
