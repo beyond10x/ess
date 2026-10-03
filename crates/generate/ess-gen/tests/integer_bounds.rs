@@ -188,15 +188,29 @@ types:
 #[test]
 fn a_newtype_of_integer_carries_its_own_bounds() {
     let artifacts = run(&JsonSchema, &compiled(NEWTYPES)).expect("generates");
-    let schema: Value = serde_json::from_str(
-        &artifacts["schema/types/demo.metering.Item.schema.json"].contents,
-    )
-    .expect("JSON");
+    let schema: Value =
+        serde_json::from_str(&artifacts["schema/types/demo.metering.Item.schema.json"].contents)
+            .expect("JSON");
     let defs = &schema["$defs"];
-    assert_eq!(defs["demo.metering.ItemVersion"]["const"], json!(2), "{schema:#}");
-    assert_eq!(defs["demo.metering.Count"]["minimum"], json!(0), "{schema:#}");
-    assert_eq!(defs["demo.metering.Count"]["maximum"], json!(999), "{schema:#}");
-    assert!(defs["demo.metering.Code"].get("const").is_none(), "{schema:#}");
+    assert_eq!(
+        defs["demo.metering.ItemVersion"]["const"],
+        json!(2),
+        "{schema:#}"
+    );
+    assert_eq!(
+        defs["demo.metering.Count"]["minimum"],
+        json!(0),
+        "{schema:#}"
+    );
+    assert_eq!(
+        defs["demo.metering.Count"]["maximum"],
+        json!(999),
+        "{schema:#}"
+    );
+    assert!(
+        defs["demo.metering.Code"].get("const").is_none(),
+        "{schema:#}"
+    );
     let validator = jsonschema::validator_for(&schema).expect("a valid schema");
     assert!(validator.is_valid(&json!({"version": 2, "count": 3, "code": "a"})));
     assert!(!validator.is_valid(&json!({"version": 3, "count": 3, "code": "a"})));
