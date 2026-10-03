@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -51,3 +51,7 @@ Keep honest extreme-state refusals after A; A does not promise zero refusals or 
 The expected arithmetic baseline is measured red at required MAX/MIN window bounds (3pass/2fail), while the full counter_limit baseline now passes17/17 on unchanged production after a test-only hash-formatting compile correction. Source freeze2b7d64232621c327024b418597767a6e198154e162cdf5efc8c8b8c7bca45d47a preserves all arithmetic tests and original production bytes. Retain both failed logs; the initial compiler error was not a finite-CAS semantic verdict.
 
 The external owner may now implement only the approved arithmetic-completeness correction in subject_fact.rs and scoped regression assertions in counter_limit.rs. Every required negation/padded-bound computation must propagate None on arithmetic failure rather than omit a bound and report a partial reachable set as complete. Preserve numeric semantics, search budgets, honest extreme-state refusal, shared-related behavior, finite-CAS arrangement/outcomes and canonical unaffected bytes. No seed capability, additional format, production state setter or unrelated CAS/input/guard change. Full affected proof and independent whole-unit review remain required before serial integration. Source edits may proceed while root verifies the disjoint authored/aggregate test unit; compiler custody is separately granted.
+
+## Focused treatment and remaining integration checks
+
+Frozen production source bbc9d2f51fb3a3f7fbadb539e833143c2e8a8c36d08a3433566fb9514c14833e passed all5arithmetic regressions (126unrelated libtests filtered) and unfiltered counter_limit17/17 with0failed/ignored. Raw logs15cf0fe051ff7fbb9ee5af3f7e5504eca36a64d2691608a150fbe7599b832280 and530c97bf8ed192d29aa8182ae877d0b34f57eb7f43e45650925b4c1752e6ff35. Source hashes unchanged; ordinary-two6bf91d8f and shared-related-three8f56c982 canonical bytes match the baseline. Original2arithmetic reds and initial test-only formatter compilation failure remain retained. Full affected-package, strict lint and independent review remain required; no integration yet. Refresh the worker base after reviewed fixture corrections and the separately diagnosed missing-token generated-runner defect, to avoid rerunning a knowingly stale full-package baseline. Seed413B remains separate/outside50 and no42/43allocation or implementation is authorized by this arithmetic correction.

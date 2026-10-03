@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 57
+revision: 58
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -394,3 +394,9 @@ The independent two-file TypeScript parity unit is source-prepared in ess-typesc
 Supplemental arithmetic-completeness correction413A is governed by active story:counter-reachability-arithmetic-completeness, independently approved design review and explicit dependencies from both304 slices. The external owner prepares only its exact two-file test baseline from0beee60c6; no production change or compiler grant yet. Seed capability413B remains proposed/outside the pinned50. External412/414 prepares its independently approved15-path correction; known Rust served codec collision415 remains separately open and cannot be counted as healthy served execution. None changes the single bundle PR/release boundary.
 
 Planning validation after these records read1043artifacts and returned problems[], retaining19 historical unscoped advisories plus old review-accounting advisories. No issue closes from this compatibility checkpoint; the original full affected-run failures, pending real targets and full final gates remain obligations.
+
+## Latest verification and resource checkpoint, 2026-10-04
+
+Integration22a48a05f precedes this record. Authored/aggregate exact3fixture candidate4f6af5ef7c2f5473eb56b76d338a8771e2b91729 has6owned tests green within measured82/83, strict scopedClippy and both formatting checks0. Independent whole review1 now runs read-only; author lease/lane ended. The soleupsert failure is classified as generated-Go missing-token RYW behavior, with TypeScript same-shape hypothesis to test; the bounded correction contract is in story312revision20.413A focused5+17 treatment passed with unchanged canonical ordinary/shared outputs; full package/lint/review remain due, and no source integration is inferred from focused tests.
+
+Closed own282 and391 target contents were archived and byte-compared before owning Cargo cleanup: archives3eb8af8137c16a6db01521947fd53a242c04fb2b45d459d893cee6631a2635cd and56e11e8d4ea74a8273cf2510add9cbaa1ef5f11a03e10c3d4ba55a9e3181181d respectively. Retained CLI/282/report proof binaries are compressed with original per-file hashes in archive17fad9408853fafbb5b0fd3db053481ee4c1699edb961f25af5d734c6a64c9a0; restore original paths before executing those binaries. Closed282 scratch and identity-reuse diagnosis are preserved in byte-compared archive2c8772f3f4828eb31ac678fc9a68b6443d7ab2e12eb2a3343b7a8f848e705a8e. Raw evidence bytes are retained; no source or managed tree was retired. Separate Factory gate terminalgreen and its owner reclaimed compiler objects. Fresh disk-floor checks remain mandatory, and no uncleared foreign target, website dependency or missing-marker target was touched.
