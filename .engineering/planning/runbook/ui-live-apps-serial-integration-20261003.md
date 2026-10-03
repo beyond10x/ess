@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 29
+revision: 30
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -291,3 +291,13 @@ Operator explicitly resumed the full A–J bundle through one integration PR and
 Full-candidate review pass1 assigned to fresh Sol/high worker in managed ess-history-review-final-20261003 at that exact candidate; its build target is tree-local target, scratch local-evidence:ess21-completion/history-review-final. Reviewer starts source inspection/test preparation while root regenerates combined outputs, then receives the sole compiler lane. Original292 source and assigned synthesis cache are retained idle. Existing282 implementor resumed its prepared dirty tree under original persisted brief, source-only until lane handback. No restart or duplicate implementation.
 
 Current main was remotely verified e07f55a9b13000a6931d842d5534d906b6e9202d;411 merged there. Root will integrate that independently merged change before combined checks. Measured free space16.9GB and available RAM38.7GB; current12GiB compiler-start floor remains. Connectors has no GitHub adapter; use authorized read-only gh and bot Gates writes after reporting capability gap. No transport reassignment or issue closure.
+
+## Combined regeneration and retained-cache maintenance
+
+Main PR411 at e07f55a9b is incorporated by bot mergee6357a9e1. Only CHANGELOG conflicted; both added-feature entries and existing changed behavior were preserved. Owning generators refreshed46public projections, the Rust/Go Billing and Gatepass implementations, the Billing web fixture, schema/diagnostics and generated conformance suites. Existing implementation bytes were enrolled against settled byte-identical references before generation:318's unit supplied the four native references, and the servers unit supplied the web reference. A nonmatching Go-parity web reference was refused and left unchanged; the matching servers reference was then established. Bot checkpoint672603099 holds93generated-file changes. Repository fmt-check and diff-check exit0.
+
+The combined CLI executes the regenerated Billing suite33passed,0failed,0skipped,0unsupported,0error, exit0. Report/2 truthfully records execution_status passed and conformance_status inconclusive because coverage knowledge is unknown. This is execution evidence only; required faulty controls and current-candidate affected-package checks remain outstanding. Gatepass/oracle generation retains the existing5/6named refusals; none is claimed executed acceptance. Logs/reports at local-evidence:ess21-completion/resume-verification.
+
+Original292 author compiler cache was handed back idle. Cargo1.98 refused cleaning its mixed target root because CACHEDIR.TAG was absent; nothing was deleted. Root preserved all evidence and separated only the known native compiler target/debug to target/native-retired-292/debug by same-filesystem rename, preserving inode36052053 on device66306. The isolated directory was classified compiler-only with a valid cache marker. The subsequent Cargo dry-run named6911paths, every one inside that isolated debug subtree, and reported5833files/4.4GiB. Cargo clean --profile dev removed those5833compiler files. Original target/tmp, backlog-input, review-boundaries, wasm output and all author source/logs/manifests remain. No managed tree removed; own cache lease released. Available space20,343,869,440bytes after cleanup.
+
+Independent292 review owns its separate target and the current compiler lane. Prepared282 follows its handback. Read-only nested-increment scope/design review proceeds in assigned local evidence; no nested implementation or new source-version semantics have been admitted yet.
