@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: decision-blocker:release-0-52-publication-identity
 kind: decision-blocker
-status: open
+status: cleared
 title: Reconcile existing release publisher with the required organization bot identity
 relations:
 - blocks: task:release-0-52-0-20261003
 withholds: verification
-revision: 3
+revision: 5
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-03T07:24:17Z", actor: "human:timo", revision: 5}
 ---
 ## Observed policy mismatch
 
@@ -20,3 +22,7 @@ Either the operator permits this existing automated publisher for0.52.0 while al
 ## Ready candidate at the unresolved decision
 
 All source verification is complete on current main e68684efb6a4ac22052c77d3ed8292fd44f9ace5: local `task check` and `task site-build` (including `site-lab`) exited 0, and main CI/Gate run 37093196094 succeeded. The source tree is clean. No 0.52.0 tag or release exists. The operator has not answered the existing publication-identity question, so this blocker remains open. The next action is to tag this verified commit and verify its release checks and assets only after the existing publisher is explicitly permitted or an approved bot publisher is supplied and verified. No additional source PR is needed for the candidate as it stands.
+
+## Operator decision
+
+The operator selected Preserve b10x-bot; prepare compliant publishing on 2026-10-03. story:bot-release-publication implements that choice. There is no github-actions publication exception. This decision is answered; implementation and final publication verification remain required.

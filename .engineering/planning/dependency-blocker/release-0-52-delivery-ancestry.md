@@ -7,7 +7,7 @@ title: Gates refuses GitHub update-branch ancestry in the release candidate
 relations:
 - blocks: task:release-0-52-0-20261003
 withholds: verification
-revision: 1
+revision: 2
 ---
 ## Observed refusal
 
@@ -22,3 +22,7 @@ The inspected Gates published_merge verifier traverses the complete candidate DA
 ## Required resolution
 
 The delivery-policy/tooling owner must supply an approved way to establish the recorded update commit's authority or explicitly authorize a suitable repair. Revalidate through the same Gates publication path after resolution. Do not route the rejected publication through another tool, change the trusted baseline, weaken verification, or rewrite main on this session's authority. No such action was attempted. The independent publication-identity decision also remains open. This blocker does not claim that a tag push was attempted; none was.
+
+## Authorized resolution
+
+The operator explicitly approved implementing and independently reviewing Gates support for bot-created GitHub update-branch provenance, preserving existing checks and main history. Gates story:github-update-branch-provenance owns the fix. The blocker remains open until the reviewed delivered tool verifies the original refused candidate ancestry through the same Gates path.
