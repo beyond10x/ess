@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 4
+revision: 5
 ---
 ## Outcome
 
@@ -52,3 +52,9 @@ Every applicable named control in docs/design/mutation-scope-and-known-failures.
 ## Design review revisions
 
 The first independent review required three corrections, now specified in docs/design/mutation-scope-and-known-failures.md. Component mutant selection remains changed-scenario based; whole-system refusal deltas cannot attribute a mutant. Selected commands without executable scenarios are explicit unavailable obligations outside the mutant denominator. Manifest4 collects exact-suite-bound report2 only; legacy report1 remains confined to legacy manifests. Known-failure declarations bind a separate public build digest, supplied by the execution host before target calls, using closed ess-conformance-execution/1 sidecars for external collected reports. Protected one-time target identity stays redacted. This supersedes the earlier name/version-only assumption and adds the explicit execution-context format/cost. Native executable identity and generated/external host provenance require changed-build and private-sentinel controls. The proposal still requires its final independent design review before implementation dispatch.
+
+## Final design review correction
+
+Final independent design pass2of2 returned needs-revision with one compatibility blocker: generated runners produce five-category report2, while report --results admits four-category results1. The three earlier findings were verified closed. The exact final report is retained in review-result:mutation-audit-design-20261003-r2; its finding is not rewritten as an approval.
+
+Coordinator correction binds a separate accounting-only report mode taking original report2, execution1, exact suite and declaration. It invokes the existing CountReport original-byte reader, preserves GoV2 Skipped and every original status/count/coverage field, writes only accounting1, and refuses conflicting caller provenance/output flags. The existing external results1 path retains its original profile and meaning. This changes the design because of that finding; no third full design pass is requested. The normal implementation review must independently prove the reported seam using actual generated Go/TypeScript Failed/Skipped/Unsupported output. No accounting implementation or source acceptance is claimed by this correction.
