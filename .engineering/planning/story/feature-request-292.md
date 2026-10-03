@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -363,3 +363,11 @@ The checkpoint retains exact source copies and hashes before feasibility changes
 The same focused Struct filter that exposed both false verdicts now passes all five tests (0 failed, exit 0). Root independently read the terminal output and verified feasibility-typed-depth-first.log SHA256 0853bdeb07aecca89ecd63fb28799c642b9e6217c0ea363816aa2fe473bcb006. The 16-Struct inhabited control remains green; 17-Struct validation uncertainty no longer becomes a proven-empty violation, and Optional inner uncertainty no longer fabricates absence and a false linearizable verdict.
 
 The first repair introduces typed Invalid versus Unresolved validation while retaining the native Result/String API. This is a bounded intermediate checkpoint, not completed proof-policy implementation: shared work/context accounting, productive recursion, completed-cache behavior and order-sensitive conjunction/member controls are still being implemented. Root source review also identified partial early-return paths and diagnostic context to preserve while finishing that work. Existing red logs and source checkpoints remain retained. Full matrix and native-neighbor verification must run after the relevant production changes settle; no final source freeze or review approval is claimed.
+
+## Source-grounded safe increment obligation
+
+Source-only language audit increment-language-disposition-review.md SHA256 eef828749d298be8269847a57b00dab6faffb7229d1da6ad73651e13cb40e87a identifies an explicit mechanical conversion from bounded Narrow Integer newtype (0..10) to unconstrained Wide Integer newtype. The shared generator planner classifies equal underlying representations as mechanical and the Rust emitter preserves the underlying value. SubjectField source admission consults declared conversions. Therefore a preserved smaller domain followed by Wide +1 is a credible legal safe-unknown positive control; a blanket claim that all nonzero unknown increments are impossible is incorrect.
+
+No compilation or execution is claimed by this audit. Complete feasibility repairs first, then admit the supplied source and prove the copy and arithmetic over every source-domain member with bounded typed validation. Keep derived domain and provenance; never pick a witness, discard invalid alternatives, or turn a valid transition into observed value authority. Required controls include partial/overflow domains, undeclared and nonmechanical crossing rejection, repeated increments and later observation-sensitive branches. Existing story scope already includes the private history value/proof surfaces; any additional scope must be recorded before edits.
+
+The audit separately suspects nested increment lookup reads an unrelated top-level same-name field. This is not legitimate evidence for safe transfer. An independent admission/execution probe is required before classifying that potential existing native defect. It must not silently broaden the current implementation or redefine source semantics.

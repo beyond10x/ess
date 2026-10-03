@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 25
+revision: 26
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -366,3 +366,11 @@ The owner reports all owned processes terminal, zero cache users, leases refresh
 After completing the independent wrapped-invariant v2 review, the existing browser owner may author the next bounded response family in the already scoped browser_response_conformance.rs and fixtures/browser-target/src/lib.rs. Cover retained invocation/result replay and response-owned creation identity with distinct repeated identities, grounded in existing retained_replay.rs and response/one-time identity vectors. The independent target must own state and replay records, not read expected assertions or use Interpreter. Include healthy behavior and faults that return a stale/wrong replay result, repeat or misassociate creation identity, and expose any required response/event correspondence through actual semantic callbacks.
 
 This phase is source-only while the history owner retains the sole compilation lane. No compiler, browser, tests, cache lease reacquisition, source commit or publication is authorized here. Preserve previous nine focused browser-test results and frozen source/evidence; new assertions remain unexecuted until actual source admission and ordinary/coverage native/browser runs. Retain exact report/run byte parity and callback/isolation checks in the authored test. Update the private capability inventory so measured response forms and persistent stale-output coverage are distinguished from remaining families. A later resource handback will schedule actual validation; source authoring alone closes no acceptance item.
+
+## Retained replay and creation identity authored checkpoint
+
+The owner completed source-only retained replay and response-owned creation identity tests in the two existing scoped Rust files. Frozen full patch SHA256 b3be24af44b74d16173e6ca72b05049f99ea00e16a6a470bd99197072596ea92; report b5fb878575d326e52a92787b131577de9d2ab50fc7d3c53771f1bbf2aa71eba0; capability inventory v2 c1ab6f550b0fbfd557c8e945bcc279e861724a153e1a72fa9aea0ae7003d9ffa. Root read the report. Scoped rustfmt and diff whitespace checks passed; compiler and test execution remain pending.
+
+RetainedInstallation owns invocation, actor/caller, result and row; fault controls change an exact adjacent integer above 2^53, timestamp or retained row. CreationInstallation allocates distinct identities and links response/event/row; faults reuse identity or misassociate an event. The single-create case intentionally cannot detect repeated allocation, so the authored two-create case captures both identities and requires both rows. Targets receive no expected assertions or Interpreter model.
+
+The intended ordinary/coverage matrix is 20 emitted-module executions, 28 scenarios, 16 passes and 12 deciding failures. These are unexecuted assertions, not measured evidence. Actual CLI source admission, full native/browser byte parity and semantic callbacks must still be checked after the history owner releases the compiler lane. Earlier nine focused browser test results remain bounded historical evidence. No source commit, delivery PR or completion claim follows from this checkpoint.

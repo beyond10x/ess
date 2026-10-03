@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/optional_value_invariants.rs
-revision: 13
+revision: 14
 ---
 ## Outcome
 
@@ -134,3 +134,9 @@ The browser implementor now independently reviews the candidate against actual h
 Candidate v3 is frozen at SHA256 7d68859b7b16edc3ee0e0448229353e45ee06c59e8b79b25e6e65fbbfebddf39. Root read its complete diff against reviewed v2. It adds normalized semantic numeric work spelling, explicit logical shape/observation/fact/predicate event charges independent of physical passes, and custom Serialize refusal plus constructor/field-copy/coverage/mutation/CLI/emitter audit for incomplete inventories. The actual browser Loaded/Runner/presentation seams and existing Rust browser test/fixture files replace the obsolete proposed new browser harness. Provenance checking remains explicitly separate from authenticating every assertion DTO against IR.
 
 The original independent reviewer will re-review the three WVI-D2 findings after its bounded source-only browser authoring checkpoint. V1 and v2 remain immutable. This is not production implementation authorization, a format reservation, review-outcome clearance or executed all-runtime support. The browser dependency and shared source sequencing remain explicit; the next implementation wave must reconcile actual overlapping witness/reader source and the full held bundle before dispatch.
+
+## Independent v3 design approval
+
+Independent bounded review of candidate wrapped-value-invariant-design-v3.md SHA256 7d68859b7b16edc3ee0e0448229353e45ee06c59e8b79b25e6e65fbbfebddf39 is recorded verbatim as review-result:consumer-wrapped-invariant-design-v3. Private report SHA256 32fb384b30fc9adc22d15e2c57568ad2930e826461b84e6e298008d4dff2e21a; root read and rehashed it. Verdict approve, findings [], execution count zero.
+
+The revision resolves the three v2 design findings through semantic canonical numeric work, a physical-pass-independent logical S/O/F/P debit schedule, and refusal of incomplete suites at generic serialization and reconstruction boundaries. The review outcome is a design correction only. It does not establish runtime parity, measured bounds, old-reader refusal, arrangement completeness or browser completion. Story remains draft, dependent on the active browser product; binding design placement, typed scope and shared-file sequencing remain required before implementation. No format number is reserved and no production source has been changed for this story.
