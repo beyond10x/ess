@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T18:48:33Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-275",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Pre-282 baseline 72167e08 reproduces stale cross-scenario uniqueness failure; corrected target at ba4591de2 passes 8/8 including native within-scenario identity-collision fault; independent retained-binary run 8/8, strict focused Clippy exit0",
+    "reference": "local-evidence:ess21-completion/identity-reuse-diagnosis/review-r1"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T18:48:33Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-275",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:caller-isolation-test-migration-20261003-r1",
+    "reference": "ba4591de292f8b0db3b337ad359c04b8c7fea37a",
+    "review": "review-result:caller-isolation-test-migration-20261003-r1",
+    "outcome": "no-op"
+  }
+}
