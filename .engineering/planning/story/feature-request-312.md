@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -55,3 +55,9 @@ Batch A compatibility continuation, based on fe251b2a4. Report migrationc5682d54
 Dispatch the existing scope_nested_increment worker for the five test files mutation_external, mutation_external_adversary, mutation_gained_refusals, mutation_skipped_baseline and mutation_unkillable. Exact diagnosisSHAf603e230ee962723a97cc9d8c03d38b7804f3774a952430febb4a3a3f6e0a4e9 establishes40 report/1 precondition failures among50tests before collector assertions. Only test-fixture migration is authorized: actual runs retain their exact report2 categories, coherent explicit stand-ins are re-admitted, intentionally invalid membership reaches its intended refusal, and existing manifest and genuine legacy reader controls remain decisive. No production change, skipped acceptance or issue closure.
 
 Required acceptance is all50 original tests plus the integrated genuine legacy mixed-reader control, scoped strict lint, owning formatting, and independent whole-unit review on the frozen candidate before serial integration. Root owns planning and integration; source-only preparation begins while the sole ESS compiler lane is reserved for the preceding Go review and fresh12GiB start guard. The bounded brief is retained outside the planning store; this record selects the already accepted story and its existing cited test-directory scope.
+
+## Current-suite compatibility integration
+
+Candidate82803ca32c941eae3eceae6a262cd449b6ccca88 is integrated c166ffea49aff0d0a2bb2b7f79e4f160c487b4f0 after independent review-result:current-suite-compatibility-312-20261003-r1 approved with no findings. Actual author21/21 includes four generated-Go tests (12.66s), zero ignored/filtered, strict scoped Clippy and owning format0. Reviewer independently ran exact supplied native17/17, inspected and hash-verified author Go4 evidence, and did not recompile or rerun Go. That redundant rerun was withdrawn after repeated disk-floor refusals; no refusal is counted as execution. The original author actual Go acceptance remains the evidence, not a skip. Exact author logSHA9a4fb5010fd6e83181eedefb5c9c5279258987f691ab8c3ad48e4d3460a44b41; independent reviewSHA8a50f44a57e566143bc65742231ca6dde3cef1380186eb39f99848c02ab431a2. Public review is immutable; genuine legacy26/27 and current34/35 controls remain distinct.
+
+Five-file remaining mutation migration is source-prepared only, all50 tests preserved. PatchSHA20eed6695ca47f932b85c95541a9d1344f9f8e87f975a483908c677f65e146aa before formatting/execution; no green claim. The current-suite target is handed exclusively to that unit after retaining and verifying all three reviewed binaries. Root retired only terminal282 dev cache after retained546-test log and corrected14-test binary were hash-verified: Cargo dry-run/clean923files635.9MiB. Source/logs remain. Fresh disk subsequently exceeded21GB, permitting the external412 baseline to recheck its conditional start grant. Story312 and final bundle verification remain open.

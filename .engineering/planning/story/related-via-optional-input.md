@@ -39,7 +39,7 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -107,3 +107,7 @@ The accepted bundle now allocates these syntax additions to source ess/22; ess/2
 Execution order remains #282, Optional input, stored reference, then generated guard behavior319. Optional-input owns absent/present/missing input reference admission, interpretation, synthesis and documented target obligations. Stored-reference owns the corresponding addressed pre-branch field lookup, subject existence/state precedence, Optional stored absence and stored-reference fault controls. Common declaration/IR infrastructure may be introduced in the first slice but does not claim the second slice's acceptance. Input absence never means a missing related row: it performs no lookup and selects no related branch. For present references, preserve #282's distinction between early missing-row refusal and later present-row predicate evaluation.
 
 Named Rust/Go/Web generation obligations are permitted only at the intermediate304 boundary because319 implements those targets in this same bundle. They cannot satisfy final generated-target acceptance or close the combined issue. No duplicate implementation of the already integrated stored-field interpreter is needed; compose on current #292/nested correction/282 source and retain all existing controls. This is planning reconciliation based on read-only current-source inspection, not a new test result.
+
+## Prepared tests refresh after reviewed precedence integration
+
+Reviewed #282 candidate31e7362f89464846f069591b313529bbc2f65f9d is integrated fe251b2a4 with14 interpreter-command checks,546 neighboring checks, strict lint, and final independent approval. The prepared Optional-input test commit4cf695b0cb2cc637c6fcd1415cce490385a006b5 remains the starting unit. Existing worker review_292 now refreshes that managed unit onto10fdf93606e568a172d6edfd8cd5b2cd2908dfd7, preserving all prepared304 tests and integrated282 controls. Only source preparation and merge-conflict resolution are assigned; no production implementation or baseline execution is claimed. External412 baseline and the remaining five-file report migration execute first under the serial resource contract. Source22 admission, old-reader refusal, declared Optional type retention, no lookup on absence and present-reference precedence remain the acceptance authority. Stored-reference304 and generated behavior319 remain later units.
