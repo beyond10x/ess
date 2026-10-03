@@ -95,6 +95,7 @@ struct Buffer {
 #[allow(dead_code)]
 struct Batcher {
     subject: &'static str,
+    max_items: usize,
     state: ::std::sync::Arc<(::std::sync::Mutex<Buffer>, ::std::sync::Condvar)>,
     sink: Sink,
     worker: ::std::sync::Mutex<Option<::std::thread::JoinHandle<()>>>,
@@ -141,9 +142,14 @@ impl Batcher {
                         }
                     }
                 }
-                let payloads = ::std::mem::take(&mut buffer.payloads);
-                buffer.oldest = None;
-                let closed = buffer.closed;
+                // At most `max_items` per message: payloads that arrived while the previous message
+                // waited for its acknowledgement stay buffered and go in the next one.
+                let take = buffer.payloads.len().min(max_items);
+                let payloads: Vec<Vec<u8>> = buffer.payloads.drain(..take).collect();
+                if buffer.payloads.is_empty() {
+                    buffer.oldest = None;
+                }
+                let finished = buffer.closed && buffer.payloads.is_empty();
                 drop(buffer);
                 if !payloads.is_empty() {
                     if let Err(message) = sink(subject, &array(&payloads)) {
@@ -152,13 +158,14 @@ impl Batcher {
                         }
                     }
                 }
-                if closed {
+                if finished {
                     return;
                 }
             })
         };
         Self {
             subject,
+            max_items,
             state,
             sink,
             worker: ::std::sync::Mutex::new(Some(worker)),
@@ -194,7 +201,15 @@ impl Batcher {
             buffer.oldest = None;
             ::std::mem::take(&mut buffer.payloads)
         };
-        self.send(payloads)
+        let mut first = Ok(());
+        for chunk in payloads.chunks(self.max_items.max(1)) {
+            if let Err(error) = self.send(chunk.to_vec()) {
+                if first.is_ok() {
+                    first = Err(error);
+                }
+            }
+        }
+        first
     }
 
     fn stop(&self) {

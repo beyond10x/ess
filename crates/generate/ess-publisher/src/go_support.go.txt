@@ -121,6 +121,17 @@ func (b *batcher) report(err error) {
 	}
 }
 
+// sendNow publishes payloads as one message, refusing them after close.
+func (b *batcher) sendNow(ctx context.Context, batch [][]byte) error {
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if closed {
+		return &PublishError{Subject: b.subject, Items: len(batch), Err: ErrClosed}
+	}
+	return b.send(ctx, batch)
+}
+
 func (b *batcher) flush(ctx context.Context) error {
 	b.mu.Lock()
 	b.stopTimer()
