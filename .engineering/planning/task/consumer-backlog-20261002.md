@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 46
+revision: 47
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -406,3 +406,11 @@ Source-only progress while release verification has compilation priority: compon
 Root independently executed a new mixed-position invariant probe with the retained CLI: a view exposes the same constrained type through both a required field and an Optional field. Synthesis produces four scenarios and zero refusals but only the direct field has an invariant observation. The named obligation-inventory assertion exits1; red log SHA256 090e63f6c603751b5a4fe99650ba8417c09a32ccc0a1348c4bb42321eeb2db37. This is recorded in story:optional-value-invariant-observation, including source/suite hashes, source-only scoping and explicit nonvacuity/container/runtime uncertainties. Existing direct support must not hide omitted wrapped positions. No target runtime or compiler executed in this probe.
 
 #292 owner saved unfinished checkpoint SHA256 a493289869e4581ce24eec47a8710a64f3054bdf5477ff63fa319dae57ba10a1. Measured checkpoint remains24/0; the prepared42-case matrix and CLI status controls include unexecuted changes, and stage B–D validation remains outstanding. Browser owner continues scoped source/test work without compiler/browser/cache starts; its full capability matrix and actual validation remain incomplete. #293 remains frozen at the earlier exact source/addendum. No new handoff count, source publication, remote verification or release completion is inferred from this planning progress.
+
+## Current remote backlog and release observation
+
+Fresh read-only GitHub queries report50open issues, zero open PRs, PR398/404 merged and403/405 closed. Relative to the retained53-issue snapshot,390/392/395 are no longer open; no new issue appeared. The exact0.52.0tag lookup returns404, and the latest published nondraft release is still0.51.0. The owner's task check PID85109 and package-test PID398004 were observed live in ess-release-052-final-20261003, with no terminal-success claim. Compilation remains held; root disk briefly measured10205872128available bytes, below this lane's12GiB start floor. No other owner's cache/process was modified.
+
+All50open issues now have canonical AEP references. New task:consumer-391-transport-coordination closes the tracking gap for391, explicitly excluded by the earlier message-contract-client epic. It records unresolved transport-owner intake/evidence under the standing third-session ownership, not a new implementation or permanent deferral. #400 now records separately merged generator source and pending verified release; no duplicate source work is scheduled here. Multi-artifact mappings for304and229 are intentional scope splits, not tickets to double-count or blindly deduplicate.
+
+verification-report:consumer-backlog-20261002 carries the complete50issue/reference/status table and its limits. Planning lifecycle is not source/release proof;50open issues is not a count of50unfixed defects. Exact private inventory hash48e3b78460127cade5b484498d28a09ad2d4861b372adc4b6633386ffc6121c2 and reference report hashe0ce0ccc668f13d435192413c36ea9b75a9c30aa23cf203b5abefbb4e843df1f are retained beside the source snapshots. Connectors still lacks a GitHub adapter; that gap was reported before the read-only gh fallback. No remote write or additional delivery PR occurred.

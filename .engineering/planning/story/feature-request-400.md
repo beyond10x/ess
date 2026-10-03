@@ -10,7 +10,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -65,3 +65,11 @@ The contradictory-bound release finding is not cleared by402's green Gate. Exact
 Delivery recommendation: keep the independent400source candidate, reconcile it with merged transport and the reviewed equality correction, and select one final0.52release candidate. PR398 and403 both carry release metadata; do not trigger duplicate release/full-gate paths. Root does not close or rewrite another live owner's PR without coordination. The held ess21 consumer bundle is separate and stays held; neither external PR closes our all-feature conformance work.
 
 Retained reads in canonical target/backlog-input: pr402-latest.json, pr403-latest.json, pr403-checks-annotations.json, open-issues-20261003-continuation.json. Connector discovery confirms only Confluence/GitLab/Jira adapters, so read-only gh was the reported fallback. No remote write, rerun, dispatch, tag or release action was performed.
+
+## Merged source and still-unverified release refresh
+
+Fresh read-only GitHub state confirms PR398 merged at reviewed head 5a5ac7f74d0ffdfcb9d91d395053620729b78254, PR404 merged, and PR403/405 closed superseded. No duplicate #400 implementation or delivery is needed in the held runtime lane. Local exact release candidate e68684efb contains b0db254c2 (consolidated reviewed generator changes), rust/layout.rs's boxed named representation and feasibility.rs tests optional_recursive_structs_compile_and_roundtrip_in_both_layouts and optional_recursive_structs_compile_in_the_shared_web_codec. This is source presence and inherited test code, not a new execution by this coordinator.
+
+Issue #400 remains open. Its explicit verified-release requirement is not satisfied: the exact refs/tags/0.52.0 API returned404, and the latest published nondraft GitHub Release remains0.51.0 (2026-10-02T03:20:46Z). The release owner's task check and package-test processes were observed live in ess-release-052-final-20261003; no terminal success is inferred. Full release/tag/artifact validation stays with that owner. Canonical story remains unclosed while the external source/evidence and release requirements are reconciled; its historical draft does not imply the merged implementation should be rebuilt here.
+
+Named enum host/wire labels already have the measured released0.51.0 idiom described above. Recursive Optional component representation is now present in the separate merged candidate, pending final release verification. Retain the issue's distinction between those two needs and do not claim the adopter's entire application is verified from minimal codec tests.

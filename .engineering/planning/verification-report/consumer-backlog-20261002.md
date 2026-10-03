@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 37
+revision: 38
 ---
 ## Current reconciliation, 2026-10-03
 
@@ -820,3 +820,70 @@ On the integrator's disk coordination request, root inspected only its own compl
 Own new compiler starts require at least 12 GiB while release398 verifies; existing work is not killed.293 actual repository regression red completed0passed/2failed with terminal101 before production edits; implementation continues without builds during the resource hold.292 has prepared Rust regressions only and waits for a cache. Those source trees and evidence remain retained.
 
 Nested response owner freezes13source/test files against5c5aeaf795 as patch9e87ddaef39cd06666bd962763e18a8fe633d5f037a2fb45c4058a16d23631be. Updated owner report8c622ff51baa2fa9dc4a420a342cdb1405197cc2f4ce531603cea72660cfd689 records actual native/Go/strict-TypeScript matrices, old-reader rejection and earlier actualWASM success. Exact frozen-source final all-target ess-conformance/ess-synth Clippy exits0, log7b9d847b9d7735c1b7ca93736b79c2a1091fec72292c31dfb4cacbdd10a17204. Final post-structural-correction warm WASM remains queued until disk threshold permits. This is owner evidence, not an independent rerun or approval. Root source inspection and independent adversary review are underway; no nested commit/import/publication yet. Added source scopes are path.rs plus support_nested_response/{admission,foreign,values}.rs and the originally planned WASM test; TypeScript runtime delta only wraps an existing diagnostic call for its style gate.
+
+## Complete open-issue reference reconciliation, 2026-10-03
+
+Fresh read-only GitHub inventory contains 50 open issues. Compared with the retained53-issue snapshot, #390, #392 and #395 are no longer open and there are no newly opened issues. A separate all-open-PR query returns an empty array; the recent PR query confirms398/404 merged and403/405 closed. This is an intake count, not50 independently proven unfixed defects or50 ready-to-implement stories.
+
+Connectors discovery still exposes only Confluence/GitLab/Jira adapters, so the capability gap was reported before using permitted read-only gh. No issue/PR/comment/release write, workflow dispatch or rerun occurred. Exact tag0.52.0 lookup returns404; the latest published nondraft release remains0.51.0. Live release task/package-test processes were independently observed in the owner final checkout; our compilation remains held, and no owner process/cache was changed.
+
+Canonical coverage is now50/50 issue references. The only missing reference was391, explicitly excluded by epic:message-contract-clients. It is now task:consumer-391-transport-coordination, an unresolved owner/disposition record, not a transport implementation takeover. #400 has a refreshed merged-source/pending-release disposition; do not duplicate its merged generator work. Two multi-artifact mappings are intentional decomposition:304 has its archived original plus two accepted replacements;229 separates guards from related-record effects. They are not automatically duplicate implementations and must retain their distinct acceptance.
+
+The table below is the planning store's recorded lifecycle, not independent proof that the source or release satisfies the issue. In particular, draft may coexist with separately merged source (#400); implemented may still lack final issue/release closure (#314); and active #293 is locally frozen but not published in the held bundle. No lifecycle move or GitHub closure was inferred from this mechanical join.
+
+| Open issue | Canonical artifact(s), recorded status |
+| --- | --- |
+| #400 | story:feature-request-400 (draft) |
+| #391 | task:consumer-391-transport-coordination (draft) |
+| #389 | story:feature-request-389 (active) |
+| #363 | story:feature-request-363 (draft) |
+| #362 | story:feature-request-362 (draft) |
+| #361 | story:feature-request-361 (draft) |
+| #360 | story:feature-request-360 (active) |
+| #354 | story:feature-request-354 (draft) |
+| #347 | story:feature-request-347 (active) |
+| #330 | story:feature-request-330 (draft) |
+| #328 | story:feature-request-328 (draft) |
+| #319 | story:related-guard-behaviour (active) |
+| #318 | story:served-store-and-entry (active) |
+| #314 | story:go-generated-behaviour (implemented) |
+| #312 | story:feature-request-312 (active) |
+| #307 | story:feature-request-307 (active) |
+| #304 | story:feature-request-304 (archived); story:related-via-optional-input (active); story:related-via-stored-reference (active) |
+| #299 | story:feature-request-299 (draft) |
+| #297 | story:feature-request-297 (draft) |
+| #296 | story:feature-request-296 (draft) |
+| #295 | story:feature-request-295 (draft) |
+| #294 | story:feature-request-294 (draft) |
+| #293 | story:feature-request-293 (active) |
+| #292 | story:feature-request-292 (active) |
+| #290 | story:feature-request-290 (draft) |
+| #286 | story:feature-request-286 (draft) |
+| #285 | story:feature-request-285 (draft) |
+| #284 | story:feature-request-284 (draft) |
+| #283 | story:feature-request-283 (draft) |
+| #282 | story:feature-request-282 (draft) |
+| #273 | story:feature-request-273 (proposed) |
+| #269 | story:feature-request-269 (proposed) |
+| #268 | story:feature-request-268 (proposed) |
+| #267 | story:feature-request-267 (proposed) |
+| #266 | story:feature-request-266 (proposed) |
+| #244 | story:feature-request-244 (draft) |
+| #237 | story:feature-request-237 (draft) |
+| #236 | story:feature-request-236 (draft) |
+| #233 | story:feature-request-233 (draft) |
+| #231 | story:feature-request-231 (draft) |
+| #229 | story:feature-request-229 (active); story:related-record-effects (draft) |
+| #228 | story:feature-request-228 (draft) |
+| #225 | story:feature-request-225 (draft) |
+| #223 | story:feature-request-223 (draft) |
+| #222 | story:feature-request-222 (draft) |
+| #221 | story:feature-request-221 (draft) |
+| #212 | story:feature-request-212 (draft) |
+| #200 | story:feature-request-200 (draft) |
+| #197 | story:feature-request-197 (draft) |
+| #194 | story:feature-request-194 (draft) |
+
+The full held ess/21 delivery remains one integration branch, batch/ui-live-apps-complete-20261003. Original58 source commits are acknowledged; nested/explorer addenda bring the proposed inventory to60 and remain pending shared receipt/integration. The full-feature runtime/browser/history/aggregate and source-language backlog is not closed by this refreshed inventory.
+
+Retained raw snapshots live in canonical target/backlog-input: open-issues-20261003-reconciled.json, recent-prs-20261003-reconciled.json, open-prs-20261003-reconciled.json, releases-20261003-reconciled.json, tag052-20261003-reconciled.json with stderr/exit, and aep-inventory-20261003-after391.json. The join uses the CLI's actual refs array of strings; an initial diagnostic assuming object-shaped refs was corrected before recording this table. No artifact references were changed based on that diagnostic.
