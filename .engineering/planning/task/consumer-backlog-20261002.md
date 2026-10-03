@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 40
+revision: 41
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -356,3 +356,9 @@ All three implementation/review workers became terminal with service usage-limit
 Exact57-commit runtime transfer is recorded in runbook:consumer-runtime-source-handoff-20261003, excluding older318, duplicate393/394, planning, CI and the unrelated child-signal correction. Hash listedf37f0b34fe1fe259f8199bf27729b31218530ca233bef0daa5de5703f6e7de, frozen carrier9e8894b7f. Shared coordinator remains sole integrator. Two cross-session message attempts failed with local MCP transport errors; no receipt or completed handoff is claimed. The durable local runbook is ready for the coordinator to consume.
 
 Separate release coordinator relayed an exact402 correctness blocker: real JSONSchema audit on1b2ed5857 runs10cases,8pass2fail; contradictory required integer Eq and newtype Eq accept the last value. Optional null/absence and range controls pass. Existing reviewed1c4e6149 semantics are absent in the shared apply_bound. Release owner independently inspected logs and owns the blocker record/correction route. This root did not rerun that audit or change transport source. Release remains blocked even if current CI passes.
+
+## Final recovery checkpoint
+
+Runtime carrier source9e8894b7f is followed by planning-only merge8b6c95c7e54d571723304fe689dec8965004dcb4. Canonical planning head99484b2dc records361/362/363 probe-backed draft fit reviews. Root reclaimed only completed own ess-conformance compiler outputs using cargo clean -p ess-conformance:5835files,4.3GiB; source and target/backlog-input evidence retained, no cache processes/open files found. Docker mount warnings in lsof are retained; no matching local cache handles were reported. Free space recovered to roughly9.3GiB. Native response nine-file candidate remains frozen/uncommitted for independent review, no owner build running, and root released its recovery lease only.
+
+Fresh GitHub read: PR402 remains OPEN at9e15e08e9f0201e06bddc268934c3f96a92e5482 with CI running. Actual local Git comparison against audited1b2ed5857 shows only one command_surface test line for generate client. No types.rs change exists between those heads, so the measured contradictory-Eq source defect remains; no correction or release-readiness claim is inferred from the head advance. Snapshot target/backlog-input/pr402-checkpoint.json.
