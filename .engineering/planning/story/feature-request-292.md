@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -251,3 +251,11 @@ A separate actual native control then passes 1 test with 13 filtered: create exa
 Exact admitted baseline log c19d58ed726fc7a7cd410f782a1ac616e64126c97da933a070d62b9afa928915; native control log ad515eb014bb32f4f15eb8191b971894dafaaf4412513c5130b34bfc7730a539; original initial log 488eb89e47e65449cb01a13f4fe696083dd3e839a16e0a4ffa3e2dde9ef9a29d. Root inspected the report and initial terminal output; these are owner executions, not independent reruns.
 
 Root directs continuation of the already accepted stages A-D implementation. Preserve the shared executor semantics and actual unknown/feasibility authority, no blanket-refusal shortcut. The owner keeps exclusive synthesis cache with one-job settings and the 12 GiB pre-start floor. Aggregate #361/#362 is a future scenario adapter dependency only; it grants no additional aggregate or binding production scope to this unit.
+
+## Shared-state first-stage evidence
+
+The private shared State/Row executor refactor reached a first green14-case regression matrix. Root inspected actual shared-state-first-stage.log: 14 passed,0failed,0ignored,0filtered, terminal0. Log SHA256 5bbf2afd06d8f99e81d570c8c102d6956bc7bf6f849ce04e05dff697802059a9. Prior abstract-first-stage run retained10passes/4failures; adding shared-state grouping and the cross-row client barrier cleared those four initial regressions. This includes the genuine early/late Timestamp cases, constrained Boolean feasibility controls, actual native cross-row control, and acknowledged-write versus other-client view ordering.
+
+This is an in-progress source checkpoint, not a frozen candidate or full design completion. Precise abstract typed-value validation, invariant dependence, provenance paths, safe increments, uncertainty/search alternatives and the remaining stage A-D acceptance still require work and broader validation. No source has been transferred for this story, and no aggregate implementation is authorized by its private Context. The future aggregate adapter must also account for unknown generated creation identity without fabricating concrete Node keys; the history's actual recorded identity is not automatically that authority.
+
+Resource starts now use an integer comparison against12884901888available bytes immediately before cargo, with one job/debug0/incremental0 and external TMPDIR. The worker reported one earlier visual GB/GiB threshold mistake and attempted to interrupt its exact process, but the22-second run had already completed; it made no termination claim. No other owner's work was paused or cleaned. Future source development continues independently while starts await the coordinated floor.

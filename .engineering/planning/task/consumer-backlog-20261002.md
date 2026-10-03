@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 43
+revision: 44
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -386,3 +386,13 @@ Native response remains independently reviewed/integrated046db8a680. Nested resp
 292 and293 completed two independent design passes each. Binding doc commits are86b4a994481f4391f7f38cc2677cdc493ca20404 (history) and6727e07363877925aa6a0f2bb1cb47b08d2348e3 (explorer); both author/committer bot. The raw reviewed bytes are preserved; AEP records explicit adoption superseding candidate-status prose. Stories are active. Managed ess-explorer-optional-unknown-20261003 starts6727, owns servers cache. Managed ess-generated-history-values-20261003 starts86b4, production awaits real regression red and an available cache; no third concurrent build is authorized. Staged history A-D remain one required unit, not a first-refusal completion.
 
 Root current-source aggregate probe independently establishes named red for direct/copied group parameters and state-only grouping; matching copied-key control passes. Combined aggregate design remains draft under independent review, with a newly identified precondition-prefix authority concern to resolve before implementation. Browser product execution and remaining full-feature backlog stay open. No issue closed or release declared from this checkpoint.
+
+## Current held-runtime checkpoint
+
+Current held runtime carrier includes frozen nested-response source d4dc8d3f57359e84b176f043ba6607613040b003 and new browser binding-design/catalog commit d849ea01c00af9360d574e06ff864d01c2564954. The two acknowledged original handoffs remain byte-identical; nested source addendum remains pending explicit integrator receipt/verification. No source/evidence is retired before published-integration verification, no wholesale carrier merge or separate held-bundle PR.
+
+Browser product is active in isolated ess-browser-conformance-product-20261003, branch fix/browser-conformance-product-20261003, based on d849ea01c. Independent design review is approved, exact scopes recorded and actual ordinary/coverage Firefox reds retained. Its owner may write scoped source/tests; compilation is held until an explicit cache handoff. The servers cache remains #293's; synthesis cache remains #292's. No third large cache is authorized.
+
+Explorer #293 has the independently reproduced extra-struct-member false-green recorded in consumer-explorer-struct-members-pass1. Both asset corrections and paired mutant are present; final14-case serial matrix, concurrent controls, strict lint and source freeze are still being completed. History #292's initial14-case matrix is green, but full abstract semantics/search/CLI acceptance remain incomplete. Aggregates361/362 have reviewed adapter direction and explicit unresolved shared-context/binding-cut authority, not an implementation. Conditional aggregation363 remains separate unfinished scope.
+
+Safe root-owned disposal now includes21 prior completed build directories (1332827930bytes), two completed Firefox profiles (76507345bytes), and5 further completed nested Rust targets (156155916bytes). Exact manifests and terminal test/browser receipts remain retained. No active servers/synthesis cache, frozen binaries, handoff source, review logs or another owner's output was removed. Free-space readings fluctuate and are not reservations; every new compile uses the exact integer12GiB start guard. Separate PR398 release ownership and third-session ess-transports ownership remain unchanged; this checkpoint makes no new remote release claim.
