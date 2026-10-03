@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/optional_value_invariants.rs
-revision: 11
+revision: 12
 ---
 ## Outcome
 
@@ -122,3 +122,9 @@ Root has requested a concrete second private design candidate before independent
 For a view without a source-proved unique selector, use an explicit any-observed-occurrence witness claim rather than a blanket absence-of-identity refusal. Where identity or a unique query selector is source-proved, bind the occurrence to that arranged row with a separate closed witness form. Neither form may infer uniqueness or confuse observed-value coverage with row-provenance proof. The revised candidate must make both forms and their admission rules exact.
 
 Keep the held 34/35 authority unchanged for this independent feature. Root's local source inspection finds current main e68684ef supports suite majors 1 through 33 and held runtime c2c4f01c6 supports 1 through 35. The next pair 36/37 is a design proposal only, pending exact catalog/scope adoption; no format has been reserved or implemented here. The revised candidate must resolve finite recursive site/back-edge identity, canonical DTO and Map ordering rules, quantifier scope, source-arrangement versus observed authority, and truthful resource-exhaustion inventory. Resource limits must be justified against existing profiles, not chosen as an arbitrary narrower feature subset. This direction is not source implementation authorization; all new cross-runtime behavior still needs actual admitted healthy/fault evidence.
+
+## Complete v2 candidate enters independent review
+
+The private complete wrapped-invariant design v2 is frozen at SHA256 ca56df7e4687bd8e4402afe8380cff3c647a91b5c785e355652ac13d128c63c3. V1 remains unchanged. Root read the complete candidate. It specifies closed any_observed_occurrence and arranged_row witnesses, projected-identity/identity-query selector admission, finite typed path sites and recursive edge/site pairs, exact canonical identity, typed facts and quantifier context, deterministic work accounting and incomplete-inventory refusal. Ordinary 36/coverage 37 remain proposed only; held 34/35 are unchanged and no format is reserved.
+
+The browser implementor now independently reviews the candidate against actual held runtime and browser bridge source, focusing concrete semantic contradictions, pre-callback admission, resource determinism, internal incomplete marker and exact integration seams. This read-only review runs beside the history owner's sole compilation lane. No wrapped-invariant production change or scope expansion is authorized until review and binding adoption. Required actual native/Go/TS/WASM/product-browser healthy/fault acceptance remains unchanged; the candidate is not executed support.

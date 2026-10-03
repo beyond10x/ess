@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -319,3 +319,15 @@ The exact generated_history_decisions_preserve_cli_statuses_zero_one_two_and_thr
 The original synthesis cache compiled the current source. Retained allocation grew by 973,516,800 bytes; terminal free space was 27,990,667,264 bytes. No actual package clean was applied. The temporary servers lease ended after checking native cache users; its compiler-only path is now target/native-build, preserving the moved debug directory inode and bytes. Cache-separation report digest e82ad3a8cfcde0d78677f9e3a0be7bfebc91c3e47d0425ac43a8b36f24acb082. The prior warm-cache compile failure remains environment evidence, not product regression evidence.
 
 The compiler lane passed to the browser worker for its two pending focused tests. This story continues source-only Stage B/C readiness audit while neighbors, strict lint, final independent review and integration remain outstanding. No source commit or publication occurred; release ancestry and publication-identity blockers remain open.
+
+## Stage B C readiness findings and next accepted controls
+
+The implementor's source-only readiness audit is retained at stage-bc-source-readiness-audit.md SHA256 8d202d5d4e9551b5f263eed527b3ff017096d4dc270fa1e836206ed77537ae05, with feasibility/design addendum SHA256 4b3162a622f34b1b839a92eb3c0f0497930e8c5b94ff7a6ddf1bd3514eee60f8. Root read both. No new execution occurred in that audit. Existing 43 history cases, two primitive controls and eight actual CLI invocations remain the measured baseline, not completion of all Stage B/C requirements.
+
+Concrete source finding: repeated set-affect entries generating the same field on the same row within one operation/branch currently share Origin because location lacks generation occurrence. Repeated effects are source-admitted by an existing native declaration-order test. This is a provenance-identity mismatch with the accepted design, not yet an executed wrong-verdict claim. Next bounded implementation step is an actual source-admitted/private-state regression demonstrating unequal generation origins, followed by the smallest occurrence-path repair, with copy preserving origin and different rows/operations retaining their distinctions. Keep execution shared with the actual native executor; do not infer scalar equality from origin equality or add expected-outcome authority.
+
+The same accepted scope permits missing history controls for original-reference reads after reassignment, missing related row versus absent member, lifecycle-ineligible set rows, multirow provenance, rollback after unresolved touched-row validity, namespace precedence, and generated retry/indeterminate alternatives. Author and run these in the existing scoped Rust test/module files; classify fixture-admission failures separately from product reds. The sole compiler lane returns to the history owner after terminal browser runs, using the original synthesis cache, jobs 1, debug/incremental disabled, external temporary directory, locked offline dependencies and a fresh 12,884,901,888-byte floor before each expensive start. Run focused tests first; no broader full gate or publication.
+
+Required feasibility traversal lacks its own work/depth bound before witness generation. Admitted recursive Union/List/Map/Optional shapes do not alone demonstrate infinite recursion because this precheck stops at them; pure required cycles are source-refused. Retain this distinction. Source-admitted recursive/deep-chain controls and a concrete bounded-proof policy remain required before fixing that separate path. Budget exhaustion must never prove Empty.
+
+Correct the binding design's zero-increment positive-control sentence: actual source admission forbids zero, as the executed regression asserts. Use admitted same-field copy for unchanged-value transfer, retain legal exact nonzero arithmetic, and resolve the bounded-safe unknown increment item against genuinely admitted source and nominal assignability. No compiler widening or invented supported case is authorized. Full freeze still requires remaining native neighbors, scoped strict lint/format authority and independent review.

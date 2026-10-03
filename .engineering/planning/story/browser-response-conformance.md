@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -354,3 +354,9 @@ optional_presence_and_nested_ordered_values_execute_in_both_browser_routes: 1 pa
 Root independently compared all fourteen complete native/browser report pairs and all fourteen complete run pairs byte-for-byte and read report verdicts. Healthy ordinary execution remains conformance-inconclusive because it has no coverage claim; healthy coverage execution reports conformance-passed. All twelve fault executions report conformance-failed. These measured semantic fault failures are the intended regression controls, not twelve failing Cargo tests. This is one focused run per test, not repeated full gate or all-feature acceptance.
 
 Private receipt roots retain completed-output-lifecycle-5-1375160 and response-value-forms-{4,5}-1380886, including actual DOM/BiDi, original product, source, module builds and native/browser reports. Broader capability families, resource-boundary evidence, native neighbors, strict lint and independent final review remain open. No source commit, independent PR, publication retry or release blocker resolution follows from these results. All four frozen runtime handoff digests were rechecked unchanged.
+
+## Final lifecycle and value-form receipt inventory
+
+Final bounded lifecycle/value-form report SHA256 fc356ac893e233aea0684289e8bfcc97f42d561f36d120d58e2ccf66be63e4cf; complete evidence inventory SHA256 d168159a1fbcf2692d3c9686e83f50a260e0ae2c88f840d380dc83212e197104. Root independently verified all 410 inventory entries with terminal exit 0, in addition to comparing fourteen complete native/browser report and run pairs. Source checkpoint remains 1e1b97f3b240f862edc741d89d374300895e0451a1953967890a30b89d7291ab, with no source repair during this phase.
+
+The owner reports all owned processes terminal, zero cache users, leases refreshed and 28,101,144,576 free bytes at phase end. Further browser starts remain held while the history owner uses its original synthesis cache. The browser owner is performing independent read-only wrapped-invariant design review, not adding implementation or new evidence claims.
