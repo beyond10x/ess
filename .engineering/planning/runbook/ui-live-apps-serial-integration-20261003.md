@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 46
+revision: 47
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -14,11 +14,11 @@ Operator direction on 2026-10-03: finish the remaining full bundle, integrate to
 
 ## Current facts
 
-Integration branch batch/ui-live-apps-complete-20261003 is at8a94f4a31 before this evidence checkpoint. It preserves the60 imported changes, #318, mainPR411/e07f55a9b, regeneration672603099, reviewed292/9f35a2d5d and nested-increment/f24dafb1e. Reviewed caller-isolation test correctionba4591de2 is integratedd75824465 with8/8 native/fault controls and independent approval. Latest bot fetch confirms main e07f55a9b. No bundle PR, main merge, issue closure or release.
+Integration branch batch/ui-live-apps-complete-20261003 is atcb6940709 before this evidence checkpoint. It preserves the60 imported changes, #318, mainPR411/e07f55a9b, regeneration672603099, reviewed292/9f35a2d5d and nested-increment/f24dafb1e. Reviewed caller-isolation test correctionba4591de2 is integratedd75824465 with8/8 native/fault controls and independent approval. Latest bot fetch confirms main e07f55a9b. No bundle PR, main merge, issue closure or release.
 
 #282 remains unintegrated at corrected candidate31e7362f8. Independent review1 measured a lost Open-external alternative at226af8bfe. The author delivered correction patch50226754db2dee0d1beec948f24a227b2a0b454dd20c9d3e69771cc9f01de69f before hitting the assigned model usage limit. Root verified whole interpreter-command14/14, strict conformance all-target lint0 and owning format0. The previously red regression and Open/Forced/Withheld controls pass. Final whole independent review2 and neighboring regression verification remain due. #304 Optional-input tests4cf695b0c have no production implementation; dependent work waits for reviewed282.
 
-The complete earlier three-package no-fail-fast run ended101 with31targets/166failures; logSHA39076a45b7c1c2ec1883b78230ec1b24818e367352c2e498e189fcd601e73d78. Fresh pre282 runtime baselinef5857f857 independently reproduced18failures in6targets,20passes, logSHAc68684261a16dd8dbf637af37aa2b4154d000359bfb126e118631c22122b8dce. Ten failures were report1 helpers using suite34. Candidatec5682d541 fixes only3mutation-test files, retaining all17originaltests and adding2compatibility/refusalcontrols:19/19 green, strict scopedlint/fmt0, independent review1 executing. It is not yet integrated. Another bounded3file source unit preserves absent/aggregate/Go faults while correcting obsolete currentformat expectations and malformed legacy provenance. Other failures remain individually unclassified; none waived. ESS_TYPES_NODE must name installed website definitions. Story312 is active under its accepted contract.
+The complete earlier three-package no-fail-fast run ended101 with31targets/166failures; logSHA39076a45b7c1c2ec1883b78230ec1b24818e367352c2e498e189fcd601e73d78. Fresh pre282 runtime baselinef5857f857 independently reproduced18failures in6targets,20passes, logSHAc68684261a16dd8dbf637af37aa2b4154d000359bfb126e118631c22122b8dce. Ten failures were report1 helpers using suite34. Candidatec5682d541 fixes only3mutation-test files, retaining all17originaltests and adding2compatibility/refusalcontrols:19/19 green, strict scopedlint/fmt0, independent review1 approved19/19. It is integrated atcb6940709. Another bounded3file source unit preserves absent/aggregate/Go faults while correcting obsolete currentformat expectations and malformed legacy provenance. Other failures remain individually unclassified; none waived. ESS_TYPES_NODE must name installed website definitions. Story312 is active under its accepted contract.
 
 Source21 remains one-time responses; additions share22. Suite36/37 bindings,38/39 aggregates, transport/IR2 and mutation manifest/report4 remain allocated. Expression design reserves40/41 and history2; after two full reviews, its final typed decision-receipt correction is not independently approved and must be proved in A3 implementation review. Mutation design likewise retains its post-review lossless-accounting correction as an implementation-proof obligation. Neither is completion evidence.
 

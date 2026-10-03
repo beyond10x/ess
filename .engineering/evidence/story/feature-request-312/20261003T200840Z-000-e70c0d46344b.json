@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T20:08:40Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Candidate82803ca32: current-suite compatibility3testtargets21/21passed,0ignored/filtered; actualGoexecution,gofmt/vet and scopedstrictClippy/fmt0. Current34/35Empty and legitimate26/27 reader controls retained. Independent whole review1 pending; same21tests as13pass8failbaseline.",
+    "reference": "sha256:9a4fb5010fd6e83181eedefb5c9c5279258987f691ab8c3ad48e4d3460a44b41"
+  }
+}

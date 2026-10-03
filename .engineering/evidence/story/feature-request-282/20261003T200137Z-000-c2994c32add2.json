@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T20:01:37Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-282",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:related-precedence-282-20261003-r1",
+    "reference": "commit:31e7362f89464846f069591b313529bbc2f65f9d#external-alternatives",
+    "review": "review-result:related-precedence-282-20261003-r1",
+    "outcome": "fixed"
+  }
+}
