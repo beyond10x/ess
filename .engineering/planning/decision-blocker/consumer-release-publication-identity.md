@@ -7,7 +7,7 @@ title: Release publication awaits the operator identity decision
 relations:
 - blocks: task:consumer-backlog-20261002
 withholds: approval
-revision: 2
+revision: 3
 ---
 ## Decision required
 
@@ -26,3 +26,9 @@ Release-owner coordination on 2026-10-03 adds an independent delivery blocker to
 The release owner records dependency-blocker:release-0-52-delivery-ancestry in its integration planning store. This lane preserves that ownership and does not create a competing resolution. Passing source checks do not resolve provenance. Publishing descendants requires an approved provenance resolution as well as the separate publication-identity decision. Do not retry through another tool, bypass the refusal, rewrite main, or change trust policy. No delivery attempt is authorized from this lane.
 
 Existing held-bundle boundaries remain: batch/ui-live-apps-complete-20261003 is the sole future bundle delivery branch, its existing root is sole integrator, no partial ess/21 release or independent PR, and transport implementation stays with the third session. Local source validation may continue under the released build reservation and existing resource guards. All frozen source handoffs and evidence remain retained until explicit published-integration verification.
+
+## Local ancestry confirmation without publication
+
+Root read local Git objects without invoking a publication path. Commit 258594c8602fa9e6d372ed5a869ad478d7e0c382 has parents 1998a0a870240c613722bf9881f29da9cfe71b41 and 27b1ef5075666a52e256c06c2dee47a172c3d95f, bot author, GitHub committer, and subject "Merge branch 'main' into fix/395-publisher-cap". Candidate e68684efb6a4ac22052c77d3ed8292fd44f9ace5 has parents 27b1ef5075666a52e256c06c2dee47a172c3d95f and 258594c8602fa9e6d372ed5a869ad478d7e0c382, with subject "Merge pull request #404 from beyond10x/fix/395-publisher-cap". git merge-base --is-ancestor for the former against the latter exits 0. Retained local object output SHA256 057f35cc1d3e3afd74a286971ac8a7a569f6aeec117b58e951a1bb4edd513a68.
+
+This verifies the local ancestry and metadata, not remote admission or an approved remedy. The reported Gates refusal and pending identity decision remain owner-held and unresolved. This lane made no publication attempt and changed no source refs or trust policy. All four frozen runtime handoff documents were independently rehashed unchanged, including the two already acknowledged by the integrator and the later nested/explorer addenda.
