@@ -374,8 +374,11 @@ function nestedIncrementSuite(): string {
 }
 
 class NestedIncrementTarget extends ExampleTarget {
-  constructor(private readonly nestedAmount: number) {
+  private readonly nestedAmount: number;
+
+  constructor(nestedAmount: number) {
     super();
+    this.nestedAmount = nestedAmount;
   }
 
   queryView(_request: ViewRequest): ViewResult {

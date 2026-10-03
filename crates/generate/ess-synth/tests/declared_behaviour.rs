@@ -185,6 +185,214 @@ fn generated_nested_increment_behaves_in_rust_and_go() {
     }
 }
 
+#[test]
+fn an_optional_struct_event_payload_does_not_read_a_non_stored_root() {
+    let ir = compile_text(OPTIONAL_STRUCT_EVENT_PAYLOAD);
+    let synthesis = synthesize_for(&ir, Target::Rust).expect("the payload behavior plans");
+    assert_eq!(
+        synthesis
+            .plan
+            .disposition_of(CapabilityKind::CommandBehavior, "payload.counter.Advance"),
+        Some(&SynthesisDisposition::Generated),
+        "a fully determined nested payload remains generated"
+    );
+    let behaviour = synthesis
+        .artifacts
+        .values()
+        .find(|artifact| artifact.path.ends_with("src/behaviour.rs"))
+        .expect("the generated behavior source")
+        .contents
+        .as_str();
+    assert!(
+        !behaviour.contains("before.snapshot"),
+        "an event payload root is not a stored entity field:\n{behaviour}"
+    );
+}
+
+#[test]
+fn a_same_named_optional_stored_field_does_not_gate_an_event_payload() {
+    let source = OPTIONAL_STRUCT_EVENT_PAYLOAD.replace(
+        "fields: [{name: amount, type: Integer}]\n    lifecycle:",
+        "fields:\n      - {name: amount, type: Integer}\n      - {name: snapshot, type: 'Optional<payload.counter.Packet>'}\n    lifecycle:",
+    );
+    let ir = compile_text(&source);
+    for (target, forbidden) in [
+        (Target::Rust, "before.snapshot.as_ref()"),
+        (Target::Go, "before.Snapshot == nil"),
+    ] {
+        let synthesis = synthesize_for(&ir, target).expect("the payload behavior plans");
+        assert_eq!(
+            synthesis
+                .plan
+                .disposition_of(CapabilityKind::CommandBehavior, "payload.counter.Advance"),
+            Some(&SynthesisDisposition::Generated),
+            "a fully determined nested payload remains generated for {target:?}"
+        );
+        let scratch = Scratch(Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "declared-behaviour-{target:?}-payload-{}",
+            std::process::id()
+        )));
+        let _ = std::fs::remove_dir_all(&scratch.0);
+        write_tree(&scratch.0, &synthesis);
+        match target {
+            Target::Rust => {
+                let target_dir = scratch.0.join("target");
+                let (built, log) = cargo(
+                    &scratch.0,
+                    &target_dir,
+                    &["check", "--workspace", "--all-targets"],
+                );
+                assert!(built, "the generated Rust payload behavior builds:\n{log}");
+            }
+            Target::Go => {
+                let go = go().expect("Go is required to compile the prospective generated target");
+                let (built, log) = go_tool(&scratch.0, &go, &["build", "./..."]);
+                assert!(built, "the generated Go payload behavior builds:\n{log}");
+            }
+            _ => unreachable!("the test covers the generated Rust and Go targets"),
+        }
+        let behaviour = synthesis
+            .artifacts
+            .values()
+            .find(|artifact| {
+                artifact.path.ends_with("behaviour.rs") || artifact.path.ends_with("behaviour.go")
+            })
+            .expect("the generated behavior source")
+            .contents
+            .as_str();
+        assert!(
+            !behaviour.contains(forbidden),
+            "an output-only payload does not depend on the same-named stored value for {target:?}:\n{behaviour}"
+        );
+    }
+}
+
+#[test]
+fn required_and_creation_struct_payloads_still_build_in_rust_and_go() {
+    let required = OPTIONAL_STRUCT_EVENT_PAYLOAD.replace(
+        "type: 'Optional<payload.counter.Packet>'",
+        "type: payload.counter.Packet",
+    );
+    for (label, source) in [
+        ("required", required.as_str()),
+        ("creation", STRUCT_PAYLOAD_CREATION),
+    ] {
+        let ir = compile_text(source);
+        for target in [Target::Rust, Target::Go] {
+            let synthesis = synthesize_for(&ir, target).expect("the payload behavior plans");
+            let scratch = Scratch(Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+                "declared-behaviour-{target:?}-{label}-payload-{}",
+                std::process::id()
+            )));
+            let _ = std::fs::remove_dir_all(&scratch.0);
+            write_tree(&scratch.0, &synthesis);
+            match target {
+                Target::Rust => {
+                    let target_dir = scratch.0.join("target");
+                    let (built, log) = cargo(
+                        &scratch.0,
+                        &target_dir,
+                        &["check", "--workspace", "--all-targets"],
+                    );
+                    assert!(built, "the generated Rust {label} payload builds:\n{log}");
+                }
+                Target::Go => {
+                    let go =
+                        go().expect("Go is required to compile the prospective generated target");
+                    let (built, log) = go_tool(&scratch.0, &go, &["build", "./..."]);
+                    assert!(built, "the generated Go {label} payload builds:\n{log}");
+                }
+                _ => unreachable!("the test covers the generated Rust and Go targets"),
+            }
+        }
+    }
+}
+
+const OPTIONAL_STRUCT_EVENT_PAYLOAD: &str = "format: ess/20
+system: payload
+version: v1
+domain: payload.counter
+types:
+  - name: payload.counter.Packet
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+entities:
+  - name: payload.counter.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields: [{name: amount, type: Integer}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+errors:
+  - name: payload.counter.Missing
+    fields: [{name: counter_id, type: Uuid}]
+events:
+  - name: payload.counter.Advanced
+    fields: [{name: snapshot, type: 'Optional<payload.counter.Packet>'}]
+commands:
+  - name: payload.counter.Advance
+    input:
+      - {name: counter_id, type: Uuid}
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: advanced
+        updates: payload.counter.Counter
+        instance: counter_id
+        sets: {amount: input.amount}
+        emits: [payload.counter.Advanced]
+        payload:
+          payload.counter.Advanced:
+            snapshot: {amount: input.amount}
+      - name: missing
+        unknown_instance: true
+        error: payload.counter.Missing
+        payload:
+          payload.counter.Missing: {counter_id: input.counter_id}
+components:
+  - component: counter-service
+    owns: {domains: [payload.counter]}
+    accepts: {commands: [payload.counter.Advance]}
+    publishes: {events: [payload.counter.Advanced]}
+    reached_by: network
+";
+
+const STRUCT_PAYLOAD_CREATION: &str = "format: ess/20
+system: payload
+version: v1
+domain: payload.counter
+types:
+  - name: payload.counter.Packet
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+entities:
+  - name: payload.counter.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields: [{name: amount, type: Integer}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - name: payload.counter.Created
+    fields:
+      - {name: counter_id, type: Uuid}
+      - {name: snapshot, type: 'Optional<payload.counter.Packet>'}
+commands:
+  - name: payload.counter.Create
+    input: [{name: amount, type: Integer}]
+    outcomes:
+      - name: created
+        creates: payload.counter.Counter
+        instance: counter_id
+        sets: {amount: input.amount}
+        emits: [payload.counter.Created]
+        payload:
+          payload.counter.Created:
+            counter_id: {generated: true}
+            snapshot: {amount: input.amount}
+components:
+  - component: counter-service
+    owns: {domains: [payload.counter]}
+    accepts: {commands: [payload.counter.Create]}
+    publishes: {events: [payload.counter.Created]}
+    reached_by: network
+";
+
 const NESTED_DECIMAL_INCREMENT: &str = "format: ess/20
 system: decimal
 version: v1
