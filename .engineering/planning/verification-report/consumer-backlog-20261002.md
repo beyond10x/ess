@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 34
+revision: 35
 ---
 ## Current reconciliation, 2026-10-03
 
@@ -804,3 +804,11 @@ The contradictory-bound release finding is not cleared by402's green Gate. Exact
 Delivery recommendation: keep the independent400source candidate, reconcile it with merged transport and the reviewed equality correction, and select one final0.52release candidate. PR398 and403 both carry release metadata; do not trigger duplicate release/full-gate paths. Root does not close or rewrite another live owner's PR without coordination. The held ess21 consumer bundle is separate and stays held; neither external PR closes our all-feature conformance work.
 
 Retained reads in canonical target/backlog-input: pr402-latest.json, pr403-latest.json, pr403-checks-annotations.json, open-issues-20261003-continuation.json. Connector discovery confirms only Confluence/GitLab/Jira adapters, so read-only gh was the reported fallback. No remote write, rerun, dispatch, tag or release action was performed.
+
+## Reconciliation after consumer probes, 2026-10-03
+
+Read-only GitHub query still reports published release0.51.0, published2026-10-02T03:20:46Z. PR398 remains open at old e88442ef6d4f88fd1b23d502b9adc57c7c7b1484 with failed historical Gate. PR403 has advanced to26bef8f840032beb76b7cecb2eb939470011cf45 and its returned check rollup contains successful common security/privacy and local evidence only. The old403 projection failure is historical; no new full Gate success is established for its new head.
+
+The independent release owner's local tree is clean at5a5ac7f74d0ffdfcb9d91d395053620729b78254. Its log records consolidation of the reviewed EKR generator change (b0db254c2) and reviewed integer equality correction (7f99f8168), plus regression/review evidence. This is observed source progress, not this root's execution or remote release evidence. Preserve the owner's single-candidate policy and do not dispatch another Gate or modify their live tree.
+
+Root's cross-thread read bridge still fails transport to its configured endpoint. The frozen runtime handoff plus actual-response addendum remains durable; no integrator acknowledgment is claimed. Work continues locally: nested native and Go first acceptance controls pass per worker report, broader TS/WASM/adversary work remains;293 actual clean-source red and292 expanded design are now recorded and independently under review. Story statuses distinguish recorded evidence, accepted design and unfinished implementation.

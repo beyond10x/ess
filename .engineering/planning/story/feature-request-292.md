@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 4
+revision: 5
 ---
 ## Outcome
 
@@ -173,3 +173,11 @@ Implementation mechanism remains under bounded design review: prefer the smalles
 Read-only candidate292-generated-history-design-candidate.md SHAfe9d01464748d7f5e57e1d164636a11afcb75c34bee98d68c398a132d3e46f43 proposes top-level provenance plus an all-branch pre-execution dependency audit. Root rejects that candidate as the final implementation: false conjuncts, earlier refusal branches, known siblings and cross-row/set combinations would gain blanket refusals despite not necessarily depending on unrecorded data. That would narrow the user's full-feature target to an easier subset.
 
 Preserve this candidate as a considered alternative. Revised design must route private history provenance through actual execution/read seams, preserve Kleene predicate and selection precedence, track nested known/unknown value and presence, and permit known overwrite/clear/sibling reads. Related/set effects require actual row provenance and sound history partition handling, not a blanket feature ban. Refuse only genuinely unresolved value-dependent obligations; do not use a guessed value as fact. Existing concrete native execution and public generation behavior remain required. Exact larger scope and staged acceptance are being assessed before independent review or production authorization.
+
+## Expanded executor design under independent review
+
+Root has read candidate 292-generated-history-executor-design.md, SHA256 ac79aaa8d0e6dc32ce41d6d7886ea9df8fc365d4425b67b7477c0ec26a090c8f. It supersedes the rejected narrow proposal as the candidate, not yet as a binding implementation design. The report contains source review only, zero new executions.
+
+The proposal retains one actual executor control flow behind private concrete/history contexts. Path-level abstract values preserve known presence, absence, shape and siblings, with no sentinel Nodes. An additive defaulted FactSource presence observation permits shared Kleene evaluation. Actual reads/writes and validation use private history authority; copies and known overwrites preserve precision. Cross-row access merges interacting search partitions rather than refusing the commands. Unresolved alternatives prevent a false violation, while a fully proven explanation remains valid; view reachability retains incompleteness separately. Recorded outcomes cannot select the implementation branch or manufacture generated data.
+
+Independent review is assigned before source edits. Proposed staged units A through D comprise one completion bundle: genuine early/late red, private value/executor integration, related/set/search/view integration, actual CLI and regression verification. Expected scope includes two primitive files and the native interpreter/history modules, materially larger than the rejected five-file shortcut. Any implementation must audit direct Store/Node bypasses and preserve ordinary native execution. No story completion or source release is claimed.
