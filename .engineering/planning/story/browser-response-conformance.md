@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -252,3 +252,11 @@ Owner checkpoint during the release compilation hold: authored source now includ
 This is owner-reported source progress, not executed acceptance. The owner explicitly paused further fixture expansion after accumulating roughly 2,700 new lines across product/ABI/assets and independent fixtures. Scoped rustfmt syntax and whitespace checks pass; compiler, emitted-host, browser, resource-bound and complete capability-matrix execution evidence remains zero. No build cache or browser process is owned by this unit.
 
 Next action after explicit release/cache clearance is a single-job check of ess-conformance and the exact browser test target on the authorized existing cache, then correction and actual execution before adding remaining matrix rows. The full all-feature acceptance remains required. This checkpoint grants no compilation clearance and does not freeze or transfer the unfinished source. story:feature-request-389 now has a depends_on edge to this story so its completion cannot lose this product execution requirement.
+
+## Preliminary correction evidence during compilation hold
+
+Preliminary review consumer-browser-product-preliminary-pass1 found two concrete defects in the uncompiled implementation. Root measured a display wrapper/depth mismatch with actual Node execution of the exact asset; separately, source inspection found arbitrary source paths could overwrite fixed output artifacts after manifest validation. Both were sent to the existing owner without releasing the compiler/browser hold.
+
+The owner corrected the JavaScript raw-envelope budget to account for serialization wrappers while retaining logical display depth1024. Root then independently ran the same retained 26-control probe against both assets: the original SHA256 715ee9f33ee65ddfacb3e93b1fdd6abdb7e9c42bde9b297c42fa137b5d8dcbd1 fails eight controls and exits1; corrected asset bceead4c48731cdb49c4899b4d857ec1e61fe667070ae539725285bfe4dda4a6 passes26/26 and exits0. Controls cover Object and List values in model and scenario envelopes at logical depths0,340,341,400,1024,1025, plus literal and escaped duplicate member names. Depth1024 remains accepted;1025 refuses; duplicate keys remain invalid. Green log SHA256 db8ed686974fbe68370c258d54c74bd0d51ca203f80d092fa106bfd25eb69914. Frozen before/after assets, exact probe and both logs/exit files are retained privately in ess-browser-preliminary-review-20261003.
+
+Root inspected the collision correction in web::emit_product: insertion of any fixed resource over an original blob now returns InvalidBundle rather than returning an internally inconsistent artifact set. Its Rust regression and persistent depth regressions still require the owner/compiler stage. This source inspection is not an executed Rust result, complete source review, or Firefox product proof. The owner retains unfinished source; no new frozen handoff or publication follows. Record the review's final disposition after the remaining correction validation rather than treating this bounded JavaScript green as approval of the whole product.
