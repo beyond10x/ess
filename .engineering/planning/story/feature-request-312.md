@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -123,3 +123,11 @@ A bounded source-only preparation may proceed while runtime custody is elsewhere
 Only these three Rust tests may change. Current ordinary/coverage documents assert exact34/35 plus typed Empty. Authored-only and combined coverage selections retain the exact full parent lineage, authored predicate and one selected id. Preserve the direct defined_aggregates::used_by assertion, eventual-only placement and deciding minimum-vocabulary controls; a current34 version assertion alone must not replace them. Aggregate compatibility files ordinary14 and coverage11/15/17 must remain genuinely labelled historical with version-correct provenance using the existing shared legacy helper, and reach their original semantic admission/refusal diagnostics. Preserve current healthy/native/Go and filter-mutant results, exact named mutants, and actual TypeScript reader/target admission. Do not alter fixtures in Go/TypeScript, shared helpers, production sources, target implementations, expected failures, report categories or required execution.
 
 Acceptance is all six complete tests with actual required Go/TypeScript execution, zero ignored/filtered, scoped strict Clippy, owning/repository formatting and independent whole-unit review before serial integration. Any later admission, target or callback defect is returned to root before wider scope. The other four remaining binary families need fresh runtime measurement with installed Node definitions; their seven-family baseline command must include --no-fail-fast so one measured failure cannot prevent the other targets from running. Compiler custody remains separately assigned. This preparation does not close312 or any bundle row.
+
+## TypeScript parity integration
+
+Candidate33817a2c5c8c3db8369dce2e4960224c59d9b9db is integratedf7ac61c52f1873fd731e24d915eb3aeed0b85061 after independent review-result:typescript-version-parity-312-20261004-r1 approved with findings[]. Author33/33 actualTypeScript/Node, zero ignored/filtered/skipped, strict scopedClippy, package/repositoryformat all passed. Reviewer audited frozen source, binary/raw-log hashes and all164 nonempty mode comparisons:35healthy/also-correct controls passed and129faulty controls failed as required, with equal native/TypeScript scenario maps. No reviewer runtime rerun is claimed. PatchSHA655f83e98b09907871847eb8a427227c9985e78d1757e90454349c41be03f5f9; public reviewSHAf2d387e23f46b48e5db9da0427d3c726bed548be7f292728abd9c22d29f646fa. Integration source equals reviewed bytes.
+
+After both author/reviewer leases ended and all processes were terminal, root preserved all25 completed native binaries and generated temporary fixtures in a byte-compared archiveSHA0234e5aa606d8509458ff85374cd57acd4b4074897fe25af94005cd406450d89. Exact own-target Cargo dry-run and actual clean both passed (2479files/1.4GiB); source remained clean and root lease ended. The archive retains the five final reader/TypeScript proof binaries by their reviewed hashes. The next unit will use its own fresh target, not a concurrently shared build directory.
+
+Three-file authored/aggregate source preparation fromb6d16b97c is ready: patch1d443ee086805bee077abfc3759fa54adb517f9027e0785fefa7325a1b1f68ac, six tests preserved, owning/repositoryformat and diff0, no runtime/lint/freeze/review claim. The seven-family83-test run with --no-fail-fast and installed Node definitions will verify these six and remeasure the remaining77. Real callback/semantic failures remain separate required corrections; no fullrun success is inferred from prepared source.
