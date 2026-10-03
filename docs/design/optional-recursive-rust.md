@@ -89,3 +89,10 @@ class. Prefix each continued line with the current documentation marker and inde
 single-line text byte-identical and leave source text, wire labels and generated APIs unchanged.
 A separate minimal fixture compiles multiline summaries and display names through the real Rust
 emitter before the adopter's exact generated crate is checked again.
+
+Independent review additionally measured Rust's refusal of a bare carriage return in a doc
+comment, even when the authored YAML escape validates. The comment renderer preserves CRLF
+exactly, prefixes the line after LF, and spells a standalone CR visibly as `\r`. This is escaping
+at the Rust documentation boundary, not normalization of the specification, IR, summary values
+or wire text. The retained prose fixture runs with LF, CRLF, standalone CR and mixed LF/CR across
+its system, domain, component, type, entity, event, command and outcome documentation.

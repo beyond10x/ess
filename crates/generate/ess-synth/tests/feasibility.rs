@@ -1412,17 +1412,13 @@ fn optional_recursive_structs_compile_in_the_shared_web_codec() {
     check_generated_for(&directory, Some("wasm32-unknown-unknown"));
 }
 
-#[test]
-fn multiline_authored_prose_stays_inside_rust_doc_comments() {
-    let ir = fixture(&[
-        ("system.yaml", "format: ess/19\nsystem: demo\nversion: v1\nsummary: |\n  System first.\n  System second.\ndomains: [demo.core]\n"),
+fn check_multiline_prose(line_ending: &str) {
+    let documents = [
+        ("system.yaml", "format: ess/19\nsystem: demo\nversion: v1\nsummary: \"System first.\\nSystem second.\"\ndomains: [demo.core]\n"),
         ("core.yaml", r#"domain: demo.core
 naming:
   display: "Domain first\nDomain second"
-summary: |
-  Domain paragraph one.
-
-  Domain paragraph two.
+summary: "Domain paragraph one.\n\nDomain paragraph two."
 types:
   - name: demo.core.Code
     kind: newtype
@@ -1475,9 +1471,44 @@ commands:
     publishes:
       events: [demo.core.Done]
 "#),
-    ]);
+    ];
+    let documents = documents
+        .iter()
+        .map(|(label, source)| (*label, source.replace("\\n", line_ending)))
+        .collect::<Vec<_>>();
+    let borrowed = documents
+        .iter()
+        .map(|(label, source)| (*label, source.as_str()))
+        .collect::<Vec<_>>();
+    let ir = fixture(&borrowed);
     let synthesis = synthesize(&ir).expect("prose is valid source");
+    let expected_summary = match line_ending {
+        "\\n" => "System first.\n//! System second.",
+        "\\r\\n" => "System first.\r\n//! System second.",
+        "\\r" => "System first.\\rSystem second.",
+        "\\nMiddle.\\r" => "System first.\n//! Middle.\\rSystem second.",
+        _ => unreachable!("the fixture enumerates the supported line endings"),
+    };
+    assert!(synthesis.artifacts["crates/demo-types/src/lib.rs"]
+        .contents
+        .contains(expected_summary));
     let directory = scratch("multiline-prose");
     write_emission(&directory, &synthesis);
     check_generated(&directory);
+}
+
+#[test]
+fn multiline_authored_prose_stays_inside_rust_doc_comments() {
+    check_multiline_prose("\\n");
+}
+
+#[test]
+fn carriage_returns_in_authored_prose_are_safe_rust_doc_comments() {
+    check_multiline_prose("\\r");
+    check_multiline_prose("\\nMiddle.\\r");
+}
+
+#[test]
+fn crlf_in_authored_prose_is_safe_rust_doc_comments() {
+    check_multiline_prose("\\r\\n");
 }

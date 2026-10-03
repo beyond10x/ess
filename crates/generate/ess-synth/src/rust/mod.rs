@@ -64,9 +64,23 @@ use self::layout::Layout;
 /// nothing: it must build outside this repository, from exactly the bytes committed.
 const EDITION: &str = "2021";
 
-/// Keeps authored prose inside its Rust line comment, preserving single-line output exactly.
+/// Keeps authored prose inside its Rust line comment. Rust admits CRLF but rejects a bare CR,
+/// which is rendered visibly as `\r`; the authored semantic text is never changed.
 fn doc_text(text: &str, marker: &str) -> String {
-    text.replace('\n', &format!("\n{marker} "))
+    let mut out = String::new();
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\n' => {
+                out.push('\n');
+                out.push_str(marker);
+                out.push(' ');
+            }
+            '\r' if characters.peek() != Some(&'\n') => out.push_str("\\r"),
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Everything the generated module renderers need to agree on, carried once.
