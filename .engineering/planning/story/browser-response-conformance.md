@@ -7,7 +7,42 @@ title: Support response contracts in browser conformance products
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/src/coverage.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/browser_response_conformance.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/coverage_browser.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/one_time_browser.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/replay_fidelity_browser.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/assets/coverage-admission.js
+- confidence: cited
+  path: crates/verify/ess-conformance/assets/coverage-player.js
+- confidence: cited
+  path: crates/verify/ess-conformance/assets/index.html
+- confidence: cited
+  path: crates/verify/ess-conformance/assets/player.js
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/lib.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/web.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/web_replay.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/response_payload.rs
+- confidence: cited
+  path: docs/design/review-replay-subset.md
+- confidence: cited
+  path: docs/design/typed-response-outcome-payloads.md
+revision: 4
 ---
 ## Outcome
 
@@ -33,3 +68,110 @@ Accept the required product gap for design and implementation in the full backlo
 ## Scope
 
 Cited declaration/admission seams: crates/verify/ess-conformance/src/web.rs, src/web_replay.rs, assets/player.js, assets/coverage-player.js and tests/response_payload.rs. Cited browser verification seams: crates/edge/ess-cli/tests/replay_fidelity_browser.rs and tests/coverage_browser.rs. Inferred real target-bridge surface remains unassessed; determine it before dispatch. Native interpret/**, caller synthesis and transport publication are separately owned.
+
+## Product bridge scope proposal, 2026-10-03
+
+# Browser response conformance: bounded product proposal
+
+Read-only scoping, 2026-10-03. No builds, browser executions, production edits, AEP writes, or version reservations performed. This is a proposal for the design owner, not execution evidence or implementation authorization.
+
+Planning source: `story:browser-response-conformance`, revision 1, in the canonical planning checkout at `e36046bdfcb85584778718727d4e349e6e2e6c20`. Runtime citations below use the integrated source checkout at `8b6c95c7e54d571723304fe689dec8965004dcb4`; this matters because its coverage reader includes the recent suite/35 migration. Paths are repository relative and publication safe.
+
+## Recommendation
+
+Add an explicit browser execution route backed by the existing Rust `Runner::run_admitted` and an independently installed `ConformanceTarget`, compiled together into a WASM host. Emit the host source/build instructions and browser integration as a product artifact, following the existing generated Rust/WASM installation and linear-memory conventions. Keep Step, Back, Play, Reset, and Select as declaration navigation. A separate Run action produces execution results with their own input identity and run identity.
+
+The first product probe must go through actual `ess conform web` emission and Firefox/BiDi, install a real independently implemented target, and fail on a corrupted response. A test that dynamically copies fixture code into WASM and calls it through Node is useful portability evidence but cannot close this story.
+
+## What exists
+
+* `crates/verify/ess-conformance/src/web.rs::emit` and `emit_input` emit static declaration players. `response_replay_supported` refuses fixture-value suites and `response::used_by` suites. The latter predicate means `ExpectResponsePayload`; it is not a comprehensive predicate for direct-return or one-time response families. Removing this guard alone proves nothing.
+* `assets/player.js:14` reads model/suite through `response.json()`. It preserves declaration groups and explicitly unknown state, but has no target connection, no assertion execution, and no original-byte admission. JavaScript parsing also cannot preserve every integer value for execution. The route can display declarations without proving their observations.
+* `assets/coverage-player.js` loads original replay bytes and calls `coverage-admission.js::admitReplay`. At the integrated source base, `admitSuite` allows suite/5, /9, /35, with /35 requiring empty initial state. Its closed `stepFields` table still has legacy steps only: no response assertions/captures, caller declaration setup, fixtures, or broad newer runner vocabulary.
+* `web_replay.rs::AdmittedReplay::{new,from_json}` retains the original suite and parent strings through `AdmittedInput`. Its replay/1 model is deliberately reduced, cannot reconstruct/authenticate the complete specification digest, and excludes one-time policy, preserving/deleting effects, aggregation fields, and periodic-binding shape. Broad suite admission must not silently discard these declarations.
+* `assets/player.js` and `coverage-player.js` rebuild a declared prefix; `cancelTimer` increments a generation counter. `index.html` expressly labels expectations unexecuted. This behavior is an existing contract, not the place to derive actual responses.
+* `crates/generate/ess-synth/src/web/{bridge,page,mod}.rs` is a different product: a generated implementation front end. It has a Rust installation seam and `ess_input_reserve`, `ess_dispatch`, `ess_output_len` exports. Without a realization it refuses. Its existing glue uses `JSON.stringify`/`JSON.parse`; reuse the memory ABI pattern, not its object round trip for exact response values. Its generated `Bound` trait is not `ConformanceTarget` and does not by itself supply conformance isolation, event observations, consistency, or setup capabilities.
+* `tests/support_initial_state/mod.rs::wasm_case` generates a temporary Rust host by copying the target fixture, builds wasm32-unknown-unknown, and calls it with Node. It establishes real WASM execution of a library plus fixture, not emitted conformance-product integration or real browser behavior.
+
+## Smallest bridge contract to prove
+
+1. A generated Rust host owns the original suite/input bytes, `AdmittedInput` or `AdmittedSuite`, the admitted declaration representation, and report production. A narrow request envelope carries original JSON as a string; the browser never parses/re-serializes suite payloads before admission. Passing a string through JSON encoding is acceptable; passing its parsed value is not. UTF-8 decoding must fail on malformed bytes.
+2. The host admits the entire input/parent chain and checks the selected identity before creating the target or calling target identity/setup/commands. The target is supplied explicitly through a Rust installation/factory seam. An uninstalled host reports unavailable; a reference interpreter is an explicitly named model target and never stands for the consumer implementation. Do not feed expectations to the target or synthesize responses in the bridge.
+3. The smallest supported implementation route is a synchronous Rust `ConformanceTarget` linked into the same WASM module. `SemanticCommandResult.response`, direct events, errors and outcome come from one target invocation, remain typed Rust values, and flow unchanged to the existing runner. Public runner/target semantics need no rewrite. Browser `fetch` adapters and arbitrary asynchronous JS targets are additional design work; the synchronous trait cannot be made asynchronous by hiding promises or replaying target callbacks.
+4. Reuse `AdmittedInput::select` for explicit run selection; retain the parent chain and original selected bytes. A browser UI selection is not permission to claim execution of the complete inventory. Use `ExecutedRun` plus the existing report/count production APIs (`counts.rs::from_run`), not a JSON object that happens to contain counts. Show incomplete/unsupported status honestly.
+5. The host exposes an admitted display representation separately from execution. The original authority remains immutable in Rust; the display representation retains every declaration and uses explicit typed number text where JS cannot represent a value. One-time values remain private runner/target data, absent from DOM, console, downloaded diagnostic detail, and declaration world. Do not make the reduced model an authority for response generation or view evaluation.
+6. Navigation never invokes target methods or mutates a completed run. Run results are keyed by suite digest, selected scenario identity, and a run generation. Reset/Select invalidates pending presentation results without claiming rollback of implementation activity. A new execution gets a fresh scenario namespace through normal target begin/end; a successful begin accepts the isolation obligation, it does not prove isolation. If worker execution is chosen for responsive navigation, terminate/discard stale presentation work explicitly and test delayed replies. A worker or an async host API is a packaging decision still to prove, not an implemented capability.
+7. Preserve retained replay/1 behavior and historical refusals. New response-bearing replay/presentation authority must use a complete typed reader, preferably the same Rust admission in WASM, rather than independently recreating response validation in JavaScript. Keep exact original suite/input as the authority carrier. Any new persisted presentation envelope or change to replay/1 requires the format owner's decision; this report reserves no version and does not authorize extending a closed historical schema in place.
+
+This approach keeps actual response semantics in Rust and needs no changes to `interpret/**`, caller synthesis, native target issuance, or Go/TypeScript runners. Source emission and browser glue should follow existing repository template conventions; no new non-Rust checker or semantic implementation is proposed.
+
+## Feature accounting
+
+| Family | Product today | Required proof / remaining implementation |
+| --- | --- | --- |
+| Declaration navigation, unknown state, views/controls | Existing real browser tests; no execution | Preserve unchanged meanings and cancellation behavior while adding a separate execution panel. |
+| Response-derived event payloads, including legacy source mappings | Explicit blanket emission refusal | First browser target bridge probe; compare healthy, wrong response, wrong event, missing response, stale invocation. |
+| Direct responses, including nested complete values, optional presence and ordered lists | Rust runner supports these; product browser execution absent; legacy navigation is not validation | Run through same bridge and prove omission versus null, order/duplicates, closed fields, exact signed integers and payload depth boundary. |
+| One-time response capture/reuse | Ordinary player shows declaration policy; closed coverage replay refuses it | Browser admission must preserve policy/authority and runner redaction; cross-scenario leakage and stale/private data controls required. Do not unlock replay/1 by dropping policy. |
+| Response-owned creation identity | Native target now reviewed; browser execution absent | Actual response/event/created-row identity agreement and repeat distinctness through installed target; no display alias substituted as a real ID. |
+| Nested response source selections in event payloads | Separate observer design work; `response.rs::Observation::of` currently collects top-level `ResolvedPayloadValue::ResponseField` mappings | Coordinate `nested-response-observations`; bridge cannot repair missing source/observer authority. Complete typed nested values are different from selecting nested source paths. |
+| Caller context, grants, fixtures, setup, isolation, views, event/binding/time/scan/reading/periodic controls | Native trait and runner have individual capabilities; closed player vocabulary is narrower | Rust bridge should carry existing runner semantics, but each installed target must implement the relevant capability. Unsupported is a reported non-success, never evidence that the family is supported. Broader browser matrix remains required for the all-features goal. |
+
+## Actual red-capable browser matrix and sequencing
+
+1. **Product boundary red first.** Add a Rust CLI browser integration test that invokes the actual emission command on `tests/fixtures/response-payload.yaml`, builds its emitted host with an independent Rust target, serves emitted files, and drives Firefox via `tests/support/browser.rs::{Server,Browser}`. At present emission itself refuses; retain that actual result, then require execution and a deliberately wrong response to fail with the native diagnostic code. Do not replace a failed product test with a library-only host.
+2. **Bridge + ordinary response.** Compare exact scenario verdicts and diagnostic-code sets symmetrically with native/Go/TypeScript using the same admitted original suite. Healthy, missing response, wrong scalar/type, extra field, wrong event, missing event, wrong outcome, stale command/result, optional absent/null and integer values around 2^53 and i64 limits. Response results may not be read back through JS numbers before comparison.
+3. **Admission before callbacks.** Callback counters remain zero for forged observations, unsupported historical authority, duplicate/unknown keys, forged parent digest, changed selected scenario body, invalid initial-state contract, integer damage, and malformed UTF-8. Use full multi-level lineage and explicit selection. Repeat the mutation after initial load to prove re-admission before each run.
+4. **Navigation/control proof.** Load, Step, Back, Play, Reset and Select must preserve every original response declaration and remain unexecuted. An actual Run changes only execution state. Navigate while a run/load response is pending, switch selection, reset/re-run, and prove an old result cannot attach to the new selection. Existing unknown state/view behavior must remain unchanged.
+5. **Remaining response families.** Direct-return nested data, response-owned identity, and one-time secrets get separate healthy/fault pairs. Nested source-path observations wait for their accepted authority design, then use this same bridge. No declaration-only or explicit unsupported case counts toward execution completion.
+6. **Existing integrated regressions.** Run `replay_fidelity_browser`, `coverage_browser`, `one_time_browser`, `conform_web_history` and its adversary, browser startup boundary tests, plus response payload/direct-return/one-time tests appropriate to the touched source. Actual commands should be focused `cargo test -p ess-cli --test <name>` and `cargo test -p ess-conformance --test <name>` using the agreed resource limits. No test was run during this scoping pass.
+
+Reuse the real browser harness: `replay_fidelity_browser.rs::Fixture::{emit, ...}` emits CLI routes and navigates `player.js`; b01–b12 test unknown facts, typed values and controls; `coverage_browser.rs::actual_browser_checks_full_lineage_and_integer_metadata` exercises original lineage; `one_time_browser.rs` already separates displayed policy from closed coverage refusal. Add a focused `browser_response_conformance.rs` rather than making the declaration fidelity suite fabricate observations. Test target implementations remain Rust.
+
+## Scope
+
+Derived 2026-10-03 by story-scoper; every entry labels its evidence. These are proposed implementation surfaces, not authorizations.
+
+- **Primary surface:** `crates/verify/ess-conformance/src/web.rs` — cited: `emit`, `emit_input`, response refusal and emitted artifact packaging.
+- **Files:** `crates/verify/ess-conformance/src/web_replay.rs` — cited: closed model/input pair and one-time authority refusal; preserve historical reader while deciding new representation.
+- **Files:** `crates/verify/ess-conformance/assets/player.js`, `crates/verify/ess-conformance/assets/coverage-player.js`, `crates/verify/ess-conformance/assets/coverage-admission.js`, `crates/verify/ess-conformance/assets/index.html` — cited: actual product loading, navigation, closed reader and UI.
+- **Files:** `crates/verify/ess-conformance/tests/response_payload.rs`, `crates/edge/ess-cli/tests/replay_fidelity_browser.rs`, `crates/edge/ess-cli/tests/coverage_browser.rs`, `crates/edge/ess-cli/tests/one_time_browser.rs` — cited: refusal and browser fidelity contracts.
+- **New bridge emitter:** `crates/verify/ess-conformance/src/web_execution.rs`, `crates/verify/ess-conformance/src/lib.rs` — inferred: generated Rust host, installation protocol and artifact exposure following existing emitter conventions.
+- **CLI wiring:** `crates/edge/ess-cli/src/main.rs`, `crates/edge/ess-cli/src/coverage.rs` — inferred: actual product route/options and coverage emission need integration with the new execution artifact.
+- **New browser test:** `crates/edge/ess-cli/tests/browser_response_conformance.rs` — inferred: actual emitted product + installed target + Firefox fault matrix.
+- **Documents:** `docs/design/typed-response-outcome-payloads.md`, `docs/design/review-replay-subset.md` — cited: response and declaration replay contracts need accurate browser support boundaries.
+- **Confidence:** medium — inferred: existing gap and seams are concrete, but a generated host/public installation contract and packaging have not been built.
+- **Would collide with:** browser declaration assets/readers, CLI conform-web wiring, response persistence authority, and conformance module exports — inferred: serialize these with any nested-response or format reader work; interpreter and caller synthesis need not be touched.
+- **Safety fact:** `Runner::run_admitted` uses actual target responses while existing Step/Back controls only rebuild declarations — cited: runner.rs:373, target.rs:575, player.js:195; stage 2, unproven in the proposed product. Actual browser fault pairs must prove the boundary.
+
+## Scope commands for the planning owner
+
+These commands were not executed. Paths marked inferred above remain inferred here.
+
+```sh
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/src/web.rs
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/src/web_replay.rs
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/assets/player.js
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/assets/coverage-player.js
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/assets/coverage-admission.js
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/assets/index.html
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/tests/response_payload.rs
+aep plan artifact scope story:browser-response-conformance --add crates/edge/ess-cli/tests/replay_fidelity_browser.rs
+aep plan artifact scope story:browser-response-conformance --add crates/edge/ess-cli/tests/coverage_browser.rs
+aep plan artifact scope story:browser-response-conformance --add crates/edge/ess-cli/tests/one_time_browser.rs
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/src/web_execution.rs --inferred
+aep plan artifact scope story:browser-response-conformance --add crates/verify/ess-conformance/src/lib.rs --inferred
+aep plan artifact scope story:browser-response-conformance --add crates/edge/ess-cli/src/main.rs --inferred
+aep plan artifact scope story:browser-response-conformance --add crates/edge/ess-cli/src/coverage.rs --inferred
+aep plan artifact scope story:browser-response-conformance --add crates/edge/ess-cli/tests/browser_response_conformance.rs --inferred
+aep plan artifact scope story:browser-response-conformance --add docs/design/typed-response-outcome-payloads.md
+aep plan artifact scope story:browser-response-conformance --add docs/design/review-replay-subset.md
+```
+
+## Not established by this pass
+
+* Host build/packaging cost, worker integration and browser responsiveness: no product bridge exists and no build was authorized.
+* Exact public installation API or CLI flag spelling: design decision, not a discovered existing interface.
+* New persisted replay representation/version: coordinate with the single held source-format bundle and the nested-observer owner; do not invent a reservation.
+* Support for arbitrary network implementations from a static page: requires an explicit transport and async design, not supplied by the current synchronous target trait.
+* Full feature support in the browser product: unproven until each admitted feature family has an actual healthy/fault witness through the emitted route.
