@@ -14,6 +14,245 @@ use ess_synth::{synthesize_for, Target};
 
 const MODEL: &str = include_str!("fixtures/served-notes/system.yaml");
 
+#[test]
+fn adversary_ambiguous_actor_aliases_never_choose_a_grant() {
+    let ir = combined(MODEL, "domain: notebook.other\nactors:\n  - name: notebook.other.Writer\n    may: [notebook.notes.ArchiveNote]\n");
+    for target in [Target::Rust, Target::Go] {
+        let root = emitted_ir(&ir, target, "adversary-actor-alias");
+        let executable = build_at(&root, target, "notebook", "notes", &[]);
+        let server = Server::start(&executable, true, None);
+        for actor in ["Writer", "notebook.other.Writer", "writer", "Writer extra"] {
+            assert_eq!(
+                server
+                    .json(
+                        "POST",
+                        "/notes/commands/add-note",
+                        Some(actor),
+                        serde_json::json!({"note_id": 1, "text": "denied"})
+                    )
+                    .0,
+                403,
+                "{target:?}: {actor}"
+            );
+        }
+        assert_eq!(
+            server
+                .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+                .1["rows"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            server
+                .json(
+                    "POST",
+                    "/notes/commands/add-note",
+                    Some("notebook.notes.Writer"),
+                    serde_json::json!({"note_id": 1, "text": "qualified"})
+                )
+                .0,
+            202
+        );
+        assert_eq!(
+            server
+                .json(
+                    "POST",
+                    "/notes/commands/archive-note",
+                    Some("notebook.other.Writer"),
+                    serde_json::json!({"note_id": 1})
+                )
+                .0,
+            202
+        );
+        assert_eq!(
+            server
+                .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+                .1["rows"][0]["state"],
+            "Archived"
+        );
+        let default = Server::start(&executable, false, None);
+        assert_eq!(
+            default
+                .json(
+                    "POST",
+                    "/notes/commands/add-note",
+                    Some("notebook.notes.Writer"),
+                    serde_json::json!({"note_id": 2, "text": "denied"})
+                )
+                .0,
+            403
+        );
+    }
+}
+
+#[test]
+fn adversary_union_identity_orders_tags_then_typed_payloads() {
+    let text = MODEL.replace("  - {name: notebook.notes.NoteId, kind: newtype, of: Integer}", "  - name: notebook.notes.NoteId\n    kind: union\n    tag: kind\n    variants:\n      zulu: Integer\n      alpha: Optional<Integer>\n");
+    for target in [Target::Rust, Target::Go] {
+        let executable = build(&text, target, "adversary-union-identity");
+        let server = Server::start(&executable, true, None);
+        for (id, text) in [
+            (serde_json::json!({"kind":"zulu", "value": i64::MAX}), "max"),
+            (serde_json::json!({"kind":"alpha", "value": 10}), "ten"),
+            (serde_json::json!({"kind":"alpha", "value": 2}), "old"),
+            (serde_json::json!({"kind":"alpha", "value": null}), "absent"),
+            (serde_json::json!({"kind":"zulu", "value": i64::MIN}), "min"),
+            (serde_json::json!({"kind":"alpha", "value": 2}), "two"),
+        ] {
+            assert_eq!(
+                server
+                    .json(
+                        "POST",
+                        "/notes/commands/add-note",
+                        Some("Writer"),
+                        serde_json::json!({"note_id": id, "text": text})
+                    )
+                    .0,
+                202,
+                "{target:?}: {text}"
+            );
+        }
+        let rows = server
+            .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+            .1;
+        let labels: Vec<_> = rows["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(labels, ["absent", "two", "ten", "min", "max"], "{target:?}");
+        assert_eq!(
+            server
+                .json(
+                    "POST",
+                    "/notes/commands/archive-note",
+                    Some("Writer"),
+                    serde_json::json!({"note_id": {"kind":"alpha", "value": 2}})
+                )
+                .0,
+            202
+        );
+        let rows = server
+            .json("GET", "/notes/views/notes", None, serde_json::Value::Null)
+            .1;
+        assert_eq!(rows["rows"][0]["state"], "Active");
+        assert_eq!(rows["rows"][1]["state"], "Archived");
+        assert_eq!(rows["rows"][2]["state"], "Active");
+    }
+}
+
+#[test]
+fn optional_union_payloads_keep_named_and_collection_values_in_scope() {
+    let text = MODEL.replace(
+        "  - {name: notebook.notes.NoteId, kind: newtype, of: Integer}",
+        r"  - name: notebook.notes.NoteId
+    kind: union
+    tag: kind
+    variants:
+      nominal: Optional<notebook.notes.Number>
+      record: Optional<notebook.notes.Payload>
+      list: Optional<List<Integer>>
+      map: Optional<Map<String, Integer>>
+  - {name: notebook.notes.Number, kind: newtype, of: Integer}
+  - name: notebook.notes.Payload
+    kind: struct
+    fields:
+      - {name: count, type: Integer}",
+    );
+    let executable = build(&text, Target::Go, "optional-union-payloads");
+    let server = Server::start(&executable, true, None);
+    for (label, value) in [
+        ("nominal", serde_json::json!(7)),
+        ("record", serde_json::json!({"count": 7})),
+        ("list", serde_json::json!([7, 8])),
+        ("map", serde_json::json!({"seven": 7})),
+    ] {
+        for (identity, suffix) in [
+            (serde_json::json!({"kind": label}), "missing"),
+            (serde_json::json!({"kind": label, "value": null}), "null"),
+            (
+                serde_json::json!({"kind": label, "value": value}),
+                "present",
+            ),
+        ] {
+            assert_eq!(
+                server.json(
+                    "POST",
+                    "/notes/commands/add-note",
+                    Some("Writer"),
+                    serde_json::json!({"note_id": identity, "text": format!("{label}-{suffix}")}),
+                ).0,
+                202,
+                "{label}-{suffix}",
+            );
+        }
+    }
+    let (status, answer) = server.json("GET", "/notes/views/notes", None, serde_json::Value::Null);
+    assert_eq!(status, 200);
+    let rows = answer["rows"].as_array().unwrap();
+    assert_eq!(
+        rows.len(),
+        8,
+        "missing and null denote the same absent payload"
+    );
+    for (label, value) in [
+        ("nominal", serde_json::json!(7)),
+        ("record", serde_json::json!({"count": 7})),
+        ("list", serde_json::json!([7, 8])),
+        ("map", serde_json::json!({"seven": 7})),
+    ] {
+        let absent = rows
+            .iter()
+            .find(|row| row["text"] == format!("{label}-null"))
+            .unwrap();
+        assert!(absent["note_id"]["value"].is_null());
+        let present = rows
+            .iter()
+            .find(|row| row["text"] == format!("{label}-present"))
+            .unwrap();
+        assert_eq!(present["note_id"]["value"], value);
+    }
+}
+
+#[test]
+fn adversary_static_head_and_document_routes_keep_their_contracts() {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "served-entry-adversary-static-{}",
+        std::process::id()
+    ));
+    let public = root.join("public");
+    std::fs::create_dir_all(public.join("nested")).unwrap();
+    std::fs::write(public.join("nested/index.html"), "nested page").unwrap();
+    std::fs::write(public.join("openapi.json"), "shadow document").unwrap();
+    std::fs::write(root.join("private.html"), "outside").unwrap();
+    #[cfg(unix)]
+    {
+        std::fs::create_dir_all(public.join("escape")).unwrap();
+        std::os::unix::fs::symlink(root.join("private.html"), public.join("escape/index.html"))
+            .unwrap();
+    }
+    for target in [Target::Rust, Target::Go] {
+        let server = Server::start(binary(target), false, Some(&public));
+        assert_eq!(
+            server.request("HEAD", "/nested/", None, ""),
+            (200, Vec::new()),
+            "{target:?}"
+        );
+        assert_eq!(
+            server.request("GET", "/nested/?v=1", None, ""),
+            (200, b"nested page".to_vec()),
+            "{target:?}"
+        );
+        assert_eq!(server.request("POST", "/nested/", None, "").0, 405);
+        let (status, document) = server.json("GET", "/openapi.json", None, serde_json::Value::Null);
+        assert_eq!(status, 200);
+        assert_eq!(document["openapi"], "3.1.0");
+        assert_eq!(server.request("POST", "/openapi.json", None, "").0, 405);
+        #[cfg(unix)]
+        assert_eq!(server.request("GET", "/escape/", None, "").0, 404);
+    }
+}
+
 fn model(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap();
     let spec = Specification::assemble([(Source::new("served-notes.yaml"), raw)]).unwrap();
@@ -31,7 +270,16 @@ fn emitted_text(text: &str, target: Target, case: &str) -> PathBuf {
 }
 
 fn emitted_ir(ir: &EssIr, target: Target, case: &str) -> PathBuf {
-    let synthesis = synthesize_for(ir, target).unwrap();
+    emitted_layout(ir, target, ess_synth::OutputLayout::Workspace, case)
+}
+
+fn emitted_layout(
+    ir: &EssIr,
+    target: Target,
+    layout: ess_synth::OutputLayout,
+    case: &str,
+) -> PathBuf {
+    let synthesis = ess_synth::synthesize_laid_out(ir, target, layout).unwrap();
     let label = match target {
         Target::Rust => "rust",
         Target::Go => "go",
@@ -89,6 +337,19 @@ fn build_at(root: &Path, target: Target, system: &str, component: &str, extra: &
                 root.display(),
                 String::from_utf8_lossy(&formatted.stdout),
                 String::from_utf8_lossy(&formatted.stderr)
+            );
+            let vetted = Command::new("go")
+                .args(["vet", "./..."])
+                .current_dir(root)
+                .env("GOWORK", "off")
+                .env("GOPROXY", "off")
+                .env("GOTOOLCHAIN", "local")
+                .output()
+                .unwrap();
+            assert!(
+                vetted.status.success(),
+                "{}",
+                String::from_utf8_lossy(&vetted.stderr)
             );
             let packages = Command::new("go")
                 .args(["build", "./..."])
@@ -190,8 +451,22 @@ fn the_generated_context_reads_the_system_clock() {
     let text = MODEL.replacen("      - {name: text, type: String}", "      - {name: text, type: String}\n      - {name: created_at, type: Timestamp}", 1)
         .replace("sets: {text: input.text}", "sets: {text: input.text, created_at: {generated: true}}")
         .replace("      - {name: state, type: notebook.notes.Note.State}", "      - {name: state, type: notebook.notes.Note.State}\n      - {name: created_at, type: Timestamp}");
+    exercise_clock(&text, "clock");
+}
+
+#[test]
+fn the_generated_context_reads_the_clock_through_a_newtype() {
+    let text = MODEL
+        .replacen("types:\n", "types:\n  - {name: notebook.notes.CreatedAt, kind: newtype, of: Timestamp}\n", 1)
+        .replacen("      - {name: text, type: String}", "      - {name: text, type: String}\n      - {name: created_at, type: notebook.notes.CreatedAt}", 1)
+        .replace("sets: {text: input.text}", "sets: {text: input.text, created_at: {generated: true}}")
+        .replace("      - {name: state, type: notebook.notes.Note.State}", "      - {name: state, type: notebook.notes.Note.State}\n      - {name: created_at, type: notebook.notes.CreatedAt}");
+    exercise_clock(&text, "clock-newtype");
+}
+
+fn exercise_clock(text: &str, case: &str) {
     for target in [Target::Rust, Target::Go] {
-        let binary = build(&text, target, "clock");
+        let binary = build(text, target, case);
         let server = Server::start(&binary, true, None);
         let before = time::OffsetDateTime::now_utc();
         let (status, answer) = server.json(
@@ -646,6 +921,208 @@ fn a_specification_without_network_reach_gets_no_memory_or_entry() {
             .any(|path| path.contains("-server/")
                 || path.starts_with("cmd/")
                 || path.ends_with("ess_memory.go")));
+    }
+}
+
+#[test]
+fn a_non_network_domain_named_memory_remains_available() {
+    let text = MODEL
+        .replace("notebook.notes", "notebook.memory")
+        .replace("    reached_by: network\n", "");
+    for (layout, label, package) in [
+        (
+            ess_synth::OutputLayout::Workspace,
+            "memory-local-workspace",
+            "notebook-types",
+        ),
+        (
+            ess_synth::OutputLayout::Crate,
+            "memory-local-crate",
+            "notebook",
+        ),
+    ] {
+        let root = emitted_layout(&model(&text), Target::Rust, layout, label);
+        let output = Command::new(std::env::var_os("CARGO").unwrap())
+            .args(["check", "--offline", "--lib", "-p", package])
+            .current_dir(root)
+            .env_remove("CARGO_TARGET_DIR")
+            .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env("RUSTFLAGS", "-D warnings")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn a_network_domain_named_memory_remains_available() {
+    let text = MODEL.replace("notebook.notes", "notebook.memory").replace(
+        "domain: notebook.memory",
+        "domain: notebook.memory\nnaming: {wire: notes}",
+    );
+    for (layout, label, features) in [
+        (
+            ess_synth::OutputLayout::Workspace,
+            "memory-network-workspace",
+            &[][..],
+        ),
+        (
+            ess_synth::OutputLayout::Crate,
+            "memory-network-crate",
+            &["--features", "server"][..],
+        ),
+    ] {
+        let root = emitted_layout(&model(&text), Target::Rust, layout, label);
+        let binary = build_at(&root, Target::Rust, "notebook", "notes", features);
+        let server = Server::start(&binary, true, None);
+        assert_eq!(
+            server
+                .json(
+                    "POST",
+                    "/notes/commands/add-note",
+                    Some("Writer"),
+                    serde_json::json!({"note_id": 42, "text": "domain memory"})
+                )
+                .0,
+            202
+        );
+        let (status, rows) =
+            server.json("GET", "/notes/views/notes", None, serde_json::Value::Null);
+        assert_eq!(status, 200);
+        assert_eq!(rows["rows"][0]["note_id"], 42);
+        assert_eq!(rows["rows"][0]["text"], "domain memory");
+    }
+}
+
+#[test]
+fn reusable_types_keep_the_default_dependency_graph_empty_and_build_for_wasm() {
+    for (layout, label, package) in [
+        (
+            ess_synth::OutputLayout::Workspace,
+            "library-workspace",
+            "notebook-types",
+        ),
+        (ess_synth::OutputLayout::Crate, "library-crate", "notebook"),
+    ] {
+        let root = emitted_layout(&model(MODEL), Target::Rust, layout, label);
+        let tree = Command::new(std::env::var_os("CARGO").unwrap())
+            .args(["tree", "--offline", "-p", package, "--edges", "normal"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(
+            tree.status.success(),
+            "{}",
+            String::from_utf8_lossy(&tree.stderr)
+        );
+        let tree = String::from_utf8(tree.stdout).unwrap();
+        assert_eq!(
+            tree.lines().count(),
+            1,
+            "default library dependencies: {tree}"
+        );
+        let built = Command::new(std::env::var_os("CARGO").unwrap())
+            .args([
+                "check",
+                "--offline",
+                "--lib",
+                "-p",
+                package,
+                "--target",
+                "wasm32-unknown-unknown",
+            ])
+            .current_dir(root)
+            .env_remove("CARGO_TARGET_DIR")
+            .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env("RUSTFLAGS", "-D warnings")
+            .output()
+            .unwrap();
+        assert!(
+            built.status.success(),
+            "{}",
+            String::from_utf8_lossy(&built.stderr)
+        );
+    }
+}
+
+#[test]
+fn generated_runtime_dependencies_respect_the_minimum_rust_version() {
+    let rustc = Command::new("rustc").arg("-vV").output().unwrap();
+    assert!(rustc.status.success());
+    let rustc = String::from_utf8(rustc.stdout).unwrap();
+    let host = rustc
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .unwrap();
+    let major_minor = |version: &str| {
+        let mut parts = version.split('.').map(|part| part.parse::<u32>().unwrap());
+        (parts.next().unwrap(), parts.next().unwrap())
+    };
+    let minimum = major_minor(env!("CARGO_PKG_RUST_VERSION"));
+    for (layout, label, features) in [
+        (
+            ess_synth::OutputLayout::Workspace,
+            "msrv-workspace",
+            &[][..],
+        ),
+        (
+            ess_synth::OutputLayout::Crate,
+            "msrv-crate",
+            &["--features", "server"][..],
+        ),
+    ] {
+        let root = emitted_layout(&model(MODEL), Target::Rust, layout, label);
+        let metadata = Command::new(std::env::var_os("CARGO").unwrap())
+            .args([
+                "metadata",
+                "--offline",
+                "--format-version",
+                "1",
+                "--filter-platform",
+                host,
+            ])
+            .args(features)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            metadata.status.success(),
+            "{}",
+            String::from_utf8_lossy(&metadata.stderr)
+        );
+        let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
+        let active: std::collections::BTreeSet<_> = metadata["resolve"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|node| node["id"].as_str().unwrap())
+            .collect();
+        let incompatible: Vec<_> = metadata["packages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|package| active.contains(package["id"].as_str().unwrap()))
+            .filter(|package| {
+                package["rust_version"]
+                    .as_str()
+                    .is_some_and(|version| major_minor(version) > minimum)
+            })
+            .map(|package| {
+                format!(
+                    "{} {} requires Rust {}",
+                    package["name"], package["version"], package["rust_version"]
+                )
+            })
+            .collect();
+        assert!(
+            incompatible.is_empty(),
+            "generated dependencies exceed Rust {}: {incompatible:?}",
+            env!("CARGO_PKG_RUST_VERSION")
+        );
     }
 }
 
@@ -1122,6 +1599,11 @@ fn the_static_directory_is_served_beside_the_api() {
     std::fs::create_dir_all(&public).unwrap();
     std::fs::write(public.join("index.html"), "served notes").unwrap();
     std::fs::write(public.join("module.wasm"), [0, 97, 115, 109, 255]).unwrap();
+    for route in ["notes/views/notes", "notes/commands/add-note"] {
+        let path = public.join(route);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "static must not replace an API answer").unwrap();
+    }
     std::fs::write(root.join("private.txt"), "outside selected root").unwrap();
     #[cfg(unix)]
     {
@@ -1153,7 +1635,12 @@ fn the_static_directory_is_served_beside_the_api() {
                 .0,
             403
         );
-        for path in ["/../private.txt", "/%2e%2e/private.txt", "/escape.txt"] {
+        for path in [
+            "/../private.txt",
+            "/%2e%2e/private.txt",
+            "/escape.txt",
+            "/..%5cprivate.txt",
+        ] {
             assert_eq!(
                 server.request("GET", path, None, "").0,
                 404,
@@ -1470,7 +1957,7 @@ fn clear_generated_packages(root: &Path, target_dir: &Path) {
     let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
     let mut clean = Command::new(std::env::var_os("CARGO").unwrap());
     clean
-        .args(["clean", "--target-dir"])
+        .args(["clean", "--offline", "--target-dir"])
         .arg(target_dir)
         .current_dir(root);
     for package in metadata["packages"].as_array().unwrap() {

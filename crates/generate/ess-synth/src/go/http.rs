@@ -725,6 +725,14 @@ fn decode_member(
     let position = next(slot);
     let member = format!("member{position}");
     let at = format!("at{position}");
+    // An optional union payload must remain in the case scope even when absent.
+    let target = if target.is_empty() && matches!(&field.type_ref, ResolvedTypeRef::Optional { .. })
+    {
+        let _ = writeln!(out, "{indent}var shape {}", emit.go_type(&field.type_ref));
+        "shape"
+    } else {
+        target
+    };
     let assign = |out: &mut String, indent: &str, expression: &str| {
         if target.is_empty() {
             let _ = writeln!(out, "{indent}shape := {expression}");

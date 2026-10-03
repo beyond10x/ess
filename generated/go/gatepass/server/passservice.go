@@ -97,6 +97,35 @@ func ServePassService(system *system.System, address string, authenticate func(*
 	}))
 }
 
+// ServePassServiceWithStatic adds files only for paths outside this surface's route table.
+func ServePassServiceWithStatic(system *system.System, address string, authenticate func(*http.Request) *Caller, staticRoot string) error {
+	root, err := memoryStaticRoot(staticRoot)
+	if err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return err
+	}
+	bound := listener.Addr().(*net.TCPAddr)
+	announcePassService(bound)
+	return http.Serve(listener, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		known := false
+		for _, route := range RoutesPassService {
+			if route[1] == request.URL.Path {
+				known = true
+				break
+			}
+		}
+		if !known && root != "" {
+			memoryStatic(writer, request, root)
+			return
+		}
+		answer := dispatchPassService(system, authenticate(request), request)
+		answer.write(writer)
+	}))
+}
+
 // dispatchPassService answers one request.
 //
 // A path this table does not hold is a 404 naming where the whole table is published; a path

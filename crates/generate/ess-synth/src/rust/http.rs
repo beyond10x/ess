@@ -275,7 +275,7 @@ fn manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     for dependency in dependencies {
         let _ = writeln!(out, "{dependency} = {{ path = \"../{dependency}\" }}");
     }
-    out.push_str("clap = { version = \"4.6.7\", features = [\"derive\"] }\nuuid = { version = \"1.26.1\", features = [\"v4\"] }\ntime = { version = \"0.3.55\", features = [\"formatting\"] }\n");
+    out.push_str("clap = { version = \"=4.6.7\", features = [\"derive\"] }\nuuid = { version = \"=1.26.1\", features = [\"v4\"] }\ntime = { version = \"=0.3.45\", features = [\"formatting\"] }\n");
     Artifact::new(format!("crates/{package}/Cargo.toml"), out)
 }
 
