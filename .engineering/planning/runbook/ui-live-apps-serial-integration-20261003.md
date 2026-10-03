@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 36
+revision: 39
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -14,15 +14,11 @@ Operator direction on 2026-10-03: finish the remaining full bundle, integrate to
 
 ## Current facts
 
-The integration branch is batch/ui-live-apps-complete-20261003 in managed tree ess-w7-server-public. Source checkpoint9f35a2d5d includes all60 selected runtime changes, retained #318, separately merged protocol PR411 via mergee6357a9e1, regenerated projections/examples672603099, and independently reviewed #292 with all three prospective review tests. Planning8606b103c binds approved #391 transport and shared #228/#237/#299 row-set designs. Bot author and committer are verified. No bundle PR, merge, issue closure or new release has occurred in this continuation.
+The integration branch batch/ui-live-apps-complete-20261003 now includes independently reviewed nested-increment candidate7cba6e0fc at mergef24dafb1e. Full review2of2 approved with actual generated Rust/Go compile and150 scenario executions, native/conformance controls, TypeScript239 runtime cases and both non-skipped typechecks. Prior60 imported changes, #318, main protocolPR411, regeneration672603099 and full reviewed #292 at9f35a2d5d remain preserved. No bundle PR, merge to main, issue closure or release has occurred.
 
-Source21 remains one-time responses; coordinated syntax additions use source22. New conditional zero-invocation suite vocabulary is allocated ordinary36/inventory37 and conditional/refusal-policy diff vocabulary14; these are prospective explicit allocations, not implemented formats. Held suite34/35 meanings remain unchanged. Aggregate persisted vocabulary needs its own later explicit allocation before implementation.
+Source21 remains one-time responses; coordinated additions use22. Conditional-binding suite36/37, aggregate suite38/39, transport/IR2 and mutation manifest/report4 are allocated by their respective designs. #391 address design, #228/#237/#299 row-set design, and #266–269 binding designs are approved; causal completion and mutation accounting proposals are in final independent design review after their first findings were corrected. Causal completion remains an open implementation/actual-adapter dependency.
 
-Combined pre-history build/generation/format and actual interpreted billing33, related-copy6, related-guard9 and subject-copy12 scenarios passed without skipped/unsupported/errors. Those report/2 files retain inconclusive coverage status, not a whole-product certificate. Common Gates passed at3e7db9aab over196 commits and must rerun on the final candidate.
-
-#292 full independent review approved exactcae6187ec plus154 test lines: history56, library109, neighbors132, primitive2, CLI1 with8 invocations and strict scoped lint. Record review-result:generated-history-complete-20261003-r1 holds the exact publication report. The integrated history56 tests also passed before the nested correction.
-
-Nested-increment author candidate1e12ada27 is frozen as a bot commit, not yet integrated. Author evidence:104 Rust tests,239 TypeScript runtime cases,150 generated Rust/Go scenario executions plus absent-parent atomicity, strict lint/fmt green. The two missing-Node-types probes were disclosed skips; actual typecheck is being resolved in independent review. Actual browser ordinary/coverage acceptance remains due after browser composition. Fresh full review1 is active in a separate managed tree; no approval or completion is inferred yet.
+The user authorized integration without another handoff choice. No pending #391 source was found in the inspected external/local ownership state; root coordinates its isolated implementation. The first bounded transport admission compile is green; all publisher/validator/real-NATS and independent review evidence remains due. Nested browser ordinary/coverage composition and all final release checks remain outstanding.
 
 ## Ordered route to main
 
@@ -61,7 +57,7 @@ The batch order fixes shared-file sequencing. A newly demonstrated dependency ma
 | Issue | Batch / current classification | Remaining work required for closure |
 |---|---|---|
 | #400 | I; recursive Optional correction already released, full request not reconciled | Verify explicit name/wire labels and component codecs; compiled self/mutual recursive controls; reconcile the consumer's required artifacts. Preserve existing nonrecursive output. |
-| #391 | Transport owner: Claude; ownership reply pending | Payload/context channel-address template contract and transport implementation/evidence. Root integrates the handoff; no concurrent transport edit. |
+| #391 | Root-coordinated source implementation; no pending external handoff found | Approved parameterized-address design; transport admission tests compile and pass after legacy unknown-version fixture correction. Publisher, AsyncAPI validator, real Rust/Go NATS execution, CI and independent source review remain required. Causal aggregate completion is a separate contract. |
 | #389 | A + F; substantial source imported, incomplete | Combined one-time response checks plus actual ordinary/coverage browser products, protected values, original-byte admission and value-free observations across required runtimes. |
 | #363 | F; design and implementation pending | Bind per-measure predicate syntax/typing/empty behavior, implement conditional count/sum across targets, and prove honest/faulty aggregate results. |
 | #362 | F; implementation pending | State-only grouping adapter and generated/runtime evidence; binding-affected cases require tested causal completion and aligned reads. |
@@ -77,23 +73,23 @@ The batch order fixes shared-file sequencing. A newly demonstrated dependency ma
 | #312 | A + F; reviewed source imported | Current-candidate isolation and per-invocation caller authority across native/Go/TypeScript/WASM; browser acceptance stays separate until executed. |
 | #307 | A; source imported, combined validation pending | Both copied Optional policy flags and named transitions, true/false/absent cases, input conjunctions and decisive copy/branch mutants. Unsupported is not a pass. |
 | #304 | B; both accepted slices unimplemented | Optional input via first, then stored subject reference via; absence skips the guard/read, present missing row stays distinct, and pre-branch value determines the lookup. |
-| #299 | C + E; fit/design pending | Bind a coherent filtered single-row read for guards and sets with uniqueness/missing/ambiguous cases, then implement with family row-set/value semantics. Do not label it a duplicate without that proof. |
+| #299 | C + E; shared row-set design independently approved | Implement approved docs/design/filtered-related-reads.md after #285/#228/#237 dependencies. Uniqueness, missing, ambiguous and exact selected-row reads across required targets remain unimplemented. |
 | #297 | F; unimplemented | Real process restart with durable state and fresh identity checks; a counter-reset faulty target must fail. Scenario reset is insufficient. |
-| #296 | H; shared design pending | Explicit known-failing retrofit accounting tied to suite/scenario/target identity; keep intended truth, default failure and strict results intact. |
-| #295 | H; operator design pending | Choose and review a killable single-event mutation and honest no-alternative behavior, then prove creating/updating/moving and external emit/collect controls. Dropping assertions is not a fix. |
-| #294 | H; shared design pending | Known-failing baseline declarations with eligible-witness scoring, unknown/stale-ID and stale-pass controls; unlisted failure still refuses and excluded-only mutants stay inconclusive. |
+| #296 | H; shared accounting design revised; final review pending | Implement declaration-bound known-failure accounting with exact suite/build provenance while preserving ordinary failed truth and strict execution. Protected one-time identity remains redacted; verify actual native and generated report paths. |
+| #295 | H; emit-swap and unavailable-site design proposed; final review pending | Implement compiler-valid single-event substitutions and honest no-compatible-alternative accounting. Creating/updating/moving, discarded-event and actual emit/collect controls remain required; never drop assertions to claim a kill. |
+| #294 | H; full design revised after first review; final review pending | Implement explicit known-failed baseline declarations, eligible-witness scoring, default refusal, stale/mismatched identity controls and excluded-only inconclusive results under the reviewed mutation contract. |
 | #293 | A + G; reviewed source imported | Rerun Optional/unknown-instance and undeclared-member fault matrices in both explorer ports; preserve deterministic seeds and explicit exclusions after #221/#223. |
-| #292 | A; active implementation | Finish final history matrix, native neighbors, actual CLI status controls and strict lint for generated timestamps and abstract value domains; independent review of the full candidate. |
+| #292 | A; full candidate independently reviewed and integrated9f35a2d5d | Complete history matrix, neighbors, actual CLI status and strict lint pass. Preserve these through final combined tests, CI and release; no issue closure before merged evidence. |
 | #290 | I; unimplemented | Bind breaking-change direction/classification and acknowledgment semantics; implement failing CLI status with widening/narrowing/addition/removal and compatibility controls. |
 | #286 | C; unimplemented | View grants in actor may, accepted open behavior for unmentioned views, served enforcement and a target that wrongly serves denied reads. |
 | #285 | C; unimplemented | Optional related value and bounded two-hop traversal; preserve absent identity/value semantics, target parity and explicit unsupported joins. |
 | #284 | I; unimplemented | Bind page actor authority, validate bound commands against grants, and test mismatched/read-only/open/caller cases. Existing pooled readability is insufficient. |
 | #283 | C; unimplemented | Multiple independent related vias and complete missing/predicate/precedence partitions after #304. |
-| #282 | B; regression prepared | Source22 admission and exact related-refusal/wrong-state precedence, all eight controls, both declaration orders and older-format refusal. |
+| #282 | B; preserved regression tests refreshed onto reviewed runtime | Execute source22 admission red and behavioral precedence red before implementation. Complete all eight controls, declaration orders, older-format refusal, affected lint and independent review. |
 | #273 | F; pending acceptance reconciliation | Captured identities in authored and synthesized event expectations; field-drop mutants must fail; preserve format admission and actual browser replay support. |
 | #269 | D; unimplemented | Per-refusal binding retry/drop policy and except semantics, exact selected error/outcome controls, projections and compatibility. |
 | #268 | D; accepted redesign unimplemented | Event-payload where predicates on bindings, typed admission and honest/faulty execution; this is the accepted response to the outcome-selection need. |
-| #267 | D; pending acceptance reconciliation | Arrange accepting held state for flow/delivery; forced drop failure must demonstrate no invocation during the eventual window. |
+| #267 | D; arrangement/drop design approved, implementation pending | Arrange an eligible destination before triggering the real binding. Forced refusal requires exactly one attempted invocation and no retries throughout the full observation window, with mapped-input and unchanged-state assertions. Zero attempts fails delivery. |
 | #266 | D; pending acceptance reconciliation | Account for state-moving bindings in arrangement and eventual view expectations without racing or invoking the bound command twice; honest/no-binding target controls. |
 | #244 | E; elapsed-time accepted, calendar half deferred | Implement #244a constant elapsed-time offsets and now in accepted stored/related predicates. Keep calendar/time-zone #244b explicitly open under its existing blocker. |
 | #237 | E; unimplemented | Row-set count/exists/forall and distinct semantics, bounded arrangement and decisive quantifier/value faults. |
@@ -132,13 +128,10 @@ The current October resource contract remains one ESS compiler lane, jobs1/debug
 
 ## Immediate next action
 
-Independent nested-increment review owns the sole ESS compiler lane in managed tree ess-nested-increment-review-20261003 at1e12ada27, base9f35a2d5d. Author tree ess-history-review-final-20261003 is frozen and its lease released. Integrate only after review findings resolve; live browser acceptance and final task check remain required after composition.
-
-#282 retains clean prospective checkpoint803383acc. Update it from the integration branch and hand it the compiler after nested correction integrates, then implement/review #282, #304 Optional input, #304 stored reference and #319 serially. Root owns designs, AEP, integration, generated reconciliation and release.
-
-Transport discovery found released #390 already integrated and no pending #391 source candidate or active ESS Claude handoff in the inspected Git/lease state. The operator's “dont care, just integrate” answer is being fulfilled by root-coordinated #391 completion. Approved design and active story391 are in8606b103c; worker scope_nested_increment prepares the unit in ess-parameterized-transport-20261003. The worker's early baseline/red Cargo starts before lane handoff are explicitly retained as a scheduling deviation in its scratch record; commands are terminal and no further compiler start is permitted until handoff. No output or process from another session was changed.
-
-Shared #228/#237/#299 design is approved by review2 with all seven findings fixed. #266/#267 design revision2 answers four observation/arrangement findings and awaits final design review; #268/#194/#269 conditional/policy design is in first independent review. Both remain unimplemented. Browser/aggregate planning was selectively reconciled in f8c35a975; binding causal-completion authority is still an open actual-adapter dependency and is distinct from #391 address rendering. Continue the full A–I scope before one bot PR/merge/release; preserve all original deferrals.
+1. Refresh the preserved #282 regression branch onto reviewed integrationf24dafb1e, then measure source22 admission red and actual precedence red before the minimal fix. The original eight controls, independent source review and serial #304 Optional-input → stored-reference → #319 sequence remain binding.
+2. Complete final causal and mutation design reviews without relaxing their obligations. Record exact findings and corrections. The causal blocker stays open until actual dispatcher/store/generated/browser proof executes.
+3. Continue #391 publisher/AsyncAPI/NATS implementation under explicit compiler custody; integrate only after complete acceptance and independent review. Address rendering alone cannot clear causal aggregate completion.
+4. Continue every accepted C–I unit, then freeze one final candidate, run required Gates/CI/release checks and deliver one bot PR and verified release. Preserve all stated deferrals; no issue-count shortcut.
 
 ## Current resource contract from final handoff
 
