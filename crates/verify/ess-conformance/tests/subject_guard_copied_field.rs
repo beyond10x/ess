@@ -12,10 +12,10 @@ use ess_compiler::{
 };
 use ess_conformance::report::Status;
 use ess_conformance::{
-    AdmittedSuite, ConformanceScenario, Runner,
     scenario::{ErrorRef, ScenarioId, ScenarioStep, ScenarioValue},
-    synthesize::{Synthesis, synthesize},
+    synthesize::{synthesize, Synthesis},
     target::*,
+    AdmittedSuite, ConformanceScenario, Runner,
 };
 use ess_domain::{
     command::OutcomeName,
