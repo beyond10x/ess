@@ -18,6 +18,8 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/protocol_cli.rs
 - confidence: cited
+  path: crates/edge/ess-xtask/src/docs.rs
+- confidence: cited
   path: crates/specify/ess-compiler/src/lib.rs
 - confidence: cited
   path: crates/specify/ess-compiler/src/protocol.rs
@@ -39,7 +41,9 @@ scope:
   path: models/protospec
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 10
+- confidence: cited
+  path: website/docs/reference/spec-versions.md
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T00:29:48Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-protospec", correlation: "ess-protospec-build-20261003"}
 - {from: "proposed", to: "active", at: "2026-10-03T00:29:48Z", actor: "human:timo", revision: 4, executor: "agent:codex-ess-protospec", correlation: "ess-protospec-build-20261003"}
@@ -96,3 +100,7 @@ Retained evidence: target/protospec-evidence/README.md and its selected logs and
 The operator authorized committing, pushing and opening a pull request against remote main on 2026-10-03, superseding the initial local-only handoff. The branch was updated to main at e68684efb. Integration retained the publisher commands, adjusted the CLI leaf count to 80 and placed the new changelog entry under Unreleased; protocol semantics did not change.
 
 On the updated tree, protocol compiler tests (3), the complete conformance unit suite (109), the CLI binary and protocol/command-surface tests passed. The CLI reference was regenerated; task ci-lint and task site-build passed again. Logs are retained under target/protospec-evidence/pr. The earlier 546 integration-target result applies to the original implementation base; CI owns the full combined-tree gate.
+
+## CI correction
+
+PR #411's required Checks job exposed a missing integration obligation: the generated CLI documentation names ess-protospec/1 and ess-prototrace/1, but FORMAT_RELEASES does not register either family. Both projection-check and the existing published-family xtask regression correctly refuse the omission. Register both as unreleased experimental formats and document them in the version reference, without claiming a released version or weakening the checker. Integrate current remote main and verify the affected documentation/projection and xtask lanes before updating the bot-authored PR.

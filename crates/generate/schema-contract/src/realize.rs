@@ -101,6 +101,9 @@ pub struct Plan {
     obligations: BTreeSet<Finding>,
     patterns: BTreeMap<String, String>,
     binary64: BTreeSet<String>,
+    /// Model integers fixed to one value, by the pointer of the node that fixes them
+    /// (beyond10x/ess#408).
+    constants: BTreeMap<String, i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +119,9 @@ enum Shape {
     Null,
     Boolean,
     String,
+    /// A model `Timestamp`: `type: string`, `format: date-time`, realized natively
+    /// (beyond10x/ess#406).
+    Timestamp,
     Number,
     Integer,
     /// A model integer whose bounds fit a native width (beyond10x/ess#394).
@@ -193,6 +199,7 @@ struct Builder {
     annotations: BTreeSet<Finding>,
     obligations: BTreeSet<Finding>,
     patterns: BTreeMap<String, String>,
+    constants: BTreeMap<String, i64>,
 }
 
 impl Plan {
@@ -345,7 +352,109 @@ impl Plan {
             obligations: builder.obligations,
             patterns: builder.patterns,
             binary64: BTreeSet::new(),
+            constants: builder.constants,
         })
+    }
+
+    /// Declare every component under the last segment of its qualified name, refusing two that
+    /// would share one (beyond10x/ess#409). For model input only: a bundle's component names
+    /// carry no domain prefix to drop.
+    pub fn with_short_names(mut self) -> Result<Self, Refused> {
+        if !matches!(self.input, InputIdentity::Model { .. }) {
+            return Err(Refused(vec![finding(
+                "/",
+                "short_names_model_only",
+                "short names drop a model domain prefix; bundle components have none",
+            )]));
+        }
+        let mut errors = BTreeSet::new();
+        let mut reverse: BTreeMap<String, String> = BTreeMap::new();
+        for (source, name) in &mut self.names {
+            let short = declaration_name(source.rsplit('.').next().unwrap_or(source));
+            let pointer = &self.definitions[source].pointer;
+            if short.is_empty()
+                || short.as_bytes()[0].is_ascii_digit()
+                || [
+                    "Self",
+                    "EssJsonValue",
+                    "EssPresence",
+                    "EssNullable",
+                    "EssTimestamp",
+                ]
+                .contains(&short.as_str())
+            {
+                errors.insert(finding(
+                    pointer,
+                    "invalid_name",
+                    "component cannot become a short declaration name",
+                ));
+            }
+            if let Some(previous) = reverse.insert(short.clone(), source.clone()) {
+                errors.insert(finding(
+                    pointer,
+                    "short_name_collision",
+                    &format!("{previous:?} and {source:?} both shorten to {short}"),
+                ));
+            }
+            *name = short;
+        }
+        if errors.is_empty() {
+            Ok(self)
+        } else {
+            Err(Refused(errors.into_iter().collect()))
+        }
+    }
+
+    /// A name for an anonymous shape built from where it sits — the owning declaration, then
+    /// each pointer step — for model input (beyond10x/ess#407). `None` for bundle input, whose
+    /// anonymous names stay hash-derived so an existing bundle adopter's API does not move.
+    fn positional_name(&self, pointer: &str) -> Option<String> {
+        if !matches!(self.input, InputIdentity::Model { .. }) {
+            return None;
+        }
+        let rest = pointer.strip_prefix("/$defs/")?;
+        let parts: Vec<String> = rest
+            .split('/')
+            .map(|part| part.replace("~1", "/").replace("~0", "~"))
+            .collect();
+        let (owner, steps) = parts.split_first()?;
+        let mut name = self.names.get(owner)?.clone();
+        let mut index = 0;
+        while index < steps.len() {
+            match steps[index].as_str() {
+                "properties" => {
+                    index += 1;
+                    name.push_str(&declaration_name(steps.get(index)?));
+                }
+                "items" => name.push_str("Item"),
+                "additionalProperties" => name.push_str("Value"),
+                "prefixItems" => {
+                    index += 1;
+                    name.push_str("Position");
+                    name.push_str(steps.get(index)?);
+                }
+                "anyOf" | "oneOf" | "allOf" => {
+                    index += 1;
+                    name.push_str("Variant");
+                    name.push_str(steps.get(index)?);
+                }
+                other => name.push_str(&declaration_name(other)),
+            }
+            index += 1;
+        }
+        Some(name)
+    }
+
+    /// Whether any selected shape is a native timestamp.
+    fn has_timestamp(&self) -> bool {
+        let mut pending: Vec<&Node> = self.definitions.values().collect();
+        while let Some(node) = pending.pop() {
+            if matches!(node.shape, Shape::Timestamp) {
+                return true;
+            }
+            pending.extend(children(node));
+        }
+        false
     }
 
     /// Component identities and their shared declaration names, in deterministic order.
@@ -626,6 +735,26 @@ impl Builder {
         }
     }
 
+    /// A model integer fixed by an invariant (`version == 2`) is realized as its sized integer,
+    /// with the value recorded for a generated constant (beyond10x/ess#408) and kept as a
+    /// runtime obligation: a literal term beside `integer` would make an intersection no native
+    /// target maps.
+    fn integer_constant(&mut self, object: &Map<String, Value>, pointer: &str) -> bool {
+        let value = object.get("const").and_then(Value::as_i64);
+        let Some(value) = value.filter(|_| {
+            self.model && object.get("type").and_then(Value::as_str) == Some("integer")
+        }) else {
+            return false;
+        };
+        self.constants.insert(pointer.to_owned(), value);
+        self.obligations.insert(finding(
+            &path(pointer, "const"),
+            "const",
+            "validate this constant against the source schema at runtime",
+        ));
+        true
+    }
+
     fn object_schema(&mut self, object: &Map<String, Value>, pointer: &str) -> Shape {
         self.classify_keywords(object, pointer);
         let mut terms = Vec::new();
@@ -644,18 +773,8 @@ impl Builder {
                 }
             }
         }
-        // A model integer fixed by an invariant (`version == 2`) is realized as its sized integer,
-        // and the constant stays a runtime obligation: a literal term beside `integer` would make
-        // an intersection no native target maps.
-        let integer_constant = self.model
-            && object.get("type").and_then(Value::as_str) == Some("integer")
-            && object.get("const").is_some_and(Value::is_i64);
-        if integer_constant {
-            self.obligations.insert(finding(
-                &path(pointer, "const"),
-                "const",
-                "validate this constant against the source schema at runtime",
-            ));
+        if self.integer_constant(object, pointer) {
+            // Held as the sized integer and recorded in `constants`; no literal term.
         } else if let Some(value) = object.get("const") {
             terms.push(Node {
                 pointer: path(pointer, "const"),
@@ -735,6 +854,12 @@ impl Builder {
         match kind {
             "null" => Shape::Null,
             "boolean" => Shape::Boolean,
+            "string"
+                if self.model
+                    && object.get("format").and_then(Value::as_str) == Some("date-time") =>
+            {
+                Shape::Timestamp
+            }
             "string" => Shape::String,
             "number" => Shape::Number,
             "integer" => match IntegerWidth::of_node(object) {

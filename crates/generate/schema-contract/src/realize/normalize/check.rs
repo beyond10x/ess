@@ -481,7 +481,7 @@ fn from_node(plan: &Types, node: &Node, depth: usize, format: &str) -> Result<Ty
         Shape::Never => Kind::Never,
         Shape::Null => Kind::Null,
         Shape::Boolean => Kind::Boolean,
-        Shape::String => Kind::String,
+        Shape::String | Shape::Timestamp => Kind::String,
         Shape::Number if plan.binary64.contains(&node.pointer) => Kind::Binary64,
         Shape::Number => Kind::Number,
         Shape::Integer | Shape::SizedInteger(_) => Kind::Integer,

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T04:01:25Z",
+  "actor": "human:timo",
+  "artifact": "task:release-0-52-0-20261003",
+  "kind": "task",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS main CI and Gate passed on e68684efb6a4ac22052c77d3ed8292fd44f9ace5",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/37093196094"
+  }
+}

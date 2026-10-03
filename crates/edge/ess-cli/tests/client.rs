@@ -115,6 +115,31 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn short_names_reach_the_generate_client_cli_and_its_publisher() {
+    let fixture = Fixture::new(BODY);
+    let output = fixture.client(&[
+        "--target",
+        "rust",
+        "--package",
+        "metering-client",
+        "--names",
+        "short",
+        "--out",
+        "short",
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    let types = fs::read_to_string(fixture.0.join("short/types.rs")).unwrap();
+    let publisher = fs::read_to_string(fixture.0.join("short/lib.rs")).unwrap();
+    assert!(types.contains("pub struct UsageRecorded"), "{types}");
+    assert!(!types.contains("MeteringItemsUsageRecorded"), "{types}");
+    assert!(publisher.contains("UsageRecorded"), "{publisher}");
+    assert!(
+        !publisher.contains("MeteringItemsUsageRecorded"),
+        "{publisher}"
+    );
+}
+
+#[test]
 fn a_rust_and_a_go_publisher_are_written_with_their_adapters_and_report() {
     let fixture = Fixture::new(BODY);
     let rust = fixture.client(&[

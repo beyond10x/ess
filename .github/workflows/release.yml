@@ -1,18 +1,18 @@
-# Cuts a GitHub Release for every version tag. The reusable gate, WASM correctness checks and
-# native packages run concurrently at one resolved commit; publication requires all three. The
-# gate is skipped only when a successful `Gate` check-run already covers those exact bytes: on the
+# Prepares a verified release artifact for every version tag. The reusable gate, WASM correctness
+# checks and native packages run concurrently at one resolved commit; preparation requires all
+# three. The gate is skipped only when a successful `Gate` check-run already covers those exact bytes: on the
 # commit itself, or on the head of the pull request it merged when that head has its tree (the
 # `prior-gate` step states the whole condition).
-# Atlas observes published releases and documentation bundles asynchronously.
+# A trusted coordinator publishes the artifact with the organization bot after this workflow.
+# Atlas observes that published release and documentation bundles asynchronously.
 #
 # Tags are the bare version (`0.1.0`, atlas § Naming).
 #
 # A manual dispatch backfills an existing tag. Every checkout and the reusable gate receive that
 # tag explicitly; the workflow file may come from a newer `main`, but no newer source is packaged.
 #
-# Every action is pinned by commit: the release job holds a token that can publish, and a retargeted
-# mutable tag would run inside it.
-name: Release
+# Every action is pinned by commit: a retargeted mutable tag would run inside the preparation job.
+name: Release preparation
 
 on:
   push:
@@ -187,7 +187,7 @@ jobs:
               *) decide "" "building the archives: package run $run holds no release-$target" ;;
             esac
           done
-          decide "$run" "publishing the archives package run $run built from $COMMIT"
+          decide "$run" "using the archives package run $run built from $COMMIT"
 
   gate:
     needs: resolve
@@ -243,13 +243,13 @@ jobs:
       version: ${{ needs.resolve.outputs.tag }}
 
   release:
-    name: Publish the release
+    name: Prepare the release artifact
     needs: [resolve, gate, wasm, package]
     if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true')) && needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
       actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -306,7 +306,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          archive_count=$(find . -maxdepth 1 -type f -name "ess-$TAG-*.tar.gz" | wc -l | tr -d ' ')
+          archive_count=$(find . -maxdepth 1 -type f -name "*.tar.gz" | wc -l | tr -d ' ')
           if [ "$archive_count" != 4 ]; then
             echo "::error::expected four release archives; found $archive_count" >&2
             exit 1
@@ -326,7 +326,7 @@ jobs:
           sha256sum --check SHA256SUMS
           cat SHA256SUMS
 
-      - name: Smoke-run the Linux archive that is published
+      - name: Smoke-run the Linux archive prepared for publication
         env:
           TAG: ${{ needs.resolve.outputs.tag }}
         run: |
@@ -336,22 +336,19 @@ jobs:
           tar -xzf "dist/ess-$TAG-x86_64-unknown-linux-gnu.tar.gz" -C "$smoke"
           printed=$("$smoke/ess-$TAG-x86_64-unknown-linux-gnu/ess" --version | awk '{print $NF}')
           if [ "$printed" != "$TAG" ]; then
-            echo "::error::the published Linux binary reports $printed, but the release tag is $TAG" >&2
+            echo "::error::the prepared Linux binary reports $printed, but the release tag is $TAG" >&2
             exit 1
           fi
 
-      # Idempotent on purpose: a dispatch can backfill a release that already exists, and a rerun
-      # after one failed asset upload must reconcile all assets rather than stop at "already exists".
-      - name: Create or reconcile the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.resolve.outputs.tag }}
-        run: |
-          set -euo pipefail
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TAG" --notes-file notes.md
-          else
-            gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag --draft
-          fi
-          gh release upload "$TAG" dist/* --clobber
-          gh release edit "$TAG" --draft=false
+      # The artifact name binds the annotated tag and resolved source commit. Publication happens
+      # later from a trusted environment through the organization-bot route described in AGENTS.md.
+      - name: Retain the verified release artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ess-release-${{ needs.resolve.outputs.tag }}-${{ needs.resolve.outputs.commit }}
+          path: |
+            dist/ess-${{ needs.resolve.outputs.tag }}-*.tar.gz
+            dist/SHA256SUMS
+            notes.md
+          if-no-files-found: error
+          retention-days: 7
