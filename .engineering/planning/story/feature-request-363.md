@@ -10,6 +10,10 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- depends_on: story:feature-request-361
+- depends_on: story:feature-request-362
+- depends_on: story:feature-request-233
+- depends_on: story:feature-request-200
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen
@@ -21,6 +25,8 @@ scope:
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/view/paging.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/admission.rs
 - confidence: inferred
@@ -36,8 +42,10 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
 - confidence: cited
+  path: crates/verify/ess-diff/src/diff.rs
+- confidence: cited
   path: docs/design/conditional-aggregate-measures.md
-revision: 4
+revision: 6
 ---
 ## Outcome
 
@@ -60,3 +68,9 @@ Accept the need, redesigned proposal pending independent design review: sibling 
 ## Acceptance
 
 The design's named tests cover source/version admission; measure-only view parameters; independent groups/subsets; empty and Optional arithmetic; real membership transitions and causal binding effects; closed reader/source/IR authority; and native/generated Rust/Go/browser plus Go/TypeScript runner faults. Dropped/inverted/swapped predicates, whole-view filtering, dropped zero-selected groups, stale parameters/state, Unknown-as-false and rounded large Integers must fail. Required scopes, old-reader tests, schema/projection generation, strict lint and independent implementation review remain due. Design review precedes production dispatch;361/362 authority and applicable expression slices precede integration.
+
+## Design review correction
+
+Immutable review-result:conditional-aggregate-measures-363-20261003-r1 returned needs-revision with six blockers and one scope warning. The revised docs/design/conditional-aggregate-measures.md addresses every finding: input-only lexical aggregate/view assembly and resolved output DTOs; preserved Aggregate comparison/hash traits with a structural resolved key and exact numbers; measure/paging selection conflicts; typed behavioral diff and shared descriptions; the full six-function application/runner execution and fault matrix; shared deterministic byte/work budgets; governed predecessor edges to361/362/233/200 and the diff/paging surfaces. All original review text and findings remain unchanged.
+
+These are design corrections, not observed execution or final approval. Final independent whole-design review round2 remains required; no implementation dispatch occurs before the exact causal and expression implementation predecessors pass. Canonical old source/IR products remain byte-pinned; input DTO/public struct source migrations are disclosed in the next 0.x minor release notes. The accepted bundle is not reduced by these dependencies.
