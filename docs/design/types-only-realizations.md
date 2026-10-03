@@ -101,6 +101,13 @@ field with an integer literal on its right (`>=`, `>`, `<=`, `<`, `==`) publishe
 instead of `const`. `x-ess-invariants` is still published verbatim; every other
 invariant shape stays an annotation only.
 
+A newtype of `Integer` gets the same keywords on its own definition from invariants
+over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes
+`const: 2`, `value >= 0` and `value < 1000` publish `minimum: 0` and `maximum: 999`.
+The realizer then wraps the native width: Rust `pub struct X(pub i32);`, Go
+`type X struct { Value int32 }`. An event field typed with such a newtype carries the
+constant even though an event declares no invariants of its own.
+
 ## Target Accounting
 
 The output report `ess-types-report/3` names the source and typed input identity,

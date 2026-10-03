@@ -158,6 +158,8 @@ pub(super) enum Family {
     TypesBundle,
     #[serde(rename = "model-types")]
     ModelTypes,
+    #[serde(rename = "client")]
+    Client,
     #[serde(rename = "cli-binding")]
     CliBinding,
     #[serde(rename = "normalization")]

@@ -6,6 +6,7 @@ mod cli_binding;
 #[cfg(test)]
 #[path = "../../ess-xtask/src/cli_reference/render.rs"]
 mod cli_reference;
+mod client;
 mod coverage;
 mod git_checkout;
 mod input_discovery;
@@ -20,6 +21,7 @@ mod schema;
 mod schema_bundle;
 mod site;
 mod toolchain;
+mod transport;
 mod ui;
 
 use std::fs;
@@ -169,6 +171,11 @@ enum SpecifyCommand {
         #[command(subcommand)]
         command: RealizationCommand,
     },
+    /// Validate or compile how the events of one exact ESS travel: broker, subject, stream.
+    Transport {
+        #[command(subcommand)]
+        command: transport::Command,
+    },
     /// Compile semantic-component to deployable runtime mappings.
     Runtime {
         #[command(subcommand)]
@@ -223,6 +230,10 @@ struct GenerateArgs {
     /// projection is legal, and the note is what tells it apart from a clean one.
     #[arg(long)]
     strict: bool,
+    /// An `ess-transport/1` document binding events to brokers, subjects and streams; only with
+    /// `--kind asyncapi`.
+    #[arg(long)]
+    transport: Option<PathBuf>,
 }
 
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
@@ -235,6 +246,8 @@ enum GenerateCommand {
     },
     /// Realize selected model types as standalone, accounted data libraries.
     Types(model_types::Args),
+    /// Generate a typed event publisher for one component over its transport document.
+    Client(client::Args),
     /// Synthesize implementation artifacts and explicit obligations.
     Synthesize {
         #[command(flatten)]
@@ -1369,6 +1382,7 @@ fn specify_area(command: SpecifyCommand) -> Result<ExitCode> {
         SpecifyCommand::Inspect { input, name } => inspect(&input.path, &name, input.format),
         SpecifyCommand::Graph { input, format } => graph(&input.path, format),
         SpecifyCommand::Realization { command } => realization(&command),
+        SpecifyCommand::Transport { command } => transport::run(&command),
         SpecifyCommand::Runtime { command } => runtime(command),
         SpecifyCommand::Toolchain { command } => toolchain::run_command(&command),
     }
@@ -1379,6 +1393,7 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
     match command {
         GenerateCommand::Output { command } => output_ownership::run(command),
         GenerateCommand::Types(args) => model_types::run(&args),
+        GenerateCommand::Client(args) => client::run(&args),
         GenerateCommand::Synthesize {
             input,
             target,
@@ -1398,6 +1413,9 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
 
 /// `ess generate generate …` and `ess generate …`: one verb, two spellings, one call.
 fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
+    if arguments.transport.is_some() && !matches!(arguments.kind, Some(Projection::AsyncApi)) {
+        bail!("--transport binds events for the AsyncAPI projection; it requires --kind asyncapi");
+    }
     generate(
         &arguments.input.path,
         arguments.kind,
@@ -1405,6 +1423,7 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         arguments.out.as_deref(),
         arguments.format,
         arguments.strict,
+        arguments.transport.as_deref(),
     )
 }
 
@@ -2957,6 +2976,7 @@ fn generate(
     out: Option<&Path>,
     format: Format,
     strict: bool,
+    transport: Option<&Path>,
 ) -> Result<ExitCode> {
     if !matches!(kind, Some(Projection::Site))
         && (site_options.strict_links
@@ -3006,6 +3026,12 @@ fn generate(
         // The site is the one projection an adopter contributes to, so it is built here rather
         // than fetched by name: a `Generator` is handed the model and nothing else.
         Some(Projection::Site) => site::render(path, site_options, &ir)?,
+        Some(Projection::AsyncApi) if transport.is_some() => {
+            match transport::asyncapi(transport.expect("guarded by the arm"), &ir, format)? {
+                Some(artifacts) => artifacts,
+                None => return Ok(ExitCode::from(1)),
+            }
+        }
         Some(kind) => {
             let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
             ess_gen::artifact::run(generator.as_ref(), &ir)?
@@ -4536,6 +4562,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
                 out.as_deref(),
                 format,
                 strict,
+                None,
             ),
             (None, Some(ir)) => project_openapi_interface(&ir, out.as_deref(), format),
             _ => bail!("exactly one of --path or --ir is required"),
@@ -5073,7 +5100,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 72;
+    const AREA_LEAVES: usize = 75;
     const AREA_ONLY_LEAVES: [&[&str]; 8] = [
         &["specify", "cli"],
         &["generate", "cli"],

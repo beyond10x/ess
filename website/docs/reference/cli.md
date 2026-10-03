@@ -540,6 +540,35 @@ ess specify realization generate [OPTIONS] --path <PATH> --spec <SPECIFICATION> 
 | `--out` | `<OUT>` | yes |  | Markdown file to write or compare |
 | `--check` |  | no |  | Compare with `--out` and fail on drift instead of writing |
 
+#### `ess specify transport validate`
+
+Validate and resolve an `ess-transport/1` document
+
+```text
+ess specify transport validate [OPTIONS] --path <PATH> --spec <SPECIFICATION>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | An `ess-transport/1` JSON or YAML document |
+| `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+
+#### `ess specify transport compile`
+
+Compile a document into canonical `ess-transport-ir/1`
+
+```text
+ess specify transport compile [OPTIONS] --path <PATH> --spec <SPECIFICATION>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | An `ess-transport/1` JSON or YAML document |
+| `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+| `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
+
 #### `ess specify runtime compile`
 
 Compile `ess-runtime/1` against exact semantic, realization, and build inputs
@@ -614,6 +643,7 @@ ess generate <COMMAND>
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
+| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 
 #### `ess generate generate`
 
@@ -636,6 +666,7 @@ ess generate generate [OPTIONS]
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
+| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 
 #### `ess generate cli`
 
@@ -711,6 +742,24 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--all-events` |  | no |  | Explicitly select every event payload in the resolved model; combines with `--all-types` |
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
+| `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
+
+#### `ess generate client`
+
+Generate a typed event publisher for one component over its transport document
+
+```text
+ess generate client [OPTIONS] --component <COMPONENT> --transport <TRANSPORT> --target <TARGET> --package <PACKAGE> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--component` | `<COMPONENT>` | yes |  | The component whose published events the publisher sends |
+| `--transport` | `<TRANSPORT>` | yes |  | The `ess-transport/1` document binding those events |
+| `--target` | `<TARGET>` | yes |  | The language to generate. One of `rust`, `go`. |
+| `--package` | `<PACKAGE>` | yes |  | Native package identity |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 

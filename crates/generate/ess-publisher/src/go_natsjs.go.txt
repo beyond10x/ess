@@ -1,0 +1,26 @@
+// Package natsjs is a JetStream Transport for the generated publisher: it publishes and waits for
+// the stream's acknowledgement. It is its own module, so the publisher's module needs no NATS
+// dependency.
+package natsjs
+
+import (
+	"context"
+
+	"github.com/nats-io/nats.go/jetstream"
+)
+
+// Transport publishes through a JetStream context.
+type Transport struct {
+	JetStream jetstream.JetStream
+}
+
+// New returns a Transport over js.
+func New(js jetstream.JetStream) Transport {
+	return Transport{JetStream: js}
+}
+
+// Publish publishes payload on subject and waits for the acknowledgement.
+func (t Transport) Publish(ctx context.Context, subject string, payload []byte) error {
+	_, err := t.JetStream.Publish(ctx, subject, payload)
+	return err
+}
