@@ -49,15 +49,6 @@ fn example(name: &str) -> (Vec<Document>, SourceMap) {
     (parsed, texts)
 }
 
-fn report1<T: ConformanceTarget>(emission: &Emission, dir: &str, target: &T) -> String {
-    let admitted = AdmittedSuite::from_json(&emission.files[&format!("{dir}/{SUITE_FILE}")])
-        .expect("admitted");
-    Runner::for_suite(admitted.suite())
-        .run_admitted(&admitted, target)
-        .standalone()
-        .to_canonical_json()
-}
-
 fn report2<T: ConformanceTarget>(emission: &Emission, dir: &str, target: &T) -> String {
     let admitted = AdmittedSuite::from_json(&emission.files[&format!("{dir}/{SUITE_FILE}")])
         .expect("admitted");
@@ -68,20 +59,20 @@ fn report2<T: ConformanceTarget>(emission: &Emission, dir: &str, target: &T) -> 
         .expect("serializes")
 }
 
-/// Billing's error-swap emission with a report/1 from the reference beside every suite.
+/// Billing's error-swap emission with a current report from the reference beside every suite.
 fn green() -> (Emission, BTreeMap<String, String>) {
     let (files, texts) = example("billing");
     let emission = mutate::emit(&files, &texts, &[MutantClass::ErrorSwap]).expect("emits");
     let mut written = emission.files.clone();
     written.insert(
         format!("{BASELINE_DIR}/{REPORT_FILE}"),
-        report1(&emission, BASELINE_DIR, &Billing::new()),
+        report2(&emission, BASELINE_DIR, &Billing::new()),
     );
     for mutant in &emission.manifest.mutants {
         let Some(dir) = &mutant.dir else { continue };
         written.insert(
             format!("{dir}/{REPORT_FILE}"),
-            report1(&emission, dir, &Billing::new()),
+            report2(&emission, dir, &Billing::new()),
         );
     }
     (emission, written)
@@ -135,20 +126,29 @@ fn adversary_a_red_report2_baseline_is_refused_with_mutate_001() {
 }
 
 #[test]
-fn adversary_a_report1_naming_a_scenario_the_suite_does_not_hold_is_not_scored() {
+fn adversary_a_report2_naming_a_scenario_the_suite_does_not_hold_is_not_scored() {
     let (emission, mut written) = green();
     let id = emission.manifest.mutants[0].id.clone();
     let path = format!("{id}/{REPORT_FILE}");
     let mut value: Value = serde_json::from_str(&written[&path]).unwrap();
-    let mut failed: Vec<Value> = value["failed_scenarios"].as_array().unwrap().clone();
-    failed.push(Value::from("failed outcome:no.such.Command/nowhere"));
-    value["scenarios_failed"] = Value::from(failed.len());
-    value["failed_scenarios"] = Value::Array(failed);
-    value["status"] = Value::from("failed");
+    let unknown = "no.such.Command/outcome/nowhere";
+    let failed = value["outcomes"]["failed"].as_array_mut().unwrap();
+    failed.push(Value::from(unknown));
+    failed.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+    value["counts"]["failed"] = Value::from(failed.len());
+    let total = value["counts"]["total"].as_u64().unwrap();
+    value["counts"]["total"] = Value::from(total + 1);
+    value["execution_status"] = Value::from("failed");
+    value["conformance_status"] = Value::from("failed");
     written.insert(path, serde_json::to_string_pretty(&value).unwrap() + "\n");
     let report = collect(&written).expect("collects");
     let (verdict, why) = verdict_of(&report, &id);
     assert_eq!(verdict, Verdict::Inconclusive, "{why:?}");
+    let why = why.expect("unscored says why");
+    assert!(
+        why.contains("total or exact selected outcome membership disagrees"),
+        "{why}"
+    );
 }
 
 #[test]

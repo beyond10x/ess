@@ -28,7 +28,6 @@ use ess_conformance::target::{
 use ess_conformance::{AdmittedSuite, CountReport};
 use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
-use ess_primitives::verification::VerificationStatus;
 use serde_json::Value;
 
 fn example(name: &str) -> (Vec<Document>, SourceMap) {
@@ -62,16 +61,13 @@ fn example(name: &str) -> (Vec<Document>, SourceMap) {
     (parsed, texts)
 }
 
-/// Billing's error-swap emission with a report/1 of the reference beside every suite.
+/// Billing's error-swap emission with the reference's actual report beside every suite.
 fn green() -> (Emission, BTreeMap<String, String>) {
     let (files, texts) = example("billing");
     let emission = mutate::emit(&files, &texts, &[MutantClass::ErrorSwap]).expect("emits");
     let mut written = emission.files.clone();
     for dir in dirs(&emission) {
-        written.insert(
-            format!("{dir}/{REPORT_FILE}"),
-            report1(&emission, &dir, |_| {}),
-        );
+        written.insert(format!("{dir}/{REPORT_FILE}"), report2(&emission, &dir));
     }
     (emission, written)
 }
@@ -101,27 +97,79 @@ fn scenario_ids(emission: &Emission, dir: &str) -> Vec<String> {
         .collect()
 }
 
-/// The reference's report/1 of the suite at `dir`, with `edit` applied to its non-pass list.
-fn report1(emission: &Emission, dir: &str, edit: impl FnOnce(&mut Vec<String>)) -> String {
+fn report2(emission: &Emission, dir: &str) -> String {
     let admitted = admitted(emission, dir);
     let run = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &Billing::new());
-    let mut report = run.standalone();
-    edit(&mut report.failed_scenarios);
-    report.scenarios_failed = report.failed_scenarios.len();
-    let status = |prefix: &str| {
-        report
-            .failed_scenarios
-            .iter()
-            .any(|entry| entry.starts_with(prefix))
-    };
-    report.status = if status("failed ") || status("unsupported ") {
-        VerificationStatus::Failed
-    } else if status("error ") || status("skipped ") {
-        VerificationStatus::Inconclusive
+    CountReport::from_run(&run, &admitted)
+        .expect("report/2")
+        .to_canonical_json()
+        .expect("serializes")
+}
+
+#[derive(Clone, Copy)]
+enum FixtureOutcome {
+    Failed,
+    Error,
+    Unsupported,
+    Skipped,
+}
+
+/// Deliberate collector input with exact per-scenario categories, not target execution evidence.
+fn fixture_report2(
+    emission: &Emission,
+    dir: &str,
+    assigned: &BTreeMap<String, FixtureOutcome>,
+) -> String {
+    let admitted = admitted(emission, dir);
+    let mut report: Value = serde_json::from_str(&report2(emission, dir)).unwrap();
+    let mut passed = Vec::new();
+    let mut failed = Vec::new();
+    let mut error = Vec::new();
+    let mut unsupported = Vec::new();
+    let mut skipped = Vec::new();
+    let mut matched = 0;
+    for id in admitted.suite().scenarios.keys().map(ToString::to_string) {
+        let destination = match assigned.get(&id) {
+            None => &mut passed,
+            Some(FixtureOutcome::Failed) => &mut failed,
+            Some(FixtureOutcome::Error) => &mut error,
+            Some(FixtureOutcome::Unsupported) => &mut unsupported,
+            Some(FixtureOutcome::Skipped) => &mut skipped,
+        };
+        matched += usize::from(assigned.contains_key(&id));
+        destination.push(id);
+    }
+    assert_eq!(
+        matched,
+        assigned.len(),
+        "every fixture outcome names the suite"
+    );
+    let execution = if !failed.is_empty() || !unsupported.is_empty() {
+        "failed"
     } else {
-        VerificationStatus::Passed
+        "inconclusive"
     };
-    report.to_canonical_json()
+    report["producer_profile"] = "go-scenario-status/2".into();
+    report["counts"] = serde_json::json!({
+        "total": admitted.suite().len(),
+        "passed": passed.len(),
+        "failed": failed.len(),
+        "error": error.len(),
+        "unsupported": unsupported.len(),
+        "skipped": skipped.len()
+    });
+    report["outcomes"] = serde_json::json!({
+        "passed": passed,
+        "failed": failed,
+        "error": error,
+        "unsupported": unsupported,
+        "skipped": skipped
+    });
+    report["execution_status"] = execution.into();
+    report["conformance_status"] = execution.into();
+    let text = serde_json::to_string_pretty(&report).unwrap() + "\n";
+    CountReport::from_json(&text, &admitted).expect("coherent report/2 collector fixture");
+    text
 }
 
 fn collect(written: &BTreeMap<String, String>) -> Result<MutationReport, AuditRefusal> {
@@ -136,10 +184,14 @@ fn skipped_and_unsupported_baseline_scenarios_are_listed_and_the_rest_is_scored(
     let (skipped, unsupported) = (ids[0].clone(), ids[1].clone());
     written.insert(
         format!("{BASELINE_DIR}/{REPORT_FILE}"),
-        report1(&emission, BASELINE_DIR, |list| {
-            list.push(format!("skipped {skipped}"));
-            list.push(format!("unsupported {unsupported}"));
-        }),
+        fixture_report2(
+            &emission,
+            BASELINE_DIR,
+            &BTreeMap::from([
+                (skipped.clone(), FixtureOutcome::Skipped),
+                (unsupported.clone(), FixtureOutcome::Unsupported),
+            ]),
+        ),
     );
     let report = collect(&written).unwrap_or_else(|refusal| panic!("scored, not {refusal}"));
     assert_eq!(
@@ -216,15 +268,19 @@ fn excluded_scenario_case(changed: bool) {
         .expect("an error-swap mutant shares such a scenario with the baseline");
     written.insert(
         format!("{BASELINE_DIR}/{REPORT_FILE}"),
-        report1(&emission, BASELINE_DIR, |list| {
-            list.push(format!("skipped {shared}"));
-        }),
+        fixture_report2(
+            &emission,
+            BASELINE_DIR,
+            &BTreeMap::from([(shared.clone(), FixtureOutcome::Skipped)]),
+        ),
     );
     written.insert(
         format!("{mutant}/{REPORT_FILE}"),
-        report1(&emission, &mutant, |list| {
-            *list = vec![format!("failed {shared}")];
-        }),
+        fixture_report2(
+            &emission,
+            &mutant,
+            &BTreeMap::from([(shared.clone(), FixtureOutcome::Failed)]),
+        ),
     );
     let report = collect(&written).expect("collects");
     let entry = report.mutants.iter().find(|it| it.id == mutant).unwrap();
@@ -252,12 +308,21 @@ fn a_baseline_scenario_that_failed_or_ended_error_is_still_refused_with_mutate_0
     for status in ["failed", "error"] {
         let (emission, mut written) = green();
         let ids = scenario_ids(&emission, BASELINE_DIR);
+        let red = match status {
+            "failed" => FixtureOutcome::Failed,
+            "error" => FixtureOutcome::Error,
+            _ => unreachable!(),
+        };
         written.insert(
             format!("{BASELINE_DIR}/{REPORT_FILE}"),
-            report1(&emission, BASELINE_DIR, |list| {
-                list.push(format!("{status} {}", ids[0]));
-                list.push(format!("skipped {}", ids[1]));
-            }),
+            fixture_report2(
+                &emission,
+                BASELINE_DIR,
+                &BTreeMap::from([
+                    (ids[0].clone(), red),
+                    (ids[1].clone(), FixtureOutcome::Skipped),
+                ]),
+            ),
         );
         let refusal = collect(&written).expect_err("a red baseline is refused");
         let AuditRefusal::BaselineFailed { not_passed, .. } = &refusal else {
@@ -271,11 +336,13 @@ fn a_baseline_scenario_that_failed_or_ended_error_is_still_refused_with_mutate_0
 fn a_baseline_that_executed_nothing_scores_nothing() {
     let (emission, mut written) = green();
     let ids = scenario_ids(&emission, BASELINE_DIR);
+    let assigned = ids
+        .iter()
+        .map(|id| (id.clone(), FixtureOutcome::Skipped))
+        .collect();
     written.insert(
         format!("{BASELINE_DIR}/{REPORT_FILE}"),
-        report1(&emission, BASELINE_DIR, |list| {
-            *list = ids.iter().map(|id| format!("skipped {id}")).collect();
-        }),
+        fixture_report2(&emission, BASELINE_DIR, &assigned),
     );
     let refusal = collect(&written).expect_err("nothing is scored");
     let AuditRefusal::NothingScored { not_scored, .. } = &refusal else {
