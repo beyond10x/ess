@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 41
+revision: 42
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -362,3 +362,17 @@ Separate release coordinator relayed an exact402 correctness blocker: real JSONS
 Runtime carrier source9e8894b7f is followed by planning-only merge8b6c95c7e54d571723304fe689dec8965004dcb4. Canonical planning head99484b2dc records361/362/363 probe-backed draft fit reviews. Root reclaimed only completed own ess-conformance compiler outputs using cargo clean -p ess-conformance:5835files,4.3GiB; source and target/backlog-input evidence retained, no cache processes/open files found. Docker mount warnings in lsof are retained; no matching local cache handles were reported. Free space recovered to roughly9.3GiB. Native response nine-file candidate remains frozen/uncommitted for independent review, no owner build running, and root released its recovery lease only.
 
 Fresh GitHub read: PR402 remains OPEN at9e15e08e9f0201e06bddc268934c3f96a92e5482 with CI running. Actual local Git comparison against audited1b2ed5857 shows only one command_surface test line for generate client. No types.rs change exists between those heads, so the measured contradictory-Eq source defect remains; no correction or release-readiness claim is inferred from the head advance. Snapshot target/backlog-input/pr402-checkpoint.json.
+
+## Continuation checkpoint: reviewed response integration and next unit, 2026-10-03
+
+This checkpoint supersedes earlier pending native-response statements. Worker source e9d543ac4b is independently approved and exactly matches reviewed tree e1296613dd3022df77b94b5fcbfc1cc3553685e9. Root imported046db8a680 with only the existing migrated fixture helper retained. Actual integrated checks192passed0failed0ignored0filtered; scoped strict Clippy0; repository task fmt-check0. Root source carrier is now5c5aeaf795a46aacfd3709e04f630d83d8a6a837, including binding design6f007d2db2 and planning-only synchronization. Three unrelated docs remain uncommitted as previously recorded. No push, PR or full remote gate was started.
+
+Frozen57-source handoff remains unchanged; response addendum appends046db8a680 for58 source commits. Addendum runtime-source-handoff-response-addendum-20261003.md hashfa5a3ae3bcab3677629cd7a4598813a43fa1befc46240b78a81f96e67ff467a7 is retained in carrier target/backlog-input and durable runbook. Binding design6f007d2db2 accompanies the next nested unit. Cross-session MCP endpoint still fails; no shared-integrator ACK or transfer is claimed. Sole shared branch/PR ownership and full ess21 hold persist.
+
+Nested-response-observations is active revision9 with an actual false-green probe, accepted binding doc28cf71a68e09bfa8cd8d59bf0b558cf4f4e26b2e983a1912055c003b07e9ecbb and independent pass2 approval. Pass1 metadata/byte-profile findings were corrected before implementation. Existing worker recover_caller owns managed ess-nested-response-observations-20261003 based on5c5aeaf795, exclusive synthesis cache, and full Rust/native/Go/TypeScript/WASM brief. A frozen real pre-amendment reader is building first; then production implementation proceeds. No browser completion claim: separate browser-response-conformance remains draft revision4 with concrete Rust/WASM product bridge proposal and typed scope.
+
+Issue292 actual probe locally fixes the old inert Timestamp failure but produces Linearizable for an early dependent outcome and Violation for late, without observing the timestamp. Root accepts history-specific conservative dependency refusal, preserving native concrete generation; exact design is under read-only review by recover_typed. Story remains draft revision3 and is not closed or dispatched for implementation. Probe exit0 is observation evidence, not a claimed regression red. Exact evidence/disposition are recorded in feature-request-292.
+
+PR402 latest read remains OPEN at9e15e08e9f0201e06bddc268934c3f96a92e5482, with CI still progressing; known contradictory-bound correction remains absent in that source. Release owner retains correction/tag authority; no0.52release claim. Last issue inventory53 is not an unfixed-ticket count. Full package/release verification and remaining accepted bundle work are still outstanding.
+
+All goal work remains active. AEP writes are root-only and validation returns valid with retained historical warning output. No managed tree was retired; unit/source/evidence remains retained until bot publication or explicit archive proof permits lifecycle cleanup.
