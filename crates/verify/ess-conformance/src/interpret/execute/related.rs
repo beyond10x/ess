@@ -1,12 +1,12 @@
 //! Read the exact related row named by admitted input lookup syntax, never a nearby row.
 use std::collections::BTreeMap;
 
-use super::{subject::Held, EssIr, ResolvedCondition, ResolvedRelatedVia, Store, Undetermined};
+use super::{subject::Held, EssIr, ResolvedCondition, ResolvedRelatedVia, State, Undetermined};
 use ess_primitives::node::Node;
 
 pub(super) fn held<'a>(
     ir: &'a EssIr,
-    store: &'a Store,
+    store: &'a State,
     input: &BTreeMap<String, Node>,
     condition: &ResolvedCondition,
 ) -> Result<Option<Held<'a>>, Undetermined> {

@@ -1,5 +1,5 @@
 //! Typed facts from the actual pre-command subject; missing values remain unknown.
-use super::{input, Completeness, EssIr, Instance, ResolvedCondition, TypedFacts, Undetermined};
+use super::{input, EssIr, ResolvedCondition, Row, Undetermined};
 use ess_compiler::ir::{ResolvedEntity, ResolvedRelatedTest};
 use ess_domain::entity::StateName;
 use ess_primitives::facts::{FactPath, FactSource, FactValue, Scales};
@@ -7,22 +7,16 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
 pub(super) struct Held<'a> {
     state: &'a StateName,
-    row: TypedFacts<'a>,
+    row: super::history::Facts<'a>,
     fields: &'a [ess_compiler::ir::ResolvedField],
 }
 impl<'a> Held<'a> {
     pub(super) fn new(
         ir: &'a EssIr,
         entity: &'a ResolvedEntity,
-        instance: &'a Instance,
+        instance: &'a Row,
     ) -> Result<Self, Undetermined> {
-        let facts = input::bind(ir, &entity.fields, &instance.fields, Completeness::Partial)
-            .map_err(|error| Undetermined::Request(error.to_string()))?;
-        let mut row = TypedFacts::new(ir, &entity.fields, facts);
-        row.set(
-            FactPath::new("state").expect("fixed fact path"),
-            FactValue::text(instance.state.to_string()),
-        );
+        let row = super::history::Facts::row(ir, &entity.fields, instance)?;
         Ok(Self {
             state: &instance.state,
             row,
@@ -65,14 +59,13 @@ impl<'a> Held<'a> {
                 input: additional,
                 ..
             } => (
-                predicate.evaluate(&super::caller::Facts::new(
-                    &RowAndInput {
-                        row: &self.row,
-                        input,
-                    },
-                    caller,
-                    self.fields,
-                )),
+                self.row.evaluate_with(|row| {
+                    predicate.evaluate(&super::caller::Facts::new(
+                        &RowAndInput { row, input },
+                        caller,
+                        self.fields,
+                    ))
+                }),
                 additional.as_ref(),
             ),
             ResolvedCondition::Related {
@@ -84,12 +77,14 @@ impl<'a> Held<'a> {
                 equals,
                 predicate,
             } => (
-                Predicate::Compare {
-                    left: Operand::Fact(FactPath::new(field).expect("resolved subject field")),
-                    op: CompareOp::Eq,
-                    right: Operand::Literal(FactValue::text(equals.clone())),
-                }
-                .evaluate(&self.row),
+                self.row.evaluate_with(|row| {
+                    Predicate::Compare {
+                        left: Operand::Fact(FactPath::new(field).expect("resolved subject field")),
+                        op: CompareOp::Eq,
+                        right: Operand::Literal(FactValue::text(equals.clone())),
+                    }
+                    .evaluate(row)
+                }),
                 predicate.as_ref(),
             ),
             _ => return Ok(None),
@@ -107,7 +102,7 @@ impl<'a> Held<'a> {
 }
 
 struct RowAndInput<'a, 'ir> {
-    row: &'a TypedFacts<'ir>,
+    row: &'a super::history::Facts<'ir>,
     input: &'a input::InputFacts<'ir>,
 }
 fn input_path(path: &FactPath) -> Option<FactPath> {
@@ -121,6 +116,21 @@ impl FactSource for RowAndInput<'_, '_> {
     }
     fn present(&self, path: &FactPath) -> bool {
         input_path(path).map_or_else(|| self.row.present(path), |path| self.input.present(&path))
+    }
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        input_path(path).map_or_else(
+            || self.row.observed_presence(path),
+            |path| self.input.observed_presence(&path),
+        )
+    }
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        input_path(path).map_or_else(|| self.row.observe(path), |path| self.input.observe(&path))
+    }
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        input_path(path).map_or_else(
+            || self.row.cardinality(path),
+            |path| self.input.cardinality(&path),
+        )
     }
     fn scales(&self) -> &Scales {
         self.row.scales()
