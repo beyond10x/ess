@@ -27,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 28
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -187,3 +187,9 @@ Bot candidate48fdc424f0cdee1b101fd168fb82177caef0f3e4 is frozen over0b98f1bb60fd
 Actual treatment: new5tests pass current34/historical32 matrices and exact-token faults (logSHA6050e12a64e5e44cda203977edeff162c5e2cf2f551e5a30688ab1bcb0c80f12). Unchanged execution12, faults20, TypeScript parity28 and upsert1 pass (combinedlogSHA088d58b25e47f02af5de7b7244d11bd6dc32d5cb1b52e2ae32444eee82a0578a retains the original Go22/23 bridge failure). Complete corrected Go parity23/23 passes, logSHAe0812cb2466406984ec23d2d587aa7b4fefc0329e3a1f8c051019a9fc9f4c100. Strict six-target Clippy passes, logSHA6d8d86ccb1f2280aa1addd956683fb8e6a1a201d2785d68095d536f389d8dd09; formatting/whitespace pass. Final test-only clone_into allocation-style correction follows runtime evidence and is compiled by green strict lint; no exact-final-source runtime rerun is claimed for that semantic-equivalent edit.
 
 The fresh disk guard briefly withheld lint. All completed unit target bytes were archived and tar-compared before root-reviewed owning package cleanup: archiveSHA52c2d408f1c100d3ef424eaa93ec502828c11c66cab529ca83a396c21ee3bf88; actualcleanSHA c0e2df9ae122773a8f393eca055c38567f93aeb9d5c7a880b685924e40386f41,43files305.4MiB. The six original tested binaries remain recoverable in this archive; current live paths are absent. Shared Go cache remains untouched. Compiler lane returned and author lease ended. Full combined package/browser/final release obligations remain open.
+
+## RYW review-one correction boundary
+
+Independent whole review1 reports a native/generated lifecycle mismatch: successful establish_entity clears native last_view and unreadable state, while the two generated runtimes clear the old observation but retain the new unreadableView/unreadableCommand markers. The admitted tokenless command, suppressed query, entity setup, then same-view expectation must yield native suite Error without a view read; stale generated markers instead yield Failed. This is a decisive source finding; no reviewer runtime is claimed. The immutable review record follows the final report.
+
+Author is assigned a regression-first correction in the existing seven paths: execute a current34/historical32 reset scenario against candidate48fdc424 before fixing the two successful-setup reset sites, then prove actual native/Go/TypeScript parity with every original control and affected neighbors retained. Strict lint and format remain required. The author holds the sole ESS compiler lane with fresh12884901888byte floor and unit-exclusive Go cache; no shared cache cleanup. A fresh observation of27512471552free bytes is not attributed to this unit. Freeze the corrected complete candidate for final independent whole review2; no third round or integration before approval. The author-supplied patch hash is source-equivalent but differently hunk-ordered from canonical git diff; final handoff must include the canonical full diff and all seven source hashes.
