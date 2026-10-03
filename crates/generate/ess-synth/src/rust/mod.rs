@@ -154,6 +154,7 @@ fn emitted(
 ) -> Result<(Layout, Vec<Artifact>), crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
+    crate::failure::one_time_response(ir, plan, crate::Target::Rust)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
     crate::paging::refuse(ir, plan, crate::Target::Rust)?;
     crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Rust)?;

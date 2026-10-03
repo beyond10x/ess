@@ -151,9 +151,10 @@ fn no_runtime_spells_the_field_name_rule_other_than_the_specification_does() {
         stale.join("\n")
     );
     // runtime.go ×4, replay.go, reading.go, reading.ts, runtime.ts, predicate.go, predicate.ts,
-    // and coverage-admission.js twice: its fact grammar and its operand classifier.
+    // coverage-admission.js twice (fact grammar and operand classifier), direct_response.ts,
+    // one_time_response.ts and one_time_identity.go.
     assert_eq!(
-        current, 12,
+        current, 15,
         "every check this file knows of carries the published rule"
     );
 }

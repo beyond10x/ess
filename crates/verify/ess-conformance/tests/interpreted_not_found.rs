@@ -116,8 +116,9 @@ fn issue_291_the_interpreter_answers_the_declared_not_found_refusal() {
         .unwrap_or_else(|| panic!("{NO_SESSION} is synthesized: {statuses:#?}"));
     assert_eq!(found.status, Status::Passed, "{statuses:#?}");
     for run in &report.scenarios {
-        assert!(
-            matches!(run.status, Status::Passed | Status::Unsupported),
+        assert_eq!(
+            run.status,
+            Status::Passed,
             "{}: {statuses:#?}",
             run.scenario
         );

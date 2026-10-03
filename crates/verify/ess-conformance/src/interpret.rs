@@ -11,8 +11,9 @@
 //! [`Interpreted::for_model`] holds a compiled model and executes its commands through
 //! [`execute`]: which outcome the input selects, the transition it takes and from which states, the
 //! `sets:` writes, the events it emits with their payload mappings, whether a `wrong_state:` branch
-//! refuses or accepts, and what `invariants:` require of an instance at rest. What it does not
-//! derive yet — views, bindings, time, redelivery, established entities — it refuses as
+//! refuses or accepts, and what `invariants:` require of an instance at rest. It projects declared
+//! views, dispatches bindings, and observes explicit delivery facts and relative time. Facts it
+//! cannot derive from the model or an explicit scenario control remain
 //! [`Status::Unsupported`](crate::report::Status::Unsupported), so a scenario that needs one reports
 //! an unsatisfied obligation and never a failure the interpreter caused by guessing.
 //!
@@ -35,7 +36,8 @@
 //! [`SemanticCommandResult::undeclared`], never as a declared branch. An `external:` branch is taken
 //! only when a scenario forced it with
 //! [`configure_external_outcome`](ConformanceTarget::configure_external_outcome), and it lapses after
-//! the next invocation of that command, which is what the step says.
+//! the next invocation of that command. The repeated control instead lasts for its explicit count
+//! of matching invocations, including binding retries; unrelated commands do not consume it.
 //!
 //! # Where the identifiers come from
 //!
@@ -44,12 +46,18 @@
 //! [`begin_scenario`](ConformanceTarget::begin_scenario) — so two runs of one suite produce the
 //! same ones, and the runner never compares one against an expected value.
 
+mod bindings;
+mod command;
 pub mod execute;
+mod facts;
+mod protected;
+mod response;
+mod setup;
+mod views;
 
 use std::cell::RefCell;
 
 use ess_compiler::ir::{EssIr, ResolvedCondition};
-use ess_primitives::consistency::ConsistencyToken;
 
 use crate::scenario::OutcomeRef;
 use crate::target::{
@@ -88,7 +96,14 @@ struct Scenario {
     store: Store,
     published: Vec<ObservedEvent>,
     sequence: u64,
-    forced: Option<OutcomeRef>,
+    forced: Option<(OutcomeRef, std::num::NonZeroU32)>,
+    issued: protected::Issued,
+    projection_reads: u64,
+    projection_versions: Vec<(u64, Store)>,
+    invocations: Vec<ObservedInvocation>,
+    pending_bindings: std::collections::VecDeque<bindings::Delivery>,
+    dispatching: bool,
+    facts: facts::Facts,
 }
 
 impl Scenario {
@@ -130,6 +145,13 @@ fn refusal(observation: String, why: &Undetermined) -> TargetError {
 }
 
 impl ConformanceTarget for Interpreted {
+    fn establish_entity(
+        &self,
+        request: crate::target::EntitySetupRequest,
+    ) -> Result<(), TargetError> {
+        self.setup_entity(request)
+    }
+
     fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
         // Answered rather than refused: §30 requires a report to name the implementation that
         // answered, whether or not it holds a model.
@@ -145,7 +167,29 @@ impl ConformanceTarget for Interpreted {
             scenario.scenario
         ))?;
         *self.scenario.borrow_mut() = Scenario::default();
+        self.scenario
+            .borrow_mut()
+            .facts
+            .open(scenario.correlation.clone());
         Ok(())
+    }
+
+    fn deliver_event(
+        &self,
+        request: crate::target::EventDeliveryRequest,
+    ) -> Result<(), TargetError> {
+        self.facts_deliver(&request)
+    }
+
+    fn mark_instant(&self, request: crate::target::InstantMark) -> Result<(), TargetError> {
+        self.facts_mark(request)
+    }
+
+    fn observe_elapsed(
+        &self,
+        request: crate::target::ElapsedObservationRequest,
+    ) -> Result<crate::target::ElapsedObservation, TargetError> {
+        self.facts_elapsed(&request)
     }
 
     fn execute_command(
@@ -157,20 +201,16 @@ impl ConformanceTarget for Interpreted {
         // The standard refusal for an actor no grant admits, before the command runs
         // (beyond10x/ess#265). A command sent as no actor is sent as the interpreter's own
         // authority: the suite sends a command no actor is granted that way.
-        if let Some(actor) = &request.actor {
-            let granted = model.actors().get(actor.name()).is_some_and(|declared| {
-                declared
-                    .may
-                    .iter()
-                    .any(|command| command.name() == request.command.name())
-            });
-            if !granted {
-                return Err(TargetError::not_granted(Some(actor.to_string())));
-            }
-        }
+        self.command_grant(&request.command, request.actor.as_ref())?;
+        let caller =
+            execute::caller::Caller::bind(model, request.actor.as_ref(), request.caller.as_ref())
+                .map_err(|why| refusal(observation.clone(), &why))?;
         let mut scenario = self.scenario.borrow_mut();
         let externals = match scenario.forced.take() {
-            Some(forced) if forced.command == request.command => {
+            Some((forced, remaining)) if forced.command == request.command => {
+                if let Some(remaining) = std::num::NonZeroU32::new(remaining.get() - 1) {
+                    scenario.forced = Some((forced.clone(), remaining));
+                }
                 Externals::Forced(forced.outcome.clone())
             }
             other => {
@@ -178,12 +218,18 @@ impl ConformanceTarget for Interpreted {
                 Externals::Withheld
             }
         };
-        let mut steps = execute::execute(
+        let mut responses = response::Authority::native(&scenario.issued);
+        let mut steps = execute::responding(
             model,
             &scenario.store,
             request.command.name(),
-            &request.input,
+            &execute::caller::Invocation {
+                input: &request.input,
+                caller: caller.as_ref(),
+            },
             &externals,
+            &execute::Generated::Counter,
+            &mut responses,
         )
         .map_err(|why| refusal(observation.clone(), &why))?;
         if steps.len() != 1 {
@@ -205,51 +251,56 @@ impl ConformanceTarget for Interpreted {
             ));
         }
         let step = steps.remove(0);
-        scenario.store = step.next;
-        let mut direct_events = Vec::with_capacity(step.events.len());
-        for event in step.events {
-            let sequence = scenario.tick();
-            let event = event.in_activity(request.correlation.clone()).at(sequence);
-            scenario.published.push(event.clone());
-            direct_events.push(event);
-        }
-        let consistency = match (&step.outcome, &step.error) {
-            (Some(_), None) => {
-                let sequence = scenario.tick();
-                Some(
-                    ConsistencyToken::new(format!("seq:{sequence}")).map_err(|error| {
-                        TargetError::unavailable(observation.clone(), error.to_string())
-                    })?,
-                )
-            }
-            _ => None,
-        };
-        Ok(SemanticCommandResult {
-            outcome: step.outcome,
-            error: step.error,
-            consistency,
-            direct_events,
-            response: None,
-        })
+        let prepared = responses
+            .finish(model, &step)
+            .map_err(|why| refusal(observation, &why))?;
+        drop(scenario);
+        self.complete_command(&request.command, &request.correlation, step, prepared)
     }
 
     fn execute_command_without_input(
         &self,
         request: crate::target::AbsentInputRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
-        Err(TargetError::unsupported(
-            format!("invoking `{}` with no input", request.command),
-            NOTHING_DERIVED,
-        ))
+        let observation = format!("invoking `{}` with no input", request.command);
+        let model = self.model(&observation)?;
+        self.command_grant(&request.command, request.actor.as_ref())?;
+        let caller =
+            execute::caller::Caller::bind(model, request.actor.as_ref(), request.caller.as_ref())
+                .map_err(|why| refusal(observation.clone(), &why))?;
+        let step = execute::without_input(
+            model,
+            &self.scenario.borrow().store,
+            request.command.name(),
+            caller.as_ref(),
+        )
+        .map_err(|why| refusal(observation, &why))?;
+        self.complete_command(&request.command, &request.correlation, step, None)
     }
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let observation = format!("reading `{}`", request.view);
-        self.model(observation.clone())?;
-        Err(TargetError::unsupported(
-            observation,
-            "views are not interpreted yet",
-        ))
+        let model = self.model(observation.clone())?;
+        let view = model
+            .views()
+            .get(request.view.name())
+            .ok_or_else(|| TargetError::unavailable(&observation, "view is not declared"))?;
+        let mut scenario = self.scenario.borrow_mut();
+        if view.consistency == ess_domain::view::Consistency::ReadYourWrites
+            || request.consistency.token().is_some()
+        {
+            return views::query(model, &scenario.store, &request);
+        }
+        scenario.projection_reads = scenario.projection_reads.saturating_add(1);
+        let store = scenario
+            .projection_versions
+            .iter()
+            .rev()
+            .find(|(after, _)| *after <= scenario.projection_reads)
+            .map(|(_, store)| store)
+            .cloned()
+            .unwrap_or_default();
+        views::query(model, &store, &request)
     }
 
     fn observe_events(
@@ -257,17 +308,7 @@ impl ConformanceTarget for Interpreted {
         request: EventObservationRequest,
     ) -> Result<Vec<ObservedEvent>, TargetError> {
         let observation = format!("the occurrences of `{}`", request.event);
-        let model = self.model(observation.clone())?;
-        // Every occurrence a command published directly is here. What a binding would publish is
-        // not, because bindings are not interpreted yet — so where the model declares one, a
-        // complete answer is not available and an incomplete one would read as "never happened".
-        if !model.bindings().is_empty() {
-            return Err(TargetError::unsupported(
-                observation,
-                "the model declares bindings, which are not interpreted yet, so the occurrences \
-                 they would publish cannot be observed",
-            ));
-        }
+        self.model(observation)?;
         Ok(self
             .scenario
             .borrow()
@@ -281,6 +322,14 @@ impl ConformanceTarget for Interpreted {
     fn configure_external_outcome(
         &self,
         request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.configure_external_outcome_repeatedly(request, std::num::NonZeroU32::MIN)
+    }
+
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
     ) -> Result<(), TargetError> {
         let observation = format!("forcing `{}`", request.force);
         let model = self.model(observation.clone())?;
@@ -308,17 +357,28 @@ impl ConformanceTarget for Interpreted {
                 ),
             ));
         }
-        self.scenario.borrow_mut().forced = Some(request.force);
+        self.scenario.borrow_mut().forced = Some((request.force, times));
         Ok(())
     }
 
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        if self.facts_redeliver(&request)? {
+            return Ok(());
+        }
         let observation = format!("delivering `{}` again", request.event);
         self.model(observation.clone())?;
-        Err(TargetError::unsupported(
-            observation,
-            "bindings are not interpreted yet, so there is nothing to deliver to",
-        ))
+        let event = self
+            .scenario
+            .borrow()
+            .published
+            .iter()
+            .rev()
+            .find(|event| event.event == request.event)
+            .cloned()
+            .ok_or_else(|| {
+                TargetError::unavailable(&observation, "event has not been published")
+            })?;
+        self.dispatch(&event, None)
     }
 
     fn observe_invocations(
@@ -330,10 +390,16 @@ impl ConformanceTarget for Interpreted {
             request.binding, request.command
         );
         self.model(observation.clone())?;
-        Err(TargetError::unsupported(
-            observation,
-            "bindings are not interpreted yet, so no binding has invoked anything",
-        ))
+        Ok(self
+            .scenario
+            .borrow()
+            .invocations
+            .iter()
+            .filter(|invocation| {
+                invocation.binding == request.binding && invocation.command == request.command
+            })
+            .cloned()
+            .collect())
     }
 
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {

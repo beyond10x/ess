@@ -182,6 +182,7 @@ mod aggregate;
 mod bounded_retry;
 mod caller;
 mod delivery_context;
+mod disclosure;
 mod existence;
 mod grant;
 mod identity;
@@ -318,6 +319,20 @@ pub enum Note {
         /// Its declared type.
         type_ref: String,
     },
+    /// The mixed-caller scenario is retained, but its reversed-role counterpart cannot compose.
+    CrossCallerUnswapped {
+        /// The retained scenario.
+        scenario: ScenarioId,
+        /// The concrete arrangement or observation restriction.
+        reason: &'static str,
+    },
+    /// The ordinary witness remains, but no source-authorized mixed caller witness composes.
+    CrossCallerUnwitnessed {
+        /// The retained ordinary scenario.
+        scenario: ScenarioId,
+        /// Why crossing callers cannot retain its source-selected expectations.
+        reason: String,
+    },
     /// A branch copying fields of the row its `when_related:` guard reads (`{related: …}` through
     /// the same input) whose scenario arranges no second row the guard accepts holding other values
     /// there (beyond10x/ess#270). A target that copies from a row the guard accepts, rather than
@@ -371,6 +386,7 @@ pub enum Note {
 }
 
 impl fmt::Display for Note {
+    #[allow(clippy::too_many_lines)] // Keep the complete note vocabulary in one exhaustive match.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownInstanceUnanswered { command } => write!(
@@ -452,6 +468,10 @@ impl fmt::Display for Note {
                  give it an identity no other scenario sends, so a target that answers one caller \
                  by name is not failed by it"
             ),
+            Self::CrossCallerUnswapped { scenario, reason } => write!(f,
+                "`{scenario}` retains its mixed-caller witness without an appended reversed-role run: {reason}"),
+            Self::CrossCallerUnwitnessed { scenario, reason } => write!(f,
+                "`{scenario}` retains its ordinary witness without a mixed-caller same-row witness: {reason}"),
             Self::UnaccompaniedRelatedCopy { scenario, fields } => {
                 let names: Vec<String> = fields.iter().map(|name| format!("`{name}`")).collect();
                 write!(
@@ -1716,6 +1736,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     } else {
         synthesize_plain(ir, Focus::Whole)
     };
+    grant::cross_caller(ir, &mut synthesis.suite, &mut synthesis.notes);
     // Read off the finished suite: no scenario expects the one row of a singleton entity created
     // twice in a run, whichever family built it (beyond10x/ess#287).
     singleton::withdraw_second_creations(ir, &mut synthesis);
@@ -1739,6 +1760,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     // Read off the finished suite, so every path that builds a branch's scenario is held to it.
     let overlaps = unwitnessed_overlaps(ir, &synthesis.suite);
     synthesis.notes.extend(overlaps);
+    disclosure::augment(ir, &mut synthesis);
     synthesis
 }
 
@@ -1775,6 +1797,12 @@ impl Focus<'_> {
 
 /// [`synthesize`], for a model in which nothing depends on who sends a command.
 fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
+    synthesize_invocations(&caller::InvocationModels::plain(ir), focus)
+}
+
+#[allow(clippy::too_many_lines)] // Keep the ordered scenario-family dispatch together.
+fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_>) -> Synthesis {
+    let ir = models.arrangement;
     // A caller assignment's model is another model: its answers are held apart and dropped with it.
     let _memoised = crate::witness_memo::memoise(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
@@ -1795,7 +1823,7 @@ fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
     let actors = granted_actors(ir);
 
     let mut unseparated_notes = Vec::new();
-    for command in ir.commands().values() {
+    for command in models.acting.commands().values() {
         if !focus.takes(&command.name) {
             continue;
         }
@@ -1823,7 +1851,7 @@ fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
                 continue;
             }
             let Some((id, scenario)) =
-                outcome_scenario(ir, command, outcome, &actors, &mut refusals)
+                outcome_scenario_in(models, command, outcome, &actors, &mut refusals)
             else {
                 continue;
             };
@@ -1839,22 +1867,29 @@ fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
         }
     }
     let mut partial = Vec::new();
-    lifecycle(ir, &actors, focus, &mut suite, &mut refusals, &mut partial);
-    state_refusals(ir, &actors, focus, &mut suite, &mut refusals);
+    lifecycle(
+        models,
+        &actors,
+        focus,
+        &mut suite,
+        &mut refusals,
+        &mut partial,
+    );
+    state_refusals(models, &actors, focus, &mut suite, &mut refusals);
     let mut notes = Vec::new();
     unknown_instances(ir, &actors, focus, &mut suite, &mut refusals, &mut notes);
     absent_input::absent_inputs(ir, &actors, focus, &mut suite, &mut refusals);
-    existence::existence(ir, &actors, focus, &mut suite, &mut refusals);
-    set_effects::set_effects(ir, &actors, focus, &mut suite, &mut refusals);
+    existence::existence(models, &actors, focus, &mut suite, &mut refusals);
+    set_effects::set_effects(models, &actors, focus, &mut suite, &mut refusals);
     notes.extend(partial);
     notes.extend(unseparated_notes);
-    invariants(ir, &actors, focus, &mut suite, &mut refusals);
+    invariants(models, &actors, focus, &mut suite, &mut refusals);
     if focus.is_whole() {
         bindings(ir, &actors, &mut suite, &mut refusals);
         aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
     }
     grant::denied(ir, &mut suite, &mut refusals, &mut notes);
-    preconditions(ir, &mut suite);
+    preconditions(models, &mut suite);
     for (id, reason) in crate::fixtures::install(ir, &mut suite) {
         suite.scenarios.remove(&id);
         refusals.push(Refusal::about(
@@ -2127,8 +2162,8 @@ fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &QualifiedName) ->
 }
 
 /// One scenario per declared outcome (§10), or the refusal that says why there is none.
-fn outcome_scenario(
-    ir: &EssIr,
+fn outcome_scenario_in(
+    models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -2137,8 +2172,16 @@ fn outcome_scenario(
     let id = ScenarioId::Outcome {
         outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
     };
-    let (mut steps, mut source, run) = exercise(ir, command, outcome, actors, &id, refusals)?;
-    let (further, depends) = boundaries(ir, command, outcome, actors, &run, &steps);
+    let (mut steps, mut source, run) = exercise_as(
+        models,
+        command,
+        outcome,
+        actors,
+        &id,
+        refusals,
+        Witness::Full,
+    )?;
+    let (further, depends) = boundaries(models, command, outcome, actors, &run, &steps);
     steps.extend(further);
     source.extend(depends);
     // ess/16 (#163): the branch again with every input it reads only through `else: <literal>`
@@ -2150,7 +2193,7 @@ fn outcome_scenario(
     if let Some((more, depends, _)) = again
         .then(|| {
             exercise_as(
-                ir,
+                models,
                 command,
                 outcome,
                 actors,
@@ -2174,7 +2217,7 @@ fn outcome_scenario(
                     continue;
                 }
                 if let Some((more, depends, _)) = exercise_as(
-                    ir,
+                    models,
                     command,
                     outcome,
                     actors,
@@ -2188,7 +2231,7 @@ fn outcome_scenario(
             }
         }
     }
-    let (more, depends) = related_boundaries(ir, command, outcome, actors, &id, refusals);
+    let (more, depends) = related_boundaries(models, command, outcome, actors, &id, refusals);
     steps.extend(more);
     source.extend(depends);
     Some((
@@ -2209,13 +2252,14 @@ fn outcome_scenario(
 /// stopped short of for another cause, is refused; so is one whose nearest value a run holds lies
 /// past the search's reach ([`subject_fact::Further::Past`]), without a search.
 fn related_boundaries(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
 ) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
     if !related_guard::routes(command, outcome) {
@@ -2250,7 +2294,7 @@ fn related_boundaries(
         let mut causes = Vec::new();
         let found = answering.iter().find_map(|branch| {
             exercise_as(
-                ir,
+                models,
                 command,
                 branch,
                 actors,
@@ -2334,12 +2378,20 @@ fn exercise(
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
-    exercise_as(ir, command, outcome, actors, id, refusals, Witness::Full)
+    exercise_as(
+        &caller::InvocationModels::plain(ir),
+        command,
+        outcome,
+        actors,
+        id,
+        refusals,
+        Witness::Full,
+    )
 }
 
-/// [`exercise`], for the invocation `witness` names.
+/// Exercise one explicitly interpreted acting invocation and its arrangement.
 fn exercise_as(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -2347,7 +2399,7 @@ fn exercise_as(
     refusals: &mut Vec<Refusal>,
     witness: Witness,
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
-    let run = match run_as(ir, command, outcome, actors, witness) {
+    let run = match run_as(models, command, outcome, actors, witness) {
         Ok(run) => run,
         Err(cause) => {
             refusals.push(Refusal::about(id, cause));
@@ -2355,10 +2407,45 @@ fn exercise_as(
         }
     };
 
+    exercise_run_in(models, command, outcome, actors, id, refusals, run)
+}
+
+/// Assert a branch whose invocation was arranged by the caller, including post-state retries.
+fn exercise_run(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+    run: Run,
+) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
+    exercise_run_in(
+        &caller::InvocationModels::plain(ir),
+        command,
+        outcome,
+        actors,
+        id,
+        refusals,
+        run,
+    )
+}
+
+fn exercise_run_in(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+    run: Run,
+) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
+    let ir = models.arrangement;
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
     let absent = not_emitted(ir, &emitted);
     let actor = run.actor.clone();
-    let views = view_expectations(ir, command, outcome, &run, actors, id, refusals);
+    let mut views = view_expectations(ir, command, outcome, &run, actors, id, refusals);
+    models.mark(caller::InvocationPhase::Arrange, &mut views.arranged);
 
     let mut steps = run.steps();
     if let Some(error) = &outcome.error {
@@ -2439,7 +2526,9 @@ fn exercise_as(
     }
     steps.extend(run.after_steps.iter().cloned());
     let mut removed = BTreeSet::new();
-    steps.extend(deletion_witness(ir, command, outcome, &run, &mut removed));
+    let mut deleted = deletion_witness(ir, command, outcome, &run, &mut removed);
+    models.mark(caller::InvocationPhase::Act, &mut deleted);
+    steps.extend(deleted);
     // After everything that reads the branch, and before anything that reads a view. Both halves of
     // that are load-bearing. Put later, the arrangement would run after the view it exists to fill;
     // put earlier, its own creating command would publish the first occurrence of the event the
@@ -2536,20 +2625,27 @@ fn run(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Run, RefusalCause> {
-    run_as(ir, command, outcome, actors, Witness::Full)
+    run_as(
+        &caller::InvocationModels::plain(ir),
+        command,
+        outcome,
+        actors,
+        Witness::Full,
+    )
 }
 
 /// [`run`], for the invocation `witness` names.
 #[allow(clippy::too_many_lines)]
 fn run_as(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     witness: Witness,
 ) -> Result<Run, RefusalCause> {
+    let ir = models.arrangement;
     if let Some(replay) = &outcome.replays {
-        return run_replay(ir, command, outcome, replay, actors);
+        return run_replay_in(models, command, outcome, replay, actors);
     }
     if is_state_refusal(command, outcome) {
         let subject = command
@@ -2558,7 +2654,10 @@ fn run_as(
         let mut first = None;
         for state in &ir.entity(&subject.entity).lifecycle.states {
             match run_state_refusal(ir, command, outcome, state, actors, Distinction::PLAIN) {
-                Ok(run) => return Ok(run),
+                Ok(mut run) => {
+                    models.mark_run(&mut run);
+                    return Ok(run);
+                }
                 Err(reason) => {
                     first.get_or_insert(reason);
                 }
@@ -2583,7 +2682,14 @@ fn run_as(
     let mut related_at = Distinction::PLAIN;
     let (mut setup, input) = if related {
         match witness {
-            Witness::Full => related_guard::prepare(ir, command, outcome, actors)?,
+            Witness::Full => related_guard::prepare_at_in(
+                models,
+                command,
+                outcome,
+                actors,
+                Distinction::PLAIN,
+                None,
+            )?,
             Witness::RelatedBoundary { of, goal } => {
                 let goals = command
                     .outcomes
@@ -2592,7 +2698,14 @@ fn run_as(
                     .unwrap_or_default();
                 let (named, _) = goals.get(goal).ok_or_else(related_guard::unarranged)?;
                 related_at = Distinction::further(goal + 1);
-                related_guard::prepare_at(ir, command, outcome, actors, related_at, Some(named))?
+                related_guard::prepare_at_in(
+                    models,
+                    command,
+                    outcome,
+                    actors,
+                    related_at,
+                    Some(named),
+                )?
             }
             Witness::LiteralFallbacks | Witness::Listed(_) => {
                 return Err(related_guard::unarranged())
@@ -2687,7 +2800,7 @@ fn run_as(
         invoke.push(ScenarioStep::ExpectNoError);
     }
     let (mut after_steps, refused) = if routed {
-        subject_fact::around(ir, command, outcome, actors, &mut setup, &supplied)?
+        subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?
     } else {
         (Vec::new(), Vec::new())
     };
@@ -2722,7 +2835,7 @@ fn run_as(
         outcome,
         super::synthesize::settled(ir, outcome, &supplied, &before_settled),
     );
-    Ok(Run {
+    let mut run = Run {
         after_steps,
         setup: setup.steps,
         invoke,
@@ -2735,7 +2848,9 @@ fn run_as(
         before_settled,
         refused,
         settled,
-    })
+    };
+    models.mark_run(&mut run);
+    Ok(run)
 }
 
 /// The subject arranged for a branch and the input chosen for it, by whichever of the three
@@ -2956,13 +3071,14 @@ fn run_state_refusal(
 /// so two refusals of one state that the input tells apart (ess/18, beyond10x/ess#201) share the one
 /// id the state has and are both asserted, rather than colliding on it.
 fn state_refusals(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
-    for command in ir.commands().values() {
+    let ir = models.arrangement;
+    for command in models.acting.commands().values() {
         if !focus.takes(&command.name) {
             continue;
         }
@@ -2995,7 +3111,8 @@ fn state_refusals(
                     Distinction::further(witnessed)
                 };
                 match run_state_refusal(ir, command, outcome, state, actors, distinction) {
-                    Ok(run) => {
+                    Ok(mut run) => {
+                        models.mark_run(&mut run);
                         witnessed += 1;
                         steps.extend(run.steps());
                         steps.push(expect_error(
@@ -3040,15 +3157,19 @@ fn state_refusals(
     }
 }
 
-fn run_replay(
-    ir: &EssIr,
+fn run_replay_in(
+    models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     replay: &ess_compiler::ir::ResolvedReplay,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Run, RefusalCause> {
-    let original = command.replay_origin(replay);
-    let origin = run(ir, command, original, actors)?;
+    let ir = models.arrangement;
+    let creator = &ir.commands()[&command.name];
+    let original = creator.replay_origin(replay);
+    let mut origin = run(ir, creator, original, actors)?;
+    models.mark(caller::InvocationPhase::Arrange, &mut origin.setup);
+    models.mark(caller::InvocationPhase::Arrange, &mut origin.invoke);
     let instance = origin.instance.clone().unwrap_or_else(|| {
         instance_name(&ir.entity(&replay.subject.entity).name, Distinction::PLAIN)
     });
@@ -3109,6 +3230,8 @@ fn run_replay(
         ScenarioStep::ExpectReplayResult { capture },
     ];
     invoke.extend(preservation.after);
+    models.mark(caller::InvocationPhase::Arrange, &mut setup);
+    models.mark(caller::InvocationPhase::Act, &mut invoke);
     let mut source = origin.source;
     source.extend(eligible_source);
     source.extend(preservation.source);
@@ -3966,7 +4089,9 @@ fn created_owned(
             })
         } else {
             Ok(match input {
-                Some(input) => invoke_with(ir, creator, None, actors, bound, input),
+                Some(input) => {
+                    invoke_created_with(ir, creator, actors, distinction, bound, input, &chain)?
+                }
                 None => invoke(ir, creator, None, None, actors, distinction, bound, &chain)?,
             })
         }
@@ -4160,7 +4285,66 @@ fn invoke(
     .map_err(|_| Unreachable::Unwitnessable {
         outcome: outcome_ref.clone(),
     })?;
-    Ok(invoke_with(ir, driver, instance, actors, bound, &input))
+    if matches!(driver.effect, ResolvedEffect::Creates) {
+        invoke_created_with(ir, driver, actors, distinction, bound, &input, arranging)
+    } else {
+        Ok(invoke_with(ir, driver, instance, actors, bound, &input))
+    }
+}
+
+/// A creation used to arrange a later subject has the same related sources as its own outcome
+/// scenario. Preserve their captured identities and typed values, with the caller's cycle guard.
+fn invoke_created_with(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, InstanceName>,
+    input: &BTreeMap<String, Node>,
+    arranging: &[&EntityHandle],
+) -> Result<Invocation, Unreachable> {
+    // A payload-only source keeps its existing outer arrangement. This seam is for stored
+    // copies needed by a later subject/view; arranging payload-only reads here would duplicate
+    // the sources that the later branch already arranges (#166).
+    if !driver
+        .outcome
+        .sets
+        .iter()
+        .any(|set| matches!(set.value, ResolvedPayloadValue::RelatedField { .. }))
+    {
+        return Ok(invoke_with(ir, driver, None, actors, bound, input));
+    }
+    let mut setup = Setup::none();
+    setup.bound.clone_from(bound);
+    let setup = related::arrange_within(
+        ir,
+        driver.outcome,
+        actors,
+        distinction,
+        setup,
+        None,
+        arranging,
+    )
+    .map_err(|_| Unreachable::Unwitnessable {
+        outcome: OutcomeRef::new(
+            CommandRef::new(driver.command.name.clone()),
+            driver.outcome.name.clone(),
+        ),
+    })?;
+    let mut invoked = invoke_with(ir, driver, None, actors, &setup.bound, input);
+    let supplied = supply(
+        driver.command,
+        input,
+        driver.outcome.subject.as_ref(),
+        None,
+        &setup.bound,
+    );
+    invoked.settled = settled(ir, driver.outcome, &supplied, &setup.settled);
+    let mut steps = setup.steps;
+    steps.append(&mut invoked.steps);
+    invoked.steps = steps;
+    invoked.source.extend(setup.source);
+    Ok(invoked)
 }
 
 /// One arranging invocation with an input already chosen: its steps, and what its `sets:` leave.
@@ -6002,6 +6186,18 @@ fn arrange_matching(
         };
         let mut wanted: Vec<(Wanted<'_>, Option<&InstanceName>)> = Vec::new();
         let by_identity = identified && reads_root(view, identity_name);
+        let by_copy = identified
+            && !singleton::is_singleton(ir, beside.entity)
+            && ir.drivers().get(beside.entity).is_some_and(|drivers| {
+                drivers
+                    .iter()
+                    .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+                    .flat_map(|driver| &driver.outcome.sets)
+                    .any(|set| {
+                        matches!(set.value, ResolvedPayloadValue::RelatedField { .. })
+                            && reads_root(view, &set.target)
+                    })
+            });
         match &bytewise {
             Some(bytewise) if identified => wanted.push((
                 Box::new(move |row: &Arrangement| {
@@ -6040,6 +6236,10 @@ fn arrange_matching(
                     ));
                 }
             }
+            None if *admits_subject && by_copy => wanted.push((
+                Box::new(move |row: &Arrangement| held(row) == Ok(false)),
+                None,
+            )),
             None if !identified
                 || *admits_subject
                 || plain_row_shown(ir, beside.entity, view, beside.actors, params) =>
@@ -8049,14 +8249,15 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
 /// be honoured there and require that it did not. Neither could be written before an outcome said
 /// which field names the instance it acts on.
 fn lifecycle(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
     notes: &mut Vec<Note>,
 ) {
-    for (handle, drivers) in ir.drivers() {
+    let ir = models.arrangement;
+    for (handle, drivers) in models.acting.drivers() {
         let entity = EntityRef::from(handle);
         let states = &ir.entity(handle).lifecycle;
 
@@ -8076,13 +8277,20 @@ fn lifecycle(
                         driver.outcome.name.clone(),
                     ),
                 };
-                let Some((mut steps, mut source, run)) =
-                    exercise(ir, driver.command, driver.outcome, actors, &id, refusals)
-                else {
+                let Some((mut steps, mut source, run)) = exercise_as(
+                    models,
+                    driver.command,
+                    driver.outcome,
+                    actors,
+                    &id,
+                    refusals,
+                    Witness::Full,
+                ) else {
                     continue;
                 };
-                let (further, depends) =
-                    other_sources(ir, driver, transition, actors, &run, &steps, &id, refusals);
+                let (further, depends) = other_sources(
+                    models, driver, transition, actors, &run, &steps, &id, refusals,
+                );
                 steps.extend(further);
                 source.extend(depends);
                 let purpose = moving(&entity, transition, driver);
@@ -8144,7 +8352,7 @@ fn lifecycle(
                     refuses,
                 };
                 if let Some(scenario) = wrong_state_scenario(
-                    ir, handle, &drivers, command, state, actors, &id, refusals, notes,
+                    models, handle, &drivers, command, state, actors, &id, refusals, notes,
                 ) {
                     insert(suite, id, scenario, refusals);
                 }
@@ -8163,7 +8371,7 @@ fn lifecycle(
 /// halves, is still this state's scenario, and never dropped.
 #[allow(clippy::too_many_arguments)]
 fn wrong_state_scenario(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     handle: &EntityHandle,
     drivers: &[Driver<'_>],
     command: &QualifiedName,
@@ -8173,9 +8381,9 @@ fn wrong_state_scenario(
     refusals: &mut Vec<Refusal>,
     notes: &mut Vec<Note>,
 ) -> Option<ConformanceScenario> {
-    let answered = ir.commands().get(command).map_or_else(
+    let answered = models.acting.commands().get(command).map_or_else(
         || Ok((Vec::new(), BTreeSet::new())),
-        |declared| subject_fact::state_answered_rows(ir, declared, handle, state, actors),
+        |declared| subject_fact::state_answered_rows(models, declared, handle, state, actors),
     );
     let (rows, depends) = match answered {
         Ok(found) => found,
@@ -8185,7 +8393,9 @@ fn wrong_state_scenario(
         }
     };
     let mut plain = Vec::new();
-    match refused_here(ir, handle, drivers, command, state, actors, id, &mut plain) {
+    match refused_here(
+        models, handle, drivers, command, state, actors, id, &mut plain,
+    ) {
         Some((mut scenario, unobserved)) => {
             refusals.extend(plain);
             if !unobserved.is_empty() {
@@ -8257,8 +8467,9 @@ pub(crate) fn insert(
 ///   invoice was paid, which is the same hole `not_emitted` closes on the branches that *are*
 ///   declared.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)] // One refusal witness, including explicit arrangement/acting roles.
 fn refused_here(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     handle: &EntityHandle,
     drivers: &[Driver<'_>],
     command: &QualifiedName,
@@ -8267,6 +8478,7 @@ fn refused_here(
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
 ) -> Option<(ConformanceScenario, Vec<String>)> {
+    let ir = models.arrangement;
     let entity = EntityRef::from(handle);
     let movers: Vec<&Driver<'_>> = drivers
         .iter()
@@ -8285,6 +8497,7 @@ fn refused_here(
         })
         .ok()?;
     let mut steps = arrangement.steps;
+    models.mark(caller::InvocationPhase::Arrange, &mut steps);
     if let Some(preservation) = &preservation {
         steps.extend(preservation.before.iter().cloned());
     }
@@ -8380,6 +8593,7 @@ fn refused_here(
         ),
         (None, false) => format!("`{command}` does not move a `{entity}` that is in `{state}`"),
     };
+    models.mark(caller::InvocationPhase::Act, &mut steps);
     Some((
         ConformanceScenario::new(clipped(&text), steps, source),
         unobserved,
@@ -8802,7 +9016,8 @@ fn whole_views(ir: &EssIr) -> Vec<ViewRef> {
 
 /// The system's preconditions (ess/15), prepended to every scenario: each command sent as its
 /// resolved actor with its literal and fixture inputs, and required to take its success branch.
-fn preconditions(ir: &EssIr, suite: &mut ConformanceSuite) {
+fn preconditions(models: &caller::InvocationModels<'_>, suite: &mut ConformanceSuite) {
+    let ir = models.arrangement;
     // One entry per precondition, in order: its two steps, and what it would create again — its
     // command and the value it sends for an input that becomes the created identity.
     let mut chunks: Vec<(Vec<ScenarioStep>, Vec<Recreated>)> = Vec::new();
@@ -8843,6 +9058,7 @@ fn preconditions(ir: &EssIr, suite: &mut ConformanceSuite) {
         prelude.push(ScenarioStep::ExpectOutcome {
             outcome: OutcomeRef::new(command_ref, precondition.outcome.clone()),
         });
+        models.mark(caller::InvocationPhase::Arrange, &mut prelude);
         chunks.push((prelude, creates));
     }
     for scenario in suite.scenarios.values_mut() {
@@ -9267,7 +9483,7 @@ fn arrange_unbound(
 /// here.
 #[allow(clippy::too_many_arguments)]
 fn other_sources(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     driver: &Driver<'_>,
     transition: &ess_domain::entity::Transition,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -9289,7 +9505,7 @@ fn other_sources(
         if from == exercised || !admits_held_state(&outcome.condition, from) {
             continue;
         }
-        match from_source(ir, driver, from, &transition.to, actors, &mut taken) {
+        match from_source(models, driver, from, &transition.to, actors, &mut taken) {
             Ok((further, depends)) => {
                 out.0.extend(further);
                 out.1.extend(depends);
@@ -9301,14 +9517,16 @@ fn other_sources(
 }
 
 /// One further source of a transition: arrange an instance in `from`, move it, and require it moved.
+#[allow(clippy::too_many_lines)] // One transition witness and its phase-specific observations.
 fn from_source(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     driver: &Driver<'_>,
     from: &StateName,
     to: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let (command, outcome) = (driver.command, driver.outcome);
     let subject = subject(driver);
     let arrangement =
@@ -9335,6 +9553,7 @@ fn from_source(
         &arrangement.settled,
     );
     let mut steps = arrangement.steps;
+    models.mark(caller::InvocationPhase::Arrange, &mut steps);
     let mut source = arrangement.source;
     if has_subject_guards(command) {
         let (observed, view) = observe_subject_state(ir, outcome, &arrangement.instance, from)?;
@@ -9407,6 +9626,7 @@ fn from_source(
         source.insert(name.into());
     }
     steps.extend(asserted);
+    models.mark(caller::InvocationPhase::Act, &mut steps);
     source.insert(command_ref.into());
     source.insert(outcome_ref.into());
     Ok((steps, source))
@@ -10262,14 +10482,16 @@ fn sent_requiring(
 /// branches whose input alone selects them: a guard over the held state or the stored row is
 /// arranged by searches of their own, and an externally decided or replayed branch has no boundary
 /// the input moves.
+#[allow(clippy::too_many_lines)] // Keep each boundary's arrangement beside its acting invocation.
 fn boundaries(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     run: &Run,
     steps: &[ScenarioStep],
 ) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let ir = models.arrangement;
     let mut out = (Vec::new(), BTreeSet::new());
     if outcome.replays.is_some()
         || subject_fact::routes(command, outcome)
@@ -10347,10 +10569,12 @@ fn boundaries(
             else {
                 continue;
             };
-            let Ok(arrangement) = arrange_unbound(ir, &subject.entity, before, actors, &mut taken)
+            let Ok(mut arrangement) =
+                arrange_unbound(ir, &subject.entity, before, actors, &mut taken)
             else {
                 continue;
             };
+            models.mark(caller::InvocationPhase::Arrange, &mut arrangement.steps);
             out.0.extend(arrangement.steps);
             out.1.extend(arrangement.source);
             settled = arrangement.settled;
@@ -10376,6 +10600,7 @@ fn boundaries(
     }
     out.1.insert(command_ref.into());
     out.1.insert(outcome_ref.into());
+    models.mark(caller::InvocationPhase::Act, &mut out.0);
     out
 }
 
@@ -10397,14 +10622,15 @@ fn clipped(text: &str) -> ScenarioPurpose {
 /// to check; neither is a refusal, because neither is a check the specification asked for and did
 /// not get.
 fn invariants(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
+    let ir = models.arrangement;
     let projections = row_projections(ir);
-    for command in ir.commands().values() {
+    for command in models.acting.commands().values() {
         if !focus.takes(&command.name) {
             continue;
         }
@@ -10419,9 +10645,15 @@ fn invariants(
                 entity: EntityRef::from(&subject.entity),
                 after: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
             };
-            let Some(scenario) =
-                holds_after(ir, command, outcome, &projections, actors, &id, refusals)
-            else {
+            let Some(scenario) = holds_after(
+                models,
+                command,
+                outcome,
+                &projections,
+                actors,
+                &id,
+                refusals,
+            ) else {
                 continue;
             };
             insert(suite, id, scenario, refusals);
@@ -10440,7 +10672,7 @@ fn invariants(
 /// still worth having, and the ones it could not appear as refusals beside it.
 #[allow(clippy::too_many_arguments)]
 fn holds_after(
-    ir: &EssIr,
+    models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     projections: &BTreeMap<&EntityHandle, Vec<&ResolvedView>>,
@@ -10448,10 +10680,11 @@ fn holds_after(
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
 ) -> Option<ConformanceScenario> {
+    let ir = models.arrangement;
     let subject = outcome.subject.as_ref()?;
     let entity = ir.entity(&subject.entity);
     let entity_ref = EntityRef::from(&subject.entity);
-    let run = match run(ir, command, outcome, actors) {
+    let run = match run_as(models, command, outcome, actors, Witness::Full) {
         Ok(run) => run,
         Err(cause) => {
             refusals.push(Refusal::about(id, cause));
@@ -11556,6 +11789,7 @@ fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
 /// The construct a scenario id is about.
 fn subject_of(id: &ScenarioId) -> EssSemanticRef {
     match id {
+        ScenarioId::Disclosure { cell } => cell.origin.clone().into(),
         ScenarioId::Outcome { outcome } => outcome.clone().into(),
         ScenarioId::Transition { transition, .. } => transition.clone().into(),
         ScenarioId::Refusal { entity, .. } | ScenarioId::Invariant { entity, .. } => {

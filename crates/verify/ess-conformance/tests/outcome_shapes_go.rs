@@ -41,7 +41,7 @@ fn go_gives_the_reference_verdict_for_every_outcome_shape_mode() {
     let suite = synthesis.suite;
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/22"
+        "ess-conformance/34"
     );
     for mode in MODES {
         let verdicts = support_go::assert_parity(
@@ -74,7 +74,7 @@ fn go_gives_the_reference_verdict_on_the_coverage_input_23() {
             .provenance
             .suite_version
             .to_string(),
-        "ess-conformance/23"
+        "ess-conformance/35"
     );
     for mode in MODES {
         let label = format!("shapes-coverage-{mode:?}").to_lowercase();

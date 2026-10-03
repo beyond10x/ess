@@ -216,6 +216,29 @@ pub(crate) fn input_absent(
     }
 }
 
+/// Structural code generation cannot supply atomic, durable one-time issuance.
+/// Refuse the named policy before emitting any incomplete implementation artifacts.
+pub(crate) fn one_time_response(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    let causes = ir.commands().values().flat_map(|command| {
+        command.outcomes.iter().filter(|outcome| !outcome.one_time_response.is_empty()).map(move |outcome| {
+            TargetFailureCause::new(
+                TargetFailureCode::MissingRepresentation,
+                vec![format!("commands.{}.outcomes.{}.one_time_response", command.name, outcome.name)],
+                "one_time_response requires implementation-owned atomic durable consumption and fresh issuance; this code target cannot implement that policy".to_owned(),
+            )
+        })
+    }).collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}
+
 /// A binding with a bounded retry (ess/16, beyond10x/ess#165) is refused by every target that
 /// delivers bindings, as `Json` is. The command-line target delivers none, so it has nothing to
 /// refuse.

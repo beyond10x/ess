@@ -8,6 +8,7 @@
 //! declared order, and not the same row again. Every claim holds on a target other users share.
 //! One in-memory target pages correctly, and each wrong mode breaks it in one way.
 
+mod support_versions;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -85,7 +86,7 @@ fn the_repro_reads_the_first_page_and_the_one_after_it() {
     let suite = &synthesis.suite;
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     assert!(view_paging::used_by(suite));
     let paged = paged_steps(suite);
@@ -200,7 +201,7 @@ fn a_view_without_paging_keeps_its_suite() {
         );
     let suite = suite_of(&text);
     assert!(!view_paging::used_by(&suite));
-    assert!(suite.provenance.suite_version.major() < view_paging::ORDINARY);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
 }
 
 // ---- running it ---------------------------------------------------------------------------------
@@ -422,12 +423,13 @@ fn a_page_under_an_older_suite_label_is_refused_as_vocabulary_it_does_not_have()
     let mut suite = suite_of(MODEL);
     let original = suite.to_canonical_json().unwrap();
     assert!(original.contains("\"expect\": \"page\""), "{original}");
-    let older = original.replace("\"ess-conformance/26\"", "\"ess-conformance/24\"");
+    let older = support_versions::legacy_json(&original, 24);
     assert_ne!(older, original);
     let error = AdmittedSuite::from_json(&older).expect_err("a page needs suite/26");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary", "{error}");
     assert!(error.to_string().contains("suite/26"), "{error}");
     suite.provenance.suite_version = SuiteFormat::parse("ess-conformance/24").unwrap();
+    suite.provenance.scenario_initial_state = None;
     let error = ess_conformance::admission::suite(&suite).expect_err("refused");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary");
 }

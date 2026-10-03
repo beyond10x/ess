@@ -377,3 +377,25 @@ The existing planning stories own implementation, not this document. Missing Atl
 ## Validation status
 
 This unit reviewed the source inventory, all 75 matrix rows and the P1–P10 pairing table for explicit outcomes and implementation owners. No compatibility fixture, canonicalization test, package test, formatter, Clippy run, browser check, AEP adaptation or downstream release was executed for this document. The sole repository check required here is git diff --check; its original result is retained in the implementation report, the first correction in correction-report.md and the final bounded correction in correction-report-2.md. The integration coordinator owns full gates and any required site build. Implementation acceptance requires the matrix to become executed checks rather than treating this design review as that evidence.
+
+## Generated runtime category parity, 2026-10-02
+
+The full runtime parity requirement adds `go-scenario-status/2`, used by both generated Go and
+TypeScript runners, to the existing report/2 producer-profile discriminator. Its available
+categories are passed, failed, error, unsupported and skipped. They are not interchangeable:
+a target execution error contributes error; a required observation the target cannot expose
+contributes unsupported. Unsupported or failed makes execution failed; absent either, error or
+skipped makes it inconclusive; otherwise it is passed. Existing complete-selection qualification
+and exact-suite association remain unchanged.
+
+The original `go-scenario-status/1` table above remains its historical contract, including the
+unavailability of error and unsupported. Readers retain that restriction and reject unknown
+profiles. The report/2 envelope already carries all five categories, so the new meaning belongs
+to the versioned profile rather than a silent reinterpretation of /1. Legacy report/1 retains
+its old diagnostic category presentation at serialization; it does not normalize report/2.
+
+A report/2 generated test with an unsupported result exits nonzero, as does a target execution
+error. Strict mode additionally rejects every nonqualifying report, including empty or unknown
+coverage. Cross-runtime tests compare the exact report/2 categories and counts rather than mapping
+native unsupported to generated skipped. Old-profile reader controls remain alongside the new
+profile's healthy/error/unsupported/explicit-skip round trips.

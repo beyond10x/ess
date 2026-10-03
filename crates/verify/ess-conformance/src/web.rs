@@ -145,7 +145,7 @@ fn command(command: &ess_compiler::ir::ResolvedCommand) -> serde_json::Value {
 }
 
 fn outcome(outcome: &ess_compiler::ir::ResolvedOutcome) -> serde_json::Value {
-    serde_json::json!({
+    let mut projected = serde_json::json!({
         "name": outcome.name.as_str(),
         "refuses": outcome.refuses,
         "subject": outcome.subject.as_ref().map(subject),
@@ -155,7 +155,11 @@ fn outcome(outcome: &ess_compiler::ir::ResolvedOutcome) -> serde_json::Value {
             .iter()
             .map(|set| serde_json::json!({ "target": set.target, "from": set_source(set) }))
             .collect::<Vec<_>>(),
-    })
+    });
+    if !outcome.one_time_response.is_empty() {
+        projected["one_time_response"] = serde_json::json!(outcome.one_time_response);
+    }
+    projected
 }
 
 /// What an outcome does to its subject, in the words the page needs to move an instance.

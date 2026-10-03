@@ -109,7 +109,7 @@ fn suite(text: &str) -> ConformanceSuite {
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     synthesis.suite
 }
@@ -136,7 +136,7 @@ fn go_gives_the_reference_verdict_for_every_caller_mode() {
             Mode::AnyoneEdits => assert_eq!(wrong, [FORBIDDEN], "{verdicts:?}"),
             Mode::OnlyTheFirstCallerEdits => assert!(!wrong.is_empty(), "{verdicts:?}"),
             Mode::CannotAuthenticate => assert!(
-                !wrong.is_empty() && wrong.iter().all(|id| verdicts[*id] == "skipped"),
+                !wrong.is_empty() && wrong.iter().all(|id| verdicts[*id] == "unsupported"),
                 "{verdicts:?}"
             ),
         }

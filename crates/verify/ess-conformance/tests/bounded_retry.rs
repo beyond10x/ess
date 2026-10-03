@@ -7,6 +7,7 @@
 //! takes `ess-conformance/26`. One in-memory target implements the sender the issue describes;
 //! each wrong mode breaks exactly one of the two scenarios.
 
+mod support_versions;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -325,7 +326,7 @@ fn the_bound_is_witnessed_by_exactly_n_invocations_with_a_retried_refusal_forced
     );
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     let exhausted = scenario(&synthesis.suite, ON_FAILURE);
     assert_eq!(
@@ -536,13 +537,10 @@ fn coverage_json(text: &str) -> String {
 #[test]
 fn coverage_for_the_fixture_is_27_and_carries_the_count() {
     let original = coverage_json(MODEL);
-    assert!(original.contains("\"ess-conformance/27\""), "{original}");
+    assert!(original.contains("\"ess-conformance/35\""), "{original}");
     assert!(original.contains("\"count\": 3"), "{original}");
     AdmittedSuite::from_json(&original).unwrap_or_else(|error| panic!("{error}"));
-    assert!(AdmittedSuite::from_json(
-        &original.replace("ess-conformance/27", "ess-conformance/25")
-    )
-    .is_err());
+    assert!(AdmittedSuite::from_json(&support_versions::legacy_json(&original, 25)).is_err());
 }
 
 #[test]
@@ -563,5 +561,5 @@ fn coverage_that_only_refuses_a_final_failure_still_takes_27() {
     let original = coverage_json(&model);
     assert!(original.contains("final-failure"), "{original}");
     assert!(!original.contains("\"count\""), "{original}");
-    assert!(original.contains("\"ess-conformance/27\""), "{original}");
+    assert!(original.contains("\"ess-conformance/35\""), "{original}");
 }

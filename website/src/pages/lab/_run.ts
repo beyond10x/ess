@@ -322,7 +322,7 @@ const SCRIPT: Exchange[] = [
   },
   {
     command: 'billing.invoice.IssueInvoice',
-    input: (held) => ({invoice_id: held.invoice}),
+    input: (held) => ({invoice_id: held.invoice, issued_at: '2026-01-05T09:00:01Z'}),
     why: 'The first declared move: the invoice the previous command created leaves Draft.',
   },
   {

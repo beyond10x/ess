@@ -736,12 +736,12 @@ test('report/2 counts every terminal verdict and is refused for an incomplete ru
       passed: 1,
       failed: 1,
       error: 0,
-      unsupported: 0,
-      skipped: 1,
+      unsupported: 1,
+      skipped: 0,
     });
     assert.equal(document.execution_status, 'failed');
     assert.equal(document.conformance_status, 'failed');
-    assert.equal(document.producer_profile, 'go-scenario-status/1');
+    assert.equal(document.producer_profile, 'go-scenario-status/2');
     assert.equal(document.coverage.knowledge, 'unknown');
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -764,6 +764,15 @@ test('asJSON reads a target answer as JSON does', () => {
     e: exact,
   });
   assert.equal(Object.hasOwn(asJSON({ a: undefined }) as object, 'a'), false);
+});
+
+test('asJSON preserves special own object keys without changing the prototype', () => {
+  const input = JSON.parse('{"__proto__":{"audit":"private"},"constructor":"data"}');
+  const observed = asJSON(input) as Record<string, Node>;
+  assert.deepEqual(observed, input);
+  assert.equal(Object.hasOwn(observed, '__proto__'), true);
+  assert.equal(Object.getPrototypeOf(observed), Object.prototype);
+  assert.equal(Object.hasOwn(Object.prototype, 'audit'), false);
 });
 
 // Everything is read exactly as `JSON.parse(JSON.stringify(x))` reads it, with two documented

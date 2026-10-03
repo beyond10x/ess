@@ -1898,10 +1898,15 @@ pub(crate) fn compile_one(
         other => unreachable!("`{other}` is an authored scenario id"),
     }));
     dependencies.extend(compiler.types.into_iter().map(EssSemanticRef::from));
-    Ok((
-        id,
-        ConformanceScenario::new(document.summary, compiler.steps, dependencies),
-    ))
+    let mut scenario = ConformanceScenario::new(document.summary, compiler.steps, dependencies);
+    crate::one_time_response::produce::attach(ir, &mut scenario).map_err(|detail| {
+        vec![Refusal {
+            origin: source.origin.clone(),
+            scenario: Some(id.clone()),
+            cause: Cause::Unreadable { detail },
+        }]
+    })?;
+    Ok((id, scenario))
 }
 
 fn document_format_refusal(document: &Document) -> Option<Cause> {

@@ -1,7 +1,9 @@
 package essconform
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,7 +15,7 @@ func TestAccessorSuiteAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if suite.Provenance.SuiteVersion != "ess-conformance/6" {
+	if suite.Provenance.SuiteVersion != "ess-conformance/34" {
 		t.Fatal(suite.Provenance.SuiteVersion)
 	}
 }
@@ -126,6 +128,66 @@ func TestAccessorForgedCertificateAndPlanRefusals(t *testing.T) {
 	}
 }
 
+// Rewrite the ordered parent chain from its root so each reference hashes the
+// exact rewritten parent bytes. RawMessage keeps scenario number tokens intact.
+func legacyAccessorInput(t *testing.T, raw []byte, version string) string {
+	t.Helper()
+	object := func(raw json.RawMessage) map[string]json.RawMessage {
+		var value map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	encode := func(value any) json.RawMessage {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	input := object(raw)
+	var suite string
+	var parents []string
+	if err := json.Unmarshal(input["suite_json"], &suite); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(input["parent_suites"], &parents); err != nil {
+		t.Fatal(err)
+	}
+	rewrite := func(raw, parent string) string {
+		document := object(json.RawMessage(raw))
+		provenance := object(document["provenance"])
+		delete(provenance, "scenario_initial_state")
+		provenance["suite_version"] = encode(version)
+		document["provenance"] = encode(provenance)
+		coverage := object(document["coverage"])
+		selection := object(coverage["selection"])
+		filter := object(selection["filter"])
+		if reference, ok := filter["parent"]; ok {
+			if parent == "" {
+				t.Fatal("filtered fixture is missing its parent")
+			}
+			ref := object(reference)
+			ref["version"] = encode(version)
+			ref["digest"] = encode(fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(parent))))
+			filter["parent"] = encode(ref)
+		}
+		selection["filter"] = encode(filter)
+		coverage["selection"] = encode(selection)
+		document["coverage"] = encode(coverage)
+		return string(encode(document))
+	}
+	parent := ""
+	for i := len(parents) - 1; i >= 0; i-- {
+		parents[i] = rewrite(parents[i], parent)
+		parent = parents[i]
+	}
+	input["suite_json"] = encode(rewrite(suite, parent))
+	input["parent_suites"] = encode(parents)
+	return string(encode(input))
+}
+
 func TestAccessorCoverageSevenLineage(t *testing.T) {
 	for _, filename := range []string{"coverage-input.json", "filtered-input.json"} {
 		raw, err := os.ReadFile("../" + filename)
@@ -133,11 +195,14 @@ func TestAccessorCoverageSevenLineage(t *testing.T) {
 			t.Fatal(err)
 		}
 		suite, err := admitRunInput(string(raw))
-		if err != nil || suite.Provenance.SuiteVersion != "ess-conformance/7" {
+		if err != nil || suite.Provenance.SuiteVersion != "ess-conformance/35" {
 			t.Fatalf("%s: %v %v", filename, suite.Provenance, err)
 		}
-		if _, err := admitRunInput(strings.ReplaceAll(string(raw), "ess-conformance/7", "ess-conformance/5")); err == nil {
-			t.Fatal("downgraded lineage admitted")
+		if _, err := admitRunInput(legacyAccessorInput(t, raw, "ess-conformance/7")); err != nil {
+			t.Fatalf("%s: valid legacy accessor lineage refused: %v", filename, err)
+		}
+		if _, err := admitRunInput(legacyAccessorInput(t, raw, "ess-conformance/5")); err == nil || err.Error() != "accessor refusal requires suite/7" {
+			t.Fatalf("%s: want accessor-version refusal, got %v", filename, err)
 		}
 	}
 }

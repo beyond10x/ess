@@ -140,8 +140,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
 use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedEffect, ResolvedInstance, ResolvedView};
+use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName as ModelName;
+use ess_domain::types::Primitive;
 use ess_domain::view::Consistency;
 use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use ess_primitives::node::Node;
@@ -362,6 +364,12 @@ fn view_read<'h>(
         return Err("an aggregate view's rows are groups, not instances".to_owned());
     }
     let entity = ir.entity(&view.source);
+    if !history_text_identity(ir, &entity.identity.type_ref) {
+        return Err(
+            "ess-history/1 records text row identities; this entity requires nontext identities"
+                .into(),
+        );
+    }
     let mut admits = BTreeSet::new();
     for state in &entity.lifecycle.states {
         let admitted = match &view.filter {
@@ -439,6 +447,19 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
             continue;
         }
         let (key, command) = ir.commands().get_key_value(&name).ok_or_else(unknown)?;
+        if command
+            .outcomes
+            .iter()
+            .filter_map(|outcome| outcome.subject.as_ref())
+            .any(|subject| {
+                !history_text_identity(ir, &ir.entity(&subject.entity).identity.type_ref)
+            })
+        {
+            return Err(CheckRefusal::Model {
+                operation_id: operation.operation_id.as_str().into(),
+                why: "ess-history/1 records text subject identities; this command requires nontext identities".into(),
+            });
+        }
         if !inputs.contains_key(key) {
             inputs.insert(key, candidates(ir, command)?);
         }
@@ -485,6 +506,34 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
         reads,
         not_judged,
     })
+}
+
+/// Whether this declaration admits history's actual text identity representation.
+/// Json histories retain text as text; numeric JSON cannot be recovered from a string.
+fn history_text_identity(ir: &EssIr, identity: &ResolvedTypeRef) -> bool {
+    let mut current = identity.required();
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        return match current {
+            ResolvedTypeRef::Primitive { name } => matches!(
+                name,
+                Primitive::String
+                    | Primitive::Uuid
+                    | Primitive::Timestamp
+                    | Primitive::Duration
+                    | Primitive::Json
+            ),
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => {
+                    current = of.required();
+                    continue;
+                }
+                ResolvedBody::Enum { .. } => true,
+                _ => false,
+            },
+            _ => false,
+        };
+    }
+    false
 }
 
 /// Every candidate input the witness strategy builds for `command`.
@@ -1768,7 +1817,7 @@ fn subject_states<'s>(stores: impl IntoIterator<Item = &'s Store>, subject: &str
     let mut states = BTreeSet::new();
     for store in stores {
         let mut held = store
-            .instances()
+            .text_instances()
             .filter(|(_, identity, _)| *identity == subject)
             .peekable();
         if held.peek().is_none() {

@@ -263,8 +263,6 @@ fn adversary_entity_setup_null_identity_is_refused_at_source_validation() {
     let result = authoring(&ir, &source);
     if result.is_complete() {
         let mut suite = ess_conformance::synthesize::synthesize(&ir).suite;
-        suite.provenance.suite_version =
-            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
         suite.scenarios = result.scenarios.clone();
         let error = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap_err();
         assert!(
@@ -380,8 +378,6 @@ mod entity_setup_execution {
 
     fn suite(ir: &EssIr) -> ConformanceSuite {
         let mut result = ess_conformance::synthesize::synthesize(ir).suite;
-        result.provenance.suite_version =
-            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
         let first = authoring(ir, CALL_HISTORY_SETUP);
         assert!(first.is_complete(), "{:?}", first.refusals);
         result.scenarios = first.scenarios;
@@ -471,6 +467,7 @@ mod entity_setup_execution {
         let mut old = suite;
         old.provenance.suite_version =
             ess_conformance::scenario::SuiteFormat::parse("ess-conformance/4").unwrap();
+        old.provenance.scenario_initial_state = None;
         assert!(ess_conformance::AdmittedSuite::from_suite(&old).is_err());
         assert!(old.to_canonical_json().is_err());
         assert!(ess_conformance::go::emit(&old).is_err());
@@ -551,7 +548,7 @@ mod entity_setup_execution {
             );
             assert_eq!(
                 output.status.success(),
-                matches!(behavior, "good" | "unsupported" | "absent-capability"),
+                behavior == "good",
                 "{behavior}: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
@@ -562,7 +559,6 @@ mod entity_setup_execution {
             .unwrap();
             let expected = match behavior {
                 "good" => "passed",
-                "unsupported" | "absent-capability" => "inconclusive",
                 _ => "failed",
             };
             assert_eq!(report["execution_status"], expected, "{behavior}: {report}");
@@ -571,12 +567,11 @@ mod entity_setup_execution {
                 ess_conformance::CountReport::from_json(&report.to_string(), &admitted).unwrap();
             let checked_status = match behavior {
                 "good" => ess_conformance::CountStatus::Passed,
-                "unsupported" | "absent-capability" => ess_conformance::CountStatus::Inconclusive,
                 _ => ess_conformance::CountStatus::Failed,
             };
             assert_eq!(checked.execution_status(), checked_status);
             if matches!(behavior, "unsupported" | "absent-capability") {
-                assert_eq!(report["counts"]["skipped"], 2);
+                assert_eq!(report["counts"]["unsupported"], 2);
                 assert_eq!(report["counts"]["passed"], 0);
                 assert_ne!(report["conformance_status"], "passed");
             }

@@ -3,8 +3,8 @@
 //! reference runner does (beyond10x/ess#188).
 //!
 //! The target is `tests/bounded_retry.rs`'s, with every wrong sender, recorded once and replayed to
-//! the Go runtime. A Go target without `RepeatedOutcomeTarget` skips the one scenario that forces an
-//! outcome more than once.
+//! the Go runtime. A Go target without `RepeatedOutcomeTarget` reports unsupported for the scenario
+//! that forces an outcome more than once.
 
 mod support_go;
 
@@ -45,7 +45,7 @@ fn go_gives_the_reference_verdict_for_every_sender() {
         (Mode::Unbounded, vec![(ON_FAILURE, "failed")]),
         (Mode::TooFew, vec![(ON_FAILURE, "failed")]),
         (Mode::RetriesFinal, vec![(FINAL, "failed")]),
-        (Mode::CannotRepeat, vec![(ON_FAILURE, "skipped")]),
+        (Mode::CannotRepeat, vec![(ON_FAILURE, "unsupported")]),
     ] {
         let verdicts = support_go::assert_parity(
             &format!("retry-{mode:?}").to_lowercase(),
@@ -62,7 +62,7 @@ fn go_gives_the_reference_verdict_for_every_sender() {
 }
 
 #[test]
-fn a_go_target_without_repeated_outcomes_skips_only_the_bounded_scenario() {
+fn a_go_target_without_repeated_outcomes_cannot_support_the_bounded_scenario() {
     let (rust, replayed) = support_go::compare_with(
         "retry-bare",
         &suite(),
@@ -79,7 +79,7 @@ fn a_go_target_without_repeated_outcomes_skips_only_the_bounded_scenario() {
         "{}",
         replayed.go.log
     );
-    assert_eq!(replayed.go.outcomes[ON_FAILURE], "skipped");
+    assert_eq!(replayed.go.outcomes[ON_FAILURE], "unsupported");
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

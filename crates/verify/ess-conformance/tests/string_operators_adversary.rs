@@ -320,7 +320,7 @@ fn published_string_invariants_reach_the_suite_rebased_and_take_the_new_pair() {
             .any(|p| p.contains(r#"{"not":{"sku":{"contains":" "}}}"#)),
         "the entity invariant is asserted: {predicates:?}"
     );
-    assert_eq!(synthesis.suite.provenance.suite_version.major(), 14);
+    assert_eq!(synthesis.suite.provenance.suite_version.major(), 34);
     let covered = ess_conformance::coverage_build::build(
         &ir,
         &[],
@@ -330,7 +330,7 @@ fn published_string_invariants_reach_the_suite_rebased_and_take_the_new_pair() {
     .expect("coverage builds");
     assert_eq!(
         covered.selected().suite().provenance.suite_version.major(),
-        15
+        35
     );
 }
 

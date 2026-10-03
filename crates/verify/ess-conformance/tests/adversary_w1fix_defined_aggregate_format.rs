@@ -65,7 +65,7 @@ fn coverage_version(ir: &EssIr) -> String {
 }
 
 /// Synthesizes `text`, requires the invariant reading `needle` to reach the suite, and requires
-/// suite/26 and coverage /27.
+/// fresh suite/34 and coverage /35, preserving the aggregate obligation.
 fn selects_round_three(text: &str, needle: &str) {
     let ir = ir(text);
     let synthesis = synthesize(&ir);
@@ -77,10 +77,10 @@ fn selects_round_three(text: &str, needle: &str) {
     );
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26",
+        "ess-conformance/34",
         "a view predicate reading `{needle}` over an Optional aggregate"
     );
-    assert_eq!(coverage_version(&ir), "ess-conformance/27");
+    assert_eq!(coverage_version(&ir), "ess-conformance/35");
 }
 
 /// Replaces the type of `metrics` in the entity, the view and the `PauseQueue` input.

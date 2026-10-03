@@ -17,8 +17,14 @@ fn versions_distinguish_lossless_reader_from_compatible_fallback() {
         assert!(typed.to_canonical_json().is_err());
         assert!(AdmittedSuite::from_json(&raw.to_string()).is_err());
         typed.select_fresh_format();
-        assert_eq!(typed.provenance.suite_version.major(), 8);
+        assert_eq!(typed.provenance.suite_version.major(), 34);
         AdmittedSuite::from_json(&typed.to_canonical_json().unwrap()).unwrap();
+        // The original feature boundary remains /8 even though fresh suites declare isolation.
+        typed.provenance.scenario_initial_state = None;
+        typed.provenance.suite_version = SuiteFormat::parse("ess-conformance/8").unwrap();
+        AdmittedSuite::from_json(&typed.to_canonical_json().unwrap()).unwrap();
+        typed.provenance.suite_version = SuiteFormat::parse("ess-conformance/4").unwrap();
+        assert!(typed.to_canonical_json().is_err());
     }
     for predicate in [
         json!({"to":{"eq":"\"busy\" status"}}),
@@ -27,8 +33,9 @@ fn versions_distinguish_lossless_reader_from_compatible_fallback() {
     ] {
         let mut typed: ConformanceSuite = serde_json::from_value(document(&predicate)).unwrap();
         assert!(!ess_conformance::quoted_predicate_format::used_by(&typed));
+        AdmittedSuite::from_json(&typed.to_canonical_json().unwrap()).unwrap();
         typed.select_fresh_format();
-        assert_eq!(typed.provenance.suite_version.major(), 4);
+        assert_eq!(typed.provenance.suite_version.major(), 34);
         AdmittedSuite::from_json(&typed.to_canonical_json().unwrap()).unwrap();
     }
     // Original structured bytes need the new reader even when the canonical compact spelling

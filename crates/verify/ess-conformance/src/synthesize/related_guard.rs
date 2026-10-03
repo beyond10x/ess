@@ -656,15 +656,6 @@ fn row_at(
 /// arrangement already binds the input `via` names, which then names two rows at once — but for
 /// the row the creation is owned by, which is arranged once, as the related row
 /// ([`owner_is_related`]).
-pub(super) fn prepare(
-    ir: &EssIr,
-    command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
-    actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
-    prepare_at(ir, command, outcome, actors, Distinction::PLAIN, None)
-}
-
 /// Every further related row `outcome`'s own predicate is witnessed on, one per connective child:
 /// for a conjunction, each conjunct refuted alone with every other held, where the command answers
 /// with another branch; for a disjunction — the predicate's, or one among its conjuncts — each
@@ -769,22 +760,22 @@ fn isolating(children: &[&Predicate], alone: bool) -> Vec<Goal> {
         .collect()
 }
 
-/// [`prepare`] for a further witness: the subject arranged at `distinction`, the related row in the
+/// [`prepare_at_in`] for a further witness: the subject arranged at `distinction`, the related row in the
 /// scenario's own block at that witness's place, and — where `goal` names one — the row searched
 /// for until every predicate of the goal reads as it says, crossed with the input sent.
-pub(super) fn prepare_at(
-    ir: &EssIr,
+pub(super) fn prepare_at_in(
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
-    arranged_at(ir, command, outcome, actors, distinction, goal)
+    arranged_at(models, command, outcome, actors, distinction, goal)
         .map(|(setup, input, _)| (setup, input))
 }
 
-/// Whether `outcome`'s own scenario ([`prepare`]) copies a field from the row its guard reads and
+/// Whether `outcome`'s own scenario ([`prepare_at_in`]) copies a field from the row its guard reads and
 /// arranges no second row the guard accepts holding another value there ([`companion`],
 /// beyond10x/ess#270): a target copying from "a row the guard accepts" rather than the row named
 /// is then not failed by it. The fields copied, where it is; else the copied fields whose type has
@@ -803,8 +794,15 @@ pub(super) fn unaccompanied(
     if !routes(command, outcome) || is_absent(outcome) || copied.is_empty() {
         return Vec::new();
     }
-    let lonely = arranged_at(ir, command, outcome, actors, Distinction::PLAIN, None)
-        .is_ok_and(|(_, _, lonely)| lonely);
+    let lonely = arranged_at(
+        &super::caller::InvocationModels::plain(ir),
+        command,
+        outcome,
+        actors,
+        Distinction::PLAIN,
+        None,
+    )
+    .is_ok_and(|(_, _, lonely)| lonely);
     if lonely {
         return copied.into_iter().map(str::to_owned).collect();
     }
@@ -825,15 +823,16 @@ pub(super) fn unaccompanied(
         .collect()
 }
 
-/// [`prepare_at`], and whether the scenario is [`unaccompanied`].
+/// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
 fn arranged_at(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    let ir = models.arrangement;
     let (via, entity) = read(command).ok_or_else(unarranged)?;
     let field = via.field();
     // A missing row reads no predicate, so no boundary of one is witnessed on it.
@@ -871,7 +870,9 @@ fn arranged_at(
         // own send: each is answered by this refusal, so a target answering that guard's branch
         // before reading the row fails. Only for a refusal, which changes nothing, so the sends
         // leave the row missing for the next.
+        models.mark(super::caller::InvocationPhase::Arrange, &mut steps);
         send_each_without_row(ir, command, outcome, actors, &setup.bound, each, &mut steps);
+        models.mark(super::caller::InvocationPhase::Act, &mut steps);
         input
     } else {
         // The owners the branch's own arrangement already names for a link input — its subject,
@@ -926,10 +927,10 @@ fn arranged_at(
     Ok((setup, input, lonely))
 }
 
-/// The branch's own arrangement, ahead of the related row [`prepare_at`] arranges for its guard.
+/// The branch's own arrangement, ahead of the related row [`prepare_at_in`] arranges for its guard.
 ///
 /// A `{related: …}` value read through the input the guard reads names the guard's own row
-/// (`guarded`): it is left out here, arranged once by [`prepare_at`], and its values carried from
+/// (`guarded`): it is left out here, arranged once by [`prepare_at_in`], and its values carried from
 /// it (beyond10x/ess#270).
 fn own_arrangement(
     ir: &EssIr,

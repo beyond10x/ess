@@ -181,28 +181,51 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             "spec_digest",
             "contract_digest",
         ],
-        &["component"],
+        &["component", "scenario_initial_state"],
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=33) {
+    if !matches!(version.major(), 1..=35) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–33",
+            "execution readers admit suite majors 1–35",
+        ));
+    }
+    if version.major() >= 34 {
+        if p.get("scenario_initial_state")
+            .map(|state| state.text())
+            .transpose()?
+            != Some("empty")
+        {
+            return Err(root["provenance"].error(
+                "InvalidSuite",
+                "scenario_initial_state must be empty in suite/34 and /35",
+            ));
+        }
+    } else if p.contains_key("scenario_initial_state") {
+        return Err(p["scenario_initial_state"].error(
+            "InvalidSuite",
+            "scenario_initial_state requires suite/34 or /35",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /33",
+            "coverage is required exactly for odd suite majors from /5 through /35",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
-        let s = scenario.closed(&["purpose", "steps", "source"], &[])?;
+        let s = scenario.closed(&["purpose", "steps", "source"], &["one_time_response"])?;
+        if version.major() < 34 && s.contains_key("one_time_response") {
+            return Err(scenario.error(
+                "UnsupportedVocabulary",
+                "one-time response authority requires suite/34 or /35",
+            ));
+        }
         for step in s["steps"].array()? {
             step_value(step, version.major())?;
         }
@@ -525,7 +548,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                     .map_err(|error| field.error("InvalidReplay", error.to_string()))?;
             }
             "response" if matches!(tag, "expect_response_payload" | "expect_direct_response") => {
-                response_observation(field, tag == "expect_direct_response")?;
+                response_observation(field, tag == "expect_direct_response", major)?;
             }
             "left" | "right" if tag == "expect_reading_order" => {
                 let reference: crate::reading::ReadingReference = serde_json::from_str(&field.raw)
@@ -569,17 +592,56 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     Ok(())
 }
 
-fn response_observation(field: &Json, direct: bool) -> Result<(), AdmissionError> {
+fn response_observation(field: &Json, direct: bool, major: u32) -> Result<(), AdmissionError> {
     if direct {
         field
             .decode_checked_depth::<crate::direct_response::Observation>()
             .map(|_| ())
             .map_err(|error| field.error("InvalidResponse", error.to_string()))
     } else {
+        if field.object()?.contains_key("nested") {
+            if major < 34 {
+                return Err(field.error(
+                    "UnsupportedVocabulary",
+                    "nested response authority requires suite/34 or /35",
+                ));
+            }
+            nested_response_metadata(field)?;
+        }
         serde_json::from_str::<crate::response::Observation>(&field.raw)
             .map(|_| ())
             .map_err(|error| field.error("InvalidResponse", error.to_string()))
     }
+}
+
+/// Check original names before the general field reader can normalize naming aliases.
+fn nested_response_metadata(field: &Json) -> Result<(), AdmissionError> {
+    let root = field.object()?;
+    for key in ["fields", "targets"] {
+        if let Some(fields) = root.get(key) {
+            for item in fields.array()? {
+                let member = item.closed(
+                    &["name", "type"],
+                    if key == "fields" { &["presence"] } else { &[] },
+                )?;
+                if let Some(presence) = member.get("presence") {
+                    if !matches!(presence.text()?, "null_when_absent" | "omitted_when_absent") {
+                        return Err(presence.error("InvalidPresence", presence.text()?));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(declarations) = root.get("declarations") {
+        for declaration in declarations.object()?.values() {
+            if let Some(fields) = declaration.object()?.get("fields") {
+                for item in fields.array()? {
+                    item.closed(&["name", "type"], &[])?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Check the model even when synthesis would omit unsupported fields or whole scenarios.
@@ -594,6 +656,13 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         .flat_map(|scenario| &scenario.steps)
     {
         if let ScenarioStep::ExpectResponsePayload { response } = step {
+            if response.nested.is_some() && suite.provenance.suite_version.major() < 34 {
+                return Err(AdmissionError::new(
+                    "UnsupportedVocabulary",
+                    "$suite",
+                    "nested response authority requires suite/34 or /35",
+                ));
+            }
             if suite.provenance.suite_version.major() < 8 {
                 return Err(AdmissionError::new(
                     "UnsupportedVocabulary",
@@ -612,6 +681,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// The construct-owned format gates: each refuses an explicitly pinned older suite version that
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::one_time_response::admit(suite)?;
     crate::direct_response::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::structured_values::admit(suite)?;

@@ -2513,6 +2513,7 @@ lifecycle:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                one_time_response: Vec::new(),
                 set_effects: crate::command::SetEffects::default(),
                 summary: None,
                 refs: crate::refs::Refs::new(),

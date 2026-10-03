@@ -294,6 +294,7 @@ impl<'a> Emit<'a> {
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
     crate::failure::input_absent(ir, plan, crate::Target::Go)?;
+    crate::failure::one_time_response(ir, plan, crate::Target::Go)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Go)?;
     crate::paging::refuse(ir, plan, crate::Target::Go)?;
     crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Go)?;

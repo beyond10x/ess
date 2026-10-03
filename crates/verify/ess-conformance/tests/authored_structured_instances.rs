@@ -12,6 +12,7 @@
 //! each container, so a runner that dropped, repeated, reordered or swapped a reference sends an
 //! input the assertions below tell apart from the right one.
 
+mod support_versions;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -264,15 +265,15 @@ fn a_suite_carrying_structured_references_claims_the_format_that_reads_them() {
     let suite = suite(&ir, &document(PLANNED));
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/32"
+        "ess-conformance/34"
     );
     let json = suite.to_canonical_json().expect("admitted");
     AdmittedSuite::from_json(&json).unwrap_or_else(|error| panic!("{error}"));
     // Labelled with the major before it, the same bytes are refused rather than read by a reader
     // that would send `{"kind": "list", …}` to the target as a value.
-    let older = json.replace("\"ess-conformance/32\"", "\"ess-conformance/30\"");
+    let older = support_versions::legacy_json(&json, 30);
     assert!(AdmittedSuite::from_json(&older).is_err());
-    // A suite without them keeps the format it had.
+    // Every fresh suite carries its explicit initial-state requirement, even without these values.
     let plain = PLANNED.replace(
         "ring_sequence: [{$instance: a}, {$instance: b}]",
         "ring_sequence: []",
@@ -291,19 +292,17 @@ fn a_suite_carrying_structured_references_claims_the_format_that_reads_them() {
             "        - {primary: 00000000-0000-4000-8000-000000000008, note: second}\n",
         );
     let plain = self::suite(&ir, &document(&plain));
-    assert!(plain.provenance.suite_version.major() < 32, "{plain:?}");
+    assert_eq!(plain.provenance.suite_version.major(), 34, "{plain:?}");
 }
 
-/// The generated runners do not read suite/32, and say so when asked for a package rather than
-/// writing one their own admission refuses.
+/// Structured references must survive generation for every conformance runtime.
+/// Runtime parity controls separately check the actual resolved callback inputs.
 #[test]
-fn the_generated_runners_refuse_a_suite_they_cannot_read() {
+fn the_generated_runners_preserve_structured_references() {
     let ir = model();
     let suite = suite(&ir, &document(PLANNED));
-    let go = ess_conformance::go::emit(&suite).expect_err("Go refuses");
-    assert!(go.to_string().contains("Rust runner"), "{go}");
-    let ts = ess_conformance::ts::emit(&suite).expect_err("TypeScript refuses");
-    assert!(ts.to_string().contains("Rust runner"), "{ts}");
+    ess_conformance::go::emit(&suite).expect("Go supports structured references");
+    ess_conformance::ts::emit(&suite).expect("TypeScript supports structured references");
 }
 
 // ---- running it --------------------------------------------------------------------------------
@@ -541,13 +540,11 @@ fn a_coverage_suite_carrying_structured_references_is_33_and_runs() {
     let admitted = input.selected();
     assert_eq!(
         admitted.suite().provenance.suite_version.to_string(),
-        "ess-conformance/33"
+        "ess-conformance/35"
     );
     AdmittedSuite::from_json(admitted.original_json()).unwrap_or_else(|error| panic!("{error}"));
-    let go = ess_conformance::go::emit_input(&input).expect_err("Go refuses");
-    assert!(go.to_string().contains("Rust runner"), "{go}");
-    let ts = ess_conformance::ts::emit_input(&input).expect_err("TypeScript refuses");
-    assert!(ts.to_string().contains("Rust runner"), "{ts}");
+    ess_conformance::go::emit_input(&input).expect("Go executes structured references");
+    ess_conformance::ts::emit_input(&input).expect("TypeScript executes structured references");
     let target = Recording {
         inner: Interpreted::for_model(ir),
         sent: RefCell::default(),

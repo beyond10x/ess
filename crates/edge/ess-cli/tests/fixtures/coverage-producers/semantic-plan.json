@@ -3361,7 +3361,7 @@
     {
       "id": "S01-combined-go-passed",
       "structure": "S01-combined",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -3692,7 +3692,7 @@
     {
       "id": "S04-invoice-component-go-passed",
       "structure": "S04-invoice-component",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -3899,7 +3899,7 @@
     {
       "id": "S06-grandchild-go-passed",
       "structure": "S06-grandchild",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -4017,7 +4017,7 @@
     {
       "id": "S07-empty-go-passed",
       "structure": "S07-empty",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -4137,7 +4137,7 @@
     {
       "id": "S08-unknown-go-passed",
       "structure": "S08-unknown",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -4419,7 +4419,7 @@
     {
       "id": "S11-gap-survivor-child-go-passed",
       "structure": "S11-gap-survivor-child",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -4605,7 +4605,7 @@
     {
       "id": "S13-accepted-duplicate-go-passed",
       "structure": "S13-accepted-duplicate",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -4727,7 +4727,7 @@
     {
       "id": "S14-refused-then-accepted-go-passed",
       "structure": "S14-refused-then-accepted",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "billing-go",
       "target_mode": "passed",
       "report_format": 2,
@@ -4839,7 +4839,7 @@
     {
       "id": "S15-single-complete-go-passed",
       "structure": "S15-single-complete",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "single_scenario_controls",
       "target_mode": "passed",
       "report_format": 2,
@@ -5188,7 +5188,7 @@
     {
       "id": "S15-single-complete-go-failed",
       "structure": "S15-single-complete",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "single_scenario_controls",
       "target_mode": "failed",
       "report_format": 2,
@@ -5199,76 +5199,19 @@
       "expected_counts": {
         "total": 1,
         "passed": 0,
-        "failed": 1,
-        "error": 0,
+        "failed": 0,
+        "error": 1,
         "unsupported": 0,
         "skipped": 0
       },
       "expected_outcomes": {
         "passed": [],
-        "failed": [
+        "failed": [],
+        "error": [
           "billing.invoice/authored/a-scenario"
         ],
-        "error": [],
         "unsupported": [],
         "skipped": []
-      },
-      "expected_execution_status": "failed",
-      "expected_conformance_status": "failed",
-      "expected_qualification": {
-        "kind": "contradiction",
-        "reason": "ExecutionFailed",
-        "path": "$.execution_status"
-      },
-      "expected_evidence_missing": {
-        "before": 9,
-        "after": 9,
-        "basis": "Source-derived from selected policy; see policy_accounting. No engine/helper run performed."
-      },
-      "callbacks": {
-        "identity": 1,
-        "begin": 1,
-        "end": 1,
-        "scenario_invocations": 1,
-        "terminal_scenarios": 1,
-        "target_factory": 2,
-        "execute_command": 1
-      },
-      "report_expected": true,
-      "construction_state": "fixed",
-      "expected_diagnostic_producer_exit": 1,
-      "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
-      "expected_implementation": "coverage-producer-control 1",
-      "expected_specification": "billing/v3",
-      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
-    },
-    {
-      "id": "S15-single-complete-go-skipped",
-      "structure": "S15-single-complete",
-      "producer_profile": "go-scenario-status/1",
-      "target": "single_scenario_controls",
-      "target_mode": "skipped",
-      "report_format": 2,
-      "strict": false,
-      "clock": 0,
-      "completed_at": 0,
-      "evaluated_at": 0,
-      "expected_counts": {
-        "total": 1,
-        "passed": 0,
-        "failed": 0,
-        "error": 0,
-        "unsupported": 0,
-        "skipped": 1
-      },
-      "expected_outcomes": {
-        "passed": [],
-        "failed": [],
-        "error": [],
-        "unsupported": [],
-        "skipped": [
-          "billing.invoice/authored/a-scenario"
-        ]
       },
       "expected_execution_status": "inconclusive",
       "expected_conformance_status": "inconclusive",
@@ -5293,18 +5236,19 @@
       },
       "report_expected": true,
       "construction_state": "fixed",
-      "expected_diagnostic_producer_exit": 0,
+      "expected_diagnostic_producer_exit": 1,
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+      "target_mode_note": "The legacy mode name failed returns an ordinary command error; profile /2 retains it as error."
     },
     {
-      "id": "S15-single-complete-go-skip-then-teardown-error",
+      "id": "S15-single-complete-go-skipped",
       "structure": "S15-single-complete",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "single_scenario_controls",
-      "target_mode": "skip-then-teardown-error",
+      "target_mode": "skipped",
       "report_format": 2,
       "strict": false,
       "clock": 0,
@@ -5313,18 +5257,18 @@
       "expected_counts": {
         "total": 1,
         "passed": 0,
-        "failed": 1,
+        "failed": 0,
         "error": 0,
-        "unsupported": 0,
+        "unsupported": 1,
         "skipped": 0
       },
       "expected_outcomes": {
         "passed": [],
-        "failed": [
+        "failed": [],
+        "error": [],
+        "unsupported": [
           "billing.invoice/authored/a-scenario"
         ],
-        "error": [],
-        "unsupported": [],
         "skipped": []
       },
       "expected_execution_status": "failed",
@@ -5354,12 +5298,71 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+      "target_mode_note": "The legacy mode name skipped returns ErrUnsupported from ExecuteCommand; profile /2 retains it as unsupported."
+    },
+    {
+      "id": "S15-single-complete-go-skip-then-teardown-error",
+      "structure": "S15-single-complete",
+      "producer_profile": "go-scenario-status/2",
+      "target": "single_scenario_controls",
+      "target_mode": "skip-then-teardown-error",
+      "report_format": 2,
+      "strict": false,
+      "clock": 0,
+      "completed_at": 0,
+      "evaluated_at": 0,
+      "expected_counts": {
+        "total": 1,
+        "passed": 0,
+        "failed": 0,
+        "error": 0,
+        "unsupported": 1,
+        "skipped": 0
+      },
+      "expected_outcomes": {
+        "passed": [],
+        "failed": [],
+        "error": [],
+        "unsupported": [
+          "billing.invoice/authored/a-scenario"
+        ],
+        "skipped": []
+      },
+      "expected_execution_status": "failed",
+      "expected_conformance_status": "failed",
+      "expected_qualification": {
+        "kind": "contradiction",
+        "reason": "ExecutionFailed",
+        "path": "$.execution_status"
+      },
+      "expected_evidence_missing": {
+        "before": 9,
+        "after": 9,
+        "basis": "Source-derived from selected policy; see policy_accounting. No engine/helper run performed."
+      },
+      "callbacks": {
+        "identity": 1,
+        "begin": 1,
+        "end": 1,
+        "scenario_invocations": 1,
+        "terminal_scenarios": 1,
+        "target_factory": 2,
+        "execute_command": 1
+      },
+      "report_expected": true,
+      "construction_state": "fixed",
+      "expected_diagnostic_producer_exit": 1,
+      "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
+      "expected_implementation": "coverage-producer-control 1",
+      "expected_specification": "billing/v3",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+      "target_mode_note": "Both ExecuteCommand and EndScenario return ErrUnsupported; profile /2 retains one unsupported terminal scenario."
     },
     {
       "id": "S15-single-complete-go-skipped-strict",
       "structure": "S15-single-complete",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "single_scenario_controls",
       "target_mode": "skipped",
       "report_format": 2,
@@ -5372,23 +5375,23 @@
         "passed": 0,
         "failed": 0,
         "error": 0,
-        "unsupported": 0,
-        "skipped": 1
+        "unsupported": 1,
+        "skipped": 0
       },
       "expected_outcomes": {
         "passed": [],
         "failed": [],
         "error": [],
-        "unsupported": [],
-        "skipped": [
+        "unsupported": [
           "billing.invoice/authored/a-scenario"
-        ]
+        ],
+        "skipped": []
       },
-      "expected_execution_status": "inconclusive",
-      "expected_conformance_status": "inconclusive",
+      "expected_execution_status": "failed",
+      "expected_conformance_status": "failed",
       "expected_qualification": {
-        "kind": "unknown",
-        "reason": "ExecutionInconclusive",
+        "kind": "contradiction",
+        "reason": "ExecutionFailed",
         "path": "$.execution_status"
       },
       "expected_evidence_missing": {
@@ -5411,7 +5414,8 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+      "target_mode_note": "The legacy mode name skipped returns ErrUnsupported from ExecuteCommand; profile /2 retains it as unsupported."
     },
     {
       "id": "S15-single-complete-rust-clock-9007199254740993",
@@ -5632,7 +5636,7 @@
     {
       "id": "S15-single-complete-go-clock-9007199254740993",
       "structure": "S15-single-complete",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "single_scenario_controls",
       "target_mode": "passed",
       "report_format": 2,
@@ -5687,7 +5691,7 @@
     {
       "id": "S15-single-complete-go-clock-9223372036854775807",
       "structure": "S15-single-complete",
-      "producer_profile": "go-scenario-status/1",
+      "producer_profile": "go-scenario-status/2",
       "target": "single_scenario_controls",
       "target_mode": "passed",
       "report_format": 2,

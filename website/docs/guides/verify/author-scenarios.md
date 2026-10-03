@@ -221,7 +221,7 @@ any other type is refused as `ESS-AUTHOR-022`, naming the position (`labels[1]`,
 `pair.note`, `tags[owner]`, `target.value`); one at a member the model does not declare, or
 inside a value of the wrong shape, is refused naming the member or the position. One inside an event payload or an error is refused as
 `ESS-AUTHOR-021`, as a whole-field one is. A suite carrying such a value is suite/32 (/33
-with coverage); the Rust runner resolves it, and Go and TypeScript generation refuse it.
+with coverage); Rust, Go and TypeScript resolve it with report/2.
 
 ## Observe outcomes selected by held state
 
@@ -266,8 +266,8 @@ their original, weaker contract. A generic error assertion alone does not
 establish subject preservation.
 
 These observations select suite/12 or declared-coverage suite/13 and require
-report/2 in Rust and generated Go. TypeScript and browser runners refuse these
-envelopes before invoking the target. An immediate retry witness does not prove
+report/2 in Rust, generated Go and generated TypeScript. Browser replay refuses these
+envelopes. An immediate retry witness does not prove
 restart recovery, retries after a later head, or absence of physical writes;
 those remain implementation-specific acceptance.
 
@@ -321,8 +321,8 @@ If a target cannot deliver an event with its context, it answers unsupported, wh
 default. Its scenarios are then recorded `unsupported` with the target's reason, and are never
 passed.
 
-These steps use suite/30, or suite/31 with declared coverage. Go and TypeScript generation
-refuse a suite that carries them.
+These steps use suite/30, or suite/31 with declared coverage. Rust, Go and TypeScript
+execute them with report/2.
 
 ## Observe bounded binding accessors
 

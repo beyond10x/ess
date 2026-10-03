@@ -32,6 +32,7 @@ fn suite(major: u32) -> ConformanceSuite {
         spec_digest: SpecDigest::new("ab".repeat(32)).expect("a digest"),
         contract_digest: SpecDigest::new("cd".repeat(32)).expect("a digest"),
         component: None,
+        scenario_initial_state: None,
     })
 }
 
@@ -479,7 +480,10 @@ fn generated_docs_typescript_format_refusal_names_the_rule() {
         "the TypeScript runner still says only suite/8 and /9 need ESS_REPORT_FORMAT=2"
     );
     assert!(
-        runtime.contains("suite/8 through /27 require explicit ESS_REPORT_FORMAT=2"),
+        runtime.contains(&format!(
+            "suite/8 through /{} require explicit ESS_REPORT_FORMAT=2",
+            SUPPORTED_SUITE_FORMATS.iter().max().unwrap()
+        )),
         "the TypeScript runner's refusal does not name the versions it refuses"
     );
 }

@@ -3,9 +3,7 @@
 //!
 //! Three questions, each answered by a program rather than a paragraph:
 //!
-//! - a direct-return suite (`/28`, `/29`) still meets the refusal that names direct returns, not
-//!   the new version refusal: both carry `UnsupportedTarget`, and the existing direct-return cases
-//!   assert only that reason, so swapping the two guards would pass every one of them;
+//! - a fresh direct-return suite (`/34`, `/35`) emits on both targets;
 //! - the new refusal itself names the version, the limit and the target, at
 //!   `$.provenance.suite_version`, for `emit` on both targets;
 //! - the emit boundary agrees with the admission limit written in each emitted runtime, read as
@@ -92,6 +90,7 @@ fn empty_suite(major: u32) -> ConformanceSuite {
         spec_digest: SpecDigest::new("ab".repeat(32)).expect("a digest"),
         contract_digest: SpecDigest::new("cd".repeat(32)).expect("a digest"),
         component: None,
+        scenario_initial_state: None,
     })
 }
 
@@ -116,47 +115,27 @@ fn issue(error: &AdmissionError) -> (String, String, String) {
     )
 }
 
-/// The explicit direct-return refusal is what an adopter of an unreleased `ess/17` model sees,
-/// for `emit` and for `emit_input`, on both targets: not the version refusal the correction added
-/// behind it.
+/// Both ordinary and coverage direct-return suites reach their executing runtime.
 #[test]
-fn adversary2_direct_return_suite_meets_the_direct_return_refusal_first() {
+fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
     let suite = direct_return_suite();
-    assert_eq!(suite.provenance.suite_version.major(), 28, "precondition");
+    assert_eq!(suite.provenance.suite_version.major(), 34, "precondition");
     let input = direct_return_input();
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        29,
+        35,
         "precondition"
     );
-    for (target, error) in [
-        ("Go", ess_conformance::go::emit(&suite).unwrap_err()),
-        ("TypeScript", ess_conformance::ts::emit(&suite).unwrap_err()),
-        ("Go", ess_conformance::go::emit_input(&input).unwrap_err()),
-        (
-            "TypeScript",
-            ess_conformance::ts::emit_input(&input).unwrap_err(),
-        ),
-    ] {
-        let (reason, path, message) = issue(&error);
-        assert_eq!(reason, "UnsupportedTarget", "{target}: {error}");
-        assert_eq!(
-            path, "$suite",
-            "{target}: the direct-return refusal is not the first guard: {error}"
-        );
-        assert_eq!(
-            message,
-            format!("{target} does not execute direct response observations; use the Rust runner"),
-            "{target}: {error}"
-        );
-    }
+    ess_conformance::go::emit(&suite).expect("Go executes direct responses");
+    ess_conformance::ts::emit(&suite).expect("TypeScript executes direct responses");
+    ess_conformance::go::emit_input(&input).expect("Go executes direct response coverage");
+    ess_conformance::ts::emit_input(&input).expect("TypeScript executes direct response coverage");
 }
 
-/// A `/28` or `/29` suite that holds no direct-return observation (a loaded or pinned document)
-/// meets the new refusal, which names the version, the newest admitted one and the target.
+/// Future majors still name the version, newest admitted major and target in their refusal.
 #[test]
 fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
-    for major in [28, 29] {
+    for major in [36, 37] {
         for (target, error) in [
             ("Go", go(&empty_suite(major)).unwrap_err()),
             ("TypeScript", typescript(&empty_suite(major)).unwrap_err()),
@@ -169,9 +148,9 @@ fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
             );
             for needle in [
                 format!("generated {target} runner"),
-                "`ess-conformance/27`".to_owned(),
+                "`ess-conformance/35`".to_owned(),
                 format!("`ess-conformance/{major}`"),
-                "use the Rust runner".to_owned(),
+                "regenerate using a supported suite version".to_owned(),
             ] {
                 assert!(
                     message.contains(&needle),

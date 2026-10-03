@@ -184,7 +184,7 @@ const ordered = (values, check, key = value => value) => {
 }
 const suiteReference = value => {
   closed(value, 'version digest_profile digest')
-  require(['ess-conformance/5', 'ess-conformance/9'].includes(value.version) && value.digest_profile === 'sha256-json-bytes/1', 'unsupported suite reference')
+  require(['ess-conformance/5', 'ess-conformance/9', 'ess-conformance/35'].includes(value.version) && value.digest_profile === 'sha256-json-bytes/1', 'unsupported suite reference')
   sha(value.digest); return value
 }
 const referenceFor = suite => ({ version: suite.document.provenance.suite_version, digest_profile: 'sha256-json-bytes/1', digest: suite.digest })
@@ -517,8 +517,9 @@ function inventory(suite) {
 }
 export async function admitSuite(original) {
   const document = closed(parse(original), 'provenance scenarios coverage')
-  const p = closed(document.provenance, 'suite_version system specification_version spec_digest contract_digest', 'component')
-  require(['ess-conformance/5', 'ess-conformance/9'].includes(p.suite_version), 'replay requires suite/5 or /9')
+  const p = closed(document.provenance, 'suite_version system specification_version spec_digest contract_digest', 'component scenario_initial_state')
+  require(['ess-conformance/5', 'ess-conformance/9', 'ess-conformance/35'].includes(p.suite_version), 'replay requires suite/5, /9 or /35 with supported replay steps')
+  require(p.suite_version === 'ess-conformance/35' ? p.scenario_initial_state === 'empty' : !own(p, 'scenario_initial_state'), 'invalid scenario_initial_state')
   text(p.system); text(p.specification_version)
   modelDigest(p.spec_digest); modelDigest(p.contract_digest); if (own(p, 'component')) nullable(p.component, text)
   const meaning = Object.create(null)
@@ -527,7 +528,7 @@ export async function admitSuite(original) {
     const purpose = text(scenario.purpose)
     require(trim(purpose) !== '' && [...purpose].length <= 200 && !/[\x00-\x1f\x7f-\x9f]/.test(purpose), 'invalid scenario purpose')
     array(scenario.source).forEach(reference)
-    meaning[id] = { purpose, steps: array(scenario.steps).map(value => step(value, p.suite_version === 'ess-conformance/9' ? 9 : 5)), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
+    meaning[id] = { purpose, steps: array(scenario.steps).map(value => step(value, p.suite_version === 'ess-conformance/5' ? 5 : 9)), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
   }
   inventory(document)
   return { original, document, meaning, digest: await digest(original) }

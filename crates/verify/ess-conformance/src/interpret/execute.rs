@@ -1,7 +1,8 @@
 //! One command, executed from the IR: state in, command in, every outcome the model allows out.
 //!
 //! This is the library half of the interpreter, and it is kept free of a runner on purpose. The
-//! [`Interpreted`](super::Interpreted) target calls [`execute`] once per `ExecuteCommand` step and
+//! [`Interpreted`](super::Interpreted) target adds the invocation's authenticated caller and
+//! executes once per `ExecuteCommand` step, then
 //! refuses when the answer is not exactly one step; a linearizability checker calls the same
 //! function as its sequential model and explores every step it returns.
 //!
@@ -27,9 +28,8 @@
 //! [`SemanticCommandResult::undeclared`](crate::target::SemanticCommandResult::undeclared): a
 //! refusal the model does not declare is not available, so it is never answered as a declared one.
 //!
-//! Where the model uses a construct this module does not execute yet — a guard over the subject's
-//! stored fields or its held state, a retained replay, a typed response, a value expression other
-//! than an input field or a literal — the answer is [`Undetermined::NotInterpreted`], never a
+//! Where the model uses a construct this module does not execute yet — a retained replay, a value
+//! expression reading a response — the answer is [`Undetermined::NotInterpreted`], never a
 //! guess. A guard that evaluates to `Unknown` is [`Undetermined::Undecidable`] for the same reason.
 //!
 //! # Minted values
@@ -41,9 +41,17 @@
 //! how a checker replays what a history recorded, under the rules that variant states — and a
 //! `sets:` write nobody observes always draws from a counter the [`Store`] carries. The counter is
 //! part of the state, so a step is a function: the same store, command and values give the same
-//! steps. A created identity is assigned once, the event field `instance:` names publishes that
-//! value whatever payload source it declares, and an identity the store already holds is never
-//! created again.
+//! steps. A created identity follows its declared payload source; only generated sources use
+//! this supply. The event field `instance:` names publishes that same value, and an identity
+//! the store already holds is never replaced by creation.
+
+pub(super) mod caller;
+mod existence;
+mod related;
+mod set_effects;
+mod subject;
+mod values;
+use caller::Invocation;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -75,21 +83,50 @@ use crate::target::{DeclaredErrorValue, ObservedEvent};
 /// the store after it. That is what lets a search keep two branches of one history side by side.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Store {
-    instances: BTreeMap<QualifiedName, BTreeMap<String, Instance>>,
+    instances: BTreeMap<QualifiedName, BTreeMap<Node, Instance>>,
     minted: u64,
 }
 
 impl Store {
-    /// The instance of `entity` with this identity, when one is held.
+    /// Establish already-validated upstream state without replacing an existing identity.
+    pub(super) fn establish(
+        &mut self,
+        entity: QualifiedName,
+        identity: Node,
+        instance: Instance,
+    ) -> bool {
+        if let std::collections::btree_map::Entry::Vacant(slot) =
+            self.instances.entry(entity).or_default().entry(identity)
+        {
+            slot.insert(instance);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Convenience lookup for a text identity. Other identity types use [`Self::instance_typed`].
     pub fn instance(&self, entity: &QualifiedName, identity: &str) -> Option<&Instance> {
+        self.instance_typed(entity, &Node::Text(identity.into()))
+    }
+
+    /// The instance of `entity` with this exact typed identity, when one is held.
+    pub fn instance_typed(&self, entity: &QualifiedName, identity: &Node) -> Option<&Instance> {
         self.instances.get(entity)?.get(identity)
     }
 
     /// Every held instance, by entity and then by identity.
-    pub fn instances(&self) -> impl Iterator<Item = (&QualifiedName, &str, &Instance)> {
+    pub fn instances(&self) -> impl Iterator<Item = (&QualifiedName, &Node, &Instance)> {
         self.instances.iter().flat_map(|(entity, held)| {
             held.iter()
-                .map(move |(identity, instance)| (entity, identity.as_str(), instance))
+                .map(move |(identity, instance)| (entity, identity, instance))
+        })
+    }
+
+    /// Only rows whose identities are text; use [`Self::instances`] to enumerate every row.
+    pub fn text_instances(&self) -> impl Iterator<Item = (&QualifiedName, &str, &Instance)> {
+        self.instances().filter_map(|(entity, identity, instance)| {
+            identity.as_text().map(|text| (entity, text, instance))
         })
     }
 
@@ -320,6 +357,40 @@ pub fn execute(
     execute_generating(ir, store, command, input, externals, &Generated::Counter)
 }
 
+/// A missing document is its own request, never an empty map sent through input selection.
+pub(super) fn without_input(
+    ir: &EssIr,
+    store: &Store,
+    command: &QualifiedName,
+    caller: Option<&caller::Caller<'_>>,
+) -> Result<Step, Undetermined> {
+    let spec = ir
+        .commands()
+        .get(command)
+        .ok_or_else(|| Undetermined::UnknownCommand(command.to_string()))?;
+    let Some(outcome) = spec
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.condition == ResolvedCondition::InputAbsent)
+    else {
+        return Ok(undeclared(store));
+    };
+    // Admission restricts this marker to a refusal with no effects or input-dependent payload.
+    take(
+        ir,
+        spec,
+        outcome,
+        store,
+        &Invocation {
+            input: &BTreeMap::new(),
+            caller,
+        },
+        &Generated::Counter,
+        &mut super::response::Authority::default(),
+    )?
+    .map_err(Undetermined::Request)
+}
+
 /// Executes `command` with `input` against `store`, returning every distinct step the model allows.
 ///
 /// Never empty: a request no declared branch covers is one step with no outcome. More than one
@@ -338,20 +409,120 @@ pub fn execute_generating(
     externals: &Externals,
     generated: &Generated,
 ) -> Result<Vec<Step>, Undetermined> {
+    in_context(
+        ir,
+        store,
+        command,
+        &Invocation {
+            input,
+            caller: None,
+        },
+        externals,
+        generated,
+    )
+}
+
+pub(super) fn in_context(
+    ir: &EssIr,
+    store: &Store,
+    command: &QualifiedName,
+    input: &Invocation<'_>,
+    externals: &Externals,
+    generated: &Generated,
+) -> Result<Vec<Step>, Undetermined> {
+    responding(
+        ir,
+        store,
+        command,
+        input,
+        externals,
+        generated,
+        &mut super::response::Authority::default(),
+    )
+}
+
+pub(super) fn responding(
+    ir: &EssIr,
+    store: &Store,
+    command: &QualifiedName,
+    input: &Invocation<'_>,
+    externals: &Externals,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Vec<Step>, Undetermined> {
     let spec = ir
         .commands()
         .get(command)
         .ok_or_else(|| Undetermined::UnknownCommand(command.to_string()))?;
-    if let Some(steps) = related_absent(ir, spec, store, input, generated)? {
+    if spec
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
+    {
+        if let Some(step) = existence::existing(ir, spec, store, input, externals)? {
+            return Ok(vec![step]);
+        }
+    }
+    if let Some(steps) = related_absent(ir, spec, store, input, generated, responses)? {
         return Ok(steps);
     }
     if let Some(steps) = refused_by_input(ir, spec, store, input)? {
         return Ok(steps);
     }
+    if let Some(step) = existence::existing(ir, spec, store, input, externals)? {
+        return Ok(vec![step]);
+    }
     interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
-    let selected = select(spec, &facts, command, externals)?;
+    let mut held_subjects = BTreeMap::new();
+    for outcome in &spec.outcomes {
+        if let Some(held) = related::held(ir, store, input, &outcome.condition)? {
+            held_subjects.insert(outcome.name.clone(), held);
+            continue;
+        }
+        if !matches!(
+            outcome.condition,
+            ResolvedCondition::SubjectState { .. }
+                | ResolvedCondition::StateChange { .. }
+                | ResolvedCondition::SubjectField { .. }
+                | ResolvedCondition::SubjectPredicate { .. }
+        ) {
+            continue;
+        }
+        let subject =
+            spec.selection_subject(outcome)
+                .ok_or_else(|| Undetermined::NotInterpreted {
+                    construct: "a state guard with no resolved subject".into(),
+                })?;
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return Err(Undetermined::NotInterpreted {
+                construct: "a state guard without a supplied subject".into(),
+            });
+        };
+        let entity = &ir.entity(&subject.entity).name;
+        let identity = input.get(&field.name).ok_or_else(|| {
+            Undetermined::Request("the guarded subject identity is absent".into())
+        })?;
+        let key = identity.clone();
+        let Some(held) = store.instance_typed(entity, &key) else {
+            return Ok(vec![unknown_instance(
+                ir, spec, store, input, generated, responses,
+            )?]);
+        };
+        held_subjects.insert(
+            outcome.name.clone(),
+            subject::Held::new(ir, ir.entity(&subject.entity), held)?,
+        );
+    }
+    let selected = select(
+        spec,
+        &facts,
+        command,
+        externals,
+        &held_subjects,
+        input.caller,
+    )?;
 
     if selected.is_empty() {
         return Ok(vec![undeclared(store)]);
@@ -359,7 +530,7 @@ pub fn execute_generating(
     let mut steps: Vec<Step> = Vec::with_capacity(selected.len());
     let mut unmatched: Vec<String> = Vec::new();
     for outcome in selected {
-        match take(ir, spec, outcome, store, input, generated)? {
+        match take(ir, spec, outcome, store, input, generated, responses)? {
             Ok(step) if !steps.contains(&step) => steps.push(step),
             Ok(_) => {}
             Err(why) => unmatched.push(format!("`{}`: {why}", branch(spec, outcome))),
@@ -392,8 +563,11 @@ fn select<'s>(
     facts: &input::InputFacts<'_>,
     command: &QualifiedName,
     externals: &Externals,
+    held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
+    caller: Option<&caller::Caller<'_>>,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
-    let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(facts) {
+    let invocation = caller::Facts::new(facts, caller, &spec.input);
+    let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&invocation) {
         Truth::True => Ok(true),
         Truth::False => Ok(false),
         Truth::Unknown => Err(Undetermined::Undecidable {
@@ -442,6 +616,19 @@ fn select<'s>(
     if selected.is_empty() {
         let mut answered = false;
         for outcome in &spec.outcomes {
+            if let Some(takes) = held_subjects
+                .get(&outcome.name)
+                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
+                .transpose()?
+                .flatten()
+            {
+                if takes {
+                    selected.push(outcome);
+                    answered = true;
+                    break;
+                }
+                continue;
+            }
             match &outcome.condition {
                 ResolvedCondition::When { predicate } if outcome.error.is_none() => {
                     if holds(outcome, predicate)? {
@@ -488,16 +675,16 @@ fn select<'s>(
 /// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
 /// order"). `None` on a command with no related guard, or where the row is stored.
 ///
-/// `existing_instance:` answers before it on such a command, and this module does not decide the
-/// command's own existence, so a command declaring one is declined here. A related row named
-/// through a stored field of the subject, or through an input the request does not carry as text,
+/// `existing_instance:` is resolved before this helper on such a command. A related row named
+/// through a stored field of the subject, or through an input the request does not carry,
 /// is declined too: nothing here reads it.
 fn related_absent(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     generated: &Generated,
+    responses: &mut super::response::Authority,
 ) -> Result<Option<Vec<Step>>, Undetermined> {
     let related: Vec<&ResolvedOutcome> = spec
         .outcomes
@@ -508,16 +695,6 @@ fn related_absent(
         return Ok(None);
     };
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    if let Some(existing) = spec
-        .outcomes
-        .iter()
-        .find(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
-    {
-        return gap(format!(
-            "the existing-instance branch of `{}`, which answers before its related row is read",
-            branch(spec, existing)
-        ));
-    }
     let ResolvedCondition::Related { via, entity, .. } = &first.condition else {
         unreachable!("filtered to related guards above")
     };
@@ -527,14 +704,14 @@ fn related_absent(
             branch(spec, first)
         ));
     };
-    let Some(identity) = input.get(field).and_then(Node::as_text) else {
+    let Some(identity) = input.get(field) else {
         return gap(format!(
-            "the guard over a related row of `{}` with no text identity in `{field}`",
+            "the guard over a related row of `{}` with no identity in `{field}`",
             branch(spec, first)
         ));
     };
     let entity = &ir.entity(entity).name;
-    if store.instance(entity, identity).is_some() {
+    if store.instance_typed(entity, identity).is_some() {
         return Ok(None);
     }
     let Some(absent) = related.iter().find(|outcome| {
@@ -551,7 +728,7 @@ fn related_absent(
     if absent.subject.is_none() && absent.error.is_some() {
         return Ok(Some(vec![refusal(ir, spec, absent, store, input, None)?]));
     }
-    match take(ir, spec, absent, store, input, generated)? {
+    match take(ir, spec, absent, store, input, generated, responses)? {
         Ok(step) => Ok(Some(vec![step])),
         Err(why) => Err(Undetermined::Request(format!(
             "no branch the model allows is described by the given values — `{}`: {why}",
@@ -583,7 +760,7 @@ fn refused_by_input(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
 ) -> Result<Option<Vec<Step>>, Undetermined> {
     let refusals: Vec<(&ResolvedOutcome, &Predicate)> = spec
         .outcomes
@@ -604,6 +781,7 @@ fn refused_by_input(
     let Ok(facts) = input::flatten(ir, spec, input) else {
         return Ok(None);
     };
+    let facts = caller::Facts::new(&facts, input.caller, &spec.input);
     for (outcome, guard) in refusals {
         match guard.evaluate(&facts) {
             Truth::True => return Ok(Some(vec![refusal(ir, spec, outcome, store, input, None)?])),
@@ -630,9 +808,6 @@ fn refused_by_input(
 /// which owes the response and the retained result themselves, is still refused both.
 fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermined> {
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    if !recorded && !spec.response.is_empty() {
-        return gap(format!("the typed response of `{}`", spec.name));
-    }
     for outcome in &spec.outcomes {
         let at = branch(spec, outcome);
         if let ResolvedCondition::When { predicate }
@@ -648,23 +823,28 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
             | ResolvedCondition::WrongState
-            | ResolvedCondition::UnknownInstance => {}
-            ResolvedCondition::SubjectField { .. } | ResolvedCondition::SubjectPredicate { .. } => {
-                return gap(format!(
-                    "the guard over the subject's stored fields of `{at}`"
-                ));
+            | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::ExistingInstance
+            | ResolvedCondition::InputAbsent
+            | ResolvedCondition::SubjectState { .. }
+            | ResolvedCondition::StateChange { .. } => {}
+            ResolvedCondition::SubjectField { predicate, .. } => {
+                if predicate.as_ref().is_some_and(reads_now) {
+                    return gap(format!("the current-time guard of `{at}`"));
+                }
             }
-            ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. } => {
-                return gap(format!("the guard over the subject's held state of `{at}`"));
+            ResolvedCondition::SubjectPredicate { predicate, input } => {
+                if reads_now(predicate) || input.as_ref().is_some_and(reads_now) {
+                    return gap(format!("the current-time guard of `{at}`"));
+                }
             }
-            ResolvedCondition::Related { .. } => {
-                return gap(format!("the guard over a related row of `{at}`"));
-            }
-            ResolvedCondition::InputAbsent => {
-                return gap(format!("the absent-input branch of `{at}`"));
-            }
-            ResolvedCondition::ExistingInstance => {
-                return gap(format!("the existing-instance branch of `{at}`"));
+
+            ResolvedCondition::Related { test, input, .. } => {
+                if matches!(test, ResolvedRelatedTest::Holds { predicate } if reads_now(predicate))
+                    || input.as_ref().is_some_and(reads_now)
+                {
+                    return gap(format!("the current-time guard of `{at}`"));
+                }
             }
         }
         if !recorded && (outcome.replays.is_some() || outcome.retains_result) {
@@ -718,92 +898,174 @@ fn reference(spec: &ResolvedCommand, outcome: &ResolvedOutcome) -> OutcomeRef {
 /// An input field carries the input's value, a literal its value at the field's type, and a
 /// `{subject: …}` the row the refusal is answered for (`held`). A `{generated: true}` field is
 /// the implementation's to choose, so it is not carried, and a field with no source is not
-/// carried either, as before `ess/19`. A source this module does not read — the caller, a related
-/// row — is a gap, as it is on an event's payload.
+/// carried either, as before `ess/19`. Caller attributes come from this invocation's validated
+/// authentication facts, including nested leaves. Related values read the original store, through
+/// the same typed address and presence rules as event payloads and assignments.
 fn declared_error(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     held: Option<&Instance>,
+    store: &Store,
 ) -> Result<Option<DeclaredErrorValue>, Undetermined> {
     let Some(handle) = outcome.error.as_ref().filter(|_| outcome.refuses) else {
         return Ok(None);
     };
     let mut error = DeclaredErrorValue::new(ErrorRef::from(handle));
+    let reads = values::Reads {
+        original: store,
+        before: held,
+        outcome,
+    };
     for field in &outcome.error_payload {
-        let value = match &field.value {
-            ResolvedPayloadValue::Generated => None,
-            ResolvedPayloadValue::SubjectField { field: read, .. } => {
-                held.and_then(|row| row.fields.get(read)).cloned()
-            }
-            ResolvedPayloadValue::InputField { field: read, .. } => input
-                .get(read)
-                .filter(|value| **value != Node::Null)
-                .cloned(),
-            ResolvedPayloadValue::Literal { value } => {
-                Some(literal(ir, &field.target_type, value)?)
-            }
-            other => {
-                return Err(Undetermined::NotInterpreted {
-                    construct: format!(
-                        "the value source `{}` of error `{handle}`",
-                        other.describe()
-                    ),
-                })
-            }
-        };
-        if let Some(value) = value {
+        if let Some(value) = error_value(ir, field, input, reads)? {
             error = error.with(field.target.clone(), value);
         }
     }
     Ok(Some(error))
 }
 
+fn error_value(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    input: &Invocation<'_>,
+    reads: values::Reads<'_>,
+) -> Result<Option<Node>, Undetermined> {
+    Ok(match &field.value {
+        ResolvedPayloadValue::Generated => None,
+        ResolvedPayloadValue::CallerAttribute {
+            attribute,
+            type_ref,
+        } => input.caller_value(ir, attribute, type_ref)?,
+        ResolvedPayloadValue::Struct { fields } => {
+            let mut values = BTreeMap::new();
+            for member in fields {
+                if let Some(value) = error_value(ir, member, input, reads)? {
+                    values.insert(member.target.clone(), value);
+                }
+            }
+            Some(Node::Map(values))
+        }
+        ResolvedPayloadValue::SubjectField {
+            field: read,
+            type_ref,
+        } => values::subject(ir, read, type_ref, &field.target_type, reads.before)?,
+        ResolvedPayloadValue::RelatedField { .. } => reads.related(ir, field, input)?,
+        ResolvedPayloadValue::InputField { field: read, .. } => input
+            .get(read)
+            .filter(|value| **value != Node::Null)
+            .cloned(),
+        ResolvedPayloadValue::Literal { value } => Some(literal(ir, &field.target_type, value)?),
+        other => {
+            return Err(Undetermined::NotInterpreted {
+                construct: format!("the value source `{}` of an error", other.describe()),
+            })
+        }
+    })
+}
+
 /// The store a branch is building, and where its assigned values come from.
 struct Work<'g> {
+    original: &'g Store,
+    outcome: &'g ResolvedOutcome,
     next: Store,
     supply: Supply<'g>,
+    /// Immutable pre-outcome fields, including the exact identity held outside `Instance.fields`.
+    before: Option<Instance>,
+    response: Option<super::response::Value>,
+}
+
+impl Work<'_> {
+    fn reads(&self) -> values::Reads<'_> {
+        values::Reads {
+            original: self.original,
+            before: self.before.as_ref(),
+            outcome: self.outcome,
+        }
+    }
 }
 
 /// Brings the instance `subject` creates into existence in `work`, and returns its identity.
 ///
-/// The identity is assigned once, from the published slot `instance:` names. One the store already
-/// holds is not a new instance, so the branch yields no step rather than replacing it.
+/// A supplied identity already held yields no step. An interpreter-minted identity skips held
+/// candidates before any other field is generated; setup may have reserved the next counter value.
 fn create(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     subject: &ResolvedSubject,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     work: &mut Work<'_>,
 ) -> Result<Result<Node, Unmatched>, Undetermined> {
     let entity = ir.entity(&subject.entity);
     let ResolvedInstance::Observed { event, field } = &subject.instance else {
         unreachable!("`creates:` publishes its identity; `take` routes nothing else here")
     };
-    let identity = or_no_step!(assign(ir, event.name(), &field.name, &field.type_ref, work))
-        .ok_or_else(|| Undetermined::NoValue {
-            what: format!("the identity of a new `{}`", entity.name),
-        })?;
-    let key = identity_key(&identity, &entity.name)?;
-    if work.next.instance(&entity.name, &key).is_some() {
-        return Ok(Err(format!(
-            "the identity `{key}` is already held by a `{}`, and `creates:` never replaces an \
-             instance",
-            entity.name
-        )));
-    }
+    let source = existence::identity_source(outcome);
+    let (identity, key) = if existence::generated(source, input) {
+        or_no_step!(creation_identity(
+            ir,
+            &entity.name,
+            event.name(),
+            field,
+            work
+        ))
+    } else {
+        let identity = existence::identity(ir, source.expect("determined identity"), input, work)?;
+        if work.next.instance_typed(&entity.name, &identity).is_some() {
+            return Ok(Err(format!(
+                "a supplied identity is already held by `{}`, and creation never replaces it",
+                entity.name
+            )));
+        }
+        (identity.clone(), identity)
+    };
     let state = subject
         .into
         .clone()
         .unwrap_or_else(|| entity.lifecycle.initial.clone());
     let mut fields = BTreeMap::new();
-    write(ir, &outcome.sets, input, None, &mut fields, work)?;
+    write(ir, &outcome.sets, input, &mut fields, work)?;
     work.next
         .instances
         .entry(entity.name.clone())
         .or_default()
         .insert(key, Instance { state, fields });
     Ok(Ok(identity))
+}
+
+fn creation_identity(
+    ir: &EssIr,
+    entity: &QualifiedName,
+    event: &QualifiedName,
+    field: &ess_compiler::ir::ResolvedField,
+    work: &mut Work<'_>,
+) -> Result<Result<(Node, Node), Unmatched>, Undetermined> {
+    let supplied = work
+        .supply
+        .given
+        .is_some_and(|given| given.contains_key(&GeneratedSlot::new(event.clone(), &field.name)));
+    let occupied = work.next.instances.get(entity).map_or(0, BTreeMap::len);
+    // At most one candidate beyond the held population: sufficient for the counter's distinct
+    // UUIDs, and a bounded refusal when a constrained witness repeats or is exhausted.
+    for _ in 0..=occupied {
+        let identity = or_no_step!(assign(ir, event, &field.name, &field.type_ref, work))
+            .ok_or_else(|| Undetermined::NoValue {
+                what: format!("the identity of a new `{entity}`"),
+            })?;
+        let key = identity.clone();
+        if work.next.instance_typed(entity, &key).is_none() {
+            return Ok(Ok((identity, key)));
+        }
+        if supplied {
+            return Ok(Err(format!(
+                "the identity `{key:?}` is already held by a `{entity}`, and `creates:` never \
+                 replaces an instance"
+            )));
+        }
+    }
+    Err(Undetermined::NoValue {
+        what: format!("a fresh identity of `{entity}` within the bounded witness search"),
+    })
 }
 
 /// Takes one selected outcome: resolves its subject, writes, emits, and checks what now rests.
@@ -814,40 +1076,37 @@ fn take(
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     generated: &Generated,
+    responses: &mut super::response::Authority,
 ) -> Result<Result<Step, Unmatched>, Undetermined> {
+    let mut prepared = None;
     let mut work = Work {
+        original: store,
+        outcome,
         next: store.clone(),
         supply: Supply::of(generated),
+        before: values::selected_subject(ir, spec, outcome, store, input),
+        response: None,
     };
     let mut created: Option<(String, Node)> = None;
-    let mut touched: Option<(QualifiedName, String)> = None;
-    // The row an existing subject held before this branch, which an error field may read.
-    let mut before: Option<Instance> = None;
+    let mut touched: Option<(QualifiedName, Node)> = None;
 
     if let Some(subject) = &outcome.subject {
         let entity = ir.entity(&subject.entity);
         match (&subject.effect, &subject.instance) {
             (ResolvedEffect::Creates, ResolvedInstance::Observed { field, .. }) => {
+                // The declared creation identity can itself read the actual response.
+                prepared = responses.prepare(ir, spec, outcome)?;
+                work.response = prepared.as_ref().and_then(|value| value.value.clone());
                 let identity = or_no_step!(create(ir, outcome, subject, input, &mut work));
-                let key = identity_key(&identity, &entity.name)?;
+                let key = identity.clone();
                 created = Some((field.name.clone(), identity));
                 touched = Some((entity.name.clone(), key));
             }
             (ResolvedEffect::Creates, ResolvedInstance::Supplied { .. })
             | (_, ResolvedInstance::Observed { .. }) => {
-                return Err(Undetermined::NotInterpreted {
-                    construct: format!(
-                        "a `{}` whose identity is {}, in `{}`",
-                        subject.effect.verb(),
-                        match subject.instance {
-                            ResolvedInstance::Supplied { .. } => "supplied",
-                            ResolvedInstance::Observed { .. } => "observed",
-                        },
-                        branch(spec, outcome)
-                    ),
-                })
+                return Err(unsupported_instance(spec, outcome, subject));
             }
             (effect, ResolvedInstance::Supplied { field }) => {
                 let identity = input.get(&field.name).ok_or_else(|| {
@@ -856,14 +1115,21 @@ fn take(
                         spec.name, field.name
                     ))
                 })?;
-                let key = identity_key(identity, &entity.name)?;
-                let Some(held) = store.instance(&entity.name, &key) else {
-                    return Ok(Ok(unknown_instance(ir, spec, store, input)?));
+                let key = identity.clone();
+                let Some(held) = store.instance_typed(&entity.name, &key) else {
+                    return Ok(Ok(unknown_instance(
+                        ir, spec, store, input, generated, responses,
+                    )?));
                 };
-                before = Some(held.clone());
                 let after = match act(ir, &outcome.sets, effect, held, input, &mut work)? {
                     Acted::NotFromHere => {
-                        return Ok(Ok(wrong_state(ir, spec, store, input, Some(held))?))
+                        return Ok(Ok(wrong_state(
+                            ir,
+                            spec,
+                            store,
+                            input,
+                            work.before.as_ref(),
+                        )?))
                     }
                     Acted::Rests(after) => Some(after),
                     Acted::Removed => None,
@@ -880,22 +1146,56 @@ fn take(
                 }
             }
         }
-    } else if !outcome.sets.is_empty() {
+    } else if outcome.instances.is_none() && !outcome.sets.is_empty() {
         return Err(Undetermined::NotInterpreted {
             construct: format!("`sets:` without a subject, in `{}`", branch(spec, outcome)),
         });
     }
 
-    let events = or_no_step!(emit(ir, spec, outcome, input, created.as_ref(), &mut work));
+    let changed = set_effects::apply(ir, spec, outcome, store, input, &mut work)?;
+    if prepared.is_none() {
+        prepared = responses.prepare(ir, spec, outcome)?;
+        work.response = prepared.as_ref().and_then(|value| value.value.clone());
+    }
+    let events = or_no_step!(emit(
+        ir,
+        spec,
+        outcome,
+        input,
+        created.as_ref(),
+        changed,
+        &mut work
+    ));
+
     if let Some((entity, key)) = &touched {
         at_rest(ir, &work.next, entity, key)?;
     }
-    Ok(Ok(Step {
+    let step = Step {
         outcome: Some(reference(spec, outcome)),
-        error: declared_error(ir, outcome, input, before.as_ref())?,
+        error: declared_error(ir, outcome, input, work.before.as_ref(), store)?,
         events,
         next: work.next,
-    }))
+    };
+    responses.completed(reference(spec, outcome), prepared);
+    Ok(Ok(step))
+}
+
+fn unsupported_instance(
+    spec: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+) -> Undetermined {
+    Undetermined::NotInterpreted {
+        construct: format!(
+            "a `{}` whose identity is {}, in `{}`",
+            subject.effect.verb(),
+            match subject.instance {
+                ResolvedInstance::Supplied { .. } => "supplied",
+                ResolvedInstance::Observed { .. } => "observed",
+            },
+            branch(spec, outcome)
+        ),
+    }
 }
 
 /// What `effect` does to an instance the store holds. Never `creates:`, which [`take`] answers.
@@ -904,7 +1204,7 @@ fn act(
     sets: &[ResolvedPayloadField],
     effect: &ResolvedEffect,
     held: &Instance,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     work: &mut Work<'_>,
 ) -> Result<Acted, Undetermined> {
     let mut after = held.clone();
@@ -918,7 +1218,7 @@ fn act(
         ResolvedEffect::Updates | ResolvedEffect::Preserves | ResolvedEffect::Creates => {}
         ResolvedEffect::Deletes => return Ok(Acted::Removed),
     }
-    write(ir, sets, input, Some(held), &mut after.fields, work)?;
+    write(ir, sets, input, &mut after.fields, work)?;
     Ok(Acted::Rests(after))
 }
 
@@ -931,16 +1231,6 @@ enum Acted {
     Rests(Instance),
     /// The instance is removed.
     Removed,
-}
-
-/// The identity of an instance as the store keys it: the text an identity type is written as.
-fn identity_key(identity: &Node, entity: &QualifiedName) -> Result<String, Undetermined> {
-    identity
-        .as_text()
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| Undetermined::NotInterpreted {
-            construct: format!("an identity of `{entity}` that is not text"),
-        })
 }
 
 /// The command's `unknown_instance:` branch, else its one declared not-found refusal, else its
@@ -956,7 +1246,9 @@ fn unknown_instance(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
 ) -> Result<Step, Undetermined> {
     match spec
         .outcomes
@@ -964,6 +1256,15 @@ fn unknown_instance(
         .find(|outcome| matches!(outcome.condition, ResolvedCondition::UnknownInstance))
         .or_else(|| crate::synthesize::declared_not_found(ir, spec))
     {
+        Some(outcome)
+            if outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.effect == ResolvedEffect::Creates) =>
+        {
+            take(ir, spec, outcome, store, input, generated, responses)?
+                .map_err(Undetermined::Request)
+        }
         Some(outcome) => refusal(ir, spec, outcome, store, input, None),
         None => wrong_state(ir, spec, store, input, None),
     }
@@ -975,7 +1276,7 @@ fn wrong_state(
     ir: &EssIr,
     spec: &ResolvedCommand,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     held: Option<&Instance>,
 ) -> Result<Step, Undetermined> {
     match spec
@@ -995,12 +1296,12 @@ fn refusal(
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     store: &Store,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     held: Option<&Instance>,
 ) -> Result<Step, Undetermined> {
     Ok(Step {
         outcome: Some(reference(spec, outcome)),
-        error: declared_error(ir, outcome, input, held)?,
+        error: declared_error(ir, outcome, input, held, store)?,
         events: Vec::new(),
         next: store.clone(),
     })
@@ -1010,8 +1311,7 @@ fn refusal(
 fn write(
     ir: &EssIr,
     sets: &[ResolvedPayloadField],
-    input: &BTreeMap<String, Node>,
-    before: Option<&Instance>,
+    input: &Invocation<'_>,
     fields: &mut BTreeMap<String, Node>,
     work: &mut Work<'_>,
 ) -> Result<(), Undetermined> {
@@ -1019,16 +1319,6 @@ fn write(
         match &set.value {
             ResolvedPayloadValue::Cleared => {
                 fields.remove(&set.target);
-            }
-            ResolvedPayloadValue::SubjectField { field, .. } => {
-                match before.and_then(|held| held.fields.get(field)) {
-                    Some(value) => {
-                        fields.insert(set.target.clone(), value.clone());
-                    }
-                    None => {
-                        fields.remove(&set.target);
-                    }
-                }
             }
             _ => match value(ir, set, input, work)? {
                 Some(value) => {
@@ -1048,16 +1338,52 @@ fn write(
 fn value(
     ir: &EssIr,
     field: &ResolvedPayloadField,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     work: &mut Work<'_>,
 ) -> Result<Option<Node>, Undetermined> {
     match &field.value {
+        ResolvedPayloadValue::ResponseField { .. } => {
+            values::response(ir, field, work.response.as_ref())
+        }
+        ResolvedPayloadValue::RelatedField { .. } => work.reads().related(ir, field, input),
+        ResolvedPayloadValue::SubjectField {
+            field: read,
+            type_ref,
+        } => values::subject(ir, read, type_ref, &field.target_type, work.before.as_ref()),
+        ResolvedPayloadValue::Increment { by } => {
+            values::increment(ir, field, by, work.before.as_ref()).map(Some)
+        }
+        ResolvedPayloadValue::CallerAttribute {
+            attribute,
+            type_ref,
+        } => input.caller_value(ir, attribute, type_ref),
         ResolvedPayloadValue::InputField { field: source, .. } => Ok(input
             .get(source)
             .filter(|value| **value != Node::Null)
             .cloned()),
         ResolvedPayloadValue::Literal { value } => literal(ir, &field.target_type, value).map(Some),
         ResolvedPayloadValue::Generated => mint(ir, &field.target_type, work),
+        ResolvedPayloadValue::Struct { fields } => {
+            let mut members = BTreeMap::new();
+            for member in fields {
+                if let Some(value) = value(ir, member, input, work)? {
+                    members.insert(member.target.clone(), value);
+                }
+            }
+            Ok(Some(Node::Map(members)))
+        }
+        ResolvedPayloadValue::InputOrGenerated {
+            field: source,
+            otherwise,
+            ..
+        } => match input.get(source).filter(|value| **value != Node::Null) {
+            Some(value) => Ok(Some(value.clone())),
+            None => match otherwise {
+                Some(text) => literal(ir, &field.target_type, text).map(Some),
+                None => mint(ir, &field.target_type, work),
+            },
+        },
+
         other => Err(Undetermined::NotInterpreted {
             construct: format!("the value source `{}`", other.describe()),
         }),
@@ -1069,25 +1395,26 @@ fn literal(ir: &EssIr, target: &ResolvedTypeRef, text: &str) -> Result<Node, Und
     let gap = || Undetermined::NotInterpreted {
         construct: format!("the literal `{text}` over `{target}`"),
     };
-    match representation(ir, target) {
-        Representation::Primitive(Primitive::Integer) => text
-            .parse::<i64>()
-            .map(|value| Node::Number(Number::from(value)))
-            .map_err(|_| gap()),
-        Representation::Primitive(Primitive::Decimal) => Number::decimal_literal(text)
-            .map(Node::Number)
-            .ok_or_else(gap),
-        Representation::Primitive(Primitive::Boolean) => match text {
-            "true" => Ok(Node::Bool(true)),
-            "false" => Ok(Node::Bool(false)),
-            _ => Err(gap()),
-        },
-        Representation::Primitive(
-            Primitive::String | Primitive::Uuid | Primitive::Timestamp | Primitive::Duration,
-        )
-        | Representation::Enum => Ok(Node::Text(text.to_owned())),
-        Representation::Primitive(_) | Representation::Other => Err(gap()),
+    let mut current = target.required();
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        let value = match current {
+            ResolvedTypeRef::Primitive { name } => {
+                input::primitive_literal(*name, text).ok_or_else(gap)?
+            }
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => {
+                    current = of.required();
+                    continue;
+                }
+                ResolvedBody::Enum { .. } => Node::Text(text.into()),
+                _ => return Err(gap()),
+            },
+            _ => return Err(gap()),
+        };
+        input::validate_typed_value(ir, target, &value).map_err(Undetermined::Request)?;
+        return Ok(value);
     }
+    Err(gap())
 }
 
 /// The observable value the implementation assigns to `field` of the emitted `event`.
@@ -1134,12 +1461,25 @@ fn mint(
     let no_value = || Undetermined::NoValue {
         what: format!("a value of `{target}`"),
     };
-    match representation(ir, target) {
-        Representation::Primitive(Primitive::Uuid) => Ok(Some(Node::Text(format!(
+    if let Representation::Primitive(Primitive::Uuid) = representation(ir, target) {
+        Ok(Some(Node::Text(format!(
             "00000000-0000-4000-8000-{:012}",
             work.next.tick()
-        )))),
-        _ => Err(no_value()),
+        ))))
+    } else {
+        let field = ess_compiler::ir::ResolvedField {
+            name: "generated".into(),
+            type_ref: target.clone(),
+            naming: ess_domain::name::Naming::default(),
+        };
+        let distinction = usize::try_from(work.next.tick()).map_err(|_| no_value())?;
+        crate::witness::fields(
+            ir,
+            &[field],
+            crate::witness::Distinction::further(distinction),
+        )
+        .map(|mut values| values.remove("generated"))
+        .map_err(|_| no_value())
     }
 }
 
@@ -1177,8 +1517,9 @@ fn emit(
     ir: &EssIr,
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    input: &BTreeMap<String, Node>,
+    input: &Invocation<'_>,
     created: Option<&(String, Node)>,
+    changed: Option<usize>,
     work: &mut Work<'_>,
 ) -> Result<Result<Vec<ObservedEvent>, Unmatched>, Undetermined> {
     let mut events = Vec::with_capacity(outcome.emits.len());
@@ -1219,7 +1560,20 @@ fn emit(
                     &field.type_ref,
                     work
                 )),
+                (
+                    false,
+                    Some(ResolvedPayloadField {
+                        value: ResolvedPayloadValue::ChangedCount,
+                        ..
+                    }),
+                ) => {
+                    let count = changed.ok_or_else(|| {
+                        Undetermined::Request("changed count without a set subject".into())
+                    })?;
+                    Some(Node::Number(Number::from(count)))
+                }
                 (false, Some(source)) => value(ir, source, input, work)?,
+
                 (false, None) => {
                     or_no_step!(
                         assign(ir, &declared.name, &field.name, &field.type_ref, work).map_err(
@@ -1255,26 +1609,25 @@ fn at_rest(
     ir: &EssIr,
     store: &Store,
     entity: &QualifiedName,
-    key: &str,
+    key: &Node,
 ) -> Result<(), Undetermined> {
     let Some(declared) = ir.entities().get(entity) else {
         return Ok(());
     };
-    let Some(instance) = store.instance(entity, key) else {
+    let Some(instance) = store.instance_typed(entity, key) else {
         return Ok(());
     };
-    let facts = input::bind(
-        ir,
-        &declared.fields,
-        &instance.fields,
-        Completeness::Partial,
-    )
-    .map_err(|errors| Undetermined::Request(errors.to_string()))?;
-    let facts = TypedFacts::new(ir, &declared.fields, facts);
+    let mut fields = declared.fields.clone();
+    fields.push(declared.identity.clone());
+    let mut values = instance.fields.clone();
+    values.insert(declared.identity.name.clone(), key.clone());
+    let facts = input::bind(ir, &fields, &values, Completeness::Partial)
+        .map_err(|errors| Undetermined::Request(errors.to_string()))?;
+    let facts = TypedFacts::new(ir, &fields, facts);
     for invariant in &declared.invariants {
         if invariant.predicate.evaluate(&facts) == Truth::False {
             return Err(Undetermined::BrokenInvariant {
-                instance: format!("`{entity}` `{key}`"),
+                instance: format!("`{entity}` `{key:?}`"),
                 invariant: invariant.statement.clone(),
             });
         }

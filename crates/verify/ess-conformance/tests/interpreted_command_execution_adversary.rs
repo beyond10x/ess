@@ -132,7 +132,7 @@ fn adversary_a_created_identity_published_as_generated_is_the_identity_the_insta
         .to_owned();
     let held: Vec<String> = opened[0]
         .next
-        .instances()
+        .text_instances()
         .map(|(_, identity, _)| identity.to_owned())
         .collect();
     assert_eq!(
@@ -372,7 +372,13 @@ fn adversary_a_sequential_history_of_the_unfaulted_reference_is_one_the_step_all
     let first = send("billing.invoice.CreateInvoice", create_input());
     let second = send("billing.invoice.CreateInvoice", create_input());
     let second_id = second.direct_events[0].payload["invoice_id"].clone();
-    let issue = BTreeMap::from([("invoice_id".to_owned(), second_id)]);
+    let issue = BTreeMap::from([
+        ("invoice_id".to_owned(), second_id),
+        (
+            "issued_at".to_owned(),
+            Node::Text("2026-01-05T09:00:01Z".to_owned()),
+        ),
+    ]);
     let recorded = send("billing.invoice.IssueInvoice", issue.clone());
     assert_eq!(
         recorded
@@ -492,7 +498,7 @@ fn adversary_a_step_that_leaves_an_instance_violating_its_invariant_is_not_answe
         )
     };
     let ok = start(1).expect("a non-negative value rests");
-    let (_, _, held) = ok[0].next.instances().next().expect("created");
+    let (_, _, held) = ok[0].next.text_instances().next().expect("created");
     assert_eq!(
         held.state.as_str(),
         "Running",

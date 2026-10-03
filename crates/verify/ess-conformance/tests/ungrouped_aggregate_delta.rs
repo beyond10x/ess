@@ -7,6 +7,7 @@
 //! change in each `count` and `sum` is asserted after them. A view with neither, and a grouped view
 //! nothing scopes, keep `ESS-SYNTH-016`.
 use std::collections::{BTreeMap, BTreeSet};
+mod support_versions;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
@@ -138,17 +139,14 @@ fn a_view_grouped_by_an_enum_alone_keeps_its_unscoped_refusal() {
 fn a_suite_with_a_change_is_written_at_26_and_its_coverage_at_27() {
     let suite = synthesis(ORDERS).suite;
     assert!(aggregate_delta::used_by(&suite));
-    assert_eq!(
-        suite.provenance.suite_version.major(),
-        aggregate_delta::ORDINARY
-    );
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     let input = coverage_build::build(&ir(ORDERS), &[], Scope::System, Origins::Generated)
         .unwrap_or_else(|error| panic!("{error:?}"));
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        aggregate_delta::COVERAGE
+        35
     );
-    // Without the ungrouped total, nothing needs the round-3 pair and the suite keeps /16.
+    // Without the ungrouped total, the delta vocabulary is absent; fresh isolation still uses /34.
     let without = with_views(
         ORDERS
             .split_once("  - name: demo.orders.PerGroup\n")
@@ -160,7 +158,7 @@ fn a_suite_with_a_change_is_written_at_26_and_its_coverage_at_27() {
     );
     let older = synthesis(&without).suite;
     assert!(!aggregate_delta::used_by(&older));
-    assert_eq!(older.provenance.suite_version.major(), 16);
+    assert_eq!(older.provenance.suite_version.major(), 34);
 }
 
 #[test]
@@ -172,13 +170,14 @@ fn a_change_under_an_older_suite_label_is_refused_as_vocabulary_it_does_not_have
         "{original}"
     );
     // The document relabelled with the ordinary major below the round-3 pair.
-    let older = original.replace("\"ess-conformance/26\"", "\"ess-conformance/24\"");
+    let older = support_versions::legacy_json(&original, 24);
     assert_ne!(older, original);
     let error = AdmittedSuite::from_json(&older).expect_err("a change needs suite/26");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary", "{error}");
     assert!(error.to_string().contains("suite/26"), "{error}");
     // The typed suite pinned there is refused before serialization.
     suite.provenance.suite_version = SuiteFormat::parse("ess-conformance/24").unwrap();
+    suite.provenance.scenario_initial_state = None;
     let error = ess_conformance::admission::suite(&suite).expect_err("refused");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary");
     assert!(error.to_string().contains("suite/26"), "{error}");

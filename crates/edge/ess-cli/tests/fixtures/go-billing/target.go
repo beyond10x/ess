@@ -8,6 +8,7 @@ package billing
 
 import (
 	"fmt"
+	"time"
 
 	"essbilling/essconform"
 )
@@ -230,10 +231,8 @@ func (t *Target) move(request essconform.CommandRequest, transition, outcome, ev
 	}
 	held.state = reached(transition)
 	if transition == "issue" {
-		t.minted++
-		// Counted, not read off a clock: two invoices issued in one scenario have to be orderable,
-		// and a wall clock would make that depend on how fast the test ran.
-		held.issuedAt = fmt.Sprintf("2020-01-01T00:00:%02dZ", t.minted%60)
+		// The specification stores the caller's explicit timestamp.
+		held.issuedAt, _ = request.Input["issued_at"].(string)
 	}
 	return essconform.CommandResult{
 		Outcome:     outcome,
@@ -398,8 +397,12 @@ func (t *Target) ScanView(request essconform.ScanRequest) (essconform.ScanObserv
 
 // byIssuedAtDescendingKey puts the most recently issued id first.
 func byIssuedAtDescendingKey(ids []string, at func(string) string) {
+	instant := func(id string) time.Time {
+		parsed, _ := time.Parse(time.RFC3339Nano, at(id))
+		return parsed
+	}
 	for index := 1; index < len(ids); index++ {
-		for back := index; back > 0 && at(ids[back]) > at(ids[back-1]); back-- {
+		for back := index; back > 0 && instant(ids[back]).After(instant(ids[back-1])); back-- {
 			ids[back], ids[back-1] = ids[back-1], ids[back]
 		}
 	}

@@ -47,6 +47,17 @@
 //     their UTF-8 bytes and JavaScript orders them by UTF-16 code units, which disagree above the
 //     basic plane.
 
+import { admitDirectResponse, compareDirectResponse } from './direct_response.js';
+import type { DirectResponse } from './direct_response.js';
+import {
+  admitOneTimeTrace,
+  admitDisclosureId,
+  parseDisclosureId,
+  DisclosureCaptures,
+  DisclosureViolation,
+} from './one_time_response.js';
+import type { OneTimeTrace } from './one_time_response.js';
+
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -412,11 +423,13 @@ const NUMBER_TOKEN = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/;
 
 class Reader {
   private readonly raw: string;
+  private readonly maxDepth: number;
   private index = 0;
   readonly spans: WeakMap<object, [number, number]>;
 
-  constructor(raw: string, spans: WeakMap<object, [number, number]>) {
+  constructor(raw: string, spans: WeakMap<object, [number, number]>, maxDepth = 128) {
     this.raw = raw;
+    this.maxDepth = maxDepth;
     this.spans = spans;
   }
 
@@ -502,8 +515,8 @@ class Reader {
   }
 
   value(depth: number): Node {
-    if (depth > 128) {
-      throw new Error('JSON nesting exceeds 128');
+    if (depth > this.maxDepth) {
+      throw new Error(`JSON nesting exceeds ${this.maxDepth}`);
     }
     this.space();
     const start = this.index;
@@ -606,12 +619,69 @@ export function strictJSONWithSpans(raw: string): {
   value: Node;
   spans: WeakMap<object, [number, number]>;
 } {
-  if (!validUTF8(raw)) {
-    throw new Error('input is not UTF-8');
+  return parseJSON(raw, 128);
+}
+
+/** A payload's depth128 plus its response map and command-result envelope. */
+export function strictResponseJSON(raw: string): Node {
+  return parseJSON(raw, 130).value;
+}
+
+type SuiteJSONScope =
+  | 'plain'
+  | 'suite'
+  | 'scenarios'
+  | 'scenario'
+  | 'steps'
+  | 'step'
+  | 'response'
+  | 'expected';
+
+/** Match the native reader's finite path to payload-local expected-value depth. */
+function strictSuiteJSONWithSpans(raw: string): {
+  value: Node;
+  spans: WeakMap<object, [number, number]>;
+} {
+  // Seven envelope levels precede a direct expected field. Keep parsing bounded before
+  // checking the narrower scope-dependent limit, without rewriting its original bytes.
+  const decoded = parseJSON(raw, 135);
+  const root = decoded.value;
+  const version =
+    isObject(root) && isObject(root.provenance) ? root.provenance.suite_version : undefined;
+  const direct = typeof version === 'string' && (SUITE_MAJORS[version] ?? 0) >= 28;
+  function visit(value: Node, depth: number, scope: SuiteJSONScope): void {
+    if (depth > 128) throw new Error('JSON nesting exceeds 128');
+    if (Array.isArray(value)) {
+      for (const child of value) visit(child, depth + 1, scope === 'steps' ? 'step' : 'plain');
+    } else if (isObject(value)) {
+      for (const [key, child] of Object.entries(value)) {
+        let next: SuiteJSONScope = 'plain';
+        if (scope === 'suite' && key === 'scenarios') next = 'scenarios';
+        else if (scope === 'scenarios') next = 'scenario';
+        else if (scope === 'scenario' && key === 'steps') next = 'steps';
+        else if (scope === 'step' && key === 'response' && value.step === 'expect_direct_response')
+          next = 'response';
+        else if (scope === 'response' && key === 'expected') next = 'expected';
+        visit(child, scope === 'expected' ? 0 : depth + 1, next);
+      }
+    }
   }
+  visit(root, 0, direct ? 'suite' : 'plain');
+  return decoded;
+}
+
+function strictSuiteJSON(raw: string): Node {
+  return strictSuiteJSONWithSpans(raw).value;
+}
+
+function parseJSON(
+  raw: string,
+  maxDepth: number,
+): { value: Node; spans: WeakMap<object, [number, number]> } {
+  if (!validUTF8(raw)) throw new Error('input is not UTF-8');
   scalarStrings(raw);
   const spans = new WeakMap<object, [number, number]>();
-  const reader = new Reader(raw, spans);
+  const reader = new Reader(raw, spans, maxDepth);
   const value = reader.value(0);
   reader.done();
   return { value, spans };
@@ -1319,7 +1389,7 @@ export function completeCoverage(coverage: { [key: string]: Node } | undefined):
 }
 
 export function admitRunInput(raw: string): Suite {
-  const value = strictJSON(raw);
+  const value = strictSuiteJSON(raw);
   if (!isObject(value)) {
     throw coverageError();
   }
@@ -1933,6 +2003,8 @@ export interface Target {
    * `delivery: at_least_once` makes.
    */
   redeliverEvent(request: RedeliveryRequest): Answer<void>;
+  /** Deliver an actual external occurrence with its separately supplied context. */
+  deliverEvent?(request: EventDeliveryRequest): Answer<void>;
 
   /**
    * observeInvocations reports the commands one binding invoked and what it passed.
@@ -2014,6 +2086,8 @@ export interface CommandResult {
   outcome?: string | undefined;
   /** The declared error it refused with, empty when it did not. */
   error?: string | undefined;
+  /** Complete declared-error payload, including fields unknown to this runner. */
+  errorPayload?: Record<string, Node> | undefined;
   /** A token a later read_your_writes query may demand, empty when the target has no such token. */
   consistency?: string | undefined;
   /** The events emitted as part of the command returning. */
@@ -2041,6 +2115,15 @@ export interface EventObservationRequest {
   event: string;
   correlation: string;
   deadline: Deadline;
+}
+
+/** One external occurrence, with authority and context independent of its payload. */
+export interface EventDeliveryRequest {
+  event: string;
+  authority: string;
+  payload: Record<string, Node>;
+  context: Record<string, Node>;
+  correlation: string;
 }
 
 /** RedeliveryRequest asks for one event to be delivered again. */
@@ -2329,10 +2412,12 @@ export interface Provenance {
   specification_version: string;
   spec_digest: string;
   contract_digest: string;
+  scenario_initial_state?: 'empty';
 }
 
 /** Scenario is one thing the specification obliges an implementation to do. */
 export interface Scenario {
+  oneTimeResponse?: OneTimeTrace;
   purpose: string;
   steps: Step[];
   /** Why admission refused this scenario by name, when it did. It is skipped, never run. */
@@ -2348,6 +2433,10 @@ export interface Scenario {
 export interface Step {
   fixtures?: FixtureContract;
   response?: ResponseObservation;
+  directResponse?: DirectResponse;
+  authority?: string;
+  context?: Record<string, Node>;
+  selecting?: Record<string, Value>;
   check?: PeriodicCheck;
   left?: ReadingReference;
   right?: ReadingReference;
@@ -2432,6 +2521,8 @@ export interface OutcomeRef {
 
 /** Value is one value a step carries: written down, captured earlier, or read from an event. */
 export interface Value {
+  items?: Value[];
+  members?: Record<string, Value>;
   fixture?: string;
   selection?: SelectionObservation;
   accessor?: AccessorObservation;
@@ -2551,7 +2642,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /27 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /35 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -2571,6 +2662,12 @@ export async function runWith(
   // machine.
   const ids = sortStrings(Object.keys(suite.scenarios));
 
+  if (suite.provenance.scenario_initial_state === 'empty') {
+    t.diagnostic(
+      'Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.',
+    );
+  }
+
   t.diagnostic(
     `${suite.provenance.system} ${suite.provenance.specification_version}, ${ids.length} scenario(s), ` +
       `spec digest ${suite.provenance.spec_digest}`,
@@ -2580,11 +2677,16 @@ export async function runWith(
   // that cannot name itself fails the run here, with that message, rather than leaving a report
   // that says nothing about what was tested.
   let identity: Identity;
+  const protectedRun = Object.values(suite.scenarios).some(
+    (scenario) => scenario.oneTimeResponse !== undefined,
+  );
   try {
     identity = normalizeIdentity(await newTarget().identity());
   } catch (error) {
-    throw new Error(`the target does not name itself: ${errorText(error)}`);
+    if (!protectedRun) throw new Error(`the target does not name itself: ${errorText(error)}`);
+    identity = { name: 'one-time-protected-target', version: '' };
   }
+  if (protectedRun) identity = { name: 'one-time-protected-target', version: '' };
 
   const harness = newHarness(suite.provenance.system);
   const results: ScenarioResult[] = [];
@@ -2614,20 +2716,26 @@ export async function runWith(
     let status = statusPassed;
     let terminal = false;
     await t.test(id, async (subtest: TestScope) => {
-      const scenarioRun = new ScenarioRun(subtest, newTarget(), harness, harness.correlation());
+      const scenarioRun = new ScenarioRun(
+        subtest,
+        newTarget(),
+        harness,
+        harness.correlation(),
+        SUITE_MAJORS[suite.provenance.suite_version]! >= 28,
+      );
       let returned = false;
       let thrown: unknown;
       try {
         await scenarioRun.execute(id, scenario);
         returned = true;
       } catch (error) {
-        thrown = error;
+        thrown =
+          scenario.oneTimeResponse === undefined
+            ? error
+            : new FatalSignal('ESS-CF-TARGET: protected target observation');
       }
       status = scenarioRun.status;
       terminal = scenarioRun.callbacksComplete && (returned || status !== statusPassed);
-      if (config.version === '2' && scenarioRun.failures.length > 0) {
-        status = statusFailed;
-      }
       if (
         thrown !== undefined &&
         !(thrown instanceof SkipSignal) &&
@@ -2641,7 +2749,12 @@ export async function runWith(
       if (thrown instanceof FatalSignal) {
         throw new Error(thrown.message);
       }
+      if (thrown === undefined && status === statusUnsupported) {
+        if (config.version === '2') throw new Error('required target observation is unsupported');
+        subtest.skip('required target observation is unsupported');
+      }
       if (thrown instanceof SkipSignal) {
+        if (config.version === '2') throw new Error(thrown.message);
         subtest.skip(thrown.message);
       }
     });
@@ -2655,7 +2768,17 @@ export async function runWith(
   if (config.version === '2') {
     writeCountReport(t, suite, identity, results, terminated, config.strict);
   } else {
-    writeReport(t, suite, identity, results, terminated);
+    // report/1 retains its frozen three-category diagnostic vocabulary.
+    const legacy = results.map((result) => ({
+      ...result,
+      status:
+        result.status === statusError
+          ? statusFailed
+          : result.status === statusUnsupported
+            ? statusSkipped
+            : result.status,
+    }));
+    writeReport(t, suite, identity, legacy, terminated);
   }
 }
 
@@ -2665,6 +2788,8 @@ export async function runWith(
 export const statusPassed = 'passed';
 export const statusFailed = 'failed';
 export const statusSkipped = 'skipped';
+export const statusError = 'error';
+export const statusUnsupported = 'unsupported';
 
 /** ScenarioResult is one scenario's verdict, for the report. */
 export interface ScenarioResult {
@@ -2779,7 +2904,7 @@ export function writeReport(
     if (result.status === statusPassed) {
       continue;
     }
-    if (result.status === statusFailed) {
+    if ([statusFailed, statusError, statusUnsupported].includes(result.status)) {
       anyFailed = true;
     } else if (result.status === statusSkipped) {
       skipped += 1;
@@ -2833,6 +2958,7 @@ export interface ObservedCommandResult {
   response: { [field: string]: Node } | undefined;
   outcome: string;
   error: string;
+  errorPayload?: Record<string, Node> | undefined;
   consistency: string;
   directEvents: ObservedEvent[];
   notGranted: boolean;
@@ -2918,7 +3044,13 @@ function jsonValue(held: Node, key: string, open: Set<object>): Node {
     for (const field of Object.keys(object)) {
       const item = jsonValue((object as { [key: string]: Node })[field], field, open);
       if (item !== undefined) {
-        result[field] = item;
+        // JSON keys are data, including __proto__; assignment would invoke its inherited setter.
+        Object.defineProperty(result, field, {
+          value: item,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
       }
     }
     return result;
@@ -2961,6 +3093,7 @@ function normalizeResult(result: CommandResult | undefined): ObservedCommandResu
     response: result?.response,
     outcome: result?.outcome ?? '',
     error: result?.error ?? '',
+    errorPayload: result?.errorPayload,
     consistency: result?.consistency ?? '',
     directEvents: result?.directEvents ?? [],
     notGranted: result?.notGranted === true,
@@ -3030,15 +3163,37 @@ export class ScenarioRun {
    * cannot complete the earlier step's verdict.
    */
   callbacksComplete = false;
+  private directResponseCommands = new Set<string>();
+  private disclosure: DisclosureCaptures | undefined;
+  private disclosureStopped = false;
+  private disclosureIncomplete = false;
+  private stepTargetError = false;
+  private readonly continuedAssertions: boolean;
 
-  constructor(t: TestScope, target: Target, harness: Harness, correlation: string) {
+  constructor(
+    t: TestScope,
+    target: Target,
+    harness: Harness,
+    correlation: string,
+    continuedAssertions = false,
+  ) {
     this.t = t;
     this.target = readAsJSON(target);
     this.harness = harness;
     this.correlation = correlation;
+    this.continuedAssertions = continuedAssertions;
   }
 
   async execute(id: string, scenario: Scenario): Promise<void> {
+    this.disclosure =
+      scenario.oneTimeResponse === undefined
+        ? undefined
+        : new DisclosureCaptures(scenario.oneTimeResponse);
+    this.directResponseCommands = new Set(
+      scenario.steps
+        .filter((step) => step.step === 'expect_direct_response')
+        .map((step) => step.directResponse!.command),
+    );
     const context: ScenarioContext = { scenario: id, correlation: this.correlation };
     const first = scenario.steps[0];
     if (first?.step === 'resolve_fixtures') {
@@ -3052,8 +3207,8 @@ export class ScenarioRun {
         this.fixtures = fixtureValues(contract, provided);
       } catch (error) {
         this.callbacksComplete = true;
-        if (isUnsupported(error)) this.skip(`fixture values: ${errorText(error)}`);
-        this.status = statusFailed;
+        if (isUnsupported(error)) this.unsupported(`fixture values: ${errorText(error)}`);
+        this.status = statusError;
         throw new FatalSignal(`fixture values: ${errorText(error)}`);
       }
     }
@@ -3062,13 +3217,15 @@ export class ScenarioRun {
     } catch (error) {
       this.callbacksComplete = true; // begin returned; no teardown is required
       if (isUnsupported(error)) {
-        this.skip(`the target does not support this scenario: ${errorText(error)}`);
+        this.unsupported(
+          `ESS-CF-TARGET: the target does not support this scenario: ${errorText(error)}`,
+        );
       }
-      this.status = statusFailed;
-      throw new FatalSignal(`begin: ${errorText(error)}`);
+      this.status = statusError;
+      throw new FatalSignal(`ESS-CF-TARGET: begin: ${errorText(error)}`);
     }
     try {
-      if (scenario.purpose !== '') {
+      if (scenario.purpose !== '' && this.disclosure === undefined) {
         this.t.diagnostic(scenario.purpose);
       }
       for (
@@ -3087,11 +3244,27 @@ export class ScenarioRun {
         ) {
           return;
         }
-        if (!(await this.step(index, step))) {
-          return;
-        }
+        this.stepTargetError = false;
+        const continued = await this.step(index, step);
+        if (
+          this.disclosureStopped ||
+          (!continued &&
+            !(
+              (this.disclosure !== undefined || this.continuedAssertions) &&
+              !this.stepTargetError &&
+              this.status === statusFailed &&
+              step.step.startsWith('expect_')
+            ))
+        )
+          break;
+        if (!(await this.disclosureWindows(index, scenario))) break;
       }
     } finally {
+      if (this.disclosure !== undefined && !this.disclosureStopped) {
+        for (const event of this.disclosure.policy.events) {
+          if (!(await this.disclosureEvents(event.event))) break;
+        }
+      }
       let teardown: unknown;
       try {
         await this.target.endScenario(context);
@@ -3100,10 +3273,129 @@ export class ScenarioRun {
       }
       this.callbacksComplete = true;
       if (teardown !== undefined) {
-        this.status = statusFailed;
-        this.failures.push(`end: ${errorText(teardown)}`);
+        this.disclosureIncomplete = true;
+        this.recordStatus(isUnsupported(teardown) ? statusUnsupported : statusError);
+        this.failures.push(
+          this.disclosure === undefined
+            ? `end: ${errorText(teardown)}`
+            : 'ESS-CF-TARGET: protected target observation',
+        );
+      }
+      if (
+        this.disclosure !== undefined &&
+        !this.disclosureIncomplete &&
+        this.status !== statusError &&
+        this.status !== statusUnsupported
+      ) {
+        if (this.disclosure.complete())
+          this.t.diagnostic('ESS-CF-DISCLOSURE: protected observation completed');
+        else this.disclosureFailure(new DisclosureViolation('disclosure'));
       }
     }
+  }
+
+  private disclosureFailure(error: unknown): boolean {
+    const violation =
+      error instanceof DisclosureViolation ? error : new DisclosureViolation('resource');
+    this.disclosureStopped = true;
+    if (violation.kind === 'resource') this.disclosureIncomplete = true;
+    this.recordStatus(violation.kind === 'resource' ? statusUnsupported : statusFailed);
+    this.failures.push(
+      `${violation.message}: protected observation did not satisfy the declared rule`,
+    );
+    return false;
+  }
+  private disclosureMaps(rows: Record<string, Node>[]): boolean {
+    try {
+      this.disclosure?.maps(rows);
+      return true;
+    } catch (error) {
+      return this.disclosureFailure(error);
+    }
+  }
+  private async disclosureEvents(event: string, attempts = 0): Promise<boolean> {
+    try {
+      const observed =
+        (await this.target.observeEvents({
+          event,
+          correlation: this.correlation,
+          deadline: { attempts },
+        })) ?? [];
+      if (!this.disclosureMaps(observed.map((value) => value.payload))) return false;
+      for (const value of observed) this.remember(value);
+      return !this.disclosureStopped;
+    } catch (error) {
+      this.recordStatus(isUnsupported(error) ? statusUnsupported : statusError);
+      this.stepTargetError = true;
+      this.disclosureIncomplete = true;
+      this.failures.push('ESS-CF-TARGET: protected target observation');
+      return false;
+    }
+  }
+  private async disclosureWindows(index: number, scenario: Scenario): Promise<boolean> {
+    if (this.disclosure === undefined) return true;
+    let elapsedTicks = 0n;
+    for (const window of this.disclosure.policy.event_windows.filter(
+      (window) => window.after_step === index,
+    )) {
+      if (window.within_ms === 0n) {
+        if (!(await this.disclosureEvents(window.event))) return false;
+        continue;
+      }
+      const clock = this.target as Target & Partial<Clock>;
+      try {
+        if (!clock.markInstant || !clock.observeElapsed)
+          throw unsupported('protected clock capability');
+        let instant = '';
+        for (let serial = 0; serial < 65536; serial += 1) {
+          const candidate = `one-time-window-${index}-${serial}`;
+          if (
+            !scenario.steps.some(
+              (step) => step.step === 'mark_instant' && step.instant === candidate,
+            )
+          ) {
+            instant = candidate;
+            break;
+          }
+        }
+        if (instant === '') throw unsupported('protected instant bound');
+        await clock.markInstant({ instant, correlation: this.correlation });
+        // Match the native advancing observation clock; elapsed target evidence still establishes
+        // actual completion before the final scan, including early harmless log answers.
+        const deadlineTicks = (window.within_ms + 99n) / 100n;
+        const scans = deadlineTicks > elapsedTicks ? deadlineTicks - elapsedTicks : 1n;
+        for (let scan = 0n; scan < scans; scan += 1n) {
+          const remaining = scans - scan;
+          if (
+            !(await this.disclosureEvents(
+              window.event,
+              Number(remaining > 65536n ? 65536n : remaining),
+            ))
+          )
+            return false;
+          if (scan === 65535n) throw unsupported('protected observation bound');
+          elapsedTicks += 1n;
+        }
+        const seconds = (window.within_ms + 999n) / 1000n;
+        if (seconds > 4294967295n) throw unsupported('protected hold bound');
+        const observed = await clock.observeElapsed({
+          instant,
+          hold: Number(seconds),
+          watching: window.event,
+          correlation: this.correlation,
+        });
+        if (unsigned(observed.elapsedMillis ?? 0) < window.within_ms)
+          throw unsupported('protected window incomplete');
+        if (!(await this.disclosureEvents(window.event))) return false;
+      } catch (error) {
+        this.recordStatus(isUnsupported(error) ? statusUnsupported : statusError);
+        this.stepTargetError = true;
+        this.disclosureIncomplete = true;
+        this.failures.push('ESS-CF-TARGET: protected target observation');
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -3121,6 +3413,37 @@ export class ScenarioRun {
         const payload = this.resolveAll(index, step.payload as Record<string, Value>);
         return payload !== null && this.expectEventValues(index, { ...step, payload });
       }
+      case 'expect_direct_response':
+        try {
+          const contract = step.directResponse!;
+          if (this.lastCommand !== contract.command || !this.last)
+            throw new Error('direct response command');
+          if (contract.outcome && this.last.outcome !== contract.outcome.outcome)
+            throw new Error('direct response outcome');
+          if (this.last.error) throw new Error('direct response returned error');
+          compareDirectResponse(contract, this.last.response);
+          return true;
+        } catch (error) {
+          return this.fail(index, errorText(error));
+        }
+      case 'deliver_event':
+        try {
+          if (!this.target.deliverEvent)
+            throw unsupported('target cannot deliver an external event');
+          await this.target.deliverEvent({
+            event: step.event,
+            authority: step.authority!,
+            payload: copyFixtureValue(step.payload ?? {}),
+            context: copyFixtureValue(step.context ?? {}),
+            correlation: this.correlation,
+          });
+          return true;
+        } catch (error) {
+          if (isUnsupported(error)) this.unsupported(`delivery: ${errorText(error)}`);
+          return this.targetError(index, `delivery: ${errorText(error)}`);
+        }
+      case 'expect_every_invocation':
+        return this.expectEveryInvocation(index, step);
       case 'expect_response_payload':
         return expectResponsePayload(this, index, step);
       case 'check_periodic':
@@ -3202,7 +3525,7 @@ export class ScenarioRun {
       default:
         // A step this build does not know is a suite written by a newer generator. Reporting it as
         // a failure would blame the implementation for the tool's age.
-        this.skip(
+        this.unsupported(
           `step ${index} is \`${step.step}\`, which this generated runner does not implement`,
         );
         return false;
@@ -3250,18 +3573,25 @@ export class ScenarioRun {
       }
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           withoutInput
             ? `step ${index}: the target cannot invoke \`${step.command}\` with no input: ${errorText(error)}`
             : `step ${index}: the target does not expose \`${step.command}\`: ${errorText(error)}`,
         );
       }
-      return this.fail(index, `executing \`${step.command}\`: ${errorText(error)}`);
+      return this.targetError(index, `executing \`${step.command}\`: ${errorText(error)}`);
     }
     let normalized = normalizeResult(result);
     if (normalized.response !== undefined && normalized.response !== null) {
       try {
-        normalized = normalizeResult(snapshotResponseResult(normalized));
+        const errorPayload = normalized.errorPayload;
+        normalized = normalizeResult(
+          snapshotResponseResult(
+            normalized,
+            this.disclosure === undefined && !this.directResponseCommands.has(step.command),
+          ),
+        );
+        normalized.errorPayload = errorPayload;
       } catch (error) {
         return this.fail(index, `response observation: ${errorText(error)}`);
       }
@@ -3271,6 +3601,13 @@ export class ScenarioRun {
     this.lastCommand = step.command;
     this.lastInput = withoutInput ? undefined : input;
     this.lastActor = step.actor;
+    if (this.disclosure !== undefined) {
+      try {
+        this.disclosure.command(step.command, normalized);
+      } catch (error) {
+        return this.disclosureFailure(error);
+      }
+    }
     // Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
     // command.
     this.observed = {};
@@ -3288,6 +3625,7 @@ export class ScenarioRun {
 
   /** remember records an occurrence for the whole scenario, without recording one twice. */
   remember(event: ObservedEvent): void {
+    if (!this.disclosureMaps([event.payload])) return;
     for (const held of this.seen) {
       if (held.event === event.event && equal(held.payload, event.payload)) {
         return;
@@ -3309,11 +3647,12 @@ export class ScenarioRun {
       );
     }
     if (this.last.outcome !== step.outcome.outcome) {
-      return this.fail(
+      this.fail(
         index,
-        `\`${step.outcome.command}\` took \`${orNone(this.last.outcome)}\`, and the specification ` +
+        `ESS-CF-OUTCOME: \`${step.outcome.command}\` took \`${orNone(this.last.outcome)}\`, and the specification ` +
           `says \`${step.outcome.outcome}\``,
       );
+      return this.continuedAssertions;
     }
     return true;
   }
@@ -3381,11 +3720,15 @@ export class ScenarioRun {
         })) ?? [];
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: the target cannot observe \`${event}\``);
+        this.unsupported(`step ${index}: the target cannot observe \`${event}\``);
       }
-      this.fail(index, `observing \`${event}\` ${when} the refused send: ${errorText(error)}`);
+      this.targetError(
+        index,
+        `observing \`${event}\` ${when} the refused send: ${errorText(error)}`,
+      );
       return undefined;
     }
+    if (!this.disclosureMaps(observed.map((event) => event.payload))) return undefined;
     for (const seen of observed) {
       this.remember(seen);
     }
@@ -3409,7 +3752,7 @@ export class ScenarioRun {
     if (this.last.error !== step.error) {
       return this.fail(
         index,
-        `refused with \`${orNone(this.last.error)}\`, and the specification says \`${step.error}\``,
+        `ESS-CF-ERROR: refused with \`${orNone(this.last.error)}\`, and the specification says \`${step.error}\``,
       );
     }
     return true;
@@ -3418,7 +3761,7 @@ export class ScenarioRun {
   expectEventValues(index: number, step: Step): boolean {
     // Match the Rust runner: select the first direct occurrence by name, never by its values.
     const event = this.last.directEvents?.find((observed) => observed.event === step.event);
-    if (!event) return this.fail(index, `\`${step.event}\` was not emitted`);
+    if (!event) return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
     if (!matches(event.payload, step.payload ?? {}))
       return this.fail(index, `\`${step.event}\` carried different fixture values`);
     const reason = holds(event.payload, step.shape ?? {});
@@ -3428,7 +3771,7 @@ export class ScenarioRun {
   expectEvent(index: number, step: Step): boolean {
     const seen = this.observed[step.event] ?? [];
     if (seen.length === 0) {
-      return this.fail(index, `\`${step.event}\` was not emitted`);
+      return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
     }
     let mismatch = '';
     for (const event of seen) {
@@ -3449,13 +3792,16 @@ export class ScenarioRun {
     }
     return this.fail(
       index,
-      `\`${step.event}\` was emitted, and no instance of it carried ${describe(step.payload ?? {})}`,
+      `ESS-CF-PAYLOAD: \`${step.event}\` was emitted, and no instance of it carried ${describe(step.payload ?? {})}`,
     );
   }
 
   expectNoEvent(index: number, step: Step): boolean {
     if ((this.observed[step.event] ?? []).length > 0) {
-      return this.fail(index, `\`${step.event}\` was emitted, and this branch does not emit it`);
+      return this.fail(
+        index,
+        `ESS-CF-NO-EVENT: \`${step.event}\` was emitted, and this branch does not emit it`,
+      );
     }
     return true;
   }
@@ -3473,10 +3819,11 @@ export class ScenarioRun {
           })) ?? [];
       } catch (error) {
         if (isUnsupported(error)) {
-          this.skip(`step ${index}: the target cannot observe \`${step.event}\``);
+          this.unsupported(`step ${index}: the target cannot observe \`${step.event}\``);
         }
-        return this.fail(index, `observing \`${step.event}\`: ${errorText(error)}`);
+        return this.targetError(index, `observing \`${step.event}\`: ${errorText(error)}`);
       }
+      if (!this.disclosureMaps(events.map((event) => event.payload))) return false;
       for (const event of events) {
         (this.observed[event.event] ??= []).push(event);
         this.remember(event);
@@ -3498,7 +3845,7 @@ export class ScenarioRun {
       }
     }
     if (!isEntitySetupTarget(this.target)) {
-      this.skip('target cannot validate and establish entity state');
+      this.unsupported('target cannot validate and establish entity state');
       return false;
     }
     const request: EntitySetupRequest = {
@@ -3512,9 +3859,9 @@ export class ScenarioRun {
       await this.target.establishEntity(request);
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`entity setup unsupported: ${errorText(error)}`);
+        this.unsupported(`entity setup unsupported: ${errorText(error)}`);
       }
-      return this.fail(index, `entity setup failed: ${errorText(error)}`);
+      return this.targetError(index, `entity setup failed: ${errorText(error)}`);
     }
     this.established.push(request);
     this.instances[step.instance] = step.identity;
@@ -3533,7 +3880,7 @@ export class ScenarioRun {
     }
     return this.fail(
       index,
-      `nothing bound \`${step.instance}\`: \`${step.event}\` did not carry \`${step.field}\``,
+      `ESS-CF-INSTANCE: nothing bound \`${step.instance}\`: \`${step.event}\` did not carry \`${step.field}\``,
     );
   }
 
@@ -3553,13 +3900,14 @@ export class ScenarioRun {
       });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           `step ${index}: the target does not expose \`${step.view}\`: ${errorText(error)}`,
         );
       }
-      return this.fail(index, `querying \`${step.view}\`: ${errorText(error)}`);
+      return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
     }
     this.lastView = result?.rows ?? [];
+    if (!this.disclosureMaps(this.lastView)) return false;
     this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
     this.queried = step.view;
     return true;
@@ -3587,7 +3935,7 @@ export class ScenarioRun {
     if (rows.length !== 1)
       return this.fail(
         index,
-        `subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
+        `ESS-CF-VIEW: subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
       );
     if (shape !== undefined) {
       try {
@@ -3704,13 +4052,14 @@ export class ScenarioRun {
           });
         } catch (error) {
           if (isUnsupported(error)) {
-            this.skip(
+            this.unsupported(
               `step ${index}: the target does not expose \`${step.view}\`: ${errorText(error)}`,
             );
           }
-          return this.fail(index, `querying \`${step.view}\`: ${errorText(error)}`);
+          return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
         }
         this.lastView = result?.rows ?? [];
+        if (!this.disclosureMaps(this.lastView)) return false;
         this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
         this.queried = step.view;
       }
@@ -3726,7 +4075,7 @@ export class ScenarioRun {
       }
       last = reason;
     }
-    return this.fail(index, last);
+    return this.fail(index, `${retry ? 'ESS-CF-EVENTUAL-VIEW' : 'ESS-CF-VIEW'}: ${last}`);
   }
 
   /** decide answers whether the view expectation holds, why not, and whether it could be decided. */
@@ -4009,11 +4358,15 @@ export class ScenarioRun {
       if (isUnsupported(error)) {
         // The one method the model explicitly refuses to require. Unsupported is a fact about the
         // target, not a failure of the specification.
-        this.skip(
-          `step ${index}: the target does not expose what \`${step.binding}\` invoked: ${errorText(error)}`,
+        this.recordStatus(statusUnsupported);
+        this.t.diagnostic(
+          this.disclosure === undefined
+            ? errorText(error)
+            : 'ESS-CF-TARGET: protected target observation',
         );
+        return true;
       }
-      return this.fail(index, `observing \`${step.binding}\`: ${errorText(error)}`);
+      return this.targetError(index, `observing \`${step.binding}\`: ${errorText(error)}`);
     }
     const want: { [field: string]: Node } = {};
     const absent: string[] = [];
@@ -4023,7 +4376,7 @@ export class ScenarioRun {
       try {
         [node, present] = this.resolveAccessorExpected(written);
       } catch (error) {
-        return this.fail(index, `\`${field}\`: ${errorText(error)}`);
+        return this.targetError(index, `ESS-CF-SUITE: \`${field}\`: ${errorText(error)}`);
       }
       if (present) {
         want[field] = node;
@@ -4042,10 +4395,11 @@ export class ScenarioRun {
         return true;
       }
     }
-    return this.fail(
+    this.fail(
       index,
       `\`${step.binding}\` did not invoke \`${step.command}\` with ${describe(want)}`,
     );
+    return true;
   }
 
   /**
@@ -4062,7 +4416,7 @@ export class ScenarioRun {
       try {
         [node, present] = this.resolveAccessorExpected(written);
       } catch (error) {
-        return this.fail(index, `\`${field}\`: ${errorText(error)}`);
+        return this.targetError(index, `\`${field}\`: ${errorText(error)}`);
       }
       if (present) {
         want[field] = node;
@@ -4084,11 +4438,11 @@ export class ScenarioRun {
           })) ?? [];
       } catch (error) {
         if (isUnsupported(error)) {
-          this.skip(
+          this.unsupported(
             `step ${index}: the target does not expose what \`${step.binding}\` invoked: ${errorText(error)}`,
           );
         }
-        return this.fail(index, `observing \`${step.binding}\`: ${errorText(error)}`);
+        return this.targetError(index, `observing \`${step.binding}\`: ${errorText(error)}`);
       }
       matching = seen.filter(
         (invocation) =>
@@ -4115,11 +4469,11 @@ export class ScenarioRun {
       await this.target.redeliverEvent({ event: step.event, correlation: this.correlation });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           `step ${index}: the target cannot redeliver \`${step.event}\`, so \`at_least_once\` is unchecked`,
         );
       }
-      return this.fail(index, `redelivering \`${step.event}\`: ${errorText(error)}`);
+      return this.targetError(index, `redelivering \`${step.event}\`: ${errorText(error)}`);
     }
     return true;
   }
@@ -4146,14 +4500,14 @@ export class ScenarioRun {
       }
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           step.times === undefined
             ? `step ${index}: the target cannot force \`${step.force.outcome}\``
             : `step ${index}: the target cannot force \`${step.force.outcome}\` on the next ` +
                 `${step.times} invocations: ${errorText(error)}`,
         );
       }
-      return this.fail(index, `forcing \`${step.force.outcome}\`: ${errorText(error)}`);
+      return this.targetError(index, `forcing \`${step.force.outcome}\`: ${errorText(error)}`);
     }
     return true;
   }
@@ -4165,7 +4519,7 @@ export class ScenarioRun {
    */
   clock(index: number): Target & Clock {
     if (!isClock(this.target)) {
-      this.skip(
+      this.unsupported(
         `step ${index} claims a length of time, and this target implements no Clock, so the claim ` +
           'cannot be checked. It is reported unanswered rather than satisfied.',
       );
@@ -4180,9 +4534,12 @@ export class ScenarioRun {
       await clock.markInstant({ instant: step.instant, correlation: this.correlation });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: the target cannot mark the instant \`${step.instant}\``);
+        this.unsupported(`step ${index}: the target cannot mark the instant \`${step.instant}\``);
       }
-      return this.fail(index, `marking the instant \`${step.instant}\`: ${errorText(error)}`);
+      return this.targetError(
+        index,
+        `marking the instant \`${step.instant}\`: ${errorText(error)}`,
+      );
     }
     this.marked[step.instant] = true;
     return true;
@@ -4214,9 +4571,14 @@ export class ScenarioRun {
       });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: the target cannot let time pass since \`${step.instant}\``);
+        this.unsupported(
+          `step ${index}: the target cannot let time pass since \`${step.instant}\``,
+        );
       }
-      this.fail(index, `letting ${hold}s pass since \`${step.instant}\`: ${errorText(error)}`);
+      this.targetError(
+        index,
+        `letting ${hold}s pass since \`${step.instant}\`: ${errorText(error)}`,
+      );
       return null;
     }
     return { elapsedMillis: observed?.elapsedMillis ?? 0, published: observed?.published ?? 0 };
@@ -4290,7 +4652,7 @@ export class ScenarioRun {
    */
   async expectHalt(index: number, step: Step, retry: boolean): Promise<boolean> {
     if (!isOrderedReader(this.target)) {
-      this.skip(
+      this.unsupported(
         `step ${index} claims a reader stopped an ordered scan, and this target implements no ` +
           'OrderedReader, so the claim cannot be checked. It is reported unanswered rather than ' +
           'satisfied.',
@@ -4324,9 +4686,14 @@ export class ScenarioRun {
         });
       } catch (error) {
         if (isUnsupported(error)) {
-          this.skip(`step ${index}: the target cannot read \`${step.view}\` a row at a time`);
+          this.unsupported(
+            `step ${index}: the target cannot read \`${step.view}\` a row at a time`,
+          );
         }
-        return this.fail(index, `reading \`${step.view}\` a row at a time: ${errorText(error)}`);
+        return this.targetError(
+          index,
+          `reading \`${step.view}\` a row at a time: ${errorText(error)}`,
+        );
       }
       const produced = observed?.produced ?? 0;
       const halted = observed?.halted ?? false;
@@ -4347,26 +4714,106 @@ export class ScenarioRun {
     );
   }
 
-  /** fail records one failed assertion and stops the scenario. */
-  fail(index: number, message: string): boolean {
-    this.status = statusFailed;
-    this.failures.push(`step ${index}: ${message}`);
+  /** Observe the whole finite window; an early correct invocation cannot hide a late wrong retry. */
+  async expectEveryInvocation(index: number, step: Step): Promise<boolean> {
+    const selected: Record<string, Node> = {};
+    const wanted: Record<string, Node> = {};
+    const absent: string[] = [];
+    try {
+      for (const [field, value] of Object.entries(step.selecting ?? {})) {
+        const [node, present] = this.resolveAccessorExpected(value);
+        if (present) selected[field] = node;
+      }
+      for (const [field, value] of Object.entries(step.input ?? {})) {
+        const [node, present] = this.resolveAccessorExpected(value);
+        if (present) wanted[field] = node;
+        else absent.push(field);
+      }
+    } catch (error) {
+      return this.targetError(index, `invocation values: ${errorText(error)}`);
+    }
+    const deadline = this.harness.deadline();
+    let chosen: Invocation[] = [];
+    for (let attempt = 0; attempt < deadline.attempts; attempt += 1) {
+      try {
+        const seen = await this.target.observeInvocations({
+          binding: step.binding,
+          command: step.command,
+          correlation: this.correlation,
+          deadline: { attempts: deadline.attempts - attempt },
+        });
+        chosen = (seen ?? []).filter(
+          (invocation) =>
+            invocation.command === step.command && matches(invocation.input, selected),
+        );
+      } catch (error) {
+        if (isUnsupported(error)) {
+          this.recordStatus(statusUnsupported);
+          this.t.diagnostic(
+            this.disclosure === undefined
+              ? errorText(error)
+              : 'ESS-CF-TARGET: protected target observation',
+          );
+          return true;
+        }
+        return this.targetError(index, `observing every invocation: ${errorText(error)}`);
+      }
+      if (
+        chosen.some(
+          (invocation) =>
+            !matches(invocation.input, wanted) ||
+            absent.some((field) => Object.hasOwn(invocation.input, field)),
+        )
+      ) {
+        this.fail(index, 'an invocation for the occurrence disagrees with its delivery');
+        return true;
+      }
+    }
+    if (chosen.length === 0) this.fail(index, 'no invocation for the delivered occurrence');
+    return true;
+  }
+
+  recordStatus(status: string): void {
+    const rank = [statusPassed, statusSkipped, statusUnsupported, statusError, statusFailed];
+    if (rank.indexOf(status) > rank.indexOf(this.status)) this.status = status;
+  }
+
+  targetError(index: number, message: string): boolean {
+    this.stepTargetError = true;
+    this.disclosureIncomplete = true;
+    this.recordStatus(statusError);
+    this.failures.push(
+      this.disclosure === undefined
+        ? `step ${index}: ${message}`
+        : 'ESS-CF-TARGET: protected target observation',
+    );
     return false;
   }
 
-  /**
-   * skip ends the scenario as one the target could not answer, and records that it did.
-   *
-   * Every skip in this runtime goes through here so the report and the test log cannot disagree
-   * about what the scenario came to.
-   *
-   * EVERY CALLER PASSES THE TARGET'S OWN ERROR. A target throws `unsupported()` around the
-   * sentence explaining what it could not answer, and printing only the construct's name throws
-   * that away, leaving different causes rendered identically.
-   */
+  /** fail records one failed assertion and stops the scenario. */
+  fail(index: number, message: string): boolean {
+    this.status = statusFailed;
+    this.failures.push(
+      this.disclosure === undefined
+        ? `step ${index}: ${message}`
+        : 'ESS-CF-PAYLOAD: protected observation did not satisfy the declared rule',
+    );
+    return false;
+  }
+
+  /** Existing reading helpers retain their capability-refusal method name. */
   skip(message: string): never {
-    this.status = statusSkipped;
-    throw new SkipSignal(message);
+    return this.unsupported(message);
+  }
+
+  /** Record a target capability gap without collapsing its report/2 category. */
+  unsupported(message: string): never {
+    this.stepTargetError = true;
+    this.disclosureIncomplete = true;
+    this.recordStatus(statusUnsupported);
+    throw new SkipSignal(
+      this.disclosure === undefined ? message : 'ESS-CF-TARGET: protected target observation',
+    );
   }
 
   /**
@@ -4389,6 +4836,10 @@ export class ScenarioRun {
       }
     };
     switch (step.step) {
+      case 'expect_every_invocation':
+        visit(step.selecting);
+        visit(step.input);
+        break;
       case 'execute_command':
       case 'expect_invocation':
         visit(step.input);
@@ -4438,7 +4889,7 @@ export class ScenarioRun {
       try {
         resolved[field] = this.resolve(written);
       } catch (error) {
-        this.fail(index, `\`${field}\`: ${errorText(error)}`);
+        this.targetError(index, `ESS-CF-SUITE: \`${field}\`: ${errorText(error)}`);
         return null;
       }
     }
@@ -4449,6 +4900,12 @@ export class ScenarioRun {
 
   resolve(value: Value): Node {
     switch (value.kind) {
+      case 'list':
+        return value.items!.map((item) => this.resolve(item));
+      case 'members':
+        return Object.fromEntries(
+          Object.entries(value.members!).map(([key, member]) => [key, this.resolve(member)]),
+        );
       case 'fixture':
         if (!Object.hasOwn(this.fixtures, value.fixture as string))
           throw new Error('fixture was not resolved');
@@ -4522,7 +4979,7 @@ export class ScenarioRun {
 
   async checkPeriodic(index: number, step: Step): Promise<boolean> {
     if (!isPeriodicTarget(this.target)) {
-      this.skip(`step ${index}: target has no periodic authority`);
+      this.unsupported(`step ${index}: target has no periodic authority`);
     }
     const clock = this.clock(index);
     if (step.check === undefined) {
@@ -4537,9 +4994,11 @@ export class ScenarioRun {
       );
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: periodic authority/observation unsupported: ${errorText(error)}`);
+        this.unsupported(
+          `step ${index}: periodic authority/observation unsupported: ${errorText(error)}`,
+        );
       }
-      return this.fail(index, `periodic contract: ${errorText(error)}`);
+      return this.targetError(index, `periodic contract: ${errorText(error)}`);
     }
     return true;
   }
@@ -5272,6 +5731,11 @@ export function scenarioIdentity(id: string, major = 21): void {
   const parts = id.split('/');
   const segment = (index: number): string => parts[index] ?? '';
   let valid = false;
+  if (parts[1] === 'disclosure') {
+    // Inventory/refusal IDs use native grammar; executable policy admission owns the major gate.
+    parseDisclosureId(id);
+    return;
+  }
   const q = (value: string): boolean => qualifiedName.test(value);
   const k = (value: string): boolean => kebabName.test(value);
   if (parts.length === 3 && segment(1) === 'outcome') {
@@ -5361,10 +5825,18 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/25': 25,
   'ess-conformance/26': 26,
   'ess-conformance/27': 27,
+  'ess-conformance/28': 28,
+  'ess-conformance/29': 29,
+  'ess-conformance/30': 30,
+  'ess-conformance/31': 31,
+  'ess-conformance/32': 32,
+  'ess-conformance/33': 33,
+  'ess-conformance/34': 34,
+  'ess-conformance/35': 35,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
-const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27]);
+const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
 export function coverageMajor(major: number): boolean {
@@ -5382,17 +5854,23 @@ export function admitSuite(raw: string): Suite {
 
 export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   accessorPreflight(raw);
-  const value = strictJSON(raw);
+  const value = strictSuiteJSON(raw);
   const root = closed(value, 'provenance scenarios', 'coverage');
   const provenance = closed(
     root.provenance,
     'suite_version system specification_version spec_digest contract_digest',
-    'component',
+    'component scenario_initial_state',
   );
   const version = text(provenance.suite_version);
   const major = SUITE_MAJORS[version];
   if (major === undefined) {
     throw new Error(`unsupported suite version ${quoteGo(version)}`);
+  }
+  if (
+    (major >= 34 && provenance.scenario_initial_state !== 'empty') ||
+    (major < 34 && Object.prototype.hasOwnProperty.call(provenance, 'scenario_initial_state'))
+  ) {
+    throw new Error('scenario_initial_state must be empty exactly in suite/34 and /35');
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
@@ -5419,7 +5897,16 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   const refused: { [id: string]: string } = {};
   for (const id of Object.keys(scenarios)) {
     scenarioIdentity(id, major);
-    const scenario = closed(scenarios[id], 'purpose steps source', '');
+    const scenario = closed(scenarios[id], 'purpose steps source', 'one_time_response');
+    let trace: OneTimeTrace | undefined;
+    if (scenario.one_time_response != null) {
+      if (major < 34) throw new Error('one-time response authority requires suite/34 or /35');
+      trace = admitOneTimeTrace(scenario.one_time_response, scenario);
+    }
+    if (id.split('/')[1] === 'disclosure') {
+      if (trace === undefined) throw new Error('disclosure identity requires policy');
+      admitDisclosureId(id, scenario, trace, version);
+    }
     const purpose = text(scenario.purpose);
     if (purpose.trim() === '' || [...purpose].length > 200) {
       throw new Error('invalid purpose');
@@ -5446,6 +5933,13 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       try {
         admitEntitySetups(steps);
         admitFixtureSteps(steps);
+        let called: string | undefined;
+        for (const step of steps) {
+          if (step.step === 'execute_command' || step.step === 'execute_command_without_input')
+            called = step.command;
+          if (step.step === 'expect_direct_response' && step.response.command !== called)
+            throw new Error('direct response does not name preceding invocation');
+        }
       } catch (error) {
         throw new Error(`${id}: ${errorText(error)}`);
       }
@@ -5494,6 +5988,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       specification_version: provenance.specification_version as string,
       spec_digest: provenance.spec_digest as string,
       contract_digest: provenance.contract_digest as string,
+      ...(major >= 34 ? { scenario_initial_state: 'empty' as const } : {}),
     },
     scenarios: {},
     original: raw,
@@ -5601,6 +6096,9 @@ function decodeScenarios(
         ? {
             purpose: (scenario.purpose as string) ?? '',
             steps: (scenario.steps as Node[]).map(decodeStep),
+            ...(scenario.one_time_response == null
+              ? {}
+              : { oneTimeResponse: admitOneTimeTrace(scenario.one_time_response, scenario) }),
           }
         : { purpose: (scenario.purpose as string) ?? '', steps: [], refused: refusal };
   }
@@ -5649,6 +6147,9 @@ function decodeValues(value: Node): { [field: string]: Value } | undefined {
     if (Object.prototype.hasOwnProperty.call(written, 'selection')) {
       decoded.selection = new SelectionObservation(written.selection);
     }
+    if (written.kind === 'list')
+      decoded.items = array(written.items).map((item) => decodeValues({ item })!.item!);
+    if (written.kind === 'members') decoded.members = decodeValues(written.members)!;
     result[field] = decoded;
   }
   return result;
@@ -5820,9 +6321,17 @@ function decodeStep(value: Node): Step {
     step.check = plainNumbers(written.check) as PeriodicCheck;
   }
   if (Object.prototype.hasOwnProperty.call(written, 'response')) {
-    step.response = decodeResponseObservation(plainNumbers(written.response));
+    if (step.step === 'expect_direct_response')
+      step.directResponse = admitDirectResponse(written.response);
+    else step.response = decodeResponseObservation(plainNumbers(written.response));
   }
   if (Object.hasOwn(written, 'fixtures')) step.fixtures = admitFixtures(written.fixtures);
+  if (step.step === 'deliver_event') {
+    step.authority = written.authority;
+    step.context = written.context;
+  }
+  if (step.step === 'expect_every_invocation')
+    step.selecting = decodeValues(written.selecting) ?? {};
   if (step.step === 'expect_event_values') step.payload = decodeValues(written.payload) ?? {};
   if (Object.prototype.hasOwnProperty.call(written, 'left')) {
     step.left = plainNumbers(written.left) as ReadingReference;
@@ -5890,6 +6399,11 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
     }
     const kind = text(written.kind);
     switch (kind) {
+      case 'list':
+      case 'members':
+        if (major < 32) throw new Error('structured values require suite/32');
+        admitStructuredValue(written, 1);
+        break;
       case 'fixture':
         if (major < 18) throw new Error('fixture references require suite/18 or /19');
         closed(written, 'kind fixture', '');
@@ -5949,6 +6463,26 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
       default:
         throw new Error(`unsupported scenario value ${kind}`);
     }
+  }
+}
+
+function admitStructuredValue(value: Node, depth: number): void {
+  if (depth > 64) throw new Error('structured value depth exceeds 64');
+  let children: Node[];
+  if (value.kind === 'list') {
+    closed(value, 'kind items', '');
+    children = array(value.items);
+  } else {
+    closed(value, 'kind members', '');
+    if (!isObject(value.members)) throw new Error('structured members must be object');
+    children = Object.values(value.members);
+  }
+  for (const child of children) {
+    if (!isObject(child)) throw new Error('structured child must be value');
+    if (child.kind === 'list' || child.kind === 'members') admitStructuredValue(child, depth + 1);
+    else if (child.kind === 'literal' || child.kind === 'instance')
+      admitValues({ child }, 32, false);
+    else throw new Error('structured child must be literal, instance or structure');
   }
 }
 
@@ -6400,6 +6934,20 @@ export function admitStep(value: Node, major: number): void {
   let required = 'step';
   let optional = '';
   switch (tag) {
+    case 'expect_direct_response':
+      if (major < 28) throw new Error('direct response requires suite/28');
+      required += ' response';
+      break;
+    case 'deliver_event':
+      if (major < 30) throw new Error('delivery context requires suite/30');
+      required += ' event authority context';
+      optional = 'payload';
+      break;
+    case 'expect_every_invocation':
+      if (major < 30) throw new Error('delivery context requires suite/30');
+      required += ' binding command input';
+      optional = 'selecting';
+      break;
     case 'resolve_fixtures':
       if (major < 18) throw new Error('fixture resolution requires suite/18 or /19');
       required += ' fixtures';
@@ -6577,7 +7125,8 @@ export function admitStep(value: Node, major: number): void {
         admitFixtures(held);
         break;
       case 'response':
-        admitResponse(held, major);
+        if (tag === 'expect_direct_response') admitDirectResponse(held);
+        else admitResponse(held, major);
         break;
       case 'check':
         admitPeriodic(held);
@@ -6637,10 +7186,20 @@ export function admitStep(value: Node, major: number): void {
       case 'field':
         text(held);
         break;
+      case 'authority':
+        text(held);
+        break;
+      case 'context':
+        if (!isObject(held)) throw new Error('delivery context must be object');
+        admitPayload(held);
+        break;
+      case 'selecting':
+        admitValues(held, major, true);
+        break;
       case 'input':
       case 'params':
       case 'subject':
-        admitValues(held, major, tag === 'expect_invocation');
+        admitValues(held, major, tag === 'expect_invocation' || tag === 'expect_every_invocation');
         break;
       case 'payload':
       case 'fields':
@@ -6833,11 +7392,13 @@ export function countDocument(
     if (
       result.status !== statusPassed &&
       result.status !== statusFailed &&
-      result.status !== statusSkipped
+      result.status !== statusSkipped &&
+      result.status !== statusError &&
+      result.status !== statusUnsupported
     ) {
       throw new Error('unsupported terminal status');
     }
-    const verdict = result.status as 'passed' | 'failed' | 'skipped';
+    const verdict = result.status as 'passed' | 'failed' | 'error' | 'unsupported' | 'skipped';
     counts[verdict] += 1;
     outcomes[verdict].push(result.id);
   }
@@ -6853,9 +7414,9 @@ export function countDocument(
     sortStrings(ids);
   }
   let execution = 'passed';
-  if (counts.failed > 0) {
+  if (counts.failed > 0 || counts.unsupported > 0) {
     execution = 'failed';
-  } else if (counts.skipped > 0) {
+  } else if (counts.skipped > 0 || counts.error > 0) {
     execution = 'inconclusive';
   }
   let conformance = 'inconclusive';
@@ -6877,7 +7438,7 @@ export function countDocument(
     specification: `${suite.provenance.system}/${suite.provenance.specification_version}`,
     spec_digest: suite.provenance.spec_digest,
     implementation: `${identity.name} ${identity.version}`,
-    producer_profile: 'go-scenario-status/1',
+    producer_profile: 'go-scenario-status/2',
     suite: {
       version: suite.provenance.suite_version,
       digest_profile: 'sha256-json-bytes/1',
@@ -7153,7 +7714,7 @@ export function decodeAccessorTypeFacts(value: Node): AccessorTypeFacts {
 export function accessorPreflight(raw: string): void {
   let decoded: { value: Node; spans: WeakMap<object, [number, number]> };
   try {
-    decoded = strictJSONWithSpans(raw);
+    decoded = strictSuiteJSONWithSpans(raw);
   } catch {
     return; // The ordinary closed admitter diagnoses malformed legacy documents.
   }

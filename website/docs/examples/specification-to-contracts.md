@@ -38,7 +38,7 @@ stream of steps on every load, and `website/src/pages/lab/_run.test.mjs` holds i
 
 One command, from `examples/billing/domains/invoice.yaml`:
 
-```yaml file=examples/billing/domains/invoice.yaml lines=191-259
+```yaml file=examples/billing/domains/invoice.yaml lines=191-258
 commands:
   - name: billing.invoice.CreateInvoice
 
@@ -92,9 +92,8 @@ commands:
         # to be in order and never to be in the right order.
         #
         # `invoice_id` has no line here for the reason it has none above: the identity is the
-        # implementation's to assign. `issued_at` has none because `CreateInvoice` is not what
-        # sets it and `IssueInvoice` does not take it — a clock is not an input, and the model says
-        # so by staying quiet rather than by naming a source that does not exist.
+        # implementation's to assign. `issued_at` stays absent here; `IssueInvoice` stores the
+        # explicit issuing timestamp its caller supplies, so the view's ordering has a source.
         #
         # `reminder_count` starts at zero, and says so, because the invariant `reminder_count >= 0`
         # reads it: a required field no creating branch sets holds whatever the implementation
@@ -144,7 +143,7 @@ commands:
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
-    "source_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+    "source_digest": "096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648",
     "contract_digest": "slice-sha256/2:79a52ac939c2e51d1a43759c926d7366c3f4cbae003a2993d8f93a23b103f004",
     "regenerate": "ess generate"
   },
@@ -295,8 +294,8 @@ page opens with the same provenance as the Markdown:
 ```html file=generated/site/index.html lines=2-7
 <!--
   generated from billing v3
-  model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
-  contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
+  model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
+  contract digest c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79
   do not edit: regenerate with `ess generate`
 -->
 ```

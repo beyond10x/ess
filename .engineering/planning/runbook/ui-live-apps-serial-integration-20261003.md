@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 20
+revision: 23
 ---
 ## Authority and delivery
 
@@ -175,4 +175,12 @@ At continuation the host had14GiB free disk and29GiB available RAM after the app
 
 ## Immediate next action
 
-Finish the running source inventory, freeze the current integration state, reconcile currentmain and start importing the reviewed missing units. Resume292 from its18-file preserved checkpoint, followed by the shared dependent seams. The9 recovery archives for11 retired release/Gates trees remain intact; no held-bundle tree was removed.
+Current main is merged at cf9461006. All60 selected runtime deltas plus the nested-response and explorer companion designs are applied to the integration index. Billing and oracle generated suites retain the newer integration-side files pending regeneration. This is an integration checkpoint, not completed validation or release acceptance.
+
+The combined workspace dependency conflict is corrected by aligning the model timestamp dependency to the generated Rust1.85 server's time0.3.45 pin. Locked offline Cargo metadata now succeeds; task fmt-check succeeds. The abandoned separate-fetch fixture and CI edits were removed. The native model API remains OffsetDateTime with an RFC3339-only decoder. The design records the bounded RFC2822 advisory disposition, and its native round-trip test now rejects that input explicitly. Actual generated-model/server tests remain due.
+
+The292 suffix correction received bounded independent approval. Its implementor reproduced and corrected the abstract-validator early-Unknown failure, then reproduced the remaining widening/increment failure. It retains the single compiler lane through its bounded acceptance. Root will build the combined generator and regenerate affected artifacts after handback. A separate read-only audit maps original syntax issues to current source and identifies the aggregate authority dependency. Every implementation unit integrates serially on the same branch; no second PR is planned.
+
+## Current resource contract from final handoff
+
+The final operator-transferred 2026-10-03 backlog handoff is the current resource contract for this work: one ESS compiler lane, jobs1/debug0/incremental0/locked/offline, external TMPDIR, and integer free-space guard12884901888 bytes before every expensive start. Its own explicit cache handbacks supersede the September initiative's generic20GiB snapshot. The continuation's initial20GiB note was over-conservative and is corrected here without changing any source/test/publication gate. Do not share a target concurrently or touch another session's cache/process. Stop new compiler starts below the current12GiB floor. Integration initially builds in its own managed tree target;292 and browser keep their separately handed-back paths when they receive the serial lane.

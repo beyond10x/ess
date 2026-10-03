@@ -6,6 +6,9 @@ description: Run a suite against a built-in target, a generated Go or TypeScript
 
 # Runners and reports
 
+For response fields that must never be disclosed again after issuance, see
+[One-time response values](./one-time-responses.md).
+
 ## Run a supported target
 
 ```shell-session
@@ -152,8 +155,11 @@ $ ess verify conform run \
 ```
 
 `--report-format 2` selects `ess-conformance-report/2` for `--report-out`. It records separate
-`passed`, `failed`, `error`, `unsupported` and `skipped` counts and sorted scenario IDs. Rust uses
-error/unsupported; generated Go uses skipped and keeps ordinary target errors as failed. The report
+`passed`, `failed`, `error`, `unsupported` and `skipped` counts and sorted scenario IDs. Rust and
+newly generated Go and TypeScript retain all five categories. Go and TypeScript use
+`go-scenario-status/2`; older `go-scenario-status/1` reports retain their original restricted
+categories. Unsupported observations fail execution; errors or explicit skips make execution
+inconclusive unless another result has already failed it. The report
 binds every original suite byte, including its final newline, under `sha256-json-bytes/1`. Retain the
 original suite beside the report; reformatting it changes that identity.
 

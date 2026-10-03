@@ -1,11 +1,11 @@
-//! A suite whose view predicate reads `defined()` or `missing()` over an `Optional` struct, list,
-//! map or `Json` is written in suite/26 (coverage /27), the round-3 pair (beyond10x/ess#176).
+//! `defined()` or `missing()` over an `Optional` aggregate requires the round-3 reading
+//! (beyond10x/ess#176). Fresh suites now also declare isolation in /34 (coverage /35).
 //!
 //! A runner from 0.37.0 binds no fact at a struct's or a list's own path, so it reads
 //! `defined(metrics)` as `false` for a queue that holds metrics: the #176 invariant
 //! `any: [state == Paused, not defined(metrics)]` then passes on every row without checking it.
 //! The number moves so that such a runner refuses the suite by version instead. The same predicate
-//! over an `Optional` scalar, which every runner binds, keeps the suite's earlier format and bytes.
+//! over an `Optional` scalar does not require the aggregate reading.
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
     scenario::ViewExpectation, synthesize::synthesize, AdmittedSuite, ConformanceSuite,
@@ -106,10 +106,10 @@ fn defined_over_an_optional_struct_selects_suite_26_and_its_coverage_27() {
     assert!(ess_conformance::defined_aggregates::used_by(&ir, &suite));
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     let original = coverage_document(&ir);
-    assert!(original.contains("\"ess-conformance/27\""), "{original}");
+    assert!(original.contains("\"ess-conformance/35\""), "{original}");
     AdmittedSuite::from_json(&original).unwrap_or_else(|error| panic!("{error}"));
 }
 
@@ -121,7 +121,7 @@ fn defined_over_an_optional_list_selects_suite_26() {
     assert!(ess_conformance::defined_aggregates::used_by(&ir, &suite));
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
 }
 
@@ -133,18 +133,18 @@ fn missing_over_an_optional_struct_selects_suite_26() {
     assert!(ess_conformance::defined_aggregates::used_by(&ir, &suite));
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
 }
 
 #[test]
-fn defined_over_an_optional_scalar_keeps_the_earlier_format_and_bytes() {
+fn defined_over_an_optional_scalar_keeps_fresh_selection_idempotent() {
     let ir = ir(&scalar_metrics());
     let suite = suite(&ir);
     assert!(carries_defined(&suite), "the invariant reaches the suite");
     assert!(!ess_conformance::defined_aggregates::used_by(&ir, &suite));
     let major = suite.provenance.suite_version.major();
-    assert!(major < 26, "{}", suite.provenance.suite_version);
+    assert_eq!(major, 34);
     let mut reselected = suite.clone();
     reselected.select_fresh_format();
     assert_eq!(
@@ -153,11 +153,11 @@ fn defined_over_an_optional_scalar_keeps_the_earlier_format_and_bytes() {
         "the suite is exactly what the construct-free selection writes"
     );
     let original = coverage_document(&ir);
-    assert!(!original.contains("\"ess-conformance/27\""), "{original}");
+    assert!(original.contains("\"ess-conformance/35\""), "{original}");
 }
 
 #[test]
-fn a_view_filter_alone_is_decided_at_synthesis_and_keeps_the_earlier_format() {
+fn a_view_filter_alone_is_decided_at_synthesis_without_aggregate_predicate_vocabulary() {
     // Without the invariant, `defined(metrics)` is read only by a view filter. Synthesis decides
     // which rows that view shows and the suite carries the rows, not the predicate, so a runner of
     // any age compares them correctly: nothing in the suite asks for the new reading.
@@ -173,5 +173,5 @@ fn a_view_filter_alone_is_decided_at_synthesis_and_keeps_the_earlier_format() {
     let suite = suite(&ir);
     assert!(!carries_defined(&suite));
     assert!(!ess_conformance::defined_aggregates::used_by(&ir, &suite));
-    assert!(suite.provenance.suite_version.major() < 26);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
 }

@@ -34,6 +34,7 @@ fn reference(field: &str) -> ReadingReference {
 fn suite() -> ConformanceSuite {
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(&fixture()));
     suite.provenance.suite_version = "ess-conformance/6".parse().unwrap();
+    suite.provenance.scenario_initial_state = None;
     suite
         .insert(
             "chronology.reading/authored/clock-reading".parse().unwrap(),
@@ -263,16 +264,20 @@ fn standalone_suite_contract_is_not_an_adapter_certificate() {
 }
 
 #[test]
-fn fresh_reading_suites_select6_and_legacy_suites_keep4() {
+fn fresh_reading_suites_require_empty_state_with_or_without_reading_steps() {
     let mut reading = suite();
     reading.provenance.suite_version = "ess-conformance/4".parse().unwrap();
     reading.select_fresh_format();
-    assert_eq!(reading.provenance.suite_version.major(), 6);
+    assert_eq!(reading.provenance.suite_version.major(), 34);
     for scenario in reading.scenarios.values_mut() {
         scenario
             .steps
             .retain(|step| !matches!(step, ScenarioStep::ExpectReadingOrder { .. }));
     }
     reading.select_fresh_format();
-    assert_eq!(reading.provenance.suite_version.major(), 4);
+    assert_eq!(reading.provenance.suite_version.major(), 34);
+    assert_eq!(
+        reading.provenance.scenario_initial_state,
+        Some(ess_conformance::scenario::ScenarioInitialState::Empty)
+    );
 }

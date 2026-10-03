@@ -211,11 +211,11 @@ fn issue_168_the_compiled_source_reads_the_callers_attribute() {
 }
 
 #[test]
-fn issue_168_every_command_is_sent_as_a_caller_and_the_suite_takes_suite_26() {
+fn issue_168_every_command_is_sent_as_a_caller_and_fresh_suite_declares_its_initial_state() {
     let suite = suite(NOTES);
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     let mut callers = BTreeSet::new();
     for scenario in suite.scenarios.values() {
@@ -514,6 +514,35 @@ fn ids(failed: &[(String, Status)]) -> Vec<&str> {
 }
 
 #[test]
+fn the_interpreter_executes_the_actual_caller_roles_and_typed_boolean_roles() {
+    for source in [
+        NOTES.to_owned(),
+        NOTES
+            .replace("kind: newtype, of: Uuid", "kind: newtype, of: Boolean")
+            .replace(
+                "name: demo.notes.NoteId, kind: newtype, of: Boolean",
+                "name: demo.notes.NoteId, kind: newtype, of: Uuid",
+            ),
+    ] {
+        let suite = suite(&source);
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        let target = ess_conformance::interpret::Interpreted::for_model(ir(&source));
+        let report = Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, &target)
+            .into_report();
+        assert_eq!(report.scenarios.len(), 3);
+        assert!(
+            report
+                .scenarios
+                .iter()
+                .all(|result| result.status == Status::Passed),
+            "{:#?}",
+            report.scenarios
+        );
+    }
+}
+
+#[test]
 fn issue_168_the_suite_passes_an_implementation_that_reads_the_caller() {
     assert_eq!(failing(&suite(NOTES), Mode::Correct), Vec::new());
 }
@@ -564,6 +593,21 @@ fn a_when_guard_comparing_the_caller_with_an_input_is_witnessed_on_both_sides() 
             "        when: account != caller.account_id\n",
         );
     let suite = suite(&text);
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(ir(&text)),
+        )
+        .into_report();
+    assert!(
+        report
+            .scenarios
+            .iter()
+            .all(|result| result.status == Status::Passed),
+        "{:#?}",
+        report.scenarios
+    );
     for (id, same) in [(FORBIDDEN, false), (EDITED, true)] {
         let edits: Vec<_> = scenario(&suite, id)
             .steps

@@ -1,4 +1,5 @@
 //! Typed response observations bound to one command invocation and its emitted event.
+pub mod path;
 use crate::scenario::{CommandRef, EventRef, OutcomeRef};
 use crate::selection::Declaration;
 use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedOutcome, ResolvedPayloadValue};
@@ -25,6 +26,9 @@ pub struct Observation {
     pub mappings: BTreeMap<String, String>,
     /// Declared mapped event field types for independent compatibility admission.
     pub targets: Vec<Field>,
+    /// Closed structural authority for nested destination relationships (held suite/34–35).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nested: Option<path::NestedTargets>,
 }
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -36,6 +40,13 @@ struct RawObservation {
     declarations: BTreeMap<QualifiedName, Declaration>,
     mappings: BTreeMap<String, String>,
     targets: Vec<Field>,
+    #[serde(default, deserialize_with = "nested_present")]
+    nested: Option<path::NestedTargets>,
+}
+fn nested_present<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<path::NestedTargets>, D::Error> {
+    <path::NestedTargets as serde::Deserialize>::deserialize(d).map(Some)
 }
 impl TryFrom<RawObservation> for Observation {
     type Error = String;
@@ -48,6 +59,7 @@ impl TryFrom<RawObservation> for Observation {
             declarations: r.declarations,
             mappings: r.mappings,
             targets: r.targets,
+            nested: r.nested,
         };
         result.validate()?;
         Ok(result)
@@ -76,7 +88,8 @@ impl Observation {
                     ));
                 }
             }
-            if mappings.is_empty() {
+            let nested = path::NestedTargets::of(ir, &payload.fields)?;
+            if mappings.is_empty() && nested.is_none() {
                 continue;
             }
             let fields: Vec<_> = command
@@ -104,6 +117,7 @@ impl Observation {
                 declarations,
                 mappings,
                 targets,
+                nested,
             };
             observation.validate()?;
             result.push(observation);
@@ -116,7 +130,8 @@ impl Observation {
             || self.fields.len() > 256
             || self.targets.len() > 256
             || self.declarations.len() > 4096
-            || self.mappings.is_empty()
+            || (self.mappings.is_empty() && self.nested.is_none())
+            || self.mappings.len() + self.nested.as_ref().map_or(0, path::NestedTargets::len) > 256
             || self.mappings.len() != self.targets.len()
         {
             return Err("response contract field/declaration bound".into());
@@ -137,6 +152,9 @@ impl Observation {
             if !ess_domain::types::is_assignable(&source.type_ref, &target.type_ref) {
                 return Err("response mapping type mismatch".into());
             }
+        }
+        if let Some(nested) = &self.nested {
+            nested.validate(self)?;
         }
         if serde_json::to_vec(self).map_err(|e| e.to_string())?.len() > 1_048_576 {
             return Err("response contract byte limit".into());
@@ -207,6 +225,9 @@ impl Observation {
                 ));
             }
         }
+        if let Some(nested) = &self.nested {
+            nested.compare(self, response, payload)?;
+        }
         Ok(())
     }
 }
@@ -230,17 +251,18 @@ pub(crate) fn event_shape(
         .payload
         .iter()
         .filter(|p| EventRef::from(&p.event) == *event)
-        .flat_map(|p| &p.fields)
-        .filter(|f| matches!(f.value, ResolvedPayloadValue::ResponseField { .. }))
-        .map(|f| f.target.as_str())
+        .flat_map(|p| path::mapped_paths(&p.fields))
         .collect();
     let mut shape = crate::scenario::PayloadShape::new();
     for (path, leaf) in crate::synthesize::payload_shape(ir, event).leaves() {
+        let segments: Vec<_> = path.split('.').collect();
         if !mapped.iter().any(|field| {
-            path == field
-                || path
-                    .strip_prefix(field)
-                    .is_some_and(|tail| tail.starts_with('.'))
+            segments
+                .iter()
+                .copied()
+                .zip(field.iter().map(String::as_str))
+                .all(|(a, b)| a == b)
+                && segments.len() >= field.len()
         }) {
             shape.insert(path, leaf.clone());
         }

@@ -37,10 +37,10 @@ A target that cannot answer a question says so: it returns `ErrUnsupported` in G
 answer, and the run still does not pass:
 
 - The Rust runner (`ess verify conform run`) fails the run.
-- The generated Go and TypeScript runners report the scenario as skipped and the run as
-  `inconclusive`, not `passed`. The language's own test command can still exit 0, so a pipeline
-  must read the report's status rather than the exit code. With `ESS_REPORT_FORMAT=2` the report
-  also counts passed, failed and skipped scenarios separately
+- Newly generated Go and TypeScript runners preserve `unsupported` with `ESS_REPORT_FORMAT=2`
+  and fail execution. They count passed, failed, error, unsupported and skipped scenarios
+  separately. Ordinary adapter errors make execution inconclusive unless a failure dominates.
+  Older packages and report/1 retain their historical presentation; regenerate for the new writer
   ([explicit outcome counts](../guides/verify/runners.md#opt-into-explicit-outcome-counts)).
 
 So a lighter target does not earn a lighter verdict. To run at a lower level, **narrow the suite**

@@ -229,7 +229,7 @@ func (h *periodicRunnerFixture) Identity() (Identity, error) {
 func (h *periodicRunnerFixture) BeginScenario(ScenarioContext) error { return nil }
 func (h *periodicRunnerFixture) EndScenario(ScenarioContext) error   { return nil }
 func TestPeriodicCountReports(t *testing.T) {
-	for _, fault := range []string{"", "unsupported"} {
+	for _, fault := range []string{os.Getenv("ESS_PERIODIC_REPORT_CASE")} {
 		t.Run("report-"+fault, func(t *testing.T) {
 			path := "report-ready.json"
 			if fault != "" {
@@ -255,7 +255,7 @@ func TestPeriodicCountReports(t *testing.T) {
 					t.Fatalf("%s", data)
 				}
 			} else {
-				if counts["skipped"] != float64(4) || counts["passed"] != float64(0) || report["conformance_status"] == "passed" {
+				if counts["unsupported"] != float64(4) || counts["skipped"] != float64(0) || counts["passed"] != float64(0) || report["execution_status"] != "failed" || report["conformance_status"] != "failed" {
 					t.Fatalf("%s", data)
 				}
 			}

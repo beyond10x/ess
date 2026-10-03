@@ -327,10 +327,8 @@ fn money(amount: f64) -> Node {
 
 /// Creating one invoice and issuing it, bound under `instance`.
 ///
-/// Written by hand because synthesis will not write one: nothing in the model relates a command's
-/// input to the field a view ranks by, so no generator knows which of two invoices the
-/// implementation will put first. An adapter that *does* know writes exactly this.
-fn create_and_issue(instance: &str, amount: f64) -> Vec<ScenarioStep> {
+/// Explicit issuance timestamps make each hand-written ordering assertion deterministic.
+fn create_and_issue(instance: &str, amount: f64, issued_at: &str) -> Vec<ScenarioStep> {
     let create: CommandRef = "billing.invoice.CreateInvoice".parse().expect("a command");
     let issue: CommandRef = "billing.invoice.IssueInvoice".parse().expect("a command");
     let created: EventRef = "billing.invoice.InvoiceCreated".parse().expect("an event");
@@ -367,7 +365,13 @@ fn create_and_issue(instance: &str, amount: f64) -> Vec<ScenarioStep> {
             command: issue.clone(),
             actor: None,
             caller: std::collections::BTreeMap::new(),
-            input: BTreeMap::from([("invoice_id".to_owned(), ScenarioValue::instance(bound))]),
+            input: BTreeMap::from([
+                ("invoice_id".to_owned(), ScenarioValue::instance(bound)),
+                (
+                    "issued_at".to_owned(),
+                    ScenarioValue::literal(Node::Text(issued_at.to_owned())),
+                ),
+            ]),
         },
         ScenarioStep::ExpectOutcome {
             outcome: OutcomeRef::new(issue, "issued".parse().expect("an outcome name")),
@@ -426,10 +430,9 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
     )
     .expect("the emitted suite parses");
 
-    // `issued_at desc`, and the fixture issues in scenario order — so the invoice issued second is
-    // the one the view puts first, and the one issued first is the one it puts last.
-    let mut steps = create_and_issue("earlier", 1.0);
-    steps.extend(create_and_issue("later", 2.0));
+    // `issued_at desc`: the explicit later timestamp sorts first, independent of command order.
+    let mut steps = create_and_issue("earlier", 1.0, "2026-01-05T09:00:01Z");
+    steps.extend(create_and_issue("later", 2.0, "2026-01-05T09:00:02Z"));
     steps.push(ScenarioStep::QueryView {
         view: "billing.invoice.OutstandingInvoices"
             .parse()
@@ -514,7 +517,7 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
 fn held_window() -> Vec<ScenarioStep> {
     let created: EventRef = "billing.invoice.InvoiceCreated".parse().expect("an event");
     let bridged: InstantName = "created".parse().expect("an instant name");
-    let mut steps = create_and_issue("held", 5.0);
+    let mut steps = create_and_issue("held", 5.0, "2026-01-05T09:00:01Z");
     steps.push(ScenarioStep::MarkInstant {
         instant: bridged.clone(),
     });
@@ -616,9 +619,9 @@ fn the_emitted_runner_holds_a_window_and_fails_a_target_whose_clock_never_moves(
 /// unrelated test is pinning. Three rather than two, because the claim is only worth making where
 /// there is a third row a producer could have gone on to build.
 fn stopped_scan() -> Vec<ScenarioStep> {
-    let mut steps = create_and_issue("first", 1.0);
-    steps.extend(create_and_issue("second", 2.0));
-    steps.extend(create_and_issue("third", 3.0));
+    let mut steps = create_and_issue("first", 1.0, "2026-01-05T09:00:01Z");
+    steps.extend(create_and_issue("second", 2.0, "2026-01-05T09:00:02Z"));
+    steps.extend(create_and_issue("third", 3.0, "2026-01-05T09:00:03Z"));
     steps.push(ScenarioStep::ExpectHalt {
         view: "billing.invoice.OutstandingInvoices"
             .parse()
@@ -703,7 +706,7 @@ fn the_emitted_runner_stops_a_scan_and_fails_a_target_that_builds_the_whole_list
 }
 
 #[test]
-fn count_report_skip_only_is_inconclusive_without_actual_failures() {
+fn count_report_unsupported_only_fails_without_assertion_failures() {
     let go = go().expect("count-stage verification requires an actual Go toolchain");
     let directory = module("count-skip-only");
     let fixture = std::fs::read_to_string(directory.join("target.go")).unwrap();
@@ -724,19 +727,33 @@ func TestConformance(t *testing.T) { essconform.Run(t, func() essconform.Target 
         .output()
         .unwrap();
     let raw = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success(),
+    assert_eq!(
+        output.status.code(),
+        Some(1),
         "{raw}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(scenarios(&raw, "SKIP").len(), 33, "{raw}");
+    assert_eq!(scenarios(&raw, "FAIL").len(), 33, "{raw}");
     let text = std::fs::read_to_string(report_path(&directory)).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["format"], "ess-conformance-report/2", "{text}");
-    assert_eq!(value["counts"]["failed"], 0);
-    assert_eq!(value["counts"]["skipped"], 33);
-    assert_eq!(value["execution_status"], "inconclusive");
-    assert_eq!(value["conformance_status"], "inconclusive");
+    assert_eq!(value["producer_profile"], "go-scenario-status/2");
+    assert_eq!(
+        value["counts"],
+        serde_json::json!({"total":33,"passed":0,"failed":0,"error":0,"unsupported":33,"skipped":0})
+    );
+    let original = std::fs::read_to_string(directory.join("essconform/suite.json")).unwrap();
+    let suite = ess_conformance::AdmittedSuite::from_json(&original).unwrap();
+    ess_conformance::CountReport::from_json(&text, &suite).unwrap();
+    let document: serde_json::Value = serde_json::from_str(&original).unwrap();
+    let mut ids: Vec<_> = document["scenarios"].as_object().unwrap().keys().collect();
+    ids.sort_unstable();
+    assert_eq!(
+        value["outcomes"],
+        serde_json::json!({"passed":[],"failed":[],"error":[],"unsupported":ids,"skipped":[]})
+    );
+    assert_eq!(value["execution_status"], "failed");
+    assert_eq!(value["conformance_status"], "failed");
 }
 
 fn predicate_path_and_operator_cases() -> Vec<(serde_json::Value, bool)> {
@@ -986,8 +1003,21 @@ fn invoke_count(
     output
 }
 
+fn assert_count_category(value: &serde_json::Value, category: &str) -> serde_json::Value {
+    let mut counts =
+        serde_json::json!({"total":1,"passed":0,"failed":0,"error":0,"unsupported":0,"skipped":0});
+    counts[category] = serde_json::json!(1);
+    let mut outcomes =
+        serde_json::json!({"passed":[],"failed":[],"error":[],"unsupported":[],"skipped":[]});
+    outcomes[category] = serde_json::json!(["example.domain/authored/control"]);
+    assert_eq!(value["producer_profile"], "go-scenario-status/2");
+    assert_eq!(value["counts"], counts);
+    assert_eq!(value["outcomes"], outcomes);
+    counts
+}
+
 #[test]
-fn count_go_actual_producers_keep_skip_error_and_teardown_categories() {
+fn count_go_actual_producers_keep_unsupported_error_and_teardown_categories() {
     let directory = count_module("count-matrix");
     let output = invoke_count(&directory, "unsigned", &[], "^TestCountUnsigned$");
     assert!(
@@ -996,13 +1026,15 @@ fn count_go_actual_producers_keep_skip_error_and_teardown_categories() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    for (mode, success, passed, failed, skipped, status) in [
-        ("passed", true, 1, 0, 0, "passed"),
-        ("skip", true, 0, 0, 1, "inconclusive"),
-        ("begin-skip", true, 0, 0, 1, "inconclusive"),
-        ("failure", false, 0, 1, 0, "failed"),
-        ("begin-error", false, 0, 1, 0, "failed"),
-        ("teardown", false, 0, 1, 0, "failed"),
+    // Historical mode names describe callbacks: `failure` is an ordinary target error;
+    // `teardown` returns ErrUnsupported from both command execution and teardown.
+    for (mode, category, status) in [
+        ("passed", "passed", "passed"),
+        ("skip", "unsupported", "failed"),
+        ("begin-skip", "unsupported", "failed"),
+        ("failure", "error", "inconclusive"),
+        ("begin-error", "error", "inconclusive"),
+        ("teardown", "unsupported", "failed"),
     ] {
         let destination = directory.join(format!("{mode}.json"));
         let output = invoke_count(
@@ -1017,18 +1049,15 @@ fn count_go_actual_producers_keep_skip_error_and_teardown_categories() {
             "^TestCount$",
         );
         assert_eq!(
-            output.status.success(),
-            success,
+            output.status.code(),
+            Some(i32::from(category != "passed")),
             "{mode}: {}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
         let raw = std::fs::read_to_string(&destination).unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(
-            value["counts"],
-            serde_json::json!({"total":1,"passed":passed,"failed":failed,"error":0,"unsupported":0,"skipped":skipped})
-        );
+        let counts = assert_count_category(&value, category);
         assert_eq!(value["execution_status"], status);
         assert_eq!(
             value["conformance_status"],
@@ -1046,6 +1075,13 @@ fn count_go_actual_producers_keep_skip_error_and_teardown_categories() {
             raw,
             "cross-language canonical bytes"
         );
+        let mut expected_counts = counts;
+        expected_counts["execution_status"] = serde_json::json!(status);
+        expected_counts["conformance_status"] = serde_json::json!(if status == "failed" {
+            "failed"
+        } else {
+            "inconclusive"
+        });
         let export = root()
             .join("target/review-boundaries-8/producer-pairs/go")
             .join(mode);
@@ -1064,16 +1100,20 @@ fn count_go_actual_producers_keep_skip_error_and_teardown_categories() {
             std::fs::create_dir_all(to.parent().unwrap()).unwrap();
             std::fs::copy(directory.join(relative), to).unwrap();
         }
-        let expected = serde_json::json!({"producer":"actual generated Go Run + writeCountReport", "command":format!("COUNT_MODE={mode} COUNT_CLOCK=1788680000000 ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=report.json go test -count=1 -v ./... -run '^TestCount$'"),"runtime":String::from_utf8(Command::new("go").arg("version").output().unwrap().stdout).unwrap(),"report":"report.json","suite":"suite.json","generated_module":"generated","expected_model_digest":"a".repeat(64),"expected_selected_ids":["example.domain/authored/control"],"expected":{"total":1,"passed":passed,"failed":failed,"error":0,"unsupported":0,"skipped":skipped,"execution_status":status,"conformance_status":if status=="failed"{"failed"}else{"inconclusive"}},"clock":1_788_680_000_000_u64});
+        let expected = serde_json::json!({"producer":"actual generated Go Run + writeCountReport", "command":format!("COUNT_MODE={mode} COUNT_CLOCK=1788680000000 ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=report.json go test -count=1 -v ./... -run '^TestCount$'"),"runtime":String::from_utf8(Command::new("go").arg("version").output().unwrap().stdout).unwrap(),"report":"report.json","suite":"suite.json","generated_module":"generated","expected_model_digest":"a".repeat(64),"expected_selected_ids":["example.domain/authored/control"],"expected":expected_counts,"clock":1_788_680_000_000_u64});
         std::fs::write(
             export.join("fixture.json"),
             serde_json::to_string_pretty(&expected).unwrap() + "\n",
         )
         .unwrap();
     }
+    assert_count_strictness(&directory);
+}
+
+fn assert_count_strictness(directory: &Path) {
     for mode in ["passed", "skip"] {
         let output = invoke_count(
-            &directory,
+            directory,
             &format!("strict-{mode}"),
             &[
                 ("COUNT_MODE", mode),

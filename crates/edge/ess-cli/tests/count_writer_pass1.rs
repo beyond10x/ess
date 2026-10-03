@@ -83,9 +83,19 @@ fn generated_go_rejects_closed_predicate_metadata_before_any_target() {
         "expectation":{"expect":"satisfies","predicate":valid.clone()}}]);
     std::fs::write(&path, document.to_string()).unwrap();
     assert!(AdmittedSuite::from_json(&document.to_string()).is_ok());
-    assert!(invoke(&directory, "valid", "begin-skip", false, true)
-        .status
-        .success());
+    assert_eq!(
+        invoke(&directory, "valid", "begin-skip", false, true)
+            .status
+            .code(),
+        Some(1)
+    );
+    assert_precise_report(
+        &directory,
+        "valid",
+        &AdmittedSuite::from_json(&document.to_string()).unwrap(),
+        &[ID],
+        "unsupported",
+    );
 
     let mut too_deep = json!(true);
     for _ in 0..33 {
@@ -138,17 +148,10 @@ fn generated_go_abnormal_teardown_cannot_publish_a_completed_skip() {
     let original = document.to_string();
     let suite = AdmittedSuite::from_json(&original).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), original).unwrap();
-    for (mode, success, failed, skipped) in [("skip", true, 0, 1), ("skip-end-error", false, 1, 0)]
-    {
+    for (mode, category) in [("skip", "unsupported"), ("skip-end-error", "error")] {
         let output = invoke(&directory, mode, mode, false, true);
-        assert_eq!(output.status.success(), success);
-        let report = CountReport::from_json(
-            &std::fs::read_to_string(directory.join(format!("{mode}.report.json"))).unwrap(),
-            &suite,
-        )
-        .unwrap();
-        assert_eq!(report.counts().failed, failed);
-        assert_eq!(report.counts().skipped, skipped);
+        assert_eq!(output.status.code(), Some(1));
+        assert_precise_report(&directory, mode, &suite, &[ID], category);
     }
     let mut completed = Vec::new();
     for destination in [false, true] {
@@ -171,7 +174,7 @@ fn generated_go_abnormal_teardown_cannot_publish_a_completed_skip() {
 }
 
 #[test]
-fn generated_go_skip_counts_preserve_opaque_ids_and_strictness_without_a_destination() {
+fn generated_go_unsupported_counts_preserve_opaque_ids_and_strictness_without_a_destination() {
     let directory = module("opaque-ids");
     let ids = [
         "review.count.Type/invariant/at/review.count.Rows/line\none",
@@ -191,21 +194,52 @@ fn generated_go_skip_counts_preserve_opaque_ids_and_strictness_without_a_destina
     let suite = AdmittedSuite::from_json(&original).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), original).unwrap();
     let output = invoke(&directory, "diagnostic", "begin-skip", false, true);
-    assert!(output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_precise_report(&directory, "diagnostic", &suite, &ids, "unsupported");
     let report = std::fs::read_to_string(directory.join("diagnostic.report.json")).unwrap();
     let admitted = CountReport::from_json(&report, &suite).unwrap();
     assert_eq!(admitted.counts().total, 3);
     assert_eq!(admitted.counts().failed, 0);
-    assert_eq!(admitted.counts().skipped, 3);
+    assert_eq!(admitted.counts().unsupported, 3);
+    assert_eq!(admitted.counts().skipped, 0);
     let report: Value = serde_json::from_str(&report).unwrap();
     let mut ids = ids.to_vec();
     ids.sort_unstable();
-    assert_eq!(report["outcomes"]["skipped"], json!(ids));
+    assert_eq!(report["outcomes"]["unsupported"], json!(ids));
     assert_eq!(report["suite"]["digest"], suite.digest());
-    assert_eq!(report["execution_status"], "inconclusive");
-    assert_eq!(report["conformance_status"], "inconclusive");
+    assert_eq!(report["execution_status"], "failed");
+    assert_eq!(report["conformance_status"], "failed");
     let strict = invoke(&directory, "strict", "begin-skip", true, false);
     assert!(!strict.status.success());
     assert!(String::from_utf8_lossy(&strict.stdout).contains("strict conformance"));
     assert!(!directory.join("strict.report.json").exists());
+}
+
+fn assert_precise_report(
+    directory: &Path,
+    label: &str,
+    suite: &AdmittedSuite,
+    ids: &[&str],
+    category: &str,
+) {
+    let text = std::fs::read_to_string(directory.join(format!("{label}.report.json"))).unwrap();
+    CountReport::from_json(&text, suite).unwrap();
+    let report: Value = serde_json::from_str(&text).unwrap();
+    let mut counts =
+        json!({"total":ids.len(),"passed":0,"failed":0,"error":0,"unsupported":0,"skipped":0});
+    counts[category] = json!(ids.len());
+    let mut outcomes = json!({"passed":[],"failed":[],"error":[],"unsupported":[],"skipped":[]});
+    let mut ids = ids.to_vec();
+    ids.sort_unstable();
+    outcomes[category] = json!(ids);
+    assert_eq!(report["producer_profile"], "go-scenario-status/2");
+    assert_eq!(report["counts"], counts);
+    assert_eq!(report["outcomes"], outcomes);
+    let status = if category == "error" {
+        "inconclusive"
+    } else {
+        "failed"
+    };
+    assert_eq!(report["execution_status"], status);
+    assert_eq!(report["conformance_status"], status);
 }

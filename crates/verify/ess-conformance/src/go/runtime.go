@@ -87,9 +87,9 @@ func suiteReference(value any) error {
 
 // newestSuiteMajor is the highest `ess-conformance/N` this runtime reads.
 //
-// The generator refuses the direct-response majors (/28 and /29) before it writes a package, so
-// every major the synthesizer writes for a Go package is at most this one.
-const newestSuiteMajor = 27
+// Keep this aligned with the emitter's capability boundary. New majors require admission,
+// execution and report parity; changing this number alone supplies none of those semantics.
+const newestSuiteMajor = 35
 
 // suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
 // Each major implies every major below it, so one number answers every "does this suite carry X"
@@ -548,7 +548,7 @@ func completeCoverage(c map[string]any) bool {
 	return true
 }
 func admitRunInput(raw string) (Suite, error) {
-	value, err := strictJSON(raw)
+	value, err := strictSuiteJSON(raw)
 	if err != nil {
 		return Suite{}, err
 	}
@@ -924,6 +924,7 @@ func scenarioMeaning(value any) any {
 			"execute_command": "input caller", "execute_command_without_input": "caller", "expect_error": "fields", "expect_event": "payload shape",
 			"query_view": "params", "eventually_view": "params", "eventually_event": "payload shape",
 			"expect_invocation": "input", "expect_duration": "", "expect_halt": "params", "eventually_halt": "params",
+			"deliver_event": "payload", "expect_every_invocation": "input selecting",
 		}
 		for _, key := range strings.Fields(defaults[step["step"].(string)]) {
 			if _, ok := step[key]; !ok {
@@ -935,15 +936,25 @@ func scenarioMeaning(value any) any {
 				step["actor"] = nil
 			}
 		}
-		for _, key := range []string{"input", "params"} {
+		for _, key := range []string{"input", "params", "selecting"} {
 			if values, ok := step[key].(map[string]any); ok {
 				step[key] = valuesMeaning(values)
 			}
 		}
-		for _, key := range []string{"payload", "fields", "caller"} {
+		for _, key := range []string{"payload", "fields", "caller", "context"} {
 			if values, ok := step[key]; ok {
 				step[key] = nodeMeaning(values)
 			}
+		}
+		if step["step"] == "expect_direct_response" {
+			response := copyObject(step["response"].(map[string]any))
+			if _, ok := response["outcome"]; !ok {
+				response["outcome"] = nil
+			}
+			if expected, ok := response["expected"]; ok {
+				response["expected"] = nodeMeaning(expected)
+			}
+			step["response"] = response
 		}
 		if shape, ok := step["shape"].(map[string]any); ok && step["step"] != "snapshot_complete_subject" {
 			shapes := map[string]any{}
@@ -1020,6 +1031,16 @@ func valuesMeaning(values map[string]any) any {
 		field := copyObject(value.(map[string]any))
 		if field["kind"] == "literal" {
 			field["value"] = nodeMeaning(field["value"])
+		}
+		if field["kind"] == "list" {
+			items := []any{}
+			for _, item := range field["items"].([]any) {
+				items = append(items, valuesMeaning(map[string]any{"item": item}).(map[string]any)["item"])
+			}
+			field["items"] = items
+		}
+		if field["kind"] == "members" {
+			field["members"] = valuesMeaning(field["members"].(map[string]any))
 		}
 		result[name] = field
 	}
@@ -1245,6 +1266,9 @@ type CommandResult struct {
 	Outcome string
 	// Error is the declared error it refused with, empty when it did not.
 	Error string
+	// ErrorPayload is the actual declared-error payload, including undeclared keys. Empty
+	// preserves legacy adapters; callers using unkeyed CommandResult literals must add it.
+	ErrorPayload map[string]Node
 	// Consistency is a token a later read_your_writes query may demand, empty when the target has
 	// no such token.
 	Consistency string
@@ -1524,6 +1548,7 @@ type Suite struct {
 	original   string
 	document   map[string]any
 	coverage   map[string]any
+	oneTime    map[string]*oneTimeTrace
 }
 
 // Provenance says which specification this suite came from.
@@ -1536,6 +1561,7 @@ type Provenance struct {
 	SpecificationVersion string `json:"specification_version"`
 	SpecDigest           string `json:"spec_digest"`
 	ContractDigest       string `json:"contract_digest"`
+	ScenarioInitialState string `json:"scenario_initial_state,omitempty"`
 }
 
 // Scenario is one thing the specification obliges an implementation to do.
@@ -1546,20 +1572,24 @@ type Scenario struct {
 
 // Step is one step of a scenario. Which fields are set depends on Step.
 type Step struct {
-	Fixtures      *FixtureContract     `json:"fixtures,omitempty"`
-	CompleteShape *subjectShape        `json:"-"`
-	Capture       *replayObservation   `json:"capture,omitempty"`
-	Response      *responseObservation `json:"response,omitempty"`
-	Check         *PeriodicCheck       `json:"check,omitempty"`
-	ReadingLeft   *ReadingReference    `json:"left,omitempty"`
-	ReadingRight  *ReadingReference    `json:"right,omitempty"`
-	ReadingOrder  string               `json:"order,omitempty"`
-	Identity      Node                 `json:"identity,omitempty"`
-	Fields        map[string]Node      `json:"fields,omitempty"`
-	State         string               `json:"state,omitempty"`
-	Step          string               `json:"step"`
-	Command       string               `json:"command,omitempty"`
-	Actor         string               `json:"actor,omitempty"`
+	Fixtures       *FixtureContract           `json:"fixtures,omitempty"`
+	CompleteShape  *subjectShape              `json:"-"`
+	Capture        *replayObservation         `json:"capture,omitempty"`
+	DirectResponse *directResponseObservation `json:"-"`
+	Authority      string                     `json:"authority,omitempty"`
+	Context        map[string]Node            `json:"context,omitempty"`
+	Selecting      map[string]Value           `json:"selecting,omitempty"`
+	Response       *responseObservation       `json:"response,omitempty"`
+	Check          *PeriodicCheck             `json:"check,omitempty"`
+	ReadingLeft    *ReadingReference          `json:"left,omitempty"`
+	ReadingRight   *ReadingReference          `json:"right,omitempty"`
+	ReadingOrder   string                     `json:"order,omitempty"`
+	Identity       Node                       `json:"identity,omitempty"`
+	Fields         map[string]Node            `json:"fields,omitempty"`
+	State          string                     `json:"state,omitempty"`
+	Step           string                     `json:"step"`
+	Command        string                     `json:"command,omitempty"`
+	Actor          string                     `json:"actor,omitempty"`
 	// Unpublished names the events no new occurrence of which may appear in the target's log after a
 	// refused send (`expect_not_granted`, beyond10x/ess#265).
 	Unpublished []string         `json:"unpublished,omitempty"`
@@ -1642,6 +1672,8 @@ type OutcomeRef struct {
 
 // Value is one value a step carries: written down, captured earlier, or read from an event.
 type Value struct {
+	Items     []Value               `json:"items,omitempty"`
+	Members   map[string]Value      `json:"members,omitempty"`
 	Fixture   string                `json:"fixture,omitempty"`
 	Selection *selectionObservation `json:"selection,omitempty"`
 	Accessor  *accessorObservation  `json:"accessor,omitempty"`
@@ -1705,7 +1737,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /27 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /35 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1723,6 +1755,9 @@ func Run(t *testing.T, newTarget func() Target) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	if suite.Provenance.ScenarioInitialState == "empty" {
+		t.Log("Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.")
+	}
 
 	t.Logf(
 		"%s %s, %d scenario(s), spec digest %s",
@@ -1736,7 +1771,11 @@ func Run(t *testing.T, newTarget func() Target) {
 	// target that cannot name itself fails the run here, with that message, rather than leaving a
 	// report that says nothing about what was tested.
 	identity, err := newTarget().Identity()
-	if err != nil {
+	if len(suite.oneTime) != 0 {
+		// Identity is observed before captures exist. Successful metadata can contain a
+		// value disclosed later too, so protected reports never carry target strings.
+		identity = Identity{Name: "one-time-protected-target", Version: ""}
+	} else if err != nil {
 		t.Fatalf("the target does not name itself: %v", err)
 	}
 
@@ -1754,20 +1793,23 @@ func Run(t *testing.T, newTarget func() Target) {
 		terminal := false
 		t.Run(id, func(t *testing.T) {
 			run := &run{
-				t:           t,
-				target:      newTarget(),
-				harness:     harness,
-				correlation: harness.Correlation(),
-				instances:   map[string]Node{},
-				marked:      map[string]bool{},
-				observed:    map[string][]ObservedEvent{},
-				status:      statusPassed,
+				t:                   t,
+				target:              newTarget(),
+				harness:             harness,
+				correlation:         harness.Correlation(),
+				instances:           map[string]Node{},
+				marked:              map[string]bool{},
+				observed:            map[string][]ObservedEvent{},
+				status:              statusPassed,
+				continuedAssertions: suiteMajor(suite.Provenance.SuiteVersion) >= 28,
+				preciseStatuses:     config.version == "2",
+				disclosure:          newOneTimeCaptures(suite.oneTime[id]),
 			}
 			returned := false
 			defer func() {
 				status = run.status
 				terminal = run.callbacksComplete && (returned || status != statusPassed)
-				if config.version == "2" && t.Failed() {
+				if config.version == "2" && t.Failed() && status == statusPassed {
 					status = statusFailed
 				}
 			}()
@@ -1792,9 +1834,11 @@ func Run(t *testing.T, newTarget func() Target) {
 
 // What one scenario came to, in the words the report uses.
 const (
-	statusPassed  = "passed"
-	statusFailed  = "failed"
-	statusSkipped = "skipped"
+	statusPassed      = "passed"
+	statusFailed      = "failed"
+	statusSkipped     = "skipped"
+	statusUnsupported = "unsupported"
+	statusError       = "error"
 )
 
 // scenarioResult is one scenario's verdict, for the report.
@@ -1866,6 +1910,13 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 	failed := make([]string, 0)
 	anyFailed, skipped := false, 0
 	for _, result := range results {
+		// Report/1 retains its frozen three-category diagnostic presentation.
+		if result.status == statusUnsupported {
+			result.status = statusSkipped
+		}
+		if result.status == statusError {
+			result.status = statusFailed
+		}
 		switch result.status {
 		case statusPassed:
 			continue
@@ -1923,7 +1974,7 @@ type subjectSnapshot struct {
 
 type run struct {
 	fixtures    map[string]Node
-	t           *testing.T
+	t           oneTimeLogger
 	target      Target
 	harness     *Harness
 	correlation string
@@ -1970,11 +2021,25 @@ type run struct {
 	status string
 	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
 	// A Goexit or panic inside teardown cannot complete the earlier step's verdict.
-	callbacksComplete bool
+	callbacksComplete     bool
+	continuedAssertions   bool
+	preciseStatuses       bool
+	directResponseMode    bool
+	disclosure            *oneTimeCaptures
+	disclosureStopped     bool
+	disclosureUnavailable bool
 }
 
 func (r *run) execute(id string, scenario Scenario) {
+	if r.disclosure != nil {
+		r.t = protectedOneTimeLogger{r.t}
+		r.directResponseMode = true
+		defer r.disclosureComplete()
+	}
 	for _, step := range scenario.Steps {
+		if step.DirectResponse != nil {
+			r.directResponseMode = true
+		}
 		if step.Capture != nil {
 			r.replayMode = true
 		}
@@ -1987,28 +2052,33 @@ func (r *run) execute(id string, scenario Scenario) {
 			if errors.Is(err, ErrUnsupported) {
 				r.skip("fixture values: %v", err)
 			}
-			r.status = statusFailed
+			r.recordStatus(statusError)
 			r.t.Fatalf("fixture values: %v", err)
 		}
 	}
 	if err := r.target.BeginScenario(context); err != nil {
 		r.callbacksComplete = true // begin returned; no teardown is required
 		if errors.Is(err, ErrUnsupported) {
-			r.skip("the target does not support this scenario: %v", err)
+			r.skip("ESS-CF-TARGET: the target does not support this scenario: %v", err)
 		}
-		r.status = statusFailed
-		r.t.Fatalf("begin: %v", err)
+		r.recordStatus(statusError)
+		r.t.Fatalf("ESS-CF-TARGET: begin: %v", err)
 	}
 	defer func() {
 		err := r.target.EndScenario(context)
 		r.callbacksComplete = true
 		if err != nil {
-			r.status = statusFailed
+			if errors.Is(err, ErrUnsupported) {
+				r.recordStatus(statusUnsupported)
+			} else {
+				r.recordStatus(statusError)
+			}
 			r.t.Errorf("end: %v", err)
 		}
 	}()
+	defer r.disclosureFinal()
 
-	if scenario.Purpose != "" {
+	if r.disclosure == nil && scenario.Purpose != "" {
 		r.t.Log(scenario.Purpose)
 	}
 	for index, step := range scenario.Steps {
@@ -2022,7 +2092,10 @@ func (r *run) execute(id string, scenario Scenario) {
 				return
 			}
 		}
-		if !r.step(index, step) {
+		if !r.step(index, step) || r.disclosureStopped {
+			return
+		}
+		if !r.disclosureWindows(index, scenario) {
 			return
 		}
 	}
@@ -2040,7 +2113,10 @@ func (r *run) logCount(index int, event, when string) (int, bool) {
 		return 0, false
 	}
 	if err != nil {
-		return 0, r.fail(index, "observing `%s` %s the refused send: %v", event, when, err)
+		return 0, r.targetFailure(index, err, "target callback")
+	}
+	if !r.disclosureObserved(observed) {
+		return 0, false
 	}
 	count := 0
 	for _, seen := range observed {
@@ -2092,6 +2168,12 @@ func (r *run) step(index int, step Step) bool {
 			return r.fail(index, "expected a command with no direct events")
 		}
 		return true
+	case "expect_direct_response":
+		return r.expectDirectResponse(index, step)
+	case "deliver_event":
+		return r.deliverEvent(index, step)
+	case "expect_every_invocation":
+		return r.expectEveryInvocation(index, step)
 	case "expect_response_payload":
 		return r.expectResponsePayload(index, step)
 	case "check_periodic":
@@ -2189,13 +2271,16 @@ func (r *run) executeCommand(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "executing `%s`: %v", step.Command, err)
+		return r.targetFailure(index, err, "executing command")
 	}
 	return r.took(index, step.Command, result)
 }
 
 // remember records an occurrence for the whole scenario, without recording one twice.
 func (r *run) remember(event ObservedEvent) {
+	if !r.disclosureMaps([]map[string]Node{event.Payload}) {
+		return
+	}
 	for _, held := range r.seen {
 		if held.Event == event.Event && equal(held.Payload, event.Payload) {
 			return
@@ -2212,9 +2297,9 @@ func (r *run) expectOutcome(index int, step Step) bool {
 		return r.fail(index, "`%s` was refused as not granted to `%s`, and the specification says `%s`", step.Outcome.Command, orNone(r.last.NotGrantedActor), step.Outcome.Outcome)
 	}
 	if r.last.Outcome != step.Outcome.Outcome {
-		return r.fail(
+		return r.assertionFailure(
 			index,
-			"`%s` took `%s`, and the specification says `%s`",
+			"ESS-CF-OUTCOME: `%s` took `%s`, and the specification says `%s`",
 			step.Outcome.Command, orNone(r.last.Outcome), step.Outcome.Outcome,
 		)
 	}
@@ -2253,7 +2338,7 @@ func (r *run) expectNotGranted(index int, step Step) bool {
 
 func (r *run) expectError(index int, step Step) bool {
 	if r.last.Error != step.Error {
-		return r.fail(index, "refused with `%s`, and the specification says `%s`", orNone(r.last.Error), step.Error)
+		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and the specification says `%s`", orNone(r.last.Error), step.Error)
 	}
 	return true
 }
@@ -2264,16 +2349,16 @@ func (r *run) expectEvent(index int, step Step) bool {
 	// carrying the wrong value" are two different repairs.
 	for _, event := range r.observed[step.Event] {
 		if reason := payloadCarries(event.Payload, step.Payload); reason != "" {
-			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "ESS-CF-PAYLOAD: `%s` was emitted, and %s", step.Event, reason)
 		}
 		// The declared fields, and what each holds. Asserting only that the event arrived would
 		// pass an implementation that published it empty.
 		if reason := holds(event.Payload, step.Shape); reason != "" {
-			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "`%s` was emitted, and %s", step.Event, reason)
 		}
 		return true
 	}
-	return r.fail(index, "`%s` was not emitted", step.Event)
+	return r.assertionFailure(index, "ESS-CF-EVENT: `%s` was not emitted", step.Event)
 }
 
 // payloadCarries is why a payload does not carry every value an event assertion names, or "": each
@@ -2299,7 +2384,7 @@ func payloadCarries(payload, want map[string]Node) string {
 
 func (r *run) expectNoEvent(index int, step Step) bool {
 	if len(r.observed[step.Event]) > 0 {
-		return r.fail(index, "`%s` was emitted, and this branch does not emit it", step.Event)
+		return r.fail(index, "ESS-CF-NO-EVENT: `%s` was emitted, and this branch does not emit it", step.Event)
 	}
 	return true
 }
@@ -2317,9 +2402,12 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 			return false
 		}
 		if err != nil {
-			return r.fail(index, "observing `%s`: %v", step.Event, err)
+			return r.targetFailure(index, err, "target callback")
 		}
 		// Remembered for the whole scenario, where an `observed` value reads it, and nowhere else:
+		if !r.disclosureObserved(events) {
+			return false
+		}
 		// `expect_event`, `expect_no_event` and `capture_instance` read only the last command's
 		// direct events, as ess_conformance::runner reads them.
 		for _, event := range events {
@@ -2362,7 +2450,7 @@ func (r *run) establishEntity(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "entity setup failed: %v", err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	r.established = append(r.established, request)
 	r.instances[step.Instance] = step.Identity
@@ -2381,7 +2469,7 @@ func (r *run) captureInstance(index int, step Step) bool {
 	}
 	return r.fail(
 		index,
-		"nothing bound `%s`: `%s` did not carry `%s`",
+		"ESS-CF-INSTANCE: nothing bound `%s`: `%s` did not carry `%s`",
 		step.Instance, step.Event, step.Field,
 	)
 }
@@ -2403,9 +2491,12 @@ func (r *run) queryView(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "querying `%s`: %v", step.View, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	r.lastView = result
+	if !r.disclosureRows(result.Rows) {
+		return false
+	}
 	r.queried = step.View
 	return true
 }
@@ -2440,7 +2531,7 @@ func (r *run) snapshotSubject(index int, step Step) bool {
 		}
 	}
 	if len(rows) != 1 {
-		return r.fail(index, "subject snapshot %s matched %d rows, want exactly one", step.View, len(rows))
+		return r.fail(index, "ESS-CF-VIEW: subject snapshot %s matched %d rows, want exactly one", step.View, len(rows))
 	}
 	encoded, err := json.Marshal(rows[0])
 	if err != nil {
@@ -2482,9 +2573,12 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 				return false
 			}
 			if err != nil {
-				return r.fail(index, "querying `%s`: %v", step.View, err)
+				return r.targetFailure(index, err, "target callback")
 			}
 			r.lastView = result
+			if !r.disclosureRows(result.Rows) {
+				return false
+			}
 			r.queried = step.View
 		}
 		held, reason, undecidable := r.decide(index, step)
@@ -2499,7 +2593,11 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 		}
 		last = reason
 	}
-	return r.fail(index, "%s", last)
+	code := "ESS-CF-VIEW"
+	if retry {
+		code = "ESS-CF-EVENTUAL-VIEW"
+	}
+	return r.assertionFailure(index, "%s: %s", code, last)
 }
 
 // decide answers whether the view expectation holds, why not, and whether it could be decided.
@@ -2624,11 +2722,11 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 }
 
 func (r *run) expectInvocation(index int, step Step) bool {
+	want, absent, ok := r.invocationWanted(index, step)
+	if !ok {
+		return false
+	}
 	if step.Count > 0 {
-		want, absent, ok := r.invocationWanted(index, step)
-		if !ok {
-			return false
-		}
 		return r.expectInvocationCount(index, step, want, absent)
 	}
 	invocations, err := r.target.ObserveInvocations(InvocationObservationRequest{
@@ -2640,15 +2738,14 @@ func (r *run) expectInvocation(index int, step Step) bool {
 	if errors.Is(err, ErrUnsupported) {
 		// The one method the model explicitly refuses to require. Unsupported is a fact about the
 		// target, not a failure of the specification.
+		if r.continuedAssertions {
+			return r.unsupportedObservation(index, err)
+		}
 		r.skip("step %d: the target does not expose what `%s` invoked: %v", index, step.Binding, err)
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "observing `%s`: %v", step.Binding, err)
-	}
-	want, absent, ok := r.invocationWanted(index, step)
-	if !ok {
-		return false
+		return r.targetFailure(index, err, "target callback")
 	}
 	for _, invocation := range invocations {
 		absenceOK := true
@@ -2661,9 +2758,9 @@ func (r *run) expectInvocation(index int, step Step) bool {
 			return true
 		}
 	}
-	return r.fail(
+	return r.assertionFailure(
 		index,
-		"`%s` did not invoke `%s` with %s",
+		"ESS-CF-INVOCATION: `%s` did not invoke `%s` with %s",
 		step.Binding, step.Command, describe(want),
 	)
 }
@@ -2676,7 +2773,7 @@ func (r *run) invocationWanted(index int, step Step) (map[string]Node, []string,
 	for field, value := range step.Input {
 		node, present, err := r.resolveAccessorExpected(value)
 		if err != nil {
-			return nil, nil, r.fail(index, "`%s`: %v", field, err)
+			return nil, nil, r.resolutionFailure(index, field, err)
 		}
 		if present {
 			want[field] = node
@@ -2694,7 +2791,7 @@ func (r *run) redeliver(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "redelivering `%s`: %v", step.Event, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return true
 }
@@ -2716,7 +2813,7 @@ func (r *run) configure(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "forcing `%s`: %v", step.Force.Outcome, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return true
 }
@@ -2747,7 +2844,7 @@ func (r *run) markInstant(index int, step Step) bool {
 			r.skip("step %d: the target cannot mark the instant `%s`", index, step.Instant)
 			return false
 		}
-		return r.fail(index, "marking the instant `%s`: %v", step.Instant, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	r.marked[step.Instant] = true
 	return true
@@ -2778,7 +2875,7 @@ func (r *run) elapsed(index int, step Step, hold int, watching string) (ElapsedO
 		return ElapsedObservation{}, false
 	}
 	if err != nil {
-		r.fail(index, "letting %ds pass since `%s`: %v", hold, step.Instant, err)
+		r.targetFailure(index, err, "letting time pass")
 		return ElapsedObservation{}, false
 	}
 	return observed, true
@@ -2890,7 +2987,7 @@ func (r *run) expectHalt(index int, step Step, retry bool) bool {
 			return false
 		}
 		if err != nil {
-			return r.fail(index, "reading `%s` a row at a time: %v", step.View, err)
+			return r.targetFailure(index, err, "target callback")
 		}
 		if observed.Halted && observed.Produced == step.After {
 			return true
@@ -2917,7 +3014,7 @@ func (r *run) expectHalt(index int, step Step, retry bool) bool {
 
 // fail records one failed assertion and stops the scenario.
 func (r *run) fail(index int, format string, args ...any) bool {
-	r.status = statusFailed
+	r.recordStatus(statusFailed)
 	r.t.Errorf("step %d: "+format, append([]any{index}, args...)...)
 	return false
 }
@@ -2939,7 +3036,14 @@ func (r *run) fail(index int, format string, args ...any) bool {
 // — appending one would corrupt that field for every reader. Carrying the cause into the document
 // needs a new field in a new format, which is `story:a-report-says-why-a-scenario-was-skipped`.
 func (r *run) skip(format string, args ...any) {
-	r.status = statusSkipped
+	r.recordStatus(statusUnsupported)
+	if r.disclosure != nil {
+		format, args = "ESS-CF-TARGET: protected unavailable observation", nil
+	}
+	if r.preciseStatuses {
+		r.t.Fatalf(format, args...)
+		return
+	}
 	r.t.Skipf(format, args...)
 }
 
@@ -2949,7 +3053,7 @@ func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, b
 	for field, value := range values {
 		node, err := r.resolve(value)
 		if err != nil {
-			r.fail(index, "`%s`: %v", field, err)
+			r.resolutionFailure(index, field, err)
 			return nil, false
 		}
 		resolved[field] = node
@@ -2959,6 +3063,26 @@ func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, b
 
 func (r *run) resolve(value Value) (Node, error) {
 	switch value.Kind {
+	case "list":
+		items := make([]any, 0, len(value.Items))
+		for _, child := range value.Items {
+			item, err := r.resolve(child)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return items, nil
+	case "members":
+		members := map[string]any{}
+		for key, child := range value.Members {
+			item, err := r.resolve(child)
+			if err != nil {
+				return nil, err
+			}
+			members[key] = item
+		}
+		return members, nil
 	case "fixture":
 		resolved, ok := r.fixtures[value.Fixture]
 		if !ok {
@@ -3811,6 +3935,10 @@ func name(value any, kebab bool) error {
 	return nil
 }
 func scenarioIdentity(id string) error {
+	if parts := strings.Split(id, "/"); len(parts) > 1 && parts[1] == "disclosure" {
+		_, err := oneTimeCellIdentity(id)
+		return err
+	}
 	p := strings.Split(id, "/")
 	valid := false
 	q := func(s string) bool { return qualifiedName.MatchString(s) }
@@ -3850,7 +3978,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err := accessorPreflight(raw); err != nil {
 		return suite, err
 	}
-	value, err := strictJSON(raw)
+	value, err := strictSuiteJSON(raw)
 	if err != nil {
 		return suite, err
 	}
@@ -3858,7 +3986,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component")
+	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component scenario_initial_state")
 	if err != nil {
 		return suite, err
 	}
@@ -3870,8 +3998,12 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if major == 0 {
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
+	initial, declaresInitial := p["scenario_initial_state"]
+	if (major >= 34 && initial != "empty") || (major < 34 && declaresInitial) {
+		return suite, fmt.Errorf("scenario_initial_state must be empty exactly in suite/34 and /35")
+	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
-		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /27")
+		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /35")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3892,9 +4024,6 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		return suite, fmt.Errorf("scenarios must be an object")
 	}
 	for id, scenario := range scenarios {
-		if err := scenarioIdentity(id); err != nil {
-			return suite, err
-		}
 		// An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17.
 		if strings.HasSuffix(id, "/aggregate") && major < 16 {
 			return suite, fmt.Errorf("aggregate views require suite/16 or /17")
@@ -3907,8 +4036,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
 			return suite, fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
 		}
-		s, err := closed(scenario, "purpose steps source", "")
+		s, err := closed(scenario, "purpose steps source", "one_time_response")
 		if err != nil {
+			return suite, err
+		}
+		policy, err := admitOneTimeTrace(s, major)
+		if err != nil {
+			return suite, err
+		}
+		if err := admitOneTimeCell(id, s, policy, major); err != nil {
 			return suite, err
 		}
 		purpose, err := text(s["purpose"])
@@ -3936,6 +4072,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
 		if err := admitFixtureSteps(steps); err != nil {
+			return suite, fmt.Errorf("%s: %w", id, err)
+		}
+		if err := admitDirectSteps(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
 		if err := admitReplaySteps(steps); err != nil {
@@ -3987,6 +4126,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		suite.Provenance = Provenance{SuiteVersion: version, System: p["system"].(string),
 			SpecificationVersion: p["specification_version"].(string), SpecDigest: p["spec_digest"].(string),
 			ContractDigest: p["contract_digest"].(string)}
+		if major >= 34 {
+			suite.Provenance.ScenarioInitialState = "empty"
+		}
 		suite.Scenarios = make(map[string]Scenario, len(scenarios))
 		for id, value := range scenarios {
 			suite.Scenarios[id] = Scenario{Purpose: value.(map[string]any)["purpose"].(string)}
@@ -4002,6 +4144,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	}
 	if err == nil {
 		err = decodeExactSuiteSteps(&suite)
+	}
+	if err == nil {
+		err = attachOneTimePolicies(&suite)
 	}
 	return suite, err
 }
@@ -4024,6 +4169,9 @@ func executionSuite(suite Suite) (Suite, error) {
 		if err := decodeExactSuiteSteps(&suite); err != nil {
 			return Suite{}, err
 		}
+	}
+	if err := attachOneTimePolicies(&suite); err != nil {
+		return Suite{}, err
 	}
 	return suite, nil
 }
@@ -4121,6 +4269,10 @@ func admitValues(value any, major int, accessors bool) error {
 			return err
 		}
 		switch kind {
+		case "list", "members":
+			if err := admitStructured(v, major, 1); err != nil {
+				return err
+			}
 		case "fixture":
 			if major < 18 {
 				return fmt.Errorf("fixture references require suite/18 or /19")
@@ -4555,6 +4707,23 @@ func admitStep(value any, major int) error {
 	}
 	required, optional := "step", ""
 	switch tag {
+	case "expect_direct_response":
+		if major < 28 {
+			return fmt.Errorf("direct responses require suite/28 or /29")
+		}
+		required += " response"
+	case "deliver_event":
+		if major < 30 {
+			return fmt.Errorf("delivery context requires suite/30 or /31")
+		}
+		required += " event authority context"
+		optional = "payload"
+	case "expect_every_invocation":
+		if major < 30 {
+			return fmt.Errorf("delivery context requires suite/30 or /31")
+		}
+		required += " binding command input"
+		optional = "selecting"
 	case "resolve_fixtures":
 		if major < 18 {
 			return fmt.Errorf("fixture resolution requires suite/18 or /19")
@@ -4712,7 +4881,11 @@ func admitStep(value any, major int) error {
 		case "fixtures":
 			err = admitFixtures(v)
 		case "response":
-			err = admitResponse(v)
+			if tag == "expect_direct_response" {
+				_, err = admitDirectResponse(v)
+			} else {
+				err = admitResponse(v, major)
+			}
 		case "check":
 			err = admitPeriodic(v)
 		case "left", "right":
@@ -4743,8 +4916,15 @@ func admitStep(value any, major int) error {
 			err = admitPayload(v)
 		case "field":
 			_, err = text(v)
-		case "input", "params", "subject":
+		case "input", "params", "subject", "selecting":
 			err = admitValues(v, major, tag == "expect_invocation")
+		case "authority":
+			_, err = text(v)
+		case "context":
+			if _, ok := v.(map[string]any); !ok {
+				return fmt.Errorf("context must be object")
+			}
+			err = admitPayload(v)
 		case "caller":
 			if _, ok := v.(map[string]any); !ok {
 				return fmt.Errorf("caller must be object")
@@ -4915,7 +5095,7 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 		if _, ok := suite.Scenarios[result.id]; !ok {
 			return nil, fmt.Errorf("unexpected terminal result")
 		}
-		if result.status != statusPassed && result.status != statusFailed && result.status != statusSkipped {
+		if result.status != statusPassed && result.status != statusFailed && result.status != statusSkipped && result.status != statusUnsupported && result.status != statusError {
 			return nil, fmt.Errorf("unsupported Go terminal status")
 		}
 		if counts[result.status] == ^uint64(0) {
@@ -4934,9 +5114,9 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 		sort.Strings(ids)
 	}
 	execution := "passed"
-	if counts["failed"] > 0 {
+	if counts["failed"] > 0 || counts["unsupported"] > 0 {
 		execution = "failed"
-	} else if counts["skipped"] > 0 {
+	} else if counts["skipped"] > 0 || counts["error"] > 0 {
 		execution = "inconclusive"
 	}
 	conformance := "inconclusive"
@@ -4955,7 +5135,7 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 	}
 	return map[string]any{
 		"format": "ess-conformance-report/2", "specification": suite.Provenance.System + "/" + suite.Provenance.SpecificationVersion, "spec_digest": suite.Provenance.SpecDigest, "implementation": identity.Name + " " + identity.Version,
-		"producer_profile": "go-scenario-status/1", "suite": map[string]any{"version": suite.Provenance.SuiteVersion, "digest_profile": "sha256-json-bytes/1", "digest": fmt.Sprintf("sha256:%x", digest)},
+		"producer_profile": "go-scenario-status/2", "suite": map[string]any{"version": suite.Provenance.SuiteVersion, "digest_profile": "sha256-json-bytes/1", "digest": fmt.Sprintf("sha256:%x", digest)},
 		"execution_status": execution, "conformance_status": conformance, "counts": counts, "outcomes": outcomes, "coverage": coverage, "policy": "complete-selection/1", "completed_at": uint64(now),
 	}, nil
 }
@@ -6308,6 +6488,7 @@ type selectionSelector struct {
 	} `json:"operation"`
 }
 type selectionObservation struct {
+	directMode   bool
 	responseMode bool
 	Raw          json.RawMessage `json:"-"`
 	EventType    string          `json:"event_type"`
@@ -6756,7 +6937,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	}
 	mark := InstantMark{Instant: "periodic-anchor", Correlation: correlation}
 	if err := clock.MarkInstant(mark); err != nil {
-		return err
+		return fromCallback(err)
 	}
 	requestCheck, err := periodicSnapshot(check)
 	if err != nil {
@@ -6764,14 +6945,14 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	}
 	opened, err := target.OpenPeriodic(PeriodicOpen{Check: requestCheck, Mark: mark})
 	if err != nil {
-		return err
+		return fromCallback(err)
 	}
 	stopped := false
 	defer func() {
 		if !stopped {
 			_, closeErr := target.ClosePeriodic(opened.Scope)
 			if result == nil {
-				result = closeErr
+				result = fromCallback(closeErr)
 			}
 		}
 	}()
@@ -6798,7 +6979,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 		seconds := anchor + offset
 		o, e := target.ObservePeriodic(PeriodicObserve{Scope: opened.Scope, Elapsed: ElapsedRequest{Instant: mark.Instant, Hold: int(seconds), Correlation: correlation}, After: ledger.cursor})
 		if e != nil {
-			return e
+			return fromCallback(e)
 		}
 		if e = ledger.observe(o, seconds*1000, nil); e != nil {
 			return e
@@ -6807,7 +6988,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	closed, err := target.ClosePeriodic(opened.Scope)
 	stopped = true
 	if err != nil {
-		return err
+		return fromCallback(err)
 	}
 	if closed.Scope != opened.Scope || closed.AtMillis < ledger.through {
 		return fmt.Errorf("PeriodicLifetime: invalid stop acknowledgement")
@@ -6818,7 +6999,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	hold := (closed.AtMillis + p*1000 + 999) / 1000
 	o, err := target.ObservePeriodic(PeriodicObserve{Scope: opened.Scope, Elapsed: ElapsedRequest{Instant: mark.Instant, Hold: int(hold), Correlation: correlation}, After: ledger.cursor})
 	if err != nil {
-		return err
+		return fromCallback(err)
 	}
 	return ledger.observe(o, hold*1000, &closed.AtMillis)
 }
@@ -6836,6 +7017,10 @@ func (r *run) checkPeriodic(index int, step Step) bool {
 		return r.fail(index, "missing periodic check")
 	}
 	if err := CheckPeriodic(*step.Check, r.correlation, target, clock); err != nil {
+		var callback callbackError
+		if errors.As(err, &callback) {
+			return r.targetFailure(index, err, "periodic callback")
+		}
 		if errors.Is(err, ErrUnsupported) {
 			r.skip("step %d: periodic authority/observation unsupported: %v", index, err)
 			return false
@@ -6938,7 +7123,7 @@ func admitSelection(value any) (*selectionObservation, error) {
 		return nil, fmt.Errorf("selection selector bound")
 	}
 	raw, err := json.Marshal(value)
-	if err != nil || accessorCompactBytes(raw) > 1048576 {
+	if err != nil || len(raw) > 1048576 {
 		return nil, fmt.Errorf("selection byte bound")
 	}
 	var s selectionObservation
@@ -7189,6 +7374,9 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		}
 		return s.validateValue(inner, value, true, bytes, depth+1)
 	}
+	if s.directMode && source == "Json" && present {
+		return directJSON(value, bytes, depth)
+	}
 	if !present || value == nil {
 		return fmt.Errorf("invalid_input")
 	}
@@ -7231,6 +7419,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 			for _, field := range body.Fields {
 				*bytes += len(field.Name)
 				item, present := fields[field.Name]
+				if s.directMode {
+					if err := directPresence(field, item, present); err != nil {
+						return err
+					}
+				}
 				if err := s.validateValue(field.Type, item, present, bytes, depth+1); err != nil {
 					return err
 				}
@@ -7273,7 +7466,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		if !ok {
 			return fmt.Errorf("invalid_input")
 		}
-		if len(values) > 64 {
+		limit := 64
+		if s.directMode {
+			limit = 65536
+		}
+		if len(values) > limit {
 			return fmt.Errorf("resource")
 		}
 		for _, item := range values {
@@ -7288,7 +7485,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		if !ok {
 			return fmt.Errorf("invalid_input")
 		}
-		if len(values) > 64 {
+		limit := 64
+		if s.directMode {
+			limit = 65536
+		}
+		if len(values) > limit {
 			return fmt.Errorf("resource")
 		}
 		for key, child := range values {
@@ -7314,7 +7515,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		}
 		if text, ok := value.(string); ok {
 			*bytes += len(text)
-			if len(text) > 4096 {
+			limit := 4096
+			if s.directMode {
+				limit = 1048576
+			}
+			if len(text) > limit {
 				return fmt.Errorf("resource")
 			}
 		}
@@ -7586,7 +7791,7 @@ func predicateNeedsLosslessReader(value any) bool {
 	return false
 }
 
-// ---- suite/22 through /27 ----------------------------------------------------------------------
+// ---- suite/22 through /35 ----------------------------------------------------------------------
 //
 // The constructs 0.37.0 and 0.38.0 added to the suite vocabulary (beyond10x/ess#188). Each runs
 // the way ess_conformance::runner runs it. A construct a given target cannot answer skips that one
@@ -7691,16 +7896,25 @@ func (r *run) executeCommandWithoutInput(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "executing `%s` with no input: %v", step.Command, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return r.took(index, step.Command, result)
 }
 
 // took records what a command did, for the assertions that read it.
 func (r *run) took(index int, command string, result CommandResult) bool {
+	if r.disclosure != nil {
+		if code := r.disclosure.command(command, result); code != "" {
+			return r.disclosureViolation(code)
+		}
+	}
 	if result.Response != nil {
 		var err error
-		result, err = snapshotResponseResult(result)
+		if r.directResponseMode {
+			result, err = snapshotDirectResult(result)
+		} else {
+			result, err = snapshotResponseResult(result)
+		}
 		if err != nil {
 			return r.fail(index, "response observation: %v", err)
 		}
@@ -8064,7 +8278,7 @@ func (r *run) configureRepeatedly(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "forcing `%s` on the next %d invocations: %v", step.Force.Outcome, step.Times, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return true
 }
@@ -8082,11 +8296,14 @@ func (r *run) expectInvocationCount(index int, step Step, want map[string]Node, 
 			Deadline:    Deadline{Attempts: deadline.Attempts - attempt},
 		})
 		if errors.Is(err, ErrUnsupported) {
+			if r.continuedAssertions {
+				return r.unsupportedObservation(index, err)
+			}
 			r.skip("step %d: the target does not expose what `%s` invoked: %v", index, step.Binding, err)
 			return false
 		}
 		if err != nil {
-			return r.fail(index, "observing `%s`: %v", step.Binding, err)
+			return r.targetFailure(index, err, "target callback")
 		}
 		matching := 0
 		for _, invocation := range invocations {
@@ -8104,11 +8321,11 @@ func (r *run) expectInvocationCount(index int, step Step, want map[string]Node, 
 			continue
 		}
 		if matching != step.Count {
-			return r.fail(index, "`%s` invoked `%s` with %s %d time(s) after %d observation(s), and the specification requires exactly %d", step.Binding, step.Command, describe(want), matching, attempt+1, step.Count)
+			return r.assertionFailure(index, "ESS-CF-INVOCATION: `%s` invoked `%s` with %s %d time(s) after %d observation(s), and the specification requires exactly %d", step.Binding, step.Command, describe(want), matching, attempt+1, step.Count)
 		}
 		return true
 	}
-	return r.fail(index, "`%s` was never observed", step.Binding)
+	return r.assertionFailure(index, "ESS-CF-INVOCATION: `%s` was never observed", step.Binding)
 }
 
 // presenceAdmits is ess_conformance::scenario's `LeafShape::admits` for an absent or null value:

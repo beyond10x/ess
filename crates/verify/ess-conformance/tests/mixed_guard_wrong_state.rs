@@ -473,3 +473,26 @@ fn no_row_refuting_every_subject_guard_refuses_the_scenario_and_names_them() {
     assert!(only.contains("history == Pending"), "{only}");
     assert!(only.contains(r#"token == """#), "{only}");
 }
+
+#[test]
+fn interpreted_executes_the_original_mixed_guard_shape() {
+    let model = ir(ORDERS);
+    let suite = synthesize(&model).suite;
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap();
+    let report = ess_conformance::Runner::for_suite(&suite)
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model),
+        )
+        .into_report();
+    assert!(!report.scenarios.is_empty());
+    for run in report.scenarios {
+        assert_eq!(
+            run.status,
+            ess_conformance::report::Status::Passed,
+            "{}: {:?}",
+            run.scenario,
+            run.checks
+        );
+    }
+}

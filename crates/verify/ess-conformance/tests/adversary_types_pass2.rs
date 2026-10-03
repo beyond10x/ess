@@ -289,7 +289,7 @@ fn adversary2_139_a_suite_with_no_carried_policy_stays_below_suite_24() {
     let json = ordinary.to_canonical_json().unwrap();
     assert!(!json.contains("\"presence\""), "{json}");
     assert!(
-        ordinary.provenance.suite_version.major() < 24,
+        ordinary.provenance.suite_version.major() == 34,
         "{}",
         ordinary.provenance.suite_version
     );
@@ -303,7 +303,7 @@ fn adversary2_139_a_suite_with_no_carried_policy_stays_below_suite_24() {
     let suite = coverage.selected().suite();
     assert!(!suite.to_canonical_json().unwrap().contains("\"presence\""));
     assert!(
-        suite.provenance.suite_version.major() < 24,
+        suite.provenance.suite_version.major() == 35,
         "{}",
         suite.provenance.suite_version
     );
@@ -343,7 +343,7 @@ commands:
 fn adversary2_139_generated_and_defaulted_policy_fields_beside_an_input_pass_the_declared_spelling()
 {
     let suite = suite(MIXED);
-    assert_eq!(suite.provenance.suite_version.major(), 24);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     let declared = Fixture(|input| {
         let mut payload = BTreeMap::from([
             ("receipt".to_owned(), Node::Text("generated-1".into())),

@@ -9,6 +9,7 @@
 //! Two mutants must each fail the suite: a target that ignores the context, and one that uses the
 //! first delivery's context when it redelivers a later occurrence.
 
+mod support_versions;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -91,7 +92,7 @@ fn the_mapping_scenario_delivers_one_event_under_two_contexts() {
     }
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/30"
+        "ess-conformance/34"
     );
 }
 
@@ -379,21 +380,16 @@ fn a_target_without_the_method_is_unsupported_too() {
 }
 
 #[test]
-fn go_and_typescript_generation_refuse_a_suite_that_delivers_with_context() {
+fn go_and_typescript_generation_preserve_delivery_context() {
     let suite = suite_of(INBOX);
-    let go = ess_conformance::go::emit(&suite).expect_err("Go refuses");
-    assert!(go.to_string().contains("delivery context"), "{go}");
-    let ts = ess_conformance::ts::emit(&suite).expect_err("TypeScript refuses");
-    assert!(ts.to_string().contains("delivery context"), "{ts}");
+    ess_conformance::go::emit(&suite).expect("Go supports delivery context");
+    ess_conformance::ts::emit(&suite).expect("TypeScript supports delivery context");
 }
 
 #[test]
 fn an_older_suite_envelope_refuses_the_delivery_step() {
     let suite = suite_of(INBOX);
-    let json = suite
-        .to_canonical_json()
-        .unwrap()
-        .replace("\"ess-conformance/30\"", "\"ess-conformance/28\"");
+    let json = support_versions::legacy_json(&suite.to_canonical_json().unwrap(), 28);
     let error = AdmittedSuite::from_json(&json).expect_err("suite/28 does not carry the step");
     assert!(error.to_string().contains("newer suite"), "{error}");
 }

@@ -89,17 +89,14 @@ fn generated_go_admits_only_typed_predicate_paths_and_operator_envelopes() {
     let valid = document(&json!({"ready": {"eq": true}})).to_string();
     let suite = AdmittedSuite::from_json(&valid).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), valid).unwrap();
-    assert!(invoke(&directory, "valid", "begin-skip", true)
-        .status
-        .success());
-    let report = std::fs::read_to_string(directory.join("valid.report.json")).unwrap();
     assert_eq!(
-        CountReport::from_json(&report, &suite)
-            .unwrap()
-            .counts()
-            .skipped,
-        1
+        invoke(&directory, "valid", "begin-skip", true)
+            .status
+            .code(),
+        Some(1)
     );
+    let report = std::fs::read_to_string(directory.join("valid.report.json")).unwrap();
+    assert_unsupported_report(&report, &suite);
 
     let mut accepted = Vec::new();
     for (label, predicate) in [
@@ -139,17 +136,14 @@ fn generated_go_abnormal_unsupported_error_formatting_cannot_complete() {
     let original = document(&json!(true)).to_string();
     let suite = AdmittedSuite::from_json(&original).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), original).unwrap();
-    assert!(invoke(&directory, "ordinary-skip", "begin-skip", true)
-        .status
-        .success());
-    let text = std::fs::read_to_string(directory.join("ordinary-skip.report.json")).unwrap();
     assert_eq!(
-        CountReport::from_json(&text, &suite)
-            .unwrap()
-            .counts()
-            .skipped,
-        1
+        invoke(&directory, "ordinary-skip", "begin-skip", true)
+            .status
+            .code(),
+        Some(1)
     );
+    let text = std::fs::read_to_string(directory.join("ordinary-skip.report.json")).unwrap();
+    assert_unsupported_report(&text, &suite);
     let mut completed = Vec::new();
     for destination in [false, true] {
         let label = format!("format-goexit-{destination}");
@@ -168,4 +162,20 @@ fn generated_go_abnormal_unsupported_error_formatting_cannot_complete() {
         "an error formatter that exits before SkipNow cannot complete a report:\n{}",
         completed.join("\n")
     );
+}
+
+fn assert_unsupported_report(text: &str, suite: &AdmittedSuite) {
+    CountReport::from_json(text, suite).unwrap();
+    let report: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(report["producer_profile"], "go-scenario-status/2");
+    assert_eq!(
+        report["counts"],
+        json!({"total":1,"passed":0,"failed":0,"error":0,"unsupported":1,"skipped":0})
+    );
+    assert_eq!(
+        report["outcomes"],
+        json!({"passed":[],"failed":[],"error":[],"unsupported":[ID],"skipped":[]})
+    );
+    assert_eq!(report["execution_status"], "failed");
+    assert_eq!(report["conformance_status"], "failed");
 }

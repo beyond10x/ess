@@ -4,6 +4,7 @@
 //! number asserted here is the page's own worked example, read off the page and not off the
 //! implementation.
 use std::collections::BTreeMap;
+mod support_versions;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
@@ -161,7 +162,7 @@ fn the_example_yields_one_aggregate_scenario_per_view_and_selects_suite_16() {
     assert!(aggregate_refusals.is_empty(), "{aggregate_refusals:?}");
     assert_eq!(
         result.suite.provenance.suite_version,
-        SuiteFormat::parse("ess-conformance/16").unwrap()
+        SuiteFormat::parse("ess-conformance/34").unwrap()
     );
     assert!(aggregate::used_by(&result.suite));
     assert_eq!(
@@ -638,6 +639,7 @@ fn a_non_scoped_first_key_gets_its_own_b_row() {
 fn an_explicitly_pinned_older_suite_with_an_aggregate_scenario_is_refused() {
     let mut suite = synthesis(METRICS).suite;
     suite.provenance.suite_version = SuiteFormat::parse("ess-conformance/15").unwrap();
+    suite.provenance.scenario_initial_state = None;
     let error = ess_conformance::admission::suite(&suite).expect_err("refused");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary");
     assert!(error.to_string().contains("suite/16"), "{error}");
@@ -655,12 +657,12 @@ fn a_refusal_only_suite_carrying_an_aggregate_refusal_is_written_at_coverage_17(
         .unwrap_or_else(|error| panic!("{error:?}"));
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        aggregate::COVERAGE
+        35
     );
     let original = input.selected().original_json();
     assert!(original.contains("ESS-SYNTH-016"), "{original}");
     // The same document labelled with the coverage major before the construct is refused.
-    let older = original.replace("\"ess-conformance/17\"", "\"ess-conformance/15\"");
+    let older = support_versions::legacy_json(original, 15);
     assert_ne!(older, original);
     let error = AdmittedSuite::from_json(&older).expect_err("an aggregate refusal needs suite/17");
     assert!(error.to_string().contains("suite/17"), "{error}");

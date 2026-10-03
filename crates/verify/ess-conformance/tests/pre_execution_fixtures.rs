@@ -537,7 +537,7 @@ fn native_fixture_cases(
             std::fs::write(root.join(format!("{tool}-{mode}.log")), &log).unwrap();
             assert_eq!(
                 output.status.success(),
-                matches!(mode, "valid" | "unsupported"),
+                mode == "valid",
                 "{label} {tool} {mode}: {log}"
             );
             let executes = matches!(

@@ -939,7 +939,14 @@ pub fn lost_update_workload() -> Workload {
     Workload {
         prefix: vec![
             Call::new(CREATE_INVOICE, create, Subject::Creates),
-            Call::new(ISSUE_INVOICE, BTreeMap::new(), Subject::Created(0)),
+            Call::new(
+                ISSUE_INVOICE,
+                BTreeMap::from([(
+                    "issued_at".to_owned(),
+                    Node::Text("2026-01-05T09:00:01Z".to_owned()),
+                )]),
+                Subject::Created(0),
+            ),
         ],
         clients: vec![vec![pay()], vec![pay()]],
     }
@@ -965,7 +972,10 @@ pub fn stale_read_workload() -> sessions::Workload {
         vec![
             Act::Call(Call::new(
                 ISSUE_INVOICE,
-                BTreeMap::new(),
+                BTreeMap::from([(
+                    "issued_at".to_owned(),
+                    Node::Text(format!("2026-01-05T09:00:0{}Z", prefix + 1)),
+                )]),
                 Subject::Created(prefix),
             )),
             Act::Read(OUTSTANDING.to_owned()),

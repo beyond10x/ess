@@ -586,6 +586,7 @@ pub fn record_with<T: Interleaved, V: ConformanceTarget>(
     seed: u64,
     injection: FaultInjection,
 ) -> Result<Recorded, RecordError> {
+    crate::record::refuse_one_time(ir)?;
     let clients = workload.clients.len().max(1);
     if workload.clients.is_empty() && workload.prefix.is_empty() || clients as u64 > MAX_INTEGER {
         return Err(RecordError::NoClients);

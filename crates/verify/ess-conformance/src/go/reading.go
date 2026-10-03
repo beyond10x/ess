@@ -146,7 +146,7 @@ func (r *run) expectReadingOrder(index int, step Step) bool {
 		requestReference.Contract.Origins = append(requestReference.Contract.Origins[:0:0], requestReference.Contract.Origins...)
 		evidence, err := target.ObserveClockReading(ReadingObservationRequest{requestReference, r.correlation})
 		if err != nil {
-			return ClockCoordinate{}, err
+			return ClockCoordinate{}, fromCallback(err)
 		}
 		origins := make([][2]string, 0, len(reference.Contract.Origins))
 		for _, origin := range reference.Contract.Origins {
@@ -172,6 +172,10 @@ func (r *run) expectReadingOrder(index int, step Step) bool {
 				return r.fail(index, "clock coordinate order differs from %s", step.ReadingOrder)
 			}
 		}
+	}
+	var callback callbackError
+	if errors.As(err, &callback) {
+		return r.targetFailure(index, err, "observing clock reading")
 	}
 	if errors.Is(err, ErrUnsupported) || (err != nil && strings.Contains(err.Error(), "DifferentClock")) {
 		r.skip("clock comparison unsupported: %v", err)

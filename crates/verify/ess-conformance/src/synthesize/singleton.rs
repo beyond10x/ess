@@ -246,6 +246,8 @@ pub(super) fn withdraw_second_creations(ir: &EssIr, synthesis: &mut Synthesis) {
             | Note::UnseparatedSources { scenario, .. }
             | Note::UnwitnessedOverlap { scenario, .. }
             | Note::UnswappedCallers { scenario, .. }
+            | Note::CrossCallerUnswapped { scenario, .. }
+            | Note::CrossCallerUnwitnessed { scenario, .. }
             | Note::UnaccompaniedRelatedCopy { scenario, .. } => *scenario != id,
             _ => true,
         });

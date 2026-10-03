@@ -209,7 +209,7 @@ use serde_json::{json, Map, Value};
 
 use crate::artifact::{Artifact, Generator};
 use crate::http::{self, status, CONFLICT, FORBIDDEN, NO_INPUT, READ, REFUSED, UPSTREAM};
-use ess_compiler::refs::{ActorRef, BindingRef, ComponentRef, EssSemanticRef};
+use ess_compiler::refs::{ActorRef, BindingRef, CommandRef, ComponentRef, EssSemanticRef};
 
 use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
 use crate::schema::types::{self, Message, Node};
@@ -329,6 +329,17 @@ fn component_slice(
             .keys()
             .map(|name| BindingRef::new(name.clone()).into()),
     );
+    seeds.extend(
+        ir.commands()
+            .values()
+            .filter(|command| {
+                command
+                    .outcomes
+                    .iter()
+                    .any(|outcome| !outcome.one_time_response.is_empty())
+            })
+            .map(|command| CommandRef::new(command.name.clone()).into()),
+    );
     mint.of_seeds(seeds)
 }
 
@@ -351,6 +362,7 @@ fn render(document: &Document, provenance: &Provenance) -> String {
 fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) -> Document {
     Document {
         openapi: VERSION,
+        one_time_response: crate::one_time_response::all(ir),
         info: Info {
             title: component
                 .naming
@@ -1482,6 +1494,11 @@ fn list(items: &[String]) -> String {
 #[derive(Debug, serde::Serialize)]
 struct Document {
     openapi: &'static str,
+    #[serde(
+        rename = "x-ess-one-time-response",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    one_time_response: Vec<crate::one_time_response::Policy>,
     info: Info,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tags: Vec<Tag>,

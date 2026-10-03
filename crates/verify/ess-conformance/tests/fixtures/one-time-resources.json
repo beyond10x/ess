@@ -1,0 +1,262 @@
+[
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048576,
+    "case": "bytes-exact",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048577,
+    "case": "bytes-over",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 1
+    },
+    "status": "unsupported"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048576,
+    "case": "escapes-exact",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048577,
+    "case": "escapes-over",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 1
+    },
+    "status": "unsupported"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1310692,
+    "case": "numbers-over",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 1
+    },
+    "status": "unsupported"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 196609,
+    "case": "members-exact",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 196612,
+    "case": "members-over",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 1
+    },
+    "status": "unsupported"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 267,
+    "case": "depth-exact",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 269,
+    "case": "depth-over",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 1
+    },
+    "status": "unsupported"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048576,
+    "case": "integral-exact",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048577,
+    "case": "integral-over",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 1
+    },
+    "status": "unsupported"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048576,
+    "case": "fractional-exact",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "query_view",
+      "end_scenario"
+    ],
+    "canonical_payload_bytes": 1048577,
+    "case": "fractional-over",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 1
+    },
+    "status": "unsupported"
+  }
+]

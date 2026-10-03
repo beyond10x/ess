@@ -271,12 +271,13 @@ pub(super) fn reads_held_state(ir: &EssIr, entity: &EntityHandle, predicate: &Pr
 /// and that no bounded arrangement reaches refuses the whole with that cause: the state is never
 /// left silently unwitnessed.
 pub(super) fn state_answered_rows(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     entity: &EntityHandle,
     held: &super::StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
     let Ok(path) = FactPath::new(EntitySpec::STATE) else {
@@ -301,7 +302,7 @@ pub(super) fn state_answered_rows(
             continue;
         }
         rows += 1;
-        let (arrangement, input) = search(
+        let (mut arrangement, input) = search(
             ir,
             entity,
             actors,
@@ -317,6 +318,10 @@ pub(super) fn state_answered_rows(
         )?;
         let (observed, view) =
             observe_fields(ir, entity, &read_by(ir, entity, &predicate), &arrangement)?;
+        models.mark(
+            super::caller::InvocationPhase::Arrange,
+            &mut arrangement.steps,
+        );
         steps.extend(arrangement.steps);
         steps.extend(observed);
         source.extend(arrangement.source);
@@ -353,6 +358,7 @@ pub(super) fn state_answered_rows(
         }
         source.insert(outcome_ref.into());
     }
+    models.mark(super::caller::InvocationPhase::Act, &mut steps);
     Ok((steps, source))
 }
 
@@ -4498,13 +4504,14 @@ pub(super) fn absent(
 /// default is further witnessed against come last, with the further rows refused on their own under
 /// the scenario while it stands (a side of a counter limit, beyond10x/ess#226).
 pub(super) fn around(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Result<(Vec<ScenarioStep>, Vec<RefusalCause>), RefusalCause> {
+    let ir = models.arrangement;
     // Whether the scenario already arranged the second owner a link comparison names (#193).
     let mut present = reading(command, outcome)
         .and_then(|subject| other_owner(ir, &subject.entity))
@@ -4514,7 +4521,7 @@ pub(super) fn around(
     taken.extend(setup.instance.iter().cloned());
     let mut refused = Vec::new();
     let (further, source) = boundaries(
-        ir,
+        models,
         command,
         outcome,
         actors,
@@ -4523,8 +4530,9 @@ pub(super) fn around(
         &mut refused,
     )?;
     let (overlapping, overlap_source) =
-        overlaps(ir, command, outcome, actors, (&mut present, &mut taken))?;
-    let mut steps = around_row(ir, command, outcome, actors, setup, supplied)?;
+        overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
+    let mut steps = around_row(models, command, outcome, actors, setup, supplied)?;
+    models.mark(super::caller::InvocationPhase::Act, &mut steps);
     steps.extend(further);
     steps.extend(overlapping);
     setup.source.extend(source);
@@ -4561,13 +4569,14 @@ fn leaves_changed(
 }
 
 fn around_row(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Vec<ScenarioStep>, RefusalCause> {
+    let ir = models.arrangement;
     let Some(subject) = reading(command, outcome) else {
         return Ok(Vec::new());
     };
@@ -4575,7 +4584,8 @@ fn around_row(
     // generated before this construct, and its moving branch is observed as it always was.
     let changes = uses_predicate(command) && moves_row(outcome);
     if outcome.subject.is_none() {
-        let (steps, source) = absent(ir, command, subject, actors)?;
+        let (mut steps, source) = absent(ir, command, subject, actors)?;
+        models.mark(super::caller::InvocationPhase::Act, &mut steps);
         setup.steps.splice(0..0, steps);
         setup.source.extend(source);
     } else if !changes {
@@ -4935,6 +4945,47 @@ fn conjunct_goals(
                 witnessed,
                 witnessed_state,
             ));
+            // `defined(flag) && flag == true` cannot isolate absence while also holding the
+            // comparison true. Keep the independent conjuncts (including command input), omit
+            // only comparisons reading this Optional field, and let full branch selection check
+            // the resulting row. Present false and absent remain distinct witnesses (#307).
+            for child in conjuncts {
+                let Predicate::Defined(path) = child else {
+                    continue;
+                };
+                if path.segments().len() != 1
+                    || !ir
+                        .entity(entity)
+                        .fields
+                        .iter()
+                        .any(|field| field.name == path.namespace() && field.type_ref.is_optional())
+                    || row_truth(
+                        ir,
+                        entity,
+                        witnessed,
+                        &BTreeSet::new(),
+                        witnessed_state,
+                        child,
+                    ) == Truth::False
+                {
+                    continue;
+                }
+                let dependent = |predicate: &&Predicate| {
+                    matches!(predicate, Predicate::Compare { .. })
+                        && predicate
+                            .fact_paths()
+                            .iter()
+                            .any(|read| read.segments().starts_with(path.segments()))
+                };
+                if conjuncts.iter().any(|predicate| dependent(&predicate)) {
+                    let held = conjuncts
+                        .iter()
+                        .filter(|predicate| *predicate != child && !dependent(predicate))
+                        .cloned()
+                        .collect();
+                    goals.push((vec![child.clone()], held));
+                }
+            }
         }
     }
     goals
@@ -5072,7 +5123,7 @@ const MAX_BOUNDARIES: usize = 8;
 /// refused, under the scenario, and the branch's own witness stands.
 #[allow(clippy::too_many_lines)]
 pub(super) fn boundaries(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -5083,6 +5134,7 @@ pub(super) fn boundaries(
     (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
     refused: &mut Vec<RefusalCause>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
     // A branch naming no subject of its own — a refusal — reads the row its siblings name.
@@ -5104,9 +5156,11 @@ pub(super) fn boundaries(
     );
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
-    // A command comparing a link with an input decides every guard with the input bound: `selects`
-    // reads every branch, so a goal of its own reads the link through a sibling too.
-    let decided_with_input = !links(ir, command, entity).is_empty();
+    // A boundary may isolate a stored flag while holding an input conjunct true. Decide the
+    // complete goal with that input bound, including ordinary scalar inputs, not only links.
+    // `selects` reads every branch, so a goal can also read input through a sibling.
+    let decided_with_input = !links(ir, command, entity).is_empty()
+        || hints.iter().any(|hint| reads_input(ir, entity, hint));
     let mut rows = 0;
     for ((refuted, held), kind) in goals {
         if let Further::Past(why) = &kind {
@@ -5207,7 +5261,7 @@ pub(super) fn boundaries(
             source.insert(OutcomeRef::new(command_ref.clone(), answering.name.clone()).into());
         }
         send_for_row(
-            ir,
+            models,
             command,
             answering,
             actors,
@@ -5340,7 +5394,7 @@ fn unreached(
 /// name the row binds is added to `taken`, so no later further row of the scenario binds it again.
 #[allow(clippy::too_many_arguments)]
 fn send_for_row(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -5352,6 +5406,7 @@ fn send_for_row(
     ),
     (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
 ) -> Result<(), RefusalCause> {
+    let ir = models.arrangement;
     let entity = &read.entity;
     let bound = &bind_links(
         ir,
@@ -5368,6 +5423,10 @@ fn send_for_row(
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     let (observed, view) = observe_fields(ir, entity, fields, &arrangement)?;
     arrangement.steps.extend(observed);
+    models.mark(
+        super::caller::InvocationPhase::Arrange,
+        &mut arrangement.steps,
+    );
     steps.append(&mut arrangement.steps);
     source.append(&mut arrangement.source);
     source.insert(view.into());
@@ -5384,6 +5443,8 @@ fn send_for_row(
         actor: actors.get(&command.name).cloned(),
         input: supplied.clone(),
     });
+    let sent = steps.len() - 1;
+    models.mark(super::caller::InvocationPhase::Act, &mut steps[sent..]);
     steps.push(ScenarioStep::ExpectOutcome {
         outcome: outcome_ref,
     });
@@ -5436,12 +5497,13 @@ fn send_for_row(
 /// The row-free half of the rule — a refusal over the identity, and every command reading no
 /// stored field — is `overlap_inputs` in the parent module.
 fn overlaps(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
     let Some(own) = super::is_input_guarded_refusal(outcome)
@@ -5531,7 +5593,7 @@ fn overlaps(
         };
         rows += 1;
         send_for_row(
-            ir,
+            models,
             command,
             outcome,
             actors,

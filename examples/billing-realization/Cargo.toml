@@ -22,10 +22,10 @@ billing-types = { path = "../../generated/rust/billing/crates/billing-types" }
 billing-system = { path = "../../generated/rust/billing/crates/billing-system" }
 email-service = { path = "../../generated/rust/billing/crates/email-service" }
 invoice-service = { path = "../../generated/rust/billing/crates/invoice-service" }
+ess-primitives.workspace = true
 
 [dev-dependencies]
 ess-conformance.workspace = true
-ess-primitives.workspace = true
 serde_json.workspace = true
 
 [lints]

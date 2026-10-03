@@ -37,6 +37,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { refusePrivateExploration } from './one_time_response.js';
 import { join } from 'node:path';
 
 import { facts, fromNode, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
@@ -217,7 +218,9 @@ export function loadModel(
   if (digest !== declared) {
     throw new Error(MODEL_MISMATCH);
   }
-  return strictJSON(body);
+  const model = strictJSON(body);
+  refusePrivateExploration(model);
+  return model;
 }
 
 /** An object's values in byte order of key. */
@@ -239,11 +242,14 @@ function nonEmpty(value: Node): boolean {
 // ---- input types --------------------------------------------------------------------------------
 
 type Kind =
-  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' }
+  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' | 'timestamp' }
   | { kind: 'enum'; variants: string[] }
-  | { kind: 'struct'; fields: [string, Kind][] }
+  | { kind: 'struct'; fields: InputField[] }
   | { kind: 'identity'; entity: string; base: Kind }
+  | { kind: 'optional'; base: Kind }
   | { kind: 'unsupported'; why: string };
+
+type InputField = [string, Kind, string?];
 
 function identityOwner(ir: Node, type: string): string | null {
   for (const entity of sortedValues(ir.entities)) {
@@ -254,13 +260,17 @@ function identityOwner(ir: Node, type: string): string | null {
 }
 
 /**
- * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`, a `timestamp`,
  * and a type whose values are constrained: concurrent exploration does not judge an answer by this
  * model, `ess` does, so a drawn value outside the constraint is a question the target answers and the
  * checker judges.
  */
 function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };
+  if (ref?.kind === 'optional') {
+    const base = resolveKind(ir, ref.of, depth + 1, concurrent);
+    return base.kind === 'unsupported' ? base : { kind: 'optional', base };
+  }
   if (ref?.kind === 'primitive') {
     switch (ref.name) {
       case 'integer':
@@ -269,6 +279,7 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
       case 'uuid':
         return { kind: ref.name };
       case 'decimal':
+      case 'timestamp':
         if (concurrent) return { kind: ref.name };
         return { kind: 'unsupported', why: `a \`${ref.name}\`` };
       default:
@@ -298,11 +309,11 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
     return { kind: 'enum', variants };
   }
   if (body?.kind === 'struct') {
-    const fields: [string, Kind][] = [];
+    const fields: InputField[] = [];
     for (const field of list(body.fields)) {
       const kind = resolveKind(ir, field.type_ref, depth + 1, concurrent);
       if (kind.kind === 'unsupported') return kind;
-      fields.push([field.name, kind]);
+      fields.push([field.name, kind, field.naming?.presence]);
     }
     return { kind: 'struct', fields };
   }
@@ -394,7 +405,7 @@ interface Command {
   name: string;
   actor: string;
   node: Node;
-  inputs: [string, Kind][];
+  inputs: InputField[];
   guards: Map<string, Predicate>;
   pools: { integers: number[]; texts: string[] };
 }
@@ -478,6 +489,7 @@ function plan(ir: Node, concurrent = false): Plan {
         kind !== 'when' &&
         kind !== 'otherwise' &&
         kind !== 'wrong_state' &&
+        kind !== 'unknown_instance' &&
         kind !== 'external' &&
         kind !== 'external_when'
       ) {
@@ -499,13 +511,13 @@ function plan(ir: Node, concurrent = false): Plan {
     // excluded for it alone stays sendable by a precondition. It is reported in the order it always
     // was: after the outcome reasons, before the guard and actor ones.
     let undrawable: string | null = null;
-    const inputs: [string, Kind][] = [];
+    const inputs: InputField[] = [];
     for (const field of list(node.input)) {
       const kind = resolveKind(ir, field.type_ref, 0, concurrent);
       if (undrawable === null && kind.kind === 'unsupported') {
         undrawable = `input \`${field.name}\` is ${kind.why}`;
       }
-      inputs.push([field.name, kind]);
+      inputs.push([field.name, kind, field.naming?.presence]);
     }
     const guards = new Map<string, Predicate>();
     let later: string | null = null;
@@ -644,10 +656,23 @@ function literalValue(ir: Node, text: Node, type: Node): Node {
   }
 }
 
+function optionalType(ir: Node, type: Node): boolean {
+  for (let depth = 0; depth <= 32; depth += 1) {
+    if (type?.kind === 'optional') return true;
+    if (type?.kind !== 'declared') return false;
+    const body = ir.types?.[type.name]?.body;
+    if (body?.kind !== 'newtype') return false;
+    type = body.of;
+  }
+  return false;
+}
+
 function valueOf(ir: Node, value: Node, input: Row, type: Node): Node | typeof CLEARED {
   switch (value?.kind) {
-    case 'input_field':
-      return readPath(input, String(value.field));
+    case 'input_field': {
+      const found = readPath(input, String(value.field));
+      return found === undefined && optionalType(ir, value.type_ref) ? null : found;
+    }
     case 'literal':
       return literalValue(ir, value.value, type);
     case 'cleared':
@@ -655,6 +680,53 @@ function valueOf(ir: Node, value: Node, input: Row, type: Node): Node | typeof C
     default:
       return undefined;
   }
+}
+
+/** Typed absence is knowledge; only genuinely unknown model fields are skipped. */
+function valueAgrees(
+  ir: Node,
+  type: Node,
+  naming: Node,
+  expected: Node,
+  actual: Node,
+  present: boolean,
+  depth = 0,
+): boolean {
+  if (depth > 32) return false;
+  if (type?.kind === 'optional') {
+    if (expected === null || expected === undefined) {
+      if (naming?.presence === 'null_when_absent') return present && actual === null;
+      if (naming?.presence === 'omitted_when_absent') return !present;
+      return !present || actual === null;
+    }
+    return valueAgrees(ir, type.of, {}, expected, actual, present, depth + 1);
+  }
+  if (type?.kind === 'declared') {
+    const body = ir.types?.[type.name]?.body;
+    if (body?.kind === 'newtype')
+      return valueAgrees(ir, body.of, naming, expected, actual, present, depth + 1);
+    if (body?.kind === 'struct' && isObject(expected)) {
+      const fields = list(body.fields);
+      const names = new Set(fields.map((field: Node) => field.name));
+      return (
+        present &&
+        isObject(actual) &&
+        Object.keys(actual).every((name) => names.has(name)) &&
+        fields.every((field: Node) =>
+          valueAgrees(
+            ir,
+            field.type_ref,
+            field.naming,
+            expected[field.name],
+            actual[field.name],
+            Object.prototype.hasOwnProperty.call(actual, field.name),
+            depth + 1,
+          ),
+        )
+      );
+    }
+  }
+  return present && equal(expected, actual);
 }
 
 /**
@@ -673,6 +745,23 @@ function suppliedOutcome(command: Command): Node | undefined {
   return list(command.node.outcomes).find(
     (outcome: Node) => outcome.subject?.instance?.from === 'supplied',
   );
+}
+
+function unknownOutcome(command: Command): Node | undefined {
+  return list(command.node.outcomes).find(
+    (outcome: Node) => outcome.condition?.kind === 'unknown_instance',
+  );
+}
+
+function terminal(command: Command, outcome: Node, input: Row, model: Model): Node {
+  const subject = outcome?.subject;
+  if (
+    subject?.instance?.from === 'supplied' &&
+    model.find(subject.entity, readPath(input, subject.instance.field.name)) === undefined
+  ) {
+    return unknownOutcome(command) ?? outcome;
+  }
+  return outcome;
 }
 
 /**
@@ -719,7 +808,7 @@ function decide(command: Command, input: Row, model: Model): Decision {
     }
     if (truth === TruthTrue) return { kind: 'take', outcome, externals: [] };
   }
-  if (supplied !== undefined && record === undefined) {
+  if (supplied !== undefined && record === undefined && unknownOutcome(command) === undefined) {
     return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
   }
   // What a step may take where no ordinary branch can be: the eligible external branches alone,
@@ -795,7 +884,7 @@ function decide(command: Command, input: Row, model: Model): Decision {
     if (wrong !== undefined) names.push(String(wrong.name));
     return orExternal({ kind: 'ambiguous', names });
   }
-  return { kind: 'take', outcome: selected, externals };
+  return { kind: 'take', outcome: terminal(command, selected, input, model), externals };
 }
 
 /**
@@ -836,16 +925,31 @@ function eligibleExternals(
  * may still hold and an external branch is eligible, then every eligible external branch the
  * target has not refused to arrange.
  */
-function choices(s: Session, command: Command, decision: Decision & { kind: 'take' }): Node[] {
-  const out: Node[] = [];
+interface Choice {
+  arrangement: string;
+  expected: Node;
+}
+
+function choices(
+  s: Session,
+  command: Command,
+  decision: Decision & { kind: 'take' },
+  input: Row,
+): Choice[] {
+  const out: Choice[] = [];
   if (
     decision.outcome !== undefined &&
     (!s.forced.has(command.name) || decision.externals.length === 0)
   ) {
-    out.push(decision.outcome);
+    out.push({ arrangement: '', expected: decision.outcome });
   }
   for (const outcome of decision.externals) {
-    if (!s.p.unarrangeable.has(`${command.name}/${outcome.name}`)) out.push(outcome);
+    if (!s.p.unarrangeable.has(`${command.name}/${outcome.name}`)) {
+      out.push({
+        arrangement: String(outcome.name),
+        expected: terminal(command, outcome, input, s.model),
+      });
+    }
   }
   return out;
 }
@@ -882,9 +986,12 @@ interface Step {
   refs: [string, string, number][];
   /** The external branch arranged for this step, or empty for the ordinary branch. */
   external: string;
+  /** Identities deliberately absent in the serial draw/replay model. */
+  fresh?: [string, string][];
 }
 
 const NO_RECORD = Symbol('no record');
+const ABSENT = Symbol('absent');
 
 function drawValue(
   kind: Kind,
@@ -896,6 +1003,10 @@ function drawValue(
   refs: [string, string, number][],
 ): Node | typeof NO_RECORD {
   switch (kind.kind) {
+    case 'optional':
+      return rng.chance(0.5)
+        ? ABSENT
+        : drawValue(kind.base, rng, command, model, path, mustExist, refs);
     case 'identity': {
       const known = model.of(kind.entity);
       if (mustExist) {
@@ -918,16 +1029,23 @@ function drawValue(
       return rng.chance(0.5);
     case 'string':
       return rng.pick(command.pools.texts);
+    case 'timestamp': {
+      // One seeded draw selects a UTC second on a fixed date, never a target clock.
+      const second = rng.int(0, 86399);
+      const part = (value: number): string => String(value).padStart(2, '0');
+      return `2020-01-01T${part(Math.floor(second / 3600))}:${part(Math.floor(second / 60) % 60)}:${part(second % 60)}Z`;
+    }
     case 'uuid':
       return `00000000-0000-4000-8000-${String(rng.int(0, 999999)).padStart(12, '0')}`;
     case 'enum':
       return rng.pick(kind.variants);
     case 'struct': {
       const value: Row = {};
-      for (const [name, field] of kind.fields) {
+      for (const [name, field, presence] of kind.fields) {
         const drawn = drawValue(field, rng, command, model, `${path}.${name}`, false, refs);
         if (drawn === NO_RECORD) return NO_RECORD;
-        value[name] = drawn;
+        if (drawn !== ABSENT) value[name] = drawn;
+        else if (presence !== 'omitted_when_absent') value[name] = null;
       }
       return value;
     }
@@ -941,16 +1059,48 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
   const instance = supplied?.subject?.instance?.field?.name;
   const input: Row = {};
   const refs: [string, string, number][] = [];
-  for (const [name, declared] of command.inputs) {
+  const fresh: [string, string][] = [];
+  for (const [name, declared, presence] of command.inputs) {
     let kind = declared;
     if (name === instance && kind.kind !== 'identity') {
       kind = { kind: 'identity', entity: supplied.subject.entity, base: kind };
     }
-    const value = drawValue(kind, rng, command, model, name, name === instance, refs);
+    let value: Node;
+    if (name === instance && unknownOutcome(command) !== undefined) {
+      const known = model.of(supplied.subject.entity);
+      if (known.length > 0 && rng.chance(0.5)) {
+        value = drawValue(kind, rng, command, model, name, true, refs);
+      } else {
+        value = NO_RECORD;
+        for (let attempt = 0; attempt < ATTEMPTS_PER_STEP; attempt += 1) {
+          const drawn = drawValue(
+            kind.kind === 'identity' ? kind.base : kind,
+            rng,
+            command,
+            model,
+            name,
+            false,
+            [],
+          );
+          if (
+            drawn !== NO_RECORD &&
+            drawn !== ABSENT &&
+            model.find(supplied.subject.entity, drawn) === undefined
+          ) {
+            value = drawn;
+            fresh.push([name, supplied.subject.entity]);
+            break;
+          }
+        }
+      }
+    } else {
+      value = drawValue(kind, rng, command, model, name, name === instance, refs);
+    }
     if (value === NO_RECORD) return null;
-    input[name] = value;
+    if (value !== ABSENT) input[name] = value;
+    else if (presence !== 'omitted_when_absent') input[name] = null;
   }
-  return { command: command.name, input, refs, external: '' };
+  return { command: command.name, input, refs, external: '', fresh };
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -1025,7 +1175,19 @@ async function perform(
       const expected = valueOf(ir, field.value, step.input, field.target_type);
       if (expected === undefined || expected === CLEARED) continue;
       const actual = (event.payload ?? {})[field.target];
-      if (!equal(expected, actual)) {
+      const target = list(ir.events[event.event]?.fields).find(
+        (declared: Node) => declared.name === field.target,
+      );
+      if (
+        !valueAgrees(
+          ir,
+          field.target_type,
+          target?.naming,
+          expected,
+          actual,
+          Object.prototype.hasOwnProperty.call(event.payload ?? {}, field.target),
+        )
+      ) {
         return {
           kind: 'payload',
           detail: `event ${index} \`${event.event}\`.${field.target} is ${render(actual)}, the specification says ${render(expected)}`,
@@ -1068,7 +1230,8 @@ async function perform(
     if (record !== undefined) {
       for (const set of list(outcome.sets)) {
         const value = valueOf(ir, set.value, step.input, set.target_type);
-        if (value === undefined || value === CLEARED) delete record.fields[set.target];
+        if (value === undefined) delete record.fields[set.target];
+        else if (value === CLEARED) record.fields[set.target] = null;
         else record.fields[set.target] = value;
       }
     }
@@ -1079,7 +1242,13 @@ async function perform(
   return checkInvariants(s);
 }
 
-function agree(view: Node, identity: string, rows: Row[], expected: Rec[]): Disagreement | null {
+function agree(
+  ir: Node,
+  view: Node,
+  identity: string,
+  rows: Row[],
+  expected: Rec[],
+): Disagreement | null {
   if (rows.length !== expected.length) {
     return {
       kind: 'view-rows',
@@ -1100,7 +1269,17 @@ function agree(view: Node, identity: string, rows: Row[], expected: Rec[]): Disa
       seen.add(record);
       for (const field of fields) {
         if (!Object.prototype.hasOwnProperty.call(record.fields, field)) continue;
-        if (!equal(record.fields[field], row[field])) {
+        const declared = list(view.fields).find((entry: Node) => entry.name === field);
+        if (
+          !valueAgrees(
+            ir,
+            declared.type_ref,
+            declared.naming,
+            record.fields[field],
+            row[field],
+            Object.prototype.hasOwnProperty.call(row, field),
+          )
+        ) {
           return {
             kind: 'view-field',
             detail: `\`${view.name}\`.${field} of ${render(row[identity])} is ${render(row[field])}, the specification says ${render(record.fields[field])}`,
@@ -1166,7 +1345,7 @@ async function checkViews(s: Session, token: string): Promise<Disagreement | nul
           detail: `reading \`${view.name}\`, the target threw ${errorText(error)}`,
         };
       }
-      problem = agree(view, String(entity.identity.name), rows, expected);
+      problem = agree(ir, view, String(entity.identity.name), rows, expected);
       if (problem === null) break;
     }
     if (problem !== null) return problem;
@@ -1299,16 +1478,23 @@ async function replay(
         else setPath(input, path, (known[index] as Rec).id);
       }
       if (!resolvable) continue;
+      if (
+        (recorded.fresh ?? []).some(
+          ([path, entity]) => s.model.find(entity, readPath(input, path)) !== undefined,
+        )
+      )
+        continue;
       const step: Step = {
         command: recorded.command,
         input,
         refs: recorded.refs,
         external: recorded.external,
+        fresh: recorded.fresh ?? [],
       };
       const decision = decide(command, input, s.model);
       if (decision.kind !== 'take') continue;
-      const outcome = choices(s, command, decision).find(
-        (choice) => (isExternal(choice) ? String(choice.name) : '') === step.external,
+      const outcome = choices(s, command, decision, input).find(
+        (choice) => choice.arrangement === step.external,
       );
       if (outcome === undefined) continue;
       let found: Disagreement | null;
@@ -1324,7 +1510,7 @@ async function replay(
             };
           }
         }
-        found = await perform(s, command, step, outcome);
+        found = await perform(s, command, step, outcome.expected);
       } catch (error) {
         if (error instanceof Unsupported) continue;
         throw error;
@@ -1392,16 +1578,16 @@ export async function explore(
           exclude(p, command.name, decision.reason);
           continue;
         }
-        const available = choices(s, command, decision);
+        const available = choices(s, command, decision, step.input);
         if (available.length === 0) {
           if (decision.names !== undefined) {
             ambiguous.add(`${command.name}: ${decision.names.join(', ')}`);
           }
           continue;
         }
-        const outcome = available.length > 1 ? rng.pick(available) : available[0];
-        if (isExternal(outcome)) {
-          step.external = String(outcome.name);
+        const outcome = available.length > 1 ? rng.pick(available) : (available[0] as Choice);
+        if (outcome.arrangement !== '') {
+          step.external = outcome.arrangement;
           let arranging: Disagreement | null;
           try {
             arranging = await arrange(s, command, step.external);
@@ -1427,7 +1613,7 @@ export async function explore(
         }
         let disagreement: Disagreement | null;
         try {
-          disagreement = await perform(s, command, step, outcome);
+          disagreement = await perform(s, command, step, outcome.expected);
         } catch (error) {
           if (error instanceof Unsupported) {
             exclude(p, command.name, `the target does not expose it: ${error.message}`);
@@ -1437,7 +1623,7 @@ export async function explore(
         }
         executed += 1;
         trace.push(step);
-        reached.add(`${command.name}/${outcome.name}`);
+        reached.add(`${command.name}/${outcome.expected.name}`);
         if (disagreement !== null) {
           found = {
             kind: disagreement.kind,
@@ -1490,6 +1676,29 @@ export async function explore(
   return result;
 }
 
+/** Keep the Optional/identity witness and arranged cause when accepting a shorter failure. */
+function sameFailure(p: Plan, original: Found, replayed: Found): boolean {
+  if (original.kind !== replayed.kind) return false;
+  const last = original.executed[original.executed.length - 1];
+  const next = replayed.executed[replayed.executed.length - 1];
+  const command = p.commands.find((candidate) => candidate.name === last?.command);
+  const optional = (kind: Kind): boolean =>
+    kind.kind === 'optional' ||
+    (kind.kind === 'struct' && kind.fields.some(([, member]) => optional(member))) ||
+    (kind.kind === 'identity' && optional(kind.base));
+  if (
+    command === undefined ||
+    (unknownOutcome(command) === undefined && !command.inputs.some(([, kind]) => optional(kind)))
+  )
+    return true;
+  return (
+    last?.command === next?.command &&
+    last?.external === next?.external &&
+    equal(last?.fresh ?? [], next?.fresh ?? []) &&
+    original.message.split(' (step ')[0] === replayed.message.split(' (step ')[0]
+  );
+}
+
 /** Removes one step at a time, last to first, while the shorter trace still fails the same way. */
 async function shrink(
   p: Plan,
@@ -1512,7 +1721,7 @@ async function shrink(
       const candidate = current.filter((_, position) => position !== index);
       replays += 1;
       const again = await replay(p, newTarget, candidate, `explore/seed-${seed}/shrink-${replays}`);
-      if (again !== null && again.kind === found.kind) {
+      if (again !== null && sameFailure(p, found, again)) {
         current = candidate;
         shortest = again;
         removed = true;

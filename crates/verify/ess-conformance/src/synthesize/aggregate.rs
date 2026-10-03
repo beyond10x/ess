@@ -2154,16 +2154,12 @@ fn create_from(
     let Some((via, read)) = related_guard::reads(creator.command)
         .filter(|_| related_guard::routes(creator.command, creator.outcome))
     else {
-        return created_owned(
-            ir,
-            plan.handle,
-            creator,
-            actors,
-            distinction,
-            &[],
-            owner,
-            Some(input),
-        )
+        // This aggregate owns the related-row prelude and points the invocation at those
+        // captured rows below. The general creator arrangement would create them again,
+        // interleaving unused sources with the aggregate's rows and changing its witness.
+        return super::created_by(ir, plan.handle, creator, distinction, owner, |bound, _| {
+            Ok::<_, super::Unreachable>(super::invoke_with(ir, creator, None, actors, bound, input))
+        })
         .map(|created| (created, None))
         .map_err(|_| plan.unwitnessed(format!("row `{}` cannot be created", row.label)));
     };

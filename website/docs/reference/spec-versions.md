@@ -57,6 +57,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/18` | [0.41.0][r41] | Several states in `when_subject_state:`, `state` in `when_subject`, `when_related:`, and a binding's delivery context. |
 | `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
 | `ess/20` | [0.49.0][r49] | `state`, the related row's held lifecycle state, in a `when_related:` predicate. |
+| `ess/21` | Unreleased | `one_time_response:` names required String response fields whose values may be disclosed only by their originating response. |
 
 The paragraphs below give each version's rules.
 
@@ -275,8 +276,8 @@ Missing or duplicate rows fail. Legacy suite formats refuse these steps.
 `ess-conformance/12` and `/13`, introduced in [0.29.0][r29], add exact retained-result capture and
 comparison, plus an explicit empty-direct-event assertion. Version 12 is ordinary;
 13 carries the same declared coverage and exact-parent rules as earlier coverage
-formats. Rust and Go execute these steps with report/2; TypeScript/browser readers
-refuse these envelopes before target callbacks. Older envelopes refuse the new
+formats. Rust, Go and TypeScript execute these steps with report/2. Browser replay
+refuses these envelopes. Older envelopes refuse the new
 steps even if the rest of their document is well shaped.
 
 A write-once snapshot binds the actual original response, command/outcome, subject
@@ -291,9 +292,9 @@ test later-head and restart retries through their real handlers.
 
 `ess-conformance/14` and `/15`, introduced in [0.34.0][r34], carry a string operator where a suite carries a
 predicate: a `satisfies` expectation or an observed selection plan. Version 14 is ordinary and 15
-carries declared coverage; each implies every major below it. Rust and Go admit and evaluate them,
+carries declared coverage; each implies every major below it. Rust, Go and TypeScript evaluate them,
 and refuse an operand that is not a JSON string. Older envelopes refuse the operators, and the
-TypeScript and browser readers refuse these envelopes by their version. A string guard over
+browser replay refuses these envelopes by their version. A string guard over
 command input is decided at synthesis and never reaches the suite, so such a suite keeps its
 earlier format.
 
@@ -302,8 +303,8 @@ through the declared creating outcome with values only that scenario uses, and o
 every group's exact aggregates and the absence of every group whose rows the filter refuses.
 Version 16 is ordinary and 17 carries declared coverage; each implies every major below it.
 Coverage 17 also carries the refusals `ESS-SYNTH-016` (no group key or parameter scopes the
-view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust and Go admit and run them;
-older envelopes refuse an aggregate scenario or refusal, and the TypeScript and browser readers
+view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust, Go and TypeScript run them;
+older envelopes refuse an aggregate scenario or refusal, and browser replay readers
 refuse these envelopes by their version.
 
 `ess-conformance/18` and `/19`, introduced in [0.35.0][r35], carry fixture values: a leading `resolve_fixtures`
@@ -313,8 +314,7 @@ name, with literal and fixture values, so a later correct occurrence cannot hide
 one. Version 18 is ordinary and 19 carries declared coverage; each implies every major below it.
 Rust, Go and TypeScript resolve and validate the values before `BeginScenario` with report/2: a
 malformed, incomplete or wrongly typed value stops before any target activity, and a missing
-provider is an explicit skip. TypeScript admits these envelopes and still refuses the
-retained-result steps, string operators and aggregate scenarios of 12–17 by name. Browser replay
+provider is an explicit unsupported result. Browser replay
 refuses fixtures. A suite without fixtures keeps its earlier format, and older envelopes refuse
 the new steps.
 
@@ -330,8 +330,8 @@ suite without one in a view expectation keeps its earlier format.
 `ess-conformance/22` and `ess-conformance/23`, introduced in [0.37.0][r37], add three steps for the outcome
 shapes of `ess/15`: `expect_subject_absent` after a `deletes:` outcome, and `snapshot_view` /
 `expect_view_unchanged` around an `accepts: nothing` outcome. Version 22 is ordinary and 23
-carries declared coverage; each implies every major below it. The Rust runner evaluates them; Go and
-TypeScript refuse these envelopes by their version.
+carries declared coverage; each implies every major below it. Rust, Go and
+TypeScript execute these steps with report/2.
 
 `ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes execute both from 0.40.0 (beyond10x/ess#188); earlier runtimes refuse them by version. A suite without a policy keeps its earlier format.
 
@@ -347,7 +347,7 @@ A bounded retry (beyond10x/ess#165) belongs to this pair too: `configure_externa
 `expect_direct_response`, which checks the immediately preceding invocation's actual return
 against its complete typed response schema and any authored literals. Version 28 is ordinary;
 29 carries declared coverage and exact-parent lineage. The Rust runner requires report/2.
-Go and TypeScript generation refuse the observation, and older readers refuse these envelopes
+Go and TypeScript also execute the observation with report/2. Older readers refuse these envelopes
 before target callbacks. Released suites 26 and 27 retain their meaning and bytes.
 Direct responses preserve exact integers, nested presence policies, collection order and
 duplicate multiplicity; Binary64 remains outside the admitted profile. Responses are bounded
@@ -357,16 +357,16 @@ to 1 MiB, depth 128 and 65,536 members per collection, without truncation.
 (beyond10x/ess#195): `deliver_event` delivers one occurrence of an event from its external
 channel with the context that channel binds, and `expect_every_invocation` requires every
 invocation for one occurrence to carry what it was delivered with. Version 30 is ordinary; 31
-carries declared coverage. The Rust runner executes both; Go and TypeScript generation refuse
-them, and older readers refuse these envelopes before target callbacks. A suite without them
+carries declared coverage. Rust, Go and TypeScript execute both with report/2;
+older readers refuse these envelopes before target callbacks. A suite without them
 keeps its earlier format.
 
 `ess-conformance/32` and `ess-conformance/33`, introduced in [0.43.0][r43], carry instance references inside a structured value (beyond10x/ess#242): a `list` value's
 `items` and a `members` value's `members` are values of their own, each a `literal`, an `instance`
 or another `list` or `members`, and the runner resolves each one before it sends the whole. An
 authored `{$instance: …}` inside a list element, a map value or a struct member is written this
-way. Version 32 is ordinary; 33 carries declared coverage. The Rust runner resolves both; Go and
-TypeScript generation refuse them, and older readers refuse these envelopes before target
+way. Version 32 is ordinary; 33 carries declared coverage. Rust, Go and TypeScript resolve both
+with report/2. Older readers refuse these envelopes before target
 callbacks. A suite without them keeps its earlier format.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:

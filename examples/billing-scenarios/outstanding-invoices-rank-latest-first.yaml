@@ -42,6 +42,7 @@ timeline:
     command: billing.invoice.IssueInvoice
     input:
       invoice_id: {$instance: earlier}
+      issued_at: 2026-01-05T09:00:01Z
     outcome: issued
 
   - at: 2026-01-05T09:00:02Z
@@ -62,6 +63,7 @@ timeline:
     command: billing.invoice.IssueInvoice
     input:
       invoice_id: {$instance: later}
+      issued_at: 2026-01-05T09:00:03Z
     outcome: issued
 
 # The order the position is relative to is the view's own `order_by:`, filled in by the compiler.

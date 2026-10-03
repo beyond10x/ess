@@ -1,0 +1,8 @@
+format: ess/21
+system: credentials
+version: v1
+domain: credentials.api
+commands:
+  - name: credentials.api.Issue
+    response: [{name: secret, type: String}]
+    outcomes: [{name: issued, returns: true, one_time_response: [secret]}]

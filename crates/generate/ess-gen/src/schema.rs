@@ -221,6 +221,15 @@ fn message_document(
 ) -> Artifact {
     let sliced = mint.of_seeds([seed]);
     let root = Node {
+        one_time_response: if matches!(carried.kind, types::COMMAND_INPUT | types::COMMAND_RESPONSE)
+        {
+            ir.commands()
+                .get(carried.name)
+                .map(crate::one_time_response::command)
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        },
         dialect: Some(DIALECT),
         provenance: Some(Attribution::new(&sliced.provenance)),
         defs: types::definitions(ir, types::field_leaves(carried.fields)),

@@ -9,8 +9,8 @@
 //! # No clock, no randomness
 //!
 //! Invariant 9. Identifiers come from a per-store counter in the `Uuid` wire shape, so two runs of
-//! one suite produce the same ids; `issued_at` stays `None` because nothing here owns a clock —
-//! the conformance runner owns time, and no committed scenario asks for the field.
+//! one suite produce the same ids. `issued_at` stays absent in Draft and is copied from the
+//! explicit `IssueInvoice` input when issued; no target-owned clock fabricates that fact.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ use billing_types::invoice::{
     IssueInvoiceOutcome, Money, OutstandingInvoices, PayInvoice, PayInvoiceOutcome, Payee,
 };
 use billing_types::obligation::UnmetObligation;
-use billing_types::primitives::{Duration, Timestamp, Uuid};
+use billing_types::primitives::{Duration, Uuid};
 
 /// `amount.amount > 0`, decided on the wire rendering and never on a float.
 ///
@@ -60,20 +60,6 @@ impl Store {
             "00000000-0000-4000-8000-{:012}",
             self.sequence
         )))
-    }
-
-    /// The instant a write happens at, from the same counter and from no clock.
-    ///
-    /// `billing.invoice.OutstandingInvoices` ranks by `issued_at`, so two invoices issued in one
-    /// scenario have to be orderable — and a wall clock would make the declared order depend on how
-    /// fast the machine ran the two commands that filled it.
-    fn instant(&mut self) -> Timestamp {
-        self.sequence += 1;
-        Timestamp(format!(
-            "2020-01-01T00:{:02}:{:02}Z",
-            self.sequence / 60,
-            self.sequence % 60
-        ))
     }
 }
 
@@ -198,11 +184,10 @@ impl IssueInvoiceBehavior for InvoiceRealization {
         // the legal move is a method call and every other state is the declared `wrong-state`.
         match snapshot.refine() {
             AnyInvoice::Draft(invoice) => {
-                let issued_at = store.instant();
                 let mut issued = AnyInvoice::Issued(invoice.issue()).snapshot();
                 // The one field issuing an invoice fills. It is `Optional<Timestamp>` because a
                 // draft has no issuing instant, and it stops being absent exactly here.
-                issued.data.issued_at = Some(issued_at);
+                issued.data.issued_at = Some(input.issued_at);
                 store.invoices.insert(key, issued);
                 Ok(IssueInvoiceOutcome::Issued {
                     invoice_issued: InvoiceIssued {
@@ -335,7 +320,12 @@ impl OutstandingInvoicesQuery for InvoiceRealization {
         // The declared `order_by: issued_at desc`. The rows come out of a map keyed by identity,
         // and answering in that order would be answering in whichever order the store happened to
         // have — which is the promise this line exists to keep.
-        rows.sort_by(|left, right| right.issued_at.cmp(&left.issued_at));
+        let instant = |row: &OutstandingInvoices| {
+            row.issued_at
+                .as_ref()
+                .and_then(|at| ess_primitives::time::Rfc3339Instant::parse_rfc3339(&at.0))
+        };
+        rows.sort_by_key(|row| std::cmp::Reverse(instant(row)));
         Ok(rows)
     }
 }
@@ -343,6 +333,7 @@ impl OutstandingInvoicesQuery for InvoiceRealization {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use billing_types::primitives::Timestamp;
 
     /// The store the tests drive commands against.
     fn realization() -> (SharedInvoices, InvoiceRealization) {
@@ -432,6 +423,7 @@ mod tests {
         realization
             .issue_invoice(IssueInvoice {
                 invoice_id: kept.clone(),
+                issued_at: Timestamp("2026-01-05T09:00:01Z".to_owned()),
             })
             .expect("the obligation is satisfied");
         let rows = realization
@@ -459,6 +451,7 @@ mod tests {
         assert_eq!(
             realization.issue_invoice(IssueInvoice {
                 invoice_id: stranger.clone(),
+                issued_at: Timestamp("2026-01-05T09:00:01Z".to_owned()),
             }),
             Ok(IssueInvoiceOutcome::WrongStateUnknownInstance)
         );

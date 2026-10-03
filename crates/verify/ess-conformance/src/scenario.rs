@@ -155,68 +155,9 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::structured_values::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::structured_values::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::delivery_context::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::delivery_context::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::direct_response::used_by(self) {
-            SuiteFormat::parse("ess-conformance/28").expect("constant suite version")
-        } else if crate::leaf_payloads::used_by(self)
-            || crate::absent_input::used_by(self)
-            || crate::aggregate_delta::used_by(self)
-            || crate::now_offset::used_by(self)
-            || crate::caller_values::used_by(self)
-            || crate::view_paging::used_by(self)
-            || crate::bounded_retry::used_by(self)
-            || crate::grant::used_by(self)
-        {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::leaf_payloads::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::presence::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::presence::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::outcome_shapes::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::outcome_shapes::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::text_match_format::case_fold_used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::text_match_format::CASE_FOLD_ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::fixtures::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::fixtures::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::aggregate::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::aggregate::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::text_match_format::used_by(self) {
-            SuiteFormat::parse("ess-conformance/14").expect("constant suite version")
-        } else if crate::replay::used_by(self) {
-            SuiteFormat::parse("ess-conformance/12").expect("constant suite version")
-        } else if self.requires_preservation_format() {
-            SuiteFormat::parse("ess-conformance/10").expect("constant suite version")
-        } else if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
-            SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
-        } else if self.requires_extended_format() {
-            SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
-        } else {
-            SuiteFormat::CURRENT
-        };
+        self.provenance.scenario_initial_state = Some(ScenarioInitialState::Empty);
+        self.provenance.suite_version =
+            SuiteFormat::parse("ess-conformance/34").expect("constant suite version");
     }
 
     /// [`select_fresh_format`](Self::select_fresh_format), with the constructs only the model can
@@ -398,6 +339,17 @@ pub struct SuiteProvenance {
     /// other field here is text: a suite is read back, and validated names do not deserialize.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<String>,
+    /// Required logical namespace before each scenario's setup. Legacy suites leave this absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario_initial_state: Option<ScenarioInitialState>,
+}
+
+/// The lifecycle precondition of a newly synthesized suite, not a physical database reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScenarioInitialState {
+    /// No modeled rows, observations or invocation history in this scenario's logical namespace.
+    Empty,
 }
 
 impl SuiteProvenance {
@@ -427,6 +379,7 @@ impl SuiteProvenance {
             spec_digest: digest(projection.source_digest.as_str()),
             contract_digest: digest(projection.contract_digest.as_str()),
             component: None,
+            scenario_initial_state: None,
         }
     }
 }
@@ -438,7 +391,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33,
+    27, 28, 29, 30, 31, 32, 33, 34, 35,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -603,6 +556,11 @@ impl<'de> serde::Deserialize<'de> for SuiteFormat {
 /// reproduces the file byte for byte instead of producing a diff.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScenarioId {
+    /// A generated finite disclosure obligation, admitted only with suite/34 or /35 authority.
+    Disclosure {
+        /// Source origin, marked field, follow-up and actual caller identity.
+        cell: Box<crate::one_time_response::Cell>,
+    },
     /// One declared outcome of one command: `billing.invoice.CreateInvoice/outcome/rejected`.
     ///
     /// The primary unit (§10). An `external` outcome needs no separate spelling — it is still that
@@ -799,6 +757,9 @@ impl ScenarioId {
         let name = |raw: &str| QualifiedName::new(raw).map_err(|_| reject("has a malformed name"));
 
         match parts.as_slice() {
+            [_, "disclosure", ..] => crate::one_time_response::Cell::parse(value)
+                .map(|cell| Self::Disclosure { cell: Box::new(cell) })
+                .map_err(reject),
             [command, Self::OUTCOME, outcome] => Ok(Self::Outcome {
                 outcome: OutcomeRef::new(
                     CommandRef::new(name(command)?),
@@ -887,6 +848,7 @@ impl ScenarioId {
 impl fmt::Display for ScenarioId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Disclosure { cell } => cell.fmt(f),
             Self::Outcome { outcome } => write!(
                 f,
                 "{}/{}/{}",
@@ -1094,6 +1056,9 @@ impl<'de> serde::Deserialize<'de> for BindingAspect {
 /// One check, as a sequence of steps over an isolated execution context.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConformanceScenario {
+    /// Scenario-wide one-time observation authority; absent on every legacy suite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_time_response: Option<crate::one_time_response::Trace>,
     /// What this scenario proves, in one line, for the person reading a report.
     pub purpose: ScenarioPurpose,
     /// What to do, in order.
@@ -1126,6 +1091,7 @@ impl ConformanceScenario {
     ) -> Self {
         Self {
             purpose,
+            one_time_response: None,
             steps: steps.into_iter().collect(),
             source: source.into_iter().collect(),
         }
@@ -3095,12 +3061,14 @@ mod tests {
             "ess-conformance/31",
             "ess-conformance/32",
             "ess-conformance/33",
+            "ess-conformance/34",
+            "ess-conformance/35",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/34").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/36").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"
@@ -3162,6 +3130,7 @@ mod tests {
             )
             .expect("a digest"),
             component: None,
+            scenario_initial_state: None,
         }
     }
 }
