@@ -2,14 +2,21 @@
 format: aep.planning-md/3
 id: story:a-killed-childs-outcome-says-which-signal-ended-it
 kind: story
-status: draft
+status: active
 title: A killed child's outcome says which signal ended it
+relations:
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/recovery/process.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/execution_recovery.rs
-revision: 3
+- confidence: cited
+  path: crates/edge/ess-cli/tests/support/fake_recovery.rs
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-03T07:30:24Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-03T07:30:24Z", actor: "human:timo", revision: 5}
 ---
 # A killed child's outcome says which signal ended it
 
@@ -50,3 +57,9 @@ attributable from its output alone.
 
 - `crates/edge/ess-cli/src/recovery/process.rs` — `cited`
 - `crates/edge/ess-cli/tests/execution_recovery.rs` — `cited`
+
+## Integrated reviewed handoff
+
+The source owner's active story and independently reviewed commit0e7fb770827c10038985105c8f4997ea74545043 were transferred in the final handoff. Exact main e68684ef matches the patch parent on all three touched files, and the patch applied unchanged as d2fdeb4ca on the grouped release carrier. The diagnostic preserves actual Unix signal, existing timeout/indeterminate decisions, absent non-Unix signal, and complete assertion output. No serialized journal format or retry disposition changes.
+
+The original consumer-child-signal-pass1 review approves the exact patch with no findings. Retained evidence reports same-test red-to-green, execution_recovery120 passed/0 failed, formatting and strict lint. These are prior source-owner observations; final combined release gates remain required. No generic restart capability is claimed. The receiving coordinator preserves original source and review evidence until publication.

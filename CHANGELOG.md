@@ -69,6 +69,9 @@
 
 ### Fixed
 
+- Recovery process diagnostics retain the observed Unix termination signal separately from
+  timeout and exit status. Failure assertions print the complete outcome without guessing
+  which actor sent a signal; non-Unix platforms report no signal.
 - Contradictory integer equality invariants stay unsatisfiable in generated JSON Schema
   for required fields and integer newtypes, independent of declaration order. Optional
   fields retain their existing null and absence semantics.
