@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-363
 kind: story
-status: draft
+status: proposed
 title: One aggregate observation contains independently filtered measures
 refs:
 - provider: github
@@ -45,7 +45,9 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: cited
   path: docs/design/conditional-aggregate-measures.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-03T21:17:07Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"approval":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -63,7 +65,7 @@ One aggregate view row reports differently selected counts and sums from one que
 
 ## Decisions
 
-Accept the need, redesigned proposal pending independent design review: sibling aggregate.where, all existing function siblings, source22 fence, independent per-measure membership after outer grouping and before absent handling. The accepted runbook authorizes resolving this design; its detailed proposal is not yet approved or implemented. Keep source21 one-time responses, older bytes and explicit unsupported targets intact. An unsupported or skipped required target cannot satisfy closure.
+Accept the need with the independently approved redesigned contract in docs/design/conditional-aggregate-measures.md at256b5cf863d632ffae1a525b14abb312854745d9. Final review-result:conditional-aggregate-measures-363-20261003-r2 approves the whole design with zero findings after seven recorded round1 corrections. The approved component-design defines sibling aggregate.where for all six functions, source22, typed independent membership after grouping, exact old-byte/API compatibility, paging/diff/reader semantics, actual application/runner faults and finite work accounting. Source21 remains for one-time responses. No implementation or execution is claimed. Exact361/362/233/200 implementation dependencies remain prerequisites for dispatch; unsupported or skipped required targets cannot satisfy closure.
 
 ## Acceptance
 
