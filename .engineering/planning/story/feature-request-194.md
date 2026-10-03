@@ -11,6 +11,7 @@ refs:
   reference: beyond10x/ess#194
 relations:
 - serves: vision:O2
+- depends_on: story:feature-request-268
 revision: 2
 ---
 ## Outcome

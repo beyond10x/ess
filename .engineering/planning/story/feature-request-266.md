@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -57,3 +57,7 @@ Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), 
 ## Decisions
 
 - **accept, redesigned (coordinator, 2026-09-30; blocker cleared by a minimal reproduction):** bindings are eventual, so no synthesized step races one. Synthesis never sends a bound command explicitly to a subject a triggering step's binding will move; where every route to such a subject triggers the binding, the binding's own flow scenario is the witness and the direct scenario is named in coverage as not arrangeable without racing the binding. View expectations after a triggering step assert only what the binding leaves unchanged, or the settled state after the eventual window.
+
+## Current coordinated binding contract
+
+The 2026-10-03 remaining-bundle execution uses docs/design/binding-arrangement-and-drop.md as the concrete contract for #266/#267. Arrangement tracks eventual binding effects and never races a binding with an explicit route command. Drop needs one forced failed attempt and no retry, not an empty event log or zero attempted delivery. Exact total attempt count uses empty input plus the independent every-invocation mapped-input check; unsupported observation cannot pass. Required healthy/faulty controls are named in that document. This is coordinator resolution before implementation, pending independent design review; historical fit/scope prose remains evidence of intake, not current execution authority.

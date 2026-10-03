@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 33
+revision: 36
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -14,13 +14,15 @@ Operator direction on 2026-10-03: finish the remaining full bundle, integrate to
 
 ## Current facts
 
-The integration branch is batch/ui-live-apps-complete-20261003 in managed tree ess-w7-server-public. Current source checkpoint9f35a2d5d includes all60 selected runtime changes, retained #318, separately merged protocol PR411 via mergee6357a9e1, regenerated projections and examples672603099, and independently reviewed #292 with all three prospective review tests. Bot author and committer are verified. No bundle PR, merge, issue closure or new release has occurred in this continuation.
+The integration branch is batch/ui-live-apps-complete-20261003 in managed tree ess-w7-server-public. Source checkpoint9f35a2d5d includes all60 selected runtime changes, retained #318, separately merged protocol PR411 via mergee6357a9e1, regenerated projections/examples672603099, and independently reviewed #292 with all three prospective review tests. Planning8606b103c binds approved #391 transport and shared #228/#237/#299 row-set designs. Bot author and committer are verified. No bundle PR, merge, issue closure or new release has occurred in this continuation.
 
-The source nickname ess/21 bundle is a delivery boundary: source21 remains the one-time-response allocation and coordinated accepted additions use source22. The canonical backlog carrier ess-consumer-backlog-20261002 retains intake evidence; reconciled integration stories292 and nested-increment now own their execution evidence. Private untracked originals are never staged.
+Source21 remains one-time responses; coordinated syntax additions use source22. New conditional zero-invocation suite vocabulary is allocated ordinary36/inventory37 and conditional/refusal-policy diff vocabulary14; these are prospective explicit allocations, not implemented formats. Held suite34/35 meanings remain unchanged. Aggregate persisted vocabulary needs its own later explicit allocation before implementation.
 
-Combined pre-history build/generation/format and actual interpreted billing33, related-copy6, related-guard9 and subject-copy12 scenarios pass with no skipped/unsupported/error results. Those report/2 files explicitly retain inconclusive coverage status; they are execution results, not a whole-product conformance certificate. Common Gates passed at3e7db9aab over196 commits; rerun on the final candidate.
+Combined pre-history build/generation/format and actual interpreted billing33, related-copy6, related-guard9 and subject-copy12 scenarios passed without skipped/unsupported/errors. Those report/2 files retain inconclusive coverage status, not a whole-product certificate. Common Gates passed at3e7db9aab over196 commits and must rerun on the final candidate.
 
-The full #292 independent review approved exactcae6187ec plus154 test lines: history56, library109, neighbors132, primitive2, CLI1 with8 invocations and strict scoped lint. Record review-result:generated-history-complete-20261003-r1 holds the exact publication report. Combined-byte history verification is the first step of the following nested-correction unit.
+#292 full independent review approved exactcae6187ec plus154 test lines: history56, library109, neighbors132, primitive2, CLI1 with8 invocations and strict scoped lint. Record review-result:generated-history-complete-20261003-r1 holds the exact publication report. The integrated history56 tests also passed before the nested correction.
+
+Nested-increment author candidate1e12ada27 is frozen as a bot commit, not yet integrated. Author evidence:104 Rust tests,239 TypeScript runtime cases,150 generated Rust/Go scenario executions plus absent-parent atomicity, strict lint/fmt green. The two missing-Node-types probes were disclosed skips; actual typecheck is being resolved in independent review. Actual browser ordinary/coverage acceptance remains due after browser composition. Fresh full review1 is active in a separate managed tree; no approval or completion is inferred yet.
 
 ## Ordered route to main
 
@@ -124,17 +126,19 @@ No defensible wall-clock release ETA exists yet: multiple rows still require des
 
 ## Execution constraints and ownership
 
-Every integration step lands on batch/ui-live-apps-complete-20261003; no intermediate main merge. Workers may prepare disjoint bounded units but shared source and each approved wave integrate serially. Use managed trees, own leases, Rust executable source, full relevant tests and preserved review evidence. Root owns manifests, formats, generated output reconciliation, AEP, PR and release. Preserve third-session transport ownership. Do not reset other sessions' CI or delete their output.
+Every integration step lands on batch/ui-live-apps-complete-20261003; no intermediate main merge. Workers may prepare disjoint bounded units, but shared source and each accepted wave integrate serially. Use managed trees, own leases, Rust executable source, relevant tests and preserved independent review evidence. Root owns manifests, format allocations, generated output reconciliation, AEP, PR and release. Following the operator's transport answer and candidate discovery, root coordinates #391 completion in the same bundle; no third-session source has been taken over or discarded. Do not reset another session's CI or delete its output.
 
-The current resource contract is the final October handoff below: one ESS compiler lane, jobs1/debug0/incremental0/locked/offline, external TMPDIR and a 12884901888-byte free-space guard before expensive starts. Reclaim only identified idle owned build output; never touch another session cache or process. Disk is an execution constraint, not a waiver of tests.
+The current October resource contract remains one ESS compiler lane, jobs1/debug0/incremental0/locked/offline, external TMPDIR and a12884901888-byte free-space guard before expensive starts. Reclaim only identified idle owned build output; never touch another session cache/process. Disk is an execution constraint, not a waiver of required checks. Retain and correct scheduling deviations instead of claiming compliance retrospectively.
 
 ## Immediate next action
 
-The nested-increment worker owns the sole ESS compiler lane in managed tree ess-history-review-final-20261003, repurposed after finished history review onto unit/nested-increment-location-20261003 at9f35a2d5d. Exact prior review tests remain on review/generated-history-final-20261003 at20cadc51a and are already integrated. Its exclusive existing target cache is reused; raw evidence remains in separate immutable review scratch. The worker first verifies the integrated history56 tests, then measures and fixes nested-location regressions under the accepted story/design. Live browser acceptance remains due after actual browser-product composition; no legacy replay substitute is accepted.
+Independent nested-increment review owns the sole ESS compiler lane in managed tree ess-nested-increment-review-20261003 at1e12ada27, base9f35a2d5d. Author tree ess-history-review-final-20261003 is frozen and its lease released. Integrate only after review findings resolve; live browser acceptance and final task check remain required after composition.
 
-#282 retains its clean prospective test checkpoint803383acc on unit/serial-related-precedence-20261003. It receives the updated integration base and compiler lane after the Batch A nested correction. It may perform read-only preparation for #304 while waiting. Root owns binding design, AEP, integration, generated reconciliation and publishing.
+#282 retains clean prospective checkpoint803383acc. Update it from the integration branch and hand it the compiler after nested correction integrates, then implement/review #282, #304 Optional input, #304 stored reference and #319 serially. Root owns designs, AEP, integration, generated reconciliation and release.
 
-The operator answered the transport handoff question: “dont care, just integrate”. Root is discovering Claude-owned #391 and binding-completion candidates across current branches and retained evidence without another handoff question. This authorizes integration; it does not make uncommitted or unverified work complete. All original deferrals stay visible and open. Continue serial units through the complete A–I bundle, then one bot PR and verified release.
+Transport discovery found released #390 already integrated and no pending #391 source candidate or active ESS Claude handoff in the inspected Git/lease state. The operator's “dont care, just integrate” answer is being fulfilled by root-coordinated #391 completion. Approved design and active story391 are in8606b103c; worker scope_nested_increment prepares the unit in ess-parameterized-transport-20261003. The worker's early baseline/red Cargo starts before lane handoff are explicitly retained as a scheduling deviation in its scratch record; commands are terminal and no further compiler start is permitted until handoff. No output or process from another session was changed.
+
+Shared #228/#237/#299 design is approved by review2 with all seven findings fixed. #266/#267 design revision2 answers four observation/arrangement findings and awaits final design review; #268/#194/#269 conditional/policy design is in first independent review. Both remain unimplemented. Browser/aggregate planning was selectively reconciled in f8c35a975; binding causal-completion authority is still an open actual-adapter dependency and is distinct from #391 address rendering. Continue the full A–I scope before one bot PR/merge/release; preserve all original deferrals.
 
 ## Current resource contract from final handoff
 

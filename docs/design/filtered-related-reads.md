@@ -1,7 +1,7 @@
 # Filtered related reads (#299, coordinated ess/22)
 
-Status: revised binding design for the accepted remaining bundle; second independent design review
-and implementation are pending. This defines the family F row-set guard shared by #228 and #237, and the
+Status: binding design approved by second independent review on 2026-10-03; implementation is
+pending. This defines the family F row-set guard shared by #228 and #237, and the
 existing related-value source described in value-expressions.md E8. It does not add a view join.
 
 ## One selection, two consumers

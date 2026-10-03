@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T17:00:58Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-269",
+  "kind": "story",
+  "revision": 31,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:conditional-binding-design-20261003-r1",
+    "reference": "docs/design/conditional-binding-failure-policies.md#retry-budget",
+    "review": "review-result:conditional-binding-design-20261003-r1",
+    "outcome": "fixed"
+  }
+}
