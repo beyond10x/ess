@@ -13,14 +13,14 @@ relations:
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen
+- confidence: inferred
+  path: crates/generate/ess-synth
 - confidence: cited
   path: crates/specify/ess-compiler/src/ir.rs
 - confidence: inferred
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/view.rs
-- confidence: inferred
-  path: crates/synthesize/ess-synth
 - confidence: inferred
   path: crates/verify/ess-conformance/src/admission.rs
 - confidence: inferred
@@ -37,7 +37,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/conditional-aggregate-measures.md
-revision: 3
+revision: 4
 ---
 ## Outcome
 

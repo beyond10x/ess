@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -61,3 +61,7 @@ Required acceptance is all50 original tests plus the integrated genuine legacy m
 Candidate82803ca32c941eae3eceae6a262cd449b6ccca88 is integrated c166ffea49aff0d0a2bb2b7f79e4f160c487b4f0 after independent review-result:current-suite-compatibility-312-20261003-r1 approved with no findings. Actual author21/21 includes four generated-Go tests (12.66s), zero ignored/filtered, strict scoped Clippy and owning format0. Reviewer independently ran exact supplied native17/17, inspected and hash-verified author Go4 evidence, and did not recompile or rerun Go. That redundant rerun was withdrawn after repeated disk-floor refusals; no refusal is counted as execution. The original author actual Go acceptance remains the evidence, not a skip. Exact author logSHA9a4fb5010fd6e83181eedefb5c9c5279258987f691ab8c3ad48e4d3460a44b41; independent reviewSHA8a50f44a57e566143bc65742231ca6dde3cef1380186eb39f99848c02ab431a2. Public review is immutable; genuine legacy26/27 and current34/35 controls remain distinct.
 
 Five-file remaining mutation migration is source-prepared only, all50 tests preserved. PatchSHA20eed6695ca47f932b85c95541a9d1344f9f8e87f975a483908c677f65e146aa before formatting/execution; no green claim. The current-suite target is handed exclusively to that unit after retaining and verifying all three reviewed binaries. Root retired only terminal282 dev cache after retained546-test log and corrected14-test binary were hash-verified: Cargo dry-run/clean923files635.9MiB. Source/logs remain. Fresh disk subsequently exceeded21GB, permitting the external412 baseline to recheck its conditional start grant. Story312 and final bundle verification remain open.
+
+## Response field parser inventory correction
+
+Read-only diagnosisSHA832bdcc36f225ff517972e211e745f1ced18043103a27875f42c9bd81d1d6673 identifies the exact two new valid published-pattern sites behind underscore_field_names.rs:153-157 observing17 instead of15: src/go/response.go:525 and src/ts/response.ts:1138. They validate nested response roots, declarations and mapping members. Existing stale-regex rejection and exact count equality must remain. Author scope_nested_increment is assigned only that test file's explicit inventory/comment and15-to17 correction, with the independent copied-field307 control as a two-file verification unit. The retained original fullrun is the measured red baseline; actual complete test binaries, strict scoped lint, owning format and independent whole-unit review remain required. No regex/parser implementation change or skipped acceptance is authorized.
