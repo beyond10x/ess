@@ -37,6 +37,9 @@ pub struct Args {
     /// Go module identity, required only for Go.
     #[arg(long)]
     module: Option<String>,
+    /// How declarations are named: the qualified model name, or its last segment.
+    #[arg(long, value_enum, default_value_t = crate::model_types::Names::Qualified)]
+    names: crate::model_types::Names,
     /// Library destination, outside the specification input tree.
     #[arg(long)]
     out: PathBuf,
@@ -68,7 +71,9 @@ pub fn run(args: &Args) -> Result<ExitCode> {
                 return Ok(ExitCode::from(1));
             }
         };
-        let plan = schema_contract::realize::Plan::from_model(&selection)?;
+        let plan = args
+            .names
+            .apply(schema_contract::realize::Plan::from_model(&selection)?)?;
         Some((selection, plan))
     };
     let realization = match (&types, args.target) {

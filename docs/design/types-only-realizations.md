@@ -127,6 +127,28 @@ exact object closure and exclusive unions are still checked by JSON Schema.
 Runtime aliases, flattening, coercion and external dispatch absent from the source
 remain unimplemented rather than guessed. No implicit root discriminator is added.
 
+### Producer-facing model libraries (beyond10x/ess#406–#409)
+
+Four rules apply to **model input only**; bundle input keeps its output byte for byte, so no
+existing bundle adopter's API moves.
+
+- **Timestamps are native.** A `string` with `format: date-time` from a model `Timestamp` is
+  realized as Go `time.Time` and Rust `EssTimestamp(pub time::OffsetDateTime)`, both RFC 3339 on
+  the wire. A string that is not RFC 3339 is refused at decode. The Rust library then depends on
+  `time` (`=0.3.55`, features `formatting` and `parsing`), the version this workspace already
+  locks, so the offline gate can build it; `chrono` was not chosen for that reason.
+- **Anonymous shapes are named by position.** The name is the owning declaration followed by each
+  pointer step (`properties/<field>` → the field in UpperCamelCase, `items` → `Item`,
+  `additionalProperties` → `Value`, `prefixItems/N` → `PositionN`, `anyOf|oneOf|allOf/N` →
+  `VariantN`): Go `UsageRecordedUsage` for a `List<Measurement>` field. A positional name that is
+  already allocated falls back to the hash-derived `EssShape<hex>`, so a collision never refuses.
+- **A newtype fixed to one integer carries it.** Where a newtype's `const` is an integer (from
+  `value == N`), Rust emits `pub const VALUE` and `Default`, Go emits `const <Name>Value` and
+  `New<Name>()`. The constant is still a runtime obligation in the report.
+- **Short names are opt-in.** `--names short` on `ess generate types` and `ess generate client`
+  declares each component under the last segment of its qualified name and refuses
+  (`short_name_collision`) when two selected components share one. Bundle input refuses the flag.
+
 ## Language Mappings
 
 TypeScript emits declarations only. Required-nullable fields use `T | null` without
