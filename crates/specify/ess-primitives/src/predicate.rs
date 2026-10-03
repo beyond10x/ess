@@ -430,6 +430,10 @@ impl FactSource for WithNow<'_> {
         self.facts.present(path)
     }
 
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.facts.observed_presence(path)
+    }
+
     fn scales(&self) -> &Scales {
         self.facts.scales()
     }
@@ -679,8 +683,16 @@ impl FactSource for Element<'_> {
         self.inner.fact(&self.rebind(path))
     }
 
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        self.inner.observe(&self.rebind(path))
+    }
+
     fn present(&self, path: &FactPath) -> bool {
         self.inner.present(&self.rebind(path))
+    }
+
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.inner.observed_presence(&self.rebind(path))
     }
 
     fn scales(&self) -> &Scales {
@@ -769,7 +781,9 @@ impl Predicate {
             Self::Truthy(path) => facts
                 .observe(path)
                 .map_or(Truth::Unknown, |value| Truth::from_bool(value.is_truthy())),
-            Self::Defined(path) => Truth::from_bool(facts.present(path)),
+            Self::Defined(path) => facts
+                .observed_presence(path)
+                .map_or(Truth::Unknown, Truth::from_bool),
             Self::AnyOf { path, values } => {
                 facts.observe(path).map_or(Truth::Unknown, |observed| {
                     Truth::from_bool(values.contains(&observed))
@@ -2129,6 +2143,75 @@ mod tests {
     fn quantifier(yaml: &str) -> Predicate {
         let node: Node = serde_yaml::from_str(yaml).expect("yaml");
         Predicate::from_node(&node).expect("parses")
+    }
+
+    struct UnobservedPresence;
+    impl FactSource for UnobservedPresence {
+        fn fact(&self, path: &FactPath) -> Option<FactValue> {
+            matches!(
+                path.to_string().as_str(),
+                "groups.count" | "groups.0.members.count"
+            )
+            .then(|| FactValue::count(1))
+        }
+        fn observe(&self, path: &FactPath) -> Option<FactValue> {
+            if path.to_string() == "groups.0.members.0.virtual" {
+                Some(FactValue::count(7))
+            } else {
+                self.fact(path)
+            }
+        }
+        fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+            match path.segments().last().map(String::as_str) {
+                Some("optional") => None,
+                Some("required") => Some(true),
+                _ => Some(false),
+            }
+        }
+    }
+
+    #[test]
+    fn unobserved_presence_keeps_kleene_logic_and_current_time_wrapping() {
+        let now =
+            crate::time::Rfc3339Instant::parse_rfc3339("2026-10-03T12:00:00Z").expect("valid time");
+        let wrapped = WithNow::new(&UnobservedPresence, now);
+        for facts in [&UnobservedPresence as &dyn FactSource, &wrapped] {
+            let unknown = parse("defined(optional)");
+            assert_eq!(unknown.evaluate(facts), Truth::Unknown);
+            assert_eq!(
+                Predicate::not(unknown.clone()).evaluate(facts),
+                Truth::Unknown
+            );
+            assert_eq!(parse("defined(required)").evaluate(facts), Truth::True);
+            assert_eq!(parse("defined(absent)").evaluate(facts), Truth::False);
+            for children in [
+                vec![unknown.clone(), Predicate::Never],
+                vec![Predicate::Never, unknown.clone()],
+            ] {
+                assert_eq!(Predicate::All(children).evaluate(facts), Truth::False);
+            }
+            for children in [
+                vec![unknown.clone(), Predicate::Always],
+                vec![Predicate::Always, unknown.clone()],
+            ] {
+                assert_eq!(Predicate::Any(children).evaluate(facts), Truth::True);
+            }
+        }
+    }
+
+    #[test]
+    fn nested_binders_forward_unobserved_presence_and_observation() {
+        for (body, expected) in [
+            ("defined(member.optional)", Truth::Unknown),
+            ("defined(member.required)", Truth::True),
+            ("defined(member.absent)", Truth::False),
+            ("member.virtual == 7", Truth::True),
+        ] {
+            let predicate = quantifier(&format!(
+                "forall: {{in: groups, as: group, that: {{forall: {{in: group.members, as: member, that: '{body}'}}}}}}"
+            ));
+            assert_eq!(predicate.evaluate(&UnobservedPresence), expected, "{body}");
+        }
     }
 
     /// Two slots, the first matched and the second not.

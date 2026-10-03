@@ -711,6 +711,125 @@ pub(crate) fn fields(
     Ok(values)
 }
 
+/// A bounded existence candidate for history proofs. It carries no observed-value authority.
+/// Uses the ordinary primitive bases, but tries productive union alternatives and empty recursive
+/// containers without changing synthesis's existing candidate ordering.
+#[allow(
+    clippy::items_after_statements,
+    clippy::too_many_lines,
+    reason = "the bounded recursive builder is private to this proof candidate operation"
+)]
+pub(crate) fn proof_base(
+    ir: &EssIr,
+    kind: &ResolvedTypeRef,
+    budget: &crate::input::ProofBudget,
+) -> Option<Node> {
+    budget.witness_candidate()?;
+    fn build(
+        ir: &EssIr,
+        kind: &ResolvedTypeRef,
+        budget: &crate::input::ProofBudget,
+        active: &mut BTreeSet<String>,
+        depth: usize,
+    ) -> Option<Node> {
+        budget.charge(1).ok()?;
+        if depth > MAX_TYPE_DEPTH {
+            return None;
+        }
+        match kind {
+            ResolvedTypeRef::Optional { .. } => Some(Node::Null),
+            ResolvedTypeRef::List { .. } => Some(Node::Seq(Vec::new())),
+            ResolvedTypeRef::Map { .. } => Some(Node::Map(BTreeMap::new())),
+            ResolvedTypeRef::Primitive { name } => {
+                if *name == Primitive::Binary64 {
+                    return None;
+                }
+                budget.charge(128).ok()?;
+                Some(primitive_value(
+                    *name,
+                    &FactPath::new("generated").expect("static path"),
+                    Distinction::PLAIN,
+                ))
+            }
+            ResolvedTypeRef::Declared { name } => {
+                let declared = ir.named_type(name);
+                for segment in declared.name.segments() {
+                    budget.charge(1 + segment.len()).ok()?;
+                }
+                let key = declared.name.to_string();
+                if !active.insert(key.clone()) {
+                    return None;
+                }
+                let result = (|| match &declared.body {
+                    ResolvedBody::Newtype {
+                        of,
+                        prefix,
+                        alphabet,
+                        ..
+                    } => {
+                        let mut value = build(ir, of, budget, active, depth + 1)?;
+                        if let Node::Text(text) = &mut value {
+                            if let Some(prefix) = prefix {
+                                budget.charge(prefix.len().checked_add(text.len())?).ok()?;
+                                *text = with_prefix(text, prefix);
+                            }
+                            if let Some(alphabet) = alphabet {
+                                budget
+                                    .charge(alphabet.len().checked_mul(text.len().max(1))?)
+                                    .ok()?;
+                                *text = into_alphabet(text, alphabet);
+                            }
+                        }
+                        Some(value)
+                    }
+                    ResolvedBody::Enum { variants } => {
+                        let variant = variants.first()?;
+                        budget.charge(variant.name().len()).ok()?;
+                        Some(Node::Text(variant.name().to_owned()))
+                    }
+                    ResolvedBody::Struct { fields, .. } => {
+                        let mut values = BTreeMap::new();
+                        for field in fields {
+                            budget.charge(1 + field.name.len()).ok()?;
+                            values.insert(
+                                field.name.clone(),
+                                build(ir, &field.type_ref, budget, active, depth + 1)?,
+                            );
+                        }
+                        Some(Node::Map(values))
+                    }
+                    ResolvedBody::Union { tag, variants } => {
+                        for (label, kind) in variants {
+                            budget.witness_candidate()?;
+                            budget.charge(1 + tag.len() + label.len()).ok()?;
+                            if let Some(value) = build(ir, kind, budget, active, depth + 1) {
+                                let value = Node::Map(BTreeMap::from([
+                                    (tag.clone(), Node::Text(label.clone())),
+                                    (ess_gen::schema::union_content_key(tag).into(), value),
+                                ]));
+                                if crate::input::validate_typed_value_bounded(
+                                    ir,
+                                    &ResolvedTypeRef::Declared { name: name.clone() },
+                                    &value,
+                                    budget,
+                                )
+                                .is_ok()
+                                {
+                                    return Some(value);
+                                }
+                            }
+                        }
+                        None
+                    }
+                })();
+                active.remove(&key);
+                result
+            }
+        }
+    }
+    build(ir, kind, budget, &mut BTreeSet::new(), 0)
+}
+
 /// The optional inputs, and optional members of inputs, that a branch copies into an emitted event
 /// field declaring a presence policy or holding a struct member that does (beyond10x/ess#139), and
 /// that no guard reads — neither the input itself nor anything under it.

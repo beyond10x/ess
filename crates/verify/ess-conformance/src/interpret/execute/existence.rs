@@ -1,8 +1,8 @@
 //! Existence is read from actual typed rows, and creation follows its declared identity source.
 use super::{
-    caller::Invocation, input, refusal, select, value, EssIr, Externals, Node, ResolvedCommand,
+    input, refusal, select, value, Context, EssIr, Externals, Node, ResolvedCommand,
     ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
-    ResolvedPayloadValue, Step, Store, Undetermined, Work,
+    ResolvedPayloadValue, State, Transition, Undetermined, Work,
 };
 
 pub(super) fn identity_source(outcome: &ResolvedOutcome) -> Option<&ResolvedPayloadField> {
@@ -22,7 +22,7 @@ pub(super) fn identity_source(outcome: &ResolvedOutcome) -> Option<&ResolvedPayl
 }
 
 /// Generated fallback identities use the same bounded collision search as ordinary generation.
-pub(super) fn generated(source: Option<&ResolvedPayloadField>, input: &Invocation<'_>) -> bool {
+pub(super) fn generated(source: Option<&ResolvedPayloadField>, input: &Context<'_>) -> bool {
     match source.map(|source| &source.value) {
         None | Some(ResolvedPayloadValue::Generated) => true,
         Some(ResolvedPayloadValue::InputOrGenerated {
@@ -37,12 +37,14 @@ pub(super) fn generated(source: Option<&ResolvedPayloadField>, input: &Invocatio
 pub(super) fn identity(
     ir: &EssIr,
     source: &ResolvedPayloadField,
-    input: &Invocation<'_>,
+    input: &Context<'_>,
     work: &mut Work<'_>,
 ) -> Result<Node, Undetermined> {
-    let identity = value(ir, source, input, work)?.ok_or_else(|| Undetermined::NoValue {
-        what: "the declared creation identity".into(),
-    })?;
+    let identity = value(ir, source, input, work)?
+        .ok_or_else(|| Undetermined::NoValue {
+            what: "the declared creation identity".into(),
+        })?
+        .require("the declared creation identity")?;
     input::validate_typed_value(ir, &source.target_type, &identity)
         .map_err(Undetermined::Request)?;
     Ok(identity)
@@ -51,10 +53,10 @@ pub(super) fn identity(
 pub(super) fn existing(
     ir: &EssIr,
     command: &ResolvedCommand,
-    store: &Store,
-    input: &Invocation<'_>,
+    store: &State,
+    input: &Context<'_>,
     externals: &Externals,
-) -> Result<Option<Step>, Undetermined> {
+) -> Result<Option<Transition>, Undetermined> {
     let Some(refused) = command
         .outcomes
         .iter()
@@ -108,6 +110,7 @@ pub(super) fn existing(
             externals,
             &std::collections::BTreeMap::new(),
             input.caller,
+            input,
         )?;
         if selected.len() > 1 {
             return Err(Undetermined::NotInterpreted {

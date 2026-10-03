@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 26
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T15:42:34Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-03T15:42:34Z", actor: "human:timo", revision: 4}
@@ -417,3 +417,11 @@ Operator resumes the full held bundle through its sole integration coordinator. 
 The integration checkout's original draft mirror is reconciled through AEP with the accepted story body and typed scope from the consumer-backlog store, active revision30, before source integration. Original transitions remain in that retained checkout and Git history; the transitions here record this continuation's adoption under the operator's explicit full-bundle instruction, not fabricated past timestamps. The source artifact checksum and verbatim body are retained in local-evidence:ess21-completion/resume-verification. No private untracked review original was imported. This integration record now owns subsequent292 bundle evidence.
 
 All18 implementation files matched the author's final checksum manifest before coordinator bot commitcae6187ecf1d3a5c98fed636beb7a2174e1d1e80. Author verification reports53history,109library,132native/search/view neighboring,2primitive and1CLI harness tests passing, with8real CLI invocations preserving statuses0/1/2/3; strict scoped Clippy/fmt/diff checks pass. Original logs and report are retained at local-evidence:ess21-completion/history-implementation. These are the author's measured results on the frozen unit, not combined integration results. Full-candidate independent review pass1 is running in managed ess-history-review-final-20261003; no source integration, issue closure or release yet.
+
+## Complete candidate independent review and integration
+
+Full candidate cae6187ecf1d3a5c98fed636beb7a2174e1d1e80 received independent tests-only review pass1, recorded unchanged in review-result:generated-history-complete-20261003-r1. Three prospective tests passed without production changes. Final evidence: history56, library109, nineteen neighboring binaries132, primitives2, CLI1 with8 distinct status invocations; targeted strict Clippy, scoped formatting and diff check passed. No verified finding; nested-increment target location remains the separate accepted correction.
+
+The reviewer supplied its required standalone approve line after one report-shape correction; no finding or result was changed. Raw report SHA256 3d9885c7c59f5a5d98c9667538cae17f901d03ddb8d1740f410c0b3a390caaa8; publication report SHA256 0a9d9ec07881a67992ca7245a0feb60aa644eb81c75a756918b9edcf6f58e8c1. Earlier command outputs were copied from the tool transcript with that provenance, not rerun to fabricate historical logs.
+
+Integration applies the exact reviewed candidate delta onto current bundle source and retains all154 lines of independent regression additions. The candidate's complete generated-history-values design is added because the bundle lacked its prior design baseline; no unrelated carrier ancestry is imported. These are candidate checks; combined-byte checks and final bundle CI/release remain due. Local integration does not close the GitHub issue or claim release.
