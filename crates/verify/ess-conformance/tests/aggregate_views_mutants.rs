@@ -5,7 +5,8 @@
 //! defects it would otherwise share — and a `Mutant` switches in one defect at a time. Each mutant
 //! must fail exactly the scenarios the page says catch it, and the implementation as specified must
 //! pass all of them. The Go lane runs the same suite against a Go port of the target (correct, and
-//! one mutant); the TypeScript lane must refuse the suite before any callback.
+//! one mutant); the TypeScript lane admits the current suite and constructs the target, whose
+//! deliberate error proves that execution crossed the admission boundary.
 mod support_versions;
 
 use std::cell::{Cell, RefCell};
