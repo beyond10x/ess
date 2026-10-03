@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -344,3 +344,13 @@ The next response-value family is authored in the two existing scoped Rust test 
 Retained response-value-forms-authored.md digest 86e8a4f3587497116a98e1cf72200808283aef8b99764845b46085262e1b7c0f; source checkpoint digest 1e1b97f3b240f862edc741d89d374300895e0451a1953967890a30b89d7291ab. The prior stale-output fix remains unchanged at player digest 236720ab7c97b71efb3a40bcc3194e8fa05b73000d219d629a140381cd33c837.
 
 After the history CLI terminal result released the compiler lane, the browser worker was cleared to reacquire its cache lease and run scoped cargo check, completed_output_is_cleared_when_coverage_selection_or_runtime_changes, then optional_presence_and_nested_ordered_values_execute_in_both_browser_routes sequentially. Native cache path is target/native-build; WASM keeps its separate existing target/browser-wasm. The 12,884,901,888-byte pre-start floor, one job, debug disabled, incremental disabled and external temporary directory remain required. No cleanup, broader matrix, commit or publication was authorized by this handback.
+
+## Persistent stale-output and response value forms measured green
+
+Both newly scheduled exact browser tests passed without source repairs. completed_output_is_cleared_when_coverage_selection_or_runtime_changes: 1 passed, 0 failed, exit 0, 37.56 seconds; log SHA256 fd25e96a886d26b775bb9cb74dae307f07a956282155651b3f9979720db1376c. The actual emitted healthy host completed three passing runs in Firefox. Root independently read the retained lifecycle receipt: selection changed the selected digest, restore recovered the original digest, all six obsolete download URLs were revoked, and Select/Restore/Reconnect each left empty results, no links and disabled pagination. This closes the persistent regression execution gap for the previously retained stale-output red; it does not close final product review or in-flight stale-completion coverage.
+
+optional_presence_and_nested_ordered_values_execute_in_both_browser_routes: 1 passed, 0 failed, exit 0, 42.28 seconds; log SHA256 6411a3624a67317ddc347f29d33d2ca99895fe8984ae8cdf6d6230a0ba864984. Exact authored source was admitted. Fourteen actual Firefox executions covered seven scenarios on each ordinary/coverage route with seven independent installation modes. Each healthy mode passed all seven; each of six fault modes passed six and failed its exact named scenario. All reports contain zero skipped, unsupported and error counts. Faults detect required-null omission, forbidden null, nested-list reordering, duplicate loss, adjacent integer corruption above 2^53, and a missing present response.
+
+Root independently compared all fourteen complete native/browser report pairs and all fourteen complete run pairs byte-for-byte and read report verdicts. Healthy ordinary execution remains conformance-inconclusive because it has no coverage claim; healthy coverage execution reports conformance-passed. All twelve fault executions report conformance-failed. These measured semantic fault failures are the intended regression controls, not twelve failing Cargo tests. This is one focused run per test, not repeated full gate or all-feature acceptance.
+
+Private receipt roots retain completed-output-lifecycle-5-1375160 and response-value-forms-{4,5}-1380886, including actual DOM/BiDi, original product, source, module builds and native/browser reports. Broader capability families, resource-boundary evidence, native neighbors, strict lint and independent final review remain open. No source commit, independent PR, publication retry or release blocker resolution follows from these results. All four frozen runtime handoff digests were rechecked unchanged.
