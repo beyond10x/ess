@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T22:35:37Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Fresh seven-target actual run: 82 passed, 1 unchanged Go upsert failure, 0 ignored/filtered; owned authored/aggregate six passed; scoped lint capacity-refused before start; no whole-run green claim",
+    "reference": "sha256:affa9587191eeae1f85fad8ba56a7b6e10cacbff0b72be7d1dc74262762a8ef3"
+  }
+}
