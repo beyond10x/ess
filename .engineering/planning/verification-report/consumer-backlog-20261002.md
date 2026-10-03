@@ -6,7 +6,7 @@ status: draft
 title: Consumer backlog reconciliation and delivery ledger
 relations:
 - verifies: task:consumer-backlog-20261002
-revision: 35
+revision: 37
 ---
 ## Current reconciliation, 2026-10-03
 
@@ -812,3 +812,11 @@ Read-only GitHub query still reports published release0.51.0, published2026-10-0
 The independent release owner's local tree is clean at5a5ac7f74d0ffdfcb9d91d395053620729b78254. Its log records consolidation of the reviewed EKR generator change (b0db254c2) and reviewed integer equality correction (7f99f8168), plus regression/review evidence. This is observed source progress, not this root's execution or remote release evidence. Preserve the owner's single-candidate policy and do not dispatch another Gate or modify their live tree.
 
 Root's cross-thread read bridge still fails transport to its configured endpoint. The frozen runtime handoff plus actual-response addendum remains durable; no integrator acknowledgment is claimed. Work continues locally: nested native and Go first acceptance controls pass per worker report, broader TS/WASM/adversary work remains;293 actual clean-source red and292 expanded design are now recorded and independently under review. Story statuses distinguish recorded evidence, accepted design and unfinished implementation.
+
+## Disk coordination and frozen nested candidate
+
+On the integrator's disk coordination request, root inspected only its own completed outputs and removed 21 exact reviewed compiler-cache directories from the runtime carrier. First 15 directories total 1.05 GiB and six additional old fixture target directories bring the measured apparent-byte total to 1.24 GiB. No managed tree, source, fixture source, logs, evidence, frozen reader, active servers/synthesis cache or another owner's output was removed. Exact path/byte/process-check manifests remain in carrier target/backlog-input/disposable-cleanup-20261003.* and disposable-cleanup-2.*. Both original frozen handoff hashes verify unchanged after cleanup. Shared available space continues changing with other sessions; root reports only observed availability, not exclusive headroom.
+
+Own new compiler starts require at least 12 GiB while release398 verifies; existing work is not killed.293 actual repository regression red completed0passed/2failed with terminal101 before production edits; implementation continues without builds during the resource hold.292 has prepared Rust regressions only and waits for a cache. Those source trees and evidence remain retained.
+
+Nested response owner freezes13source/test files against5c5aeaf795 as patch9e87ddaef39cd06666bd962763e18a8fe633d5f037a2fb45c4058a16d23631be. Updated owner report8c622ff51baa2fa9dc4a420a342cdb1405197cc2f4ce531603cea72660cfd689 records actual native/Go/strict-TypeScript matrices, old-reader rejection and earlier actualWASM success. Exact frozen-source final all-target ess-conformance/ess-synth Clippy exits0, log7b9d847b9d7735c1b7ca93736b79c2a1091fec72292c31dfb4cacbdd10a17204. Final post-structural-correction warm WASM remains queued until disk threshold permits. This is owner evidence, not an independent rerun or approval. Root source inspection and independent adversary review are underway; no nested commit/import/publication yet. Added source scopes are path.rs plus support_nested_response/{admission,foreign,values}.rs and the originally planned WASM test; TypeScript runtime delta only wraps an existing diagnostic call for its style gate.

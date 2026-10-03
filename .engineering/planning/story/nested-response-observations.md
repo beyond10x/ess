@@ -34,11 +34,17 @@ scope:
   path: crates/verify/ess-conformance/tests/runtime_parity_go_28_35.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/runtime_parity_typescript_28_35.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/support_nested_response/admission.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/support_nested_response/foreign.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/support_nested_response/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/support_nested_response/values.rs
 - confidence: inferred
   path: docs/design/nested-response-observations.md
-revision: 10
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -90,3 +96,11 @@ Proposal327839ef111a6a7ee7f4f94e8ea65ba5ea8baa305c5086dd19b9f6cde6b27474 is reta
 Implementation owner preserved an actual pre-amendment reader binary linked against runtime046db8a680 before production changes. Binary SHA256663b007524dba832bae388425bdf59bca6ca414c5ea5c3e524065a6ad05a23ac; source/dependency diff against that checkpoint is empty. It admits original healthy suite39380b6a20ad97e89587879d08280c8b7bcd51c932cacd6e060dd968c868e0b9 under suite34 with1scenario, exit0. Exact source/lock/build log/binary/hash manifest are privately retained under ess-nested-response-probe-20261003/frozen-reader. The frozen copy will not be rebuilt after authority changes. No new-envelope rejection has been claimed before a real generated nested suite exists.
 
 In managed ess-nested-response-observations-20261003, repository test binary nested_response_observations now runs3tests against unchanged production:1passes (healthy and generated-sibling control),2fail independently because wrong response and wrong event each return Passed. Terminal101; target/backlog-input/nested-response-red.log and exit retained. Production implementation started only after that observed red. Owner branch fix/nested-response-observations-20261003 begins at5c5aeaf795, exclusive synthesis cache and live lease. No full workspace build or remote gate was started. All four runtime matrices and independent implementation review remain pending.
+
+## Disk coordination and frozen nested candidate
+
+On the integrator's disk coordination request, root inspected only its own completed outputs and removed 21 exact reviewed compiler-cache directories from the runtime carrier. First 15 directories total 1.05 GiB and six additional old fixture target directories bring the measured apparent-byte total to 1.24 GiB. No managed tree, source, fixture source, logs, evidence, frozen reader, active servers/synthesis cache or another owner's output was removed. Exact path/byte/process-check manifests remain in carrier target/backlog-input/disposable-cleanup-20261003.* and disposable-cleanup-2.*. Both original frozen handoff hashes verify unchanged after cleanup. Shared available space continues changing with other sessions; root reports only observed availability, not exclusive headroom.
+
+Own new compiler starts require at least 12 GiB while release398 verifies; existing work is not killed.293 actual repository regression red completed0passed/2failed with terminal101 before production edits; implementation continues without builds during the resource hold.292 has prepared Rust regressions only and waits for a cache. Those source trees and evidence remain retained.
+
+Nested response owner freezes13source/test files against5c5aeaf795 as patch9e87ddaef39cd06666bd962763e18a8fe633d5f037a2fb45c4058a16d23631be. Updated owner report8c622ff51baa2fa9dc4a420a342cdb1405197cc2f4ce531603cea72660cfd689 records actual native/Go/strict-TypeScript matrices, old-reader rejection and earlier actualWASM success. Exact frozen-source final all-target ess-conformance/ess-synth Clippy exits0, log7b9d847b9d7735c1b7ca93736b79c2a1091fec72292c31dfb4cacbdd10a17204. Final post-structural-correction warm WASM remains queued until disk threshold permits. This is owner evidence, not an independent rerun or approval. Root source inspection and independent adversary review are underway; no nested commit/import/publication yet. Added source scopes are path.rs plus support_nested_response/{admission,foreign,values}.rs and the originally planned WASM test; TypeScript runtime delta only wraps an existing diagnostic call for its style gate.
