@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 15
+revision: 16
 ---
 ## Authority and delivery
 
@@ -123,3 +123,5 @@ Operator clarified: "the goal is to have the least amount of PRs - organize with
 Fresh GitHub read at this checkpoint:399 transport has four test shards in progress and its completed checks successful;401 integer-newtype bounds has Checks/planning/build archives/output-ownership in progress, docs/common checks successful.398 release remains separately owned, with Checks/Test2/Test3/Gate failed on its published head. Preserve ongoing verification; no reset, replacement or mutation of these PRs by this coordinator. Upcoming client publishers remains third Claude ownership; release owner01a0feb8 has been asked to coordinate its minimum-PR boundary and relay the directive. These observations are time-specific, not final CI verdicts.
 
 Local integration validation: task ci-lint exit0 on728734b61; subsequent0e00f6720 changes only two AEP evidence files, source diff exit0. task site-build exit0 on0e00f6720, including actual WASM/browser lab and Docusaurus. Exact logs/exits retained in assigned serial scratch delivery/verification. Common check at0e00f6720 passed, scanned120commits; branch publish exit0. Both owned check process groups exited, clean unit checkout verified. No source release or full workspace CI completion claimed.44 completed test executables were removed by exact reviewed owned paths after package completion; all source and evidence retained. Unit checkout retained for CI followups, next owner coordinator; integration checkout remains active for shared candidate reconciliation.
+
+Runtime coordinator01a0fbbb explicitly acknowledged the consolidation: one shared held integration PR, this coordinator sole branch/PR integrator, same batch/ui-live-apps-complete-20261003 branch; no separate runtime parent PR or replacements for399/401. It retains runtime units and canonical backlog AEP; our five story/runbook records remain ours. It will supply a reviewed source-only manifest excluding318/393/394/transport after312 freezes; its response unit is active. Shared source baseline0e00f67201b70e9f02f5ca335ec7c81998a37213, merge-base1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036; latest observed origin/mainf5be9eafd3190e05e4cc053f260112cfc634e7d5. No wholesale carrier merge. This acknowledgement supersedes the proposal-pending sentence above. Frozen-manifest dependency and full ess/21 hold remain open.
