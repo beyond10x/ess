@@ -152,9 +152,9 @@ fn no_runtime_spells_the_field_name_rule_other_than_the_specification_does() {
     );
     // runtime.go ×4, replay.go, reading.go, reading.ts, runtime.ts, predicate.go, predicate.ts,
     // coverage-admission.js twice (fact grammar and operand classifier), direct_response.ts,
-    // one_time_response.ts and one_time_identity.go.
+    // one_time_response.ts, one_time_identity.go, response.go and response.ts.
     assert_eq!(
-        current, 15,
+        current, 17,
         "every check this file knows of carries the published rule"
     );
 }
