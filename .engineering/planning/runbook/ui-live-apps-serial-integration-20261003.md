@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 42
+revision: 43
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -320,3 +320,33 @@ The #282 focused conformance build passed but left a16GiB target, predominantly 
 Coordinator authorized that exact package cache clean and an explicit build-profile amendment: CARGO_PROFILE_DEV_STRIP=symbols and CARGO_PROFILE_TEST_STRIP=symbols on all subsequent unit checks. Existing Rust1.98.1, jobs1, debug0, incremental0, locked/offline, own in-tree target and outside-Git TMPDIR controls remain. The integer free-space floor is checked before every expensive start. This changes disposable binary size, not acceptance scope or test behavior. Retain both profile identities and the clean/result logs; no earlier pass is rewritten as a result under the new profile.
 
 The completed nested reviewer confirmed its clean source at7cba6e0fc and all external review-log hashes, with no process using its2.8GiB target. That target remains preserved for the upcoming independent review; no cleanup was performed there. Unrelated repository caches/processes remain outside this task's authority.
+
+## Verification followups after capacity recovery
+
+#282's scoped clean completed; compiler capacity recovered and stripped-profile focused domain
+controls passed4/4. The final affected-package command completed with exit101 at
+adversary_275_pass2::adversary_275_p2_every_dropped_swap_is_noted_and_every_drawn_identity_is_unshared:
+two swapped runs supplied the same value2.0. Its target reported6passed/1failed. This remains an
+unresolved combined-candidate failure; pre-existing versus regression attribution requires exact
+baseline execution. The author is not authorized to change that separate class under282.
+
+Root source inspection also identified that accepting When branches and present-related refusals
+still share a declaration-order loop in interpret/execute.rs::select. The author is measuring an
+acceptance-first overlapping case before correction, retaining the original requirement that the
+related refusal precedes acceptance. The source22 validator's refusal-priority partition and the
+runtime phase must agree both with and without an explicit wrong_state branch; older valid
+external/declaration-order behavior must remain unchanged. No final source review has begun.
+
+Additional capacity maintenance supersedes the earlier cache-preservation note: after the nested
+reviewer's handback, no-live-process confirmation and verification of all ten external log/report
+hashes, root acquired its own lease and Cargo-cleaned only the completed review target's dev
+profile. Dry-run and actual clean each identified2158files/1.3GiB. Source remained clean at7cba6e0fc.
+The separate target/review-r1 dry-run refused missing or invalid CACHEDIR.TAG; it deleted nothing
+and that subtree remains untouched. Root released its own maintenance lease. All logs are retained
+in local-evidence:ess21-completion/nested-increment-review-r2; no worktree was removed.
+
+The exact coordinator CI patch is composed into the unverified391 candidate, together with the two
+CLI help corrections admitting transport/1 or/2. Owned NATS cleanup now requires successful exact
+container removal and a successful full-ID absence query; daemon/query failures preserve cleanup
+failure rather than masquerading as absence. Actual official-validator and broker execution remain
+pending compiler handoff and independent review.
