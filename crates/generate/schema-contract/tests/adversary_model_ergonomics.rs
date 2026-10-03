@@ -190,8 +190,10 @@ fn a_reachable_position_name_collision_uses_the_documented_deterministic_hash_fa
         .lines()
         .find_map(|line| line.strip_prefix("type EssShape"))
         .and_then(|rest| rest.split_whitespace().next())
-        .map(|suffix| format!("EssShape{suffix}"))
-        .unwrap_or_else(|| panic!("Go hash fallback in:\n{go}"));
+        .map_or_else(
+            || panic!("Go hash fallback in:\n{go}"),
+            |suffix| format!("EssShape{suffix}"),
+        );
     assert!(
         go.contains(&format!("Samples {go_fallback}")),
         "Go does not use its collision fallback for Reading.samples:\n{go}"
