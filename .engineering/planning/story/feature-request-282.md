@@ -39,7 +39,7 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"approval":1}}}
@@ -94,3 +94,7 @@ The accepted source allocation in the consumer backlog and current integration r
 The full frozen runtime handoff has been applied as local bot integration commit48d5cc77b38f919381d04830475ff6ea4959289f after current released main. The present-related interpreter prerequisite is now present; do not duplicate it or import old carrier ancestry. A read-only scope refresh confirms the named eight controls and narrow files, including interpret/execute/related.rs. Root delegates only FormatVersion::V22 plus its supported-source admission/compatibility plumbing to this serial unit; other format/default/schema projections remain coordinator-owned unless a measured need is reported.
 
 Next unit: ess-serial-282-20261003 from48d5cc77b, branch unit/serial-related-precedence-20261003, own target and assigned scratch. The292 source remains in its own tree and integrates serially. Its implementation and tests must finish; source-read/preparation may proceed independently. Final combined checks and issue closure remain pending.
+
+## Review1 correction boundary — 2026-10-03
+
+Independent review `related-precedence-282-20261003-r1` confirms the Open-external alternative loss with actual0/1red execution and two1/1green controls. The author is correcting that defect and the two repository-formatting lines before final review2. The review's broad description of the31target/166test failures as unrelated baseline drift is not an established classification of every failure: the coordinator retains the complete inventory and requires baseline/requirement-specific diagnosis. No failure is waived by that sentence, and no full affected-package success is claimed.
