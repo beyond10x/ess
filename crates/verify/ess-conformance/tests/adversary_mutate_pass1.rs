@@ -13,10 +13,9 @@ use ess_conformance::mutate::{
 };
 use ess_conformance::reference::Billing;
 use ess_conformance::runner::Runner;
-use ess_conformance::AdmittedSuite;
+use ess_conformance::{AdmittedSuite, CountReport};
 use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
-use ess_primitives::verification::VerificationStatus;
 
 fn load(paths: Vec<std::path::PathBuf>) -> (Vec<Document>, SourceMap) {
     let mut texts = SourceMap::new();
@@ -204,11 +203,25 @@ fn shop_emission() -> BTreeMap<String, String> {
             AdmittedSuite::from_json(&emission.files[&format!("{dir}/{SUITE_FILE}")]).unwrap();
         let run = Runner::for_suite(admitted.suite())
             .run_admitted(&admitted, &Interpreted::for_model(ir.clone()));
-        let mut report = run.standalone();
-        report.failed_scenarios.clear();
-        report.scenarios_failed = 0;
-        report.status = VerificationStatus::Passed;
-        written.insert(format!("{dir}/{REPORT_FILE}"), report.to_canonical_json());
+        let text = CountReport::from_run(&run, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        let mut report: serde_json::Value = serde_json::from_str(&text).unwrap();
+        // Deliberate collector input, not evidence that this target passed.
+        let ids: Vec<_> = admitted.suite().scenarios.keys().collect();
+        report["outcomes"] = serde_json::json!({
+            "passed": ids, "failed": [], "error": [], "unsupported": [], "skipped": []
+        });
+        report["counts"] = serde_json::json!({
+            "total": ids.len(), "passed": ids.len(), "failed": 0,
+            "error": 0, "unsupported": 0, "skipped": 0
+        });
+        report["execution_status"] = "passed".into();
+        report["conformance_status"] = "inconclusive".into();
+        let text = serde_json::to_string(&report).unwrap();
+        CountReport::from_json(&text, &admitted).expect("coherent report/2 collector input");
+        written.insert(format!("{dir}/{REPORT_FILE}"), text);
     }
     written
 }
