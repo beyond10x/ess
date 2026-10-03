@@ -1,6 +1,8 @@
 # Mutation scope, single-event alternatives and known failures
 
-Status: proposed for independent review, 2026-10-03. This coordinates issues #212, #236,
+Status: coordinator correction after two independent design passes, 2026-10-03. Pass two's
+generated-report reader finding is recorded below; its actual implementation proof remains due.
+This coordinates issues #212, #236,
 #294, #295 and #296 within the accepted bundle. It changes neither specification truth nor
 the ordinary conformance verdict. Implementation has not been admitted by this document.
 
@@ -149,13 +151,32 @@ no conformance-passed field. Its validator rechecks all identities and the parti
 original report and declaration. Validate all inputs before writing outputs; create-new outputs
 must not overwrite one another or any input. A write failure is failure, never a success receipt.
 
-Generated Go/TypeScript runners keep their ordinary failed reports and process status. Their
-results can be accounted through `report --suite --results`; no environment variable makes a
-failing runner pass. External `report` additionally requires `--implementation-build <sha256>`
-and `--execution-context-out FILE` whenever known-failure accounting is requested. The build value
-comes from the host's public build artifact, not from target identity callbacks. Native run and
-external report must produce equivalent accounting for the same statuses, labels and build
-provenance. Browser conformance truth and one-time identity redaction are unchanged.
+Generated Go/TypeScript runners keep their ordinary failed report/2 and process status. They do
+not emit results/1, and their five-category producer profile must not be converted to its
+four-category external profile. Add an accounting-only mode to `verify conform report`:
+
+`--suite SUITE --observed-report REPORT --execution-context CONTEXT --known-failing DECLARATION
+--accounting-out ACCOUNTING`.
+
+This mode admits exact original report/2 bytes through the existing CountReport reader against
+the admitted suite, preserving producer profile, all five status arrays/counts, coverage,
+execution_status and conformance_status. It then admits the original execution/1 sidecar against
+that exact report and suite, and checks the declaration's implementation/build and failed IDs.
+It writes only accounting/1. It never rewrites the supplied report or creates a results/1.
+`--results`, `--implementation`, `--runner`, `--report-out`, `--implementation-build` and
+`--execution-context-out` conflict with this mode: caller flags cannot replace observed provenance.
+Exit 0 means accounting was written, never conformance passed; refused inputs exit 2 before output.
+Report/1 is not admitted by this mode because it lacks exact suite binding and producer semantics.
+
+The existing `report --suite --results --implementation --report-out` mode remains unchanged for
+external results/1 producers. Only that mode additionally requires `--implementation-build
+<sha256>` and `--execution-context-out FILE` when known-failure accounting is requested, and writes
+the new context alongside its report/accounting. The build value comes from the host's public
+build artifact, not target identity callbacks. No environment variable makes a failing runner
+pass. Native run and both report modes share the same accounting validator; category equivalence
+is compared only where producer profiles support that category. Skipped remains Skipped in actual
+Go/TypeScript controls and is never relabeled Unsupported. Browser conformance truth and one-time
+identity redaction are unchanged.
 
 Persist host execution provenance in a separate closed `ess-conformance-execution/1` sidecar:
 format, exact original report-byte digest, exact suite-byte digest, report implementation label
@@ -163,7 +184,8 @@ and implementation_build. There are no values, timestamps, free-text host fields
 The runner freezes the build identity before its first target invocation; it binds the report
 digest after producing the ordinary report. Generated Go/TypeScript runners accept an explicit
 pre-execution public build digest and execution-context output path, validating both before
-execution. The Rust external-report CLI creates the same envelope from its explicit caller claim.
+execution. The Rust external-results report mode creates the same envelope from its explicit caller
+claim; the accounting-only observed-report mode consumes it without inventing a new identity.
 Unknown/duplicate fields and invalid/mismatched digests refuse. A context file is not an attestation
 of a remote binary; consumers must trust the result-producing host, as for the ordinary report.
 Tests must show protected response/identity sentinels and their hashes cannot enter this envelope.
@@ -223,7 +245,8 @@ unlisted failure; all witnesses excluded; changed excluded scenario; newly added
 scenario; stale passing declaration; Error/Unsupported/Skipped substitution; duplicate/unknown ID;
 changed raw suite bytes/spec/build; missing report; wrong mutant report; tampered declaration;
 cross-component commands; no in-scope mutation site; selected and excluded unavailable sites.
-Run actual generated Go/TypeScript results through `report` and collect, checking raw reports
+Run actual generated Go/TypeScript report/2 through the accounting-only report mode and collect,
+including a mixed Failed/Skipped run and a required Unsupported observation. Check raw reports
 remain failed, strict execution still fails and the accounting partition matches native execution.
 Plant faults in exclusion and stale-entry handling and show each falsely scored mutant or wrongly
 accepted declaration is caught. Unit-only construction of a report is insufficient acceptance.

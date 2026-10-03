@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T18:22:59Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-275",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Existing adversary_275_pass2 binary: exact dropped-swap identity control exit101; repeated values 2.0; 0 passed, 1 failed, 6 filtered; 0.11s",
+    "reference": "local-evidence:ess21-completion/identity-reuse-diagnosis/candidate-red.log"
+  }
+}

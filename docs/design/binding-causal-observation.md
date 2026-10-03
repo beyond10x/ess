@@ -1,7 +1,8 @@
 # Binding completion at an aggregate query boundary
 
-Status: coordinator proposal for the open #361/#362 dependency; not implemented or independently
-verified. This is separate from #391's address rendering and from invocation-count observation.
+Status: design approved by independent review2of2 at 3dfaba0ee on 2026-10-03; implementation and
+actual adapter verification remain outstanding. This is separate from #391's address rendering
+and from invocation-count observation.
 The blocker stays open until the actual adapter controls below execute.
 
 ## What the observation must establish

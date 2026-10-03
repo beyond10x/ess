@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 36
+revision: 43
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -14,28 +14,28 @@ Operator direction on 2026-10-03: finish the remaining full bundle, integrate to
 
 ## Current facts
 
-The integration branch is batch/ui-live-apps-complete-20261003 in managed tree ess-w7-server-public. Source checkpoint9f35a2d5d includes all60 selected runtime changes, retained #318, separately merged protocol PR411 via mergee6357a9e1, regenerated projections/examples672603099, and independently reviewed #292 with all three prospective review tests. Planning8606b103c binds approved #391 transport and shared #228/#237/#299 row-set designs. Bot author and committer are verified. No bundle PR, merge, issue closure or new release has occurred in this continuation.
+The integration branch batch/ui-live-apps-complete-20261003 includes independently reviewed nested-increment candidate7cba6e0fc at mergef24dafb1e. Full review2of2 approved with actual generated Rust/Go compile and150 scenario executions, native/conformance controls, TypeScript239 runtime cases and both non-skipped typechecks. Prior60 imported changes, #318, main protocolPR411, regeneration672603099 and reviewed #292 at9f35a2d5d remain preserved. No bundle PR, merge to main, issue closure or release has occurred.
 
-Source21 remains one-time responses; coordinated syntax additions use source22. New conditional zero-invocation suite vocabulary is allocated ordinary36/inventory37 and conditional/refusal-policy diff vocabulary14; these are prospective explicit allocations, not implemented formats. Held suite34/35 meanings remain unchanged. Aggregate persisted vocabulary needs its own later explicit allocation before implementation.
+Source21 remains one-time responses; coordinated additions use22. Conditional-binding suite36/37, aggregate suite38/39, transport/IR2 and mutation manifest/report4 are allocated by their respective designs. #391, #228/#237/#299, #266–269 and causal-completion designs passed their two independent reviews. Causal completion remains an open implementation/actual-adapter dependency. Mutation design review2 found a generated-report accounting compatibility defect; coordinator correction17c039c27 adds the lossless observed-report mode. The two review passes are exhausted; do not report that correction as independently approved. Its exact compatibility seam must be proved during implementation review.
 
-Combined pre-history build/generation/format and actual interpreted billing33, related-copy6, related-guard9 and subject-copy12 scenarios passed without skipped/unsupported/errors. Those report/2 files retain inconclusive coverage status, not a whole-product certificate. Common Gates passed at3e7db9aab over196 commits and must rerun on the final candidate.
+#282 has measured source-admission and semantic red-to-green evidence. Its focused runtime run passed four interpreter and two synthesis/fault tests; final affected tests, lint and independent review are pending. Multiple selected related refusals retain the existing ambiguity refusal: declaration order is not a new tiebreak. #304 Optional-input tests are prepared in their own tree, without production changes or execution, pending reviewed #282 integration.
 
-#292 full independent review approved exactcae6187ec plus154 test lines: history56, library109, neighbors132, primitive2, CLI1 with8 invocations and strict scoped lint. Record review-result:generated-history-complete-20261003-r1 holds the exact publication report. The integrated history56 tests also passed before the nested correction.
+The user authorized integration without another handoff choice. Root coordinates #391 in its isolated tree. The initial bounded transport admission compile passed; later static corrections require execution again. Official validator, generated publishers, real Rust/Go NATS checks, required CI and independent source review remain due. Nested browser ordinary/coverage composition and all final release checks remain outstanding.
 
-Nested-increment author candidate1e12ada27 is frozen as a bot commit, not yet integrated. Author evidence:104 Rust tests,239 TypeScript runtime cases,150 generated Rust/Go scenario executions plus absent-parent atomicity, strict lint/fmt green. The two missing-Node-types probes were disclosed skips; actual typecheck is being resolved in independent review. Actual browser ordinary/coverage acceptance remains due after browser composition. Fresh full review1 is active in a separate managed tree; no approval or completion is inferred yet.
+Common Gates passed and its signed receipt verified at267130977 for211 commits. Later changes require fresh exact-head evidence before publication.
 
 ## Ordered route to main
 
 | Order | Work | Current state and completion condition |
 |---|---|---|
-| 1 | Merge released main and reconcile the frozen source inventory. | DONE as local integration work: main4d6a4ecaf merged at cf9461006; all60 selected deltas and two companion designs preserved in bot checkpoint48d5cc77b. Newer318 and released transport/model/publisher fixes retained. This is not a passing combined gate. |
-| 2 | Build the combined generator, regenerate projections/examples/suites, and test imported runtime, isolation, response/disclosure, nested response, explorer and copied-field work. | ACTIVE: dependency resolution, task fmt-check and the combined Rust1.98.1 CLI/xtask build pass (exit0); schema regeneration completed. Other generated outputs and behavioral checks remain pending. No historical unit result substitutes for current combined bytes. |
-| 3 | Complete292 history validation, then correct the separately recorded nested-increment location defect. | ACTIVE: suffix correction independently approved; early-Unknown and widening/increment regressions have measured red-to-green results; worker completing final history matrix, native neighbors, CLI status controls and lint. Nested-location correction is still pending. |
-| 4 | Implement syntax serially:282;304 Optional input;304 stored reference;319 generated guards;283;285;286;268;269; related-record effects and family225/233/244a/228/237;200 parameter operands. | 282 has its eight regression controls prepared in its managed tree; compiler admission and semantic red runs are next after292 releases the compiler lane. Current-source audit confirms these acceptance sets are unimplemented. Bind source22 admission and coherent family designs; run named conformance and compatibility controls.194 is covered by268;225 is part of233. Each unit integrates on this branch before the next dependent unit. |
-| 5 | Finish browser execution parity, wrapped Optional/List/Map/Union/recursive invariant observations, restart297, aggregate361/362 and conditional measures363. | PENDING, with partial browser/history evidence preserved.361/362 need tested binding causal-completion authority from the separately owned transport work.363 needs a separate measure-predicate design. Existing partial behavior does not satisfy these acceptance sets. |
-| 6 | Reconcile all open issues with integrated source, acceptance and disposition. | Current GitHub count50. The exact 50-row closure ledger below accounts for every observed open issue; each row still requires its stated implementation and evidence. Preserve existing deferrals197, calendar244b and external lowering231part2.391 remains transport-owned pending operator ownership clarification. No blanket issue closure. |
-| 7 | Freeze final combined candidate, update release notes/version projections, run required checks/reviews and publish one bot PR. | PENDING all required bundle members. Affected checks, common Gates and final required CI must pass; full task check/site-lab run on the release candidate and required site-build passes. Separate protocol PR411 is already running CI under another owner; coordinate any main update before final validation. No per-unit PRs for this bundle. |
-| 8 | Bot-merge the single bundle PR, verify issue closures, tag and publish the next available version. | PENDING green final candidate. Verify exact tag/checks, public bot-authored release, four native archives, checksums and release-status. Documentation publication is asynchronous. Report any explicitly deferred/external issues separately. |
+| 1 | Reconcile source inventory and current main. | Sixty selected source changes preserved; main PR411/e07f55a9b integrated at e6357a9e1. Refresh main again before final candidate validation. |
+| 2 | Regenerate and verify the combined runtime. | Combined Rust1.98.1 CLI/xtask build and regeneration672603099 completed. Retain per-unit results and finish all affected runtime/browser controls on the final combined bytes. |
+| 3 | Complete292 and nested-increment correction. | Reviewed292 integrated9f35a2d5d; nested candidate7cba6e0fc independently approved and integratedf24dafb1e. Browser composition and final Gates remain due. |
+| 4 | Execute batches B–I in the authoritative sequence below. | #282 final affected checks pending after focused red-to-green controls; #304 Optional-input tests prepared only. Integrate every reviewed unit before its dependent production implementation. #194 is covered by268;225 is part of233. |
+| 5 | Complete observation and aggregate authority. | Causal design approved; actual native/generated/browser implementation and aligned-cut fault controls remain required. #363 measure design and implementation remain pending. |
+| 6 | Reconcile issue closure against complete evidence. | Preserve all50 checklist rows and deferrals197/calendar244b/external231. Root coordinates391 under the user's integration direction. No issue is closed from partial evidence or historical status. |
+| 7 | Prepare one final PR candidate and pass required checks. | Pending accepted A–I work. Update release notes, both lockfiles and owning projections; pass affected checks, common Gates, final CI, release task check/site-lab and applicable site-build. No per-unit PRs. |
+| 8 | Bot-merge and verify one source release. | Tag the exact merged candidate only after complete evidence. Verify exact checks, public bot release, four archives, checksums, binary version and release-status. Documentation publication is asynchronous. |
 
 ## Every open issue: work and closure condition
 
@@ -61,7 +61,7 @@ The batch order fixes shared-file sequencing. A newly demonstrated dependency ma
 | Issue | Batch / current classification | Remaining work required for closure |
 |---|---|---|
 | #400 | I; recursive Optional correction already released, full request not reconciled | Verify explicit name/wire labels and component codecs; compiled self/mutual recursive controls; reconcile the consumer's required artifacts. Preserve existing nonrecursive output. |
-| #391 | Transport owner: Claude; ownership reply pending | Payload/context channel-address template contract and transport implementation/evidence. Root integrates the handoff; no concurrent transport edit. |
+| #391 | Root-coordinated source implementation; no pending external handoff found | Approved parameterized-address design; transport admission tests compile and pass after legacy unknown-version fixture correction. Publisher, AsyncAPI validator, real Rust/Go NATS execution, CI and independent source review remain required. Causal aggregate completion is a separate contract. |
 | #389 | A + F; substantial source imported, incomplete | Combined one-time response checks plus actual ordinary/coverage browser products, protected values, original-byte admission and value-free observations across required runtimes. |
 | #363 | F; design and implementation pending | Bind per-measure predicate syntax/typing/empty behavior, implement conditional count/sum across targets, and prove honest/faulty aggregate results. |
 | #362 | F; implementation pending | State-only grouping adapter and generated/runtime evidence; binding-affected cases require tested causal completion and aligned reads. |
@@ -77,23 +77,23 @@ The batch order fixes shared-file sequencing. A newly demonstrated dependency ma
 | #312 | A + F; reviewed source imported | Current-candidate isolation and per-invocation caller authority across native/Go/TypeScript/WASM; browser acceptance stays separate until executed. |
 | #307 | A; source imported, combined validation pending | Both copied Optional policy flags and named transitions, true/false/absent cases, input conjunctions and decisive copy/branch mutants. Unsupported is not a pass. |
 | #304 | B; both accepted slices unimplemented | Optional input via first, then stored subject reference via; absence skips the guard/read, present missing row stays distinct, and pre-branch value determines the lookup. |
-| #299 | C + E; fit/design pending | Bind a coherent filtered single-row read for guards and sets with uniqueness/missing/ambiguous cases, then implement with family row-set/value semantics. Do not label it a duplicate without that proof. |
+| #299 | C + E; shared row-set design independently approved | Implement approved docs/design/filtered-related-reads.md after #285/#228/#237 dependencies. Uniqueness, missing, ambiguous and exact selected-row reads across required targets remain unimplemented. |
 | #297 | F; unimplemented | Real process restart with durable state and fresh identity checks; a counter-reset faulty target must fail. Scenario reset is insufficient. |
-| #296 | H; shared design pending | Explicit known-failing retrofit accounting tied to suite/scenario/target identity; keep intended truth, default failure and strict results intact. |
-| #295 | H; operator design pending | Choose and review a killable single-event mutation and honest no-alternative behavior, then prove creating/updating/moving and external emit/collect controls. Dropping assertions is not a fix. |
-| #294 | H; shared design pending | Known-failing baseline declarations with eligible-witness scoring, unknown/stale-ID and stale-pass controls; unlisted failure still refuses and excluded-only mutants stay inconclusive. |
+| #296 | H; shared accounting design revised; final review pending | Implement declaration-bound known-failure accounting with exact suite/build provenance while preserving ordinary failed truth and strict execution. Protected one-time identity remains redacted; verify actual native and generated report paths. |
+| #295 | H; emit-swap and unavailable-site design proposed; final review pending | Implement compiler-valid single-event substitutions and honest no-compatible-alternative accounting. Creating/updating/moving, discarded-event and actual emit/collect controls remain required; never drop assertions to claim a kill. |
+| #294 | H; full design revised after first review; final review pending | Implement explicit known-failed baseline declarations, eligible-witness scoring, default refusal, stale/mismatched identity controls and excluded-only inconclusive results under the reviewed mutation contract. |
 | #293 | A + G; reviewed source imported | Rerun Optional/unknown-instance and undeclared-member fault matrices in both explorer ports; preserve deterministic seeds and explicit exclusions after #221/#223. |
-| #292 | A; active implementation | Finish final history matrix, native neighbors, actual CLI status controls and strict lint for generated timestamps and abstract value domains; independent review of the full candidate. |
+| #292 | A; full candidate independently reviewed and integrated9f35a2d5d | Complete history matrix, neighbors, actual CLI status and strict lint pass. Preserve these through final combined tests, CI and release; no issue closure before merged evidence. |
 | #290 | I; unimplemented | Bind breaking-change direction/classification and acknowledgment semantics; implement failing CLI status with widening/narrowing/addition/removal and compatibility controls. |
 | #286 | C; unimplemented | View grants in actor may, accepted open behavior for unmentioned views, served enforcement and a target that wrongly serves denied reads. |
 | #285 | C; unimplemented | Optional related value and bounded two-hop traversal; preserve absent identity/value semantics, target parity and explicit unsupported joins. |
 | #284 | I; unimplemented | Bind page actor authority, validate bound commands against grants, and test mismatched/read-only/open/caller cases. Existing pooled readability is insufficient. |
 | #283 | C; unimplemented | Multiple independent related vias and complete missing/predicate/precedence partitions after #304. |
-| #282 | B; regression prepared | Source22 admission and exact related-refusal/wrong-state precedence, all eight controls, both declaration orders and older-format refusal. |
+| #282 | B; preserved regression tests refreshed onto reviewed runtime | Execute source22 admission red and behavioral precedence red before implementation. Complete all eight controls, declaration orders, older-format refusal, affected lint and independent review. |
 | #273 | F; pending acceptance reconciliation | Captured identities in authored and synthesized event expectations; field-drop mutants must fail; preserve format admission and actual browser replay support. |
 | #269 | D; unimplemented | Per-refusal binding retry/drop policy and except semantics, exact selected error/outcome controls, projections and compatibility. |
 | #268 | D; accepted redesign unimplemented | Event-payload where predicates on bindings, typed admission and honest/faulty execution; this is the accepted response to the outcome-selection need. |
-| #267 | D; pending acceptance reconciliation | Arrange accepting held state for flow/delivery; forced drop failure must demonstrate no invocation during the eventual window. |
+| #267 | D; arrangement/drop design approved, implementation pending | Arrange an eligible destination before triggering the real binding. Forced refusal requires exactly one attempted invocation and no retries throughout the full observation window, with mapped-input and unchanged-state assertions. Zero attempts fails delivery. |
 | #266 | D; pending acceptance reconciliation | Account for state-moving bindings in arrangement and eventual view expectations without racing or invoking the bound command twice; honest/no-binding target controls. |
 | #244 | E; elapsed-time accepted, calendar half deferred | Implement #244a constant elapsed-time offsets and now in accepted stored/related predicates. Keep calendar/time-zone #244b explicitly open under its existing blocker. |
 | #237 | E; unimplemented | Row-set count/exists/forall and distinct semantics, bounded arrangement and decisive quantifier/value faults. |
@@ -132,13 +132,10 @@ The current October resource contract remains one ESS compiler lane, jobs1/debug
 
 ## Immediate next action
 
-Independent nested-increment review owns the sole ESS compiler lane in managed tree ess-nested-increment-review-20261003 at1e12ada27, base9f35a2d5d. Author tree ess-history-review-final-20261003 is frozen and its lease released. Integrate only after review findings resolve; live browser acceptance and final task check remain required after composition.
-
-#282 retains clean prospective checkpoint803383acc. Update it from the integration branch and hand it the compiler after nested correction integrates, then implement/review #282, #304 Optional input, #304 stored reference and #319 serially. Root owns designs, AEP, integration, generated reconciliation and release.
-
-Transport discovery found released #390 already integrated and no pending #391 source candidate or active ESS Claude handoff in the inspected Git/lease state. The operator's “dont care, just integrate” answer is being fulfilled by root-coordinated #391 completion. Approved design and active story391 are in8606b103c; worker scope_nested_increment prepares the unit in ess-parameterized-transport-20261003. The worker's early baseline/red Cargo starts before lane handoff are explicitly retained as a scheduling deviation in its scratch record; commands are terminal and no further compiler start is permitted until handoff. No output or process from another session was changed.
-
-Shared #228/#237/#299 design is approved by review2 with all seven findings fixed. #266/#267 design revision2 answers four observation/arrangement findings and awaits final design review; #268/#194/#269 conditional/policy design is in first independent review. Both remain unimplemented. Browser/aggregate planning was selectively reconciled in f8c35a975; binding causal-completion authority is still an open actual-adapter dependency and is distinct from #391 address rendering. Continue the full A–I scope before one bot PR/merge/release; preserve all original deferrals.
+1. Refresh the preserved #282 regression branch onto reviewed integrationf24dafb1e, then measure source22 admission red and actual precedence red before the minimal fix. The original eight controls, independent source review and serial #304 Optional-input → stored-reference → #319 sequence remain binding.
+2. Complete final causal and mutation design reviews without relaxing their obligations. Record exact findings and corrections. The causal blocker stays open until actual dispatcher/store/generated/browser proof executes.
+3. Continue #391 publisher/AsyncAPI/NATS implementation under explicit compiler custody; integrate only after complete acceptance and independent review. Address rendering alone cannot clear causal aggregate completion.
+4. Continue every accepted C–I unit, then freeze one final candidate, run required Gates/CI/release checks and deliver one bot PR and verified release. Preserve all stated deferrals; no issue-count shortcut.
 
 ## Current resource contract from final handoff
 
@@ -315,3 +312,41 @@ Independent292 review owns its separate target and the current compiler lane. Pr
 Nested-correction worker tested unchanged integrated9f35a2d5d before edits: all56 generated-history cases pass, exit0. The raw runner output remains in assigned nested-increment implementation evidence. Review candidate results are therefore supplemented by an actual combined-byte history run.
 
 Global free space fell below the12,884,901,888-byte start floor while other repositories compiled; no other process or cache was touched. Root inspected its own idle integration target: Cargo cache marker present, only debug compiler output, no active open files. Retained exact pre-history combined CLI externally with SHA256facf3de7d49ceade8c7eaf4a4c6c94ab9b404449e554a33c380ecd8e19471586 for read-only probes. Cargo1.98.1 clean --profile dev --dry-run reported2144files/1.9GiB, then the exact clean removed those2144files. Source, generated fixtures, logs and all review evidence remain. Free space13,333,860,352bytes immediately afterward; worker must still guard each subsequent compiler start because disk is shared globally.
+
+## Compiler capacity and retained evidence
+
+The #282 focused conformance build passed but left a16GiB target, predominantly linked test executables; libraries plus metadata occupied about573MB. Global free capacity was below the12,884,901,888-byte start floor. The worker verified no live compiler and retained all red/green logs outside target. Its exact cargo clean --profile dev -p ess-conformance --dry-run reported2111files/14.7GiB; no source or retained evidence was included.
+
+Coordinator authorized that exact package cache clean and an explicit build-profile amendment: CARGO_PROFILE_DEV_STRIP=symbols and CARGO_PROFILE_TEST_STRIP=symbols on all subsequent unit checks. Existing Rust1.98.1, jobs1, debug0, incremental0, locked/offline, own in-tree target and outside-Git TMPDIR controls remain. The integer free-space floor is checked before every expensive start. This changes disposable binary size, not acceptance scope or test behavior. Retain both profile identities and the clean/result logs; no earlier pass is rewritten as a result under the new profile.
+
+The completed nested reviewer confirmed its clean source at7cba6e0fc and all external review-log hashes, with no process using its2.8GiB target. That target remains preserved for the upcoming independent review; no cleanup was performed there. Unrelated repository caches/processes remain outside this task's authority.
+
+## Verification followups after capacity recovery
+
+#282's scoped clean completed; compiler capacity recovered and stripped-profile focused domain
+controls passed4/4. The final affected-package command completed with exit101 at
+adversary_275_pass2::adversary_275_p2_every_dropped_swap_is_noted_and_every_drawn_identity_is_unshared:
+two swapped runs supplied the same value2.0. Its target reported6passed/1failed. This remains an
+unresolved combined-candidate failure; pre-existing versus regression attribution requires exact
+baseline execution. The author is not authorized to change that separate class under282.
+
+Root source inspection also identified that accepting When branches and present-related refusals
+still share a declaration-order loop in interpret/execute.rs::select. The author is measuring an
+acceptance-first overlapping case before correction, retaining the original requirement that the
+related refusal precedes acceptance. The source22 validator's refusal-priority partition and the
+runtime phase must agree both with and without an explicit wrong_state branch; older valid
+external/declaration-order behavior must remain unchanged. No final source review has begun.
+
+Additional capacity maintenance supersedes the earlier cache-preservation note: after the nested
+reviewer's handback, no-live-process confirmation and verification of all ten external log/report
+hashes, root acquired its own lease and Cargo-cleaned only the completed review target's dev
+profile. Dry-run and actual clean each identified2158files/1.3GiB. Source remained clean at7cba6e0fc.
+The separate target/review-r1 dry-run refused missing or invalid CACHEDIR.TAG; it deleted nothing
+and that subtree remains untouched. Root released its own maintenance lease. All logs are retained
+in local-evidence:ess21-completion/nested-increment-review-r2; no worktree was removed.
+
+The exact coordinator CI patch is composed into the unverified391 candidate, together with the two
+CLI help corrections admitting transport/1 or/2. Owned NATS cleanup now requires successful exact
+container removal and a successful full-ID absence query; daemon/query failures preserve cleanup
+failure rather than masquerading as absence. Actual official-validator and broker execution remain
+pending compiler handoff and independent review.
