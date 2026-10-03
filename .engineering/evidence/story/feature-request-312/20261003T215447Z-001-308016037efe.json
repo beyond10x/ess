@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T21:54:47Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Emitted-reader candidate803677f9: all11 tests actualGo/TypeScript zeroignored, scopedstrictClippy and owningformat0; authorlogSHAadec5b012c6ad063201b3e514fc6458221dd6ba664c13bc1f0697674f148eec3. Independent r1 static/source and raw evidence audit approve; reviewer execution preflight refused before start and is not acceptance execution."
+  }
+}
