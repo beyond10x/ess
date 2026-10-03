@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 12
+revision: 13
 ---
 ## Authority and delivery
 
@@ -101,3 +101,11 @@ Preliminary common-security check on integration ec636c34a3 succeeded, scanned11
 Coordinator01a0fbbb confirmed it owns local batch/consumer-runtime-20261002 in ess-backlog-next-20261002: #389 one-time responses, #312 isolation/mixed callers, native typed Store/caller/existence/SubjectField+Increment and RelatedField. It confirmed this session should own318/282/304/319, noted older local318/307/360 copies to reconcile, and stated it does not own releasePR398 or transports390–395. Our later conformance interpreter/synthesis edits must wait for a reviewed shared base or explicit file ownership agreement; bounded ess-synth server correction is disjoint from its current work. Both peers explicitly reserve all ess-transports work to the third Claude session.
 
 The exact operator-supplied session01a0feb8 was reached through the running local app-server's supported turn/start operation after metadata-only thread/read confirmed ephemeral=true, idle, canAcceptDirectInput=true, no parent. No config/model/permission override was used. Delivery returned turn01a0ff05-03cb-71b1-86e2-b0ab74060543 inProgress with no error; full message and response retained in assigned scratch. It carries all ownership boundaries and asks whether that session ownsPR398. This supersedes the earlier delivery failure; acknowledgement still pending.
+
+## Confirmed ownership and resumed bounded correction
+
+Exact session01a0feb8 acknowledged: it owns only releasePR398, branch release/0.52.0-20261003 in ess-release-052-20261003. Its verified clean localHEAD73282a13dd93346edfc2ded3041b544a401765c8 differs from published PRhead e88442ef6d4f88fd1b23d502b9adc57c7c7b1484. It owns version/lock/changelog/release-documentation and two release AEP records, no crates implementation. Its operator hold waits for third-session transports390–395, not this five-unit bundle. No source release is claimed: no tag and full exact-candidate local/remote checks remain. The release owner will reconcile metadata; this session will not modify its tree, merge or tag its PR. It explicitly confirmed our318/282/304/319 ownership and third Claude's exclusive ess-transports ownership.
+
+Runtime coordinator01a0fbbb confirmed its older318 copy at e9355b003 with2969953014/2291c5adfa followups will yield to our final reviewed318; no parallel318 changes there. Its active312 edits synthesize.rs and synthesize/{caller,subject_fact,related_guard,existence}; RelatedField reviewed85754ad031178695fb72169a9850dc7bf60fbed8 changes execute.rs/execute/values.rs and2tests. Prerequisite runtime commits it named:2693e5348,fc676ff13,641fdfa28,13e40c33f9,73faabfaf9. These are provenance, not authorization to blindly import its carrier or all prerequisites. Before282/304 dispatch agree a reviewed source-only shared base/file boundary, excluding duplicate393/394 and unrelated planning/CI; retain operator scope. Both sides acknowledged the overlap and later-wave hold.
+
+Available disk fell below our10GiB build floor during other-session work. After verifying this unit's agents/builds were idle, coordinator cargo-cleaned24 exact completed consumer targets, then removed only individually verified ELF server binaries in its target/tmp. Generated sources, reports, logs, private ownership metadata and mainunit target/debug remain. Reviewed lists and output retained in318scratch. Next check reported13,368,438,784available bytes. The #318 implementor resumed only the bounded Go decoder correction under its original brief plus correction-pass-2.md, own lease and10GiB monitored floor. No new conformance wave or transport work dispatched.
