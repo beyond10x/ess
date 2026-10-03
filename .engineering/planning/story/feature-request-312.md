@@ -27,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -153,3 +153,9 @@ Acceptance requires measured red-to-green controls, unchanged full upsert_by_exi
 ## Missing-token test observation scope amendment
 
 The first preparation audit found existing Go transcript requests record only view parameters, and the reusable TypeScript Rust bridge hardcodes Current while discarding AtLeast. Exact foreign token observation is an acceptance requirement, so it is not replaced with status-only parity. Author may additionally change the existing test-only support_go/mod.rs and fixtures/transcript-target-go.go to record and compare consistency, and support_typescript_prerequisite/mod.rs if needed to parse and record the already-forwarded AtLeast field. These three helper paths join the previous exact3path unit, for6maximum; no new standalone script or public transport/report shape. The TypeScript upper(request) bridge already forwards that field; a JavaScript driver change is not inherently required. A test-local Rust server/target may instead supply the same observation without the optional third helper edit. Preserve current transcript strictness and add a decisive dropped/altered-token detection control. Existing helpers' affected parity neighbors remain required. Production runtime changes still await actual baseline evidence.
+
+## Authored and aggregate fixture integration
+
+Final independent review2 approved corrected candidatea3ffd032917f90a7425d99e7263d3c016cadb799 with findings[], full3file patch6d49705aca1a23381cb9ad52fcbca65bc027586328885db6fb4ab9042ec9d0be. Round1's sole stale module-comment finding is fixed and recorded; removing module-doc lines proves executable source unchanged, SHA8f541d6206098183a1667b4233458a6045f0449e2a5ffac050431379167681f4. Original author6/6 plus strictlint/format remain valid; wider82/83 and the unchanged upsert failure remain explicit. No reviewer execution or third review is claimed. Final publicreviewSHA4428dbafbd64ebfc8529d220b3535d9e89304f3c25488773081cb38b307a4ad7.
+
+Bot merge20144e12e695e2a6b03c824b5d622ab971837afc integrated the exact reviewed3files; direct candidate-to-integration file comparison and diff checks pass. Root verified both bot identities. After final reviewer lease ended, exact7native test binaries, generated fixtures and WASM outputs were archived and byte-compared, archiveSHA13aff6cd3cebb236e2b5a8c170c1d3712c8b07937bcf7ebd8279c44eb1fb0a02, before owning Cargo clean retired1458files827.3MiB. Original logs/source/evidence remain available and all tested artifacts recoverable. Parent312 remains active: missing-token runtime correction, full combined acceptance and browser/release obligations remain due.
