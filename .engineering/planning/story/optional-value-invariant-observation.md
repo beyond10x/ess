@@ -3,28 +3,105 @@ format: aep.planning-md/3
 id: story:optional-value-invariant-observation
 kind: story
 status: draft
-title: Observe declared value invariants through Optional view positions
+title: Observe declared value invariants through all wrapped view positions
 relations:
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:feature-request-293
 - serves: vision:O2
 - depends_on: story:browser-response-conformance
+- depends_on: story:feature-request-292
 scope:
 - confidence: inferred
-  path: crates/edge/ess-cli/tests/optional_value_invariant_browser.rs
+  path: crates/edge/ess-cli/src/main.rs
 - confidence: inferred
-  path: crates/generate/ess-synth/tests/optional_value_invariant_wasm.rs
-- confidence: cited
+  path: crates/edge/ess-cli/tests/browser_response_conformance.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/fixtures/browser-target/src/lib.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/wrapped_value_invariant_wasm.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/admission.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/aggregate_delta.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/authored.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/count_json.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/counts.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/coverage.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/coverage_build.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/defined_aggregates.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/fixtures.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/mod.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/predicate.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/leaf_payloads.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/lib.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/mutate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/now_offset.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/presence.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/quoted_predicate_format.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/runner/page.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/value_invariant.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/text_match_format.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/mod.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/predicate.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/value_invariant.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/view_paging.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution/bundle.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution/presentation.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
-  path: crates/verify/ess-conformance/tests/optional_value_invariants.rs
-revision: 14
+  path: crates/verify/ess-conformance/tests/support_wrapped_value_invariants/mod.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/support_wrapped_value_invariants/models.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/support_wrapped_value_invariants/targets.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/wrapped_value_invariants.rs
+- confidence: inferred
+  path: docs/design/wrapped-value-invariant-observations.md
+revision: 20
 ---
 ## Outcome
 
-Synthesize executable observations for declared value invariants reached through Optional view positions, with explicit treatment of sibling container positions, so an admitted type is not left untested merely because the view can also hold absence.
+Synthesize executable, nonvacuous observations for declared invariants at every admitted wrapped view position: Optional, List, Map, Union, nested combinations and productive recursion. Apply the same closed assertion semantics across native, generated Go/TypeScript, WASM and the actual browser product. Legal absence or empty containers must not become failures or substitute for an actual applicable witness; no required position may disappear from inventory.
 
 ## Fit review
 
@@ -44,11 +121,15 @@ Synthesize executable observations for declared value invariants reached through
 
 ## Decisions
 
-Accept the coverage need under the standing full-backlog/all-features instruction. Record it separately from #293 so the exact fixed-suite refusal is not hidden by its passing exploration tests. This draft schedules design and implementation work; no implementation is claimed or dispatched. The finite-domain and recursive witness limitations in #293 remain separate retained limitations, not outcomes of this new item. No GitHub issue, PR or remote gate was created.
+Accept, redesigned: use the independently approved closed ValueInvariants assertion and finite position graph in docs/design/wrapped-value-invariant-observations.md. Conditional rebasing of the legacy Satisfies predicate is insufficient because absence-only observations can pass vacuously and untyped fact paths do not preserve container semantics. Preserve existing direct-only assertion identities and bytes.
+
+The binding semantic design is local commit 4c78066fde612a556d6a00aa653fe39bb48f1785 on design/wrapped-value-invariants-20261003, based on frozen runtime c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9. File SHA256 b58b77b9ef68abe18aabd681d13144a5ac6e8ecc1921d8fd6da543d669aad29e. From Contract and evidence onward it is byte-identical to approved candidate v3; only the adoption preamble changed. Both author and committer are the bot. No production implementation, remote publication or format reservation occurred.
+
+Ordinary36/coverage37 remain proposed numbers pending integration-owner catalog reconciliation and exact generated-carrier scoping. Story stays draft with dependencies on browser-response-conformance and feature-request-292; do not edit those owners' active shared surfaces. The existing single held-bundle integrator owns eventual delivery. Prior exploratory scope, cost and candidate paragraphs below are retained history and are superseded by this decision and the current typed scope.
 
 ## Acceptance
 
-For admitted Optional value-invariant positions, a synthesized suite obtains an actual present witness, passes an independent healthy target including legal absence, and rejects a target returning an invariant-breaking present value in every conformance runtime; sibling container positions have explicit evidence-backed dispositions and no silently omitted obligation.
+Complete all eleven groups in docs/design/wrapped-value-invariant-observations.md, Actual acceptance matrix, with admitted source and independent healthy/fault targets across native, generated Go, generated TypeScript, WASM and actual CLI/browser routes. This includes every wrapped and recursive position, nonvacuous occurrence/row selection, exact typed/lexical facts, deterministic cross-runtime logical work traces and N-1/N/N+1 boundaries, forged authority rejection before callbacks, old-reader refusal and historical-byte preservation, and incomplete-inventory refusal through every serialization/reconstruction/packaging path. Retain the original mixed-position red and controls proving missing observers and bad later members are detected. A named refusal or library-only WASM run does not establish full browser feature support. No matrix group is yet implemented or discharged by design approval.
 
 ## Evidence
 
@@ -85,19 +166,9 @@ This strengthens the required inventory rule: a supported direct position must n
 
 ## Scope
 
-Derived 2026-10-03 by `story-scoper`, reading canonical revision 2 at `a552b9434` and runtime source at `c2c4f01c6` — cited.
+Current machine-readable scope follows the reviewed full-feature v3 design: 43 explicit paths, recorded as inferred planned implementation/audit surfaces rather than an implemented diff. Three earlier Optional-only test paths are retired in favor of shared full-feature tests and the existing browser host. The four web execution/producer paths are coordination and serialization/admission audit scope; change them only if the shared checks prove insufficient, preserving target ABI and the browser owner's implementation. Exact generated format/catalog carriers remain to be enumerated after number reconciliation. The dependencies on browser-response-conformance and feature-request-292 prevent scheduling conflicting work.
 
-- **Primary surface:** value-invariant observation synthesis — cited.
-- **Files:** `crates/verify/ess-conformance/src/synthesize.rs:10808` — cited; `value_object_invariants`, `positions_of`, `reaches`, `holds_at`, `rebased`, and `assert_satisfied` own obligation discovery, arrangement and assertions.
-- **Required behavior:** inventory wrapped positions even when another direct position already succeeds; establish a present constrained value, permit legal absence elsewhere, and retain a specific unresolved obligation when presence cannot be established — cited from acceptance and the existing omission path.
-- **Also likely:** `crates/verify/ess-conformance/src/witness.rs:262` — inferred; presence-directed arrangement may need to extend candidate search while preserving guard selection, type/entity invariants, aliases and existing resource bounds. Existing Optional witnesses already prefer present values, but that does not prove the resulting view position remains present.
-- **Tests:** `crates/verify/ess-conformance/tests/optional_value_invariants.rs` — inferred new Rust-driven native and generated Go/TypeScript regression surface, including independent healthy, absent-only, invalid-present and mixed-position controls.
-- **WASM tests:** `crates/generate/ess-synth/tests/optional_value_invariant_wasm.rs` — inferred new regression using the repository’s actual WASM test convention; library execution must remain distinct from product-browser execution.
-- **Browser tests:** `crates/edge/ess-cli/tests/optional_value_invariant_browser.rs` — inferred new real CLI/browser test surface, dependent on a browser target-execution bridge; current declaration replay cannot satisfy this acceptance.
-- **Documents:** a binding observation/compatibility design is required before implementation; no document path or format change has been selected — inferred.
-- **Confidence:** medium — the omission and arrangement seams are established, but general nonvacuous observation, container semantics and browser execution still require design decisions — inferred.
-- **Would collide with:** value-invariant synthesis, shared arrangement/candidate generation, and browser conformance integration-test surfaces — inferred.
-- **Safety fact:** existing predicate syntax and runtimes already distinguish Optional absence from present scalar/struct values; existing Satisfies requires a nonempty view but does not require a present value at the constrained position. Walked through holds_at → assert_satisfied and the runtime evaluators: level 3, unproven by this read-only pass. A guarded invariant alone is insufficient — cited.
+Binding design: docs/design/wrapped-value-invariant-observations.md. The CLI scope entries enumerate the exact paths and supersede the original exploratory scoper's Optional-only list. Core assertion/graph and synthesis modules, exhaustive feature visitors, Rust-driven target tests and existing embedded runtime assets are included. No transport implementation or interpreter command-evaluator change is authorized by this story.
 
 ## Scope uncertainties and full-feature boundary
 

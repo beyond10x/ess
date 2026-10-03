@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 25
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -379,3 +379,23 @@ The ongoing private proof-budget/context implementation passed the focused gener
 Root independently ran the frozen CLI's source validation for the proposed mechanical widening source. The audit's first Copy/Advance definitions lacked observable events and were refused as empty_change; those original bytes and logs are retained. Adding a Changed event carrying only input counter_id to each update makes the source valid with exit0. Corrected widening-model.yaml SHA256 83b8f0de517be2245c7abc7097fc431285e82e0edad7579eb527e6badfb1471e; widening-validate.log 0a3b0f16e8c9baaf52b8b8b07e954f15a39aaf604237b23280a3ba445df7f60c in private ess-nested-increment-probe-20261003. This proves source admission only, not history transfer correctness. The owner has the fixture for the next phase after feasibility is complete.
 
 The separate nested lookup issue is now reproduced and tracked as story:nested-increment-previous-location, draft, dependent on this story solely for shared-file sequencing. It must not become a positive control for bounded unknown arithmetic or expand current source work implicitly.
+
+## Frozen feasibility checkpoint awaiting correction
+
+The owner froze the feasibility implementation for independent review. Checkpoint report SHA256 7ca2b64b62594ea5d03465f21b34fe727b09350ab153111eaf097f3fbfe78cc4; 18-file source manifest ecb0f1bd5211a9c21c928aab2b0a6569024e5aca63e4d499ea29da5de3a5c745; source archive 5368f68bb3e06930e6f83885e313bcc3546c40116260b7939c9ebcb2bdcfd9c6; tracked patch 2ef073590506bf48ca6fc3f81796efe4290ab652c5eb7e1c0c49ba368d057d4a. Root independently verified all18 live source entries and read the complete report.
+
+Exact frozen source passes corrected52-case history matrix, log SHA256 16746861d5b2164709bac8715e5996098e256d62aba1df4da45fcca6fe40102c, and four private proof tests, log 801d190307b281106b732f42366a8f59a28abb0af056a7a6583d2115ef1c5080. Both exits0, no warning shown. The report retains an introduced51/1 regression caused by overcharging maximum path lengths on the16-Struct control, corrected using actual traversed lengths without raising the16,384 limit. Earlier compile-only failures and the original actual false-empty/false-absence red are retained distinctly.
+
+Independent source review subsequently found an exact-zero-budget List/Map validation defect: success on one child can exhaust the budget, break the loop and return Valid while later children are unchecked. The checkpoint is not accepted despite its52+4 green tests. The reviewer provided source-derived budget6 List and budget8 Map probes, not executed failures. The owner is to author regression controls, execute the red when the compiler lane returns, then repair and revalidate. Abstract transfer validation's early-Unknown precision gap, safe widening/derived increments, scoped neighbors, strict lint and final CLI revalidation remain outstanding.
+
+The browser owner now holds the single ESS compiler lane for retained replay/creation identity validation; feasibility source stays frozen except for separately authorized regression-test authoring after review. Publication and integration holds remain unchanged.
+
+## Complete concrete Narrow domain transfer control
+
+Root executed a concrete semantic control with frozen CLI d397e76cd811915e6efb9bfd33e0a7c7483ce65d9518ff229de0cbcab56fd23b. Eleven independent authored scenarios explicitly arrange every known Narrow value0..10, copy through the declared mechanical Narrow-to-Wide conversion, increment Wide by1, and assert the unchanged sample plus resulting count1..11. Actual authoring reports11 scenarios, zero refusals, suite/34; native interpreted execution passes all11 with no failed/error/skipped/unsupported scenarios, exit0. Coverage remains unknown and conformance_status is inconclusive; this is a concrete execution control, not full coverage or an unknown-value history proof.
+
+Private ess-nested-increment-probe-20261003: widening-observed-model.yaml SHA256 794f8748cc62319f7f4b96b65ee6f3f6909da123652f73c43bb1f40ae1912eb1; widening-suite.json 29ef57802223ab2ede47c2a132f6a3eb155fe2965e3b03be4e20dcee88464dbe; widening-run.json dbf19a2acc7430baff8747c084e9d472e5f9d4c6deb7b391ffd18b9153a5d143; widening-report.json 2fd3958f7868ec0e7c66679fabff5906c635bb45fd524d506ed9604f264f2268. All source/scenario/output/exit files are retained. No generated-target parity, abstract transfer correctness or observation authority is inferred from these known samples.
+
+## Ordinary control report import limitation
+
+The actual attempt to import widening-report.json with its exact widening-suite.json through AEP0.68.0 failed with exit1: `error: MissingField at $suite.coverage: required field absent`. The ordinary suite/34 carries no coverage field; the execution report truthfully declares unknown coverage and inconclusive conformance. No report or suite was rewritten to satisfy the importer, and no replacement asserted evidence record was used to evade this refusal. The11 known-value execution results and exact original hashes remain in the story's concrete-control section and private receipts. This import limitation does not establish a failing ESS execution or full conformance evidence.
