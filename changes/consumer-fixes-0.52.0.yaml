@@ -2,12 +2,12 @@ schema: b10x-change/v1
 id: ess/consumer-fixes-0.52.0
 repository: ess
 publishedAt: 2026-10-03T00:00:00Z
-title: Generated Go behavior, served view parameters and consumer fixes
+title: Event publishers, generated Go behavior and consumer fixes
 summary: >-
-  ESS generates Go command behavior and view queries, passes typed view parameters
-  through Go and Rust servers, and filters UI reads in React and terminal renderers.
-  Fixes cover creation identities, conformance synthesis and browser startup.
-  Generated behavior and view interfaces have breaking changes documented in the release notes.
+  ESS adds declared event transports and typed Rust and Go publishers, including
+  batching and JetStream adapters. Generated Go behavior, typed view parameters,
+  UI read filters and integer bounds complete the consumer update. Breaking
+  behavior and view interfaces are documented in the release notes.
 kind: capability
 impact: notable
 source:

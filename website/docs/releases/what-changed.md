@@ -11,11 +11,11 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.52.0 — 2026-10-03
 
-### Generated Go behavior, served view parameters and consumer fixes
+### Event publishers, generated Go behavior and consumer fixes
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.52.0)
 
-ESS generates Go command behavior and view queries, passes typed view parameters through Go and Rust servers, and filters UI reads in React and terminal renderers. Fixes cover creation identities, conformance synthesis and browser startup. Generated behavior and view interfaces have breaking changes documented in the release notes.
+ESS adds declared event transports and typed Rust and Go publishers, including batching and JetStream adapters. Generated Go behavior, typed view parameters, UI read filters and integer bounds complete the consumer update. Breaking behavior and view interfaces are documented in the release notes.
 
 ## 0.51.0 — 2026-10-01
 

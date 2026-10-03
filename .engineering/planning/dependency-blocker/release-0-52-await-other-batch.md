@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: dependency-blocker:release-0-52-await-other-batch
 kind: dependency-blocker
-status: open
+status: cleared
 title: Wait for the other ESS session batch before releasing 0.52.0
 relations:
 - blocks: task:release-0-52-0-20261003
-revision: 1
+revision: 2
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-03T01:40:07Z", actor: "human:timo", revision: 2}
 ---
 ## Blocking condition
 

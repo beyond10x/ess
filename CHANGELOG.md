@@ -6,9 +6,20 @@
 
 ### Added
 
+- `ess-transport/1` binds events from an exact specification to broker, subject, envelope,
+  delivery and stream declarations, compiling to `ess-transport-ir/1`. Transport validation
+  refuses missing or ambiguous JetStream coverage; AsyncAPI generation uses the declared
+  bindings (beyond10x/ess#390, beyond10x/ess#392).
+- `ess generate client` emits typed Rust and Go event publishers with batching, flush/close
+  operations, transport seams and optional NATS JetStream adapters. `ess-client-report/1`
+  records generated operations and application obligations. At-least-once delivery remains
+  explicitly unsupported (beyond10x/ess#395).
+- Model-based type generation accepts an event payload as a root, retaining its reachable
+  named types without introducing another authored format (beyond10x/ess#393).
 - Integer field bounds declared by supported invariants are projected into JSON Schema.
   Model-based Go and Rust type generation selects native integer widths for complete ranges;
-  incomplete ranges retain exact-number types (beyond10x/ess#394).
+  incomplete ranges retain exact-number types. Integer newtypes carry their own bounds and
+  constants in schemas and generated native types (beyond10x/ess#394).
 
 - `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
   and terminal semantics after live effects and before local paging. Filters never reach the
