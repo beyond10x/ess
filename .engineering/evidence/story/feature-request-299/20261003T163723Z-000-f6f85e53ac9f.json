@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T16:37:23Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-299",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:filtered-related-read-design-20261003-r1",
+    "reference": "docs/design/filtered-related-reads.md",
+    "review": "review-result:filtered-related-read-design-20261003-r1",
+    "outcome": "fixed"
+  }
+}
