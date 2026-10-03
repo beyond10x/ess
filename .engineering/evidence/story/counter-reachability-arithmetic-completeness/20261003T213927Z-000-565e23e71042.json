@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T21:39:27Z",
+  "actor": "human:timo",
+  "artifact": "story:counter-reachability-arithmetic-completeness",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Coordinator accepted the independently reviewed supplemental413A bounded arithmetic correction and serialized exact two-path ownership before304 production.413B remains proposed and unassigned; pinned50 unchanged.",
+    "reference": "review-result:counter-reachability-413-design-r1"
+  }
+}

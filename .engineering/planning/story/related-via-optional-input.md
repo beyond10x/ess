@@ -12,6 +12,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:feature-request-287
 - supersedes: story:feature-request-304
+- depends_on: story:counter-reachability-arithmetic-completeness
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
