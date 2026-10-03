@@ -8,10 +8,19 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:feature-request-293
 - serves: vision:O2
+- depends_on: story:browser-response-conformance
 scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/optional_value_invariant_browser.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/optional_value_invariant_wasm.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
-revision: 2
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/optional_value_invariants.rs
+revision: 9
 ---
 ## Outcome
 
@@ -56,3 +65,44 @@ Both actual CLI invocations exited 0; synthesis refusals are reported counts and
 | Control suite | 8b65bd408b31f8b7bbcf1f42846c19b4e93dfcde3b79f410b0827688685ecebd |
 
 The actual command was ess verify conform synthesize --path source.yaml --out suite.json, then the same invocation for direct-control.yaml and direct-control-suite.json. The pinned CLI predates the #293 production changes; that unit changes explorer assets only. This establishes an existing source-observation gap, not a regression introduced by Optional random drawing.
+
+## Mixed-position silent omission regression
+
+Root independently executed a stronger source control after read-only scoping identified that positions_of omits Optional/List/Map/Union before inventory. The original Optional note remains; the entity and view additionally carry a required_note of the same Bounded type, set to concrete zero in each source outcome. Actual retained CLI synthesis succeeds with four scenarios and zero refusals. Its only value-invariant scenario is demo.items.Bounded/invariant/at/demo.items.Items/required_note; the note position has neither an invariant scenario nor a coverage refusal. A named inventory assertion fails with OPTIONAL_INVARIANT_POSITION_OMITTED_WITH_ZERO_REFUSALS (exit1). No target execution is claimed.
+
+Private evidence ess-optional-invariant-observation-20261003/mixed-position:
+
+| Artifact | SHA256 |
+| --- | --- |
+| model.yaml | b1e4d4cd70cf265481164ef4a8feb8f06f113f626a098c55985dadb8625a5555 |
+| suite.json | 3fc4056059eb2f9fa920f87491dcb9c4fe3d2673ff274b581a356b1bfd91f60e |
+| synthesis.log | e3621f5fef2734ca0febaa62c72ba3f1a65a6daf7fdda84162097a32905c2cae |
+| obligation-red.log | 090e63f6c603751b5a4fe99650ba8417c09a32ccc0a1348c4bb42321eeb2db37 |
+
+The pinned CLI hash remains d397e76cd811915e6efb9bfd33e0a7c7483ce65d9518ff229de0cbcab56fd23b. First invocation used the parent working directory and failed to find model.yaml; its log/exit are retained at the evidence root, not counted as the product red. The corrected invocation in mixed-position produced the stated suite. No compilation occurred.
+
+This strengthens the required inventory rule: a supported direct position must not hide omitted wrapped positions of the same type. Fixing only the at=None refusal case is insufficient. Legal absence must remain legal while a present witness is actually asserted, and sibling container dispositions must be per position rather than inferred from type-level presence of any one successful scenario.
+
+## Scope
+
+Derived 2026-10-03 by `story-scoper`, reading canonical revision 2 at `a552b9434` and runtime source at `c2c4f01c6` — cited.
+
+- **Primary surface:** value-invariant observation synthesis — cited.
+- **Files:** `crates/verify/ess-conformance/src/synthesize.rs:10808` — cited; `value_object_invariants`, `positions_of`, `reaches`, `holds_at`, `rebased`, and `assert_satisfied` own obligation discovery, arrangement and assertions.
+- **Required behavior:** inventory wrapped positions even when another direct position already succeeds; establish a present constrained value, permit legal absence elsewhere, and retain a specific unresolved obligation when presence cannot be established — cited from acceptance and the existing omission path.
+- **Also likely:** `crates/verify/ess-conformance/src/witness.rs:262` — inferred; presence-directed arrangement may need to extend candidate search while preserving guard selection, type/entity invariants, aliases and existing resource bounds. Existing Optional witnesses already prefer present values, but that does not prove the resulting view position remains present.
+- **Tests:** `crates/verify/ess-conformance/tests/optional_value_invariants.rs` — inferred new Rust-driven native and generated Go/TypeScript regression surface, including independent healthy, absent-only, invalid-present and mixed-position controls.
+- **WASM tests:** `crates/generate/ess-synth/tests/optional_value_invariant_wasm.rs` — inferred new regression using the repository’s actual WASM test convention; library execution must remain distinct from product-browser execution.
+- **Browser tests:** `crates/edge/ess-cli/tests/optional_value_invariant_browser.rs` — inferred new real CLI/browser test surface, dependent on a browser target-execution bridge; current declaration replay cannot satisfy this acceptance.
+- **Documents:** a binding observation/compatibility design is required before implementation; no document path or format change has been selected — inferred.
+- **Confidence:** medium — the omission and arrangement seams are established, but general nonvacuous observation, container semantics and browser execution still require design decisions — inferred.
+- **Would collide with:** value-invariant synthesis, shared arrangement/candidate generation, and browser conformance integration-test surfaces — inferred.
+- **Safety fact:** existing predicate syntax and runtimes already distinguish Optional absence from present scalar/struct values; existing Satisfies requires a nonempty view but does not require a present value at the constrained position. Walked through holds_at → assert_satisfied and the runtime evaluators: level 3, unproven by this read-only pass. A guarded invariant alone is insufficient — cited.
+
+## Scope uncertainties and full-feature boundary
+
+The scoper changed and executed nothing. The mixed-position red is root execution, independently linked in the evidence section. Proposed scope is medium-confidence, not implementation authorization.
+
+List/Map/Union remain required parts of the full all-features objective, not accepted permanent exclusions. The initial Optional scope does not claim to cover them. Source inspection found native runner::row_facts currently publishes sequence presence only, while generated Go/TypeScript predicate fact projectors additionally publish counts/elements. Typed input map projection uses values in key order, whereas untyped runtime maps are flattened by member; input quantifier support therefore does not establish view-observation parity. Union path resolution and first-variant witness generation need variant-aware design. These are source-grounded concerns, not executed cross-runtime red/green results. Their implementation needs an explicit expanded or sibling scope before dispatch; recording them does not discharge full feature support.
+
+For Optional, holds_at proves some row exists, not that the constrained value is present. Binding design must handle cleared/generated/converted values, filters, shared rows and eventual consistency without an absence-only pass. Existing Contains/Excludes might establish nonvacuity for identifiable arrangements; general sufficiency and compatibility are not established. Browser acceptance depends on the separately owned full execution product; declaration navigation or library WASM alone cannot prove it.

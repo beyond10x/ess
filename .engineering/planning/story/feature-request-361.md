@@ -10,7 +10,50 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 8
+- depends_on: story:feature-request-292
+- depends_on: story:browser-response-conformance
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/aggregate_observation_wasm.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/admission.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/aggregate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/aggregate_observation
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/aggregate_observation.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/aggregate.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/lib.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner/disclosure.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/aggregate_observation_admission.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/aggregate_observation_execution.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/support_aggregate_observation
+revision: 29
 ---
 ## Outcome
 
@@ -91,3 +134,11 @@ The revised normalized aggregate observation design, aggregate-result-observatio
 This approves a concrete design direction, not an implemented adapter or complete aggregate support. Required next work is to bind a design page and exact scopes, source-to-Contract completeness and foreign validator inventories, and the shared #292 execution interface. First actual evidence must cover reconstruction round-trip and one-change invalid mutations before production expectations use the adapter. Then prove complete-prefix, direct/related/set-effect, dynamic grouping and all six aggregate functions on actual native/Go/TypeScript/WASM runtimes. A binding-affected query still needs independently verifiable causal-cut authority coordinated with the assigned transport owner; unconnected bindings do not justify refusing other queries. No static-only or missing-binding partial result closes this story.
 
 No compiler/domain helper, transport change, format reservation or implementation worker is authorized by this review. No builds or target probes were executed for the review. The actual admitted aggregate and precondition reds remain retained unchanged, and the original incomplete-inventory finding is only fully closed by later implementation evidence.
+
+## Source ownership and actual execution dependencies
+
+The next integration surfaces are recorded in component-design:aggregate-observation-integration-boundary, based on actual current source and the #292 owner's private interface manifest SHA256 ba00692007103aa15962296f57c1d99c062381edf6ee9dea72177c234407fef5. Current history::State/execute expose lifecycle/history authority, not a general scenario row observer. A separate post-freeze child adapter must retain actual caller/provider/response authority and bind symbolic row identity/alias uncertainty; an invented Node key is not an unobserved generated identity. No #292 expansion is authorized by the aggregate direction.
+
+Complete aggregate operation indices must be lowered after preconditions, fixtures, time/phase installation and other final scenario rewrites. Packaging hooks and native/generated original-byte admission are part of the source scope; writing only synthesize/aggregate.rs cannot implement the chosen design. New executable harness code remains Rust. The read-only file inventory records existing hooks and proposed new modules; it is not a claim that adapter reconstruction, foreign validation or runtime execution has passed.
+
+dependency-blocker:aggregate-binding-cut-authority records the concrete missing capability for binding-affected exactness. The existing input-only ObservedInvocation vector and a deadline do not prove completed transitive effects or retries. Its clearing condition includes a jointly bound interface and independent actual adapter proof from the separate transport owner. Binding-irrelevant positive controls remain required and are not blanket-blocked. #292 is an explicit prerequisite, while full-browser acceptance reuses the separately owned browser product after its freeze. The one held integration branch and full-bundle release boundary remain unchanged.

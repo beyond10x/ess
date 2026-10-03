@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 45
+revision: 46
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -398,3 +398,11 @@ History #292: latest bounded search-stage execution is terminal, 24 passed and z
 The release coordinator reports PR398 and PR404 merged, PR405 closed, final candidate main e68684ef (tree bd40895), and no 0.52 tag. This is attributed owner coordination, not root remote verification. All our new compiler starts are held for the release full check. #293 released both leases and retains its warm servers cache; #292 retains its synthesis cache and source lease, with no active compile; browser has no cache. Source-only implementation/review continues. Transport implementation stays with the third session.
 
 Previously reclaimed owned disposables total 1565491191 bytes: 21 completed build directories, two completed Firefox profiles and five completed nested Rust targets. No additional safely disposable cache was identified at this checkpoint. Exact manifests, source, frozen binaries and evidence are preserved. Free space is not a reservation; the 12 GiB integer start guard remains mandatory when compilation is explicitly cleared again. Full consumer backlog and release completion remain unproven.
+
+## Source evidence and dependencies during release verification
+
+Source-only progress while release verification has compilation priority: component-design:aggregate-observation-integration-boundary now records actual native/external interface ownership and the proposed exact source footprint for #361/#362. Both stories depend on #292; its current API is history-specific, lacks abstract row enumeration/setup, and uses exact Node addresses rather than symbolic unknown identities. The owner confirmed that aggregate symbolic addressing remains separate post-freeze scope. dependency-blocker:aggregate-binding-cut-authority records the missing relevant-binding completion/read-boundary proof; input-only invocation traces cannot clear it. No transport implementation or new wire capability was started.
+
+Root independently executed a new mixed-position invariant probe with the retained CLI: a view exposes the same constrained type through both a required field and an Optional field. Synthesis produces four scenarios and zero refusals but only the direct field has an invariant observation. The named obligation-inventory assertion exits1; red log SHA256 090e63f6c603751b5a4fe99650ba8417c09a32ccc0a1348c4bb42321eeb2db37. This is recorded in story:optional-value-invariant-observation, including source/suite hashes, source-only scoping and explicit nonvacuity/container/runtime uncertainties. Existing direct support must not hide omitted wrapped positions. No target runtime or compiler executed in this probe.
+
+#292 owner saved unfinished checkpoint SHA256 a493289869e4581ce24eec47a8710a64f3054bdf5477ff63fa319dae57ba10a1. Measured checkpoint remains24/0; the prepared42-case matrix and CLI status controls include unexecuted changes, and stage B–D validation remains outstanding. Browser owner continues scoped source/test work without compiler/browser/cache starts; its full capability matrix and actual validation remain incomplete. #293 remains frozen at the earlier exact source/addendum. No new handoff count, source publication, remote verification or release completion is inferred from this planning progress.
