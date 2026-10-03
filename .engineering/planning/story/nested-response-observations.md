@@ -38,7 +38,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_nested_response/mod.rs
 - confidence: inferred
   path: docs/design/nested-response-observations.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -84,3 +84,9 @@ Seven production files: response.rs, new response/path.rs, admission.rs, go/resp
 Probe report dab907a603c09b09ccc609eafca4f7c0d421c15a529314fcadd865dde9099c36 and evidence manifest d3e18af47b894327cf8b0be4390a81f97b87324c674433e10e7051472c7af245 retain original source, suite, reports and terminal101 runs in private ess-nested-response-probe-20261003. Suite39380b6a20ad97e89587879d08280c8b7bcd51c932cacd6e060dd968c868e0b9; healthy/wrong-value reports byte-identical46abcbfcc10041229ffd646bed23998a3a36aac6c58308a3483103e080a30c44. Actual generated-sibling fault disproves an inert checker.
 
 Proposal327839ef111a6a7ee7f4f94e8ea65ba5ea8baa305c5086dd19b9f6cde6b27474 is retained as historical input. Independent design pass1 found two parity blockers, both corrected in binding document. review-result:consumer-nested-response-design-pass2 approves exact28cf71... with findings[] and reviewer executions0. Design approval is not implementation or release proof. Native response integration046db8a680 passed192 focused tests but does not fix this observer gap.
+
+## Frozen reader and repository red, 2026-10-03
+
+Implementation owner preserved an actual pre-amendment reader binary linked against runtime046db8a680 before production changes. Binary SHA256663b007524dba832bae388425bdf59bca6ca414c5ea5c3e524065a6ad05a23ac; source/dependency diff against that checkpoint is empty. It admits original healthy suite39380b6a20ad97e89587879d08280c8b7bcd51c932cacd6e060dd968c868e0b9 under suite34 with1scenario, exit0. Exact source/lock/build log/binary/hash manifest are privately retained under ess-nested-response-probe-20261003/frozen-reader. The frozen copy will not be rebuilt after authority changes. No new-envelope rejection has been claimed before a real generated nested suite exists.
+
+In managed ess-nested-response-observations-20261003, repository test binary nested_response_observations now runs3tests against unchanged production:1passes (healthy and generated-sibling control),2fail independently because wrong response and wrong event each return Passed. Terminal101; target/backlog-input/nested-response-red.log and exit retained. Production implementation started only after that observed red. Owner branch fix/nested-response-observations-20261003 begins at5c5aeaf795, exclusive synthesis cache and live lease. No full workspace build or remote gate was started. All four runtime matrices and independent implementation review remain pending.
