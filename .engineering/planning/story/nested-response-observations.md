@@ -44,7 +44,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_nested_response/values.rs
 - confidence: inferred
   path: docs/design/nested-response-observations.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T01:32:21Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -104,3 +104,9 @@ On the integrator's disk coordination request, root inspected only its own compl
 Own new compiler starts require at least 12 GiB while release398 verifies; existing work is not killed.293 actual repository regression red completed0passed/2failed with terminal101 before production edits; implementation continues without builds during the resource hold.292 has prepared Rust regressions only and waits for a cache. Those source trees and evidence remain retained.
 
 Nested response owner freezes13source/test files against5c5aeaf795 as patch9e87ddaef39cd06666bd962763e18a8fe633d5f037a2fb45c4058a16d23631be. Updated owner report8c622ff51baa2fa9dc4a420a342cdb1405197cc2f4ce531603cea72660cfd689 records actual native/Go/strict-TypeScript matrices, old-reader rejection and earlier actualWASM success. Exact frozen-source final all-target ess-conformance/ess-synth Clippy exits0, log7b9d847b9d7735c1b7ca93736b79c2a1091fec72292c31dfb4cacbdd10a17204. Final post-structural-correction warm WASM remains queued until disk threshold permits. This is owner evidence, not an independent rerun or approval. Root source inspection and independent adversary review are underway; no nested commit/import/publication yet. Added source scopes are path.rs plus support_nested_response/{admission,foreign,values}.rs and the originally planned WASM test; TypeScript runtime delta only wraps an existing diagnostic call for its style gate.
+
+## Independent frozen-source review
+
+Independent reviewer approves the exact frozen 13-file patch 9e87ddaef39cd06666bd962763e18a8fe633d5f037a2fb45c4058a16d23631be with no findings. Immutable report SHA256 791952b2d62dd4c59387eace5e957c303126a47ff7177675c25a7c3997489261 is recorded as review-result:consumer-nested-response-implementation-pass1. Review executions are zero cargo builds and zero generated-runtime/test-binary executions. One isolated installed-Node regex check disproved a proposed terminal-newline admission mismatch; that hypothesis was withdrawn and its unexecuted Rust test remains only in private scratch. No reviewer test or production edits remain in the source tree.
+
+The report cited the earlier owner report d081106ee23776fbc929d7461739b24c0aeb74d8c049e541af1ff359c0963c14; root separately reconciles the owner's final report 8c622ff51baa2fa9dc4a420a342cdb1405197cc2f4ce531603cea72660cfd689 against the same unchanged frozen source. Strict all-target Clippy and repository formatter succeeded. The final post-correction WASM recheck remains queued because shared available disk is below the temporary 12 GiB build-start floor. Prior WASM success is retained, not mislabelled as this final rerun. Source approval does not remove that remaining verification requirement. No commit, integration, release or browser-product completion is claimed.

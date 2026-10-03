@@ -10,7 +10,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 ---
 ## Outcome
 
@@ -53,3 +53,9 @@ Root compiled and ran the private Rust current-probe against unchanged runtime04
 The copied-key control without a group parameter produces3scenarios,1aggregate,0refusals. Direct group-parameter source produces5scenarios,0aggregates,1ESS-SYNTH-017; copied related group-parameter source2scenarios,0aggregates,1ESS-SYNTH-017; state-only source5scenarios,0aggregates,1ESS-SYNTH-016. After validating the control, explicit assertions requiring the three missing aggregates fail with AGGREGATE_GROUP_SELECTION_GAP and terminal101. This is actual red on current code, not an installed-old-version observation or source-authoring failure. It does not execute target queries or claim an implementation.
 
 Private retained current-probe Rust source SHA256a9cfb9c1206ead4a5358ea156b11c136ae50272a286a28e87fc2fb3bd611f86e; actualrunloga085425b0dc5ec35c36574d2a80152f008517b15f00ed78c0f3df38d7953dd4f; exitreceipt39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c; manifest03cf1c4a8db2f9c77a623d7ba484b60837d531b1f5e36c90ad168755c66ace70. Source YAML, lock, emitted suites and per-case JSON results retained under private ess-aggregate-intake-20261003/current-probe and its parent. One warm one-job compile finished0.85s. Root released the servers-cache lease after completion; no source edits or remote gate.
+
+## Executed precondition composition check
+
+Root executed the retained current-source Rust probe binary without compiling, using copied private fixture inputs and adding a declared Open precondition to the state-only aggregate source. Binary SHA256 fb597026674fde8b15c53453370832d7b967803fcc4bc75f93424e210bbcc6aa is retained in the owned servers cache. New source SHA256 66f6384d45d4b883eda2738aa6df644b40c6f2e80bd003a7d8bdbadce08095d1 declares demo.work.Open with team=seeded and cents=17. Source admission succeeds. All five emitted state-case scenarios begin with that exact ExecuteCommand and its expected opened outcome, verified by an independent jq assertion. Thus this composition is admitted source and retained setup, not a hypothetical syntax example. It creates an aggregate source row before the scenario's own arrangement.
+
+The current aggregate remains absent with ESS-SYNTH-016. The unchanged full probe still ends at its named AGGREGATE_GROUP_SELECTION_GAP assertion, terminal 101; no target query was executed and no healthy-target failure is claimed. Original intake and prior current-source red evidence remain unchanged. New private evidence under ess-aggregate-intake-20261003/precondition-probe/run: run.log SHA256 cbcffc5efbf262158c8eb744d9f193f6e0d89a41712cfb317d94b352eb8d7e4e; state suite c3c358f21e049a7d4f03019b8b77b104ec90e8d273c5d54b382d3972552015dd; terminal receipt 39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c. This strengthens the existing independent design finding: Empty only precedes setup, and exact observations require the complete retained command prefix and its subsequent effects. A revision is being developed before any implementation authorization.

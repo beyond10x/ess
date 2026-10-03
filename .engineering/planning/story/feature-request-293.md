@@ -13,6 +13,8 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/explore_optional_unknown_concurrent.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/explore.go
 - confidence: cited
@@ -23,7 +25,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_explore_optional_unknown
 - confidence: inferred
   path: docs/design/explorer-optional-unknown.md
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:13:06Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:13:06Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -167,3 +169,7 @@ Root adopts docs/design/explorer-optional-unknown.md, exact SHA256591e84c819d732
 The internal Choice keeps original external arrangement distinct from the resolved terminal outcome throughout setup, effects, trace, replay, shrinking and accounting. Known absence must remain known through payload, stored rows, views and invariants; concurrent fresh identities mean absent only in the prefix snapshot. Recursive Optional wrapping, known/fresh draw selection, actual unknown-instance creation/refusal, same-fault replay and actual Go/TypeScript concurrent history boundary are mandatory acceptance. No new feature fence, source syntax, suite/history/report format or target API.
 
 Production authorization is limited to the existing two explorer assets and their focused Rust-driven tests/support directory in typed scope. A managed worker starts from the runtime carrier plus this binding document. Preserve original actual probe red and add repository red before source changes. Stop only to resolve a concretely named semantic or scope gap; routine implementation choices need no operator approval. All new committed executable code is Rust; existing Go/TypeScript runtime assets retain their repository convention. Root owns AEP, independent review, source integration and grouped publication. No separate PR or remote gate.
+
+## Concurrent native process test scope
+
+The concurrent acceptance case must cross the actual native CLI process boundary. Existing reproducible tests use CARGO_BIN_EXE_ess under ess-cli; the assigned conformance crate has neither that compiled binary authority nor an exact-source CLI executable available. Root therefore authorizes the narrow additional Rust integration test crates/edge/ess-cli/tests/explore_optional_unknown_concurrent.rs. Existing production scope remains the Go and TypeScript explorer assets. Additional shared support paths must be reported before editing; no separate executable language or ad hoc external-binary dependency is authorized. Worker keeps compilation held below the shared 12 GiB start threshold. This is test-scope authorization, not an execution result.
