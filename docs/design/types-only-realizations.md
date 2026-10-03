@@ -134,7 +134,10 @@ existing bundle adopter's API moves.
 
 - **Timestamps are native.** A `string` with `format: date-time` from a model `Timestamp` is
   realized as Go `time.Time` and Rust `EssTimestamp(pub time::OffsetDateTime)`, both RFC 3339 on
-  the wire. A string that is not RFC 3339 is refused at decode. The Rust library then depends on
+  the wire. Native serialization preserves the timestamp value and numeric offset, while it may
+  normalize the spelling (for example, fractional seconds `.500` become `.5`). It does not
+  preserve the original JSON string byte for byte. A string that is not RFC 3339 is refused at
+  decode. The Rust library then depends on
   `time` (`=0.3.55`, features `formatting` and `parsing`), the version this workspace already
   locks, so the offline gate can build it; `chrono` was not chosen for that reason.
 - **Anonymous shapes are named by position.** The name is the owning declaration followed by each
