@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:browser-response-conformance
 kind: story
-status: draft
+status: active
 title: Support response contracts in browser conformance products
 relations:
 - decomposes: epic:downstream-reported-gaps
@@ -10,39 +10,70 @@ relations:
 scope:
 - confidence: inferred
   path: crates/edge/ess-cli/src/coverage.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/load.rs
 - confidence: inferred
   path: crates/edge/ess-cli/src/main.rs
 - confidence: inferred
   path: crates/edge/ess-cli/tests/browser_response_conformance.rs
 - confidence: cited
+  path: crates/edge/ess-cli/tests/browser_startup_refusal_boundary.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/browser_startup_slow_serve_boundary.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/conform_web_history.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/conform_web_history_adversary.rs
+- confidence: cited
   path: crates/edge/ess-cli/tests/coverage_browser.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/fixtures/browser-target/Cargo.toml
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/fixtures/browser-target/src/lib.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/one_time_browser.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/replay_fidelity_browser.rs
 - confidence: cited
-  path: crates/verify/ess-conformance/assets/coverage-admission.js
-- confidence: cited
-  path: crates/verify/ess-conformance/assets/coverage-player.js
-- confidence: cited
-  path: crates/verify/ess-conformance/assets/index.html
-- confidence: cited
-  path: crates/verify/ess-conformance/assets/player.js
+  path: crates/edge/ess-cli/tests/support/browser.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/assets/browser-index.html
+- confidence: inferred
+  path: crates/verify/ess-conformance/assets/browser-player.js
+- confidence: inferred
+  path: crates/verify/ess-conformance/assets/browser-worker.js
 - confidence: inferred
   path: crates/verify/ess-conformance/src/lib.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/web.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/web_execution.rs
-- confidence: cited
-  path: crates/verify/ess-conformance/src/web_replay.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution/abi.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution/bundle.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution/host.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/web_execution/presentation.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/browser_product_admission.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/browser_product_presentation.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/response_payload.rs
+- confidence: cited
+  path: docs/design/browser-conformance-product.md
+- confidence: cited
+  path: docs/design/review-format-catalog.md
 - confidence: cited
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 6
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -197,3 +228,13 @@ Root reviewed the original browser product candidate with final v2 delta (SHA256
 Choose useful static navigation immediately after CLI emission using a Rust-generated complete lossless declaration document. JavaScript renders display-only tagged numbers/text and checks original-file integrity; it cannot interpret source behavior or mint execution authority. Building the exact emitted Rust module with an explicit consumer Cargo manifest supplies the separate execution route. Before factory callbacks, that module re-admits complete original execution/lineage and source archive through existing Rust authorities and regenerates presentation. The real Rust Runner produces actual execution reports. No prebuilt reader, new packaging helper, target oracle, async transport or default reference target is part of this unit.
 
 The unified binding design and browser product/presentation/ABI version1 catalog entries are being prepared before source dispatch. Exact implementation scope must be recorded and the isolated worktree established first. All original acceptance remains: actual emitted module build, independent healthy/fault target in Firefox, every admitted feature, exact large integers, full coverage selection/lineage, clocks/namespaces, stale-run handling and protected-value disclosure checks. Finite resource limits are unmeasured until actual boundary/peak evidence passes. This story is not implemented by its design approval; no source changes or format publication have occurred yet.
+
+## Bound implementation scope
+
+Binding design docs/design/browser-conformance-product.md, SHA256 02162cbaa70e722e782d187bdcd54f07d9fa7bf9ebb9b295a46a7265e699b88a, is committed with browser product/presentation/ABI version1 catalog entries in carrier commit d849ea01c. This is design registration, not a released reader or execution claim. Root design review consumer-browser-product-design-pass1 is approved. Actual CLI/Firefox regression evidence remains retained as recorded above.
+
+The machine-readable scope now follows design section9. New source modules, embedded browser assets, admission/presentation tests and independent target fixture are marked inferred until implementation confirms them. Existing CLI acquisition/emission and browser test seams are cited. Legacy assets and web_replay.rs are removed from edit scope: preserve their bytes/behavior through an explicit legacy route. Existing response-payload and history/browser tests are neighbors and change only when dispatch expectations require it. Any additional file or helper first requires root scope correction.
+
+Root owns planning, binding design, format catalog and changelog. Worker owns only the scoped implementation source/assets/tests and related response/replay design clarification after authorization. No transport, compiler constructor, Runner semantics, async target protocol, build helper, import flags or new suite major is authorized. Every new committed executable test/fixture is Rust; established embedded browser glue follows the existing asset convention. Work remains on the one held integration delivery path; no separate PR, remote gate or publication is authorized.
+
+Implementation may proceed in isolated ess-browser-conformance-product-20261003 once provisioned from the exact binding-design carrier. Source/test work can proceed under current storage pressure, but compiler/build/browser starts require resource coordination; no third large cache is created. Existing servers and synthesis caches remain exclusively owned by #293 and #292. The browser worker must await an explicit cache handoff before any compile. Completion still requires the full design feature matrix, actual emitted module packaging and independent Firefox healthy/fault execution; static navigation alone cannot close this story.
