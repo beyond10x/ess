@@ -1470,3 +1470,157 @@ fn one_valid_finite_candidate_proves_existence_despite_an_unknown_optional_candi
         Verdict::Linearizable
     );
 }
+
+#[test]
+fn definite_false_suffix_dominates_unknown_optional_prefix_in_generated_domain() {
+    let declarations = r"  - name: demo.sessions.Value
+    kind: struct
+    fields: [{name: maybe, type: Optional<Boolean>}, {name: known, type: Boolean}]
+    invariants: ['maybe == true', 'known == true', 'known == false']
+";
+    let ir = model(&domain_source(declarations, "demo.sessions.Value"));
+    let checked = linearize::check(&ir, &recorded(&ir, None), linearize::DEFAULT_BUDGET)
+        .expect("a definitely empty domain is a resolved absence of a successor");
+    assert_eq!(
+        checked.verdict,
+        Verdict::Violation,
+        "an unknown optional prefix cannot mask a later contradictory Boolean suffix"
+    );
+}
+
+#[test]
+fn complete_increment_domains_distinguish_partial_from_total_overflow() {
+    for (lower, expected_model_refusal) in [
+        ("9223372036854775806", true),
+        ("9223372036854775807", false),
+    ] {
+        let source = GENERATED_NARROW_TO_WIDE.replace(
+            "invariants: ['value >= 0', 'value <= 10']",
+            &format!("invariants: ['value >= {lower}', 'value <= 9223372036854775807']"),
+        );
+        let ir = model(&source);
+        let result = linearize::check(
+            &ir,
+            &widening_history(&ir, 1, None),
+            linearize::DEFAULT_BUDGET,
+        );
+        if expected_model_refusal {
+            assert!(
+                matches!(result, Err(CheckRefusal::Model { .. })),
+                "one safe and one overflowing member is unresolved: {result:?}"
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().verdict,
+                Verdict::Violation,
+                "an entirely overflowing complete domain has no successor"
+            );
+        }
+    }
+}
+
+fn generated_related_identity_source(generated: bool) -> String {
+    let linked = if generated {
+        "{generated: true}"
+    } else {
+        "input.b_id"
+    };
+    format!(
+        r#"format: ess/20
+system: demo
+version: v1
+domain: demo.authority
+entities:
+  - name: demo.authority.A
+    identity: {{name: a_id, type: String}}
+    fields: [{{name: linked, type: String}}, {{name: copied, type: Boolean}}]
+    relations: [{{name: linked_b, kind: references, target: demo.authority.B, cardinality: one, via: linked}}]
+    lifecycle: {{initial: Active, states: [Active], terminal: [Active]}}
+  - name: demo.authority.B
+    identity: {{name: b_id, type: String}}
+    fields: [{{name: marker, type: Boolean}}]
+    lifecycle: {{initial: Active, states: [Active], terminal: [Active]}}
+events:
+  - {{name: demo.authority.ACreated, fields: [{{name: a_id, type: String}}]}}
+  - {{name: demo.authority.BCreated, fields: [{{name: b_id, type: String}}]}}
+  - {{name: demo.authority.Resolved, fields: []}}
+errors:
+  - {{name: demo.authority.OtherB, fields: []}}
+commands:
+  - name: demo.authority.CreateB
+    outcomes:
+      - name: created
+        creates: demo.authority.B
+        instance: b_id
+        sets: {{marker: true}}
+        emits: [demo.authority.BCreated]
+        payload: {{demo.authority.BCreated: {{b_id: {{generated: true}}}}}}
+  - name: demo.authority.CreateA
+    input: [{{name: b_id, type: String}}]
+    outcomes:
+      - {{name: other-b, when: 'b_id != "b"', error: demo.authority.OtherB}}
+      - name: created
+        creates: demo.authority.A
+        instance: a_id
+        sets: {{linked: {linked}, copied: false}}
+        emits: [demo.authority.ACreated]
+        payload: {{demo.authority.ACreated: {{a_id: {{generated: true}}}}}}
+  - name: demo.authority.Resolve
+    input: [{{name: a_id, type: String}}]
+    outcomes:
+      - name: resolved
+        updates: demo.authority.A
+        instance: a_id
+        sets: {{copied: {{related: {{via: linked, field: marker}}}}}}
+        emits: [demo.authority.Resolved]
+"#
+    )
+}
+
+fn generated_related_identity_history(ir: &EssIr) -> History {
+    let digest = SuiteProvenance::of(ir).spec_digest;
+    let document = serde_json::json!({
+        "format":"ess-history/1", "history_id":"00000000-0000-4000-8000-00000000f294",
+        "spec_digest":digest, "seed":0, "clients":1,
+        "operations":[
+            {"operation_id":"00000000-0000-4000-8000-000000000401", "client":0,
+             "command":"demo.authority.CreateB", "subject_key":"b", "invoked_at":1,
+             "returned_at":2, "completion":"Returned", "outcome":"created"},
+            {"operation_id":"00000000-0000-4000-8000-000000000402", "client":0,
+             "command":"demo.authority.CreateA", "subject_key":"a", "invoked_at":3,
+             "returned_at":4, "completion":"Returned", "outcome":"created"},
+            {"operation_id":"00000000-0000-4000-8000-000000000403", "client":0,
+             "command":"demo.authority.Resolve", "subject_key":"a", "invoked_at":5,
+             "returned_at":6, "completion":"Returned", "outcome":"resolved"}
+        ]
+    });
+    history::read(&serde_json::to_vec(&document).unwrap(), &digest)
+        .expect("the generated-related-identity history is admitted")
+}
+
+#[test]
+fn a_generated_identity_is_not_observation_authority_for_a_cross_row_read() {
+    let generated = model(&generated_related_identity_source(true));
+    let result = linearize::check(
+        &generated,
+        &generated_related_identity_history(&generated),
+        linearize::DEFAULT_BUDGET,
+    );
+    assert!(
+        matches!(&result, Err(CheckRefusal::Model { operation_id, .. })
+            if operation_id == "00000000-0000-4000-8000-000000000403"),
+        "a generated identity is still unrecorded address authority: {result:?}"
+    );
+
+    let supplied = model(&generated_related_identity_source(false));
+    assert_eq!(
+        linearize::check(
+            &supplied,
+            &generated_related_identity_history(&supplied),
+            linearize::DEFAULT_BUDGET,
+        )
+        .expect("the exact admitted input can authorize the related address")
+        .verdict,
+        Verdict::Linearizable
+    );
+}
