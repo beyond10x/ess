@@ -648,12 +648,78 @@ fn adversary_275_p2_every_scenario_passes_when_an_invariant_reads_a_text_identit
 
 // ---- a type with too few values ---------------------------------------------------------------
 
+/// Empty namespaces separate scenarios, while both caller orders within one scenario must execute
+/// against the same state. Reusing the first arrangement's identity in the second must fail.
+#[test]
+fn caller_swaps_execute_in_empty_namespaces_and_reject_an_in_scenario_collision() {
+    let model = ir(NARROW);
+    let synthesis = synthesize(&model);
+    assert_eq!(
+        synthesis.suite.provenance.scenario_initial_state,
+        Some(ess_conformance::scenario::ScenarioInitialState::Empty)
+    );
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).expect("admitted suite");
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model.clone()),
+        )
+        .into_report();
+    assert!(!report.scenarios.is_empty());
+    for result in report.scenarios {
+        assert_eq!(result.status, Status::Passed, "{result:#?}");
+    }
+
+    let mut faulty = synthesis.suite;
+    faulty
+        .scenarios
+        .retain(|id, _| id.to_string() == "demo.records.Amend/outcome/amended");
+    assert_eq!(faulty.scenarios.len(), 1);
+    let scenario = faulty.scenarios.values_mut().next().unwrap();
+    let mut first: Option<ScenarioValue> = None;
+    let mut changed = 0;
+    for step in &mut scenario.steps {
+        if let ScenarioStep::ExecuteCommand { command, input, .. } = step {
+            if command.to_string() == "demo.records.RecordEntry" {
+                let identity = input.get_mut("record_id").expect("creating identity");
+                if let Some(first) = &first {
+                    *identity = first.clone();
+                    changed += 1;
+                } else {
+                    first = Some(identity.clone());
+                }
+            }
+        }
+    }
+    assert_eq!(
+        changed, 1,
+        "one second arrangement receives the stale identity"
+    );
+    let admitted = AdmittedSuite::from_suite(&faulty).expect("admitted faulty suite");
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model),
+        )
+        .into_report();
+    assert_eq!(report.scenarios.len(), 1);
+    assert_eq!(report.scenarios[0].status, Status::Failed);
+    assert!(report.scenarios[0]
+        .diagnostics()
+        .any(|diagnostic| diagnostic.code == ess_conformance::report::CheckCode::Outcome));
+}
+
 /// Every scenario that sends the creating command either runs under both callers or is named in a
 /// `Note::UnswappedCallers`, never neither and never both; and a swapped run's identity is one no
-/// first run of any scenario sends and no other swapped run was given.
+/// first run in the same scenario sends. Suite34/35 requires an empty namespace before the next
+/// scenario, so independently arranged scenarios may reuse a finite identity.
 #[test]
 fn adversary_275_p2_every_dropped_swap_is_noted_and_every_drawn_identity_is_unshared() {
     let synthesis = synthesize(&ir(NARROW));
+    assert_eq!(
+        synthesis.suite.provenance.scenario_initial_state,
+        Some(ess_conformance::scenario::ScenarioInitialState::Empty)
+    );
     let noted: BTreeSet<String> = synthesis
         .notes
         .iter()
@@ -664,7 +730,6 @@ fn adversary_275_p2_every_dropped_swap_is_noted_and_every_drawn_identity_is_unsh
             _ => None,
         })
         .collect();
-    let mut first_sent = BTreeSet::new();
     let mut drawn = Vec::new();
     let mut sending = 0;
     for (id, scenario) in &synthesis.suite.scenarios {
@@ -675,11 +740,24 @@ fn adversary_275_p2_every_dropped_swap_is_noted_and_every_drawn_identity_is_unsh
         sending += 1;
         if let Some((first, again)) = halves(scenario) {
             assert!(!noted.contains(&id), "{id} runs swapped and is noted");
-            first_sent.extend(sent_identities(first));
-            drawn.extend(sent_identities(again));
+            let first_sent = sent_identities(first);
+            let fresh = sent_identities(again);
+            // This fixture's only Integer values are 1 and 2. Compare numeric values so JSON
+            // spelling differences cannot disguise an identity collision.
+            let old: Vec<f64> = first_sent
+                .iter()
+                .map(|value| serde_json::from_str(value).unwrap())
+                .collect();
+            for value in &fresh {
+                let numeric: f64 = serde_json::from_str(value).unwrap();
+                assert!(
+                    !old.contains(&numeric),
+                    "{id}: swapped identity {value} is reused"
+                );
+            }
+            drawn.extend(fresh);
         } else {
             assert!(noted.contains(&id), "{id} runs once and no note says so");
-            first_sent.extend(sent_identities(&scenario.steps));
         }
     }
     assert!(sending > 0, "some scenario sends record_id");
@@ -687,16 +765,4 @@ fn adversary_275_p2_every_dropped_swap_is_noted_and_every_drawn_identity_is_unsh
         !drawn.is_empty() && !noted.is_empty(),
         "one swap is drawn ({drawn:?}) and one is noted ({noted:?})"
     );
-    let unique: BTreeSet<&String> = drawn.iter().collect();
-    assert_eq!(
-        unique.len(),
-        drawn.len(),
-        "two swapped runs share {drawn:?}"
-    );
-    for value in &drawn {
-        assert!(
-            !first_sent.contains(value),
-            "a swapped run is given {value}, which a first run sends ({first_sent:?})"
-        );
-    }
 }
