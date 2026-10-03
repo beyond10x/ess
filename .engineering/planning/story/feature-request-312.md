@@ -27,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 26
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -173,3 +173,9 @@ The corrected second baseline failed all five tests during fixture admission: hi
 The third baseline reached semantic red at 2026-10-03T23:26:33Z, fresh free14449025024bytes, ending23:26:41Z with3pass/2fail and no ignored or filtered tests. Native passed all six scenarios under current34 and historical32. Both actual generated-target dropped/changed-token controls passed. Go and TypeScript parity each failed current34 on missing-token reads and stale-view reuse; their historical loops were not reached. RawlogSHA8d1350f8e09eeef7304616afcfc458ef39389a2f701dc70aa61da23d49da4678; semanticreceiptSHA2293080ec2a227b4625434c92d9af55b7d3f32c00e8a4145673e1c2a1b92279b. Both earlier fixture failures remain retained and are not semantic evidence.
 
 Root consumed this baseline and authorized the two bounded production runtime corrections within the existing six-path scope. Preserve native callback suppression, stale-view clearing, Failed expectation versus Error snapshot, prior-write distinction, exact nonempty tokens, eventual behavior and diagnostics. Author must run the full five-test binary, unchanged upsert_by_existence_go, both runtime_parity_*_28_35 targets, affected native execution neighbors, strict scoped lint and format. Fresh capacity floor and sole ESS compiler custody remain mandatory. Independent whole-unit review precedes integration. Combined full-package acceptance remains due after correction; parent312 stays active.
+
+## RYW treatment and demonstrated Go bridge dependency
+
+The two-resource treatment passed all five new controls after a retained first treatment still classified missing snapshots as Failed rather than Error. Current34 and historical32 native/generated matrices now execute green; full acceptance remains pending. The unchanged Go parity neighbor exposed a separate test bridge defect in go_generates_structured_value_suites_32_and_33: healthy nativePassed versus generatedFailed. The current combined neighbor run remains in flight, so no aggregate result is claimed here.
+
+Root read-only inspection identifies tests/support_go_prerequisite/mod.rs: its structured target delegates the interpreter, which returns a real token, but execute dispatch drops result.consistency from response JSON; query dispatch hardcodes Current. The corrected runtime honestly refuses that weakened read. Add only this seventh helper path to the bounded unit: preserve the actual Consistency response field and decode exact AtLeast/Current requests, retaining all healthy/faulty target behavior and assertions. Test observation must distinguish omitted/altered tokens; no invented successful token or production weakening is authorized. Preserve the observed neighbor failure and rerun the complete unchanged Go parity target and applicable helper users after correction. Whole affected package and independent review still precede final acceptance.
