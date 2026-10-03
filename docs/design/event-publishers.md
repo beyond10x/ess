@@ -54,7 +54,7 @@ already holds a connection writes three lines instead.
 | channel | `publish_<event>` | `publish_<event>_now` | `flush` / `close` |
 |---|---|---|---|
 | `envelope: single` | encodes and publishes one message | — | nothing buffered |
-| `envelope: array` | encodes, buffers; a flush publishes the buffer as one JSON array at `max_items` or `max_delay_ms` | publishes the given payloads as one array, bypassing the buffer | publishes what is buffered; `close` also stops the flusher |
+| `envelope: array` | encodes, buffers; a flush publishes the buffer at `max_items` or `max_delay_ms`, never more than `max_items` payloads per message (what arrives while a message waits for its acknowledgement goes in the next one) | publishes the given payloads as one array, bypassing the buffer; refused after `close` | publishes what is buffered, in messages of at most `max_items`; `close` also stops the flusher |
 
 `delivery: at_most_once`: a failed publish is reported to the error callback (default: none) and
 the batch is dropped; nothing retries it. `delivery: at_least_once` is refused by the generator in
