@@ -192,9 +192,9 @@ fn issue_275_each_run_of_the_refusal_resends_the_identity_it_recorded() {
         assert!(
             sent.iter()
                 .any(|(stored, by, expected)| stored.as_ref() == Some(identity)
-                    && by == account
+                    && by != account
                     && expected.as_deref() == Some(RECORDED)),
-            "the refused identity is one its own run recorded: {sent:#?}"
+            "the refused identity is one its own run recorded under the other caller: {sent:#?}"
         );
     }
 }

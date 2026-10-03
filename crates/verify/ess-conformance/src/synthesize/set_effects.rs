@@ -28,6 +28,7 @@ use ess_domain::view::Consistency;
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
+use super::caller::{InvocationModels, InvocationPhase};
 use crate::witness::{Distinction, WitnessGap};
 
 use super::{
@@ -46,13 +47,13 @@ const MATCHING: usize = 3;
 
 /// Every set outcome's scenario, and every `affects:` segment.
 pub(super) fn set_effects(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
-    for command in ir.commands().values() {
+    for command in models.acting.commands().values() {
         if !focus.takes(&command.name) {
             continue;
         }
@@ -64,7 +65,7 @@ pub(super) fn set_effects(
                 ),
             };
             if let Some(set) = &outcome.instances {
-                match set_scenario(ir, command, outcome, set, actors) {
+                match set_scenario(models, command, outcome, set, actors) {
                     Ok(scenario) => insert(suite, id.clone(), scenario, refusals),
                     Err(cause) => refusals.push(Refusal::about(&id, cause)),
                 }
@@ -77,7 +78,7 @@ pub(super) fn set_effects(
                 continue;
             };
             let mut taken = captured(&scenario.steps);
-            match affects_segment(ir, command, outcome, actors, &mut taken) {
+            match affects_segment(models, command, outcome, actors, &mut taken) {
                 Ok((steps, source)) => {
                     let scenario = suite
                         .scenarios
@@ -606,6 +607,7 @@ fn read_back(
 
 /// The invocation of the branch under test, and the answer it must give.
 fn invocation(
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -613,6 +615,7 @@ fn invocation(
     steps: &mut Vec<ScenarioStep>,
     source: &mut BTreeSet<EssSemanticRef>,
 ) {
+    let start = steps.len();
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     steps.push(ScenarioStep::ExecuteCommand {
@@ -624,6 +627,7 @@ fn invocation(
     steps.push(ScenarioStep::ExpectOutcome {
         outcome: branch.clone(),
     });
+    models.mark(InvocationPhase::Act, &mut steps[start..]);
     source.insert(command_ref.into());
     source.insert(branch.into());
     if let Some(actor) = actors.get(&command.name) {
@@ -739,12 +743,13 @@ fn answer(
 
 /// The `instances:` scenario.
 fn set_scenario(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     set: &ResolvedSetSubject,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<ConformanceScenario, RefusalCause> {
+    let ir = models.arrangement;
     let entity = &set.entity;
     let at = || format!("{}.instances", outcome.name);
     let moves = matches!(set.effect, ResolvedEffect::Moves { .. });
@@ -773,7 +778,9 @@ fn set_scenario(
         source.extend(row.source.iter().cloned());
     }
     source.insert(EntityRef::from(entity).into());
+    models.mark(InvocationPhase::Arrange, &mut steps);
     invocation(
+        models,
         command,
         outcome,
         actors,
@@ -804,7 +811,7 @@ fn set_scenario(
     let left = left_by(ir, outcome, &supplied, &arranged, to);
     if let Some(none) = matching_none(ir, command, outcome, &set.filter, entity, &left) {
         zero_match(
-            ir,
+            models,
             command,
             outcome,
             actors,
@@ -955,13 +962,15 @@ fn affect_inputs(
 }
 
 /// The `affects:` segment appended to the branch's own scenario.
+#[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
 fn affects_segment(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
     let subject = outcome.subject.as_ref().ok_or_else(|| {
         gap(
@@ -1039,7 +1048,9 @@ fn affects_segment(
             rows,
         });
     }
+    models.mark(InvocationPhase::Arrange, &mut steps);
     invocation(
+        models,
         command,
         outcome,
         actors,
@@ -1148,7 +1159,7 @@ fn matching_none(
 /// accepted, `{count: changed}` is 0, and every row reads as the first call left it.
 #[allow(clippy::too_many_arguments)]
 fn zero_match(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -1157,8 +1168,17 @@ fn zero_match(
     left: Vec<Arrangement>,
     (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
 ) -> Result<(), RefusalCause> {
+    let ir = models.arrangement;
     let supplied = supply(command, input, None, None, &BTreeMap::new());
-    invocation(command, outcome, actors, supplied.clone(), steps, source);
+    invocation(
+        models,
+        command,
+        outcome,
+        actors,
+        supplied.clone(),
+        steps,
+        source,
+    );
     answer(ir, command, outcome, &supplied, 0, steps, source)?;
     let unchanged = Rows {
         changed: Vec::new(),
