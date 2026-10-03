@@ -42,7 +42,7 @@ scope:
   path: docs/design/binding-delivery-guarantees.md
 - confidence: cited
   path: models/toolchain/README.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -92,3 +92,7 @@ The 2026-10-03 remaining-bundle execution uses docs/design/binding-arrangement-a
 ## Design revision 2
 
 The four findings in review-result:binding-arrangement-drop-design-20261003-r1 are fixed in docs/design/binding-arrangement-and-drop.md: reconcile obsolete mapping-only tracing documentation with shipped retry/every-invocation semantics; specify cumulative non-consuming per-correlation snapshots and adapter controls; require pre-trigger mapped destination identity authority with DestinationIdentityUnavailable for post-trigger-only values; and pin QueryView/SnapshotSubject before the trigger plus QueryView/ExpectSubjectUnchanged after count observation. These are prospective source/adapter tests, not completed execution. Independent final design review remains due.
+
+## Current design disposition
+
+Final independent design reviews at aec396fe6 approved the arrangement/drop contract and the conditional/per-refusal contract (review-result:binding-arrangement-drop-design-20261003-r2 and review-result:conditional-binding-design-20261003-r2). All four and three first-round findings, respectively, were fixed. The matching docs/design pages now bind implementation. Prior pending-design wording is historical; implementation, decisive target controls and independent source review are still required. Serial #266 -> #267 -> #268/#194 -> #269 order and the one bundle PR remain unchanged.

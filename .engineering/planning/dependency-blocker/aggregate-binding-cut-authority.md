@@ -8,7 +8,7 @@ relations:
 - blocks: story:feature-request-361
 - blocks: story:feature-request-362
 withholds: test_result
-revision: 2
+revision: 3
 ---
 ## Missing dependency
 
@@ -25,3 +25,9 @@ The sole held-bundle integrator now coordinates the required completion work und
 ## Evidence
 
 Current target.rs::observe_invocations at line308 and ObservedInvocation at line974 were inspected at runtime c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9. The design boundary and proposed scope are component-design:aggregate-observation-integration-boundary. Native shared context also depends on #292 freeze and a separately reviewed adapter; that dependency is represented by story edges, not conflated with this transport completion capability.
+
+## Causal observation proposal and allocations
+
+The coordinator proposal docs/design/binding-causal-observation.md binds a separate optional actual-dispatch capability: begin an observed session, execute a source operation exactly once with an actual receipt, and query a completed causal inventory plus aligned immutable rows. It requires register-before-complete child tracking, actual mapped inputs/results, retry/commit order, source-valid conditional skips, correlation isolation, typed unknown-effect failures and disclosure. It is not implemented or independently reviewed and does not clear the dependency blocker.
+
+New aggregate program/cut vocabulary is allocated ordinary suite38/inventory39. Held34/35 remain unchanged; suite36/37 is separately allocated to conditional-binding zero-invocation observation. Any serialized new capability exchange uses the explicit closed ess-binding-observation/1 envelope rather than adding unchecked fields to released command/event results. Required original-byte, actual adapter healthy/fault and full target/browser proofs are enumerated in the proposal. The contract/program must still use checked source reconstruction/reprojection and the separate shared executor adapter; no expected aggregate row or selected outcome becomes observation authority.

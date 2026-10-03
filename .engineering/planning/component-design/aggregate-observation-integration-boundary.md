@@ -7,7 +7,7 @@ title: Aggregate observation source ownership and shared execution dependencies
 relations:
 - designs: story:feature-request-361
 - designs: story:feature-request-362
-revision: 2
+revision: 3
 ---
 ## Purpose
 
@@ -78,3 +78,9 @@ All current work here was read-only source inspection; no compiler, test, target
 The operator's accepted remaining-bundle plan authorizes implementation, serial integration, one PR and release. When asked for a transport handoff, the operator answered “dont care, just integrate”. Current read-only discovery found no #391 or binding-completion source candidate in local/remote refs, managed trees, active ESS leases or the identified Claude plan. Literal transport390 is already in the integration ancestry via PR402. The historical external-owner wording records an earlier assignment; it no longer means root waits for another handoff answer. Root coordinates completion of the necessary source on the held branch, preserving the original scope and independent proof requirements.
 
 This body and scope were reconciled through AEP from the canonical intake carrier at acb88e97d3c99587c3b0a501314ce35d73fa4f3b; that dirty carrier was not modified. Historical source/review results remain dated evidence, never promoted to current execution. The #292 candidate is now integrated at9f35a2d5d and its combined56-test history run passes. No aggregate observer, causal completion adapter or dynamic-address transport implementation exists in these planning imports. The dependency blocker stays open until actual independent adapter evidence satisfies it. Full browser and all six aggregates remain required; no partial feature result closes361/362.
+
+## Causal observation proposal and allocations
+
+The coordinator proposal docs/design/binding-causal-observation.md binds a separate optional actual-dispatch capability: begin an observed session, execute a source operation exactly once with an actual receipt, and query a completed causal inventory plus aligned immutable rows. It requires register-before-complete child tracking, actual mapped inputs/results, retry/commit order, source-valid conditional skips, correlation isolation, typed unknown-effect failures and disclosure. It is not implemented or independently reviewed and does not clear the dependency blocker.
+
+New aggregate program/cut vocabulary is allocated ordinary suite38/inventory39. Held34/35 remain unchanged; suite36/37 is separately allocated to conditional-binding zero-invocation observation. Any serialized new capability exchange uses the explicit closed ess-binding-observation/1 envelope rather than adding unchecked fields to released command/event results. Required original-byte, actual adapter healthy/fault and full target/browser proofs are enumerated in the proposal. The contract/program must still use checked source reconstruction/reprojection and the separate shared executor adapter; no expected aggregate row or selected outcome becomes observation authority.

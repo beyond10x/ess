@@ -50,7 +50,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
 - confidence: inferred
   path: docs/design/binding-delivery-guarantees.md
-revision: 31
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -100,3 +100,7 @@ For the operator-authorized remaining bundle, docs/design/conditional-binding-fa
 ## Design revision 2
 
 Review-result:conditional-binding-design-20261003-r1 is answered in docs/design/conditional-binding-failure-policies.md. Refusal policies apply only after a valid mapped input reaches the command port, where every logical attempt is counted once before the call. Untyped port failures consume this budget. Pre-input mapping/host/selection failures are explicit obligations with zero attempts and no policy/retry/escalation, avoiding an unadvanceable budget and fabricated escalation input. Escalation uses the actual complete failed input and the existing typed host builder; builder failure neither publishes nor reenters retry. Named controls cover these boundaries. Story268's Outcome/title now promise event-payload conditioning, not indistinguishable source-outcome selection. All three design findings are fixed; second independent design review remains due, implementation remains pending.
+
+## Current design disposition
+
+Final independent design reviews at aec396fe6 approved the arrangement/drop contract and the conditional/per-refusal contract (review-result:binding-arrangement-drop-design-20261003-r2 and review-result:conditional-binding-design-20261003-r2). All four and three first-round findings, respectively, were fixed. The matching docs/design pages now bind implementation. Prior pending-design wording is historical; implementation, decisive target controls and independent source review are still required. Serial #266 -> #267 -> #268/#194 -> #269 order and the one bundle PR remain unchanged.

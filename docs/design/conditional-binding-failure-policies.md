@@ -1,6 +1,6 @@
 # Conditional bindings and per-refusal policies (#268/#194, #269)
 
-Status: coordinator contract proposed for the accepted bundle; independent design review and
+Status: coordinator contract approved by final independent design review on 2026-10-03;
 implementation pending. Implement #268/#194 before #269, after #266/#267. Source syntax is
 coordinated ess/22; ess/21 remains the one-time-response allocation.
 

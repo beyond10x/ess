@@ -1,7 +1,7 @@
 # Binding arrangement and drop observation (#266, #267)
 
-Status: coordinator contract for the accepted bundle, pending independent design review and
-implementation. This clarifies the existing eventual-binding model; it adds no source syntax.
+Status: coordinator contract approved by final independent design review on 2026-10-03;
+implementation pending. This clarifies the existing eventual-binding model; it adds no source syntax.
 
 ## Execution authority
 
