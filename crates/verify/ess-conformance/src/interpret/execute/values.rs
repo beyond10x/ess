@@ -165,6 +165,25 @@ fn checked_read(
     }
 }
 
+pub(super) fn response(
+    ir: &EssIr,
+    target: &ResolvedPayloadField,
+    actual: Option<&super::super::response::Value>,
+) -> Result<Option<Node>, Undetermined> {
+    let ResolvedPayloadValue::ResponseField { field, type_ref } = &target.value else {
+        unreachable!("only response sources use this evaluator")
+    };
+    let gap = || Undetermined::NotInterpreted {
+        construct: "an actual response field or its executable conversion".into(),
+    };
+    if target.conversion.is_some() {
+        return Err(gap());
+    }
+    let actual = actual.ok_or_else(gap)?;
+    // Error text must not disclose a protected field elsewhere in this response.
+    checked_read(ir, field, type_ref, &target.target_type, actual.get(field)).map_err(|_| gap())
+}
+
 pub(super) fn increment(
     ir: &EssIr,
     field: &ResolvedPayloadField,
@@ -181,4 +200,44 @@ pub(super) fn increment(
     let value = Node::Number(previous.checked_add(increment).ok_or_else(no_value)?);
     input::validate_typed_value(ir, &field.target_type, &value).map_err(Undetermined::Request)?;
     Ok(value)
+}
+
+#[cfg(test)]
+mod response_tests {
+    use super::*;
+
+    #[test]
+    fn actual_response_reads_preserve_absence_null_and_exact_values_and_validate_both_types() {
+        let source = include_str!("../../../tests/fixtures/response-payload.yaml")
+            .replace("type: demo.api.Item", "type: Optional<demo.api.Item>");
+        let specification = ess_domain::Specification::assemble([(
+            ess_domain::system::Source::new("response.yaml"),
+            ess_domain::spec::RawSpecFile::parse(&source).unwrap(),
+        )])
+        .unwrap();
+        let ir =
+            ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+                .unwrap();
+        let command = ir.commands().values().next().unwrap();
+        let field = &command.outcomes[0].payload[0].fields[0];
+        assert_eq!(response(&ir, field, Some(&BTreeMap::new())).unwrap(), None);
+        let null = BTreeMap::from([("item".into(), Node::Null)]);
+        assert_eq!(response(&ir, field, Some(&null)).unwrap(), Some(Node::Null));
+        let mut present: BTreeMap<String, Node> = serde_json::from_str(r#"{"item":{"remaining":9007199254740993,"created":"2026-09-11T10:00:00Z","ended":"2026-09-11T10:01:00Z","state":"Ready","call_type":"incoming","features":{"enabled":true}}}"#).unwrap();
+        assert_eq!(
+            response(&ir, field, Some(&present)).unwrap(),
+            present.get("item").cloned()
+        );
+        let mut converted = field.clone();
+        converted.conversion = Some("opaque transformation".into());
+        assert!(response(&ir, &converted, Some(&present)).is_err());
+        let mut wrong_target = field.clone();
+        wrong_target.target_type = ResolvedTypeRef::Primitive {
+            name: ess_domain::types::Primitive::String,
+        };
+        assert!(response(&ir, &wrong_target, Some(&present)).is_err());
+        present.insert("item".into(), Node::Bool(false));
+        assert!(response(&ir, field, Some(&present)).is_err());
+        assert!(response(&ir, field, None).is_err());
+    }
 }

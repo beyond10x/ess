@@ -221,3 +221,21 @@ fn browser_response_vocabulary_is_explicitly_refused() {
         .to_string()
         .contains("browser replay does not support observed command response payloads"));
 }
+
+#[test]
+fn native_target_executes_legacy_response_payload_suite() {
+    let model = ir();
+    let admitted = AdmittedSuite::from_suite(&suite()).unwrap();
+    let run = ess_conformance::Runner::for_suite(admitted.suite()).run_admitted(
+        &admitted,
+        &ess_conformance::interpret::Interpreted::for_model(model),
+    );
+    assert!(!run.scenarios.is_empty());
+    assert!(
+        run.scenarios
+            .iter()
+            .all(|result| result.status == Status::Passed),
+        "{:#?}",
+        run.scenarios
+    );
+}

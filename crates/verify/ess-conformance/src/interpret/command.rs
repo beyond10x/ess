@@ -1,5 +1,5 @@
 //! Both request shapes share grants and the publication of their actual completed step.
-use super::{execute::Step, protected, Interpreted};
+use super::{execute::Step, response::Prepared, Interpreted};
 use crate::scenario::{ActorRef, CommandRef};
 use crate::target::{SemanticCommandResult, TargetError};
 use ess_primitives::{consistency::ConsistencyToken, ids::CorrelationId};
@@ -30,12 +30,14 @@ impl Interpreted {
         command: &CommandRef,
         correlation: &CorrelationId,
         step: Step,
+        prepared: Option<Prepared>,
     ) -> Result<SemanticCommandResult, TargetError> {
         let observation = format!("invoking `{command}`");
-        let model = self.model(&observation)?;
         let mut scenario = self.scenario.borrow_mut();
-        let response =
-            protected::response(model, command, step.outcome.as_ref(), &mut scenario.issued)?;
+        let response = prepared.and_then(|prepared| {
+            scenario.issued = prepared.issued;
+            prepared.value
+        });
         if scenario.store != step.next {
             let visible_after = scenario.projection_reads.saturating_add(2);
             scenario

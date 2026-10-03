@@ -386,6 +386,7 @@ pub(super) fn without_input(
             caller,
         },
         &Generated::Counter,
+        &mut super::response::Authority::default(),
     )?
     .map_err(Undetermined::Request)
 }
@@ -429,6 +430,26 @@ pub(super) fn in_context(
     externals: &Externals,
     generated: &Generated,
 ) -> Result<Vec<Step>, Undetermined> {
+    responding(
+        ir,
+        store,
+        command,
+        input,
+        externals,
+        generated,
+        &mut super::response::Authority::default(),
+    )
+}
+
+pub(super) fn responding(
+    ir: &EssIr,
+    store: &Store,
+    command: &QualifiedName,
+    input: &Invocation<'_>,
+    externals: &Externals,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Vec<Step>, Undetermined> {
     let spec = ir
         .commands()
         .get(command)
@@ -442,7 +463,7 @@ pub(super) fn in_context(
             return Ok(vec![step]);
         }
     }
-    if let Some(steps) = related_absent(ir, spec, store, input, generated)? {
+    if let Some(steps) = related_absent(ir, spec, store, input, generated, responses)? {
         return Ok(steps);
     }
     if let Some(steps) = refused_by_input(ir, spec, store, input)? {
@@ -485,7 +506,9 @@ pub(super) fn in_context(
         })?;
         let key = identity.clone();
         let Some(held) = store.instance_typed(entity, &key) else {
-            return Ok(vec![unknown_instance(ir, spec, store, input, generated)?]);
+            return Ok(vec![unknown_instance(
+                ir, spec, store, input, generated, responses,
+            )?]);
         };
         held_subjects.insert(
             outcome.name.clone(),
@@ -507,7 +530,7 @@ pub(super) fn in_context(
     let mut steps: Vec<Step> = Vec::with_capacity(selected.len());
     let mut unmatched: Vec<String> = Vec::new();
     for outcome in selected {
-        match take(ir, spec, outcome, store, input, generated)? {
+        match take(ir, spec, outcome, store, input, generated, responses)? {
             Ok(step) if !steps.contains(&step) => steps.push(step),
             Ok(_) => {}
             Err(why) => unmatched.push(format!("`{}`: {why}", branch(spec, outcome))),
@@ -661,6 +684,7 @@ fn related_absent(
     store: &Store,
     input: &Invocation<'_>,
     generated: &Generated,
+    responses: &mut super::response::Authority,
 ) -> Result<Option<Vec<Step>>, Undetermined> {
     let related: Vec<&ResolvedOutcome> = spec
         .outcomes
@@ -704,7 +728,7 @@ fn related_absent(
     if absent.subject.is_none() && absent.error.is_some() {
         return Ok(Some(vec![refusal(ir, spec, absent, store, input, None)?]));
     }
-    match take(ir, spec, absent, store, input, generated)? {
+    match take(ir, spec, absent, store, input, generated, responses)? {
         Ok(step) => Ok(Some(vec![step])),
         Err(why) => Err(Undetermined::Request(format!(
             "no branch the model allows is described by the given values — `{}`: {why}",
@@ -948,6 +972,7 @@ struct Work<'g> {
     supply: Supply<'g>,
     /// Immutable pre-outcome fields, including the exact identity held outside `Instance.fields`.
     before: Option<Instance>,
+    response: Option<super::response::Value>,
 }
 
 impl Work<'_> {
@@ -1053,13 +1078,16 @@ fn take(
     store: &Store,
     input: &Invocation<'_>,
     generated: &Generated,
+    responses: &mut super::response::Authority,
 ) -> Result<Result<Step, Unmatched>, Undetermined> {
+    let mut prepared = None;
     let mut work = Work {
         original: store,
         outcome,
         next: store.clone(),
         supply: Supply::of(generated),
         before: values::selected_subject(ir, spec, outcome, store, input),
+        response: None,
     };
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, Node)> = None;
@@ -1068,6 +1096,9 @@ fn take(
         let entity = ir.entity(&subject.entity);
         match (&subject.effect, &subject.instance) {
             (ResolvedEffect::Creates, ResolvedInstance::Observed { field, .. }) => {
+                // The declared creation identity can itself read the actual response.
+                prepared = responses.prepare(ir, spec, outcome)?;
+                work.response = prepared.as_ref().and_then(|value| value.value.clone());
                 let identity = or_no_step!(create(ir, outcome, subject, input, &mut work));
                 let key = identity.clone();
                 created = Some((field.name.clone(), identity));
@@ -1075,17 +1106,7 @@ fn take(
             }
             (ResolvedEffect::Creates, ResolvedInstance::Supplied { .. })
             | (_, ResolvedInstance::Observed { .. }) => {
-                return Err(Undetermined::NotInterpreted {
-                    construct: format!(
-                        "a `{}` whose identity is {}, in `{}`",
-                        subject.effect.verb(),
-                        match subject.instance {
-                            ResolvedInstance::Supplied { .. } => "supplied",
-                            ResolvedInstance::Observed { .. } => "observed",
-                        },
-                        branch(spec, outcome)
-                    ),
-                })
+                return Err(unsupported_instance(spec, outcome, subject));
             }
             (effect, ResolvedInstance::Supplied { field }) => {
                 let identity = input.get(&field.name).ok_or_else(|| {
@@ -1096,7 +1117,9 @@ fn take(
                 })?;
                 let key = identity.clone();
                 let Some(held) = store.instance_typed(&entity.name, &key) else {
-                    return Ok(Ok(unknown_instance(ir, spec, store, input, generated)?));
+                    return Ok(Ok(unknown_instance(
+                        ir, spec, store, input, generated, responses,
+                    )?));
                 };
                 let after = match act(ir, &outcome.sets, effect, held, input, &mut work)? {
                     Acted::NotFromHere => {
@@ -1130,6 +1153,10 @@ fn take(
     }
 
     let changed = set_effects::apply(ir, spec, outcome, store, input, &mut work)?;
+    if prepared.is_none() {
+        prepared = responses.prepare(ir, spec, outcome)?;
+        work.response = prepared.as_ref().and_then(|value| value.value.clone());
+    }
     let events = or_no_step!(emit(
         ir,
         spec,
@@ -1143,12 +1170,32 @@ fn take(
     if let Some((entity, key)) = &touched {
         at_rest(ir, &work.next, entity, key)?;
     }
-    Ok(Ok(Step {
+    let step = Step {
         outcome: Some(reference(spec, outcome)),
         error: declared_error(ir, outcome, input, work.before.as_ref(), store)?,
         events,
         next: work.next,
-    }))
+    };
+    responses.completed(reference(spec, outcome), prepared);
+    Ok(Ok(step))
+}
+
+fn unsupported_instance(
+    spec: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+) -> Undetermined {
+    Undetermined::NotInterpreted {
+        construct: format!(
+            "a `{}` whose identity is {}, in `{}`",
+            subject.effect.verb(),
+            match subject.instance {
+                ResolvedInstance::Supplied { .. } => "supplied",
+                ResolvedInstance::Observed { .. } => "observed",
+            },
+            branch(spec, outcome)
+        ),
+    }
 }
 
 /// What `effect` does to an instance the store holds. Never `creates:`, which [`take`] answers.
@@ -1201,6 +1248,7 @@ fn unknown_instance(
     store: &Store,
     input: &Invocation<'_>,
     generated: &Generated,
+    responses: &mut super::response::Authority,
 ) -> Result<Step, Undetermined> {
     match spec
         .outcomes
@@ -1214,7 +1262,8 @@ fn unknown_instance(
                 .as_ref()
                 .is_some_and(|subject| subject.effect == ResolvedEffect::Creates) =>
         {
-            take(ir, spec, outcome, store, input, generated)?.map_err(Undetermined::Request)
+            take(ir, spec, outcome, store, input, generated, responses)?
+                .map_err(Undetermined::Request)
         }
         Some(outcome) => refusal(ir, spec, outcome, store, input, None),
         None => wrong_state(ir, spec, store, input, None),
@@ -1293,6 +1342,9 @@ fn value(
     work: &mut Work<'_>,
 ) -> Result<Option<Node>, Undetermined> {
     match &field.value {
+        ResolvedPayloadValue::ResponseField { .. } => {
+            values::response(ir, field, work.response.as_ref())
+        }
         ResolvedPayloadValue::RelatedField { .. } => work.reads().related(ir, field, input),
         ResolvedPayloadValue::SubjectField {
             field: read,
