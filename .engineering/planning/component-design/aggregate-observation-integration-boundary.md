@@ -7,7 +7,7 @@ title: Aggregate observation source ownership and shared execution dependencies
 relations:
 - designs: story:feature-request-361
 - designs: story:feature-request-362
-revision: 4
+revision: 5
 ---
 ## Purpose
 
@@ -88,3 +88,7 @@ This body and scope were reconciled through AEP from the canonical intake carrie
 The coordinator proposal docs/design/binding-causal-observation.md binds a separate optional actual-dispatch capability: begin an observed session, execute a source operation exactly once with an actual receipt, and query a completed causal inventory plus aligned immutable rows. It requires register-before-complete child tracking, actual mapped inputs/results, retry/commit order, source-valid conditional skips, correlation isolation, typed unknown-effect failures and disclosure. It is not implemented or independently reviewed and does not clear the dependency blocker.
 
 New aggregate program/cut vocabulary is allocated ordinary suite38/inventory39. Held34/35 remain unchanged; suite36/37 is separately allocated to conditional-binding zero-invocation observation. Any serialized new capability exchange uses the explicit closed ess-binding-observation/1 envelope rather than adding unchecked fields to released command/event results. Required original-byte, actual adapter healthy/fault and full target/browser proofs are enumerated in the proposal. The contract/program must still use checked source reconstruction/reprojection and the separate shared executor adapter; no expected aggregate row or selected outcome becomes observation authority.
+
+## Causal design approval
+
+Independent final design review2of2 approves the complete causal contract and producer ownership at3dfaba0eea3108103c6e46099a56f0851f91e190, no findings. Publication report SHA256614ea21b94478af47470ee0af32cc60f5b5e9e4782d2b554a540ee851853bc3a; recorded review-result:aggregate-causal-design-20261003-r2. The default-method lifecycle, actual generated/native dispatcher and shared transaction store, immutable query cut, versioned exposure and full browser path are bound. No implementation or actual adapter acceptance has run. dependency-blocker:aggregate-binding-cut-authority remains open until its healthy/fault controls actually execute; approval of this design does not clear it.
