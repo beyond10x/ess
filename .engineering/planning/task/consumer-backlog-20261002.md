@@ -7,7 +7,7 @@ title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 37
+revision: 38
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -320,3 +320,11 @@ RelatedField frozen patch1bc0bccde4892209ef65ee8b76581910ababcba9acc187771590159
 Latest CLI regenerated billing33, gatepass17 and oracle34 scenarios to exact producer bytes, with0/5/6 explicit refusals respectively; each generator exited0. Canonical suite files now carry initial-state metadata, and their README replaces the nonexistent cargo xtask suite command with actual CLI commands. Caller-sensitive312 continuation remains active with measured compiled reds, native target witnesses and no expansion to compiler-rejected source syntax.
 
 No new remote gate or publication was triggered by this continuation. Source0.51.0 remains the last verified release. Full backlog disposition, complete affected-package checks and agreed release candidate remain outstanding.
+
+## Full ess/21 hold clarified
+
+Serial coordinator relayed the exact operator boundary: Keep the existing ess/21 bundle; hold this PR until the remaining bundle work is ready. Its original downstream-gaps record says every accepted syntax change there lands together:282,283,285,286,268/194,269,200,related-record-effects,F225/228/233/237/244a. This is broader than its immediate five serial units.389 was not named in that older list; no exemption for independently shipping source21 is inferred.
+
+Root runtime carrier includes source21 activation and one-time-response IR dependencies. Therefore it is not independently releasable merely by removing318/393/394. Preserve source and reviewed commits, finish runtime work, and prepare a frozen local/held base for coordinated stacking only after exact source dependency reconciliation. Do not merge/release that source21 base until the full bundle boundary is satisfied. A separately landable ess20-compatible prerequisite subset would require actual dependency proof; none is claimed yet.318 remains solely in the serial owner's held bundle, transport390–395 remains with the third session, and release398 remains its owner's separate operator hold awaiting transport. No remote gate or publication is authorized by this clarification alone.
+
+Planning publication correction: bot refused two newly created review records because each named an absolute local path. Immutable originals remain local/unpublished and unstaged in the planning tree. Reviewer reissued publication copies with identical scope/verdict/evidence and repository-relative carriers; committed safe copies as994abfb9c after the same bot gate passed. Original record names consumer-312-migration-pass2 and consumer-312-typescript-migration must not be accidentally staged later. Publication copies end in -publication. No policy exception, record rewrite or scanner bypass was used.
