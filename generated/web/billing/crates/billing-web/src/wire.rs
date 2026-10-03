@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
-// contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
+// model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
+// contract digest c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79
 // do not edit: regenerate with `ess synthesize --target web`
 
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
@@ -611,6 +611,8 @@ pub fn encode_command_billing_invoice_issue_invoice(value: &billing_types::invoi
     out.push('{');
     json::member(out, "invoice_id");
     encode_billing_invoice_invoice_id(&value.invoice_id, out);
+    json::member(out, "issued_at");
+    json::push_text(out, &value.issued_at.0);
     out.push('}');
 }
 
@@ -625,6 +627,11 @@ pub fn decode_command_billing_invoice_issue_invoice(value: &json::Value, at: &st
             let at0 = json::nested(at, "invoice_id");
             let member0 = json::member_at(value, at, "invoice_id")?;
             decode_billing_invoice_invoice_id(member0, &at0)?
+        },
+        issued_at: {
+            let at1 = json::nested(at, "issued_at");
+            let member1 = json::member_at(value, at, "issued_at")?;
+            billing_types::primitives::Timestamp(json::text_at(member1, &at1, "an RFC 3339 instant")?.to_owned())
         },
     })
 }

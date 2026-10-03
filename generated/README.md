@@ -6,7 +6,7 @@
 Every file here is a projection of one model, so two of them disagreeing is a bug in one of them —
 and a file nothing generates any more is a contract this repository no longer stands behind.
 
-Generated from billing v3 (model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c, contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301).
+Generated from billing v3 (model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648, contract digest c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79).
 
 | projection | files | describes |
 | --- | --- | --- |
