@@ -14,10 +14,14 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+- confidence: cited
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
