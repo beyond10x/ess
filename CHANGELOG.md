@@ -57,6 +57,9 @@
 
 ### Fixed
 
+- Contradictory integer equality invariants stay unsatisfiable in generated JSON Schema
+  for required fields and integer newtypes, independent of declaration order. Optional
+  fields retain their existing null and absence semantics.
 - Synthesized server creation identities and Web/Clap existence handling agree with the
   declared command behavior; generated contract guidance describes the actual seams.
 - Conformance synthesis handles the corrected optional inputs, copied-field guards,
