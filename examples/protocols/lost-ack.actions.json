@@ -1,0 +1,14 @@
+[
+  {"kind":"input","participant":"client","name":"invite","payload":{}},
+  {"kind":"deliver","transmission":1},
+  {"kind":"deliver","transmission":2},
+  {"kind":"drop","transmission":3},
+  {"kind":"advance_to","millis":500},
+  {"kind":"fire","participant":"server","timer":"G","generation":1},
+  {"kind":"deliver","transmission":4},
+  {"kind":"deliver","transmission":5},
+  {"kind":"advance_to","millis":5500},
+  {"kind":"fire","participant":"server","timer":"I","generation":1},
+  {"kind":"advance_to","millis":32000},
+  {"kind":"fire","participant":"client","timer":"D","generation":1}
+]

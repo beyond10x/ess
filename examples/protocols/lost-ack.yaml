@@ -1,0 +1,111 @@
+format: ess-protospec/1
+name: rejected-invite-lost-ack
+bounds: {max_steps: 64, max_states: 512, max_time_ms: 32000}
+participants:
+  - name: client
+    initial: idle
+    states: [idle, calling, completed, terminated]
+    inputs: [{name: invite, fields: []}]
+    timers: [D]
+    transitions:
+      - name: send-invite
+        from: idle
+        to: calling
+        trigger: {kind: input, name: invite}
+        effects:
+          - kind: send
+            channel: requests
+            message: invite
+            exchange: {kind: literal, value: invite-1}
+            logical: {kind: literal, value: request-1}
+            payload: {}
+      - name: final-response
+        from: calling
+        to: completed
+        trigger: {kind: receive, channel: responses, message: rejected}
+        effects:
+          - {kind: emit, name: final-response}
+          - kind: send
+            channel: requests
+            message: ack
+            exchange: {kind: literal, value: invite-1}
+            logical: {kind: literal, value: ack-1}
+            payload: {}
+          - {kind: arm, timer: D, after: {kind: fixed, millis: 32000}}
+      - name: repeated-final-response
+        from: completed
+        to: completed
+        trigger: {kind: receive, channel: responses, message: rejected}
+        effects:
+          - kind: send
+            channel: requests
+            message: ack
+            exchange: {kind: literal, value: invite-1}
+            logical: {kind: literal, value: ack-1}
+            payload: {}
+      - name: absorb-client
+        from: completed
+        to: terminated
+        trigger: {kind: timer, name: D}
+  - name: server
+    initial: idle
+    states: [idle, completed, confirmed, terminated]
+    timers: [G, H, I]
+    transitions:
+      - name: reject-invite
+        from: idle
+        to: completed
+        trigger: {kind: receive, channel: requests, message: invite}
+        effects:
+          - kind: send
+            channel: responses
+            message: rejected
+            exchange: {kind: literal, value: invite-1}
+            logical: {kind: literal, value: final-1}
+            payload: {status: {kind: literal, value: 486}}
+          - {kind: arm, timer: G, after: {kind: fixed, millis: 500}}
+          - {kind: arm, timer: H, after: {kind: fixed, millis: 32000}}
+      - name: retransmit-final
+        from: completed
+        to: completed
+        trigger: {kind: timer, name: G}
+        effects:
+          - kind: send
+            channel: responses
+            message: rejected
+            exchange: {kind: literal, value: invite-1}
+            logical: {kind: literal, value: final-1}
+            payload: {status: {kind: literal, value: 486}}
+          - {kind: arm, timer: G, after: {kind: backoff, timer: G, factor: 2, ceiling_ms: 4000}}
+      - name: acknowledge-final
+        from: completed
+        to: confirmed
+        trigger: {kind: receive, channel: requests, message: ack}
+        effects:
+          - {kind: cancel, timer: G}
+          - {kind: cancel, timer: H}
+          - {kind: arm, timer: I, after: {kind: fixed, millis: 5000}}
+      - name: absorb-duplicate-ack
+        from: confirmed
+        to: confirmed
+        trigger: {kind: receive, channel: requests, message: ack}
+      - name: absorb-server
+        from: confirmed
+        to: terminated
+        trigger: {kind: timer, name: I}
+      - name: server-timeout
+        from: completed
+        to: terminated
+        trigger: {kind: timer, name: H}
+        effects:
+          - {kind: cancel, timer: G}
+          - {kind: emit, name: transaction-failure}
+messages:
+  - {name: invite, fields: []}
+  - {name: rejected, fields: [{name: status, type: Integer}]}
+  - {name: ack, fields: []}
+channels:
+  - {name: requests, from: client, to: server, ordering: fifo, capacity: 4, loss: true, duplication: false}
+  - {name: responses, from: server, to: client, ordering: fifo, capacity: 4, loss: true, duplication: false}
+properties:
+  - {kind: event_count, name: notify-final-once, participant: client, event: final-response, max: 1}

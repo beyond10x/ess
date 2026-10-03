@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T07:27:07Z",
+  "actor": "human:timo",
+  "artifact": "story:ess-protospec-foundation",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Updated remote-main base e68684efb: protocol compiler tests, conformance unit suite, CLI binary/protocol/command-surface tests, task ci-lint and task site-build passed",
+    "reference": "target/protospec-evidence/pr"
+  }
+}
