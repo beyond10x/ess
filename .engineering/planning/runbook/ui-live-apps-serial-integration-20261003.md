@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 17
+revision: 18
 ---
 ## Authority and delivery
 
@@ -129,3 +129,11 @@ Runtime coordinator01a0fbbb explicitly acknowledged the consolidation: one share
 Release coordinator01a0feb8 also explicitly acknowledged the shared held ess/21 PR and this coordinator as sole integrator.398 remains its separate release carrier and excludes held ess/21 activation;399/401 verification will not be replaced, reset or mutated. Excluding duplicate393/394 changes from the runtime manifest does not revert already-merged main code.
 
 It identified transport owner as Claude session b6b95849-33dd-4009-bc48-1163b7e41e21 in the separate specs project. No callable Claude messaging bridge is available; do not resume or fork the live session to inject a message. Its proposed minimum-PR route, NOT yet acknowledged by Claude: after399/401 finish, integrate reviewed frozen395 client-publisher commits into existing398 if compatible with admitted main and transport contracts; otherwise discuss their inclusion in the held shared ess/21 carrier. Claude keeps implementation ownership. No publisher-only PR is desired, but its owner must receive the instruction through operator relay.398 needs fresh corrected combined-candidate checks; its existing red Gate cannot establish readiness. Operator relay is also needed for the runtime owner's reviewed394 contradictory-equality correction1c4e6149. No direct Claude acknowledgement or cross-carrier integration is claimed.
+
+## Release continuation: consolidated transport candidate and measured blocker
+
+Fresh GitHub state supersedes the earlier399/401-running inventory: Claude consolidated transport390/392, publishers395 and newtype394 into402 at1b2ed5857ab60fd4b55ccee1a041df6b546f124d;399/401 closed unmerged at00:24Z. Release owner confirmed no separate395 transfer is needed: once402 is corrected, green and owner-landed, final main is incorporated into398 once. Full ess/21 carrier stays held. Earlier instruction to relay no-extra-publisher-PR is obsolete.
+
+Release owner requested a disjoint exact402 equality audit. Coordinator created managed ess-release-402-audit-20261003 from that exact head; production unchanged, only101testlines added, comprising prior reviewed1c4e6149 controls and a newtype control. cargo test -p ess-gen --locked --offline --test integer_bounds -- --nocapture exited101:10tests,8passed2failed0ignored. Required-field and newtype contradictory equalities both accept the last equality's value in either order. Optional null/absence and numeric contradiction controls passed, as did compatible/incompatible range intersections and original six cases. Source types.rs:951 apply_bound overwrites constant; both required-field and newtype lowering use it. This confirms a release correctness blocker irrespective of existing CI. No source correction performed and no post-fix pass claimed.
+
+Exact private evidence in assigned402-audit scratch: report.txt, test.log, test.exit, tests.patch. Patch SHA2563132adda3665a414bbd1850dd8ec35cdefbb3f5cb32035de6c49b6d4406a4229. Release owner was notified; operator relay to the live Claude owner requested because no messaging bridge is available. Owner must adapt reviewed correction1c4e6149a47588311b920f7501c680ab3581ab5a to shared apply_bound and cover newtypes; no direct Claude acknowledgement claimed. No duplicate PR or mutation of transport/release trees. Known398 tutorial failures were verified in its CI log as stale0.51 install assertions already corrected by release owner's local73282a13dd; final release rerun still required.
