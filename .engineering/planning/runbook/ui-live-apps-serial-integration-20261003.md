@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 44
+revision: 45
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -14,15 +14,17 @@ Operator direction on 2026-10-03: finish the remaining full bundle, integrate to
 
 ## Current facts
 
-The integration branch batch/ui-live-apps-complete-20261003 includes independently reviewed nested-increment candidate7cba6e0fc at mergef24dafb1e. Full review2of2 approved with actual generated Rust/Go compile and150 scenario executions, native/conformance controls, TypeScript239 runtime cases and both non-skipped typechecks. Prior60 imported changes, #318, main protocolPR411, regeneration672603099 and reviewed #292 at9f35a2d5d remain preserved. No bundle PR, merge to main, issue closure or release has occurred.
+The integration branch batch/ui-live-apps-complete-20261003 is at9dc77c48c. It preserves the60 imported changes, #318, mainPR411/e07f55a9b, regeneration672603099, reviewed292/9f35a2d5d and nested-increment/f24dafb1e. Reviewed test-only caller-isolation correctionba4591de2 is integrated atd75824465 with actual8/8 native/fault controls and independent approval. A fresh bot fetch confirms main still e07f55a9b. No bundle PR, main merge, issue closure or release has occurred.
 
-Source21 remains one-time responses; coordinated additions use22. Conditional-binding suite36/37, aggregate suite38/39, transport/IR2 and mutation manifest/report4 are allocated by their respective designs. #391, #228/#237/#299, #266–269 and causal-completion designs passed their two independent reviews. Causal completion remains an open implementation/actual-adapter dependency. Mutation design review2 found a generated-report accounting compatibility defect; coordinator correction17c039c27 adds the lossless observed-report mode. The two review passes are exhausted; do not report that correction as independently approved. Its exact compatibility seam must be proved during implementation review.
+#282 remains unintegrated at frozen candidate226af8bfe. Its12 focused controls and strict all-target lint pass. Refreshed formatting finds two mechanical history-test lines. The independent prospective Open-external control is measured red: execution loses the valid provider-declined alternative beside wrong-state. Author correction and final independent review are required. #304 Optional-input tests are committed4cf695b0c, without production implementation; dependent work waits for reviewed282 integration.
 
-#282 has measured source-admission and semantic red-to-green evidence. Its focused runtime run passed four interpreter and two synthesis/fault tests; final affected tests, lint and independent review are pending. Multiple selected related refusals retain the existing ambiguity refusal: declaration order is not a new tiebreak. #304 Optional-input tests are prepared in their own tree, without production changes or execution, pending reviewed #282 integration.
+The complete three-package no-fail-fast run is terminal exit101:31targets/166tests fail. Its exact log SHA256 is39076a45b7c1c2ec1883b78230ec1b24818e367352c2e498e189fcd601e73d78. Early classifications include stale suite26/27-versus34/35 tests, invalid legacy provenance relabeling, report1 helpers fed current suites, and an unset ESS_TYPES_NODE environment despite installed definitions. Other failures require individual diagnosis; none is waived. Story312's stale draft mirror has been reconciled to its canonical accepted active contract. Root's isolated pre282-runtime baseline is159a21d7f; baseline probes and independently reviewed compatibility corrections remain pending. Compiler evidence is retained, and completed author conformance caches were cleaned to restore the required start floor.
 
-The user authorized integration without another handoff choice. Root coordinates #391 in its isolated tree. The initial bounded transport admission compile passed; later static corrections require execution again. Official validator, generated publishers, real Rust/Go NATS checks, required CI and independent source review remain due. Nested browser ordinary/coverage composition and all final release checks remain outstanding.
+Source21 remains one-time responses; additions share22. Suite36/37 bindings,38/39 aggregates, transport/IR2 and mutation manifest/report4 remain allocated. Revised expression design reserves40/41 and history2. Its two full reviews found and refined the occurrence-clock boundary; the final coordinator typed-receipt correction is explicitly not independently approved and must be proved during A3 implementation review. Mutation design likewise retains its post-review lossless-accounting correction as an independent implementation-proof obligation. Neither design edit is completion evidence.
 
-Common Gates passed and its signed receipt verified at267130977 for211 commits. Later changes require fresh exact-head evidence before publication.
+#391 source is frozen pending actual validator, Rust/Go NATS, CI, lint and independent implementation checks. Causal completion remains an open actual-adapter dependency. Root owns one serial ESS compiler lane; completed282author handed back to the independent probe, followed by the explicitly granted #412 baseline window, then compatibility probes and391. #412 remains a separate coordinated intake; #413 is fit/design preparation only, not a silent addition to the pinned50. Nested browser composition, remaining accepted A-I work and all final release checks remain due.
+
+Common Gates passed with a verified signed receipt at267130977 for211commits. Later source requires fresh exact-head evidence before publication. Documentation publication stays asynchronous after the verified source release.
 
 ## Ordered route to main
 
