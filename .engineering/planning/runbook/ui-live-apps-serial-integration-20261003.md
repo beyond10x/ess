@@ -6,7 +6,7 @@ status: draft
 title: Five serial ui-live-apps waves, one integration branch and one PR
 relations:
 - informed_by: epic:ui-live-apps
-revision: 16
+revision: 17
 ---
 ## Authority and delivery
 
@@ -125,3 +125,7 @@ Fresh GitHub read at this checkpoint:399 transport has four test shards in progr
 Local integration validation: task ci-lint exit0 on728734b61; subsequent0e00f6720 changes only two AEP evidence files, source diff exit0. task site-build exit0 on0e00f6720, including actual WASM/browser lab and Docusaurus. Exact logs/exits retained in assigned serial scratch delivery/verification. Common check at0e00f6720 passed, scanned120commits; branch publish exit0. Both owned check process groups exited, clean unit checkout verified. No source release or full workspace CI completion claimed.44 completed test executables were removed by exact reviewed owned paths after package completion; all source and evidence retained. Unit checkout retained for CI followups, next owner coordinator; integration checkout remains active for shared candidate reconciliation.
 
 Runtime coordinator01a0fbbb explicitly acknowledged the consolidation: one shared held integration PR, this coordinator sole branch/PR integrator, same batch/ui-live-apps-complete-20261003 branch; no separate runtime parent PR or replacements for399/401. It retains runtime units and canonical backlog AEP; our five story/runbook records remain ours. It will supply a reviewed source-only manifest excluding318/393/394/transport after312 freezes; its response unit is active. Shared source baseline0e00f67201b70e9f02f5ca335ec7c81998a37213, merge-base1ff3056850e52ed3cf5f2a7e1a1d7f4af46cb036; latest observed origin/mainf5be9eafd3190e05e4cc053f260112cfc634e7d5. No wholesale carrier merge. This acknowledgement supersedes the proposal-pending sentence above. Frozen-manifest dependency and full ess/21 hold remain open.
+
+Release coordinator01a0feb8 also explicitly acknowledged the shared held ess/21 PR and this coordinator as sole integrator.398 remains its separate release carrier and excludes held ess/21 activation;399/401 verification will not be replaced, reset or mutated. Excluding duplicate393/394 changes from the runtime manifest does not revert already-merged main code.
+
+It identified transport owner as Claude session b6b95849-33dd-4009-bc48-1163b7e41e21 in the separate specs project. No callable Claude messaging bridge is available; do not resume or fork the live session to inject a message. Its proposed minimum-PR route, NOT yet acknowledged by Claude: after399/401 finish, integrate reviewed frozen395 client-publisher commits into existing398 if compatible with admitted main and transport contracts; otherwise discuss their inclusion in the held shared ess/21 carrier. Claude keeps implementation ownership. No publisher-only PR is desired, but its owner must receive the instruction through operator relay.398 needs fresh corrected combined-candidate checks; its existing red Gate cannot establish readiness. Operator relay is also needed for the runtime owner's reviewed394 contradictory-equality correction1c4e6149. No direct Claude acknowledgement or cross-carrier integration is claimed.
