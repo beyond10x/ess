@@ -38,7 +38,7 @@ scope:
   path: docs/design/one-time-response-values.md
 - confidence: cited
   path: schemas/generated
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T13:57:12Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"approval":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -220,3 +220,9 @@ The browser dependency has advanced beyond the earlier uncompiled checkpoint. st
 This changes the actual-browser cell from no execution to partial measured feature coverage. It does not complete #389 or imply all protected disclosure paths passed. View/error leakage, retained replay/response-owned identity, fixture/isolation controls, failure/trap/abort surfaces, real WASM resource boundaries and remaining Runner capabilities are still listed explicitly by the browser owner. The next retained-response/identity family is source-only while the history worker owns the compiler lane; its assertions remain unexecuted. Full integrated package checks, independent final review and sole-integrator transfer remain required.
 
 #389 remains active and fast-lane. Preserve all native/Go/TS/WASM source and evidence, keep the browser dependency, and do not create a partial delivery PR. The separate 0.52 source candidate remains untagged under publication-identity and delivery-ancestry blockers; its green gates do not include or release this held bundle.
+
+## Browser retained replay and response identity progress
+
+The active browser product has added actual retained replay and response-owned creation identity evidence:20 native/browser pairs across ordinary/coverage routes,28 scenarios,16 expected passes and12 deciding failures, zero error/skipped/unsupported, complete raw report/run parity. Root verified all680 receipt hashes. The generated single-create repeated-identity mutant deliberately passes; an actual CLI-authored two-create case supplies the deciding repeated-allocation check. First fixture missing-write-token failure is retained separately; its correction preserved assertions.
+
+Canonical source/evidence remains story:browser-response-conformance, current retained-creation checkpoint02cd2f6f04ff920488deb445303c9034c2ef76b33f0d62b72315f257f64adbf3 and report2022d6a6b6d6db8e88b7172af0ac103b29b674ab25ce0b1dcd506b97265cfcb6. Eleven browser test functions have now passed in focused runs across their respective frozen checkpoints, not as one full-suite run on final bytes. Protected disclosure surfaces, caller/setup and remaining inventory still prevent a full fast-lane completion claim. One integration branch/bundle PR and publication ancestry/identity holds remain unchanged.

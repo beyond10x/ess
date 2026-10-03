@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 26
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -374,3 +374,21 @@ The owner completed source-only retained replay and response-owned creation iden
 RetainedInstallation owns invocation, actor/caller, result and row; fault controls change an exact adjacent integer above 2^53, timestamp or retained row. CreationInstallation allocates distinct identities and links response/event/row; faults reuse identity or misassociate an event. The single-create case intentionally cannot detect repeated allocation, so the authored two-create case captures both identities and requires both rows. Targets receive no expected assertions or Interpreter model.
 
 The intended ordinary/coverage matrix is 20 emitted-module executions, 28 scenarios, 16 passes and 12 deciding failures. These are unexecuted assertions, not measured evidence. Actual CLI source admission, full native/browser byte parity and semantic callbacks must still be checked after the history owner releases the compiler lane. Earlier nine focused browser test results remain bounded historical evidence. No source commit, delivery PR or completion claim follows from this checkpoint.
+
+## Actual retained replay and creation identity receipts
+
+The authored retained replay/creation identity family is now actually executed. Scoped cargo check and both exact tests pass. Across ordinary and coverage routes:20 real emitted-module/native pairs,28 scenarios,16 expected passes and12 deciding failures, zero skipped/unsupported/error. Root independently read the full report, compared every complete native/browser report and run pair, and verified all680 entries in the evidence manifest with exit0. Ordinary healthy runs truthfully remain conformance-inconclusive because coverage is unknown; healthy coverage routes pass.
+
+Retained replay covers the complete generated seeded/replayed suite: wrong exact adjacent number above2^53, stale timestamp and changed retained row fail replay while setup passes. Creation covers generated response/event identity correspondence and an actual CLI-authored two-create scenario. Reusing the first identity intentionally passes a single create but fails the repeated-create exact row count/captures; misassociated event identity fails. Concrete targets own state and records, not expected assertions or Interpreter behavior.
+
+The first creation run failed because the synchronous fixture omitted its read-your-writes write token. Native/browser bytes agreed on the proper ESS-CF-VIEW refusal. Only the fixture was corrected to return its actual creation token; no expectation, model, fault or count was weakened. The failed source/receipts remain retained distinctly from a product red.
+
+Private browser progress hashes: validation report2022d6a6b6d6db8e88b7172af0ac103b29b674ab25ce0b1dcd506b97265cfcb6; evidence manifest628cac69432d1aff619f4c4f02b5399a99806be8fa61c44b4bced23daa2380b9; full source patch02cd2f6f04ff920488deb445303c9034c2ef76b33f0d62b72315f257f64adbf3; retained test logb3da95693889520211fe8d154ca896f0dc3508e90510cbe9345d9beeb883c7a7; corrected creation log7e22401054872a2755f7404b7ae8eabbf8bff455c9f07dd92fa468ac25d05017; capability inventoryv3 0c14b5aec756127de8dfd0818f015848bb4056bf81089727c0b3f1848b9bc2f2.
+
+Both exact tests and every owned compiler/browser process are terminal; all21 recorded Firefox PIDs are gone. Browser owner released only its native cache lease for explicit handback to the history owner; source lease remains. Native-build bytes3,450,134,528 and browser-wasm209,854,464 are retained, not cleaned. Final handback free-space observation16,655,937,536 supersedes the earlier20.5GB in the immutable report. Other owners' work was untouched. This is bounded family evidence, not full browser, strict-lint or release completion.
+
+## Next source-only caller and entity setup family
+
+The next bounded authoring family is caller/grant semantics and established entity state, using the already scoped browser_response_conformance.rs and fixtures/browser-target/src/lib.rs. Reuse admitted native caller/setup/typed-identity source fixtures where suitable. The independent Installation must receive and use actual actor/caller and EntitySetup callbacks, maintain its own stored rows, and enforce the model's named authorization/stored-state outcomes. Include deciding faults for caller/grant selection and missing/wrong setup or typed identity, while distinguishing identical-looking String/Integer/Uuid identities wherever the admitted source permits them. Do not treat generated expected data, Interpreter or a model evaluator as target behavior.
+
+Source-only while the history owner owns the sole compiler lane. Preserve the measured retained/creation checkpoint and all earlier evidence. No compiler, browser run, cache operation, commit or publication in this phase. The owner will report exact chosen fixture source, authored cases and expected deciding controls before later actual source admission and native/browser execution in both routes. Update the capability inventory without counting unexecuted assertions as coverage. Any required product-source or scope expansion comes back to root before edits. This family does not silently claim related/set effects, all protected cases or namespace scheduling completion.
