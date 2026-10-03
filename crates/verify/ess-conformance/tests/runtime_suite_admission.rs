@@ -10,11 +10,12 @@
 //! additionally exercise each feature against healthy and faulty targets.
 
 mod support_go;
+mod support_versions;
 
 use std::collections::BTreeSet;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::scenario::SUPPORTED_SUITE_FORMATS;
+use ess_conformance::scenario::{ScenarioInitialState, SUPPORTED_SUITE_FORMATS};
 use ess_conformance::ConformanceSuite;
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
@@ -86,7 +87,13 @@ fn coverage(major: u32) -> bool {
 
 /// One admission document per major, keyed by the file name the Go driver prints.
 fn documents() -> Vec<(String, String)> {
-    let ordinary = serde_json::to_value(suite()).unwrap();
+    let ordinary = suite();
+    assert_eq!(ordinary.provenance.suite_version.major(), 34);
+    assert_eq!(
+        ordinary.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+    let ordinary = ordinary.to_canonical_json().unwrap();
     let input = ess_conformance::coverage_build::build(
         &ir(),
         &[],
@@ -94,22 +101,30 @@ fn documents() -> Vec<(String, String)> {
         ess_conformance::coverage::Origins::Generated,
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    let covered: serde_json::Value =
-        serde_json::from_str(input.selected().original_json()).unwrap();
+    let selected = input.selected();
+    assert_eq!(selected.suite().provenance.suite_version.major(), 35);
+    assert_eq!(
+        selected.suite().provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+    let covered = selected.original_json();
     let newest = SUPPORTED_SUITE_FORMATS.iter().copied().max().unwrap();
     emittable_majors()
         .into_iter()
         .chain([newest + 1])
         .map(|major| {
-            let mut document = if coverage(major) {
-                covered.clone()
+            let current = if coverage(major) { covered } else { &ordinary };
+            let json = if major < 34 {
+                support_versions::legacy_json(current, major)
             } else {
-                ordinary.clone()
+                let mut document: serde_json::Value = serde_json::from_str(current).unwrap();
+                document["provenance"]["suite_version"] = format!("ess-conformance/{major}").into();
+                serde_json::to_string(&document).unwrap()
             };
+            let mut document: serde_json::Value = serde_json::from_str(&json).unwrap();
             if !coverage(major) {
                 document["scenarios"] = serde_json::json!({});
             }
-            document["provenance"]["suite_version"] = format!("ess-conformance/{major}").into();
             (
                 format!("suite-{major:02}.json"),
                 serde_json::to_string(&document).unwrap(),
