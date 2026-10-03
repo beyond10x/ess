@@ -199,7 +199,7 @@ fn helper_like_event_names_remain_legal_without_the_codec_scope() {
 #[test]
 fn multiple_causes_keep_a_complete_unchanged_plan_and_canonical_order() {
     let ir = fixture(
-        "types:\n  - name: demo.core.FooBar\n    kind: newtype\n    of: String\n  - name: demo.core.Foo_Bar\n    kind: newtype\n    of: String\n  - name: demo.core.Loop\n    kind: struct\n    fields:\n      - { name: next, type: Optional<demo.core.Loop> }\n",
+        "types:\n  - name: demo.core.FooBar\n    kind: newtype\n    of: String\n  - name: demo.core.Foo_Bar\n    kind: newtype\n    of: String\n  - name: demo.core.Loop\n    kind: struct\n    fields:\n      - { name: next, type: Optional<Optional<demo.core.Loop>> }\n",
         "components: []\n",
     );
     let error = synthesize(&ir)

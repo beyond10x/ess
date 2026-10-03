@@ -56,7 +56,7 @@ fn newtype(
     let _ = writeln!(
         out,
         "\n/// {} — `{}`: a distinct wrapper around `{of}`.",
-        declared.naming.display_or(&declared.name),
+        super::doc_text(declared.naming.display_or(&declared.name), "///"),
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
@@ -83,7 +83,7 @@ fn structure(
     let _ = writeln!(
         out,
         "\n/// {} — `{}`.",
-        declared.naming.display_or(&declared.name),
+        super::doc_text(declared.naming.display_or(&declared.name), "///"),
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
@@ -119,7 +119,7 @@ fn enumeration(
         let _ = writeln!(
             out,
             "\n/// {} — `{}`: one of a closed set of names.",
-            declared.naming.display_or(&declared.name),
+            super::doc_text(declared.naming.display_or(&declared.name), "///"),
             declared.name
         );
         summary_doc(out, declared.naming.summary.as_deref());
@@ -155,7 +155,7 @@ fn union(
     let _ = writeln!(
         out,
         "\n/// {} — `{}`: one of a fixed set of shapes, tagged on the wire by `{tag}`.",
-        declared.naming.display_or(&declared.name),
+        super::doc_text(declared.naming.display_or(&declared.name), "///"),
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
@@ -183,7 +183,7 @@ pub(super) fn command_contract(out: &mut String, emit: &Emit<'_>, command: &Reso
     let _ = writeln!(
         out,
         "\n/// {} — the input of `{}`.",
-        command.naming.display_or(&command.name),
+        super::doc_text(command.naming.display_or(&command.name), "///"),
         command.name
     );
     summary_doc(out, command.naming.summary.as_deref());
@@ -286,10 +286,14 @@ fn outcome_variant(
         out,
         "    /// `{}` — {}.",
         outcome.name,
-        condition_phrase(&outcome.condition)
+        super::doc_text(&condition_phrase(&outcome.condition), "    ///")
     );
     if let Some(summary) = &outcome.summary {
-        let _ = writeln!(out, "    ///\n    /// {}", summary.trim());
+        let _ = writeln!(
+            out,
+            "    ///\n    /// {}",
+            super::doc_text(summary.trim(), "    ///")
+        );
     }
     let variant = name::pascal(outcome.name.as_str());
     if outcome.emits.is_empty() && outcome.error.is_none() && !response_bearing(outcome) {
@@ -328,7 +332,7 @@ pub(super) fn event(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
     let _ = writeln!(
         out,
         "\n/// {} — the event `{}`.",
-        event.naming.display_or(&event.name),
+        super::doc_text(event.naming.display_or(&event.name), "///"),
         event.name
     );
     summary_doc(out, event.naming.summary.as_deref());
@@ -368,7 +372,7 @@ pub(super) fn view(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
     let _ = write!(
         out,
         "\n/// {} — one row of the view `{}`.\n///\n/// Projects `{}` at `{}` consistency",
-        view.naming.display_or(&view.name),
+        super::doc_text(view.naming.display_or(&view.name), "///"),
         view.name,
         view.source,
         view.consistency.as_str()
@@ -423,7 +427,7 @@ pub(super) fn conversion(
          {{\n        Self(value.0)\n    }}\n}}",
         declared.from,
         declared.to,
-        declared.because.trim(),
+        super::doc_text(declared.because.trim(), "///"),
         emit.reference(to)
     );
 }
@@ -440,10 +444,10 @@ fn field_line(out: &mut String, emit: &Emit<'_>, field: &ResolvedField) {
     );
 }
 
-/// The optional one-line summary, as its own doc paragraph.
+/// The optional summary, with every authored line kept inside its doc paragraph.
 pub(super) fn summary_doc(out: &mut String, summary: Option<&str>) {
     if let Some(summary) = summary {
-        let _ = writeln!(out, "///\n/// {}", summary.trim());
+        let _ = writeln!(out, "///\n/// {}", super::doc_text(summary.trim(), "///"));
     }
 }
 
@@ -451,6 +455,7 @@ pub(super) fn summary_doc(out: &mut String, summary: Option<&str>) {
 /// and does not check it.
 fn alphabet_doc(out: &mut String, alphabet: Option<&str>) {
     if let Some(alphabet) = alphabet {
+        let alphabet = super::doc_text(alphabet, "///");
         let _ = writeln!(out, "///\n/// Every character is one of `{alphabet}`.");
     }
 }
@@ -467,7 +472,7 @@ pub(super) fn invariant_doc(out: &mut String, invariants: &[Invariant]) {
             out,
             "/// Every value satisfies `{}` — declared here, enforced by whatever behaviour \
              constructs one.",
-            invariant.statement
+            super::doc_text(&invariant.statement, "///")
         );
     }
 }
@@ -553,6 +558,7 @@ fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
 /// A declared prefix, documented as an alphabet is and for the same reason.
 fn prefix_doc(out: &mut String, prefix: Option<&str>) {
     if let Some(prefix) = prefix {
+        let prefix = super::doc_text(prefix, "///");
         let _ = writeln!(out, "///\n/// Every value starts with `{prefix}`.");
     }
 }
