@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -83,3 +83,11 @@ Two-file candidate37f600cdf579d462c0009c17aa76e7d51ce72355 is integrated4ecd5546
 Latest bot fetch confirms main e07f55a9b13000a6931d842d5534d906b6e9202d is an ancestor. Integrated repository task fmt-check on4ecd55469 with Rust1.98.1 FAILED: task exit201, cargo-fmt child exit1. Its sole source difference is subject_guard_copied_field.rs import ordering, because the unit's standalone rustfmt invocation did not match the repository package formatting settings. The root prematurely recorded a pass before inspecting the terminal result: evidence20261003T205407Z-000-aa6d70315aec is an inaccurate assertion, retained unchanged and explicitly superseded by the corrective evidence record. It cannot satisfy acceptance. The earlier prose claiming integrated formatter success is replaced by this correction. Repository formatting remains pending, and the original failed log remains unchanged.
 
 The repository formatter intentionally excludes byte-pinned generated projections. This observed import-order failure is separate from the earlier cargo-fmt-all generated Billing/Gatepass differences; neither is rewritten as a pass. All remaining baseline failures and final bundle checks stay open.
+
+## Fresh suite feature provenance migration scope
+
+Next bounded compatibility unit: only crates/verify/ess-conformance/tests/current_time_guard.rs, field_presence.rs, field_presence_synthesized.rs and pre_execution_fixtures.rs. The retained baseline39076a45b7c1c2ec1883b78230ec1b24818e367352c2e498e189fcd601e73d78 reaches six stale assertions: fresh34 versus now-offset26, ineffective26-to24 replacement, two fresh34 versus presence24 expectations, and fixture ordinary34/coverage35 versus18/19. Source remains unchanged since that baseline. None establishes a production defect or licenses relaxing admission.
+
+Preserve all34 existing tests (14 current_time_guard,6 field_presence,1 field_presence_synthesized,13 pre_execution_fixtures), all clocks, boundary targets, exact value/presence policies, fixture isolation, mutated provider refusals, Go/TypeScript runtime checks and parent lineage assertions. Current generated suites must assert their exact current major and explicit Empty initial-state provenance, then actually admit/execute where the original control requires it. Pin genuine historical26/27 now-offset,24/25 presence and18/19 fixture compatibility with valid legacy envelopes; legacy negative cases must remove unsupported new provenance only in an explicitly labelled compatibility fixture, mutate the actual asserted header, and fail for the intended unsupported vocabulary rather than an unrelated envelope precondition. Never relabel a current suite as accepted historical evidence, use numeric version ordering as compatibility, or soften exact faulty-target assertions. Existing early-format constants remain historical vocabulary introductions, not the current suite selector.
+
+Acceptance is the complete four binaries, zero failed/ignored, strict scoped lint, owning package/repository formatting, source diff and independent whole-unit review. Preserve actual emitted Go and TypeScript execution with ESS_TYPES_NODE set to the installed definitions; unsupported/skipped required execution cannot pass. Stop and report any real semantics/admission/target defect or required scope beyond these four files before editing more. This is a ready scope under the existing accepted312 compatibility work, not measured completion. Root assigns compiler custody separately after external412's exact two-case run is terminal and the fresh12GiB floor passes.
