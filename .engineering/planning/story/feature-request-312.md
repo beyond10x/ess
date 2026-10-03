@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -47,3 +47,11 @@ Baseline six binaries: 20 passed/18 failed, exit101. Scoped three binaries: 1pas
 Other baseline failures reproduced before282: three absent controls, one aggregate-delta old-format control, and four Go parity freshformat assertions. Go parity did not yet execute Go. Full31target/166failure inventory remains open, none waived. Required final checks still pending.
 
 #282 author correction patch50226754db2dee0d1beec948f24a227b2a0b454dd20c9d3e69771cc9f01de69f delivered source-only before assigned model hit usage limit. Root took verification custody, acquired separate own lease without clearing author's, and began whole interpreted_command_execution tests. Initial attempt correctly refused disk start guard; after own terminal ess-synth cache dry-run/review/clean675files838MiB, actual start free13,608,767,488. No other repository cache touched. Corrected source remains uncommitted/unintegrated until actual results and final review2.
+
+## Remaining mutation report fixture migration
+
+Batch A compatibility continuation, based on fe251b2a4. Report migrationc5682d541 is independently approved and integratedcb6940709; current-suite candidate82803ca32 is author-verified21/21 with independent Go4 still pending resource headroom. Story312 remains open.
+
+Dispatch the existing scope_nested_increment worker for the five test files mutation_external, mutation_external_adversary, mutation_gained_refusals, mutation_skipped_baseline and mutation_unkillable. Exact diagnosisSHAf603e230ee962723a97cc9d8c03d38b7804f3774a952430febb4a3a3f6e0a4e9 establishes40 report/1 precondition failures among50tests before collector assertions. Only test-fixture migration is authorized: actual runs retain their exact report2 categories, coherent explicit stand-ins are re-admitted, intentionally invalid membership reaches its intended refusal, and existing manifest and genuine legacy reader controls remain decisive. No production change, skipped acceptance or issue closure.
+
+Required acceptance is all50 original tests plus the integrated genuine legacy mixed-reader control, scoped strict lint, owning formatting, and independent whole-unit review on the frozen candidate before serial integration. Root owns planning and integration; source-only preparation begins while the sole ESS compiler lane is reserved for the preceding Go review and fresh12GiB start guard. The bounded brief is retained outside the planning store; this record selects the already accepted story and its existing cited test-directory scope.
