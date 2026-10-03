@@ -456,6 +456,17 @@ fn issue_282_source() -> String {
     source
 }
 
+fn issue_282_acceptance_first_source() -> String {
+    let source = issue_282_source();
+    let published = "      - name: published\n        moves: demo.release.Release.publish\n        instance: release_id\n        emits: [demo.release.ReleasePublished]\n        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}\n";
+    let source = source.replacen(published, "", 1);
+    source.replacen(
+        "      - name: not-accepted\n",
+        "      - name: published\n        when: true\n        moves: demo.release.Release.publish\n        instance: release_id\n        emits: [demo.release.ReleasePublished]\n        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}\n      - name: not-accepted\n",
+        1,
+    )
+}
+
 fn issue_282_model(source: &str) -> EssIr {
     let raw = RawSpecFile::parse(source).unwrap_or_else(|error| panic!("{error}\n{source}"));
     let specification = Specification::assemble([(Source::new("issue-282.yaml"), raw)])
@@ -468,9 +479,9 @@ fn issue_282_step(
     ir: &EssIr,
     store: &Store,
     command: &str,
-    input: BTreeMap<String, Node>,
+    input: &BTreeMap<String, Node>,
 ) -> ess_conformance::interpret::execute::Step {
-    let mut steps = execute(ir, store, &name(command), &input, &Externals::Withheld)
+    let mut steps = execute(ir, store, &name(command), input, &Externals::Withheld)
         .unwrap_or_else(|error| panic!("{command} is interpreted: {error}"));
     assert_eq!(steps.len(), 1, "{command} has one selected outcome");
     steps.remove(0)
@@ -491,13 +502,8 @@ fn issue_282_outcome(step: &ess_conformance::interpret::execute::Step) -> String
         .map_or_else(|| "none".to_owned(), ToString::to_string)
 }
 
-fn issue_282_create(
-    ir: &EssIr,
-    store: &Store,
-    command: &str,
-    event: &str,
-) -> (Store, String) {
-    let step = issue_282_step(ir, store, command, BTreeMap::new());
+fn issue_282_create(ir: &EssIr, store: &Store, command: &str, event: &str) -> (Store, String) {
+    let step = issue_282_step(ir, store, command, &BTreeMap::new());
     let identity = issue_282_created(&step, event);
     (step.next, identity)
 }
@@ -514,10 +520,7 @@ fn issue_282_accept(ir: &EssIr, store: &Store, candidate: &str) -> Store {
         ir,
         store,
         "demo.release.AcceptCandidate",
-        BTreeMap::from([(
-            "candidate_id".to_owned(),
-            Node::Text(candidate.to_owned()),
-        )]),
+        &BTreeMap::from([("candidate_id".to_owned(), Node::Text(candidate.to_owned()))]),
     )
     .next
 }
@@ -540,7 +543,7 @@ fn issue_282_published_release(ir: &EssIr) -> (Store, String) {
         ir,
         &store,
         "demo.release.PublishRelease",
-        issue_282_input(&release, &accepted),
+        &issue_282_input(&release, &accepted),
     );
     assert_eq!(
         issue_282_outcome(&published),
@@ -563,7 +566,7 @@ fn issue_282_wrong_state_precedes_related_predicate_refusal() {
         &ir,
         &store,
         "demo.release.PublishRelease",
-        issue_282_input(&release, &proposed),
+        &issue_282_input(&release, &proposed),
     );
     assert_eq!(
         issue_282_outcome(&refused),
@@ -592,7 +595,7 @@ fn issue_282_related_predicate_refuses_from_an_allowed_state() {
         &ir,
         &store,
         "demo.release.PublishRelease",
-        issue_282_input(&release, &candidate),
+        &issue_282_input(&release, &candidate),
     );
     assert_eq!(
         issue_282_outcome(&refused),
@@ -605,12 +608,40 @@ fn issue_282_related_predicate_refuses_from_an_allowed_state() {
         &ir,
         &accepted,
         "demo.release.PublishRelease",
-        issue_282_input(&release, &candidate),
+        &issue_282_input(&release, &candidate),
     );
     assert_eq!(
         issue_282_outcome(&published),
         "demo.release.PublishRelease/published"
     );
+}
+
+#[test]
+fn issue_282_related_refusal_precedes_an_earlier_accepting_when() {
+    let ir = issue_282_model(&issue_282_acceptance_first_source());
+    let (store, candidate) = issue_282_create(
+        &ir,
+        &Store::default(),
+        "demo.release.ProposeCandidate",
+        "demo.release.CandidateProposed",
+    );
+    let (store, release) = issue_282_create(
+        &ir,
+        &store,
+        "demo.release.DraftRelease",
+        "demo.release.ReleaseDrafted",
+    );
+    let refused = issue_282_step(
+        &ir,
+        &store,
+        "demo.release.PublishRelease",
+        &issue_282_input(&release, &candidate),
+    );
+    assert_eq!(
+        issue_282_outcome(&refused),
+        "demo.release.PublishRelease/not-accepted"
+    );
+    assert_eq!(refused.next, store, "the earlier acceptance does not run");
 }
 
 #[test]
@@ -621,7 +652,7 @@ fn issue_282_missing_related_row_keeps_its_existing_precedence() {
         &ir,
         &store,
         "demo.release.PublishRelease",
-        issue_282_input(&release, "00000000-0000-4000-8000-999999999999"),
+        &issue_282_input(&release, "00000000-0000-4000-8000-999999999999"),
     );
     assert_eq!(
         issue_282_outcome(&missing),
@@ -657,12 +688,7 @@ fn issue_282_nonmoving_acceptance_keeps_its_state_independence() {
     );
     let mut publish_input = issue_282_input(&release, &accepted);
     publish_input.insert("inspect".to_owned(), Node::Bool(false));
-    let published = issue_282_step(
-        &ir,
-        &store,
-        "demo.release.PublishRelease",
-        publish_input,
-    );
+    let published = issue_282_step(&ir, &store, "demo.release.PublishRelease", &publish_input);
     assert_eq!(
         issue_282_outcome(&published),
         "demo.release.PublishRelease/published"
@@ -670,12 +696,7 @@ fn issue_282_nonmoving_acceptance_keeps_its_state_independence() {
     let store = published.next;
     let mut input = issue_282_input(&release, &accepted);
     input.insert("inspect".to_owned(), Node::Bool(true));
-    let inspected = issue_282_step(
-        &ir,
-        &store,
-        "demo.release.PublishRelease",
-        input,
-    );
+    let inspected = issue_282_step(&ir, &store, "demo.release.PublishRelease", &input);
     assert_eq!(
         issue_282_outcome(&inspected),
         "demo.release.PublishRelease/inspected"

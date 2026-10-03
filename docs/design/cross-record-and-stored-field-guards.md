@@ -623,8 +623,10 @@ of its own:
 4. the held state: `when_subject_state` and `when_subject` select by it; `wrong_state` answers only
    where the branch step 6 selects moves from a state its move does not start from, so an accepting
    branch that moves nothing answers in every state, as Entity Runtime admits it (beyond10x/ess#235);
-5. on a present related row, the first declared `when_related:` predicate refusal whose predicate
-   and optional input guard hold (`ess/22`, beyond10x/ess#282);
+5. from `ess/22`, where the command also declares `wrong_state`, on a present related row the
+   `when_related:` predicate refusal whose predicate and optional input guard hold
+   (beyond10x/ess#282); overlapping related refusals remain ambiguous, and commands without this
+   composition retain declaration order;
 6. accepting and external branches in declaration order (#217).
 
 There is no cycle: step 1 applies only to `when_related` commands, which Entity Runtime does not

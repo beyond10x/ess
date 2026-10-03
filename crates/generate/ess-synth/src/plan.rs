@@ -63,7 +63,7 @@ use std::fmt::Write as _;
 use ess_compiler::ir::{
     EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent, ResolvedCondition,
     ResolvedConversion, ResolvedEffect, ResolvedFailure, ResolvedField, ResolvedMappingValue,
-    ResolvedTypeRef, ResolvedView, TypeHandle,
+    ResolvedRelatedTest, ResolvedTypeRef, ResolvedView, TypeHandle,
 };
 use ess_domain::component::Reach;
 use ess_gen::Provenance;
@@ -701,21 +701,46 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
     // The inventory below retains source order. For related guards the implementation is owed,
     // so its reader also needs the conditional order from the binding design:
     // docs/design/cross-record-and-stored-field-guards.md#the-precedence-order.
-    let precedence = if command
+    let has_related = command
         .outcomes
         .iter()
-        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
-    {
-        " Selection precedence: on commands with `when_related:`, check `existing_instance` then \
+        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }));
+    let orders_present_related_refusal = ir.format().major()
+        >= ess_domain::system::FormatVersion::V22.major()
+        && command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState))
+        && command.outcomes.iter().any(|outcome| {
+            outcome.error.is_some()
+                && matches!(
+                    outcome.condition,
+                    ResolvedCondition::Related {
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    }
+                )
+        });
+    let precedence = if has_related {
+        let present_related = if orders_present_related_refusal {
+            "then choose the present `when_related:` predicate refusal whose predicate and \
+             optional input guard hold; "
+        } else {
+            ""
+        };
+        format!(
+            " Selection precedence: on commands with `when_related:`, check `existing_instance` then \
          `exists: false` before input-guarded refusals; choose the first declared input refusal \
          whose guard holds; then check addressed-row existence (`unknown_instance`, and \
          `existing_instance` on commands without `when_related:`); then the held state \
          (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch \
-         moves from a state the row does not hold; then accepting and external branches in \
-         declaration order. An accepting branch that moves nothing answers in every state. \
-         Related-presence predicates do not precede input-guarded refusals."
+         moves from a state the row does not hold; {present_related}then \
+         accepting and external branches in declaration order. An accepting branch that moves \
+         nothing answers in every state. Related-presence predicates do not precede input-guarded \
+         refusals."
+        )
     } else {
-        ""
+        String::new()
     };
     format!(
         "given `{}` input, decide and enact exactly one outcome.{precedence} Declared outcomes (declaration order, not selection precedence): {}",

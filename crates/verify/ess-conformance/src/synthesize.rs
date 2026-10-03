@@ -3615,6 +3615,13 @@ struct Arrangement {
     unwritten: BTreeSet<String>,
 }
 
+/// A wrong-state arrangement, the input sent to it, and identities arranged for that input.
+type RefusalArrangement = (
+    Arrangement,
+    BTreeMap<String, Node>,
+    BTreeMap<String, InstanceName>,
+);
+
 /// The `Optional` fields of `entity` the creating branch `creator` does not write, and nothing but
 /// a later act on the row itself can: absent on the row as it leaves it (beyond10x/ess#239).
 ///
@@ -8543,7 +8550,7 @@ fn refused_here(
         .collect();
     let attempt = movers.first().copied()?;
 
-    let (arrangement, input) = refusal_arrangement(ir, handle, state, actors, attempt)
+    let (arrangement, input, bound) = refusal_arrangement(ir, handle, state, actors, attempt)
         .map_err(|cause| refusals.push(Refusal::about(id, cause)))
         .ok()?;
 
@@ -8565,7 +8572,7 @@ fn refused_here(
         Some(&arrangement.instance),
         // The command under test moves the row the arrangement already created, so its input
         // names that row; an owner, where there was one, was arranged inside `arrange`.
-        &BTreeMap::new(),
+        &bound,
     );
     steps.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
@@ -9420,8 +9427,8 @@ fn refusal_arrangement(
     state: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     attempt: &Driver<'_>,
-) -> Result<(Arrangement, BTreeMap<String, Node>), RefusalCause> {
-    let arrangement =
+) -> Result<RefusalArrangement, RefusalCause> {
+    let mut arrangement =
         arrange(ir, handle, state, actors, Distinction::PLAIN, &[]).map_err(|reason| {
             RefusalCause::InstanceRequired {
                 entity: EntityRef::from(handle),
@@ -9444,10 +9451,16 @@ fn refusal_arrangement(
             attempt.command,
             attempt.outcome,
             Distinction::PLAIN,
-        );
+        )
+        .map(|(arrangement, input)| (arrangement, input, BTreeMap::new()));
+    }
+    if related_guard::orders_present_related_refusal(ir, attempt.command) {
+        let (input, bound) =
+            related_guard::wrong_state_overlap(ir, attempt.command, actors, &mut arrangement)?;
+        return Ok((arrangement, input, bound));
     }
     let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;
-    Ok((arrangement, input))
+    Ok((arrangement, input, BTreeMap::new()))
 }
 
 /// Full refusal observation is an explicit compiler obligation of the new source profile.

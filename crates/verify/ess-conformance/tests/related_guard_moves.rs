@@ -439,8 +439,19 @@ fn issue_282_source() -> String {
     source
 }
 
+fn issue_282_acceptance_first_source() -> String {
+    let source = issue_282_source();
+    let published = "      - name: published\n        moves: demo.release.Release.publish\n        instance: release_id\n        emits: [demo.release.ReleasePublished]\n        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}\n";
+    let source = source.replacen(published, "", 1);
+    source.replacen(
+        "      - name: not-accepted\n",
+        "      - name: published\n        when: true\n        moves: demo.release.Release.publish\n        instance: release_id\n        emits: [demo.release.ReleasePublished]\n        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}\n      - name: not-accepted\n",
+        1,
+    )
+}
+
 fn issue_282_synthesis() -> (EssIr, Synthesis) {
-    let model = ir(&issue_282_source());
+    let model = ir(&issue_282_acceptance_first_source());
     let result = ess_conformance::synthesize::synthesize(&model);
     (model, result)
 }
@@ -449,7 +460,8 @@ fn issue_282_statuses(
     result: &Synthesis,
     target: &impl ConformanceTarget,
 ) -> BTreeMap<String, Status> {
-    let admitted = AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}"));
+    let admitted =
+        AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}"));
     Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, target)
         .into_report()
@@ -470,7 +482,11 @@ fn issue_282_synthesis_witnesses_both_lifecycle_and_related_refusals() {
         &ess_conformance::interpret::Interpreted::for_model(model),
     );
     for id in [ISSUE_282_RELATED, ISSUE_282_WRONG] {
-        assert_eq!(statuses.get(id), Some(&Status::Passed), "{id}: {statuses:#?}");
+        assert_eq!(
+            statuses.get(id),
+            Some(&Status::Passed),
+            "{id}: {statuses:#?}"
+        );
     }
 }
 
@@ -482,7 +498,10 @@ struct RelatedBeforeWrongState {
 
 impl ConformanceTarget for RelatedBeforeWrongState {
     fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
-        Ok(ImplementationIdentity::new("related-before-wrong-state", "1"))
+        Ok(ImplementationIdentity::new(
+            "related-before-wrong-state",
+            "1",
+        ))
     }
 
     fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {

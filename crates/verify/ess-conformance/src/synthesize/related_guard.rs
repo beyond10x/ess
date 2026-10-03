@@ -59,6 +59,12 @@ const NESTED: usize = 9;
 /// from every other, so they name no row a scenario, a driver or a nested arrangement does.
 const COMPANION: usize = 11;
 
+/// Input for a related-row overlap and the arranged identities it references.
+type BoundInput = (
+    BTreeMap<String, Node>,
+    BTreeMap<String, crate::scenario::InstanceName>,
+);
+
 /// The distinction the related row of the `distinction`th witness is arranged at, in block `base`:
 /// four apart, so no row and no decoy either side of it (one away) is another witness's, and every
 /// further instance a driver arranges reads a related row of its own (beyond10x/ess#211).
@@ -233,6 +239,8 @@ fn selects<'c>(
                 ResolvedCondition::External { .. }
                     | ResolvedCondition::ExternalWhen { .. }
                     | ResolvedCondition::ExistingInstance
+                    // Selected from the addressed row's held state, before this row is read.
+                    | ResolvedCondition::WrongState
             )
     }) {
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
@@ -268,12 +276,91 @@ fn selects<'c>(
         .find(|branch| super::is_input_guarded_refusal(branch))
     {
         selected = vec![first];
+    } else if let Some(first) = orders_present_related_refusal(ir, command)
+        .then(|| {
+            selected.iter().copied().find(|branch| {
+                branch.error.is_some()
+                    && matches!(
+                        branch.condition,
+                        ResolvedCondition::Related {
+                            test: ResolvedRelatedTest::Holds { .. },
+                            ..
+                        }
+                    )
+            })
+        })
+        .flatten()
+    {
+        // From ess/22 the present-related predicate refusal answers before every accepting branch.
+        // Validation keeps two selected related refusals ambiguous, so this first match does not
+        // introduce a declaration-order tie-break between them.
+        selected = vec![first];
     }
     Ok(match selected.as_slice() {
         [] => command.outcomes.iter().find(|branch| state_default(branch)),
         [only] => Some(*only),
         _ => None,
     })
+}
+
+pub(super) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedCommand) -> bool {
+    ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
+        && command
+            .outcomes
+            .iter()
+            .any(|branch| matches!(branch.condition, ResolvedCondition::WrongState))
+        && command.outcomes.iter().any(|branch| {
+            branch.error.is_some()
+                && matches!(
+                    branch.condition,
+                    ResolvedCondition::Related {
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    }
+                )
+        })
+}
+
+/// Arrange a present related row that selects the predicate refusal, while the addressed
+/// subject is already in the wrong state. This is the overlap the wrong-state scenario must send
+/// to distinguish the ess/22 order from a target that reads the related row first.
+pub(super) fn wrong_state_overlap(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    addressed: &mut Arrangement,
+) -> Result<BoundInput, RefusalCause> {
+    let refusal = command
+        .outcomes
+        .iter()
+        .find(|outcome| {
+            outcome.error.is_some()
+                && matches!(
+                    outcome.condition,
+                    ResolvedCondition::Related {
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    }
+                )
+        })
+        .ok_or_else(unarranged)?;
+    let (via, entity) = read(command).ok_or_else(unarranged)?;
+    let (row, _, input) = with_row(
+        ir,
+        command,
+        refusal,
+        entity,
+        actors,
+        (OWN, Distinction::PLAIN, &[]),
+        None,
+        None,
+        (&BTreeMap::new(), &addressed.steps),
+    )?;
+    addressed.steps.extend(row.steps);
+    addressed.source.extend(row.source);
+    addressed.source.insert(entity_ref(entity));
+    let bound = BTreeMap::from([(via.field().to_owned(), row.instance)]);
+    Ok((input, bound))
 }
 
 /// The first branch of the command acting on an existing row the input names, and that input.

@@ -47,7 +47,8 @@ acceptance does not inherit a moving sibling's source-state requirement. Earlier
 | two input-guarded refusals | the first declared whose guard holds; a witness of one refutes the refusals declared before it, and where no input does, synthesis refuses the scenario naming them (beyond10x/ess#227 correction 1, superseding the unordered rule of #209) |
 | two accepting guarded branches | the first declared whose guard holds (beyond10x/ess#217, below) |
 | an accepting guarded branch and an external branch | the same declaration order: the first declared whose guard holds, an external one where its provider takes it (beyond10x/ess#217, below) |
-| a refusal decided by the stored row, the held state or a provider; the wrong-state branch | unchanged |
+| a present `when_related:` predicate refusal; the wrong-state branch | `wrong_state`, from `ess/22`; earlier formats refuse the combination, and without `wrong_state` related branches retain their prior declaration-order behavior |
+| another refusal decided by the stored row, the held state or a provider; the wrong-state branch | unchanged |
 
 Without a default, validation's finite coverage proof already refuses every overlap it can decide,
 and a guard it cannot decide (a text or a number) requires a default. The rule therefore changes
