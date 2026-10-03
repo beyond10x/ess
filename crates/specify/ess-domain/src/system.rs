@@ -1356,6 +1356,12 @@ domains:
         assert!(FormatVersion::V11.is_supported());
         assert!(FormatVersion::V12.is_supported());
         assert!(FormatVersion::V13.is_supported());
+        assert!(
+            FormatVersion::parse("ess/22")
+                .expect("ess/22 parses")
+                .is_supported(),
+            "the coordinated syntax bundle admits ess/22"
+        );
         assert!(!FormatVersion::parse("ess/99")
             .expect("parses")
             .is_supported());

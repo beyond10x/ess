@@ -532,16 +532,25 @@ tenant", "the configuration does not register this client".
   composes with `when:` — except on the `exists: false` branch, as above.
 - **Authority.** Beside `when_subject`, `when_subject_state`, `when_state_changes`, `external`,
   `wrong_state`, `unknown_instance`, `input_absent`, `existing_instance` or `replays` on one branch
-  it is `conflicting_declaration`. In one command it is refused in 0.41 beside `when_subject*`,
-  `wrong_state`, `unknown_instance` and `input_absent`: no validation, synthesis or runtime
-  arranges that combination yet. `existing_instance:` sits beside it, answering first
-  ([the precedence order](#the-precedence-order)). One command reads one related
-  row, and declares at most one `exists: false` branch.
+  it is `conflicting_declaration`. In one command it remains refused beside `when_subject*`,
+  `unknown_instance` and `input_absent`. From `ess/22`, `wrong_state:` may coexist with a
+  `when_related:` predicate refusal: the addressed row's wrong state answers first, then a present
+  related row may refuse the request. `existing_instance:` sits beside it, answering first
+  ([the precedence order](#the-precedence-order)). One command reads one related row, and declares
+  at most one `exists: false` branch.
 - **Validation.** The rows that exist are partitioned jointly with the input, as the stored-field
   partition does; where the finite prover declines — a comparison with the input, an open domain —
   the command needs a genuine default.
 - **Format.** Below `ess/18` the key is refused with `unsupported_format_version` at
   `outcomes.<name>.when_related`, in YAML and JSON sources alike.
+- **Related refusal beside wrong state (`ess/22`, beyond10x/ess#282).** A command may combine a
+  present-row `when_related:` predicate refusal with its own `wrong_state:` outcome. Declaration
+  order does not decide the answer: after the earlier missing-row and input-refusal steps, the
+  addressed row's lifecycle is checked first. A moving acceptance in a wrong state therefore takes
+  `wrong_state:` without emitting an event or changing storage; from an allowed state the related
+  predicate may refuse it, and a related row that admits it reaches the acceptance. A nonmoving
+  acceptance remains independent of the moving sibling's source-state requirement. Through
+  `ess/21`, the combination retains its `conflicting_declaration` refusal.
 - **Held state (`ess/20`, beyond10x/ess#229).** From `ess/20` the predicate also reads the related
   row's held lifecycle state as `state` — "a release needs a candidate in state `Accepted`":
   `predicate: state != Accepted` on the refusal, beside a default that moves the release. It is
@@ -596,9 +605,9 @@ tenant", "the configuration does not register this client".
   an unknown identity, an illegal move — has no row to point it at and refuses with the strategy
   `arrange_related_row` named.
 - **Runtimes.** The interpreted target answers a missing related row by its `exists: false`
-  branch, and on a stored row an input-guarded refusal the input selects
-  ([the precedence order](#the-precedence-order)); it does not evaluate a predicate over the row,
-  and declines a command with `existing_instance:`, reporting such a scenario `unsupported`.
+  branch, and on a stored row evaluates its related predicates after the addressed row's lifecycle
+  and before accepting or external branches ([the precedence order](#the-precedence-order)). It
+  declines a command with `existing_instance:`, reporting such a scenario `unsupported`.
   Entity Runtime refuses the command with `RelatedGuardUnsupported`: an entity-core operation
   reads its arguments and the one row its request names.
 
@@ -612,9 +621,11 @@ of its own:
 2. input-guarded refusals, the first declared whose guard holds (#209, #227);
 3. existence of the addressed row (`unknown_instance`, and `existing_instance` on commands without `when_related`);
 4. the held state: `when_subject_state` and `when_subject` select by it; `wrong_state` answers only
-   where the branch step 5 selects moves from a state its move does not start from, so an accepting
+   where the branch step 6 selects moves from a state its move does not start from, so an accepting
    branch that moves nothing answers in every state, as Entity Runtime admits it (beyond10x/ess#235);
-5. accepting and external branches in declaration order (#217).
+5. on a present related row, the first declared `when_related:` predicate refusal whose predicate
+   and optional input guard hold (`ess/22`, beyond10x/ess#282);
+6. accepting and external branches in declaration order (#217).
 
 There is no cycle: step 1 applies only to `when_related` commands, which Entity Runtime does not
 lower. The kernel half of the order — input refusals decided before any row is loaded, the first

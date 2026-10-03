@@ -416,3 +416,139 @@ fn issue_211_a_target_checking_the_carrier_passes_and_one_ignoring_it_fails() {
         "{ignoring:#?}"
     );
 }
+
+// ---- related predicate refusal beside wrong_state (beyond10x/ess#282, `ess/22`) -------------
+
+const ISSUE_282_RELATED: &str = "demo.release.PublishRelease/outcome/not-accepted";
+const ISSUE_282_WRONG: &str =
+    "demo.release.Release/state/Published/refuses/demo.release.PublishRelease";
+
+fn issue_282_source() -> String {
+    let source = include_str!("fixtures/related-guard-release.yaml")
+        .replace("format: ess/20", "format: ess/22")
+        .replace(
+            "  - {name: demo.release.CandidateNotAccepted, summary: The candidate is not accepted., fields: []}\n",
+            "  - {name: demo.release.CandidateNotAccepted, summary: The candidate is not accepted., fields: []}\n  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its held state., fields: []}\n",
+        )
+        .replace(
+            "      - name: published\n",
+            "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n      - name: published\n",
+        );
+    assert!(source.contains("format: ess/22"));
+    assert!(source.contains("wrong_state: true"));
+    source
+}
+
+fn issue_282_synthesis() -> (EssIr, Synthesis) {
+    let model = ir(&issue_282_source());
+    let result = ess_conformance::synthesize::synthesize(&model);
+    (model, result)
+}
+
+fn issue_282_statuses(
+    result: &Synthesis,
+    target: &impl ConformanceTarget,
+) -> BTreeMap<String, Status> {
+    let admitted = AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}"));
+    Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, target)
+        .into_report()
+        .scenarios
+        .into_iter()
+        .map(|run| (run.scenario.to_string(), run.status))
+        .collect()
+}
+
+#[test]
+fn issue_282_synthesis_witnesses_both_lifecycle_and_related_refusals() {
+    let (model, result) = issue_282_synthesis();
+    for id in [ISSUE_282_RELATED, ISSUE_282_WRONG] {
+        scenario(&result, id);
+    }
+    let statuses = issue_282_statuses(
+        &result,
+        &ess_conformance::interpret::Interpreted::for_model(model),
+    );
+    for id in [ISSUE_282_RELATED, ISSUE_282_WRONG] {
+        assert_eq!(statuses.get(id), Some(&Status::Passed), "{id}: {statuses:#?}");
+    }
+}
+
+/// The model interpreter with exactly the disputed order swapped: whenever the addressed row would
+/// answer `wrong_state`, this target answers the present-related predicate refusal instead.
+struct RelatedBeforeWrongState {
+    inner: ess_conformance::interpret::Interpreted,
+}
+
+impl ConformanceTarget for RelatedBeforeWrongState {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new("related-before-wrong-state", "1"))
+    }
+
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.begin_scenario(scenario)
+    }
+
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let command = request.command.clone();
+        let mut result = self.inner.execute_command(request)?;
+        if result
+            .outcome
+            .as_ref()
+            .is_some_and(|outcome| outcome.to_string().ends_with("/wrong-state"))
+        {
+            result.outcome = Some(branch(&command, "not-accepted"));
+            result.error = Some(DeclaredErrorValue::new(
+                "demo.release.CandidateNotAccepted"
+                    .parse::<ErrorRef>()
+                    .unwrap(),
+            ));
+        }
+        Ok(result)
+    }
+
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.inner.query_view(request)
+    }
+
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+}
+
+#[test]
+fn issue_282_wrong_precedence_target_fails_its_suite() {
+    let (model, result) = issue_282_synthesis();
+    let statuses = issue_282_statuses(
+        &result,
+        &RelatedBeforeWrongState {
+            inner: ess_conformance::interpret::Interpreted::for_model(model),
+        },
+    );
+    assert_eq!(
+        statuses.get(ISSUE_282_WRONG),
+        Some(&Status::Failed),
+        "the wrong-state scenario distinguishes the swapped order: {statuses:#?}"
+    );
+}

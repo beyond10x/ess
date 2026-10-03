@@ -32,6 +32,14 @@ Where this rule sits among existence, the held state and related rows is
 orders refusals ahead of accepting branches, refusals among themselves and accepting guarded
 branches by the order they are declared in:
 
+From `ess/22`, that order also admits a `when_related:` predicate refusal beside `wrong_state:`
+(beyond10x/ess#282). Once the related row is known to exist and input refusals have been considered,
+the addressed row's lifecycle answers first. A moving acceptance in the wrong state therefore takes
+`wrong_state:`; in an allowed state, a predicate over the present related row may refuse before the
+accepting or external branches. Declaration order cannot reverse those answers, and a nonmoving
+acceptance does not inherit a moving sibling's source-state requirement. Earlier formats through
+`ess/21` retain the combination's validation refusal.
+
 | pair | order |
 |---|---|
 | input-guarded refusal, accepting branch with an input guard: a plain `when:`, the `when:` beside a `when_subject:`, or an external branch's `when:` | the refusal, before any stored row is read or any provider asked |
