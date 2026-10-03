@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:related-via-optional-input
 kind: story
 status: active
-title: when_related reads through an Optional input; an absent reference reads no row (ess/21)
+title: when_related reads through an Optional input; absence reads no row (ess/22)
 refs:
 - provider: github
   reference: beyond10x/ess#304
@@ -15,8 +15,12 @@ relations:
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
 - confidence: cited
   path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/tests/related_guard_ir.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command/related_guard.rs
 - confidence: cited
@@ -25,11 +29,17 @@ scope:
   path: crates/specify/ess-domain/tests/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/related.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_optional.rs
-revision: 10
+- confidence: inferred
+  path: docs/design/cross-record-and-stored-field-guards.md
+- confidence: inferred
+  path: website/docs/reference/predicates.md
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -65,10 +75,9 @@ origin/main moved to `8700d0808` (0.50.0) during the review; among the cited fil
 
 ## Acceptance
 
-`crates/specify/ess-domain/tests/related_guard.rs`: `issue_304_an_optional_input_via_validates_under_ess_21`, `issue_304_an_optional_via_below_ess_21_is_refused_naming_ess_21`, `issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive`; `issue_211_via_is_an_input_field_typed_as_another_entitys_identity` stays green. `crates/specify/ess-compiler/tests/related_guard_ir.rs`: `issue_304_ess_20_related_fixtures_compile_to_identical_ir`. New `crates/verify/ess-conformance/tests/related_guard_optional.rs`: `issue_304_absent_present_and_missing_are_each_witnessed`, `issue_304_a_target_treating_absent_as_missing_fails`, `issue_304_a_target_ignoring_a_present_reference_fails`. `crates/verify/ess-conformance/tests/interpreted_command_execution.rs`: `issue_304_an_absent_optional_reference_reads_no_related_row`. `crates/generate/ess-gen/tests/related_guard.rs`: `issue_304_an_optional_reference_is_documented_as_checked_when_present`.
+`crates/specify/ess-domain/tests/related_guard.rs`: `issue_304_an_optional_input_via_validates_under_ess_22`, `issue_304_an_optional_via_below_ess_22_is_refused_naming_ess_22`, `issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive`; `issue_211_via_is_an_input_field_typed_as_another_entitys_identity` stays green. `crates/specify/ess-compiler/tests/related_guard_ir.rs`: `issue_304_ess_20_related_fixtures_compile_to_identical_ir`. New `crates/verify/ess-conformance/tests/related_guard_optional.rs`: `issue_304_absent_present_and_missing_are_each_witnessed`, `issue_304_a_target_treating_absent_as_missing_fails`, `issue_304_a_target_ignoring_a_present_reference_fails`. `crates/verify/ess-conformance/tests/interpreted_command_execution.rs`: `issue_304_an_absent_optional_reference_reads_no_related_row`. `crates/generate/ess-gen/tests/related_guard.rs`: `issue_304_an_optional_reference_is_documented_as_checked_when_present`.
 
 The stored-reference (subject via) tests belong to story:related-via-stored-reference; generation of either via to story:related-guard-behaviour.
-
 
 ## Scope
 
@@ -90,3 +99,11 @@ Current main's interpreter declines present related predicates; later guard-gene
 ## Precedence reconciliation for the approved serial batch
 
 The earlier "input via unchanged (step 1)" phrase preserves the early lookup/missing-row behavior. It does not override the accepted ess/21 held-state-before-related-predicate-refusal decision in story:feature-request-282, implemented first in this batch. Optional absence skips every related lookup/branch regardless of placement; required/present input lookup retains the early missing-row refusal, while present-row predicate refusal follows the held-state decision under ess/21. Below ess/21 preserve the existing supported contract. Source: this story's #282 dependency in its design and story:feature-request-282 Decisions/Acceptance. This is a coordinator clarification of the overlapping accepted decisions; implementation must prove the distinctions rather than introduce a separate order.
+
+## Current allocation and acceptance ownership
+
+The accepted bundle now allocates these syntax additions to source ess/22; ess/21 is reserved for one-time responses. This supersedes historical ess/21 references in the original fit, cost, decisions and sequencing paragraphs without erasing those dated assessments. Older formats through21 must refuse each newly admitted Optional-input/stored-reference form by its source location; required input-via behavior and serialized bytes of unchanged old models remain stable. The named acceptance tests above use ess_22 accordingly.
+
+Execution order remains #282, Optional input, stored reference, then generated guard behavior319. Optional-input owns absent/present/missing input reference admission, interpretation, synthesis and documented target obligations. Stored-reference owns the corresponding addressed pre-branch field lookup, subject existence/state precedence, Optional stored absence and stored-reference fault controls. Common declaration/IR infrastructure may be introduced in the first slice but does not claim the second slice's acceptance. Input absence never means a missing related row: it performs no lookup and selects no related branch. For present references, preserve #282's distinction between early missing-row refusal and later present-row predicate evaluation.
+
+Named Rust/Go/Web generation obligations are permitted only at the intermediate304 boundary because319 implements those targets in this same bundle. They cannot satisfy final generated-target acceptance or close the combined issue. No duplicate implementation of the already integrated stored-field interpreter is needed; compose on current #292/nested correction/282 source and retain all existing controls. This is planning reconciliation based on read-only current-source inspection, not a new test result.
