@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -239,3 +239,15 @@ Scope permits narrow crate-private boundary exports in interpret.rs, reusable ex
 Staged A through D are one completion bundle: establish real early/late regression red; implement abstract facts and actual executor transfer/control flow; integrate related/set/search/view authority and admitted source controls; execute CLI0/1/2/3 and complete focused neighbors/review. The pass1 affects.moves fixture suggestion was inadmissible and is corrected by the preserved pass2 report; the revised when_related/affected-row source must compile before it counts as evidence. No partial source approval or issue closure at the first Model refusal.
 
 Implementation is assigned to an isolated managed worker after its current bounded aggregate design review. Initial source/test work may proceed, but compilation waits for an explicitly free cache; nested response worker currently owns synthesis and293 owns servers. Maintain jobs1/debug0/incremental0, external TMPDIR and8GiB floor. Root alone owns AEP, independent source approval, integration and the held delivery branch. No extra PR, push or remote full gate.
+
+## Admitted generated-history regression baseline
+
+Implementation owner established genuine current-source regression evidence before production edits. Baseline report SHA256 bced862f4a5b3f81035a7630cee64536070d398e08b8a32cb279073d44e33dcf; final 14-test source SHA256 5a7e15ba24860a1f771d87f9e3c7c1c5754ef28f1451165a5233153847d91869. Source base remains 86b4a994481f4391f7f38cc2677cdc493ca20404 under the accepted a84c7962 design. Evidence is retained in private ess-292-history-probe-20261003/implementation.
+
+The final admitted 13-case baseline exits 101: 6 pass, 7 product assertions fail, no source-admission failures. Passed controls include inert generated Timestamp, source-known Integer true/false outcomes, impossible Boolean/Enum/joint-Struct domains and Optional-empty generation. Failures include fabricated early/late Timestamp decisions, inert inhabited Boolean generation constrained to true, A-addressed related-B healthy/stale/other-client histories, and subjectless-set stale omission. A-addressed failures currently expose partitioning before view judgment; the stale test requires the specific StaleRead finding so any unrelated Violation is not accepted as success. The subjectless control wrongly returns Linearizable.
+
+A separate actual native control then passes 1 test with 13 filtered: create exact A/B rows, execute the admitted A-addressed related-B Active guard, update A and affect B, and verify both original rows changed. Thus the cross-row fixture is not a prose-only or unsupported affects.moves example. The final 14-test baseline is supported by these two runs (7 controls pass, 7 product assertions fail), not a claimed single full 14-test run. Original intermediate fixture-admission failures remain retained and explicitly distinguished from product defects. The first initial log had 1 pass/3 failures, of which one was an invalid literal Timestamp sets fixture; that fixture was corrected without changing source admission.
+
+Exact admitted baseline log c19d58ed726fc7a7cd410f782a1ac616e64126c97da933a070d62b9afa928915; native control log ad515eb014bb32f4f15eb8191b971894dafaaf4412513c5130b34bfc7730a539; original initial log 488eb89e47e65449cb01a13f4fe696083dd3e839a16e0a4ffa3e2dde9ef9a29d. Root inspected the report and initial terminal output; these are owner executions, not independent reruns.
+
+Root directs continuation of the already accepted stages A-D implementation. Preserve the shared executor semantics and actual unknown/feasibility authority, no blanket-refusal shortcut. The owner keeps exclusive synthesis cache with one-job settings and the 12 GiB pre-start floor. Aggregate #361/#362 is a future scenario adapter dependency only; it grants no additional aggregate or binding production scope to this unit.

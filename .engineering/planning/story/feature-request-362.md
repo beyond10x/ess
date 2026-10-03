@@ -10,7 +10,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+revision: 6
 ---
 ## Outcome
 
@@ -67,3 +67,11 @@ Read-only source proposal aggregate-group-selection-revision-proposal.md, SHA256
 Dynamic fixture/observed-dependent grouping or totals remain part of this same completion bundle. Existing ScenarioValue, static Counts and literal ChangedBy cannot express all such results. A concrete closed aggregate-result observation design is being drafted, with actual occurrence capture, causal query cuts, exact arithmetic and every runtime required. No format is adopted, no version pair is reserved, and no new implementation has been dispatched by this direction record. Static-only support must not be reported as completion of the general feature; a blanket precondition refusal would not fix the reviewed defect. Generated stored values with no independent source-observable authority remain an information boundary requiring a truthful named gap rather than fabricated expected values.
 
 Retained source-specific proposal includes prefix truncation, known/generated identity distinction, cross-row old-store effects, fixture key merging, same-event multiple occurrence captures, source binding completion and legacy compatibility controls. The proposal itself executed zero builds/tests/probes. Root's earlier admitted precondition probe is separate actual evidence. Draft dynamic authority must resolve exact scope/resource/compatibility questions and undergo independent review before production edits; the original design review finding is not yet marked fixed.
+
+## Dynamic aggregate wire proposal and review
+
+A concrete private aggregate-result observation candidate now exists, SHA256 64d60937c33fe7f0af2cb56a40a8d8c19b3b7fefb823b9019d547a748f472c8d. It proposes closed prepare_aggregate/aggregate_result vocabulary, exact finalized step/query-cut references, normalized semantic contracts, write-once invocation captures, all six aggregate functions, bounded exact arithmetic, full native/Go/TypeScript/WASM parity and actual historical-reader rejection. This is a design proposal, not an implemented capability or reserved format.
+
+Root source review needs revision, immutable report SHA256 69a9e7463fbc7b95dc82347ce79663fde8efa2621db45ea903b64deb4b4ea9fd, review-result:consumer-aggregate-wire-pass1. Two concrete boundaries remain: the normalized Contract has no defined admitted reconstruction path into compiler-owned EssIr consumed by the shared executor; and binding delivery_cut requires a concrete source/target completion capability and scenario trigger absent from the current ObservedInvocation API. No unchecked IR constructor, alternate hand-written native interpreter, blanket binding refusal or fabricated quiescence is authorized. Keep dynamic fixture/observation support in the same completion bundle; static-only success is not completion.
+
+One-time disclosure, runtime error/capability classifications, exact resource counters and occurrence provenance are explicit acceptance obligations. Transport changes require the separately assigned transport owner; #292's private executor implementation is not implicitly expanded. Browser product design is being made concrete independently. The original aggregate baseline review remains unresolved until a complete revision is independently assessed. This pass executed no builds or target probes.
