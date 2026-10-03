@@ -7,6 +7,8 @@
 //! the runner sends the command — which the runner resolves from its wall clock when it sends it.
 //! The target is told nothing new. Both sides are witnessed a second from the boundary, never at it:
 //! `now - 61s` requires the refusal and `now - 59s` the accepting branch.
+mod support_versions;
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,6 +21,7 @@ use ess_compiler::{
 use ess_conformance::{
     now_offset,
     report::{ConformanceStatus, Status},
+    scenario::ScenarioInitialState,
     synthesize::synthesize,
     target::*,
     AdmittedSuite, AdvancingClock, Clock, ConformanceSuite, Ids, Runner, RunnerConfig,
@@ -167,12 +170,19 @@ fn the_stored_start_is_required_as_the_value_that_was_sent() {
 }
 
 #[test]
-fn a_suite_carrying_now_offsets_takes_the_round_three_pair() {
+fn a_fresh_suite_carrying_now_offsets_declares_empty_state_and_preserves_round_three_compatibility()
+{
+    use ess_conformance::coverage::{Origins, Scope};
+
     let suite = suite();
     assert!(now_offset::used_by(&suite));
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        format!("ess-conformance/{}", now_offset::ORDINARY)
+        "ess-conformance/34"
+    );
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
     );
     assert_eq!(now_offset::ORDINARY, 26);
     assert_eq!(now_offset::COVERAGE, 27);
@@ -180,15 +190,43 @@ fn a_suite_carrying_now_offsets_takes_the_round_three_pair() {
     assert!(json.contains("\"now_offset\""), "{json}");
     assert!(json.contains("-61"), "{json}");
     AdmittedSuite::from_json(&json).expect("the suite it writes is admitted");
+
+    let legacy = support_versions::legacy_json(&json, now_offset::ORDINARY);
+    let admitted = AdmittedSuite::from_json(&legacy).expect("historical suite/26 is admitted");
+    assert_eq!(admitted.suite().provenance.suite_version.major(), 26);
+    assert_eq!(admitted.suite().provenance.scenario_initial_state, None);
+
+    let coverage =
+        ess_conformance::coverage_build::build(&ir(JOBS), &[], Scope::System, Origins::Generated)
+            .unwrap();
+    assert_eq!(
+        coverage.selected().suite().provenance.suite_version.major(),
+        35
+    );
+    assert_eq!(
+        coverage
+            .selected()
+            .suite()
+            .provenance
+            .scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+    let historical =
+        support_versions::legacy_json(coverage.selected().original_json(), now_offset::COVERAGE);
+    let admitted = AdmittedSuite::from_json(&historical).expect("historical suite/27 is admitted");
+    assert_eq!(admitted.suite().provenance.suite_version.major(), 27);
+    assert_eq!(admitted.suite().provenance.scenario_initial_state, None);
 }
 
 #[test]
 fn an_older_suite_format_refuses_now_offsets() {
-    let json = suite().to_canonical_json().unwrap().replace(
-        &format!("ess-conformance/{}", now_offset::ORDINARY),
-        "ess-conformance/24",
-    );
-    let refused = AdmittedSuite::from_json(&json).expect_err("suite/24 has no now_offset");
+    let fresh = suite().to_canonical_json().unwrap();
+    let legacy = support_versions::legacy_json(&fresh, now_offset::ORDINARY);
+    AdmittedSuite::from_json(&legacy).expect("the compatibility fixture is valid suite/26");
+    let older = support_versions::legacy_json(&legacy, 24);
+    assert!(older.contains("\"suite_version\":\"ess-conformance/24\""));
+    assert!(!older.contains("scenario_initial_state"));
+    let refused = AdmittedSuite::from_json(&older).expect_err("suite/24 has no now_offset");
     assert!(
         refused.to_string().contains("now_offset"),
         "the refusal names the value kind: {refused}"
@@ -203,9 +241,13 @@ fn a_suite_without_now_keeps_its_format() {
     );
     let suite = suite_of(&fixed);
     assert!(!now_offset::used_by(&suite));
-    assert_ne!(
+    assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
+    );
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
     );
 }
 
