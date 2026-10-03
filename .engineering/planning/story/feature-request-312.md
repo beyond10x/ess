@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -65,3 +65,11 @@ Five-file remaining mutation migration is source-prepared only, all50 tests pres
 ## Response field parser inventory correction
 
 Read-only diagnosisSHA832bdcc36f225ff517972e211e745f1ced18043103a27875f42c9bd81d1d6673 identifies the exact two new valid published-pattern sites behind underscore_field_names.rs:153-157 observing17 instead of15: src/go/response.go:525 and src/ts/response.ts:1138. They validate nested response roots, declarations and mapping members. Existing stale-regex rejection and exact count equality must remain. Author scope_nested_increment is assigned only that test file's explicit inventory/comment and15-to17 correction, with the independent copied-field307 control as a two-file verification unit. The retained original fullrun is the measured red baseline; actual complete test binaries, strict scoped lint, owning format and independent whole-unit review remain required. No regex/parser implementation change or skipped acceptance is authorized.
+
+## Legacy runner entry-point migration scope
+
+The retained full-run baseline (SHA39076a45b7c1c2ec1883b78230ec1b24818e367352c2e498e189fcd601e73d78) measured execution.rs0passed/12failed and faults.rs7passed/13failed. Every failing entry stops at Runner::try_run's UnsupportedReportFormat before target execution. Root inspected runner.rs:345-373: the legacy run/try_run entry refuses every suite major>=5; current freshly synthesized suites are34. git diff226af8bfe..502bf1a75 is empty for runner.rs and these two test files, so their relevant source is unchanged from that measured baseline.
+
+Next bounded source assignment is only execution.rs and faults.rs: admit the exact fresh or intentionally mutated suite through AdmittedSuite, run it through run_admitted, and inspect the actual report/diagnostics. Preserve custom Runner clock/configuration, all32 tests, deterministic whole-report equality, exact diagnostic and faulty-target assertions. The faults helper should use the admitted path for every current suite rather than only Retry. This changes test callers, never the production legacy refusal; existing genuine suite4/report1 controls remain authority for old readers. Do not relabel a fresh suite as legacy, fabricate results, filter failures or loosen counts. If exact admission or real execution exposes another defect, retain the result and return to root before widening scope.
+
+Required acceptance: both full binaries32/32 with zero ignored, strict scoped lint, owning formatting/diff, and independent whole-unit review before integration. All original source/helper and byte-determinism obligations stay intact. This records a ready bounded correction under the existing accepted312 test scope; root dispatches an available existing worker and serial compiler custody separately. It is not implementation evidence.
