@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 53
+revision: 54
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -378,3 +378,13 @@ Disposition: A is accepted in principle as a bounded two-path correctness correc
 ## Conditional aggregate design completion
 
 Final independent whole-design review2 approved the revised363 contract at256b5cf863d632ffae1a525b14abb312854745d9 with zero findings. DesignSHA2fbceaadebf20e34cbbd9b38dd8690241adaed493154e46cd1e277e62cd2b085; reportSHA6bb003d3b94813b3653ba6fffe623f9fe3732b2814333f0c928edf10d4227053. Immutable r1/r2 and allseven fixed outcomes are recorded; component-design is approved and story363 proposed. This supersedes the earlier current-facts pending-design snapshot. No code, real target, reader, budget or release acceptance is implied by static design approval. Exact governed361/362/233/200 implementation dependencies remain required before dispatch. No third design review round. Planning validation at1040artifacts returned problems[], with19 historical unscoped advisories and older review-accounting advisories retained; raw validation JSON is retained privately.
+
+## Active compatibility queue
+
+The34-test feature-provenance candidate is bot-frozen9f11ab7424460bdcdd084a43f56bcbe66dedb924 over0e431c8e8. Exact34tests including generatedGo/TS, strict scopedClippy and package/repositoryformat all terminal0. FinalpatchSHA c532f0b3c633cd5dd1e62c1276f5d908c43879fa4794f477de3ebda133544d4e; authorhandoffSHA404b107f8147b5793f9fa3c89d7ae49313d3aa8bcea9d36e6d0fb2e7d55d6339. Initial import and raw-coverage API failures plus the capacity refusal are retained as failures. Whole independent review1 is running; reviewer owns exclusive execution lane for retained binaries and actualGoTS under freshfloor, no Rustbuild. Authorleaseended; targetstays in featureprovenance tree until reviewerterminal.
+
+Three-file emitted-reader fixtures are source-prepared in ess-emitted-reader-fixtures-20261003 from93ffe140c, branchunit/emitted-reader-fixtures-20261003; patchSHA648405d4cadc94180c1d22d09ae308b3e270f70394f9146d597a0b16443b0c7c. Exactly11tests, owningformatgreen, no compiler/runtime/lint/review claim, no target, authorleaseended. Full selected-input wrapper versus raw legacy-suite API audit found no source mistake. It gets compiler custody after34reviewterminal, then strictlint/independentreview before integration.
+
+The prior34author prepares a separate independent two-file TypeScript parity unit in ess-typescript-version-parity-20261003 froma2cbb5b41, branchunit/typescript-version-parity-20261003. Scope is committedstory312 TypeScript version parity migration preparation:29+4tests,26+1original stale-version failures; exactfresh34/35Empty distinguished from genuinehistoricalauthored documents, allfaults/realnativeTS/parentlineage preserved. Source/formatonly, no compilergrant; integration order remains34unit then reader3 then TS2. Production template/runtime corrections are not silently authorized as fixture updates.
+
+Common Gates86945c94e82f355a6f7851c78c71d18fb720de70 passed259commits, signedreceipt verified0/scanner_invocations0. This supersedes the older10fdf Gates snapshot but does not replace unit/final acceptance. Current disk recovered abovefloor; every expensive start rechecks. External412/414 approved source amendment is bounded15paths including go/port.rs handler allocator, preserving public/ordinarybytes and actualHTTPbinding controls. Samecollisioninputs execute embedded/direct, while existing servedWireCollision remains explicit; codec415 staysseparate/open. No rootowner collision; eventual319integration must reconcile frozenhandoff. ExternalESScompiler remains ungranted until rootqueue yields.
