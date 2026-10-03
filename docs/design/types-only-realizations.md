@@ -44,6 +44,15 @@ Publish the checked schema selection alongside the library and report. Neither t
 selection nor its output changes the model language or yet binds an ESS field to an
 imported schema root; that connection requires its own checked identity contract.
 
+A root may also name an event (beyond10x/ess#393). The event's payload is selected as
+a struct of its fields under the event's own qualified name, display name and wire
+names, annotated `x-ess-kind: event-payload`, with the closure of the types its fields
+reach. Its `type`, `properties`, `required` and `additionalProperties` are the ones the
+event's JSON Schema projection publishes, so a producer library holds exactly the
+object the event carries and the model declares those fields once. `--all-events`
+selects every event payload and may be combined with `--all-types`; `--root` beside
+either `--all-*` selector is refused.
+
 ## Shared Structural Plan
 
 A language-neutral, in-memory plan owns selected roots, component identities,
@@ -67,6 +76,30 @@ Unsupported combinations refuse before a partial successful artifact is returned
 Conditional object/array constraints without an explicit type need a conditional
 mapping, not an inferred narrowing to that type. Defaults and formats remain
 annotations; they do not enable coercion or infer integer storage widths.
+
+### Bounded model integers (beyond10x/ess#394)
+
+A bound is not a format. For **model input only**, an integer node whose `minimum`
+and `maximum` both lie in `i32` is realized as Rust `i32` and Go `int32`; both in
+`i64`, as `i64` and `int64`. An integer `const` (from an invariant such as
+`version == 2`) is realized at the width of its value, and the constant itself stays
+a named runtime obligation: a literal term beside `integer` would be an intersection
+no native target maps. An integer with one bound or none keeps the exact JSON-number
+carrier, because the model names no width and none is invented. `minimum` and
+`maximum` remain runtime-constraint obligations in the report even where the width
+already enforces them, so the report never claims a narrower bound is discharged.
+TypeScript keeps `number`; an `i32` drops the precision obligation, an `i64` keeps it.
+
+Bundle input is unchanged: an imported OpenAPI or JSON Schema document with both
+bounds keeps its exact-number carrier, so the generated API of an existing bundle
+adopter does not move.
+
+The keywords come from `ess-gen`: a struct invariant comparing a top-level `Integer`
+field with an integer literal on its right (`>=`, `>`, `<=`, `<`, `==`) publishes
+`minimum`, `maximum` or `const` on that property, the tighter bound winning, and
+`==` on a field that may be absent or `null` publishing `minimum` and `maximum`
+instead of `const`. `x-ess-invariants` is still published verbatim; every other
+invariant shape stays an annotation only.
 
 ## Target Accounting
 

@@ -6,8 +6,8 @@ use std::fmt::Write as _;
 use super::native::{nullable, string_values};
 
 use super::{
-    children, finding, Field, Finding, Node, Plan, Realization, Refused, Report, Shape,
-    TargetConfiguration, UnionMode,
+    children, finding, Field, Finding, IntegerWidth, Node, Plan, Realization, Refused, Report,
+    Shape, TargetConfiguration, UnionMode,
 };
 
 const DERIVE: &str =
@@ -285,6 +285,8 @@ impl Emitter<'_> {
             Shape::Boolean => "bool".to_owned(),
             Shape::String => "::std::string::String".to_owned(),
             Shape::Number | Shape::Integer => "::serde_json::Number".to_owned(),
+            Shape::SizedInteger(IntegerWidth::I32) => "i32".to_owned(),
+            Shape::SizedInteger(IntegerWidth::I64) => "i64".to_owned(),
             Shape::Ref(name) => format!("::std::boxed::Box<{}>", self.plan.names[name]),
             Shape::Array { prefix, items, .. } if prefix.is_empty() => {
                 format!("::std::vec::Vec<{}>", self.ty(items))
