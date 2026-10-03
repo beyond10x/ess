@@ -95,7 +95,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         &context,
                         &at,
                         Place::Payload,
-                        filled,
+                        (filled, filled),
                         source,
                         0,
                         &mut errors,
@@ -120,7 +120,15 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         continue;
                     };
                     let at = site.clone().key("sets").named(target);
-                    check(&context, &at, Place::Sets, held, source, 0, &mut errors);
+                    check(
+                        &context,
+                        &at,
+                        Place::Sets,
+                        (held, held),
+                        source,
+                        0,
+                        &mut errors,
+                    );
                     errors.extend(fallback_literal(
                         &context,
                         &Filled::Sets { entity },
@@ -197,7 +205,7 @@ fn error_payload(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors
             &context,
             &at,
             Place::Payload,
-            filled,
+            (filled, filled),
             source,
             0,
             &mut errors,
@@ -249,7 +257,15 @@ pub(super) fn validate_affect(
             continue;
         };
         let site = at.clone().key("sets").named(target);
-        check(&context, &site, Place::Sets, held, source, 0, &mut errors);
+        check(
+            &context,
+            &site,
+            Place::Sets,
+            (held, held),
+            source,
+            0,
+            &mut errors,
+        );
         errors.extend(fallback_literal(
             &context,
             &Filled::Sets { entity },
@@ -266,11 +282,12 @@ fn check(
     context: &Context<'_>,
     at: &ConstructRef,
     place: Place,
-    target: &Field,
+    targets: (&Field, &Field),
     source: &PayloadSource,
     depth: usize,
     errors: &mut ValidationErrors,
 ) {
+    let (root, target) = targets;
     let format = context.spec.system().format;
     if source.needs_value_expressions() && format.major() < FormatVersion::V14.major() {
         errors.push(ValidationError::at(
@@ -344,7 +361,7 @@ fn check(
             );
         }
         PayloadSource::Increment { by, scalar } => {
-            check_increment(context, at, place, target, by, *scalar, errors);
+            check_increment(context, at, place, (root, target), by, *scalar, errors);
         }
         PayloadSource::InputOrGenerated { field, otherwise } => {
             check_fallback(
@@ -358,7 +375,7 @@ fn check(
             );
         }
         PayloadSource::Struct { fields } => {
-            check_struct(context, at, place, target, fields, depth, errors);
+            check_struct(context, at, place, (root, target), fields, depth, errors);
         }
         PayloadSource::ChangedCount if depth > 0 || place == Place::Sets => {
             errors.push(super::set_effects::count_elsewhere(at));
@@ -708,11 +725,12 @@ fn check_increment(
     context: &Context<'_>,
     at: &ConstructRef,
     place: Place,
-    target: &Field,
+    targets: (&Field, &Field),
     by: &str,
     scalar: ScalarKind,
     errors: &mut ValidationErrors,
 ) {
+    let (root, target) = targets;
     if place != Place::Sets {
         errors.push(
             ValidationError::at(
@@ -724,7 +742,7 @@ fn check_increment(
         );
         return;
     }
-    if existing_subject_field(context, at, "`{increment: …}`", &target.name, errors).is_none() {
+    if existing_subject_field(context, at, "`{increment: …}`", &root.name, errors).is_none() {
         return;
     }
     if target.type_ref.is_optional() {
@@ -822,7 +840,7 @@ fn check_fallback(
         // `validate_sets` do on a bare one; inside a nested mapping the leaf rule at depth 1
         // checks both the misspelling and the literal's type against the target.
         let depth = usize::from(depth > 0);
-        check(context, at, place, target, literal, depth, errors);
+        check(context, at, place, (target, target), literal, depth, errors);
     }
     let command = context.command;
     let Some(read) = command.input_field(field) else {
@@ -1028,11 +1046,12 @@ fn check_struct(
     context: &Context<'_>,
     at: &ConstructRef,
     place: Place,
-    target: &Field,
+    targets: (&Field, &Field),
     fields: &[super::PayloadField],
     depth: usize,
     errors: &mut ValidationErrors,
 ) {
+    let (root, target) = targets;
     if depth >= MAX_DEPTH {
         errors.push(ValidationError::at(
             at.clone(),
@@ -1089,7 +1108,7 @@ fn check_struct(
             context,
             &at.clone().named(&field.target),
             place,
-            inner,
+            (root, inner),
             &field.source,
             depth + 1,
             errors,

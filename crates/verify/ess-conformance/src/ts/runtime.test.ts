@@ -344,6 +344,59 @@ class ExampleTarget implements Target {
   }
 }
 
+function nestedIncrementSuite(): string {
+  const raw = JSON.parse(suiteText());
+  raw.provenance.suite_version = 'ess-conformance/32';
+  raw.scenarios = {
+    'nested.counter/authored/increment': {
+      purpose: 'A nested increment reads its own previous location',
+      source: [],
+      steps: [
+        { step: 'query_view', view: 'nested.counter.Counters' },
+        {
+          step: 'expect_view',
+          view: 'nested.counter.Counters',
+          expectation: {
+            expect: 'contains',
+            fields: {
+              amount: { kind: 'literal', value: 3 },
+              packet: {
+                kind: 'members',
+                members: { amount: { kind: 'literal', value: 101 } },
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
+  return JSON.stringify(raw);
+}
+
+class NestedIncrementTarget extends ExampleTarget {
+  constructor(private readonly nestedAmount: number) {
+    super();
+  }
+
+  queryView(_request: ViewRequest): ViewResult {
+    return { rows: [{ amount: 3, packet: { amount: this.nestedAmount } }] };
+  }
+}
+
+test('nested increment suite passes the full path and fails the old-leaf mutant', async () => {
+  await withEnvironmentAsync({ ESS_REPORT_FORMAT: '2', ESS_REPORT_OUT: undefined }, async () => {
+    const correct = new Recorder('correct nested location');
+    await runWith(correct, () => new NestedIncrementTarget(101), nestedIncrementSuite());
+    assert.deepEqual(correct.verdicts(), ['passed']);
+
+    // The former defect incremented the unrelated top-level `amount` (3 + 1) and stored that 4 in
+    // `packet.amount`; this target is the deliberate regression mutant.
+    const oldLeafMutant = new Recorder('old leaf mutant');
+    await runWith(oldLeafMutant, () => new NestedIncrementTarget(4), nestedIncrementSuite());
+    assert.deepEqual(oldLeafMutant.verdicts(), ['failed']);
+  });
+});
+
 function setEnvironment(
   values: Record<string, string | undefined>,
 ): Record<string, string | undefined> {

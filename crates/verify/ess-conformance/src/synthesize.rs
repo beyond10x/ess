@@ -6389,6 +6389,22 @@ fn expression_value(
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
 ) -> Option<ScenarioValue> {
+    expression_value_at(
+        ir,
+        field,
+        supplied,
+        before,
+        std::slice::from_ref(&field.target),
+    )
+}
+
+fn expression_value_at(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedPayloadField,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    target_location: &[String],
+) -> Option<ScenarioValue> {
     match &field.value {
         ResolvedPayloadValue::SubjectField { field: read, .. } => {
             before.get(read).map(|held| held.value.clone())
@@ -6400,10 +6416,7 @@ fn expression_value(
             .get(&related::key(via, read))
             .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
-            let ScenarioValue::Literal {
-                value: Node::Number(held),
-            } = &before.get(&field.target)?.value
-            else {
+            let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
             };
             let by = ess_primitives::facts::Number::decimal_literal(by)?;
@@ -6430,7 +6443,12 @@ fn expression_value(
         ResolvedPayloadValue::Struct { fields } => {
             let mut leaves = BTreeMap::new();
             for leaf in fields {
-                leaves.insert(leaf.target.clone(), leaf_value(ir, leaf, supplied, before)?);
+                let mut location = target_location.to_vec();
+                location.push(leaf.target.clone());
+                leaves.insert(
+                    leaf.target.clone(),
+                    leaf_value(ir, leaf, supplied, before, &location)?,
+                );
             }
             Some(ScenarioValue::Literal {
                 value: Node::Map(leaves),
@@ -6445,6 +6463,22 @@ fn expression_value(
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => None,
     }
+}
+
+fn before_literal_at<'a>(
+    before: &'a BTreeMap<String, Determined>,
+    location: &[String],
+) -> Option<&'a Node> {
+    let (root, remaining) = location.split_first()?;
+    let ScenarioValue::Literal { value } = &before.get(root)?.value else {
+        return None;
+    };
+    remaining.iter().try_fold(value, |node, member| {
+        let Node::Map(fields) = node else {
+            return None;
+        };
+        fields.get(member)
+    })
 }
 
 /// [`arranged`], or [`arranged_without_fallbacks`], for the invocation `witness` names.
@@ -6663,6 +6697,7 @@ fn leaf_value(
     leaf: &ess_compiler::ir::ResolvedPayloadField,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
 ) -> Option<Node> {
     if leaf.conversion.is_some() {
         return None;
@@ -6673,7 +6708,7 @@ fn leaf_value(
             Some(ScenarioValue::Literal { value }) => Some(value.clone()),
             _ => None,
         },
-        _ => match expression_value(ir, leaf, supplied, before)? {
+        _ => match expression_value_at(ir, leaf, supplied, before, target_location)? {
             ScenarioValue::Literal { value } => Some(value),
             _ => None,
         },
@@ -6699,7 +6734,15 @@ fn determined_leaves(
         && field.conversion.is_none()
         && expression_value(ir, field, supplied, before).is_none()
     {
-        collect_leaves(ir, field, prefix, supplied, before, &mut out);
+        collect_leaves(
+            ir,
+            field,
+            prefix,
+            supplied,
+            before,
+            std::slice::from_ref(&field.target),
+            &mut out,
+        );
     }
     out
 }
@@ -6712,6 +6755,7 @@ fn collect_leaves(
     prefix: &str,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
     out: &mut BTreeMap<String, Node>,
 ) {
     let ResolvedPayloadValue::Struct { fields } = &field.value else {
@@ -6719,11 +6763,13 @@ fn collect_leaves(
     };
     for leaf in fields {
         let path = format!("{prefix}.{}", leaf.target);
+        let mut location = target_location.to_vec();
+        location.push(leaf.target.clone());
         if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
             if leaf.conversion.is_none() {
-                collect_leaves(ir, leaf, &path, supplied, before, out);
+                collect_leaves(ir, leaf, &path, supplied, before, &location, out);
             }
-        } else if let Some(value) = leaf_value(ir, leaf, supplied, before) {
+        } else if let Some(value) = leaf_value(ir, leaf, supplied, before, &location) {
             flatten_leaf(ir, &leaf.target_type, &path, &value, 0, out);
         }
     }
@@ -6812,7 +6858,15 @@ fn shown_leaves(
             row.entry(path)
                 .or_insert_with(|| ScenarioValue::literal(value));
         }
-        undetermined_leaves(ir, field, &field.target, supplied, before, &mut required);
+        undetermined_leaves(
+            ir,
+            field,
+            &field.target,
+            supplied,
+            before,
+            std::slice::from_ref(&field.target),
+            &mut required,
+        );
     }
     required
 }
@@ -6825,6 +6879,7 @@ fn undetermined_leaves(
     prefix: &str,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
     out: &mut Vec<String>,
 ) {
     let ResolvedPayloadValue::Struct { fields } = &field.value else {
@@ -6832,11 +6887,13 @@ fn undetermined_leaves(
     };
     for leaf in fields {
         let path = format!("{prefix}.{}", leaf.target);
+        let mut location = target_location.to_vec();
+        location.push(leaf.target.clone());
         if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
             if leaf.conversion.is_none() {
-                undetermined_leaves(ir, leaf, &path, supplied, before, out);
+                undetermined_leaves(ir, leaf, &path, supplied, before, &location, out);
             }
-        } else if leaf_value(ir, leaf, supplied, before).is_none()
+        } else if leaf_value(ir, leaf, supplied, before, &location).is_none()
             && !may_be_null(ir, &leaf.target_type, 0)
         {
             out.push(path);

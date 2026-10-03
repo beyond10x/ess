@@ -1624,3 +1624,77 @@ fn a_generated_identity_is_not_observation_authority_for_a_cross_row_read() {
         Verdict::Linearizable
     );
 }
+
+const NESTED_INCREMENT_HISTORY: &str = r"
+format: ess/20
+system: demo
+version: v1
+domain: demo.nested
+types:
+  - name: demo.nested.Amount
+    kind: newtype
+    of: Integer
+    invariants: ['value >= 0', 'value <= 1']
+  - name: demo.nested.Packet
+    kind: struct
+    fields: [{name: amount, type: demo.nested.Amount}]
+entities:
+  - name: demo.nested.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields: [{name: amount, type: Integer}, {name: packet, type: demo.nested.Packet}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: demo.nested.Started, fields: [{name: counter_id, type: Uuid}]}
+  - {name: demo.nested.Advanced, fields: []}
+commands:
+  - name: demo.nested.Start
+    input: []
+    outcomes:
+      - name: started
+        creates: demo.nested.Counter
+        instance: counter_id
+        sets: {amount: 0, packet: {amount: {generated: true}}}
+        emits: [demo.nested.Started]
+        payload: {demo.nested.Started: {counter_id: {generated: true}}}
+  - name: demo.nested.Advance
+    input: [{name: counter_id, type: Uuid}]
+    outcomes:
+      - name: advanced
+        updates: demo.nested.Counter
+        instance: counter_id
+        sets: {packet: {amount: {increment: 1}}}
+        emits: [demo.nested.Advanced]
+";
+
+fn nested_increment_history(ir: &EssIr) -> History {
+    let digest = SuiteProvenance::of(ir).spec_digest;
+    let document = serde_json::json!({
+        "format":"ess-history/1", "history_id":"00000000-0000-4000-8000-00000000f295",
+        "spec_digest":digest, "seed":0, "clients":1,
+        "operations":[
+            {"operation_id":"00000000-0000-4000-8000-000000000501", "client":0,
+             "command":"demo.nested.Start", "subject_key":"00000000-0000-4000-8000-000000000292",
+             "invoked_at":1, "returned_at":2, "completion":"Returned", "outcome":"started"},
+            {"operation_id":"00000000-0000-4000-8000-000000000502", "client":0,
+             "command":"demo.nested.Advance", "subject_key":"00000000-0000-4000-8000-000000000292",
+             "invoked_at":3, "returned_at":4, "completion":"Returned", "outcome":"advanced"}
+        ]
+    });
+    history::read(&serde_json::to_vec(&document).unwrap(), &digest)
+        .expect("the nested-increment history is admitted")
+}
+
+#[test]
+fn nested_increment_preserves_location_and_unknown_arithmetic() {
+    let ir = model(NESTED_INCREMENT_HISTORY);
+    let result = linearize::check(
+        &ir,
+        &nested_increment_history(&ir),
+        linearize::DEFAULT_BUDGET,
+    );
+    assert!(
+        matches!(&result, Err(CheckRefusal::Model { operation_id, .. })
+            if operation_id == "00000000-0000-4000-8000-000000000502"),
+        "packet.amount has a partially overflowing unknown domain; top-level amount=0 is not its authority: {result:?}"
+    );
+}

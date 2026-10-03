@@ -1081,6 +1081,8 @@ struct Work<'g> {
     response: Option<super::response::Value>,
     operation: Option<&'g str>,
     location: Vec<String>,
+    /// The field location being written, independent of history-generation provenance.
+    target_location: Vec<String>,
 }
 
 impl Work<'_> {
@@ -1217,6 +1219,7 @@ fn take(
         response: None,
         operation: input.operation,
         location: Vec::new(),
+        target_location: Vec::new(),
     };
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, Node)> = None;
@@ -1477,7 +1480,9 @@ fn value(
     work: &mut Work<'_>,
 ) -> Result<Option<Value>, Undetermined> {
     work.location.push(field.target.clone());
+    work.target_location.push(field.target.clone());
     let result = value_at(ir, field, input, work);
+    work.target_location.pop();
     work.location.pop();
     let value = result?;
     if input.operation.is_some() {
@@ -1517,6 +1522,7 @@ fn value_at(
             field,
             by,
             work.before.as_ref(),
+            &work.target_location,
             work.operation.is_some(),
         )
         .map(Some),

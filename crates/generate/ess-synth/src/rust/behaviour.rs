@@ -1570,8 +1570,18 @@ impl Writer<'_> {
     /// The value one source fills its field with. `before` names the held data before the
     /// outcome, where the branch holds a row.
     // One arm per value source the model declares, each rendering its own expression.
-    #[allow(clippy::too_many_lines)]
     fn value(&mut self, field: &ResolvedPayloadField, before: Option<&str>) -> String {
+        let previous = before.map(|row| format!("{row}.{}", name::value_ident(&field.target)));
+        self.value_at(field, before, previous)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn value_at(
+        &mut self,
+        field: &ResolvedPayloadField,
+        before: Option<&str>,
+        previous: Option<String>,
+    ) -> String {
         let target = &field.target_type;
         let wrap = |source: &ResolvedTypeRef, expression: String| {
             if source == target {
@@ -1617,16 +1627,15 @@ impl Writer<'_> {
             ResolvedPayloadValue::Literal { value } => literal(self.ir, self.layout, target, value),
             ResolvedPayloadValue::Generated => self.assigned(target),
             ResolvedPayloadValue::Cleared => "None".to_owned(),
-            ResolvedPayloadValue::Increment { by } => {
-                let before = before.expect("the plan admits `{increment:}` only on a held row");
-                increment(
-                    self.ir,
-                    self.layout,
-                    target,
-                    &format!("{before}.{}", name::value_ident(&field.target)),
-                    by,
-                )
-            }
+            ResolvedPayloadValue::Increment { by } => increment(
+                self.ir,
+                self.layout,
+                target,
+                previous
+                    .as_deref()
+                    .expect("the plan admits `{increment:}` only on a held row"),
+                by,
+            ),
             ResolvedPayloadValue::InputOrGenerated {
                 field: source,
                 otherwise,
@@ -1658,10 +1667,27 @@ impl Writer<'_> {
                 else {
                     unreachable!("the plan admits a struct source only for a struct")
                 };
+                let previous = previous.map(|read| {
+                    if target.is_optional() {
+                        self.uses.helpers.insert("undeclared");
+                        format!(
+                            "{read}.as_ref().ok_or_else(|| undeclared(\"{}\"))?",
+                            self.command.name
+                        )
+                    } else {
+                        read
+                    }
+                });
                 let mut rendered = Vec::new();
                 for member in members {
                     let value = match fields.iter().find(|source| source.target == member.name) {
-                        Some(source) => self.value(source, before),
+                        Some(source) => self.value_at(
+                            source,
+                            before,
+                            previous
+                                .as_ref()
+                                .map(|read| format!("{read}.{}", name::value_ident(&member.name))),
+                        ),
                         None => "None".to_owned(),
                     };
                     rendered.push(format!("{}: {value}", name::value_ident(&member.name)));
