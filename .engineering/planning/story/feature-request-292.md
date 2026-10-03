@@ -55,7 +55,7 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:16:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -357,3 +357,9 @@ The provenance/transfer checkpoint is frozen at stage-bc-transfer-checkpoint.md 
 The next separately authorized phase has now established an actual feasibility red on admitted source. feasibility-depth-red.log SHA256 4deae0a8710a7047c81edeccbd84f5f66e0e549d3849a7c17a5ed92d6aecbb2a records 3 passed, 2 failed, exit 101. The 16-Struct control has a valid generated inhabitant. The 17-Struct case incorrectly returns Violation where bounded validation cannot establish emptiness; its Optional form incorrectly returns Linearizable for absence after fabricating a definitely absent value. Root independently read both deciding outputs. These are measured checker defects, not source-admission failures. Typed bounded-proof remediation is now in progress; no green result is yet claimed for this phase.
 
 The checkpoint retains exact source copies and hashes before feasibility changes. Native neighbor tests, updated CLI evidence where invalidated, strict lint, remaining acceptance audit and independent final review are still required. No final source freeze, integration, PR or publication follows from this checkpoint.
+
+## Typed feasibility depth controls measured green
+
+The same focused Struct filter that exposed both false verdicts now passes all five tests (0 failed, exit 0). Root independently read the terminal output and verified feasibility-typed-depth-first.log SHA256 0853bdeb07aecca89ecd63fb28799c642b9e6217c0ea363816aa2fe473bcb006. The 16-Struct inhabited control remains green; 17-Struct validation uncertainty no longer becomes a proven-empty violation, and Optional inner uncertainty no longer fabricates absence and a false linearizable verdict.
+
+The first repair introduces typed Invalid versus Unresolved validation while retaining the native Result/String API. This is a bounded intermediate checkpoint, not completed proof-policy implementation: shared work/context accounting, productive recursion, completed-cache behavior and order-sensitive conjunction/member controls are still being implemented. Root source review also identified partial early-return paths and diagnostic context to preserve while finishing that work. Existing red logs and source checkpoints remain retained. Full matrix and native-neighbor verification must run after the relevant production changes settle; no final source freeze or review approval is claimed.
