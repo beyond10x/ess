@@ -26,6 +26,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/execute.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/related.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
@@ -37,7 +39,7 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 20
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"approval":1}}}
@@ -84,3 +86,11 @@ Read-only story-scoper inspected current main on 2026-10-03. Confidence high for
 Inferred: crates/specify/ess-domain/src/command.rs:2705 for source-format admission context; crates/specify/ess-domain/src/system.rs:117 for ess/21 bundle constants; tests in crates/specify/ess-domain/tests/related_guard.rs, crates/verify/ess-conformance/tests/related_guard_moves.rs and crates/verify/ess-conformance/tests/interpreted_command_execution.rs. Compiler IR and schemas are not established as necessary for #282 alone; report evidence before extending scope.
 
 Both Optional-via and stored-via stories overlap validation, related-row arrangement and interpreter files. Keep them serial. Preserve the early missing-related-row refusal and distinguish moving branches from nonmoving acceptance; only predicate-refusal precedence moves after held-state. This is cited code inspection, not executed correctness evidence. Related predicates are currently declined by the interpreter, so implementation requires real predicate execution as well as branch ordering. Existing candidate batch/consumer-interpreted-related-20261002 is being inspected as a possible reusable prerequisite; it is not silently considered landed.
+
+## Current source allocation and resumed implementation
+
+The accepted source allocation in the consumer backlog and current integration runbook assigns one-time responses to ess/21 and the coordinated syntax bundle to ess/22. Therefore every historical ess/21 admission boundary and prospective test name in this story now means ess/22; older sources through ess/21 retain the existing refusal. Update binding designs before implementation. This preserves the accepted precedence semantics and delivery boundary; it does not broaden scope.
+
+The full frozen runtime handoff has been applied as local bot integration commit48d5cc77b38f919381d04830475ff6ea4959289f after current released main. The present-related interpreter prerequisite is now present; do not duplicate it or import old carrier ancestry. A read-only scope refresh confirms the named eight controls and narrow files, including interpret/execute/related.rs. Root delegates only FormatVersion::V22 plus its supported-source admission/compatibility plumbing to this serial unit; other format/default/schema projections remain coordinator-owned unless a measured need is reported.
+
+Next unit: ess-serial-282-20261003 from48d5cc77b, branch unit/serial-related-precedence-20261003, own target and assigned scratch. The292 source remains in its own tree and integrates serially. Its implementation and tests must finish; source-read/preparation may proceed independently. Final combined checks and issue closure remain pending.
