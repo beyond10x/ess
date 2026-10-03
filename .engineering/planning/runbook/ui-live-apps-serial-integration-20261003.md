@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 32
+revision: 33
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -305,3 +305,9 @@ The combined CLI executes the regenerated Billing suite33passed,0failed,0skipped
 Original292 author compiler cache was handed back idle. Cargo1.98 refused cleaning its mixed target root because CACHEDIR.TAG was absent; nothing was deleted. Root preserved all evidence and separated only the known native compiler target/debug to target/native-retired-292/debug by same-filesystem rename, preserving inode36052053 on device66306. The isolated directory was classified compiler-only with a valid cache marker. The subsequent Cargo dry-run named6911paths, every one inside that isolated debug subtree, and reported5833files/4.4GiB. Cargo clean --profile dev removed those5833compiler files. Original target/tmp, backlog-input, review-boundaries, wasm output and all author source/logs/manifests remain. No managed tree removed; own cache lease released. Available space20,343,869,440bytes after cleanup.
 
 Independent292 review owns its separate target and the current compiler lane. Prepared282 follows its handback. Read-only nested-increment scope/design review proceeds in assigned local evidence; no nested implementation or new source-version semantics have been admitted yet.
+
+## Current combined history and bounded cache reclamation
+
+Nested-correction worker tested unchanged integrated9f35a2d5d before edits: all56 generated-history cases pass, exit0. The raw runner output remains in assigned nested-increment implementation evidence. Review candidate results are therefore supplemented by an actual combined-byte history run.
+
+Global free space fell below the12,884,901,888-byte start floor while other repositories compiled; no other process or cache was touched. Root inspected its own idle integration target: Cargo cache marker present, only debug compiler output, no active open files. Retained exact pre-history combined CLI externally with SHA256facf3de7d49ceade8c7eaf4a4c6c94ab9b404449e554a33c380ecd8e19471586 for read-only probes. Cargo1.98.1 clean --profile dev --dry-run reported2144files/1.9GiB, then the exact clean removed those2144files. Source, generated fixtures, logs and all review evidence remain. Free space13,333,860,352bytes immediately afterward; worker must still guard each subsequent compiler start because disk is shared globally.
