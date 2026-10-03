@@ -10,7 +10,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`), then the first declared input-guarded refusal whose `when:` holds, before anything else is read (`refused_by_input`); else the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
+//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch ([`related_absent`]), then the first declared input-guarded refusal whose `when:` holds ([`refused_by_input`]); addressed-row existence and held state; for the ess/22 `wrong_state` composition, the present-related predicate refusal; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch; for an identity nobody holds, its `unknown_instance:` branch, else its one declared not-found refusal, else `wrong_state:` |
@@ -471,6 +471,10 @@ pub(super) fn responding(
     .collect()
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "command execution keeps its ordered selection and response authorities together"
+)]
 fn responding_core(
     ir: &EssIr,
     store: &State,
@@ -545,6 +549,23 @@ fn responding_core(
             subject::Held::new(ir, ir.entity(&subject.entity), held)?,
         );
     }
+    let orders_present_related_refusal = orders_present_related_refusal(ir, spec);
+    if orders_present_related_refusal {
+        if let Some(steps) = subject_refusals_before_present_related(
+            ir,
+            spec,
+            store,
+            input,
+            &facts,
+            command,
+            externals,
+            &held_subjects,
+            generated,
+            responses,
+        )? {
+            return Ok(steps);
+        }
+    }
     let selected = select(
         spec,
         &facts,
@@ -553,6 +574,8 @@ fn responding_core(
         &held_subjects,
         input.caller,
         input,
+        true,
+        orders_present_related_refusal,
     )?;
 
     if selected.is_empty() {
@@ -581,6 +604,45 @@ fn responding_core(
     Ok(steps)
 }
 
+fn orders_present_related_refusal(ir: &EssIr, spec: &ResolvedCommand) -> bool {
+    ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
+        && spec.outcomes.iter().any(is_present_related_refusal)
+        && spec
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState))
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the preflight shares the command execution's existing authorities"
+)]
+fn subject_refusals_before_present_related(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    facts: &input::InputFacts<'_>,
+    command: &QualifiedName,
+    externals: &Externals,
+    held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Option<Vec<Transition>>, Undetermined> {
+    let after_related = select(
+        spec,
+        facts,
+        command,
+        externals,
+        held_subjects,
+        input.caller,
+        input,
+        false,
+        false,
+    )?;
+    selected_subject_refusals(ir, spec, store, input, generated, responses, &after_related)
+}
+
 /// The branches `facts` select under `externals`, in the declared precedence
 /// (`docs/design/input-guard-overlap-precedence.md`), read in order and stopped at the first that
 /// answers, so a guard after it is never read: an Unknown there leaves the answer as it is, and an
@@ -589,12 +651,15 @@ fn responding_core(
 /// 1. The input-guarded refusals, before any other branch and before the provider is asked
 ///    (beyond10x/ess#178): the first declared whose guard holds answers (beyond10x/ess#227). Most
 ///    requests are answered earlier by [`refused_by_input`]; this step reads the refusals it leaves.
-/// 2. The accepting `when:` branches and the external branches, in declaration order: the first
+/// 2. For the ess/22 `wrong_state` composition, the present-related predicate refusal whose guard
+///    holds, after addressed-row existence and held state have been checked (beyond10x/ess#282).
+/// 3. The accepting `when:` branches and the external branches, in declaration order: the first
 ///    whose guard holds answers (beyond10x/ess#217), and an external one holds where its provider
 ///    takes it — forced, never while withheld, and either way while open, where it stays one
 ///    possible answer beside whatever the declarations after it select.
-/// 3. The default, where no guard and no provider answered.
+/// 4. The default, where no guard and no provider answered.
 #[allow(
+    clippy::too_many_arguments,
     clippy::too_many_lines,
     reason = "selection preserves source-declared guard precedence in one ordered routine"
 )]
@@ -606,6 +671,8 @@ fn select<'s>(
     held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
     caller: Option<&caller::Caller<'_>>,
     context: &Context<'_>,
+    include_present_related_refusals: bool,
+    prioritize_present_related_refusals: bool,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
     let invocation = caller::Facts::new(facts, caller, &spec.input);
     let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&invocation) {
@@ -654,11 +721,35 @@ fn select<'s>(
             }
         }
     }
+    if selected.is_empty() && prioritize_present_related_refusals {
+        for outcome in spec
+            .outcomes
+            .iter()
+            .filter(|outcome| is_present_related_refusal(outcome))
+        {
+            let held = held_subjects
+                .get(&outcome.name)
+                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
+                .transpose();
+            match held {
+                Ok(Some(Some(true))) => {
+                    selected.push(outcome);
+                    break;
+                }
+                Ok(_) => {}
+                Err(why) => {
+                    context.defer(why)?;
+                    return Ok(Vec::new());
+                }
+            }
+        }
+    }
     if selected.is_empty() {
         let mut answered = false;
         for outcome in &spec.outcomes {
-            let held = held_subjects
-                .get(&outcome.name)
+            let held = (!is_present_related_refusal(outcome) || include_present_related_refusals)
+                .then(|| held_subjects.get(&outcome.name))
+                .flatten()
                 .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
                 .transpose();
             let takes = match held {
@@ -718,6 +809,104 @@ fn select<'s>(
         }
     }
     Ok(selected)
+}
+
+fn is_present_related_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }
+        )
+}
+
+/// The addressed-row existence or held-state answers selected before a present-related predicate
+/// refusal (ess/22, beyond10x/ess#282). `selected` is the complete alternative set the later
+/// accepting/external step would take with those refusals omitted. Each alternative keeps its own
+/// subject authority: an invalid moving branch becomes the lifecycle refusal while an independent
+/// nonmoving or external branch remains possible beside it. If every selected alternative may act,
+/// selection continues to the present-related refusal phase without preparing any response.
+fn selected_subject_refusals(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    selected: &[&ResolvedOutcome],
+) -> Result<Option<Vec<Transition>>, Undetermined> {
+    let mut refusals = Vec::with_capacity(selected.len());
+    for outcome in selected {
+        refusals.push(selected_subject_refusal(
+            ir, spec, store, input, generated, responses, outcome,
+        )?);
+    }
+    if refusals.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+
+    let mut steps = Vec::with_capacity(selected.len());
+    let mut unmatched = Vec::new();
+    for (outcome, refusal) in selected.iter().copied().zip(refusals) {
+        if let Some(step) = refusal {
+            if !steps.contains(&step) {
+                steps.push(step);
+            }
+            continue;
+        }
+        match take(ir, spec, outcome, store, input, generated, responses) {
+            Ok(Ok(step)) if !steps.contains(&step) => steps.push(step),
+            Ok(Ok(_)) => {}
+            Ok(Err(why)) => unmatched.push(format!("`{}`: {why}", branch(spec, outcome))),
+            Err(Undetermined::Request(why)) if input.operation.is_some() => unmatched.push(why),
+            Err(why) => input.defer(why)?,
+        }
+    }
+    if steps.is_empty() {
+        return Err(Undetermined::Request(format!(
+            "no branch the model allows is described by the given values — {}",
+            unmatched.join("; ")
+        )));
+    }
+    Ok(Some(steps))
+}
+
+fn selected_subject_refusal(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    outcome: &ResolvedOutcome,
+) -> Result<Option<Transition>, Undetermined> {
+    let Some(subject) = &outcome.subject else {
+        return Ok(None);
+    };
+    if subject.effect == ResolvedEffect::Creates {
+        return Ok(None);
+    }
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return Ok(None);
+    };
+    let identity = input.get(&field.name).ok_or_else(|| {
+        Undetermined::Request(format!(
+            "`{}` names its subject in `{}`, and the input has none",
+            spec.name, field.name
+        ))
+    })?;
+    let entity = ir.entity(&subject.entity);
+    let Some(held) = store.instance_typed(&entity.name, identity) else {
+        return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
+    };
+    if let ResolvedEffect::Moves { transition } = &subject.effect {
+        if !transition.from.contains(&held.state) {
+            return wrong_state(ir, spec, store, input, Some(held)).map(Some);
+        }
+    }
+    Ok(None)
 }
 
 /// The answer of a command guarded by a related row (`when_related:`, ess/18) whose related row is

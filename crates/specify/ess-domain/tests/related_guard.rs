@@ -513,3 +513,164 @@ fn issue_229_the_related_state_enters_the_partition() {
         "{errors}"
     );
 }
+
+// ---- a present related refusal beside wrong_state (beyond10x/ess#282, `ess/22`) -------------
+
+fn issue_282_overlap(wrong_state_first: bool) -> String {
+    let text = release_at("ess/22");
+    let text = replaced(
+        &text,
+        "  - {name: demo.release.CandidateNotAccepted, summary: The candidate is not accepted., fields: []}\n",
+        "  - {name: demo.release.CandidateNotAccepted, summary: The candidate is not accepted., fields: []}\n  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its held state., fields: []}\n",
+    );
+    let wrong =
+        "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n";
+    if wrong_state_first {
+        replaced(
+            &text,
+            "      - name: not-accepted\n",
+            &format!("{wrong}      - name: not-accepted\n"),
+        )
+    } else {
+        replaced(
+            &text,
+            "      - name: published\n",
+            &format!("{wrong}      - name: published\n"),
+        )
+    }
+}
+
+#[test]
+fn issue_282_two_selected_related_refusals_remain_ambiguous_under_ess_22() {
+    let source = replaced(
+        &issue_282_overlap(false),
+        "        error: demo.release.CandidateNotAccepted\n      - {name: wrong-state",
+        "        error: demo.release.CandidateNotAccepted\n      - name: also-not-accepted\n        when_related: {via: input.candidate, predicate: state == Proposed}\n        error: demo.release.CandidateNotAccepted\n      - {name: wrong-state",
+    );
+    let errors = assemble_as(&source, "release.yaml")
+        .err()
+        .unwrap_or_else(|| panic!("two related refusals must remain ambiguous under ess/22"));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            "state = Proposed"
+        ),
+        "{errors}"
+    );
+}
+
+#[test]
+fn issue_282_only_a_present_related_refusal_gains_wrong_state_precedence() {
+    let source = replaced(
+        &issue_282_overlap(false),
+        "        when_related: {via: input.candidate, predicate: state != Accepted}\n        error: demo.release.CandidateNotAccepted\n",
+        "        when_related: {via: input.candidate, predicate: state != Accepted}\n        preserves: demo.release.Release\n        instance: release_id\n",
+    );
+    let errors = assemble_as(&source, "release.yaml")
+        .err()
+        .unwrap_or_else(|| panic!("a related acceptance beside wrong_state remains outside #282"));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            "wrong_state"
+        ),
+        "{errors}"
+    );
+}
+
+#[test]
+fn issue_282_source_22_without_wrong_state_keeps_related_acceptance_ambiguity() {
+    let source = replaced(
+        &release_at("ess/22"),
+        "      - {name: candidate, type: demo.release.CandidateId}\n",
+        "      - {name: candidate, type: demo.release.CandidateId}\n      - {name: publish, type: Boolean}\n",
+    );
+    let source = replaced(
+        &source,
+        "      - name: published\n",
+        "      - name: held\n        when: publish == false\n        preserves: demo.release.Release\n        instance: release_id\n      - name: published\n        when: publish == true\n",
+    );
+    let errors = assemble_as(&source, "release.yaml")
+        .err()
+        .unwrap_or_else(|| panic!("source22 without wrong_state retains the related partition"));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            "state = Proposed"
+        ),
+        "{errors}"
+    );
+}
+
+fn issue_282_objective_switch(wrong_state_first: bool) -> String {
+    issue_282_overlap(wrong_state_first)
+        .replace("Release", "Objective")
+        .replace("release", "objective")
+        .replace("Candidate", "Switch")
+        .replace("candidate", "switch")
+        .replace("Accepted", "Running")
+        .replace("accepted", "running")
+        .replace("Proposed", "Paused")
+        .replace("proposed", "paused")
+        .replace("Published", "Executing")
+        .replace("published", "executing")
+        .replace("PublishObjective", "StartObjective")
+        .replace("publish", "start")
+}
+
+fn issue_282_deployment_approval(wrong_state_first: bool) -> String {
+    issue_282_overlap(wrong_state_first)
+        .replace("Release", "Deployment")
+        .replace("release", "deployment")
+        .replace("Candidate", "Release")
+        .replace("candidate", "release")
+        .replace("Accepted", "Approved")
+        .replace("accepted", "approved")
+        .replace("Published", "Deployed")
+        .replace("published", "deployed")
+        .replace("PublishDeployment", "Deploy")
+        .replace("publish", "deploy")
+}
+
+#[test]
+fn issue_282_related_refusal_and_wrong_state_validate_under_ess_22() {
+    for (shape, build) in [
+        (
+            "objective/switch",
+            issue_282_objective_switch as fn(bool) -> String,
+        ),
+        ("deployment/approval", issue_282_deployment_approval),
+    ] {
+        for wrong_state_first in [true, false] {
+            let source = build(wrong_state_first);
+            assemble_as(&source, "issue-282.yaml").unwrap_or_else(|errors| {
+                panic!("{shape}, wrong_state_first={wrong_state_first}: {errors}\n{source}")
+            });
+        }
+    }
+}
+
+#[test]
+fn issue_282_overlap_below_ess_22_keeps_its_refusal() {
+    for format in ["ess/21", "ess/20"] {
+        let source = replaced(
+            &issue_282_overlap(true),
+            "format: ess/22\n",
+            &format!("format: {format}\n"),
+        );
+        let errors = assemble_as(&source, "overlap.yaml")
+            .err()
+            .unwrap_or_else(|| panic!("{format} must retain the overlap refusal"));
+        assert!(
+            has(
+                &errors,
+                ValidationCode::ConflictingDeclaration,
+                "`wrong_state` branch"
+            ),
+            "{format}: {errors}"
+        );
+    }
+}

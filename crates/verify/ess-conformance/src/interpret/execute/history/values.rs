@@ -257,7 +257,8 @@ fn validate_at(
     }
     match value.concrete() {
         Ok(Some(known)) => {
-            return input::validate_typed_value(ir, declared, &known).map_err(Undetermined::Request)
+            return input::validate_typed_value(ir, declared, &known)
+                .map_err(Undetermined::Request);
         }
         Ok(None) => {
             let field = ResolvedField {
@@ -372,7 +373,7 @@ fn validate_invariants(
                 return Err(Undetermined::Request(format!(
                     "`{declared}` invariant `{}` is false",
                     invariant.statement
-                )))
+                )));
             }
             Truth::Unknown => {
                 unresolved.get_or_insert_with(|| Undetermined::Undecidable {
@@ -721,6 +722,8 @@ pub(crate) fn generated(
 
 #[cfg(test)]
 mod proof_tests {
+    use std::fmt::Write as _;
+
     use super::*;
 
     fn model(types: &str) -> EssIr {
@@ -730,10 +733,12 @@ mod proof_tests {
         let raw = ess_domain::spec::RawSpecFile::parse(&source).unwrap();
         source.push_str("events:\n  - name: demo.proof.Values\n    fields:\n");
         for (index, declared) in raw.types.iter().enumerate() {
-            source.push_str(&format!(
-                "      - {{name: field{index}, type: {}}}\n",
+            writeln!(
+                source,
+                "      - {{name: field{index}, type: {}}}",
                 declared.name
-            ));
+            )
+            .unwrap();
         }
         let raw = ess_domain::spec::RawSpecFile::parse(&source).unwrap();
         let spec = ess_domain::Specification::assemble([(
@@ -894,7 +899,7 @@ mod proof_tests {
     #[test]
     fn proof_validation_false_dominates_unknown_in_members_and_enclosing_constraints() {
         let ir = model(
-            r#"
+            r"
   - name: demo.proof.Value
     kind: struct
     fields: [{name: maybe, type: Optional<Boolean>}, {name: known, type: Boolean}]
@@ -907,7 +912,7 @@ mod proof_tests {
     kind: newtype
     of: demo.proof.Value
     invariants: ['value.known == false']
-"#,
+",
         );
         let unknown = Node::Map(BTreeMap::from([("known".into(), Node::Bool(true))]));
         let invalid = Node::Map(BTreeMap::from([
@@ -974,7 +979,7 @@ mod proof_tests {
     #[test]
     fn abstract_validation_false_dominates_earlier_unknown_constraints_and_members() {
         let ir = model(
-            r#"
+            r"
   - name: demo.proof.Value
     kind: struct
     fields: [{name: maybe, type: Optional<Boolean>}, {name: known, type: Boolean}]
@@ -990,7 +995,7 @@ mod proof_tests {
   - name: demo.proof.Siblings
     kind: struct
     fields: [{name: first, type: demo.proof.Maybe}, {name: second, type: Boolean}]
-"#,
+",
         );
         let origin = Origin {
             operation: "proof".into(),
@@ -1047,7 +1052,9 @@ mod proof_tests {
             "['maybe == true', 'known == false']",
             "['known == false', 'maybe == true']",
         ] {
-            let ir = model(&format!("  - name: demo.proof.Value\n    kind: struct\n    fields: [{{name: maybe, type: Optional<Boolean>}}, {{name: known, type: Boolean}}]\n    invariants: {predicates}\n"));
+            let ir = model(&format!(
+                "  - name: demo.proof.Value\n    kind: struct\n    fields: [{{name: maybe, type: Optional<Boolean>}}, {{name: known, type: Boolean}}]\n    invariants: {predicates}\n"
+            ));
             let value = Node::Map(BTreeMap::from([("known".into(), Node::Bool(true))]));
             assert!(matches!(
                 input::validate_typed_value_proof(&ir, &kind(&ir, "Value"), &value),
@@ -1078,7 +1085,19 @@ mod proof_tests {
 
     #[test]
     fn proof_named_chains_bound_work_without_caching_exhaustion_as_empty() {
-        let declarations: String = (0..64).map(|index| format!("  - {{name: demo.proof.S{index}, kind: struct, fields: [{{name: next, type: {}}}]}}\n", if index == 63 { "Boolean".into() } else { format!("demo.proof.S{}", index + 1) })).collect();
+        let mut declarations = String::new();
+        for index in 0..64 {
+            let next = if index == 63 {
+                "Boolean".into()
+            } else {
+                format!("demo.proof.S{}", index + 1)
+            };
+            writeln!(
+                declarations,
+                "  - {{name: demo.proof.S{index}, kind: struct, fields: [{{name: next, type: {next}}}]}}"
+            )
+            .unwrap();
+        }
         let ir = model(&declarations);
         let mut cache = BTreeMap::new();
         let mut context = ProofContext::new(&mut cache, 16_384);

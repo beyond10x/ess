@@ -111,6 +111,8 @@ pub(super) fn existing(
             &std::collections::BTreeMap::new(),
             input.caller,
             input,
+            true,
+            false,
         )?;
         if selected.len() > 1 {
             return Err(Undetermined::NotInterpreted {
