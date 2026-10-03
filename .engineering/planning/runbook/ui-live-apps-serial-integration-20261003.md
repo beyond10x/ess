@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 43
+revision: 44
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -350,3 +350,13 @@ CLI help corrections admitting transport/1 or/2. Owned NATS cleanup now requires
 container removal and a successful full-ID absence query; daemon/query failures preserve cleanup
 failure rather than masquerading as absence. Actual official-validator and broker execution remain
 pending compiler handoff and independent review.
+
+## Verification and design continuation — 2026-10-03
+
+Integration commit `d75824465` merges independently reviewed test-only candidate `ba4591de292f8b0db3b337ad359c04b8c7fea37a`. The #275 failure noted earlier reproduces on pre-282 baseline `72167e08`: its global uniqueness assertion contradicts accepted #312 per-scenario empty isolation. The correction preserves identity freshness within each scenario, swapped/unswapped accounting and a native collision fault. Author and independent execution each pass8/8; strict focused Clippy passes. Review `caller-isolation-test-migration-20261003-r1` approves without findings. This diagnosis supersedes the earlier unclassified-failure note; no production change was needed for that failure.
+
+#282 is frozen for review at `226af8bfeac6db007c8e9da9ee90005346acdd89`, containing source checkpoint `bf0fc3d0b`, refreshed integration and four mechanical test-helper lint corrections. Twelve focused controls and formatting passed before refresh; strict all-target lint and full affected-package tests are rerunning. Whole independent review pass1 is in progress and has prepared an unexecuted control for a nonmoving Open-external alternative possibly lost beside a moving fallback's wrong-state refusal. It is not a confirmed execution result or final review verdict yet. #282 has not integrated; dependent #304 production work remains held. Its test-only preparation is committed at `4cf695b0cb2cc637c6fcd1415cce490385a006b5`.
+
+Expression-family design review1 found five blockers. `component-design:expression-family-source22` records the exact initial review and the coordinator's complete revised proposal in `docs/design/expression-family-source22.md`. The revision adds mechanically resolved-only persistence, tagged UTF-8 selector identity, exact wider Integer intermediates, occurrence-scoped command-clock authority with history2, and decisive distinctness/finite-domain controls. Final independent design review remains due; no expression implementation or acceptance is claimed. Suite40/41 and history2 are reserved for this revised contract, subject to that review.
+
+External intake #412 is being prepared by its owning coordinator as a coherent Rust/Go input-bearing external callback unit. Both behavior emitters are reserved for that bounded work before #319; no source has been integrated here or compiler window granted. Newly reported #413 is a separate counter-arrangement intake with a retained public reproduction, not a silent addition to the pinned50 or an already diagnosed fix. Refresh main and reconcile any independently landed fixes before final candidate validation. One bundle PR and all source-release requirements remain unchanged.
