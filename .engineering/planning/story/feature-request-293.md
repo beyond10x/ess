@@ -25,7 +25,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_explore_optional_unknown
 - confidence: inferred
   path: docs/design/explorer-optional-unknown.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T02:13:06Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-03T02:13:06Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-runtime-20261002"}
@@ -173,3 +173,13 @@ Production authorization is limited to the existing two explorer assets and thei
 ## Concurrent native process test scope
 
 The concurrent acceptance case must cross the actual native CLI process boundary. Existing reproducible tests use CARGO_BIN_EXE_ess under ess-cli; the assigned conformance crate has neither that compiled binary authority nor an exact-source CLI executable available. Root therefore authorizes the narrow additional Rust integration test crates/edge/ess-cli/tests/explore_optional_unknown_concurrent.rs. Existing production scope remains the Go and TypeScript explorer assets. Additional shared support paths must be reported before editing; no separate executable language or ad hoc external-binary dependency is authorized. Worker keeps compilation held below the shared 12 GiB start threshold. This is test-scope authorization, not an execution result.
+
+## Frozen implementation and independent review
+
+Independent final review consumer-293-implementation-pass2 approves the exact nine-file patch SHA256 93245998c5d554653c53ef40b6c11c0f98fb7b536ad7f2189010d7e6b09b2304. Worker bot commit 2309ec9c0b8a480cf4a69efa46cff23ec7822c49 was transferred without conflict to runtime carrier c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9. Both author/committer pairs are bot and both binary patches match. Source is locally frozen and unpublished; shared integration remains pending, so the story remains active.
+
+Root verified all hashes in the evidence manifest and the final terminal logs: 14 serial tests, two concurrent tests with 40 native-judged histories, strict TypeScript, repository formatting and strict all-target Clippy for conformance/CLI passed. Earlier neighbor receipts cover 30 serial and 22 concurrent tests before the final narrow member-closure correction. Full touched-crate, feature-off, workspace and remote gates are still owed on the grouped candidate; no rerun or release claim is invented. Final review source/evidence inspection did not start builds.
+
+The independently reproduced undeclared-member false green is fixed in both assets and both mutant matrices. Review outcome fixed is recorded against consumer-explorer-struct-members-pass1; actual corrected root probe SHA256 e4dc215158f3087e8c4551e260b9879c2745f3a7408b28049a6fb0306fe379c4 preserves the healthy control and rejects the extra member. The separately reproduced constrained Optional value-invariant observation refusal is now story:optional-value-invariant-observation. This is not hidden by explorer success, not an Integer witness defect, and not an implicit expansion of the frozen nine-file unit.
+
+Private report SHA256 f710ae6c741fe628d53d188c20d8ed4ecde28c89e6509b313d21669161ebe530, evidence manifest 40fe301a9fd850ca0dfbd7e9231508e2e0e4c0cc2cc36edda9cf3fc61e0ecc67 and root review 0c8324034a01778b2c611e4c56a7261a6084d07909be9b5b9cf7cc60f39a68e7 remain retained. Worker cache/source leases were released after completion. All new compiler starts are held for the release owner's final verification, with source-only work continuing. No independent PR or partial-bundle publication.

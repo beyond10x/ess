@@ -6,7 +6,7 @@ status: draft
 title: Frozen source handoff to the shared ESS integration branch
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 ---
 # Frozen runtime source handoff, 2026-10-03
 
@@ -137,3 +137,11 @@ Exact source was committed as worker 103381711f9b427f490b4503611da75601939d31 an
 The new frozen runtime-source-handoff-nested-addendum-20261003.md has SHA256 c269b5d7faf5cb66ca0a7569da051766f9333764eb54fcb7e9b67e97c98b7d2e and lives beside the two acknowledged carrier handoffs. It proposes appending d4dc8d3f573 to the existing 58 source commits, plus companion binding-document commit 6f007d2db2b9184a7b523d65c58cfe5ccde3a5cc outside that source count. Preserve all original exclusions and dependencies, no wholesale merge and no partial bundle. Both earlier acknowledged handoff hashes verify unchanged. This addendum is prepared locally; no integrator receipt or published integration has been observed for it. All handoff source/evidence remain retained until explicit published-integration verification.
 
 Bounded unit checks are not a full new crate/workspace/release gate. Affected-crate checks must cover the eventual grouped candidate before publication. Product browser response, history, explorer and aggregates remain separate required work. Story remains active pending shared integration and full completion; no claim that the full backlog or release is complete.
+
+## Explorer source follow-up prepared
+
+Root independently reviewed and transferred explorer #293 as source c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9 from worker 2309ec9c0b8a480cf4a69efa46cff23ec7822c49. Both bot commits carry the identical reviewed nine-file patch SHA256 93245998c5d554653c53ef40b6c11c0f98fb7b536ad7f2189010d7e6b09b2304. Transfer applied cleanly; the three preexisting carrier documentation edits remain untouched. Binding companion 6727e07363877925aa6a0f2bb1cb47b08d2348e3 is separate from source count. Final review consumer-293-implementation-pass2 approves; actual dedicated 14 serial plus two concurrent tests (40 native-judged histories), strict TypeScript, formatting and Clippy are green. Required broader grouped-candidate checks remain outstanding.
+
+Frozen carrier file target/backlog-input/runtime-source-handoff-explorer-addendum-20261003.md has SHA256 15f75bd66a930b32afb515d18ab18c19af26680a88fba424099dd6fcafa14ace. It proposes explorer as source number 60 after nested source number 59. All earlier handoff hashes were reverified unchanged. Neither the nested nor explorer addendum has an explicit integration receipt or published-integration verification. All source/evidence remain retained; no wholesale carrier merge, duplicate PR or partial held ess/21 publication. The sole shared carrier remains batch/ui-live-apps-complete-20261003.
+
+Latest explicit coordinator message reports PR398 and PR404 merged, duplicate PR405 closed, main e68684ef (tree bd40895) as the 0.52 final local-verification candidate with no tag. This is owner-provided state, not an independently verified remote release or successful gate. All our new compilation is held for that release check. Explorer's verification and both leases are terminal/released; its cache is retained for later coordinated reuse. History #292's bounded test is terminal 24/0 and its later source is unexecuted; browser product has authored but uncompiled source. No other owner's process or cache was touched.

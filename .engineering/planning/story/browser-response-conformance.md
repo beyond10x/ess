@@ -70,7 +70,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T03:32:57Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T03:33:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -238,3 +238,9 @@ The machine-readable scope now follows design section9. New source modules, embe
 Root owns planning, binding design, format catalog and changelog. Worker owns only the scoped implementation source/assets/tests and related response/replay design clarification after authorization. No transport, compiler constructor, Runner semantics, async target protocol, build helper, import flags or new suite major is authorized. Every new committed executable test/fixture is Rust; established embedded browser glue follows the existing asset convention. Work remains on the one held integration delivery path; no separate PR, remote gate or publication is authorized.
 
 Implementation may proceed in isolated ess-browser-conformance-product-20261003 once provisioned from the exact binding-design carrier. Source/test work can proceed under current storage pressure, but compiler/build/browser starts require resource coordination; no third large cache is created. Existing servers and synthesis caches remain exclusively owned by #293 and #292. The browser worker must await an explicit cache handoff before any compile. Completion still requires the full design feature matrix, actual emitted module packaging and independent Firefox healthy/fault execution; static navigation alone cannot close this story.
+
+## Bounded Run nonce inventory and build hold
+
+Binding design follow-up commit 6b15cceb7cef5e1897056d0e9b0da9fc7f76e204 adds a finite inventory of 65,536 distinct Run nonces per module with no eviction. Validate frame and loaded handle, then consume the new nonce before installation factory or target callbacks, retaining it even if installation/execution fails. Duplicate reuse remains invalid; a new nonce at capacity returns resource_limit before callbacks. Release/selection never clear the inventory. Continuation requires a fresh worker/module and full Load. Current binding document SHA256 a0b8d60aee3fb42f334877a2a3abdd0346dacbe7fc3d3db690f72a74656f1890. This is a bounded design clarification, not a measured resource profile or execution result.
+
+Owner has authored the scoped source/product/assets, independent fixture and admission/execution tests but has started no compiler or browser execution for this unit. Compilation remains held during the release owner's final check; the newly idle servers cache has not been handed to this worker. Rust formatting parsed source; it is not a build or test result. Original ordinary/coverage browser product reds remain the acceptance baseline.
