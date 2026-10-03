@@ -241,6 +241,43 @@ fn a_failed_background_flush_reaches_the_callback_and_is_dropped() {
     assert!(publisher.publish_audited(&audited("z")).is_err());
     publisher.close().unwrap();
 }
+
+#[derive(Clone, Default)]
+struct Slow {
+    sent: Arc<Mutex<Vec<String>>>,
+}
+
+impl Transport for Slow {
+    type Error = String;
+    fn publish(&self, _subject: &str, payload: &[u8]) -> Result<(), String> {
+        let first = self.sent.lock().unwrap().is_empty();
+        if first {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        self.sent.lock().unwrap().push(String::from_utf8(payload.to_vec()).unwrap());
+        Ok(())
+    }
+}
+
+#[test]
+fn no_message_carries_more_than_max_items_when_the_broker_is_slow() {
+    let slow = Slow::default();
+    let publisher = ProducerPublisher::new(slow.clone(), PublisherOptions::default());
+    for index in 0..7 {
+        publisher.publish_usage_recorded(&item(&format!("i{index}"))).unwrap();
+    }
+    publisher.close().unwrap();
+    let sizes: Vec<usize> = slow
+        .sent
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|message| serde_json::from_str::<Vec<serde_json::Value>>(message).unwrap().len())
+        .collect();
+    assert_eq!(sizes.iter().sum::<usize>(), 7, "{sizes:?}");
+    assert!(sizes.iter().all(|size| *size <= USAGE_RECORDED_MAX_ITEMS), "max_items is {USAGE_RECORDED_MAX_ITEMS}, messages carried {sizes:?}");
+}
+
 "##;
 
 #[test]
@@ -382,6 +419,20 @@ func TestFailedFlushReachesOnError(t *testing.T) {
 		t.Fatal("a refused single publish returned no error")
 	}
 }
+
+func TestPublishNowAfterCloseIsRefused(t *testing.T) {
+	m := &memory{}
+	p := NewProducerPublisher(m, PublisherOptions{})
+	ctx := context.Background()
+	if err := p.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	err := p.PublishUsageRecordedNow(ctx, []MeteringItemsUsageRecorded{item(t, "late")})
+	if !errors.Is(err, ErrClosed) || m.count() != 0 {
+		t.Fatalf("after close: err=%v, sent=%v", err, m.sent)
+	}
+}
+
 "#;
 
 #[test]
