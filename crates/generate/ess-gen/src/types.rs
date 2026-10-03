@@ -948,7 +948,18 @@ fn apply_bound(
             node.minimum = raise(node.minimum, value);
             node.maximum = lower(node.maximum, value);
         }
-        CompareOp::Eq => node.constant = Some(Constant::Integer(value)),
+        CompareOp::Eq => {
+            // Invariants are conjunctive. Preserve the first equality and intersect
+            // conflicting equalities as bounds, so later comparisons cannot erase them.
+            if let Some(Constant::Integer(previous)) = node.constant {
+                if previous != value {
+                    node.minimum = raise(node.minimum, previous.max(value));
+                    node.maximum = lower(node.maximum, previous.min(value));
+                }
+            } else {
+                node.constant = Some(Constant::Integer(value));
+            }
+        }
         CompareOp::Ne => {}
     }
 }

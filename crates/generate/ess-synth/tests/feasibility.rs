@@ -565,8 +565,28 @@ fn optional_identity_and_omission_bindings_compile() {
 }
 
 #[test]
-fn optional_self_recursion_is_a_size_cycle() {
-    refusal(&core("types:\n  - name: demo.core.Link\n    kind: struct\n    fields:\n      - name: next\n        type: Optional<demo.core.Link>\n", ""), "recursive-layout", "self-recursion");
+fn mandatory_self_recursion_is_rejected_before_synthesis() {
+    for optional in [
+        "",
+        "      - {name: optional, type: Optional<demo.core.Link>}\n",
+    ] {
+        let text = format!("format: ess/1\nsystem: demo\nversion: v1\ndomain: demo.core\ntypes:\n  - name: demo.core.Link\n    kind: struct\n    fields:\n      - {{name: next, type: demo.core.Link}}\n{optional}");
+        let raw = RawSpecFile::parse(&text).unwrap();
+        let error = Specification::assemble([(Source::new("mandatory.yaml"), raw)])
+            .expect_err("mandatory recursion has no finite value");
+        assert!(error.to_string().contains("[self_reference]"));
+    }
+}
+
+#[test]
+fn an_optional_self_edge_does_not_admit_other_recursive_edges() {
+    for (label, extra, sibling) in [
+        ("nested", "      - {name: nested, type: Optional<Optional<demo.core.Link>>}\n", ""),
+        ("mutual", "      - {name: peer, type: demo.core.Other}\n", "  - name: demo.core.Other\n    kind: struct\n    fields:\n      - {name: back, type: Optional<demo.core.Link>}\n"),
+    ] {
+        let body = format!("types:\n  - name: demo.core.Link\n    kind: struct\n    fields:\n      - {{name: next, type: Optional<demo.core.Link>}}\n{extra}{sibling}");
+        refusal(&core(&body, ""), "recursive-layout", label);
+    }
 }
 
 #[test]
@@ -1226,4 +1246,269 @@ fn an_unpresented_web_command_has_no_outcome_codec_binding_scope() {
         &directory.join("generated/web/demo"),
         Some("wasm32-unknown-unknown"),
     );
+}
+
+fn optional_recursive_model() -> EssIr {
+    fixture(&[(
+        "recursive.yaml",
+        r"format: ess/19
+system: demo
+version: v1
+domain: demo.core
+types:
+  - name: demo.core.DocumentFormat
+    kind: enum
+    variants:
+      - name: DocumentV1
+        wire: demo.document/1
+  - name: demo.core.Link
+    kind: struct
+    fields:
+      - {name: format, type: demo.core.DocumentFormat}
+      - {name: label, type: String}
+      - {name: next, type: Optional<demo.core.Link>}
+  - name: demo.core.Envelope
+    kind: struct
+    fields:
+      - {name: root, type: demo.core.Link}
+      - {name: list, type: 'List<demo.core.Link>'}
+      - {name: map, type: 'Map<String, demo.core.Link>'}
+events:
+  - name: demo.core.Arrived
+    fields:
+      - {name: root, type: demo.core.Link}
+  - name: demo.core.Done
+    fields:
+      - {name: built, type: Optional<demo.core.Link>}
+commands:
+  - name: demo.core.Receive
+    input:
+      - {name: root, type: demo.core.Link}
+      - {name: child, type: Optional<demo.core.Link>}
+      - {name: label, type: Optional<String>}
+    outcomes:
+      - name: accepted
+        emits: [demo.core.Done]
+        payload:
+          demo.core.Done:
+            built:
+              format: DocumentV1
+              label: built
+              next: input.child
+components:
+  - component: worker
+    owns:
+      domains: [demo.core]
+    accepts:
+      commands: [demo.core.Receive]
+    publishes:
+      events: [demo.core.Arrived, demo.core.Done]
+    reached_by: network
+bindings:
+  - id: project
+    when:
+      event: demo.core.Arrived
+    invoke:
+      command: demo.core.Receive
+    mapping:
+      root: event.root
+      child: event.root.next
+      label: event.root.next.label
+    delivery: at_most_once
+    on_failure: drop
+",
+    )])
+}
+
+const RECURSIVE_HARNESS: &str = r##"
+use demo_server::{json, wire};
+use demo_types::core::{Arrived, DocumentFormat, Envelope, Link};
+use demo_types::core::obligations::ReceiveBehavior;
+
+#[test]
+fn recursive_json_and_accessor() {
+    let leaf = Link { format: DocumentFormat::DocumentV1, label: "leaf".into(), next: None };
+    let root = Link { format: DocumentFormat::DocumentV1, label: "root".into(), next: Some(Box::new(leaf.clone())) };
+    let mut encoded = String::new();
+    wire::encode_demo_core_link(&root, &mut encoded);
+    assert_eq!(encoded, r#"{"format":"demo.document/1","label":"root","next":{"format":"demo.document/1","label":"leaf"}}"#);
+    let value = json::parse(&encoded).unwrap();
+    assert_eq!(wire::decode_demo_core_link(&value, "$").unwrap(), root);
+    let absent = json::parse(r#"{"format":"demo.document/1","label":"leaf","next":null}"#).unwrap();
+    assert_eq!(wire::decode_demo_core_link(&absent, "$").unwrap(), leaf);
+    let mut envelope = Envelope { root: Box::new(root.clone()), list: vec![Box::new(leaf.clone())], map: Default::default() };
+    envelope.map.insert("child".into(), Box::new(leaf.clone()));
+    encoded.clear();
+    wire::encode_demo_core_envelope(&envelope, &mut encoded);
+    let value = json::parse(&encoded).unwrap();
+    assert_eq!(wire::decode_demo_core_envelope(&value, "$").unwrap(), envelope);
+    let input = demo_system::project(&Arrived { root: Box::new(root.clone()) });
+    assert_eq!(input.root.as_ref(), &root);
+    assert_eq!(input.child.as_deref(), Some(&leaf));
+    assert_eq!(input.label.as_deref(), Some("leaf"));
+    let demo_types::core::ReceiveOutcome::Accepted { done } = demo_types::behaviour::Generated::new(()).receive(input).unwrap();
+    let built = done.built.unwrap();
+    assert_eq!(built.label, "built");
+    assert_eq!(built.next.as_deref(), Some(&leaf));
+    let input = demo_system::project(&Arrived { root: Box::new(leaf) });
+    assert!(input.child.is_none());
+    assert!(input.label.is_none());
+}
+"##;
+
+#[test]
+fn optional_recursive_structs_compile_and_roundtrip_in_both_layouts() {
+    use ess_synth::{synthesize_laid_out, OutputLayout};
+    let ir = optional_recursive_model();
+    for (label, layout) in [
+        ("workspace", OutputLayout::Workspace),
+        ("crate", OutputLayout::Crate),
+    ] {
+        let synthesis = synthesize_laid_out(&ir, Target::Rust, layout)
+            .expect("optional recursive structs are representable");
+        assert_eq!(
+            synthesis.artifacts,
+            synthesize_laid_out(&ir, Target::Rust, layout)
+                .unwrap()
+                .artifacts
+        );
+        let root = scratch(&format!("recursive-{label}"));
+        let generated = root.join("generated");
+        write_emission(&generated, &synthesis);
+        let harness = root.join("harness");
+        std::fs::create_dir_all(harness.join("src")).unwrap();
+        let (dependencies, source) = if layout == OutputLayout::Workspace {
+            ("demo-types = {path = '../generated/crates/demo-types'}\ndemo-server = {path = '../generated/crates/demo-server'}\ndemo-system = {path = '../generated/crates/demo-system'}\n", RECURSIVE_HARNESS.to_owned())
+        } else {
+            (
+                "demo = {path = '../generated', features = ['server']}\n",
+                RECURSIVE_HARNESS
+                    .replace("demo_server::", "demo::server::")
+                    .replace("demo_types::", "demo::")
+                    .replace("demo_system::", "demo::system::"),
+            )
+        };
+        std::fs::write(harness.join("Cargo.toml"), format!("[workspace]\n[package]\nname = 'recursive-witness'\nversion = '0.0.0'\nedition = '2021'\n[dependencies]\n{dependencies}")).unwrap();
+        std::fs::write(harness.join("src/lib.rs"), source).unwrap();
+        let lock = cargo(&harness, "lock", &["generate-lockfile", "--offline"]);
+        assert!(lock.status.success());
+        let run = cargo(&harness, "test", &["test", "--offline", "--locked"]);
+        assert!(
+            run.status.success(),
+            "fresh recursive {label} witness failed"
+        );
+    }
+}
+
+#[test]
+fn optional_recursive_structs_compile_in_the_shared_web_codec() {
+    let ir = optional_recursive_model();
+    let root = scratch("recursive-web");
+    let rust = synthesize(&ir).expect("recursive Rust prerequisite");
+    write_emission(&root.join("generated/rust/demo"), &rust);
+    let web = synthesize_for(&ir, Target::Web).expect("shared recursive Web codec");
+    let directory = root.join("generated/web/demo");
+    write_emission(&directory, &web);
+    check_generated_for(&directory, Some("wasm32-unknown-unknown"));
+}
+
+fn check_multiline_prose(line_ending: &str) {
+    let documents = [
+        ("system.yaml", "format: ess/19\nsystem: demo\nversion: v1\nsummary: \"System first.\\nSystem second.\"\ndomains: [demo.core]\n"),
+        ("core.yaml", r#"domain: demo.core
+naming:
+  display: "Domain first\nDomain second"
+summary: "Domain paragraph one.\n\nDomain paragraph two."
+types:
+  - name: demo.core.Code
+    kind: newtype
+    of: String
+    naming:
+      display: "Code first\nCode second"
+      summary: "Code summary first.\nCode summary second."
+  - name: demo.core.Payload
+    kind: struct
+    naming:
+      display: "Payload first\nPayload second"
+      summary: "Payload summary first.\nPayload summary second."
+    fields:
+      - {name: code, type: demo.core.Code}
+entities:
+  - name: demo.core.Record
+    naming:
+      display: "Record first\nRecord second"
+    identity: {name: id, type: demo.core.Code}
+    lifecycle:
+      initial: Held
+      states: [Held]
+      terminal: [Held]
+events:
+  - name: demo.core.Done
+    naming:
+      display: "Event first\nEvent second"
+      summary: "Event summary first.\nEvent summary second."
+commands:
+  - name: demo.core.Receive
+    naming:
+      display: "Command first\nCommand second"
+      summary: "Command summary first.\nCommand summary second."
+    input:
+      - {name: value, type: demo.core.Payload}
+    outcomes:
+      - name: accepted
+        summary: "Outcome first.\nOutcome second."
+        emits: [demo.core.Done]
+"#),
+        ("components.yaml", r#"components:
+  - component: worker
+    naming:
+      display: "Component first\nComponent second"
+      summary: "Component summary first.\nComponent summary second."
+    owns:
+      domains: [demo.core]
+    accepts:
+      commands: [demo.core.Receive]
+    publishes:
+      events: [demo.core.Done]
+"#),
+    ];
+    let documents = documents
+        .iter()
+        .map(|(label, source)| (*label, source.replace("\\n", line_ending)))
+        .collect::<Vec<_>>();
+    let borrowed = documents
+        .iter()
+        .map(|(label, source)| (*label, source.as_str()))
+        .collect::<Vec<_>>();
+    let ir = fixture(&borrowed);
+    let synthesis = synthesize(&ir).expect("prose is valid source");
+    let expected_summary = match line_ending {
+        "\\n" => "System first.\n//! System second.",
+        "\\r\\n" => "System first.\r\n//! System second.",
+        "\\r" => "System first.\\rSystem second.",
+        "\\nMiddle.\\r" => "System first.\n//! Middle.\\rSystem second.",
+        _ => unreachable!("the fixture enumerates the supported line endings"),
+    };
+    assert!(synthesis.artifacts["crates/demo-types/src/lib.rs"]
+        .contents
+        .contains(expected_summary));
+    let directory = scratch("multiline-prose");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+#[test]
+fn multiline_authored_prose_stays_inside_rust_doc_comments() {
+    check_multiline_prose("\\n");
+}
+
+#[test]
+fn carriage_returns_in_authored_prose_are_safe_rust_doc_comments() {
+    check_multiline_prose("\\r");
+    check_multiline_prose("\\nMiddle.\\r");
+}
+
+#[test]
+fn crlf_in_authored_prose_is_safe_rust_doc_comments() {
+    check_multiline_prose("\\r\\n");
 }

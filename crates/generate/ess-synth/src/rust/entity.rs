@@ -66,7 +66,7 @@ fn data_struct(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity, conte
          identity and every declared field. The state is deliberately not one: inside the domain \
          it\n/// is carried by the type parameter of [`{}<S>`], and at a boundary by \
          [`{}::state`].",
-        entity.naming.display_or(&entity.name),
+        super::doc_text(entity.naming.display_or(&entity.name), "///"),
         entity.name,
         context.type_name,
         context.snapshot_name
@@ -226,7 +226,7 @@ fn typed_entity(
          from\n/// a declared transition. A move the specification does not declare is therefore not an \
          error\n/// case: it does not compile. Where the state is data — wire, storage — use \
          [`{snapshot_name}`]\n/// and [`{snapshot_name}::refine`].",
-        entity.naming.display_or(&entity.name),
+        super::doc_text(entity.naming.display_or(&entity.name), "///"),
         entity.name,
     );
     let _ = writeln!(
