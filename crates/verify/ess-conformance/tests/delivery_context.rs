@@ -9,6 +9,7 @@
 //! Two mutants must each fail the suite: a target that ignores the context, and one that uses the
 //! first delivery's context when it redelivers a later occurrence.
 
+mod support_versions;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -91,7 +92,7 @@ fn the_mapping_scenario_delivers_one_event_under_two_contexts() {
     }
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/30"
+        "ess-conformance/34"
     );
 }
 
@@ -388,10 +389,7 @@ fn go_and_typescript_generation_preserve_delivery_context() {
 #[test]
 fn an_older_suite_envelope_refuses_the_delivery_step() {
     let suite = suite_of(INBOX);
-    let json = suite
-        .to_canonical_json()
-        .unwrap()
-        .replace("\"ess-conformance/30\"", "\"ess-conformance/28\"");
+    let json = support_versions::legacy_json(&suite.to_canonical_json().unwrap(), 28);
     let error = AdmittedSuite::from_json(&json).expect_err("suite/28 does not carry the step");
     assert!(error.to_string().contains("newer suite"), "{error}");
 }

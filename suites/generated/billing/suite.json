@@ -1,10 +1,11 @@
 {
   "provenance": {
-    "suite_version": "ess-conformance/4",
+    "suite_version": "ess-conformance/34",
     "system": "billing",
     "specification_version": "v3",
     "spec_digest": "096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648",
-    "contract_digest": "c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79"
+    "contract_digest": "c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79",
+    "scenario_initial_state": "empty"
   },
   "scenarios": {
     "billing.email.SendEmail/outcome/failed": {

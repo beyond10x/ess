@@ -30,7 +30,7 @@ impl Interleaved for Counter {
     fn invoke(&self, _: SemanticCommandRequest) {
         self.0.set(self.0.get() + 1);
     }
-    fn complete(&self, _: ()) -> Result<SemanticCommandResult, TargetError> {
+    fn complete(&self, (): ()) -> Result<SemanticCommandResult, TargetError> {
         Err(TargetError::unavailable(
             "fixture",
             "sensitive target detail",

@@ -33,7 +33,7 @@ fn suite() -> ConformanceSuite {
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     synthesis.suite
 }

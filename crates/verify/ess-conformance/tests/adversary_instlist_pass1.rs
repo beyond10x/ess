@@ -2,6 +2,7 @@
 //!
 //! Each case here is red on the tree it was written against, and names the defect it shows.
 #![allow(clippy::too_many_lines, clippy::missing_panics_doc)]
+mod support_versions;
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
@@ -374,7 +375,7 @@ mod probes {
         let suite = suite(&ir, &aim(ALL));
         assert_eq!(
             suite.provenance.suite_version.to_string(),
-            "ess-conformance/32"
+            "ess-conformance/34"
         );
         let target = Recording {
             inner: Interpreted::for_model(ir),
@@ -557,6 +558,10 @@ mod probes {
             );
         }
         value["provenance"]["suite_version"] = json!("ess-conformance/30");
+        value["provenance"]
+            .as_object_mut()
+            .unwrap()
+            .remove("scenario_initial_state");
         assert!(AdmittedSuite::from_json(&value.to_string()).is_err());
     }
 
@@ -573,11 +578,9 @@ mod probes {
         let admitted = input.selected();
         assert_eq!(
             admitted.suite().provenance.suite_version.to_string(),
-            "ess-conformance/33"
+            "ess-conformance/35"
         );
-        let older = admitted
-            .original_json()
-            .replace("\"ess-conformance/33\"", "\"ess-conformance/31\"");
+        let older = crate::support_versions::legacy_json(admitted.original_json(), 31);
         let error = AdmittedSuite::from_json(&older).expect_err("/31 refused");
         assert!(
             error.to_string().contains("UnsupportedScenarioValue"),

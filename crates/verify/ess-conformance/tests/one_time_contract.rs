@@ -33,6 +33,7 @@ fn document_from_source(source: &str) -> serde_json::Value {
         serde_json::from_str(include_str!("fixtures/one-time-response/valid-string.json")).unwrap();
     value["provenance"] = serde_json::to_value(ess_conformance::SuiteProvenance::of(&ir)).unwrap();
     value["provenance"]["suite_version"] = "ess-conformance/34".into();
+    value["provenance"]["scenario_initial_state"] = "empty".into();
     for scenario in value["scenarios"].as_object_mut().unwrap().values_mut() {
         // The original ordinary outcome asserted absence for each declared event and
         // carried its source reference. Keep those template bytes, including the later
@@ -80,6 +81,10 @@ fn one_time_closed_trace_contract_is_admitted() {
 fn one_time_old_envelope_refuses_new_authority() {
     let mut value = document();
     value["provenance"]["suite_version"] = "ess-conformance/28".into();
+    value["provenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("scenario_initial_state");
     assert!(AdmittedSuite::from_json(&serde_json::to_string(&value).unwrap()).is_err());
 }
 

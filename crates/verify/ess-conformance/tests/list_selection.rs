@@ -227,7 +227,7 @@ fn generated_binding_scenario_retains_observed_selection_and_version_six() {
     let result = ess_conformance::synthesize(&ir);
     let suite = result.suite.to_canonical_json().unwrap();
     assert!(suite.contains("observed_selection"), "{result:?}");
-    assert!(suite.contains("ess-conformance/6"));
+    assert!(suite.contains("ess-conformance/34"));
     if let Some(directory) = std::env::var_os("ESS_SELECTION_ORACLE_OUT") {
         std::fs::write(
             std::path::PathBuf::from(directory).join("suite.json"),

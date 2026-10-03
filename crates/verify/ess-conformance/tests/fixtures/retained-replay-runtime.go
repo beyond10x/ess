@@ -105,6 +105,20 @@ func (*retainedFixture) ObserveEvents(EventObservationRequest) ([]ObservedEvent,
 	return nil, ErrUnsupported
 }
 
+func legacySuiteJSON(t *testing.T, raw string, major int) string {
+	t.Helper()
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &document); err != nil { t.Fatal(err) }
+	var provenance map[string]json.RawMessage
+	if err := json.Unmarshal(document["provenance"], &provenance); err != nil { t.Fatal(err) }
+	delete(provenance, "scenario_initial_state")
+	provenance["suite_version"] = json.RawMessage(fmt.Sprintf(`"ess-conformance/%d"`, major))
+	encoded, err := json.Marshal(provenance); if err != nil { t.Fatal(err) }
+	document["provenance"] = encoded
+	encoded, err = json.Marshal(document); if err != nil { t.Fatal(err) }
+	return string(encoded)
+}
+
 func TestActualRetainedRunner(t *testing.T) {
 	if mode := os.Getenv("RETAINED_FIXTURE_CHILD"); mode != "" {
 		if os.Getenv("RETAINED_COVERAGE_CHILD") != "" {
@@ -379,7 +393,7 @@ func TestCompleteStepsRequireNewEnvelopeWithoutReplay(t *testing.T) {
 	}
 	for major := 1; major < 12; major++ {
 		t.Run(fmt.Sprint(major), func(t *testing.T) {
-			old := strings.ReplaceAll(string(raw), "ess-conformance/12", fmt.Sprintf("ess-conformance/%d", major))
+			old := legacySuiteJSON(t, string(raw), major)
 			if _, err := admitRunInput(old); err == nil {
 				t.Fatal("old envelope admitted complete steps")
 			}
@@ -467,7 +481,7 @@ func TestRetainedCoverageEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if suite.Provenance.SuiteVersion != "ess-conformance/13" || suite.coverage == nil {
+	if suite.Provenance.SuiteVersion != "ess-conformance/35" || suite.coverage == nil {
 		t.Fatal("missing new coverage authority")
 	}
 	binary, err := os.Executable()
@@ -604,7 +618,7 @@ func TestRetainedAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	for old := 1; old < 12; old++ {
-		if _, err := admitRunInput(strings.ReplaceAll(suiteJSON, "ess-conformance/12", fmt.Sprintf("ess-conformance/%d", old))); err == nil {
+		if _, err := admitRunInput(legacySuiteJSON(t, suiteJSON, old)); err == nil {
 			t.Fatal("old envelope admitted retained steps", old)
 		}
 	}

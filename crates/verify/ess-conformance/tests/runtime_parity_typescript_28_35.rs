@@ -122,7 +122,7 @@ fn typescript_emits_complete_direct_response_suites_28_and_29() {
         let input = direct(covered);
         assert_eq!(
             input.selected().suite().provenance.suite_version.major(),
-            if covered { 29 } else { 28 }
+            if covered { 35 } else { 34 }
         );
         input
             .emit()
@@ -157,6 +157,10 @@ fn malformed_direct_authority_is_refused_by_native_before_execution() {
     let input = direct(false);
     let mut value: Value = serde_json::from_str(input.selected().original_json()).unwrap();
     value["provenance"]["suite_version"] = json!("ess-conformance/26");
+    value["provenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("scenario_initial_state");
     assert!(AdmittedSuite::from_json(&value.to_string()).is_err());
 }
 
@@ -172,6 +176,10 @@ fn ordinary_status_suite() -> AdmittedSuite {
     let original = direct(false);
     let mut value: Value = serde_json::from_str(original.selected().original_json()).unwrap();
     value["provenance"]["suite_version"] = json!("ess-conformance/26");
+    value["provenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("scenario_initial_state");
     for scenario in value["scenarios"].as_object_mut().unwrap().values_mut() {
         scenario["steps"]
             .as_array_mut()
@@ -785,6 +793,11 @@ fn typescript_stops_target_error_after_prior_failed_delivery_assertion() {
 }
 
 fn expected_depth_suite(covered: bool, depth: usize) -> String {
+    // Intentionally keep the original compact bytes, including the step tag after response.
+    expected_depth_document(covered, depth).to_string()
+}
+
+fn expected_depth_document(covered: bool, depth: usize) -> Value {
     let source = constant(include_str!("direct_returns.rs"), "MODEL")
         .replace("name: value, type: String", "name: value, type: Json");
     let ir = model(&source);
@@ -805,8 +818,7 @@ fn expected_depth_suite(covered: bool, depth: usize) -> String {
         .unwrap();
     response["response"]["expected"]["value"] =
         (0..depth).fold(Value::Null, |value, _| json!([value]));
-    // Intentionally keep the original compact bytes, including the step tag after response.
-    document.to_string()
+    document
 }
 
 fn refused_depth_document(raw: &str, label: &str) {
@@ -897,9 +909,13 @@ fn typescript_direct_depth_allowance_never_escapes_its_finite_envelope_path() {
             json!({"unrelated":{"kind":"literal","value":literal}});
         refused_depth_document(&document.to_string(), label);
     }
-    let older =
-        expected_depth_suite(false, 128).replace("ess-conformance/28", "ess-conformance/26");
-    refused_depth_document(&older, "old-deep-direct");
+    let mut older = expected_depth_document(false, 128);
+    older["provenance"]["suite_version"] = json!("ess-conformance/26");
+    older["provenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("scenario_initial_state");
+    refused_depth_document(&older.to_string(), "old-deep-direct");
 }
 
 #[test]

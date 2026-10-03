@@ -61,7 +61,7 @@ fn suite() -> ConformanceSuite {
 #[test]
 fn pure_return_correct_literal_compiles_without_events() {
     let suite = suite();
-    assert_eq!(suite.provenance.suite_version.major(), 28);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     let bytes = suite.to_canonical_json().unwrap();
     assert!(bytes.contains("expect_direct_response"), "{bytes}");
     assert!(!bytes.contains("query_view"));
@@ -519,7 +519,7 @@ fn pure_return_legacy_suite_bytes_unchanged() {
     let model = compile(&spec, &SourceMap::new()).unwrap();
     assert!(!model.to_compact_json().contains("\"returns\""));
     let synthesis = ess_conformance::synthesize(&model);
-    assert_eq!(synthesis.suite.provenance.suite_version.major(), 8);
+    assert_eq!(synthesis.suite.provenance.suite_version.major(), 34);
     assert!(!synthesis
         .suite
         .to_canonical_json()
@@ -543,7 +543,7 @@ fn pure_return_coverage_and_report_retain_exact_admitted_bytes() {
     )
     .unwrap();
     let admitted = input.selected();
-    assert_eq!(admitted.suite().provenance.suite_version.major(), 29);
+    assert_eq!(admitted.suite().provenance.suite_version.major(), 35);
     assert_eq!(admitted.suite().scenarios.len(), 2);
     let target = Library {
         response: Some(actual()),

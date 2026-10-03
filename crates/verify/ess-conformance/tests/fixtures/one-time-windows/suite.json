@@ -4,7 +4,8 @@
     "system": "credentials",
     "specification_version": "v1",
     "spec_digest": "970f2cc2d80cfdfc31ddfed7db088583aaeed633c83acd1bc4154f8391b67607",
-    "contract_digest": "ab389cd6377b41f12efdf510a1f1f1e3f16dff89cbef2c006bb8dacd3f43f57d"
+    "contract_digest": "ab389cd6377b41f12efdf510a1f1f1e3f16dff89cbef2c006bb8dacd3f43f57d",
+    "scenario_initial_state": "empty"
   },
   "scenarios": {
     "credentials.api.Issue/outcome/issued": {

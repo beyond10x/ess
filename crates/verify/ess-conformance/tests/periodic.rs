@@ -396,7 +396,7 @@ fn elapsed_overshoot_cannot_hide_a_missing_live_tick() {
 #[test]
 fn periodic_suites_require_new_vocabulary_and_unsupported_is_not_passing() {
     let suite = suite();
-    assert_eq!(suite.provenance.suite_version.major(), 6);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap();
     let run = ess_conformance::Runner::for_suite(&suite)
         .run_admitted(&admitted, &Controlled::new(Fault::Unsupported));
@@ -416,6 +416,7 @@ fn periodic_suites_require_new_vocabulary_and_unsupported_is_not_passing() {
     let mut legacy = suite.clone();
     legacy.provenance.suite_version =
         ess_conformance::scenario::SuiteFormat::parse("ess-conformance/4").unwrap();
+    legacy.provenance.scenario_initial_state = None;
     assert!(legacy.to_canonical_json().is_err());
 }
 
@@ -508,13 +509,20 @@ fn generated_go_admits_periodic_vocabulary() {
     run_go(
         "admission",
         r#"package essconform
-import ("testing"; "strings")
+import ("testing"; "strings"; "encoding/json")
 func TestPeriodicAdmission(t *testing.T) {
     suite, err := admitRunInput(suiteJSON)
     if err != nil { t.Fatal(err) }
     if len(suite.Scenarios) != 4 { t.Fatalf("want four real periodic fixtures; got %d",len(suite.Scenarios)) }
     for _,bad:=range []string{"PT0S","PT02S","PT+2S","PT4294967296S"} { if _,err:=admitRunInput(strings.ReplaceAll(suiteJSON,"PT2S",bad));err==nil{t.Fatalf("admitted %s",bad)} }
-    if _,err:=admitRunInput(strings.ReplaceAll(suiteJSON,"ess-conformance/6","ess-conformance/4"));err==nil{t.Fatal("legacy suite admitted periodic vocabulary")}
+    var legacy map[string]any
+    if err := json.Unmarshal([]byte(suiteJSON), &legacy); err != nil { t.Fatal(err) }
+    provenance := legacy["provenance"].(map[string]any)
+    provenance["suite_version"] = "ess-conformance/4"
+    delete(provenance, "scenario_initial_state")
+    bytes, err := json.Marshal(legacy)
+    if err != nil { t.Fatal(err) }
+    if _,err:=admitRunInput(string(bytes));err==nil{t.Fatal("legacy suite admitted periodic vocabulary")}
 }
 "#,
     );

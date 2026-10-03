@@ -127,7 +127,6 @@ fn authored_setup_reaches_real_storage_and_resets_between_scenarios() {
     let ir = model(MODEL);
     assert!(ir.commands().is_empty());
     let mut suite = ess_conformance::synthesize::synthesize(&ir).suite;
-    suite.provenance.suite_version = "ess-conformance/6".parse().unwrap();
     let authored = author(&ir, &[AuthoredSource::new("upstream.yaml", SCENARIO)]);
     assert!(authored.is_complete(), "{:?}", authored.refusals);
     suite.scenarios = authored.scenarios;

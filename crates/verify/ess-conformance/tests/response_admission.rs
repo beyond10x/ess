@@ -22,6 +22,7 @@ fn typed_response_writers_refuse_old_pins_and_invalid_observations() {
     assert!(admitted.to_compact_json().is_ok());
     let mut old = admitted.clone();
     old.provenance.suite_version = SuiteFormat::parse("ess-conformance/4").unwrap();
+    old.provenance.scenario_initial_state = None;
     assert!(old.to_canonical_json().is_err());
     assert!(old.to_compact_json().is_err());
 

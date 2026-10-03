@@ -1,6 +1,7 @@
 {
   "provenance": {
     "contract_digest": "85590aa196a683831f115e9c8c7b56d8af2ead012107d2b5ac25e864a70654e8",
+    "scenario_initial_state": "empty",
     "spec_digest": "2a5af0b78a6284311d10bfcca93fbe0e0295aff84560441cc40989425bcda5a7",
     "specification_version": "v1",
     "suite_version": "ess-conformance/34",

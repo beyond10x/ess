@@ -159,6 +159,10 @@ fn immutable_disclosure_identity_admission_vectors() {
         if name == "valid-origin" {
             let mut legacy = value.clone();
             legacy["provenance"]["suite_version"] = "ess-conformance/28".into();
+            legacy["provenance"]
+                .as_object_mut()
+                .unwrap()
+                .remove("scenario_initial_state");
             vector("old-envelope", false, &legacy);
             let mut absent = value;
             for scenario in absent["scenarios"].as_object_mut().unwrap().values_mut() {

@@ -364,7 +364,7 @@ fn the_140_repro_synthesizes_both_branches() {
     assert!(!ess_conformance::text_match_format::case_fold_used_by(
         &suite
     ));
-    assert!(suite.provenance.suite_version.major() < 20);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
 }
 
 fn suite(version: &str, predicate: &Value) -> Value {
@@ -417,7 +417,7 @@ fn a_suite_carrying_a_fold_takes_the_new_ordinary_major() {
             "a pinned older suite refuses to serialise the construct"
         );
         typed.select_fresh_format();
-        assert_eq!(typed.provenance.suite_version.major(), 20);
+        assert_eq!(typed.provenance.suite_version.major(), 34);
         AdmittedSuite::from_json(&typed.to_canonical_json().unwrap()).unwrap();
         AdmittedSuite::from_json(&coverage("ess-conformance/21", &predicate).to_string())
             .expect("coverage/21 carries a fold");
@@ -443,7 +443,7 @@ fn a_suite_carrying_a_fold_takes_the_new_ordinary_major() {
     let mut typed: ConformanceSuite =
         serde_json::from_value(suite("ess-conformance/4", &both)).unwrap();
     typed.select_fresh_format();
-    assert_eq!(typed.provenance.suite_version.major(), 20);
+    assert_eq!(typed.provenance.suite_version.major(), 34);
 }
 
 #[test]

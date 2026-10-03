@@ -172,7 +172,7 @@ fn adversary_139_a_synthesized_suite_fails_an_implementation_swapping_the_polici
 #[test]
 fn adversary_139_the_synthesized_suite_24_is_admitted_for_execution() {
     let suite = suite(PRESENCE);
-    assert_eq!(suite.provenance.suite_version.major(), 24);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     AdmittedSuite::from_suite(&suite).expect("suite/24 is admitted from memory");
     AdmittedSuite::from_json(&suite.to_canonical_json().unwrap())
         .expect("suite/24 is admitted from its canonical bytes");
@@ -190,7 +190,7 @@ fn adversary_139_the_coverage_suite_25_is_built_and_admitted() {
     .unwrap_or_else(|error| panic!("the coverage writer refuses its own suite/25: {error:?}"));
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        25
+        35
     );
 }
 

@@ -3,7 +3,7 @@
 //!
 //! Three questions, each answered by a program rather than a paragraph:
 //!
-//! - a direct-return suite (`/28`, `/29`) emits on both targets now that each runtime executes it;
+//! - a fresh direct-return suite (`/34`, `/35`) emits on both targets;
 //! - the new refusal itself names the version, the limit and the target, at
 //!   `$.provenance.suite_version`, for `emit` on both targets;
 //! - the emit boundary agrees with the admission limit written in each emitted runtime, read as
@@ -119,11 +119,11 @@ fn issue(error: &AdmissionError) -> (String, String, String) {
 #[test]
 fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
     let suite = direct_return_suite();
-    assert_eq!(suite.provenance.suite_version.major(), 28, "precondition");
+    assert_eq!(suite.provenance.suite_version.major(), 34, "precondition");
     let input = direct_return_input();
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        29,
+        35,
         "precondition"
     );
     ess_conformance::go::emit(&suite).expect("Go executes direct responses");

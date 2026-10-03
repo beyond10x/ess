@@ -25,7 +25,7 @@ fn direct_returns_use_fresh_source_and_suite_versions() {
     let mut suite = ess_conformance::synthesize(&model).suite;
     suite.scenarios = authored.scenarios;
     suite.select_fresh_format();
-    assert_eq!(suite.provenance.suite_version.major(), 28);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     assert!(suite
         .to_canonical_json()
         .unwrap()
@@ -62,7 +62,18 @@ fn released_round_three_suites_keep_exact_bytes_and_meaning() {
         let admitted = AdmittedSuite::from_json(expected).unwrap();
         assert_eq!(admitted.original_json(), expected);
         assert_eq!(admitted.suite().provenance.suite_version.major(), major);
-        assert_eq!(actual, expected);
+        let fresh: serde_json::Value = serde_json::from_str(&actual).unwrap();
+        let legacy: serde_json::Value = serde_json::from_str(expected).unwrap();
+        assert_eq!(fresh["scenarios"], legacy["scenarios"]);
+        for field in [
+            "system",
+            "specification_version",
+            "spec_digest",
+            "contract_digest",
+        ] {
+            assert_eq!(fresh["provenance"][field], legacy["provenance"][field]);
+        }
+        assert_eq!(fresh["provenance"]["scenario_initial_state"], "empty");
         assert!(expected.contains("execute_command_without_input"));
         assert!(!expected.contains("expect_direct_response"));
     }

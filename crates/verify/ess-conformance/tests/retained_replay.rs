@@ -1,4 +1,5 @@
 //! Retained replies are observed before retry rather than supplied by the target.
+mod support_versions;
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::{report::Status, target::*, AdmittedSuite, Runner, ScenarioStep};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -33,7 +34,7 @@ fn replay_synthesis_captures_original_result_and_identity_before_real_retry() {
     assert!(text.contains("capture_instance"), "{text}");
     assert!(text.contains("snapshot_complete_subject"), "{text}");
     assert!(!text.contains("configure_external_outcome"), "{text}");
-    assert_eq!(result.suite.provenance.suite_version.major(), 12);
+    assert_eq!(result.suite.provenance.suite_version.major(), 34);
 }
 
 fn replay_suite() -> ess_conformance::ConformanceSuite {
@@ -222,10 +223,7 @@ fn replay_envelope_refuses_old_labels_unknown_fields_and_unbound_or_overwritten_
     let suite = replay_suite();
     let json = suite.to_canonical_json().unwrap();
     for old in 1..12 {
-        assert!(AdmittedSuite::from_json(
-            &json.replace("ess-conformance/12", &format!("ess-conformance/{old}"))
-        )
-        .is_err());
+        assert!(AdmittedSuite::from_json(&support_versions::legacy_json(&json, old)).is_err());
     }
     for mutation in [
         "missing",
@@ -740,7 +738,7 @@ fn emit_runtime(root: &std::path::Path) {
     .unwrap();
     assert_eq!(
         covered.selected().suite().provenance.suite_version.major(),
-        13
+        35
     );
     std::fs::write(
         root.join("coverage.json"),
@@ -1986,7 +1984,7 @@ mod issue_308 {
             step,
             ScenarioStep::SnapshotSubject { .. } | ScenarioStep::ExpectSubjectUnchanged { .. }
         )));
-        assert_eq!(suite.provenance.suite_version.major(), 12);
+        assert_eq!(suite.provenance.suite_version.major(), 34);
         assert_eq!(
             serde_json::to_value(shape(&suite)).unwrap(),
             serde_json::from_str::<serde_json::Value>(DESCRIPTOR).unwrap()

@@ -261,7 +261,7 @@ fn the_suite_needs_no_new_vocabulary_and_every_lane_admits_it() {
     let suite = suite();
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/12",
+        "ess-conformance/34",
         "every assertion added is an existing step"
     );
     AdmittedSuite::from_suite(&suite).unwrap();

@@ -756,7 +756,7 @@ fn a_struct_written_only_by_sets_moves_the_suite_to_26_and_its_coverage_to_27() 
     assert!(row.contains_key("lead.number"), "{row:?}");
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     let input = ess_conformance::coverage_build::build(
         &ir(&text),
@@ -769,7 +769,7 @@ fn a_struct_written_only_by_sets_moves_the_suite_to_26_and_its_coverage_to_27() 
         input
             .selected()
             .original_json()
-            .contains("\"ess-conformance/27\""),
+            .contains("\"ess-conformance/35\""),
         "coverage is written as /27"
     );
     let mut pinned = suite.clone();

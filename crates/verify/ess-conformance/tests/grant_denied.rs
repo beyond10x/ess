@@ -8,6 +8,7 @@
 //! no grant runs the command instead, and fails exactly the denied scenarios.
 
 mod support_go;
+mod support_versions;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -186,7 +187,7 @@ fn every_gatepass_command_the_auditor_lacks_gets_a_denied_scenario_sent_as_the_a
     );
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     assert_eq!(enforced_by_caller(&synthesis.notes), 0);
 }
@@ -199,7 +200,7 @@ fn a_model_that_serves_nothing_gets_a_coverage_fact_and_no_denied_scenario() {
     assert!(grant_ids(&synthesis.suite).is_empty());
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/4"
+        "ess-conformance/34"
     );
     assert_eq!(enforced_by_caller(&synthesis.notes), 1);
     let fact = synthesis
@@ -274,7 +275,7 @@ fn a_denied_scenario_round_trips_through_the_document_and_an_older_major_is_refu
     let admitted = AdmittedSuite::from_json(&json).expect("admits");
     assert_eq!(admitted.suite(), &suite);
 
-    let pinned = json.replace("ess-conformance/26", "ess-conformance/24");
+    let pinned = support_versions::legacy_json(&json, 24);
     let refused = AdmittedSuite::from_json(&pinned).expect_err("an older major is refused");
     assert!(
         refused.to_string().contains("newer suite major")

@@ -263,8 +263,6 @@ fn adversary_entity_setup_null_identity_is_refused_at_source_validation() {
     let result = authoring(&ir, &source);
     if result.is_complete() {
         let mut suite = ess_conformance::synthesize::synthesize(&ir).suite;
-        suite.provenance.suite_version =
-            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
         suite.scenarios = result.scenarios.clone();
         let error = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap_err();
         assert!(
@@ -380,8 +378,6 @@ mod entity_setup_execution {
 
     fn suite(ir: &EssIr) -> ConformanceSuite {
         let mut result = ess_conformance::synthesize::synthesize(ir).suite;
-        result.provenance.suite_version =
-            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
         let first = authoring(ir, CALL_HISTORY_SETUP);
         assert!(first.is_complete(), "{:?}", first.refusals);
         result.scenarios = first.scenarios;
@@ -471,6 +467,7 @@ mod entity_setup_execution {
         let mut old = suite;
         old.provenance.suite_version =
             ess_conformance::scenario::SuiteFormat::parse("ess-conformance/4").unwrap();
+        old.provenance.scenario_initial_state = None;
         assert!(ess_conformance::AdmittedSuite::from_suite(&old).is_err());
         assert!(old.to_canonical_json().is_err());
         assert!(ess_conformance::go::emit(&old).is_err());
