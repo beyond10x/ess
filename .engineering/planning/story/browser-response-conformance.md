@@ -42,7 +42,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 5
+revision: 6
 ---
 ## Outcome
 
@@ -189,3 +189,11 @@ Actual emitted coverage replay SHA256 adcd5ada4cf1980d91517ed41017b059bf2a2e58ac
 Private evidence is retained under ess-browser-response-probe-20261003. The final actual-browser probe log SHA256 c7e364bdae9410c567e141099aaae80b4d45096bdd440e4abba7e9f47e62ba4a records BROWSER_RESPONSE_PRODUCT_GAP and terminal1; ordinary DOM9ec85109eb03d5e9ac80eda2997ad36417d24d53fdd9abdd2d55a6dde62628a2; coverage DOMebb796b9248db584fa7c459cf1b1b9b77cd32cbdb86ed7388956ba19f722ff52; full BiDi receipt62ec30cfad5b962e62345af7ff554f84c5da3f8d5d45e89e826a97dc231d7e66. Exact emitted assets, source inputs, logs, HTTP requests and private probe are retained. The first browser probe also observed both defects but its harness incorrectly required the Error message inside Firefox's stack-only DOM; its receipts remain unchanged, and the second probe corrects only that evidence predicate. No product source changed between probes.
 
 This establishes a real product regression baseline, not a healthy/fault implementation conformance matrix. Target installation, generated host compilation, all-feature execution, one-time disclosure, full original-byte admission and native/browser parity remain required implementation acceptance. Revised browser design is being scoped with source-built CLI routes, explicit tested consumer Cargo packaging and concrete bounded ABI. No production edit or format reservation is authorized by this evidence record.
+
+## Reviewed browser product direction
+
+Root reviewed the original browser product candidate with final v2 delta (SHA256 140902410e0a8bb29809bc03e8d61418aeb83253b2f0ee794db909b4a385d4f2), with v2 governing all conflicts. review-result:consumer-browser-product-design-pass1 records approve with no findings. The design now has actual CLI and Firefox reds, a concrete default navigation/build boundary, exact original-byte Rust admission, concrete Target/Clock installation, closed ABI and proposed finite limits.
+
+Choose useful static navigation immediately after CLI emission using a Rust-generated complete lossless declaration document. JavaScript renders display-only tagged numbers/text and checks original-file integrity; it cannot interpret source behavior or mint execution authority. Building the exact emitted Rust module with an explicit consumer Cargo manifest supplies the separate execution route. Before factory callbacks, that module re-admits complete original execution/lineage and source archive through existing Rust authorities and regenerates presentation. The real Rust Runner produces actual execution reports. No prebuilt reader, new packaging helper, target oracle, async transport or default reference target is part of this unit.
+
+The unified binding design and browser product/presentation/ABI version1 catalog entries are being prepared before source dispatch. Exact implementation scope must be recorded and the isolated worktree established first. All original acceptance remains: actual emitted module build, independent healthy/fault target in Firefox, every admitted feature, exact large integers, full coverage selection/lineage, clocks/namespaces, stale-run handling and protected-value disclosure checks. Finite resource limits are unmeasured until actual boundary/peak evidence passes. This story is not implemented by its design approval; no source changes or format publication have occurred yet.
