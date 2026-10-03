@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -109,3 +109,9 @@ Acceptance must retain actual Go and TypeScript readers at every currently regis
 A later bounded test-only unit is typescript_suite_versions.rs (29 tests) and typescript_adversary_rp1.rs (4), total33. The retained full-run baseline records26 stale pinned-version assertions in the first file and1 in the second; these are distinct from TS2688 environment failures in other binaries. Both existing Case harnesses mix newly synthesized ordinary/coverage suites with genuine hand-authored historical documents. Current fresh suites must pin34/35 and typed Empty provenance; do not rewrite the historical authored12/14/26 or other literal fixtures into current suites.
 
 Keep all actual target modes, native-versus-TypeScript exact per-scenario verdict equality, complete nonempty reports, exact healthy/all-fault expectations, clocks, concurrent request/caller state, and full parent lineage. Preserve explicit historical format controls through labelled valid legacy fixtures or unchanged literal documents, with actual reader execution where currently required. Do not blanket-replace every numeric major, delete the Case version assertion, use a greater-than threshold, remove older tests, or treat skipped toolchain execution as success. Toolchain and installed Node type definitions must be present before acceptance. Any genuine target/runtime discrepancy is measured and returned to root as its own scope; production TypeScript templates and shared target resources are not authorized in this unit. Required acceptance is both complete binaries33existing tests, strict scoped lint, owning formatting and independent review. This section is preparation only; dispatch/compiler custody follows active compatibility units.
+
+## Emitted reader fixture integration
+
+Candidate803677f9c9c7532b8b30d3e83a68b9604ad32dbb is integrated0845bbf5b485faddd68540ad6e71b0646cd65015 after independent whole-unit review-result:emitted-reader-fixtures-312-20261003-r1 approved with findings[]. Exact three-file patchSHA648405d4cadc94180c1d22d09ae308b3e270f70394f9146d597a0b16443b0c7c; integration source matches reviewed bytes. Author11/11 actualGo/TypeScript (5+4+2), strict scopedClippy and packageformat passed. Author logSHAadec5b012c6ad063201b3e514fc6458221dd6ba664c13bc1f0697674f148eec3. Reviewer independently audited source and exact raw execution/binary evidence; its own redundant execution was refused before start at11978960896bytes and is not claimed as a run. Public reviewSHA9834b1345c26b1edc5dc29f528c9311b30bfcd53194fd103a183816d75b65b9d.
+
+Both author/reviewer leases ended and all processes were terminal before root transferred the exclusive warm target to the separately prepared TypeScript33 unit. The root reclaimed only its own unused reproducible pinned AsyncAPI dependency directory, preserving package/lock/integrity/install evidence for exact restoration before391 actual validation; no active/foreign cache was changed. Transport412/414 owns the next bounded six-case-plus-allocator execution grant, then TypeScript33 follows. This integration closes this correction only; actual remaining conformance, browser and final bundle gates still remain.
