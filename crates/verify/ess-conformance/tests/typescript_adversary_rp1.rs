@@ -33,6 +33,7 @@ use ess_compiler::refs::{CommandRef, ErrorRef, OutcomeRef};
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::now_offset::WithWall;
 use ess_conformance::report::Status;
+use ess_conformance::scenario::ScenarioInitialState;
 use ess_conformance::target::*;
 use ess_conformance::{AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig};
 use ess_domain::{command::OutcomeName, spec::RawSpecFile, system::Source, Specification};
@@ -201,6 +202,12 @@ impl Case<'_> {
         for refusal in &synthesis.refusals {
             println!("{}: synthesis refused {}", self.name, refusal.code());
         }
+        assert_eq!(
+            synthesis.suite.provenance.scenario_initial_state,
+            Some(ScenarioInitialState::Empty),
+            "{}: fresh ordinary suite initial state",
+            self.name
+        );
         let admitted =
             AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
         self.check(&admitted, || {
@@ -673,11 +680,11 @@ fn presence_target() -> String {
 /// and passes it. The reverse for `omitted_when_absent`: Rust sees it left out and passes, the
 /// TypeScript runtime reads it as "sent as null" and fails it.
 #[test]
-fn adversary_typescript_presence_undefined_leaf_gets_the_rust_verdict() {
+fn adversary_typescript_fresh_presence_suite_gets_the_rust_verdict() {
     let target = presence_target();
     Case {
         name: "adv-presence-undefined",
-        version: "ess-conformance/24",
+        version: "ess-conformance/34",
         target: &target,
         modes: &[
             "correct",
