@@ -2,11 +2,12 @@ schema: b10x-change/v1
 id: ess/consumer-fixes-0.52.0
 repository: ess
 publishedAt: 2026-10-03T00:00:00Z
-title: Event publishers, generated Go behavior and consumer fixes
+title: Event publishers, recursive Rust contracts and consumer fixes
 summary: >-
   ESS adds declared event transports and typed Rust and Go publishers, including
-  batching and JetStream adapters. Generated Go behavior, typed view parameters,
-  UI read filters and integer bounds complete the consumer update. Breaking
+  batching and JetStream adapters. Optional recursive Rust contracts, generated
+  Go behavior, typed view parameters, UI read filters and integer bounds complete
+  the consumer update. Breaking
   behavior and view interfaces are documented in the release notes.
 kind: capability
 impact: notable

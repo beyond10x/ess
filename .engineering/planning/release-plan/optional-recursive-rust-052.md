@@ -6,7 +6,7 @@ status: draft
 title: Release ESS 0.52.0 for generated runtime contract adoption
 relations:
 - derived_from: story:optional-recursive-rust
-revision: 1
+revision: 2
 ---
 ## Intent
 
@@ -23,3 +23,7 @@ Recheck affected code after integrating main and changing version, publish bot-a
 ## Scope
 
 Release metadata Cargo.toml/Cargo.lock/CHANGELOG.md, existing verification/release workflows unchanged, and AEP evidence. No consumer pin promotion except the EKR generator pin explicitly requested by this task. No other repository release, facade deployment or shared delivery-control change.
+
+## Release integration handoff
+
+The owner agreed to consolidate into existing PR398 rather than maintain a second release PR. Frozen handoff 26bef8f840032beb76b7cecb2eb939470011cf45 is preserved in merge b0db254c2 on release/0.52.0-20261003, including source and both sanitized independent review records. PR398 is the sole release carrier and its integrator owns the final gate, merge and tag. PR403 will close as superseded after wanted source/evidence are published through PR398. Local package 380 passed with one existing ignore; final tutorial eight passed; projections and site build passed on the peer branch. The combined candidate's full gate remains pending. EKR generator adoption remains the peer owner's separate follow-up after verified source release.

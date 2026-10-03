@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: correctness-blocker:release-0-52-contradictory-integer-bounds
 kind: correctness-blocker
-status: open
+status: cleared
 title: PR402 weakens contradictory equality invariants in generated JSON Schema
 relations:
 - blocks: task:release-0-52-0-20261003
 withholds: test_result
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-03T01:57:48Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Verified failure
 
@@ -28,3 +30,11 @@ The transport owner corrects the common apply_bound behavior without discarding 
 ## Ownership
 
 Transport implementation remains with the third Claude session. The release owner makes no product-source patch or transport PR. The separate held full ess/21 carrier remains outside PR398. The existing batch-completion hold also remains open until its own condition is met.
+
+## Correction and ownership handoff, 2026-10-03
+
+After transport PR402 merged at 2f554561bef25125a93a1fb1d6517d50cb24ed20 and the former release owner became unavailable, the release integrator resumed the existing PR398 under the operator's release instruction. Transport development remains with its Claude owner; this bounded release correction changes only the shared schema equality intersection and its regression tests.
+
+Correction b4b74139b1f71212677a280dddfa525ad32c6eb6 preserves the first equality and intersects contradictory values into unsatisfiable bounds. The exact ten audit cases changed from eight passed/two failed to ten passed. The affected ess-gen package changed from 301 passed/two failed to 303 passed/zero failed. Strict package Clippy and formatting passed. Independent review added permutation and integer-boundary controls in ced143ebac98bf032351a95f13ea8c3e110eeb14; twelve focused tests pass, including optional absence/null behavior. Review found no remaining issue. Its immutable report is review-result:release-equality-adversary-20261003. Private retained raw report SHA256 is b9d0f0d5b770579fe29d7a98b0260d0d004ddb66dd59af4f6cac45b02d4d447f.
+
+Both commits are integrated through 7f99f8168 in the sole release branch release/0.52.0-20261003. The demonstrated schema defect is corrected; normal final integration and release gates remain mandatory and pending. This is not evidence that the full release gate has passed.
