@@ -10,7 +10,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 7
+revision: 8
 ---
 ## Outcome
 
@@ -83,3 +83,11 @@ A concrete private aggregate-result observation candidate now exists, SHA256 64d
 Root source review needs revision, immutable report SHA256 69a9e7463fbc7b95dc82347ce79663fde8efa2621db45ea903b64deb4b4ea9fd, review-result:consumer-aggregate-wire-pass1. Two concrete boundaries remain: the normalized Contract has no defined admitted reconstruction path into compiler-owned EssIr consumed by the shared executor; and binding delivery_cut requires a concrete source/target completion capability and scenario trigger absent from the current ObservedInvocation API. No unchecked IR constructor, alternate hand-written native interpreter, blanket binding refusal or fabricated quiescence is authorized. Keep dynamic fixture/observation support in the same completion bundle; static-only success is not completion.
 
 One-time disclosure, runtime error/capability classifications, exact resource counters and occurrence provenance are explicit acceptance obligations. Transport changes require the separately assigned transport owner; #292's private executor implementation is not implicitly expanded. Browser product design is being made concrete independently. The original aggregate baseline review remains unresolved until a complete revision is independently assessed. This pass executed no builds or target probes.
+
+## Reviewed aggregate adapter direction
+
+The revised normalized aggregate observation design, aggregate-result-observation-wire-candidate-v2.md SHA256 a32c5a65d92d132b6356aab3c3a0b2db553f507a9ef066e761d8cbe2fabc64cf, has passed root source review with no new findings (review-result:consumer-aggregate-wire-pass2; private review SHA256 1ef6914afaa9d24bb5827e35bf1da165c972e1a9049ce7e45beb2fe1b182b20b). Both pass1 design findings are addressed: native Contract admission constructs checked RawSpecFile values, assembles and compiles through existing authorities, then checks semantic re-projection; delivery_cut/frontier are removed from admitted grammar and binding-sensitive completion remains an explicit unresolved same-bundle dependency.
+
+This approves a concrete design direction, not an implemented adapter or complete aggregate support. Required next work is to bind a design page and exact scopes, source-to-Contract completeness and foreign validator inventories, and the shared #292 execution interface. First actual evidence must cover reconstruction round-trip and one-change invalid mutations before production expectations use the adapter. Then prove complete-prefix, direct/related/set-effect, dynamic grouping and all six aggregate functions on actual native/Go/TypeScript/WASM runtimes. A binding-affected query still needs independently verifiable causal-cut authority coordinated with the assigned transport owner; unconnected bindings do not justify refusing other queries. No static-only or missing-binding partial result closes this story.
+
+No compiler/domain helper, transport change, format reservation or implementation worker is authorized by this review. No builds or target probes were executed for the review. The actual admitted aggregate and precondition reds remain retained unchanged, and the original incomplete-inventory finding is only fully closed by later implementation evidence.

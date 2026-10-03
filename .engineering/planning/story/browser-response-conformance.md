@@ -42,7 +42,7 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 4
+revision: 5
 ---
 ## Outcome
 
@@ -175,3 +175,17 @@ aep plan artifact scope story:browser-response-conformance --add docs/design/rev
 * New persisted replay representation/version: coordinate with the single held source-format bundle and the nested-observer owner; do not invent a reservation.
 * Support for arbitrary network implementations from a static page: requires an explicit transport and async design, not supplied by the current synchronous target trait.
 * Full feature support in the browser product: unproven until each admitted feature family has an actual healthy/fault witness through the emitted route.
+
+## Actual CLI and Firefox baseline, 2026-10-03
+
+Root executed both real CLI web products and loaded their emitted pages in actual Firefox through BiDi. The private pinned CLI has SHA256 d397e76cd811915e6efb9bfd33e0a7c7483ce65d9518ff229de0cbcab56fd23b, built from source parent6727e07363877925aa6a0f2bb1cb47b08d2348e3 with only the #293 explorer assets changed in production. Its CLI/web production files are unchanged; this fixture uses a flat response field and does not claim the later nested-response implementation was in that binary. No compilation or remote gate was started by this probe.
+
+The admitted source is the existing response-payload fixture, SHA256 cb03d385ca8d0bb5492d89026fb1b438c43833935e6dc7b7e16065f6fbbc304b. The authored ess-scenario/4 claim SHA256 a138a665c49f83e596f5fd0337ed2aaf2e8d54bddfbc6617ee55bad80058283a names demo.api.Cancel/cancelled, declares a direct response containing remaining=9007199254740993, and expects demo.api.Returned. Both ordinary and --suite-format5 actual web CLI invocations exit0. Ordinary emits1scenario/7artifacts. Thus the design candidate's prediction that this authored response would fail response_replay_supported is incorrect: that guard tests ExpectResponsePayload, while the authored response compiles to ExpectDirectResponse. The prior library response-mapping refusal remains a separate verified source fact.
+
+Actual emitted ordinary suite SHA256 cc78007f33b62dd5d36f38be676c016ddcb024cd97071ccb1197fa5533300338 retains the exact integer token. Its unchanged player parses JSON through Number, and the real Firefox DOM instead contains9007199254740992 and no9007199254740993. The ordinary DOM also contains only declaration-navigation actions and explicitly labels expectations unexecuted; no implementation target or execution report was produced. Actual Node assertion BROWSER_RESPONSE_EXACT_INTEGER_DISPLAY also fails1, independently matching this DOM observation.
+
+Actual emitted coverage replay SHA256 adcd5ada4cf1980d91517ed41017b059bf2a2e58ac67bf62ee9dc1537c225e02 is emitted successfully but its browser admission aborts at the closed unsupported-step check. Firefox displays the admission.js:413 stack and leaves the Vue template unmounted. Executing that exact emitted admission module on that exact replay in Node separately yields Invalid coverage replay: unsupported suite step, exit1. Do not confuse successful artifact emission with successful browser loading.
+
+Private evidence is retained under ess-browser-response-probe-20261003. The final actual-browser probe log SHA256 c7e364bdae9410c567e141099aaae80b4d45096bdd440e4abba7e9f47e62ba4a records BROWSER_RESPONSE_PRODUCT_GAP and terminal1; ordinary DOM9ec85109eb03d5e9ac80eda2997ad36417d24d53fdd9abdd2d55a6dde62628a2; coverage DOMebb796b9248db584fa7c459cf1b1b9b77cd32cbdb86ed7388956ba19f722ff52; full BiDi receipt62ec30cfad5b962e62345af7ff554f84c5da3f8d5d45e89e826a97dc231d7e66. Exact emitted assets, source inputs, logs, HTTP requests and private probe are retained. The first browser probe also observed both defects but its harness incorrectly required the Error message inside Firefox's stack-only DOM; its receipts remain unchanged, and the second probe corrects only that evidence predicate. No product source changed between probes.
+
+This establishes a real product regression baseline, not a healthy/fault implementation conformance matrix. Target installation, generated host compilation, all-feature execution, one-time disclosure, full original-byte admission and native/browser parity remain required implementation acceptance. Revised browser design is being scoped with source-built CLI routes, explicit tested consumer Cargo packaging and concrete bounded ABI. No production edit or format reservation is authorized by this evidence record.
