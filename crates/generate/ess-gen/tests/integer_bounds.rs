@@ -155,3 +155,50 @@ fn a_validator_refuses_what_the_invariants_refuse() {
         "an absent Optional stays valid"
     );
 }
+
+const NEWTYPES: &str = "format: ess/20
+system: demo
+version: v1
+domain: demo.metering
+types:
+  - name: demo.metering.ItemVersion
+    kind: newtype
+    of: Integer
+    invariants:
+      - value == 2
+  - name: demo.metering.Count
+    kind: newtype
+    of: Integer
+    invariants:
+      - value >= 0
+      - value < 1000
+  - name: demo.metering.Code
+    kind: newtype
+    of: String
+    invariants:
+      - value != 'x'
+  - name: demo.metering.Item
+    kind: struct
+    fields:
+      - {name: version, type: demo.metering.ItemVersion}
+      - {name: count, type: demo.metering.Count}
+      - {name: code, type: demo.metering.Code}
+";
+
+#[test]
+fn a_newtype_of_integer_carries_its_own_bounds() {
+    let artifacts = run(&JsonSchema, &compiled(NEWTYPES)).expect("generates");
+    let schema: Value = serde_json::from_str(
+        &artifacts["schema/types/demo.metering.Item.schema.json"].contents,
+    )
+    .expect("JSON");
+    let defs = &schema["$defs"];
+    assert_eq!(defs["demo.metering.ItemVersion"]["const"], json!(2), "{schema:#}");
+    assert_eq!(defs["demo.metering.Count"]["minimum"], json!(0), "{schema:#}");
+    assert_eq!(defs["demo.metering.Count"]["maximum"], json!(999), "{schema:#}");
+    assert!(defs["demo.metering.Code"].get("const").is_none(), "{schema:#}");
+    let validator = jsonschema::validator_for(&schema).expect("a valid schema");
+    assert!(validator.is_valid(&json!({"version": 2, "count": 3, "code": "a"})));
+    assert!(!validator.is_valid(&json!({"version": 3, "count": 3, "code": "a"})));
+    assert!(!validator.is_valid(&json!({"version": 2, "count": 1000, "code": "a"})));
+}

@@ -756,7 +756,7 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
             invariants,
         } => {
             let wrapped = type_ref(of);
-            Node {
+            let mut node = Node {
                 invariants: statements(invariants),
                 alphabet: alphabet.clone(),
                 // A literal prefix is a grammar small enough to be certainly right: `^` and the
@@ -767,7 +767,9 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
                     .map(|prefix| std::borrow::Cow::Owned(prefix_pattern(prefix)))
                     .or(wrapped.pattern.clone()),
                 ..wrapped
-            }
+            };
+            newtype_integer_bounds(&mut node, of, invariants);
+            node
         }
         ResolvedBody::Struct { fields, invariants } => {
             let mut node = Node {
@@ -860,63 +862,94 @@ pub(crate) fn content_key(tag: &str) -> &'static str {
 /// field that may be absent or `null` becomes `minimum` and `maximum` rather than `const`, because
 /// `const` would refuse the `null` the field admits and the numeric keywords ignore it.
 fn integer_bounds(node: &mut Node, fields: &[ResolvedField], invariants: &[Invariant]) {
-    use ess_primitives::predicate::{CompareOp, Operand, Predicate};
+    for invariant in invariants {
+        let Some((segment, op, value)) = integer_comparison(invariant) else {
+            continue;
+        };
+        let Some(field) = fields.iter().find(|field| field.name == segment) else {
+            continue;
+        };
+        if !is_integer(&field.type_ref) {
+            continue;
+        }
+        let may_be_missing = field.type_ref.is_optional();
+        if let Some(property) = node.properties.get_mut(wire_name(field)) {
+            apply_bound(property, op, value, may_be_missing);
+        }
+    }
+}
+
+/// The same lowering for a newtype of `Integer`, whose invariants read the wrapped value as `value`
+/// (`ess_domain::types` `VALUE`): the keywords go on the newtype's own definition.
+fn newtype_integer_bounds(node: &mut Node, of: &ResolvedTypeRef, invariants: &[Invariant]) {
+    if !is_integer(of) {
+        return;
+    }
+    for invariant in invariants {
+        if let Some(("value", op, value)) = integer_comparison(invariant) {
+            apply_bound(node, op, value, of.is_optional());
+        }
+    }
+}
+
+fn is_integer(reference: &ResolvedTypeRef) -> bool {
+    matches!(
+        reference.required(),
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Integer
+        }
+    )
+}
+
+/// `field <op> <integer>`, with a single-segment field path.
+fn integer_comparison(
+    invariant: &Invariant,
+) -> Option<(&str, ess_primitives::predicate::CompareOp, i64)> {
+    use ess_primitives::predicate::{Operand, Predicate};
     use ess_primitives::FactValue;
 
-    for invariant in invariants {
-        let Predicate::Compare { left, op, right } = &invariant.predicate else {
-            continue;
-        };
-        let (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) = (left, right)
-        else {
-            continue;
-        };
-        let op = *op;
-        let [segment] = path.segments() else {
-            continue;
-        };
-        let Some(field) = fields.iter().find(|field| field.name == *segment) else {
-            continue;
-        };
-        if !matches!(
-            field.type_ref.required(),
-            ResolvedTypeRef::Primitive {
-                name: Primitive::Integer
+    let Predicate::Compare { left, op, right } = &invariant.predicate else {
+        return None;
+    };
+    let (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) = (left, right) else {
+        return None;
+    };
+    let [segment] = path.segments() else {
+        return None;
+    };
+    Some((segment.as_str(), *op, number.as_i64()?))
+}
+
+/// Tightens `node` by one comparison; the tighter of two bounds wins.
+fn apply_bound(
+    node: &mut Node,
+    op: ess_primitives::predicate::CompareOp,
+    value: i64,
+    may_be_missing: bool,
+) {
+    use ess_primitives::predicate::CompareOp;
+
+    let raise = |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.max(bound)));
+    let lower = |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.min(bound)));
+    match op {
+        CompareOp::Ge => node.minimum = raise(node.minimum, value),
+        CompareOp::Gt => {
+            if let Some(bound) = value.checked_add(1) {
+                node.minimum = raise(node.minimum, bound);
             }
-        ) {
-            continue;
         }
-        let Some(value) = number.as_i64() else {
-            continue;
-        };
-        let may_be_missing = field.type_ref.is_optional();
-        let Some(property) = node.properties.get_mut(wire_name(field)) else {
-            continue;
-        };
-        let raise =
-            |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.max(bound)));
-        let lower =
-            |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.min(bound)));
-        match op {
-            CompareOp::Ge => property.minimum = raise(property.minimum, value),
-            CompareOp::Gt => {
-                if let Some(bound) = value.checked_add(1) {
-                    property.minimum = raise(property.minimum, bound);
-                }
+        CompareOp::Le => node.maximum = lower(node.maximum, value),
+        CompareOp::Lt => {
+            if let Some(bound) = value.checked_sub(1) {
+                node.maximum = lower(node.maximum, bound);
             }
-            CompareOp::Le => property.maximum = lower(property.maximum, value),
-            CompareOp::Lt => {
-                if let Some(bound) = value.checked_sub(1) {
-                    property.maximum = lower(property.maximum, bound);
-                }
-            }
-            CompareOp::Eq if may_be_missing => {
-                property.minimum = raise(property.minimum, value);
-                property.maximum = lower(property.maximum, value);
-            }
-            CompareOp::Eq => property.constant = Some(Constant::Integer(value)),
-            CompareOp::Ne => {}
         }
+        CompareOp::Eq if may_be_missing => {
+            node.minimum = raise(node.minimum, value);
+            node.maximum = lower(node.maximum, value);
+        }
+        CompareOp::Eq => node.constant = Some(Constant::Integer(value)),
+        CompareOp::Ne => {}
     }
 }
 
