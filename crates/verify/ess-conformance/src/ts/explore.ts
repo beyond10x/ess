@@ -239,7 +239,7 @@ function nonEmpty(value: Node): boolean {
 // ---- input types --------------------------------------------------------------------------------
 
 type Kind =
-  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' }
+  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' | 'timestamp' }
   | { kind: 'enum'; variants: string[] }
   | { kind: 'struct'; fields: [string, Kind][] }
   | { kind: 'identity'; entity: string; base: Kind }
@@ -254,10 +254,10 @@ function identityOwner(ir: Node, type: string): string | null {
 }
 
 /**
- * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`
- * and a type whose values are constrained: concurrent exploration does not judge an answer by this
- * model, `ess` does, so a drawn value outside the constraint is a question the target answers and the
- * checker judges.
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`,
+ * a `timestamp` and a type whose values are constrained: concurrent exploration does not judge an
+ * answer by this model, `ess` does, so a drawn value outside the constraint is a question the target
+ * answers and the checker judges.
  */
 function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };
@@ -269,6 +269,7 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
       case 'uuid':
         return { kind: ref.name };
       case 'decimal':
+      case 'timestamp':
         if (concurrent) return { kind: ref.name };
         return { kind: 'unsupported', why: `a \`${ref.name}\`` };
       default:
@@ -886,6 +887,14 @@ interface Step {
 
 const NO_RECORD = Symbol('no record');
 
+/** An RFC 3339 instant `seconds` into 2020-01-01, UTC. Go's `exploreInstant` writes the same text. */
+function drawnInstant(seconds: number): string {
+  const two = (n: number): string => String(n).padStart(2, '0');
+  const hours = two(Math.floor(seconds / 3600));
+  const minutes = two(Math.floor(seconds / 60) % 60);
+  return `2020-01-01T${hours}:${minutes}:${two(seconds % 60)}Z`;
+}
+
 function drawValue(
   kind: Kind,
   rng: Mulberry32,
@@ -920,6 +929,8 @@ function drawValue(
       return rng.pick(command.pools.texts);
     case 'uuid':
       return `00000000-0000-4000-8000-${String(rng.int(0, 999999)).padStart(12, '0')}`;
+    case 'timestamp':
+      return drawnInstant(rng.int(0, 86399));
     case 'enum':
       return rng.pick(kind.variants);
     case 'struct': {

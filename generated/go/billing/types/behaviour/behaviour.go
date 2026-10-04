@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
-// contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
+// model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
+// contract digest c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79
 // do not edit: regenerate with `ess synthesize`
 
 // Package behaviour is what the specification fully determines, generated: the behaviour of
@@ -161,6 +161,7 @@ func (b *Generated) IssueInvoice(input invoice.IssueInvoice) (invoice.IssueInvoi
 		return invoice.IssueInvoiceOutcomeWrongState{Error: invoice.InvoiceStateConflict{State: heldState}}, nil
 	}
 	next := moved.Snapshot()
+	next.Data.IssuedAt = some(input.IssuedAt)
 	if broken, breaks := next.Data.BrokenInvariant(); breaks {
 		return nil, &obligation.UnmetObligation{Capability: "entity invariant", Source: broken}
 	}
@@ -187,4 +188,9 @@ func (b *Generated) InvoiceById() ([]invoice.InvoiceById, *obligation.UnmetOblig
 // OutstandingInvoices forwards the owed query `billing.invoice.OutstandingInvoices` to the ports.
 func (b *Generated) OutstandingInvoices() ([]invoice.OutstandingInvoices, *obligation.UnmetObligation) {
 	return b.ports.Owed.OutstandingInvoices()
+}
+
+// some is value, present.
+func some[T any](value T) *T {
+	return &value
 }

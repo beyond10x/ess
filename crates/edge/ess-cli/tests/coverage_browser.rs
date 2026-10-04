@@ -178,7 +178,7 @@ fn retained_legacy_player_bytes_still_replay_in_actual_firefox() {
     .unwrap();
     assert_eq!(result["before"], -1);
     assert_eq!(result["after"], 0);
-    assert_eq!(result["scenarios"], 1);
+    assert_eq!(result["scenarios"], 2);
     let modern = evidence.join("modern");
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
     command
@@ -217,7 +217,7 @@ fn retained_legacy_player_bytes_still_replay_in_actual_firefox() {
     )
     .unwrap();
     assert_eq!(result["cursor"], 0);
-    assert_eq!(result["scenarios"], 1);
+    assert_eq!(result["scenarios"], 2);
     assert_eq!(result["coverageBanner"], false);
 }
 
@@ -261,7 +261,7 @@ fn actual_browser_admits_the_pair_before_creating_replay_state() {
     assert_eq!(result["admitted"], true, "{result}");
     assert_eq!(result["before"], -1);
     assert_eq!(result["after"], 0);
-    assert_eq!(result["scenarios"], 1);
+    assert_eq!(result["scenarios"], 2);
     assert!(result["selection"].as_str().unwrap().contains("authored"));
     let original = fs::read_to_string(generated.join("replay.json")).unwrap();
     fs::write(evidence.join("replay.original.json"), &original).unwrap();

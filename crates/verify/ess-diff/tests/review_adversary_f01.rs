@@ -14,9 +14,11 @@ fn complete_generated_and_authored_suite_four_bytes_remain_frozen() {
     // for ess#111 (`cancel` is also run from its second source, `Issued`, on a fourth invoice):
     // SHA256 35355f258eda03947fc25f5aec10bf739579af22e000cc38ef036201201f0abe, 158491 bytes; re-frozen
     // for ess#113 (each lifecycle command is sent for an invoice no record carries): SHA256
-    // e7edbca4b365a52c736ab9712067f18203e6314279361fd3d3dbe3917a55b172, 166349 bytes.
+    // e7edbca4b365a52c736ab9712067f18203e6314279361fd3d3dbe3917a55b172, 166349 bytes; re-frozen
+    // for the issuing instant (`IssueInvoice` takes `issued_at` and `issued` records it): SHA256
+    // 965522eb76d00d1b1d238cbc5c50be8b37fc5775d2dad635d60c0c644e08c96a, 170237 bytes.
     let frozen = include_str!("fixtures/review-billing-suite-v4.json");
-    assert_eq!(frozen.len(), 166_349);
+    assert_eq!(frozen.len(), 170_237);
     let ir = support::compiled("examples/billing");
     let mut synthesis = ess_conformance::synthesize(&ir);
     let authoring = ess_conformance::authored::compile(&ir, &[

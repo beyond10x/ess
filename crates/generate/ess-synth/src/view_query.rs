@@ -322,8 +322,8 @@ fn order(ir: &EssIr, entity: &ResolvedEntity, name: &str) -> Result<(), String> 
     match values(ir, entity, name) {
         Some(Values::Numeric | Values::Text | Values::Other) => Ok(()),
         Some(Values::Instant) => Err(format!(
-            "an order over the `Timestamp` field `{name}`, which the suite ranks by its text and \
-             not by its instant"
+            "an order over the `Timestamp` field `{name}`, which the suite ranks by its instant \
+             and a generated query does not"
         )),
         None => Err(format!(
             "an order over the field `{name}`, a value the generated query does not rank"

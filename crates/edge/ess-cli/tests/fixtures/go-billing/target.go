@@ -8,6 +8,7 @@ package billing
 
 import (
 	"fmt"
+	"time"
 
 	"essbilling/essconform"
 )
@@ -230,10 +231,15 @@ func (t *Target) move(request essconform.CommandRequest, transition, outcome, ev
 	}
 	held.state = reached(transition)
 	if transition == "issue" {
-		t.minted++
-		// Counted, not read off a clock: two invoices issued in one scenario have to be orderable,
-		// and a wall clock would make that depend on how fast the test ran.
-		held.issuedAt = fmt.Sprintf("2020-01-01T00:00:%02dZ", t.minted%60)
+		// The `issued` outcome records the instant the caller sent. A suite with no `issued_at`
+		// input gets a counted one, never a clock reading: two invoices issued in one scenario have
+		// to be orderable, and a wall clock would make that depend on how fast the test ran.
+		if sent, ok := request.Input["issued_at"].(string); ok {
+			held.issuedAt = sent
+		} else {
+			t.minted++
+			held.issuedAt = fmt.Sprintf("2020-01-01T00:00:%02dZ", t.minted%60)
+		}
 	}
 	return essconform.CommandResult{
 		Outcome:     outcome,
@@ -399,10 +405,22 @@ func (t *Target) ScanView(request essconform.ScanRequest) (essconform.ScanObserv
 // byIssuedAtDescendingKey puts the most recently issued id first.
 func byIssuedAtDescendingKey(ids []string, at func(string) string) {
 	for index := 1; index < len(ids); index++ {
-		for back := index; back > 0 && at(ids[back]) > at(ids[back-1]); back-- {
+		for back := index; back > 0 && later(at(ids[back]), at(ids[back-1])); back-- {
 			ids[back], ids[back-1] = ids[back-1], ids[back]
 		}
 	}
+}
+
+// later reports whether the instant left names is after the one right names. A `Timestamp` is
+// ordered by its instant, not its spelling: `2026-01-05T10:00:01+02:00` is before
+// `2026-01-05T09:00:03Z`. Text that names no instant compares as text.
+func later(left, right string) bool {
+	leftAt, leftErr := time.Parse(time.RFC3339Nano, left)
+	rightAt, rightErr := time.Parse(time.RFC3339Nano, right)
+	if leftErr != nil || rightErr != nil {
+		return left > right
+	}
+	return leftAt.After(rightAt)
 }
 
 func (t *Target) ids() []string {

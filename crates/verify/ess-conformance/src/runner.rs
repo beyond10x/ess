@@ -64,7 +64,7 @@ use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use ess_primitives::ids::CorrelationId;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Predicate, Truth};
-use ess_primitives::time::Timestamp;
+use ess_primitives::time::{Rfc3339Instant, Timestamp};
 
 use crate::report::{
     quote, quote_input, CheckCode, CheckResult, ConformanceReport, Diagnostic, ScenarioResult,
@@ -3067,10 +3067,23 @@ fn ranked(order_by: &[Ranking], result: &SemanticViewResult) -> Verdict {
 /// A view that publishes a number in one row and a string in the next has not returned rows in the
 /// wrong order — it has returned a column that is not one thing, and calling that "out of order"
 /// would name the wrong defect.
+///
+/// Two texts that each name an RFC 3339 instant are ordered by those instants, not by their
+/// spellings: a `Timestamp` travels as text, and `2026-01-05T10:00:01+02:00` is before
+/// `2026-01-05T09:00:03Z` although its text is greater. Any other pair of texts orders by its
+/// UTF-8 bytes. The Go and TypeScript runtimes' `rankOrder` read rows the same way.
 fn compare_nodes(left: &Node, right: &Node) -> Option<Ordering> {
     match (left, right) {
         (Node::Number(left), Node::Number(right)) => Some(left.cmp(right)),
-        (Node::Text(left), Node::Text(right)) => Some(left.cmp(right)),
+        (Node::Text(left), Node::Text(right)) => Some(
+            match (
+                Rfc3339Instant::parse_rfc3339(left),
+                Rfc3339Instant::parse_rfc3339(right),
+            ) {
+                (Some(left), Some(right)) => left.cmp(&right),
+                _ => left.as_bytes().cmp(right.as_bytes()),
+            },
+        ),
         (Node::Bool(left), Node::Bool(right)) => Some(left.cmp(right)),
         (Node::Null, Node::Null) => Some(Ordering::Equal),
         _ => None,
@@ -3744,6 +3757,55 @@ mod tests {
             ),
             Verdict::Unsatisfied(_)
         ));
+    }
+
+    #[test]
+    fn a_declared_order_over_instants_ranks_the_instants_and_not_their_spellings() {
+        let order = Required::Ranked(vec![ranking("queued_at", Direction::Descending)]);
+        // 08:00:01Z written with an offset, after 09:00:03Z: the later instant is first, although
+        // the earlier one's text is the greater.
+        assert_eq!(
+            decide(
+                &order,
+                &SemanticViewResult::of([
+                    queued(1.0, "2026-01-05T09:00:03Z"),
+                    queued(1.0, "2026-01-05T10:00:01+02:00"),
+                ])
+            ),
+            Verdict::Satisfied
+        );
+        assert!(matches!(
+            decide(
+                &order,
+                &SemanticViewResult::of([
+                    queued(1.0, "2026-01-05T10:00:01+02:00"),
+                    queued(1.0, "2026-01-05T09:00:03Z"),
+                ])
+            ),
+            Verdict::Unsatisfied(_)
+        ));
+        // A fraction is a later instant, though `.` sorts before `Z`.
+        assert!(matches!(
+            decide(
+                &order,
+                &SemanticViewResult::of([
+                    queued(1.0, "2026-01-05T09:00:03Z"),
+                    queued(1.0, "2026-01-05T09:00:03.5Z"),
+                ])
+            ),
+            Verdict::Unsatisfied(_)
+        ));
+        // One instant in two spellings is a tie.
+        assert_eq!(
+            decide(
+                &order,
+                &SemanticViewResult::of([
+                    queued(1.0, "2026-01-05T08:00:01Z"),
+                    queued(1.0, "2026-01-05T10:00:01+02:00"),
+                ])
+            ),
+            Verdict::Satisfied
+        );
     }
 
     #[test]

@@ -466,11 +466,11 @@ fn review_whole_model_hashes_and_index_bytes_remain_frozen() {
     let whole = ess_gen::Provenance::of(&ir);
     assert_eq!(
         whole.source_digest,
-        "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
+        "096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648"
     );
     assert_eq!(
         whole.contract_digest,
-        "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
+        "c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79"
     );
     assert_eq!(
         ess_gen::generate_all(&ir).unwrap()["docs/index.md"].contents,

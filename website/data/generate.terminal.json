@@ -4,7 +4,7 @@
   "entries": [
     {
       "command": "ess generate generate --path examples/billing --kind openapi --out generated",
-      "output": "openapi/email-service.yaml — 7457 byte(s)\nopenapi/invoice-service.yaml — 31928 byte(s)\n2 artifact(s), written to generated",
+      "output": "openapi/email-service.yaml — 7457 byte(s)\nopenapi/invoice-service.yaml — 32016 byte(s)\n2 artifact(s), written to generated",
       "exitCode": 0
     },
     {

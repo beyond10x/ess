@@ -195,7 +195,7 @@ fn no_scenario_outside_the_acceptance_is_contradicted_by_what_the_interpreter_ha
             .into_report()
             .scenarios,
     );
-    assert_eq!(interpreted.len(), 33, "every committed scenario ran");
+    assert_eq!(interpreted.len(), 34, "every committed scenario ran");
     for (id, candidate) in &interpreted {
         let same = candidate.status == billing[id].status && candidate.checks == billing[id].checks;
         assert!(
@@ -235,7 +235,13 @@ fn create_input(amount: i64) -> BTreeMap<String, Node> {
 }
 
 fn invoice_input(id: &str) -> BTreeMap<String, Node> {
-    BTreeMap::from([("invoice_id".to_owned(), Node::Text(id.to_owned()))])
+    BTreeMap::from([
+        ("invoice_id".to_owned(), Node::Text(id.to_owned())),
+        (
+            "issued_at".to_owned(),
+            Node::Text("2026-01-05T09:00:01Z".to_owned()),
+        ),
+    ])
 }
 
 /// Creates one invoice and returns the store after it and the identity it was given.
