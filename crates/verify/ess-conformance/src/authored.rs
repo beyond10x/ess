@@ -2967,8 +2967,10 @@ impl Compiler<'_> {
             }
         }
         if let Some(actor) = actor {
-            self.steps
-                .push(ScenarioStep::ExpectNotGranted { actor, unpublished });
+            self.steps.push(ScenarioStep::ExpectNotGranted {
+                actor: Some(actor),
+                unpublished,
+            });
         }
         self.mark(act);
     }

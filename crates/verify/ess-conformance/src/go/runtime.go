@@ -1325,11 +1325,28 @@ type ViewRequest struct {
 	AtLeast     string
 	Correlation string
 	Deadline    Deadline
+	// Actor is who the read is sent as: the actor the last `read_as` step named (suite/34,
+	// beyond10x/ess#286), empty before one. A view some actor's grant names is answered only to an
+	// actor it names; read it as Actor, and answer NotGranted otherwise, before reading anything.
+	Actor string
+	// Anonymous is true for a read sent as no actor at all, after a `read_as` naming none
+	// (beyond10x/ess#286): an unauthenticated request, which a read-granted view refuses naming no
+	// actor. A target that ignores it serves the read and fails the scenario that requires the
+	// refusal.
+	Anonymous bool
 }
 
 // ViewResult is what a view holds.
 type ViewResult struct {
-	Rows []Row
+	// NotGranted is true when the target refused the read before reading anything, with the standard
+	// refusal for an actor no grant admits (beyond10x/ess#286): on a served surface, 403 {"refused":
+	// "not granted", "actor": ...}. Leave Rows empty. A target that checks no read grant never sets
+	// it, and fails every `.../grant/read/denied` scenario, which is the point of them.
+	NotGranted bool
+	// NotGrantedActor is the qualified name of the actor the refusal names, empty where it names
+	// none.
+	NotGrantedActor string
+	Rows            []Row
 	// Total is the number of rows the view's filter admits, where the answer carries one: a view
 	// declaring `paging: {total: true}` (suite/26, beyond10x/ess#174) answers it beside a page. Nil
 	// for every other answer. The page and the size a read asks for travel in ViewRequest.Params
@@ -1445,6 +1462,10 @@ type ScanRequest struct {
 	AtLeast     string
 	Correlation string
 	Deadline    Deadline
+	// Actor is who the read is sent as, as ViewRequest.Actor (beyond10x/ess#286).
+	Actor string
+	// Anonymous is a read sent as no actor, as ViewRequest.Anonymous.
+	Anonymous bool
 }
 
 // ScanObservation is what one ordered read did, as the target that performed it saw it.
@@ -1995,6 +2016,14 @@ type run struct {
 	harness     *Harness
 	correlation string
 
+	// reader is the actor every read is sent as since the last `read_as` step, empty before one
+	// (beyond10x/ess#286). readRefusalExpected says the read about to be made is one the next step
+	// requires refused, and readAnswer keeps that read's answer for it.
+	reader              string
+	readerSet           bool
+	readRefusalExpected bool
+	readAnswer          *readAnswer
+
 	// instances are what `capture_instance` bound, by name.
 	instances   map[string]Node
 	established []EntitySetupRequest
@@ -2112,6 +2141,8 @@ func (r *run) execute(id string, scenario Scenario) {
 				return
 			}
 		}
+		// A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
+		r.readRefusalExpected = step.Step == "query_view" && index+1 < len(scenario.Steps) && scenario.Steps[index+1].Step == "expect_not_granted"
 		if !r.step(index, step) || r.disclosureStopped {
 			return
 		}
@@ -2210,6 +2241,10 @@ func (r *run) step(index int, step Step) bool {
 		return r.expectOutcome(index, step)
 	case "expect_not_granted":
 		return r.expectNotGranted(index, step)
+	case "read_as":
+		// Every later read is sent as this actor (beyond10x/ess#286).
+		r.reader, r.readerSet = step.Actor, true
+		return true
 	case "snapshot_subject", "expect_subject_unchanged":
 		return r.snapshotSubject(index, step)
 	case "snapshot_complete_subject", "expect_complete_subject_unchanged":
@@ -2328,9 +2363,36 @@ func (r *run) expectOutcome(index int, step Step) bool {
 	return true
 }
 
+// readAnswer is the answer to a read the next step requires refused (beyond10x/ess#286).
+type readAnswer struct {
+	view    string
+	unread  bool
+	refused bool
+	actor   string
+}
+
+// expectReadNotGranted requires that the read just made was refused before anything was read, with
+// the standard refusal for an actor no grant admits, naming the actor it was read as
+// (beyond10x/ess#286).
+func (r *run) expectReadNotGranted(index int, step Step, answer readAnswer) bool {
+	switch {
+	case answer.unread:
+		return r.fail(index, "`%s` was not read: the command before it returned no consistency token, so the refusal of the read as `%s` was not observed", answer.view, orNone(step.Actor))
+	case !answer.refused:
+		return r.fail(index, "`%s` was served to `%s`; the specification refuses it as not granted", answer.view, orNone(step.Actor))
+	case answer.actor != step.Actor:
+		return r.fail(index, "reading `%s` was refused as not granted to `%s`, and it was read as `%s`", answer.view, orNone(answer.actor), orNone(step.Actor))
+	}
+	return true
+}
+
 // expectNotGranted requires that the last command was refused before it ran, with the standard
 // refusal for an actor no grant admits, naming the actor it was sent as (beyond10x/ess#265).
 func (r *run) expectNotGranted(index int, step Step) bool {
+	if answer := r.readAnswer; answer != nil {
+		r.readAnswer = nil
+		return r.expectReadNotGranted(index, step, *answer)
+	}
 	if r.lastCommand == "" {
 		return r.fail(index, "no command preceded the refusal an ungranted actor gets")
 	}
@@ -2503,7 +2565,12 @@ func (r *run) queryView(index int, step Step) bool {
 	if !ok {
 		return false
 	}
+	expected := r.readRefusalExpected
+	r.readRefusalExpected = false
 	if r.lastCommand != "" && r.consistency == "" {
+		if expected {
+			r.readAnswer = &readAnswer{view: step.View, unread: true}
+		}
 		// Asking at Current would answer a weaker question than read-your-writes. Remember why no read
 		// was made so expect_view can report the implementation contradiction rather than reusing an
 		// earlier query.
@@ -2519,6 +2586,8 @@ func (r *run) queryView(index int, step Step) bool {
 		AtLeast:     r.consistency,
 		Correlation: r.correlation,
 		Deadline:    r.harness.Deadline(),
+		Actor:       r.reader,
+		Anonymous:   r.readerSet && r.reader == "",
 	})
 	if errors.Is(err, ErrUnsupported) {
 		r.skip("step %d: the target does not expose `%s`: %v", index, step.View, err)
@@ -2526,6 +2595,19 @@ func (r *run) queryView(index int, step Step) bool {
 	}
 	if err != nil {
 		return r.targetFailure(index, err, "target callback")
+	}
+	// A read the next step requires refused keeps its answer for that step; any other refused read
+	// is a read the scenario needed answered (beyond10x/ess#286).
+	if expected {
+		r.readAnswer = &readAnswer{view: step.View, refused: result.NotGranted, actor: result.NotGrantedActor}
+	}
+	if result.NotGranted {
+		r.queried = ""
+		r.lastView = ViewResult{}
+		if expected {
+			return true
+		}
+		return r.fail(index, "reading `%s` as `%s` was refused as not granted to `%s`", step.View, orNone(r.reader), orNone(result.NotGrantedActor))
 	}
 	r.unreadableView = ""
 	r.unreadableCommand = ""
@@ -2625,6 +2707,8 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 				Params:      params,
 				Correlation: r.correlation,
 				Deadline:    Deadline{Attempts: attempts - attempt},
+				Actor:       r.reader,
+				Anonymous:   r.readerSet && r.reader == "",
 			})
 			if errors.Is(err, ErrUnsupported) {
 				r.skip("step %d: the target does not expose `%s`: %v", index, step.View, err)
@@ -2632,6 +2716,9 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 			}
 			if err != nil {
 				return r.targetFailure(index, err, "target callback")
+			}
+			if result.NotGranted {
+				return r.fail(index, "reading `%s` as `%s` was refused as not granted to `%s`", step.View, orNone(r.reader), orNone(result.NotGrantedActor))
 			}
 			r.lastView = result
 			if !r.disclosureRows(result.Rows) {
@@ -3039,6 +3126,8 @@ func (r *run) expectHalt(index int, step Step, retry bool) bool {
 			AtLeast:     atLeast,
 			Correlation: r.correlation,
 			Deadline:    Deadline{Attempts: attempts - attempt},
+			Actor:       r.reader,
+			Anonymous:   r.readerSet && r.reader == "",
 		})
 		if errors.Is(err, ErrUnsupported) {
 			r.skip("step %d: the target cannot read `%s` a row at a time", index, step.View)
@@ -4020,8 +4109,14 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0])
 	case len(p) == 3 && p[1] == "grant":
 		valid = q(p[0]) && p[2] == "denied"
+	case len(p) == 4 && p[1] == "grant" && p[2] == "read":
+		// A read-granted view read as an actor its grant does not name (beyond10x/ess#286).
+		valid = q(p[0]) && p[3] == "denied"
 	case len(p) == 4 && p[1] == "grant":
 		valid = q(p[0]) && p[2] == "admitted" && q(p[3])
+	case len(p) == 5 && p[1] == "grant" && p[2] == "read":
+		// A read-granted view read as an actor its grant names (beyond10x/ess#286).
+		valid = q(p[0]) && p[3] == "admitted" && q(p[4])
 	}
 	if !valid {
 		return fmt.Errorf("malformed scenario ID %q", id)
@@ -4097,6 +4192,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		// The refusal an ungranted actor gets (beyond10x/ess#265) arrived in suite/26 and /27.
 		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
 			return suite, fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
+		}
+		// A read of a read-granted view (beyond10x/ess#286) arrived in suite/34 and /35.
+		if strings.Contains(id, "/grant/read/") && major < 34 {
+			return suite, fmt.Errorf("a read sent as an actor requires suite/34 or /35")
 		}
 		s, err := closed(scenario, "purpose steps source", "one_time_response")
 		if err != nil {
@@ -4864,8 +4963,18 @@ func admitStep(value any, major int) error {
 		if major < 26 {
 			return fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
 		}
+		// A refusal naming no actor, of a read sent as no actor (beyond10x/ess#286).
+		if actor, present := f["actor"]; present && actor == nil && major < 34 {
+			return fmt.Errorf("a read sent as an actor requires suite/34 or /35")
+		}
 		required += " actor"
 		optional = "unpublished"
+	case "read_as":
+		// Every later read sent as this actor (beyond10x/ess#286).
+		if major < 34 {
+			return fmt.Errorf("a read sent as an actor requires suite/34 or /35")
+		}
+		required += " actor"
 	case "snapshot_complete_subject":
 		if major < 12 {
 			return fmt.Errorf("complete subject snapshots require suite/12 or /13")

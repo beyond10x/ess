@@ -271,6 +271,30 @@ still checks each of its fields against the source entity. Compiled IR carries b
 and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
 once rather than copied per view.
 
+## Who may read a view
+
+From source `ess/22` an actor's `may:` names the views it may read as well as the commands it may
+invoke. There is one grant table: a view named there is read-granted, and only the actors naming it
+may read it.
+
+```yaml
+actors:
+  - name: desk.tickets.Clerk
+    may:
+      - desk.tickets.OpenTicket
+      - desk.tickets.Board
+  - name: desk.tickets.Watcher
+    may:
+      - desk.tickets.OpenTicket
+```
+
+Here the Clerk may read `Board` and the Watcher may not. A view no actor names stays open to every
+caller, so a specification that names no view means what it meant before. A grant naming something
+that is neither a command nor a view is refused as `undeclared_reference`. Under `ess/21` and
+earlier a grant naming a view is refused with `unsupported_format_version`, naming `ess/22`. A
+served component refuses a read the grant does not admit with the same `403` it answers an
+ungranted command; see [synthesis](../synthesize.md).
+
 ## A view can be paged
 
 A list endpoint that answers one page of its rows at a time declares `paging:` beside its

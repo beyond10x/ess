@@ -319,11 +319,19 @@ fn lib_module(
     Artifact::new(format!("crates/{package}/src/lib.rs"), out)
 }
 
-/// Whether any route serves a command: the only routes a grant check guards.
+/// Whether any route serves a command: the routes a command grant check guards.
 fn commands_served(routes: &[http::Route<'_>]) -> bool {
     routes
         .iter()
         .any(|route| matches!(route.serves, Served::Command(_)))
+}
+
+/// Whether any route serves a read-granted view: the views a read grant guards (beyond10x/ess#286).
+fn reads_checked(ir: &EssIr, routes: &[http::Route<'_>]) -> bool {
+    routes.iter().any(|route| match route.serves {
+        Served::View(handle) => http::read_checked(ir, handle.name()),
+        Served::Command(_) => false,
+    })
 }
 
 /// The caller parameter `dispatch` and `handle` take in a model that declares an actor, named
@@ -334,7 +342,11 @@ fn caller_parameter(server: &Server<'_>, routes: &[http::Route<'_>]) -> String {
     }
     format!(
         "{}caller: Option<&{}::actor::Caller>, ",
-        if commands_served(routes) { "" } else { "_" },
+        if commands_served(routes) || reads_checked(server.ir, routes) {
+            ""
+        } else {
+            "_"
+        },
         server.types
     )
 }
@@ -378,8 +390,11 @@ fn surface_module(
     serve_function(&mut out, server, component);
     dispatch(&mut out, server, &routes);
     entry_point(&mut out, server, component, &routes);
-    if http::checks_grants(ir) && commands_served(&routes) {
+    if http::checks_grants(ir) && (commands_served(&routes) || reads_checked(ir, &routes)) {
         grant_check(&mut out, server);
+    }
+    if reads_checked(ir, &routes) {
+        read_grant_check(&mut out, server);
     }
     handlers(&mut out, server, component, &routes);
 
@@ -691,6 +706,25 @@ fn grant_check(out: &mut String, server: &Server<'_>) {
     );
 }
 
+/// The read-grant check every read-granted view's route and `handle` arm runs first
+/// (beyond10x/ess#286). Emitted only for a surface serving a view some actor's `may:` names; a view
+/// no actor names is open and runs no check.
+fn read_grant_check(out: &mut String, server: &Server<'_>) {
+    let types = &server.types;
+    let _ = write!(
+        out,
+        "\n/// Nothing, where `caller` may read `view`, a view some actor's grant names; otherwise \
+         the actor\n/// the standard refusal names, `None` where the request was authenticated as \
+         no actor.\n///\n/// Checked before the view is read, on the caller the realization \
+         authenticated the request as.\n/// Public, so code that reads the system in process \
+         checks the grant exactly as every route does.\npub fn admit_read(caller: \
+         Option<&{types}::actor::Caller>, view: &str) -> Result<(), Option<&'static str>> \
+         {{\n    match caller {{\n        Some(caller) if caller.may_read(view) => Ok(()),\n        \
+         Some(caller) => Err(Some(caller.actor.name())),\n        None => Err(None),\n    \
+         }}\n}}\n",
+    );
+}
+
 /// The `where` clause every function over the system carries: the bounds `System::pump` carries,
 /// because every command this surface runs is pumped before it is answered. Empty when the system
 /// is not generic.
@@ -774,6 +808,12 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
              command.\n",
         );
     }
+    if reads_checked(ir, routes) {
+        out.push_str(
+            "/// A view some actor's grant names checks the reader's grant the same way before \
+             it is read.\n",
+        );
+    }
     let _ = writeln!(
         out,
         "pub fn dispatch{angled}(system: &mut {system_crate}::System{angled}, {}request: \
@@ -810,14 +850,14 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
                         "            {}(system, &request.body)\n        }}\n",
                         handler_ident(&ir.command(handle).name)
                     ),
-                    Served::View(handle) if !ir.view(handle).params.is_empty() => format!(
-                        "            {}(system, &request.query)\n        }}\n",
-                        handler_ident(&ir.view(handle).name)
+                    // A read-granted view checks the reader first (beyond10x/ess#286).
+                    Served::View(handle) if http::read_checked(ir, handle.name()) => format!(
+                        "            if let Err(actor) = admit_read(caller, {:?}) {{\n                \
+                         return not_granted(actor);\n            }}\n{}",
+                        ir.view(handle).name.to_string(),
+                        view_call(ir, handle)
                     ),
-                    Served::View(handle) => format!(
-                        "            http::answer({}(system))\n        }}\n",
-                        runner_ident(&ir.view(handle).name)
-                    ),
+                    Served::View(handle) => view_call(ir, handle),
                 };
                 out.push_str(&call);
             }
@@ -828,6 +868,22 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
          &format!(\"`{other}` is not a path this surface declares; `GET /openapi.json` publishes \
          every one that is\"),\n        ),\n    }\n}\n",
     );
+}
+
+/// One view route's read and answer, the arm's closing brace included.
+fn view_call(ir: &EssIr, handle: &ess_compiler::ir::ViewHandle) -> String {
+    let view = ir.view(handle);
+    if view.params.is_empty() {
+        format!(
+            "            http::answer({}(system))\n        }}\n",
+            runner_ident(&view.name)
+        )
+    } else {
+        format!(
+            "            {}(system, &request.query)\n        }}\n",
+            handler_ident(&view.name)
+        )
+    }
 }
 
 /// The handler function name for one construct: its whole qualified name, snake-cased.
@@ -900,6 +956,12 @@ fn entry_point(
              command; checked before\n/// the command runs (the route's `403`).\n",
         );
     }
+    if reads_checked(ir, routes) {
+        out.push_str(
+            "/// A view some actor's grant names answers the same refusal, checked before it \
+             is read.\n",
+        );
+    }
     let _ = writeln!(
         out,
         "pub fn handle{angled}({system}: &mut {system_crate}::System{angled}, {}name: &str, \
@@ -935,16 +997,7 @@ fn entry_point(
                     format!("{}(system, &input)", runner_ident(declared)),
                 )
             }
-            Served::View(handle) => {
-                let view = ir.view(handle);
-                let declared = &view.name;
-                let call = if view.params.is_empty() {
-                    format!("{}(system)", runner_ident(declared))
-                } else {
-                    format!("{}(system, &input)", runner_ident(declared))
-                };
-                (declared.to_string(), call)
-            }
+            Served::View(handle) => handle_view_arm(ir, handle),
         })
         .collect();
     arms.sort();
@@ -955,6 +1008,28 @@ fn entry_point(
         "        other => return Err(entry::Refused::Unknown(other.to_owned())),\n    };\n    \
          let (_, body) = answered?;\n    Ok(entry::read(&body))\n}\n",
     );
+}
+
+/// One view's `handle` arm: its qualified name, and the call answering it — behind the read grant
+/// check where some actor's `may:` names the view (beyond10x/ess#286).
+fn handle_view_arm(ir: &EssIr, handle: &ess_compiler::ir::ViewHandle) -> (String, String) {
+    let view = ir.view(handle);
+    let declared = &view.name;
+    let call = if view.params.is_empty() {
+        format!("{}(system)", runner_ident(declared))
+    } else {
+        format!("{}(system, &input)", runner_ident(declared))
+    };
+    let call = if http::read_checked(ir, declared) {
+        format!(
+            "match admit_read(caller, {:?}) {{\n            Ok(()) => {call},\n            \
+             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),\n        }}",
+            declared.to_string()
+        )
+    } else {
+        call
+    };
+    (declared.to_string(), call)
 }
 
 /// One handler per route: decode, call the port, render what the contract declares.

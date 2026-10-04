@@ -381,8 +381,11 @@ impl Specification {
 
         let command_names: BTreeSet<QualifiedName> =
             Refused::with(&self.commands.keys().cloned().collect(), &refused.commands);
+        // A grant may name a view from ess/22 (beyond10x/ess#286).
+        let view_names: BTreeSet<QualifiedName> =
+            Refused::with(&self.views.keys().cloned().collect(), &refused.views);
         for actor in self.actors.values() {
-            errors.extend(actor.validate(&command_names));
+            errors.extend(actor.validate_grants(&command_names, &view_names, self.system.format));
         }
 
         errors.extend(self.validate_components(&command_names, &event_names));
@@ -820,6 +823,9 @@ pub(crate) struct Refused {
     pub(crate) commands: BTreeSet<QualifiedName>,
     pub(crate) events: BTreeSet<QualifiedName>,
     pub(crate) errors: BTreeSet<QualifiedName>,
+    /// Views whose conversion failed, so a grant naming one (ess/22, beyond10x/ess#286) is not
+    /// reported as naming nothing.
+    pub(crate) views: BTreeSet<QualifiedName>,
     pub(crate) components: BTreeSet<crate::component::ComponentName>,
     /// The `moves:` a refused command's outcomes name, so a transition only that command takes is
     /// not reported as one nothing takes.
@@ -1140,6 +1146,7 @@ impl Collected {
                     Some(converted)
                 }
                 Err(member_errors) => {
+                    self.refused.views.insert(name.clone());
                     errors.extend(member_errors);
                     None
                 }

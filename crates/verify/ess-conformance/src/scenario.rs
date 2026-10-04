@@ -741,6 +741,29 @@ pub enum ScenarioId {
         /// The granted actor that sends it.
         actor: ActorRef,
     },
+    /// A read-granted view read as an actor the specification does not grant it, answered with the
+    /// standard refusal: `desk.tickets.Board/grant/read/denied` (beyond10x/ess#286).
+    ///
+    /// One per view some actor's `may:` names and some declared actor does not, in a model that
+    /// serves a component (`reached_by: network`). `read` keeps the id apart from a command's
+    /// [`Grant`](Self::Grant), which the rendered name alone could not tell from a view's. Carried
+    /// by suite majors [`crate::view_grant::ORDINARY`] and [`crate::view_grant::COVERAGE`].
+    ReadGrant {
+        /// The view no grant admits the reader to.
+        view: ViewRef,
+    },
+    /// A read-granted view read as one of the actors the specification grants it, and served:
+    /// `desk.tickets.Board/grant/read/admitted/desk.tickets.Clerk` (beyond10x/ess#286).
+    ///
+    /// One per actor whose `may:` names the view, so a surface whose read grants drop one fails.
+    /// Carried by suite majors [`crate::view_grant::ORDINARY`] and
+    /// [`crate::view_grant::COVERAGE`].
+    ReadGrantAdmitted {
+        /// The view.
+        view: ViewRef,
+        /// The granted actor that reads it.
+        actor: ActorRef,
+    },
 }
 
 impl ScenarioId {
@@ -767,7 +790,9 @@ impl ScenarioId {
 
         match parts.as_slice() {
             [_, "disclosure", ..] => crate::one_time_response::Cell::parse(value)
-                .map(|cell| Self::Disclosure { cell: Box::new(cell) })
+                .map(|cell| Self::Disclosure {
+                    cell: Box::new(cell),
+                })
                 .map_err(reject),
             [command, Self::OUTCOME, outcome] => Ok(Self::Outcome {
                 outcome: OutcomeRef::new(
@@ -824,6 +849,13 @@ impl ScenarioId {
                 command: CommandRef::new(name(command)?),
                 actor: ActorRef::new(name(actor)?),
             }),
+            [view, Self::GRANT, "read", "denied"] => Ok(Self::ReadGrant {
+                view: ViewRef::new(name(view)?),
+            }),
+            [view, Self::GRANT, "read", "admitted", actor] => Ok(Self::ReadGrantAdmitted {
+                view: ViewRef::new(name(view)?),
+                actor: ActorRef::new(name(actor)?),
+            }),
             [domain, Self::AUTHORED, authored] => Ok(Self::Authored {
                 domain: DomainRef::new(name(domain)?),
                 name: AuthoredName::new(authored)
@@ -847,7 +879,8 @@ impl ScenarioId {
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
                  `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>`, \
-                 `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>` or \
+                 `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>`, \
+                 `<view>/grant/read/denied`, `<view>/grant/read/admitted/<actor>` or \
                  `<domain>/authored/<name>`",
             )),
         }
@@ -905,6 +938,10 @@ impl fmt::Display for ScenarioId {
             Self::Grant { command } => write!(f, "{command}/{}/denied", Self::GRANT),
             Self::GrantAdmitted { command, actor } => {
                 write!(f, "{command}/{}/admitted/{actor}", Self::GRANT)
+            }
+            Self::ReadGrant { view } => write!(f, "{view}/{}/read/denied", Self::GRANT),
+            Self::ReadGrantAdmitted { view, actor } => {
+                write!(f, "{view}/{}/read/admitted/{actor}", Self::GRANT)
             }
         }
     }
@@ -2046,15 +2083,19 @@ pub enum ScenarioStep {
         outcome: OutcomeRef,
     },
     /// Require that the immediately preceding command was refused before it ran, with the standard
-    /// refusal for an actor no grant admits, naming this actor (beyond10x/ess#265).
+    /// refusal for an actor no grant admits, naming this actor (beyond10x/ess#265) — or, right after
+    /// a [`QueryView`](Self::QueryView), that the read was refused so (beyond10x/ess#286).
     ///
     /// Not an outcome: the refusal is the served contract's, the same for every command, and no
     /// branch the specification declares. A target answers it as
     /// [`TargetError::NotGranted`](crate::target::TargetError::NotGranted). Carried by suite majors
     /// [`crate::grant::ORDINARY`] and [`crate::grant::COVERAGE`].
     ExpectNotGranted {
-        /// The actor the command was sent as, and the refusal names.
-        actor: ActorRef,
+        /// The actor the command or read was sent as, and the refusal names; `null` for a read sent
+        /// as no actor after `read_as` with no actor (suite/34, beyond10x/ess#286), whose refusal
+        /// names none. Always written, so the no-actor form is `"actor": null`.
+        #[serde(default)]
+        actor: Option<ActorRef>,
         /// Events no occurrence of which may appear anywhere in the target's log after the refused
         /// send: each is observed once, and an occurrence the scenario had not seen before fails
         /// the step.
@@ -2063,6 +2104,24 @@ pub enum ScenarioStep {
         /// about those could not fail a target that ran the command and refused afterwards.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         unpublished: Vec<EventRef>,
+    },
+    /// Read every later view of this scenario as this actor, until the next such step
+    /// (beyond10x/ess#286).
+    ///
+    /// A view some actor's `may:` names is read-granted: a served surface answers it only to an
+    /// actor the grant names, and the standard refusal to anyone else. So a read of one is sent as
+    /// an actor, as a command is; a read before any such step is sent as no actor, which is how
+    /// every view no grant names is read. A target reads as this actor through
+    /// [`query_view_as`](crate::target::ConformanceTarget::query_view_as); with `actor: null` it
+    /// reads as no actor at all, an unauthenticated request, through
+    /// [`query_view_anonymous`](crate::target::ConformanceTarget::query_view_anonymous). After a
+    /// [`QueryView`](Self::QueryView) read as an actor the grant does not name,
+    /// [`ExpectNotGranted`](Self::ExpectNotGranted) requires the read's refusal. Carried by suite
+    /// majors [`crate::view_grant::ORDINARY`] and [`crate::view_grant::COVERAGE`].
+    ReadAs {
+        /// The actor later reads are sent as; `null` for no actor. Always written.
+        #[serde(default)]
+        actor: Option<ActorRef>,
     },
     /// Require that the immediately preceding command returned without an error.
     ExpectNoError,

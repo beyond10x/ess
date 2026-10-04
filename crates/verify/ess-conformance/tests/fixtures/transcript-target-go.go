@@ -225,18 +225,32 @@ func (b *transcriptTarget) ExecuteCommandWithoutInput(r AbsentInputRequest) (Com
 	})
 }
 func (b *transcriptTarget) QueryView(r ViewRequest) (ViewResult, error) {
-	entry, err := b.next("query_view", r.View, map[string]any{"params": orEmpty(r.Params), "at_least": r.AtLeast})
+	request := map[string]any{"params": orEmpty(r.Params), "at_least": r.AtLeast}
+	// A read sent as an actor (beyond10x/ess#286) was recorded with it, and only then.
+	if r.Actor != "" {
+		request["actor"] = r.Actor
+	}
+	if r.Anonymous {
+		request["anonymous"] = true
+	}
+	entry, err := b.next("query_view", r.View, request)
 	if err != nil {
 		return ViewResult{}, err
 	}
 	var recorded struct {
-		Rows  []Row   `json:"rows"`
-		Total *uint64 `json:"total"`
+		Rows            []Row   `json:"rows"`
+		Total           *uint64 `json:"total"`
+		NotGranted      bool    `json:"not_granted"`
+		NotGrantedActor *string `json:"not_granted_actor"`
 	}
 	if err := decodeInto(entry.Result, &recorded); err != nil {
 		return ViewResult{}, err
 	}
-	return ViewResult{Rows: recorded.Rows, Total: recorded.Total}, nil
+	result := ViewResult{Rows: recorded.Rows, Total: recorded.Total, NotGranted: recorded.NotGranted}
+	if recorded.NotGrantedActor != nil {
+		result.NotGrantedActor = *recorded.NotGrantedActor
+	}
+	return result, nil
 }
 func (b *transcriptTarget) ObserveEvents(r EventObservationRequest) ([]ObservedEvent, error) {
 	entry, err := b.next("observe_events", r.Event, map[string]any{})

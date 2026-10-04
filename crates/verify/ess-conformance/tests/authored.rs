@@ -2116,7 +2116,8 @@ fn an_ungranted_actor_is_accepted_where_the_act_expects_the_refusal() {
                 actor.as_ref().map(ToString::to_string).unwrap_or_default()
             ),
             ScenarioStep::ExpectNotGranted { actor, unpublished } => format!(
-                "not granted to {actor}, publishing no {}",
+                "not granted to {}, publishing no {}",
+                actor.as_ref().map(ToString::to_string).unwrap_or_default(),
                 unpublished
                     .iter()
                     .map(ToString::to_string)

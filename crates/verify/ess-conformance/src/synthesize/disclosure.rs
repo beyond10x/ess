@@ -498,7 +498,7 @@ fn denied_cell(
     }
     steps.push(invoke);
     steps.push(ScenarioStep::ExpectNotGranted {
-        actor: actor.clone(),
+        actor: Some(actor.clone()),
         unpublished: ir
             .events()
             .values()

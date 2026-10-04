@@ -1042,6 +1042,10 @@ fn actors_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
         let mut about = Blocks::new();
         about.prose(naming_sentence(&actor.naming, &actor.name));
         about.prose(grants_sentence(ir, domain, actor));
+        // ess/22 (beyond10x/ess#286): the views its grant names, which only those actors may read.
+        if !actor.may_read.is_empty() {
+            about.prose(reads_sentence(ir, domain, actor));
+        }
         // ess/16 (#168): what the credential carries, which a command it invokes may read.
         if !actor.attributes.is_empty() {
             about.sentence("Its credential carries:");
@@ -2437,6 +2441,26 @@ fn grants_sentence(ir: &EssIr, domain: &ResolvedDomain, actor: &ResolvedActor) -
             .collect(),
     ));
     out.push(Inline::text("."));
+    out
+}
+
+/// The views an actor's `may:` names (beyond10x/ess#286): it may read them, and an actor that does
+/// not name one may not.
+fn reads_sentence(ir: &EssIr, domain: &ResolvedDomain, actor: &ResolvedActor) -> Vec<Inline> {
+    let mut out = vec![Inline::text("It may read ")];
+    out.extend(inline_list(
+        actor
+            .may_read
+            .iter()
+            .map(|handle| {
+                let view = ir.view(handle);
+                vec![section_link(ir, domain, &view.name, &view.domain)]
+            })
+            .collect(),
+    ));
+    out.push(Inline::text(
+        ", which an actor whose grant does not name it may not read.",
+    ));
     out
 }
 

@@ -125,6 +125,15 @@ impl ActorSpec {
         self.may.contains(command)
     }
 
+    /// `true` when this actor's `may:` names `view` (ess/22, beyond10x/ess#286).
+    ///
+    /// One grant table: a view named in `may:` is read-granted to the actor, matched on the
+    /// qualified name as a command grant is. Whether the name is a view is the specification's to
+    /// say — names are unique across kinds — so this answers only whether the actor names it.
+    pub fn may_read(&self, view: &QualifiedName) -> bool {
+        self.may.contains(view)
+    }
+
     /// Checks every grant against the commands the specification declares.
     ///
     /// A grant naming a command nobody declared is the failure worth catching: it reads as an
@@ -164,6 +173,84 @@ impl ActorSpec {
                     )),
                 );
             }
+        }
+        errors
+    }
+
+    /// Checks every grant against the commands and the views the specification declares
+    /// (beyond10x/ess#286).
+    ///
+    /// From `ess/22` a grant may name a view: the actor may read it, and a view no actor names
+    /// stays open to every caller. Below `ess/22` a grant naming a view is refused naming the
+    /// format that admits it, once, rather than also as a command nobody declared. A grant naming
+    /// neither is [`validate`](Self::validate)'s refusal, worded for both kinds from `ess/22`.
+    pub fn validate_grants(
+        &self,
+        commands: &BTreeSet<QualifiedName>,
+        views: &BTreeSet<QualifiedName>,
+        format: FormatVersion,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let reads: Vec<&QualifiedName> = self
+            .may
+            .iter()
+            .filter(|granted| !commands.contains(*granted) && views.contains(*granted))
+            .collect();
+        if format.major() < FormatVersion::V22.major() {
+            for view in &reads {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("actor {}.may", self.name),
+                        format!(
+                            "`{}` may read the view `{view}`: a grant naming a view requires \
+                             specification format ess/22",
+                            self.name
+                        ),
+                    )
+                    .with_hint("write `format: ess/22` on the source that declares the system"),
+                );
+            }
+            let commanded = Self {
+                may: self
+                    .may
+                    .iter()
+                    .filter(|granted| !reads.contains(granted))
+                    .cloned()
+                    .collect(),
+                ..self.clone()
+            };
+            errors.extend(commanded.validate(commands));
+            return errors;
+        }
+        for granted in &self.may {
+            if commands.contains(granted) || views.contains(granted) {
+                continue;
+            }
+            let declared: Vec<String> = commands
+                .iter()
+                .chain(views)
+                .map(ToString::to_string)
+                .collect();
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UndeclaredReference,
+                    format!("actor {}.may", self.name),
+                    format!(
+                        "`{}` may invoke or read `{granted}`, which no domain declares as a \
+                         command or a view",
+                        self.name
+                    ),
+                )
+                .with_hint(format!(
+                    "declared commands and views: {}",
+                    if declared.is_empty() {
+                        "none".to_owned()
+                    } else {
+                        declared.join(", ")
+                    }
+                )),
+            );
         }
         errors
     }

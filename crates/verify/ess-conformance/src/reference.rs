@@ -1721,6 +1721,21 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
         self.0.query_view(request)
     }
 
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &crate::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view_as(request, reader)
+    }
+
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view_anonymous(request)
+    }
+
     fn observe_events(
         &self,
         request: EventObservationRequest,

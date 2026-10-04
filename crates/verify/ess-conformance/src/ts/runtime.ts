@@ -2154,16 +2154,46 @@ export interface ViewRequest {
   atLeast: string;
   correlation: string;
   deadline: Deadline;
+  /**
+   * Who the read is sent as: the actor the last `read_as` step named (suite/34,
+   * beyond10x/ess#286); unset before one. A view some actor's grant names is answered only to an
+   * actor it names; read it as `actor`, and answer `notGranted` otherwise, before reading anything.
+   */
+  actor?: string | undefined;
+  /**
+   * True for a read sent as no actor at all, after a `read_as` naming none (beyond10x/ess#286): an
+   * unauthenticated request, which a read-granted view refuses naming no actor. A target that
+   * ignores it serves the read and fails the scenario that requires the refusal.
+   */
+  anonymous?: boolean | undefined;
 }
 
 /** ViewResult is what a view holds. */
 export interface ViewResult {
+  /**
+   * True when the target refused the read before reading anything, with the standard refusal for
+   * an actor no grant admits (beyond10x/ess#286). Leave `rows` unset. A target that checks no read
+   * grant never sets it, and fails every `.../grant/read/denied` scenario.
+   */
+  notGranted?: boolean | undefined;
+  /** The qualified name of the actor the refusal names, unset where it names none. */
+  notGrantedActor?: string | undefined;
   rows?: Row[] | undefined;
   /**
    * How many rows the view's filter admits, for a paged view that declares `total: true`
    * (suite/26, beyond10x/ess#174). Unset where the target reports none.
    */
   total?: number | undefined;
+}
+
+/** The answer to a read the next step requires refused (beyond10x/ess#286). */
+interface ReadAnswer {
+  view: string;
+  /** The read was not made: the command before it returned no consistency token. */
+  unread: boolean;
+  refused: boolean;
+  /** The actor the refusal named, empty where it named none. */
+  actor: string;
 }
 
 /** InvocationObservationRequest asks what one binding invoked. */
@@ -2239,6 +2269,10 @@ export interface ScanRequest {
   atLeast: string;
   correlation: string;
   deadline: Deadline;
+  /** Who the read is sent as, as `ViewRequest.actor` (beyond10x/ess#286). */
+  actor?: string | undefined;
+  /** A read sent as no actor, as `ViewRequest.anonymous`. */
+  anonymous?: boolean | undefined;
 }
 
 /** ScanObservation is what one ordered read did, as the target that performed it saw it. */
@@ -3153,6 +3187,15 @@ export class ScenarioRun {
   /** What the most recent command did, for the assertions that read it. */
   last: ObservedCommandResult = normalizeResult(undefined);
   lastCommand = '';
+  /**
+   * The actor every read is sent as since the last `read_as` step, empty before one; whether the
+   * read about to be made is one the next step requires refused; and that read's answer
+   * (beyond10x/ess#286).
+   */
+  reader = '';
+  readerSet = false;
+  readRefusalExpected = false;
+  readAnswer: ReadAnswer | undefined;
   /** The input and actor of the last command, as sent, which a retained replay repeats. */
   lastInput: { [field: string]: Node } | undefined;
   lastActor = '';
@@ -3266,6 +3309,9 @@ export class ScenarioRun {
         ) {
           return;
         }
+        // A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
+        this.readRefusalExpected =
+          step.step === 'query_view' && next?.step === 'expect_not_granted';
         this.stepTargetError = false;
         const continued = await this.step(index, step);
         if (
@@ -3483,6 +3529,11 @@ export class ScenarioRun {
         return this.expectOutcome(index, step);
       case 'expect_not_granted':
         return this.expectNotGranted(index, step);
+      case 'read_as':
+        // Every later read is sent as this actor (beyond10x/ess#286).
+        this.reader = step.actor ?? '';
+        this.readerSet = true;
+        return true;
       case 'snapshot_subject':
       case 'expect_subject_unchanged':
       case 'snapshot_complete_subject':
@@ -3682,10 +3733,43 @@ export class ScenarioRun {
   }
 
   /**
+   * Requires that the read just made was refused before anything was read, with the standard
+   * refusal for an actor no grant admits, naming the actor it was read as (beyond10x/ess#286).
+   */
+  expectReadNotGranted(index: number, step: Step, answer: ReadAnswer): boolean {
+    if (answer.unread) {
+      return this.fail(
+        index,
+        `\`${answer.view}\` was not read: the command before it returned no consistency token, ` +
+          `so the refusal of the read as \`${step.actor}\` was not observed`,
+      );
+    }
+    if (!answer.refused) {
+      return this.fail(
+        index,
+        `\`${answer.view}\` was served to \`${step.actor}\`; the specification refuses it as not granted`,
+      );
+    }
+    if (answer.actor !== (step.actor ?? '')) {
+      return this.fail(
+        index,
+        `reading \`${answer.view}\` was refused as not granted to \`${orNone(answer.actor)}\`, ` +
+          `and it was read as \`${step.actor}\``,
+      );
+    }
+    return true;
+  }
+
+  /**
    * Requires that the last command was refused before it ran, with the standard refusal for an
    * actor no grant admits, naming the actor it was sent as (beyond10x/ess#265).
    */
   async expectNotGranted(index: number, step: Step): Promise<boolean> {
+    const answer = this.readAnswer;
+    if (answer !== undefined) {
+      this.readAnswer = undefined;
+      return this.expectReadNotGranted(index, step, answer);
+    }
     if (this.lastCommand === '') {
       return this.fail(index, 'no command preceded the refusal an ungranted actor gets');
     }
@@ -3696,7 +3780,7 @@ export class ScenarioRun {
           `refuses it as not granted to \`${step.actor}\``,
       );
     }
-    if ((this.last.notGrantedActor ?? '') !== step.actor) {
+    if ((this.last.notGrantedActor ?? '') !== (step.actor ?? '')) {
       return this.fail(
         index,
         `\`${this.lastCommand}\` was refused as not granted to ` +
@@ -3919,7 +4003,10 @@ export class ScenarioRun {
     if (params === null) {
       return false;
     }
+    const expected = this.readRefusalExpected;
+    this.readRefusalExpected = false;
     if (this.lastCommand !== '' && this.consistency === '') {
+      if (expected) this.readAnswer = { view: step.view, unread: true, refused: false, actor: '' };
       // Current is weaker than the read-your-writes claim. Keep the cause for expect_view, and
       // discard any earlier query so it cannot satisfy the assertion after this command.
       this.unreadableView = step.view;
@@ -3937,6 +4024,8 @@ export class ScenarioRun {
         atLeast: this.consistency,
         correlation: this.correlation,
         deadline: this.harness.deadline(),
+        actor: this.reader === '' ? undefined : this.reader,
+        anonymous: this.readerSet && this.reader === '' ? true : undefined,
       });
     } catch (error) {
       if (isUnsupported(error)) {
@@ -3945,6 +4034,28 @@ export class ScenarioRun {
         );
       }
       return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
+    }
+    // A read the next step requires refused keeps its answer for that step; any other refused read
+    // is a read the scenario needed answered (beyond10x/ess#286).
+    const refused = result?.notGranted === true;
+    if (expected) {
+      this.readAnswer = {
+        view: step.view,
+        unread: false,
+        refused,
+        actor: result?.notGrantedActor ?? '',
+      };
+    }
+    if (refused) {
+      this.queried = '';
+      this.lastView = [];
+      this.lastTotal = undefined;
+      if (expected) return true;
+      return this.fail(
+        index,
+        `reading \`${step.view}\` as \`${orNone(this.reader)}\` was refused as not granted to ` +
+          `\`${orNone(result?.notGrantedActor ?? '')}\``,
+      );
     }
     this.unreadableView = '';
     this.unreadableCommand = '';
@@ -4115,6 +4226,8 @@ export class ScenarioRun {
             atLeast: '',
             correlation: this.correlation,
             deadline: { attempts: attempts - attempt },
+            actor: this.reader === '' ? undefined : this.reader,
+            anonymous: this.readerSet && this.reader === '' ? true : undefined,
           });
         } catch (error) {
           if (isUnsupported(error)) {
@@ -4123,6 +4236,13 @@ export class ScenarioRun {
             );
           }
           return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
+        }
+        if (result?.notGranted === true) {
+          return this.fail(
+            index,
+            `reading \`${step.view}\` as \`${orNone(this.reader)}\` was refused as not granted to ` +
+              `\`${orNone(result.notGrantedActor ?? '')}\``,
+          );
         }
         this.lastView = result?.rows ?? [];
         if (!this.disclosureMaps(this.lastView)) return false;
@@ -4749,6 +4869,8 @@ export class ScenarioRun {
           atLeast,
           correlation: this.correlation,
           deadline: { attempts: attempts - attempt },
+          actor: this.reader === '' ? undefined : this.reader,
+          anonymous: this.readerSet && this.reader === '' ? true : undefined,
         });
       } catch (error) {
         if (isUnsupported(error)) {
@@ -5867,6 +5989,14 @@ export function scenarioIdentity(id: string, major = 21): void {
       throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
     }
     valid = q(segment(0)) && segment(2) === 'denied';
+  } else if (parts.length === 4 && segment(1) === 'grant' && segment(2) === 'read') {
+    // A read-granted view read as an actor its grant does not name (beyond10x/ess#286).
+    if (major < 34) throw new Error('a read sent as an actor requires suite/34 or /35');
+    valid = q(segment(0)) && segment(3) === 'denied';
+  } else if (parts.length === 5 && segment(1) === 'grant' && segment(2) === 'read') {
+    // A read-granted view read as an actor its grant names (beyond10x/ess#286).
+    if (major < 34) throw new Error('a read sent as an actor requires suite/34 or /35');
+    valid = q(segment(0)) && segment(3) === 'admitted' && q(segment(4));
   } else if (parts.length === 4 && segment(1) === 'grant') {
     // Each granted actor sends its command (beyond10x/ess#265): suite/26 vocabulary as well.
     if (major < 26) {
@@ -7119,8 +7249,21 @@ export function admitStep(value: Node, major: number): void {
       if (major < 26) {
         throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
       }
+      // A refusal naming no actor, of a read sent as no actor (beyond10x/ess#286).
+      if (
+        Object.prototype.hasOwnProperty.call(value, 'actor') &&
+        isNil(value.actor) &&
+        major < 34
+      ) {
+        throw new Error('a read sent as an actor requires suite/34 or /35');
+      }
       required += ' actor';
       optional = 'unpublished';
+      break;
+    case 'read_as':
+      // Every later read sent as this actor (beyond10x/ess#286).
+      if (major < 34) throw new Error('a read sent as an actor requires suite/34 or /35');
+      required += ' actor';
       break;
     case 'snapshot_subject':
       if (major < 10) throw new Error('subject snapshots require suite/10 or /11');

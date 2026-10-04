@@ -173,7 +173,12 @@ fn authentication(emit: &Emit<'_>) -> String {
 		if *callers != "actor-header" {{
 			return nil
 		}}
-		header := request.Header.Get("Authorization")
+		// One credential: a request carrying two Authorization headers is authenticated as nobody.
+		values := request.Header.Values("Authorization")
+		if len(values) != 1 {{
+			return nil
+		}}
+		header := values[0]
 		if !strings.HasPrefix(header, "Actor ") {{
 			return nil
 		}}

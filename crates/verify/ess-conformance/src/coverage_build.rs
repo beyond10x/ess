@@ -504,6 +504,7 @@ fn coverage_version(
             "ess-conformance/37"
         } else if suite.provenance.scenario_initial_state.is_some()
             || crate::one_time_response::used_by(suite)
+            || crate::view_grant::used_by(suite)
         {
             "ess-conformance/35"
         } else if crate::structured_values::used_by(suite) {

@@ -479,6 +479,28 @@ impl ConformanceTarget for Interpreted {
             .collect())
     }
 
+    // A read-granted view is read only by an actor its grant names (beyond10x/ess#286).
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &crate::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.read_grant(&request.view, reader)?;
+        self.query_view(request)
+    }
+
+    // A read-granted view is refused to a read sent as no actor (beyond10x/ess#286).
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let model = self.model(format!("reading `{}`", request.view))?;
+        if model.read_granted(request.view.name()) {
+            return Err(TargetError::not_granted(None::<String>));
+        }
+        self.query_view(request)
+    }
+
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
         self.model(format!(
             "closing the execution context of `{}`",

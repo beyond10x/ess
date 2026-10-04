@@ -147,6 +147,17 @@ the `ConformanceTarget` trait of the `ess-conformance` crate, which is what the 
 It must preserve scenario identity, request/response correlation and refusal semantics, and it must
 not report its own unobserved success.
 
+A suite for a specification whose actors' `may:` names a view sends reads of that view as an actor,
+after a `read_as` step (beyond10x/ess#286), and also as no actor after `read_as` with
+`actor: null`. The runner calls `query_view_as` with the actor, or `query_view_anonymous` for no
+actor, and a target answers a read the grant does not admit with `TargetError::NotGranted` naming
+the actor, or none, before reading anything. The defaults read as `query_view` does, so a target
+that checks no read grant fails the suite's `<view>/grant/read/denied` scenarios. A read the
+scenario needed answered and the target refused is `failed`. The generated Go and TypeScript
+runtimes send the actor as `ViewRequest.Actor` and `actor`, set `Anonymous` and `anonymous` for a
+read sent as no actor, and read a refusal from `NotGranted` and `notGranted` on the view result; a
+target that ignores them serves the read and fails the same scenarios.
+
 ## Opt into explicit outcome counts
 
 ### Where passed, failed and skipped live

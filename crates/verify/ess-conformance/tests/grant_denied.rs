@@ -169,7 +169,7 @@ fn every_gatepass_command_the_auditor_lacks_gets_a_denied_scenario_sent_as_the_a
     );
     assert!(
         matches!(&scenario.steps[refused], ScenarioStep::ExpectNotGranted { actor, unpublished }
-            if actor.to_string() == "gatepass.visit.SecurityAuditor"
+            if actor.as_ref().is_some_and(|actor| actor.to_string() == "gatepass.visit.SecurityAuditor")
                 && unpublished.iter().any(|event| event.to_string() == "gatepass.visit.VisitRegistered")),
         "{:?}",
         scenario.steps

@@ -12,8 +12,9 @@
 //! view counts as readable when some actor may invoke a command of the bounded context that owns
 //! it. A section reading a view of a context no actor is granted anything in is shown to nobody.
 //! The rule over-approximates — a grant to write one entity of a context counts as reading every
-//! view of it — and it will stay an approximation until the model can state read grants. A
-//! section rendered by a widget is judged by the reads of the widget's expanded body.
+//! view of it. From `ess/22` a view an actor's `may:` names (beyond10x/ess#286) is readable by
+//! that actor whatever its context grants, so it is readable here too. A section rendered by a
+//! widget is judged by the reads of the widget's expanded body.
 //!
 //! A document with `actor: anonymous` is read by nobody signed in, so no grant decides what it
 //! shows, and `section_readable` does not apply to it.
@@ -25,7 +26,9 @@
 //! (`ActorSpec::may_invoke`). No pooling: another actor's grant does not admit it, and a command
 //! no actor is granted is granted to nobody, as a served surface refuses it to every caller. A
 //! model that serves nothing leaves enforcing the grant to its caller, and the page is that
-//! caller, so it is held the same way. An actor the model does not declare is `actor_in_model`;
+//! caller, so it is held the same way. From `ess/22` a view some actor's grant names is held the same
+//! way: a page whose actor's grant does not name it, and an `actor: anonymous` document, are
+//! reported for reading it (beyond10x/ess#286). An actor the model does not declare is `actor_in_model`;
 //! a page without `actor`, or an `UNMAPPED:` one, is not held to any actor's grants.
 //!
 //! Widget declarations are not checked here: `args.<param>` is unbound in them. Their views,
@@ -73,6 +76,12 @@ pub struct Model {
     /// invoke.
     actors: BTreeMap<String, BTreeSet<String>>,
     readable: BTreeSet<DomainHandle>,
+    /// The views some actor's `may:` names (ess/22, beyond10x/ess#286): readable by those actors,
+    /// whatever commands their context grants.
+    read_granted: BTreeSet<String>,
+    /// Every declared actor by qualified name, with the read-granted views its `may:` names
+    /// (beyond10x/ess#286).
+    actor_reads: BTreeMap<String, BTreeSet<String>>,
     /// The qualified names a document type can name: the model's types, entities and views.
     pub(crate) type_names: BTreeSet<String>,
     /// Every enum of the model by qualified name, with its variants as a choice offers them.
@@ -206,8 +215,24 @@ fn spec_files(path: &Path) -> Result<Vec<PathBuf>, CheckError> {
     Ok(files)
 }
 
+/// Every declared actor by qualified name, with the views its `may:` names (beyond10x/ess#286).
+fn actor_reads(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
+    ir.actors()
+        .iter()
+        .map(|(name, actor)| {
+            let reads = actor
+                .may_read
+                .iter()
+                .map(|view| view.name().to_string())
+                .collect();
+            (name.to_string(), reads)
+        })
+        .collect()
+}
+
 impl Model {
     fn index(ir: &EssIr) -> Self {
+        let actor_reads = actor_reads(ir);
         let readable = ir
             .actors()
             .values()
@@ -268,6 +293,8 @@ impl Model {
                 })
                 .collect(),
             readable,
+            read_granted: actor_reads.values().flatten().cloned().collect(),
+            actor_reads,
             type_names: ir
                 .types()
                 .keys()
@@ -365,9 +392,11 @@ impl Model {
     }
 
     pub(crate) fn check(&self, document: &Document, sink: &mut Sink) {
-        // `actor: anonymous`: nobody signs in, so no grant decides what is shown; ESS has no read
-        // grants, so every view is read without one and `section_readable` does not apply. An
-        // UNMAPPED actor is reported by `unmapped_reported` and decides nothing here either.
+        // `actor: anonymous`: nobody signs in, so no grant decides what is shown and
+        // `section_readable`'s approximation does not apply; but a view some actor's grant names
+        // (ess/22, beyond10x/ess#286) is refused to every request authenticated as no actor, so an
+        // anonymous read of one is reported under `section_readable`. An UNMAPPED actor is reported by
+        // `unmapped_reported` and decides nothing here either.
         let grants_apply = matches!(document.actor, None | Some(ActorSource::FromSession));
         let page_actors = self.page_actors(document, sink);
         for named in names(document) {
@@ -387,6 +416,10 @@ impl Model {
                             self.readable(sink, &section, &qualified, &view.domain);
                         }
                     }
+                    if document.actor == Some(ActorSource::Anonymous) {
+                        self.anonymous_read(sink, &named.at, &qualified);
+                    }
+                    self.page_actor_reads(document, &page_actors, sink, &named.at, &qualified);
                     if let Some(params) = bound_params(document, &named.node, bound) {
                         read_params(sink, &named.at, &qualified, view, params);
                     }
@@ -481,6 +514,59 @@ impl Model {
                  {granted}"
             ),
         );
+    }
+
+    /// A page whose actor reads a view some actor's grant names, which its own grant does not
+    /// (ess/22, beyond10x/ess#286): the served surface refuses that page's read, so it is reported
+    /// under `page_actor_grants`, as a command the actor is not granted is. A view no grant names
+    /// is open to every caller.
+    fn page_actor_reads(
+        &self,
+        document: &Document,
+        page_actors: &BTreeMap<&str, String>,
+        sink: &mut Sink,
+        at: &NodePath,
+        view: &str,
+    ) {
+        if !self.read_granted.contains(view) {
+            return;
+        }
+        let Some((page, _)) = page_of(document, at) else {
+            return;
+        };
+        let Some(actor) = page_actors.get(page) else {
+            return;
+        };
+        let Some(reads) = self.actor_reads.get(actor) else {
+            return;
+        };
+        if reads.contains(view) {
+            return;
+        }
+        sink.push(
+            "page_actor_grants",
+            at,
+            format!(
+                "page `{page}` reads `{view}`, which its actor `{actor}` is not granted: the \
+                 served surface answers that read with the standard refusal"
+            ),
+        );
+    }
+
+    /// An `actor: anonymous` document reading a view some actor's grant names (ess/22,
+    /// beyond10x/ess#286): the served surface refuses that view to every request authenticated
+    /// as no actor, so the read renders a refusal for every visitor.
+    fn anonymous_read(&self, sink: &mut Sink, at: &NodePath, view: &str) {
+        if self.read_granted.contains(view) {
+            sink.push(
+                "section_readable",
+                at,
+                format!(
+                    "`{view}` is read by an `actor: anonymous` document, and a grant names it: \
+                     the served surface refuses it to every request authenticated as no actor"
+                ),
+            );
+        }
     }
 
     /// The qualified name and row fields of the view `reads` names, when the model has it.
@@ -693,7 +779,7 @@ impl Model {
         qualified: &str,
         domain: &DomainHandle,
     ) {
-        if !self.readable.contains(domain) {
+        if !self.readable.contains(domain) && !self.read_granted.contains(qualified) {
             sink.push(
                 "section_readable",
                 section,

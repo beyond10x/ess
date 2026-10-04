@@ -58,7 +58,7 @@ pub(super) fn binary(
                     let _ = writeln!(aliases, "{short:?} => {full:?},");
                 }
             }
-            format!(", |request| {{ if mode != \"actor-header\" {{ return None; }} let header = request.headers.iter().find(|(key, _)| key.eq_ignore_ascii_case(\"Authorization\"))?.1.strip_prefix(\"Actor \")?; let actor = match header {{ {aliases} other => other }}; {types}::actor::Actor::ALL.iter().find(|candidate| candidate.name() == actor).map(|actor| {types}::actor::Caller {{ actor: *actor }}) }}")
+            format!(", |request| {{ if mode != \"actor-header\" {{ return None; }} let mut authorization = request.headers.iter().filter(|(key, _)| key.eq_ignore_ascii_case(\"Authorization\")); let header = authorization.next()?.1.strip_prefix(\"Actor \")?; if authorization.next().is_some() {{ return None; }} let actor = match header {{ {aliases} other => other }}; {types}::actor::Actor::ALL.iter().find(|candidate| candidate.name() == actor).map(|actor| {types}::actor::Caller {{ actor: *actor }}) }}")
         } else {
             String::new()
         };

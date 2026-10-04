@@ -505,7 +505,7 @@ fn refused_from_template(
     }
     steps.push(send);
     steps.push(ScenarioStep::ExpectNotGranted {
-        actor: sender.clone(),
+        actor: Some(sender.clone()),
         unpublished: not_emitted(ir, &[]),
     });
     // Of what followed, only the claims that something is unchanged, each with the query of its

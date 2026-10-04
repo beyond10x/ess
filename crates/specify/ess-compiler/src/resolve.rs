@@ -1465,7 +1465,7 @@ impl<'a> Resolver<'a> {
         let errors = self.errors();
         let commands = self.commands(&events, &errors, &entities);
         let views = self.views(&types, &entities);
-        let actors = self.actors(&commands);
+        let actors = self.actors(&commands, &views);
         let components = self.components(&commands, &events);
         let bindings = self.bindings(&events, &commands);
         let workloads = self.workloads(&components);
@@ -3660,10 +3660,12 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Every actor, with every grant resolved to the command it names.
+    /// Every actor, with every grant resolved to the command or, from ess/22, the view it names
+    /// (beyond10x/ess#286).
     fn actors(
         &mut self,
         commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        views: &BTreeMap<QualifiedName, ResolvedView>,
     ) -> BTreeMap<QualifiedName, ResolvedActor> {
         let declared: Vec<ActorSpec> = self.spec.actors().values().cloned().collect();
         let mut resolved = BTreeMap::new();
@@ -3673,6 +3675,7 @@ impl<'a> Resolver<'a> {
             let code = codes::ACTOR_UNDECLARED_REFERENCE;
             let domain = self.owner(code, &actor.name, "actor");
             let mut may = BTreeSet::new();
+            let mut may_read = BTreeSet::new();
             let mut complete = true;
             for granted in &actor.may {
                 match self.command_of(granted, commands) {
@@ -3680,6 +3683,14 @@ impl<'a> Resolver<'a> {
                         may.insert(handle);
                     }
                     Found::Unresolved => complete = false,
+                    Found::Missing if self.view_grant_admitted(granted) => {
+                        match self.view_grant_of(granted, views) {
+                            Found::Handle(handle) => {
+                                may_read.insert(handle);
+                            }
+                            Found::Unresolved | Found::Missing => complete = false,
+                        }
+                    }
                     Found::Missing => {
                         complete = false;
                         let available = self
@@ -3720,12 +3731,36 @@ impl<'a> Resolver<'a> {
                     name: actor.name,
                     domain,
                     may,
+                    may_read,
                     naming: actor.naming,
                     attributes,
                 },
             );
         }
         resolved
+    }
+
+    /// Whether `granted` names a view an actor's `may:` may grant: a declared view, in a
+    /// specification from ess/22 (beyond10x/ess#286). Below it `ess-domain` refused the grant, so
+    /// it stays the reference to an undeclared command it always was.
+    fn view_grant_admitted(&self, granted: &QualifiedName) -> bool {
+        self.spec.system().format.major() >= ess_domain::system::FormatVersion::V22.major()
+            && self.spec.views().contains_key(granted)
+    }
+
+    /// A read-granted view, as a handle (beyond10x/ess#286).
+    fn view_grant_of(
+        &self,
+        name: &QualifiedName,
+        views: &BTreeMap<QualifiedName, ResolvedView>,
+    ) -> Found<ViewHandle> {
+        if views.contains_key(name) {
+            Found::Handle(ViewHandle::new(name.clone()))
+        } else if self.spec.views().contains_key(name) {
+            Found::Unresolved
+        } else {
+            Found::Missing
+        }
     }
 
     // ---- components and topology ----------------------------------------------------------

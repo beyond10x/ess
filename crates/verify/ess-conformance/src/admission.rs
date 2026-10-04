@@ -504,6 +504,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || crate::delivery_context::needs_newer(tag, major)
         || crate::no_invocation::needs_newer(tag, major)
         || (major < crate::grant::ORDINARY && tag == "expect_not_granted")
+        || crate::view_grant::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
@@ -536,6 +537,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "execute_command_without_input" => (&["step", "command"], &["actor", "caller"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
         "expect_not_granted" => (&["step", "actor"], &["unpublished"]),
+        "read_as" => (&["step", "actor"], &[]),
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
         "expect_subject_unchanged" if major >= 10 => (&["step", "view"], &[]),
@@ -594,6 +596,14 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "context" if tag == "deliver_event" => {
                 field.object()?;
                 field.payload()?;
+            }
+            // A refusal naming no actor is suite/34 vocabulary (beyond10x/ess#286).
+            "actor"
+                if tag == "expect_not_granted"
+                    && field.raw.trim() == "null"
+                    && major < crate::view_grant::ORDINARY =>
+            {
+                return Err(field.error("UnsupportedVocabulary", crate::view_grant::REQUIRES));
             }
             "identity" => field.payload()?,
             "fields" | "payload" | "caller" => {
@@ -715,6 +725,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::caller_values::admit_format(suite)?;
     crate::bounded_retry::admit_format(suite)?;
     crate::grant::admit_format(suite)?;
+    crate::view_grant::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;

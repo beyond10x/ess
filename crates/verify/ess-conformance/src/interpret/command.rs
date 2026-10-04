@@ -25,6 +25,28 @@ impl Interpreted {
         Ok(())
     }
 
+    /// The standard refusal for a read of a read-granted view by an actor its grant does not name,
+    /// before anything is read (beyond10x/ess#286). A view no actor names is open to every reader.
+    pub(super) fn read_grant(
+        &self,
+        view: &crate::scenario::ViewRef,
+        reader: &ActorRef,
+    ) -> Result<(), TargetError> {
+        let model = self.model(format!("reading `{view}`"))?;
+        if !model.read_granted(view.name()) {
+            return Ok(());
+        }
+        let granted = model
+            .actors()
+            .get(reader.name())
+            .is_some_and(|declared| declared.may_read(view.name()));
+        if granted {
+            Ok(())
+        } else {
+            Err(TargetError::not_granted(Some(reader.to_string())))
+        }
+    }
+
     pub(super) fn complete_command(
         &self,
         command: &CommandRef,

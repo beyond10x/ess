@@ -194,6 +194,7 @@ mod related_guard;
 mod set_effects;
 mod singleton;
 mod subject_fact;
+mod view_grant;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
@@ -384,6 +385,22 @@ pub enum Note {
         /// The actors holding it that carry attributes, in name order.
         attributed: Vec<ActorRef>,
     },
+    /// Every declared actor's `may:` names a view, so no declared actor is refused a read of it,
+    /// and its `…/grant/read/denied` scenario reads it as no actor only (beyond10x/ess#286).
+    ReadGrantedToEveryActor {
+        /// The view.
+        view: ViewRef,
+    },
+    /// The model names a view in a grant and serves no component (`reached_by: network`), so no
+    /// `…/grant/read/…` scenario is owed (beyond10x/ess#286): where nothing is served, enforcing a
+    /// read grant is the caller's.
+    ReadGrantEnforcedByCaller,
+    /// A read-granted view declares parameters and no scenario reads it, so no read of it can be
+    /// bound and no `…/grant/read/…` scenario is synthesized for it (beyond10x/ess#286).
+    ReadGrantUnwitnessed {
+        /// The view.
+        view: ViewRef,
+    },
 }
 
 impl fmt::Display for Note {
@@ -489,11 +506,35 @@ impl fmt::Display for Note {
             | Self::GrantRotationSkipped { .. }
             | Self::GrantedToNoActor { .. }
             | Self::GrantEnforcedByCaller => self.grant(f),
+            Self::ReadGrantedToEveryActor { .. }
+            | Self::ReadGrantEnforcedByCaller
+            | Self::ReadGrantUnwitnessed { .. } => self.read_grant(f),
         }
     }
 }
 
 impl Note {
+    /// The notes about who may read a read-granted view on a served surface (beyond10x/ess#286).
+    fn read_grant(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ReadGrantedToEveryActor { view } => write!(
+                f,
+                "every declared actor may read `{view}`, so `{view}/grant/read/denied` reads it \
+                 as no actor only"
+            ),
+            Self::ReadGrantEnforcedByCaller => f.write_str(
+                "the specification names a view in a grant and serves no component, so enforcing \
+                 a read grant is the caller's and no `<view>/grant/read/…` scenario is owed",
+            ),
+            Self::ReadGrantUnwitnessed { view } => write!(
+                f,
+                "`{view}` declares parameters and no scenario reads it, so no read of it can be \
+                 bound and no `{view}/grant/read/…` scenario is synthesized"
+            ),
+            _ => Ok(()),
+        }
+    }
+
     /// The notes about who may send what on a served surface (beyond10x/ess#265), kept apart so
     /// each rendering stays beside its own variant.
     fn grant(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1962,6 +2003,8 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
         synthesize_plain(ir, Focus::Whole)
     };
     grant::cross_caller(ir, &mut synthesis.suite, &mut synthesis.notes);
+    // Who may read a read-granted view (beyond10x/ess#286), over the otherwise finished suite.
+    view_grant::read_grants(ir, &mut synthesis);
     // Read off the finished suite: no scenario expects the one row of a singleton entity created
     // twice in a run, whichever family built it (beyond10x/ess#287).
     singleton::withdraw_second_creations(ir, &mut synthesis);
@@ -2344,6 +2387,8 @@ pub(crate) fn needs_of(
             | ScenarioStep::ExpectNoEvents
             | ScenarioStep::ExpectOutcome { .. }
             | ScenarioStep::ExpectNotGranted { .. }
+            // Who later reads are sent as (beyond10x/ess#286): an actor, which no component realises.
+            | ScenarioStep::ReadAs { .. }
             | ScenarioStep::ExpectNoError
             | ScenarioStep::ExpectError { .. }
             | ScenarioStep::ExpectNoEvent { .. }
@@ -12789,6 +12834,9 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         ScenarioId::Aggregate { view } => view.clone().into(),
         ScenarioId::Grant { command } | ScenarioId::GrantAdmitted { command, .. } => {
             command.clone().into()
+        }
+        ScenarioId::ReadGrant { view } | ScenarioId::ReadGrantAdmitted { view, .. } => {
+            view.clone().into()
         }
         // Synthesis mints every id it refuses about and mints no authored one — an authored
         // scenario is a person's claim, compiled and refused by [`crate::authored`] in a vocabulary

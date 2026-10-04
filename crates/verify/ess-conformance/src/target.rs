@@ -224,6 +224,43 @@ pub trait ConformanceTarget {
     /// Reads a view, no fresher than the request demands (§14).
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError>;
 
+    /// Reads a view as `reader`, the actor a [`ReadAs`](crate::scenario::ScenarioStep::ReadAs)
+    /// step named (beyond10x/ess#286).
+    ///
+    /// A view some actor's `may:` names is read-granted: a target answers it only to an actor the
+    /// grant names, and answers anyone else [`TargetError::NotGranted`] naming `reader` before
+    /// reading anything. A view no actor names is open, read as [`query_view`](Self::query_view)
+    /// reads it. The runner calls this only after a `ReadAs` step; every other read stays
+    /// [`query_view`](Self::query_view).
+    ///
+    /// The default body reads as [`query_view`](Self::query_view) does, whoever `reader` is: a
+    /// target written before this method existed keeps compiling, and serves every read it is sent
+    /// — so a suite's `<view>/grant/read/denied` scenario fails it, which is the finding.
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &crate::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let _ = reader;
+        self.query_view(request)
+    }
+
+    /// Reads a view as no actor at all, an unauthenticated request, after a
+    /// [`ReadAs`](crate::scenario::ScenarioStep::ReadAs) step naming none (beyond10x/ess#286).
+    ///
+    /// A view some actor's `may:` names is refused to such a read with
+    /// [`TargetError::NotGranted`] naming no actor; a view no actor names is open. Not
+    /// [`query_view`](Self::query_view), which is the harness reading on its own authority to
+    /// check what a command did. The default body reads as `query_view` does, so a target that
+    /// cannot send a read unauthenticated serves it and fails the `<view>/grant/read/denied`
+    /// scenario that requires its refusal.
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.query_view(request)
+    }
+
     /// Reports the occurrences of an event this context has published (§13).
     ///
     /// The request carries a deadline. §15 puts the waiting here, in the only layer that knows what
@@ -450,6 +487,25 @@ pub trait ConformanceTarget {
             "this target cannot read a view a row at a time, so it cannot say whether a consumer \
              stopped the producer or merely stopped looking",
         ))
+    }
+
+    /// [`scan_view`](Self::scan_view), read as `reader`, the actor a
+    /// [`ReadAs`](crate::scenario::ScenarioStep::ReadAs) step named (beyond10x/ess#286), as
+    /// [`query_view_as`](Self::query_view_as) reads. The default body scans as
+    /// [`scan_view`](Self::scan_view) does, whoever `reader` is.
+    fn scan_view_as(
+        &self,
+        request: OrderedScanRequest,
+        reader: &crate::scenario::ActorRef,
+    ) -> Result<OrderedScan, TargetError> {
+        let _ = reader;
+        self.scan_view(request)
+    }
+
+    /// [`scan_view`](Self::scan_view), read as no actor, as
+    /// [`query_view_anonymous`](Self::query_view_anonymous) reads (beyond10x/ess#286).
+    fn scan_view_anonymous(&self, request: OrderedScanRequest) -> Result<OrderedScan, TargetError> {
+        self.scan_view(request)
     }
 
     /// Closes the scenario's execution context (§8).

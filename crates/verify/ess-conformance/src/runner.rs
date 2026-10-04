@@ -455,6 +455,15 @@ impl<C: Clock> Runner<C> {
                         break;
                     }
                 }
+                // A read the next step requires refused keeps its answer for that step
+                // (beyond10x/ess#286).
+                run.read_refusal_expected = matches!(
+                    (step, scenario.steps.get(index + 1)),
+                    (
+                        ScenarioStep::QueryView { .. },
+                        Some(ScenarioStep::ExpectNotGranted { .. })
+                    )
+                );
                 if self.step(step, &mut run, target) == Flow::Stop || run.disclosure_stopped {
                     break;
                 }
@@ -572,8 +581,15 @@ impl<C: Clock> Runner<C> {
             } => execute_command_without_input(command, (actor.as_ref(), caller), run, target),
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
             ScenarioStep::ExpectNotGranted { actor, unpublished } => {
+                if let Some((view, answer)) = run.read_answer.take() {
+                    return expect_read_not_granted(actor.as_ref(), &view, &answer, run);
+                }
                 let now = self.clock.now();
-                expect_not_granted(actor, unpublished, Deadline::at(now), run, target)
+                expect_not_granted(actor.as_ref(), unpublished, Deadline::at(now), run, target)
+            }
+            ScenarioStep::ReadAs { actor } => {
+                run.reader = Some(actor.clone().map_or(Reader::Anonymous, Reader::Actor));
+                Flow::Continue
             }
             ScenarioStep::ExpectNoError => expect_no_error(run),
             ScenarioStep::SnapshotSubject { view, subject } => {
@@ -742,7 +758,12 @@ impl<C: Clock> Runner<C> {
                 correlation: run.context.correlation.clone(),
                 deadline,
             };
-            let scan = match target.scan_view(request) {
+            let scan = match run.reader.as_ref() {
+                Some(Reader::Actor(reader)) => target.scan_view_as(request, reader),
+                Some(Reader::Anonymous) => target.scan_view_anonymous(request),
+                None => target.scan_view(request),
+            };
+            let scan = match scan {
                 Ok(scan) => scan,
                 Err(error) => {
                     run.record(target_failure(
@@ -913,12 +934,16 @@ impl<C: Clock> Runner<C> {
         let Ok(bound) = resolve_params(view, params, run) else {
             return Flow::Stop;
         };
+        let expected = std::mem::take(&mut run.read_refusal_expected);
         let consistency = match run.last_command.as_ref() {
             // Nothing has been written in this scenario, so there is no write to read no older
             // than. Synthesis never produces this, and a suite that does means it.
             None => QueryConsistency::Current,
             Some(executed) => {
                 let Some(token) = executed.result.consistency.clone() else {
+                    if expected {
+                        run.read_answer = Some((view.clone(), ReadAnswer::Unread));
+                    }
                     run.unreadable = Some((view.clone(), executed.command.clone()));
                     run.last_view = None;
                     return Flow::Continue;
@@ -934,14 +959,32 @@ impl<C: Clock> Runner<C> {
             correlation: run.context.correlation.clone(),
             deadline,
         };
-        match target.query_view(request) {
+        let answered = read(target, request, run.reader.as_ref());
+        match answered {
             Ok(result) => {
                 if !run.disclosure_rows(&result.rows) {
                     return Flow::Stop;
                 }
                 run.unreadable = None;
+                if expected {
+                    run.read_answer = Some((view.clone(), ReadAnswer::Served));
+                }
                 run.last_view = Some((view.clone(), result));
                 Flow::Continue
+            }
+            // The refusal the next step requires, kept for it (beyond10x/ess#286).
+            Err(TargetError::NotGranted { actor }) if expected => {
+                run.unreadable = None;
+                run.last_view = None;
+                run.read_answer = Some((view.clone(), ReadAnswer::Refused(NotGranted { actor })));
+                Flow::Continue
+            }
+            // A refused read the scenario needed answered: failed, as the Go and TypeScript runners
+            // report it (beyond10x/ess#286).
+            Err(TargetError::NotGranted { actor }) => {
+                let refused = read_refused(view, run.reader.as_ref(), actor.as_deref(), run);
+                run.record(refused);
+                Flow::Stop
             }
             Err(error) => {
                 run.record(target_failure(
@@ -1057,8 +1100,15 @@ impl<C: Clock> Runner<C> {
                 correlation: run.context.correlation.clone(),
                 deadline,
             };
-            let result = match target.query_view(request) {
+            let result = match read(target, request, run.reader.as_ref()) {
                 Ok(result) => result,
+                // A refused read is the target's answer, and not the one the scenario needed
+                // (beyond10x/ess#286): failed, as the Go and TypeScript runners report it.
+                Err(TargetError::NotGranted { actor }) => {
+                    let refused = read_refused(view, run.reader.as_ref(), actor.as_deref(), run);
+                    run.record(refused);
+                    return Flow::Stop;
+                }
                 Err(error) => {
                     run.record(target_failure(
                         &run.id,
@@ -1393,7 +1443,7 @@ fn not_granted_seen(named: Option<&str>) -> String {
 /// The refusal must name that actor: a surface that refused a command sent as the ungranted actor
 /// while naming another — or none — refused a request the scenario did not send.
 fn expect_not_granted<T: ConformanceTarget>(
-    actor: &ActorRef,
+    actor: Option<&ActorRef>,
     unpublished: &[EventRef],
     deadline: Deadline,
     run: &mut Run,
@@ -1403,10 +1453,14 @@ fn expect_not_granted<T: ConformanceTarget>(
         run.record(no_command(&run.id, "the refusal an ungranted actor gets"));
         return Flow::Stop;
     };
-    let about = format!("not granted to {actor}");
-    let expected = not_granted_seen(Some(&actor.to_string()));
+    let actor_name = actor.map(ToString::to_string);
+    let about = format!(
+        "not granted to {}",
+        actor_name.as_deref().unwrap_or("no actor")
+    );
+    let expected = not_granted_seen(actor_name.as_deref());
     match &executed.not_granted {
-        Some(NotGranted { actor: Some(named) }) if *named == actor.to_string() => {
+        Some(NotGranted { actor: named }) if *named == actor_name => {
             run.record(CheckResult::passed(CheckCode::Outcome, about));
             // Only a refused send is held to having set nothing in motion; one that ran has
             // already failed, and the Go and TypeScript runners stop there too.
@@ -1425,14 +1479,100 @@ fn expect_not_granted<T: ConformanceTarget>(
                     },
                 ),
             };
-            let diagnostic = Diagnostic::new(CheckCode::Outcome, run.id.clone())
-                .declared_by(actor.clone())
+            let diagnostic = declared(Diagnostic::new(CheckCode::Outcome, run.id.clone()), actor)
                 .executing(executed.quoted())
                 .expected(expected)
                 .observed(seen);
             run.record(CheckResult::failed(about, diagnostic));
         }
     }
+    Flow::Continue
+}
+
+/// `diagnostic`, declared by `actor` where the step names one.
+fn declared(diagnostic: Diagnostic, actor: Option<&ActorRef>) -> Diagnostic {
+    match actor {
+        Some(actor) => diagnostic.declared_by(actor.clone()),
+        None => diagnostic,
+    }
+}
+
+/// Who reads are sent as, after a `ReadAs` step (beyond10x/ess#286).
+enum Reader {
+    /// The declared actor the step named.
+    Actor(ActorRef),
+    /// No actor: an unauthenticated read.
+    Anonymous,
+}
+
+/// One read: as the actor a `ReadAs` step named, as no actor after one naming none, and as the
+/// harness before any (beyond10x/ess#286).
+fn read<T: ConformanceTarget>(
+    target: &T,
+    request: SemanticViewRequest,
+    reader: Option<&Reader>,
+) -> Result<SemanticViewResult, TargetError> {
+    match reader {
+        Some(Reader::Actor(reader)) => target.query_view_as(request, reader),
+        Some(Reader::Anonymous) => target.query_view_anonymous(request),
+        None => target.query_view(request),
+    }
+}
+
+/// A read the scenario needed answered, refused as not granted (beyond10x/ess#286): a failed
+/// check, as the Go and TypeScript runners report it, and not a target error.
+fn read_refused(
+    view: &ViewRef,
+    reader: Option<&Reader>,
+    named: Option<&str>,
+    run: &Run,
+) -> CheckResult {
+    let sent = match reader {
+        Some(Reader::Actor(actor)) => format!("`{actor}`"),
+        Some(Reader::Anonymous) => "no actor".to_owned(),
+        None => "the harness, as no actor".to_owned(),
+    };
+    let diagnostic = Diagnostic::new(CheckCode::Outcome, run.id.clone())
+        .declared_by(view.clone())
+        .expected(format!("`{view}` read as {sent} answers its rows"))
+        .observed(not_granted_seen(named));
+    CheckResult::failed(format!("reading {view}"), diagnostic)
+}
+
+/// Requires that the read just made of `view` was refused with the standard refusal for an actor
+/// no grant admits, naming the actor it was read as (beyond10x/ess#286).
+///
+/// A view that was served is the defect the scenario exists to catch: the target read a read-granted
+/// view to an actor its grant does not name. One that was not read at all is not a refusal either.
+fn expect_read_not_granted(
+    actor: Option<&ActorRef>,
+    view: &ViewRef,
+    answer: &ReadAnswer,
+    run: &mut Run,
+) -> Flow {
+    let actor_name = actor.map(ToString::to_string);
+    let about = format!(
+        "reading {view} not granted to {}",
+        actor_name.as_deref().unwrap_or("no actor")
+    );
+    if let ReadAnswer::Refused(NotGranted { actor: named }) = answer {
+        if *named == actor_name {
+            run.record(CheckResult::passed(CheckCode::Outcome, about));
+            return Flow::Continue;
+        }
+    }
+    let seen = match answer {
+        ReadAnswer::Refused(refused) => not_granted_seen(refused.actor.as_deref()),
+        ReadAnswer::Served => format!("`{view}` was served; the target checked no read grant"),
+        ReadAnswer::Unread => format!(
+            "`{view}` was not read: the command before it returned no consistency token, so the \
+             refusal of the read was not observed"
+        ),
+    };
+    let diagnostic = declared(Diagnostic::new(CheckCode::Outcome, run.id.clone()), actor)
+        .expected(not_granted_seen(actor_name.as_deref()))
+        .observed(seen);
+    run.record(CheckResult::failed(about, diagnostic));
     Flow::Continue
 }
 
@@ -2668,6 +2808,16 @@ struct Executed {
     not_granted: Option<NotGranted>,
 }
 
+/// The answer to a read the next step requires refused (beyond10x/ess#286).
+enum ReadAnswer {
+    /// The view was served: the target checked no read grant.
+    Served,
+    /// The read was refused with the standard refusal.
+    Refused(NotGranted),
+    /// The read was not made: the command before it returned no consistency token.
+    Unread,
+}
+
 /// The standard refusal a target answered for a command (beyond10x/ess#265).
 struct NotGranted {
     /// The actor it names; `None` where it names none.
@@ -2742,6 +2892,13 @@ struct Run {
     /// How many occurrences of each event a refused send must not add were in the target's log just
     /// before that send (beyond10x/ess#265).
     log_before: BTreeMap<EventRef, usize>,
+    /// The actor every read is sent as since the last `ReadAs` step; `None` before one
+    /// (beyond10x/ess#286).
+    reader: Option<Reader>,
+    /// Whether the read about to be made is one the next step requires refused (beyond10x/ess#286).
+    read_refusal_expected: bool,
+    /// The answer to that read, and the view it was of.
+    read_answer: Option<(ViewRef, ReadAnswer)>,
     checks: Vec<CheckResult>,
 }
 
@@ -2766,6 +2923,9 @@ impl Run {
             now: crate::now_offset::Resolved::default(),
             seen: Vec::new(),
             log_before: BTreeMap::new(),
+            reader: None,
+            read_refusal_expected: false,
+            read_answer: None,
             checks: Vec::new(),
         }
     }

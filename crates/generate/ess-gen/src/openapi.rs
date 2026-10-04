@@ -436,9 +436,18 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
              `{\"refused\": \"not granted\", \"actor\": <name or null>}`. A 403 a declared branch \
              answers carries `outcome` and the declared `error` instead, so a client tells the two \
              apart by the members present. A command no declared actor may invoke is refused to \
-             every caller. Views are not grant-checked: a grant names commands, and any caller may \
-             read what a view publishes.",
+             every caller.",
         );
+        text.push_str(if ir.grants_reads() {
+            // beyond10x/ess#286: a model naming a view in a grant states who may read it.
+            " A view an actor's grant names is read-checked the same way (`x-ess-may-read` on its \
+             operation): a request authenticated as no actor, or as one the grant does not name, \
+             is answered 403 with the same standard refusal before the view is read. A view no \
+             grant names is open, and any caller may read what it publishes."
+        } else {
+            " Views are not grant-checked: a grant names commands, and any caller may read what a \
+             view publishes."
+        });
     }
     if component.reached_by == Reach::Network {
         text.push_str(
@@ -499,7 +508,7 @@ fn paths(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, PathItem
             http::Served::Command(handle) => {
                 item.post = Some(operation(ir, handle, &grants, checked));
             }
-            http::Served::View(handle) => item.get = Some(query(ir, handle)),
+            http::Served::View(handle) => item.get = Some(query(ir, handle, checked)),
         }
     }
     out
@@ -526,6 +535,7 @@ fn operation(
         description: command.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: may_invoke(handle, grants),
+        may_read: Vec::new(),
         caller: http::caller_attributes(ir, command),
         accessors: ir
             .bindings()
@@ -565,6 +575,15 @@ const NOT_GRANTED_MEANING: &str = "the standard refusal for an actor no grant ad
                                    `actor`, never the `outcome` and `error` a declared branch \
                                    carries.";
 
+/// What the standard refusal means on a read-granted view (beyond10x/ess#286), for its `403`
+/// response's description.
+const NOT_GRANTED_READ_MEANING: &str = "the standard refusal for an actor no grant admits: the \
+                                        request was authenticated as no actor, or as one \
+                                        `x-ess-may-read` does not list. It is checked before the \
+                                        view is read, so no row was read, and the same request \
+                                        from a granted actor answers the rows. Its body is the \
+                                        one a command answers an ungranted actor.";
+
 /// The standard refusal's body: `{"refused": "not granted", "actor": …}`, the same for every
 /// command (beyond10x/ess#265).
 fn not_granted_schema() -> Value {
@@ -597,9 +616,30 @@ fn not_granted_schema() -> Value {
 /// cursor, no ordering and no filter parameter, because the model states none of them. The view's
 /// filter is declared in the specification and is a property of the projection, not of the
 /// request: a caller supplies the values it reads as `param.<name>`, never the predicate.
-fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
+fn query(ir: &EssIr, handle: &ViewHandle, checks_grants: bool) -> Operation {
     let view = ir.view(handle);
     let domain = ir.domain(&view.domain);
+    // A read-granted view on a surface that checks grants answers the standard refusal too
+    // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
+    let read_checked = checks_grants && ir.read_granted(&view.name);
+    let mut responses: BTreeMap<String, Response> = [(
+        READ.to_owned(),
+        Response {
+            description: view_description(ir, view),
+            content: Some(content(json!({"$ref": reference(&view_key(view))}))),
+        },
+    )]
+    .into_iter()
+    .collect();
+    if read_checked {
+        responses.insert(
+            FORBIDDEN.to_owned(),
+            Response {
+                description: format!("No declared outcome: {NOT_GRANTED_READ_MEANING}"),
+                content: Some(content(not_granted_schema())),
+            },
+        );
+    }
     Operation {
         id: view.name.to_string(),
         periodic: Vec::new(),
@@ -607,20 +647,19 @@ fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
         description: view.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: Vec::new(),
+        may_read: if read_checked {
+            ir.readers(&view.name)
+                .map(|actor| actor.name.to_string())
+                .collect()
+        } else {
+            Vec::new()
+        },
         caller: Vec::new(),
         accessors: Vec::new(),
         consistency: Some(view.consistency.as_str()),
         parameters: view_parameters(view),
         request_body: None,
-        responses: [(
-            READ.to_owned(),
-            Response {
-                description: view_description(ir, view),
-                content: Some(content(json!({"$ref": reference(&view_key(view))}))),
-            },
-        )]
-        .into_iter()
-        .collect(),
+        responses,
     }
 }
 
@@ -1633,6 +1672,11 @@ struct Operation {
     /// prove it. See the module documentation's "What this refuses to guess".
     #[serde(rename = "x-ess-may-invoke", skip_serializing_if = "Vec::is_empty")]
     may_invoke: Vec<String>,
+    /// The actors the specification permits to read this view (beyond10x/ess#286): the actors whose
+    /// `may:` names it. Absent on a command, and on a view no actor names, which is open to every
+    /// caller. An annotation, for the reason `x-ess-may-invoke` is one.
+    #[serde(rename = "x-ess-may-read", skip_serializing_if = "Vec::is_empty")]
+    may_read: Vec<String>,
     /// The attributes of the caller the command reads (ess/16, beyond10x/ess#168): what the
     /// request has to be authenticated as, which its body does not carry. An annotation, for the
     /// reason `x-ess-may-invoke` is one: the model states what the credential carries, not how a

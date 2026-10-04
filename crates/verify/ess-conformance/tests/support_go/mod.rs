@@ -300,6 +300,52 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
             |result| json!({"rows": nodes(&result.rows), "total": result.total}),
         )
     }
+    // A read sent as an actor (beyond10x/ess#286) records the actor beside the read, and only
+    // then, so a transcript of reads sent as no actor keeps its bytes.
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &ess_conformance::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
+        let described = json!({
+            "params": nodes(&request.params), "at_least": at_least, "actor": reader.to_string(),
+        });
+        let key = request.view.to_string();
+        let answer = self.inner.query_view_as(request, reader);
+        self.record(
+            "query_view",
+            key,
+            described,
+            answer,
+            |result| json!({"rows": nodes(&result.rows), "total": result.total}),
+        )
+    }
+    // A read sent as no actor at all (beyond10x/ess#286), recorded as one.
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
+        let described = json!({
+            "params": nodes(&request.params), "at_least": at_least, "anonymous": true,
+        });
+        let key = request.view.to_string();
+        let answer = self.inner.query_view_anonymous(request);
+        self.record(
+            "query_view",
+            key,
+            described,
+            answer,
+            |result| json!({"rows": nodes(&result.rows), "total": result.total}),
+        )
+    }
     fn observe_events(
         &self,
         request: EventObservationRequest,

@@ -151,7 +151,7 @@ fn denied(steps: &[crate::ScenarioStep], command: &CommandRef, actor: Option<&Ac
     let mut last = None;
     steps.iter().any(|step| {
         if let Some(invoked) = invocation(step) { last = Some(invoked); }
-        matches!(step, crate::ScenarioStep::ExpectNotGranted { actor: denied, .. } if denied == actor)
+        matches!(step, crate::ScenarioStep::ExpectNotGranted { actor: Some(denied), .. } if denied == actor)
             && last.is_some_and(|(invoked, caller)| invoked == command && caller.as_ref() == Some(actor))
     })
 }

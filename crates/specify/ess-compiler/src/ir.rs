@@ -1748,6 +1748,13 @@ pub struct ResolvedActor {
     /// A set, ordered by name: the same grant written twice means the same thing, and anything
     /// generated from it has to be diffable.
     pub may: BTreeSet<CommandHandle>,
+    /// The views it may read: the views its `may:` names, from ess/22 (beyond10x/ess#286).
+    ///
+    /// A view no actor names is open to every caller; one some actor names is read-granted, and
+    /// only the actors naming it may read it. Left out of the document when empty, so a model
+    /// that names no view keeps its bytes.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub may_read: BTreeSet<ViewHandle>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
     /// What its credential carries about it (ess/16, beyond10x/ess#168), each type resolved.
@@ -1761,6 +1768,11 @@ impl ResolvedActor {
     /// `true` when this actor may invoke `command`.
     pub fn may_invoke(&self, command: &CommandHandle) -> bool {
         self.may.contains(command)
+    }
+
+    /// `true` when this actor's `may:` names `view` (beyond10x/ess#286).
+    pub fn may_read(&self, view: &QualifiedName) -> bool {
+        self.may_read.iter().any(|granted| granted.name() == view)
     }
 }
 
@@ -2665,6 +2677,28 @@ impl EssIr {
             }
         }
         out
+    }
+
+    /// Whether some actor's `may:` names `view`, so that only those actors may read it
+    /// (beyond10x/ess#286). A view no actor names is open to every caller.
+    pub fn read_granted(&self, view: &QualifiedName) -> bool {
+        self.actors.values().any(|actor| actor.may_read(view))
+    }
+
+    /// The actors whose `may:` names `view`, in name order (beyond10x/ess#286).
+    pub fn readers<'a>(
+        &'a self,
+        view: &'a QualifiedName,
+    ) -> impl Iterator<Item = &'a ResolvedActor> + 'a {
+        self.actors
+            .values()
+            .filter(move |actor| actor.may_read(view))
+    }
+
+    /// Whether any actor's `may:` names a view (beyond10x/ess#286): what every projection asks
+    /// before it says anything about read grants, so a model naming none keeps its bytes.
+    pub fn grants_reads(&self) -> bool {
+        self.actors.values().any(|actor| !actor.may_read.is_empty())
     }
 
     /// The IR as canonical JSON, with a trailing newline.

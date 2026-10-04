@@ -151,6 +151,9 @@ fn helpers_file(
     };
     if http::checks_grants(ir) {
         helpers.push_str(&grant_helpers(ir));
+        if http::checks_read_grants(ir) {
+            helpers.push_str(&read_grant_helpers(ir));
+        }
     }
     if serves_params(ir, refusals) {
         emit.import("net/url");
@@ -236,6 +239,61 @@ fn grant_helpers(ir: &EssIr) -> String {
          \"not granted\", \"actor\": <name or null>}}.\nfunc admit(caller *Caller, command \
          string) *response {{\n\tadmitted, named := Admit(caller, command)\n\tif admitted \
          {{\n\t\treturn nil\n\t}}\n\tvar actor any\n\tif named != \"\" {{\n\t\tactor = \
+         string(named)\n\t}}\n\tanswer := rendered({status}, map[string]any{{\"refused\": \
+         {not_granted:?}, \"actor\": actor}})\n\treturn &answer\n}}\n",
+        status = http::FORBIDDEN,
+        not_granted = http::NOT_GRANTED,
+    );
+    out
+}
+
+/// Every declared actor's read grants — the views its `may:` names — and the check every
+/// read-granted view's route runs first (beyond10x/ess#286). Emitted only for a model naming a
+/// view in a grant, so a model naming none keeps its bytes; a view no actor names is open.
+fn read_grant_helpers(ir: &EssIr) -> String {
+    let width = ir
+        .actors()
+        .keys()
+        .map(|actor| actor_ident(actor).len())
+        .max()
+        .unwrap_or(0);
+    let mut out = String::from(
+        "\n// readGrants is every declared actor's read grants: the qualified names of the views \
+         its grant\n// names. A view no actor's grant names is open to every caller.\nvar \
+         readGrants = map[Actor][]string{\n",
+    );
+    for (actor, declared) in ir.actors() {
+        let views: Vec<String> = declared
+            .may_read
+            .iter()
+            .map(|view| format!("{:?}", view.name().to_string()))
+            .collect();
+        let key = format!("{}:", actor_ident(actor));
+        let _ = writeln!(
+            out,
+            "\t{key:<pad$} {{{}}},",
+            views.join(", "),
+            pad = width + 1
+        );
+    }
+    let _ = write!(
+        out,
+        "}}\n\n// MayRead reports whether the caller may read view, a view some actor's grant \
+         names, named by\n// its qualified name.\nfunc (c Caller) MayRead(view string) bool \
+         {{\n\tfor _, granted := range readGrants[c.Actor] {{\n\t\tif granted == view \
+         {{\n\t\t\treturn true\n\t\t}}\n\t}}\n\treturn false\n}}\n\n// AdmitRead reports whether \
+         caller may read view, a view some actor's grant names, checked\n// as its route checks \
+         it before the view is read. Where it may not, it also names the actor the\n// standard \
+         refusal names: the caller's declared actor, or \"\" where the request was\n// \
+         authenticated as no actor or as an actor the specification does not declare.\nfunc \
+         AdmitRead(caller *Caller, view string) (bool, Actor) {{\n\tif caller == nil \
+         {{\n\t\treturn false, \"\"\n\t}}\n\tif caller.MayRead(view) {{\n\t\treturn true, \
+         \"\"\n\t}}\n\tif _, declared := grants[caller.Actor]; !declared {{\n\t\treturn false, \
+         \"\"\n\t}}\n\treturn false, caller.Actor\n}}\n\n// admitRead is nil where caller may read \
+         view, and otherwise the standard refusal the\n// contract declares: {status}, \
+         {{\"refused\": \"not granted\", \"actor\": <name or null>}}.\nfunc admitRead(caller \
+         *Caller, view string) *response {{\n\tadmitted, named := AdmitRead(caller, view)\n\tif \
+         admitted {{\n\t\treturn nil\n\t}}\n\tvar actor any\n\tif named != \"\" {{\n\t\tactor = \
          string(named)\n\t}}\n\tanswer := rendered({status}, map[string]any{{\"refused\": \
          {not_granted:?}, \"actor\": actor}})\n\treturn &answer\n}}\n",
         status = http::FORBIDDEN,
@@ -1161,6 +1219,15 @@ fn dispatch(
                 }
                 Served::View(handle) => {
                     let view = ir.view(handle);
+                    // A read-granted view checks the reader first (beyond10x/ess#286).
+                    if http::read_checked(ir, &view.name) {
+                        let _ = writeln!(
+                            body,
+                            "\t\tif refused := admitRead(caller, {:?}); refused != nil {{\n\t\t\treturn \
+                             *refused\n\t\t}}",
+                            view.name.to_string()
+                        );
+                    }
                     let _ = writeln!(
                         body,
                         "\t\treturn serve{}(system{})",
