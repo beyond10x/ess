@@ -268,6 +268,151 @@ fn the_help_names_emit_and_collect() {
     assert!(help.contains("--collect <COLLECT>"), "{help}");
 }
 
+// ---- --component (beyond10x/ess#236) --------------------------------------------------------------
+
+/// Emits billing's `error-swap` mutants for `component` into `<scratch>/emitted`.
+fn emit_component(name: &str, component: &str) -> PathBuf {
+    let emitted = scratch(name).join("emitted");
+    let output = mutate(&[
+        "--path",
+        "examples/billing",
+        "--class",
+        "error-swap",
+        "--component",
+        component,
+        "--emit",
+        emitted.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}{}",
+        text(&output.stdout),
+        text(&output.stderr)
+    );
+    emitted
+}
+
+#[test]
+fn a_component_emission_collects_into_a_report_naming_the_component() {
+    let emitted = emit_component("component", "invoice-service");
+    let manifest = read_json(&emitted.join("manifest.json"));
+    assert_eq!(manifest["format"], "ess-mutation-manifest/4");
+    assert_eq!(manifest["component"], "invoice-service");
+    let baseline = read_json(&emitted.join("baseline/suite.json"));
+    assert_eq!(baseline["provenance"]["component"], "invoice-service");
+    // The project's runner is the built-in billing reference, run over each emitted suite.
+    let ran = dirs(&manifest);
+    assert!(!ran.is_empty(), "{manifest}");
+    for dir in std::iter::once("baseline").chain(ran.iter().map(String::as_str)) {
+        let suite = emitted.join(dir).join("suite.json");
+        let report = emitted.join(dir).join("report.json");
+        let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+            .current_dir(root())
+            .args([
+                "verify",
+                "conform",
+                "run",
+                "--path",
+                "examples/billing",
+                "--suite",
+                suite.to_str().unwrap(),
+                "--target",
+                "billing",
+                "--report-format",
+                "2",
+                "--report-out",
+                report.to_str().unwrap(),
+            ])
+            .output()
+            .expect("the `ess` binary runs");
+        assert!(report.is_file(), "{dir}: {}", text(&output.stderr));
+    }
+
+    let output = mutate(&[
+        "--collect",
+        emitted.to_str().unwrap(),
+        "--component",
+        "invoice-service",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}{}",
+        text(&output.stdout),
+        text(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["format"], "ess-mutation-report/4");
+    assert_eq!(report["component"], "invoice-service");
+
+    let other = mutate(&[
+        "--collect",
+        emitted.to_str().unwrap(),
+        "--component",
+        "email-service",
+    ]);
+    let stderr = text(&other.stderr);
+    assert_eq!(other.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("email-service") && stderr.contains("invoice-service"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn the_built_in_targets_refuse_component_by_name() {
+    let output = mutate(&[
+        "--path",
+        "examples/billing",
+        "--target",
+        "billing",
+        "--component",
+        "invoice-service",
+    ]);
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.contains("cannot be used with")
+            && stderr.contains("'--component <COMPONENT>'")
+            && stderr.contains("'--target <TARGET>'"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn an_undeclared_component_is_refused_and_nothing_is_written() {
+    let emitted = scratch("undeclared").join("emitted");
+    let output = mutate(&[
+        "--path",
+        "examples/billing",
+        "--class",
+        "error-swap",
+        "--component",
+        "ledger",
+        "--emit",
+        emitted.to_str().unwrap(),
+    ]);
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("ledger") && stderr.contains("invoice-service"),
+        "{stderr}"
+    );
+    assert!(!emitted.join("manifest.json").exists());
+}
+
+#[test]
+fn the_help_offers_the_new_classes_and_component() {
+    let output = mutate(&["--help"]);
+    let help = text(&output.stdout);
+    assert!(help.contains("--component <COMPONENT>"), "{help}");
+    assert!(help.contains("sets-drop"), "{help}");
+    assert!(help.contains("precedence-swap"), "{help}");
+}
+
 fn walk(directory: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut pending = vec![directory.to_path_buf()];

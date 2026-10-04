@@ -2131,7 +2131,7 @@ pub(crate) fn needs_of(
 }
 
 /// Whether a component is the handler of a command: it accepts it, or owns the domain it is in.
-fn handles(ir: &EssIr, component: &ResolvedComponent, command: &QualifiedName) -> bool {
+pub(crate) fn handles(ir: &EssIr, component: &ResolvedComponent, command: &QualifiedName) -> bool {
     component
         .accepts
         .iter()
@@ -2155,7 +2155,7 @@ fn emits(ir: &EssIr, component: &ResolvedComponent, event: &QualifiedName) -> bo
 }
 
 /// Whether a component projects a view: a view is declared inside a domain, so this is ownership.
-fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &QualifiedName) -> bool {
+pub(crate) fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &QualifiedName) -> bool {
     ir.views()
         .get(view)
         .is_some_and(|declared| component.owns.contains(&declared.domain))
@@ -7194,6 +7194,148 @@ fn freshened(
             }
             let mut next = input.clone();
             next.insert(field.clone(), moved);
+            if admitted(ir, command, &next)
+                && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+            {
+                input = next;
+                break;
+            }
+        }
+    }
+    unread_apart(ir, command, outcome, input, held, settled)
+}
+
+/// One `sets:` entry a `sets-drop` mutant of the mutation audit removed: `target: input.source`
+/// on `command`'s `outcome` (beyond10x/ess#212). Only [`with_dropped_write`] names one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DroppedWrite {
+    /// The command, by qualified name.
+    pub(crate) command: String,
+    /// The outcome.
+    pub(crate) outcome: String,
+    /// The entity field the dropped entry wrote.
+    pub(crate) target: String,
+    /// The input field it wrote it from.
+    pub(crate) source: String,
+}
+
+thread_local! {
+    /// The dropped write of the `sets-drop` mutant being synthesized on this thread, if any.
+    static DROPPED: std::cell::RefCell<Option<DroppedWrite>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `synthesize` with `dropped` as the write the model under synthesis no longer makes, and
+/// restores what was there before, also on a panic.
+///
+/// The mutant's model has lost the entry, so nothing in it says that its now unread input once fed
+/// that field. [`unread_apart`] reads this to send the input apart from what the row holds there,
+/// under whatever names, so a target that still writes it shows another row. Every synthesis
+/// outside the mutation audit runs with none, and its bytes are unchanged.
+pub(crate) fn with_dropped_write<R>(
+    dropped: Option<DroppedWrite>,
+    synthesize: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Option<DroppedWrite>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            DROPPED.with(|it| *it.borrow_mut() = previous);
+        }
+    }
+    let previous = DROPPED.with(|it| it.replace(dropped));
+    let _restore = Restore(previous);
+    synthesize()
+}
+
+/// The dropped write [`with_dropped_write`] names for `command`'s `outcome`, if any.
+fn dropped_writes(command: &str, outcome: &str) -> Vec<DroppedWrite> {
+    DROPPED.with(|it| {
+        it.borrow()
+            .iter()
+            .filter(|it| it.command == command && it.outcome == outcome)
+            .cloned()
+            .collect()
+    })
+}
+
+/// The branch's input, with every field no `sets:` entry reads moved apart from what the row holds
+/// in the field of the same name and identical declared type, where the branch leaves that field
+/// alone (beyond10x/ess#212), and from what it holds in the field a `sets-drop` mutant's dropped
+/// entry wrote from it ([`with_dropped_write`]).
+///
+/// Where the two coincide, the row reads the same whether or not the implementation also wrote the
+/// input there, so a target that did — or the model of a `sets-drop` mutant, which leaves a field
+/// the declared model writes as it was — passed. The input field naming the instance is never
+/// moved, a further witness gives the moved field its value as [`freshened`] takes one, and the
+/// branch is decided again by [`selects_branch`]; where nothing can move, the input stands.
+///
+/// Only the same-named field: it is the write an implementation makes by accident, and the one
+/// `title: input.title` drops. Every same-typed field would move inputs in suites whose rows only
+/// share a type with them, such as a payment's amount beside the invoice's total, and a choice of
+/// witness is all this is — it says nothing about which field an input belongs to.
+fn unread_apart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    held: Option<&StateName>,
+    settled: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, Node> {
+    let Some(subject) = &outcome.subject else {
+        return input;
+    };
+    let written: BTreeSet<&str> = outcome.sets.iter().map(|set| set.target.as_str()).collect();
+    let read: BTreeSet<&str> = outcome
+        .sets
+        .iter()
+        .filter_map(|set| match &set.value {
+            ResolvedPayloadValue::InputField { field, .. } => Some(field.as_str()),
+            _ => None,
+        })
+        .collect();
+    let identity = subject.instance.field().name.as_str();
+    let entity = ir.entity(&subject.entity);
+    let dropped = dropped_writes(&command.name.to_string(), &outcome.name.to_string());
+    for field in &command.input {
+        if read.contains(field.name.as_str()) || field.name == identity {
+            continue;
+        }
+        // The fields a `sets-drop` mutant's dropped entry wrote from this input, whatever its name.
+        let wrote: Vec<&str> = dropped
+            .iter()
+            .filter(|it| it.source == field.name)
+            .map(|it| it.target.as_str())
+            .collect();
+        let stored: Vec<Node> = entity
+            .fields
+            .iter()
+            .filter(|it| {
+                !written.contains(it.name.as_str())
+                    && ((it.name == field.name && it.type_ref == field.type_ref)
+                        || wrote.contains(&it.name.as_str()))
+            })
+            .filter_map(|it| held_value(ir, settled, &it.name, &it.type_ref))
+            .collect();
+        if !input
+            .get(&field.name)
+            .is_some_and(|value| stored.contains(value))
+        {
+            continue;
+        }
+        for nth in 1..=FRESH_WITNESSES {
+            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+                .ok()
+                .and_then(|inputs| inputs.into_iter().next())
+                .and_then(|mut further| further.remove(&field.name))
+            else {
+                continue;
+            };
+            if stored.contains(&moved) || equals_a_sibling(command, &input, &field.name, &moved) {
+                continue;
+            }
+            let mut next = input.clone();
+            next.insert(field.name.clone(), moved);
             if admitted(ir, command, &next)
                 && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
             {

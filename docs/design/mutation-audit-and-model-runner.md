@@ -39,12 +39,18 @@ direction can and cannot show.
 - **Kill condition.** The suite synthesized from mutant specification *S′* fails against the
   target that implements *S*. The mutant is killed only if the synthesized suite asks a question
   whose answer differs between *S* and *S′*, and the target gives the *S* answer.
-- **A weakening mutant can never be killed.** Dropping a `sets` entry says the field is the
-  implementation's to choose (`crates/specify/ess-compiler/src/ir.rs:813-823`: "Empty is the common
-  case and a statement, not a gap"). The mutant's suite then asserts nothing about the field, and a
-  correct target satisfies a weaker specification by definition. Such a mutant tells a reader
-  nothing, so no weakening class is generated. Each issue class is replaced by the altering version
-  of the same fault (see "The classes").
+- **A weakening mutant can never be killed.** Dropping a `sets` entry from a branch that creates
+  its row says the field is the implementation's to choose (`crates/specify/ess-compiler/src/ir.rs:813-823`:
+  "Empty is the common case and a statement, not a gap"). The mutant's suite then asserts nothing
+  about the field, and a correct target satisfies a weaker specification by definition. Such a
+  mutant tells a reader nothing, so no weakening class is generated. Each issue class is replaced
+  by the altering version of the same fault (see "The classes").
+- **Correction (beyond10x/ess#212): a dropped write on an existing row is altering, not
+  weakening.** This page said dropping any `sets` entry weakens the specification. On a branch
+  that updates or moves a row that already exists, it does not: the field keeps the value the row
+  held instead of taking the input, and the mutant's suite still reads the row back. It survived
+  only because synthesis sent the input equal to the stored value. `sets-drop` is therefore a class
+  on such branches, with the witness separation below; it stays out of creating branches.
 - **Authored scenarios cannot kill a specification mutant.** An authored scenario's expectations are
   written by its author, not derived from the model. `act` (`crates/verify/ess-conformance/src/
   authored.rs:1723-1797`) resolves the names a step uses, and then it pushes the author's own
@@ -161,6 +167,10 @@ order of id. Where the site rule says "first", it means byte order of the name.
 | wrong error | `error-swap` | outcome with an `error:` | `error` := the first declared error in the command's domain that is not the current one | the `ExpectError` step of the outcome or refusal scenario |
 | wrong event | `emit-drop` | (outcome, event in its `emits`) | remove the event from `emits`, and remove its `payload:` entry if there is one | the absent-event assertion (`synthesize.rs:1377-1383`), because the target still emits it |
 | wrong order | `order-flip` | (view, key in `order_by`) | flip that key's direction | the ordering scenario. Where synthesis refuses to witness ordering (`OrderUnwitnessed`, `ESS-SYNTH-014`, `synthesize.rs:376`, `:546`), the mutant survives, and that survival is the finding. |
+| move a guard boundary outward (beyond10x/ess#212) | `guard-boundary` (`<leaf>-outward`) | ordering leaf `x >= L` or `x <= L` (either side) with an integer literal | `L` := `L - 1` for `>=`, `L + 1` for `<=`: the step the strictness swap does not take | the boundary witness of the mutant's own accepting side, which the target refuses |
+| flip an equality (beyond10x/ess#212) | `guard-boundary` (`equality-<n>`) | `==` or `!=` leaf, in pre-order, unless it, or its negation, is the whole guard | `==`↔`!=` | the outcome scenario |
+| drop a write on an existing row (beyond10x/ess#212) | `sets-drop` | `sets` entry whose source is `input.<f>`, on an outcome that `updates:` or `moves:` and does not `creates:`, whose field is not `Optional<…>` | remove the entry | the view scenario reading the field: synthesis sends each input no `sets:` entry reads apart from what the row holds in the field of the same name and type, where the branch leaves it alone (`unread_apart`), so the row the target shows differs from the one the mutant keeps |
+| declaration-order precedence (beyond10x/ess#212) | `precedence-swap` | two adjacent outcomes, both guarded by a `when:` alone (no `when_subject`, `when_subject_state`, `when_related`, `when_state_changes`, `external`, `replays` or existence flag), both accepting or both refusing | swap them | the overlap point synthesis sends the first-declared branch (`overlap_inputs`, #217); where no input satisfies both guards (decided as `ESS-MUTATE-005` decides a dead guard), the mutant is `equivalent` and names the overlap as `unsatisfiable_guard` |
 
 Why the site rules are shaped this way:
 
@@ -309,6 +319,33 @@ ess verify conform mutate --collect DIR [--report-out FILE] [--format text|json|
   report the built-in audit writes (the implementation spelled `<name> <version>`, as a report
   names it). `crates/edge/ess-cli/tests/mutate_external.rs` holds the verb to fabricated reports:
   two red, two green, one missing, and a baseline that did not pass.
+- **`--component NAME`** (beyond10x/ess#236, `mutate::emit_for` and `mutate::collect_for`). A
+  repository that implements one component runs only that component's scenarios, so every suite
+  `--emit` writes is the one `synthesize --component` writes (`synthesize_for`), less the grant
+  scenarios no class alters. A mutant is in scope when the site it mutates belongs to the
+  component by the membership `synthesize --component` scopes with (`mutate::in_component`): an
+  outcome's guard, `sets`, error or events, and two outcomes' order, belong to the component that
+  handles the command (accepts it, or owns its domain); a view's ranking to the one that owns the
+  view; a transition to one that handles a command performing it. A survivor on the component's
+  own site is scored and counted, so the component gate fails on it. Every other mutant is that
+  other component's to answer: it is written to the manifest as `out_of_scope: true` with no suite
+  and is not compiled, and `--collect` lists it in the report's `out_of_scope` instead of scoring
+  or counting it. Two rules were not taken. The request's "site in an owned domain" misses a
+  command a component accepts from another domain. The first cut's "the component suite differs
+  from the baseline's" put a survivor on the component's own command out of scope, since a
+  survivor is exactly a mutant whose suite asks nothing new (adversary pass 1, F1). The manifest names the `component` (`ess-mutation-manifest/4`),
+  and so does the report (`ess-mutation-report/4`); `--collect --component NAME` refuses an
+  emission made for another component or for none. `--target` refuses `--component` by name: the
+  built-in targets implement whole systems. Refusals are the whole system's, as
+  `synthesize_for` leaves them. Checked by `crates/verify/ess-conformance/tests/mutation_component.rs`
+  over billing's two components.
+- **Manifest versions.** An emission declares the oldest manifest that can say it: `/4` where it
+  names a component or holds a `sets-drop` or `precedence-swap` mutant, `/3` otherwise, so a `/3`
+  reader still collects every emission that needs nothing newer. `--collect` reads `/4` to `/1`,
+  refuses a format it does not know by name before reading any field, and refuses a `/3` or older
+  manifest carrying a `component`, an `out_of_scope` mutant or a `/4` class, naming `/4`. A
+  released `/3` reader refuses a `/4` manifest that uses either: serde refuses the unknown class
+  or field, as it refused `unsatisfiable_guard` before `/3`.
 
 ### The mutants Part 1 must kill
 
@@ -320,7 +357,7 @@ These are defects the implementation could have, and each has a deciding test (l
 | counts a baseline failure as a kill | inflated kills against a wrong target | P1-4: a `Faulty` Billing baseline is refused with `ESS-MUTATE-001` |
 | treats a stillborn mutant as killed or survived | counts that misstate the suite | P1-6: a crafted `to: Nowhere` is `stillborn` with `ESS-MUTATE-002` |
 | collapses `Unsupported` into `Passed` | false survivors | P1-7: the classification table over synthetic `ExecutedRun`s |
-| ships a weakening class | survivors that are certain in advance | P1-8: `MutantClass::ALL` is exactly the nine names |
+| ships a weakening class | survivors that are certain in advance | P1-8: `MutantClass::ALL` is exactly the eleven names (nine until beyond10x/ess#212) |
 | exits 0 with no mutants | a green exit that ran nothing | P1-9: `--class order-flip` on a fixture without `order_by` gives `ESS-MUTATE-003`, exit 3 |
 | enumerates in hash order | reports that differ between runs | P1-5: two audits, identical bytes |
 
@@ -608,7 +645,7 @@ And defects the explorer itself could have:
 
 | Site | Part | Render or refuse |
 |---|---|---|
-| `ess verify conform mutate --help` (clap) | 1 | render: synopsis, the nine classes, the exit table |
+| `ess verify conform mutate --help` (clap) | 1 | render: synopsis, the eleven classes, the exit table |
 | `website/docs/reference/cli.md:303-314` (`ess verify` table) | 1 | render: one row for `mutate` |
 | `website/docs/guides/verify-conformance.md` | 1, 2 | render: a section "Audit the suite with specification mutants", which states that a survivor is not answered by an authored scenario, and a section "Explore random command sequences" covering the options, `assertExplored` and `allowExcluded` |
 | `website/docs/reference/formats.md` | 1, 2 | render: an `ess-mutation-report/1` row (writer only, no reader, no timestamp), the `ESS-MUTATE-*` codes, and on the compiled-IR row (`:109`) the emitted `ir.json` (compact, digest-bound) |
@@ -641,7 +678,8 @@ And defects the explorer itself could have:
 - **P1-7.** The verdict classification over synthetic scenario-status sets: all passed gives
   survived; any failed gives killed; none failed with any error or unsupported gives inconclusive.
 - **P1-8.** `MutantClass::ALL` is exactly `from-drop, transition-to, guard-boundary, sets-retarget,
-  guard-negate, guard-connective, error-swap, emit-drop, order-flip`.
+  guard-negate, guard-connective, error-swap, emit-drop, order-flip, sets-drop, precedence-swap`
+  (the last two since beyond10x/ess#212).
 - **P1-9.** A class with no site gives `ESS-MUTATE-003` and exit 3.
 - **P1-10.** A fixture `tests/fixtures/mutation-survivor.yaml`, where a `sets` field has a
   same-typed sibling and no view reads it, has exactly one survivor: that `sets-retarget`.
@@ -718,7 +756,9 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 | The dual direction: the unchanged suite, authored scenarios included, against a mutant implementation | needs an executing interpreter; `interpret.rs` derives nothing | a Rust reference model (Part 2's, ported), selected as a target |
 | Mutating subject guards, view filters, invariants, binding mappings, payload values and literal `sets`; "add a `from` state"; an empty `from` | each has its own synthesis family; the first cut is the issue's classes | one class each, with its killer family named |
 | An accepted-survivors file for equivalent mutants | needs an identity story for a mutant across edits of the specification | a stable site id that survives renumbering |
-| Coverage suites (`/5` and above) and `--component` for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
+| Coverage suites (`/5` and above) for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
+| `sets-drop` of a literal or other non-input source, and of an `Optional<…>` field | a row nothing wrote holds an `Optional` absent, and no synthesized row expectation states an absence; a literal's prior value is arranged apart only while the literal is written | a row expectation for an absent field; an arrangement apart from a literal the mutant no longer names |
+| `precedence-swap` of `when_subject:` branches, and of an accepting branch beside an external one | two overlapping `when_subject` branches have no stated order (`cross-record-and-stored-field-guards.md:614`); the external pair needs a provider-arranged overlap | a stated order; an overlap witness through `ConfigureExternalOutcome` |
 | Explorer inputs: `Decimal`, lists, `Optional`, unions, maps, timestamps, and types with invariants | exact-number generation and invariant-respecting draws | a generator per type, the same in TS and Go |
 | Explorer conditions: replays, `preserves`, `related` and `input_absent`. Subject fields, subject state, state changes, stored predicates and `existing_instance` are drawn since beyond10x/ess#221, decided from the model's rows; external outcomes are taken since beyond10x/ess#156: a seeded choice, arranged through `ConfigureExternalOutcome`, reported per branch in `external` | each needs arranged state | the arranging steps synthesis already has |
 | Views with `params` or `group_by`; binding-driven events; a persisted exploration report; an explorer in Rust against the reference targets | out of the issue's measured scope | — |

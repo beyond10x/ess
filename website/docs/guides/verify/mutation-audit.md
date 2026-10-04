@@ -20,11 +20,28 @@ $ ess verify conform mutate \
 
 It changes the **specification**, one edit per mutant, and runs each mutant's freshly synthesized
 suite against the unchanged reference target. A mutant is *killed* when its suite fails there. A
-*survivor* is a declared rule that no synthesized scenario pins down. The nine classes are
+*survivor* is a declared rule that no synthesized scenario pins down. The eleven classes are
 `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`,
-`guard-connective`, `error-swap`, `emit-drop` and `order-flip`; `--class` selects some of them and
-repeats. Every class *changes* the specification rather than weakening it: a mutant that only says
-less could never be killed by a correct target.
+`guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop` and `precedence-swap`;
+`--class` selects some of them and repeats. Every class *changes* the specification rather than
+weakening it: a mutant that only says less could never be killed by a correct target.
+
+- `guard-boundary` moves a boundary three ways: it swaps the strictness of `<`, `<=`, `>` or `>=`;
+  it moves the integer literal of a `>=` or `<=` one step outward (`amount >= 10` becomes
+  `amount >= 9`), the direction the swap does not take; and it flips `==`↔`!=` on a comparison that
+  is not the whole guard, which `guard-negate` already covers.
+- `sets-drop` removes one `sets: field: input.x` entry from a branch that updates or moves an
+  existing row. There the drop is not weaker: the field keeps what the row held instead of taking
+  the input. Synthesis sends an input no `sets:` entry reads apart from what the row holds in the
+  field of the same name and type, so a view reading the field tells the two apart. Where the
+  dropped input feeds a field of another name that already holds the same value, the mutant can
+  survive: that survivor is a weak witness, not a correct implementation. A creating branch is
+  left out, because there a dropped write only leaves the value to the implementation, and so is
+  an `Optional` field, which a row nothing wrote holds absent and no scenario asserts.
+- `precedence-swap` swaps two adjacent branches guarded by their input alone, both accepting or
+  both refusing, so the second answers where both guards hold. Where no input satisfies both
+  guards, the swap decides nothing and is *equivalent* (below). A branch the held state, a stored
+  or related row, a provider or a replay also decides is left out.
 
 A mutant the model refuses is *stillborn*, with the refusing check's own code. For example, a
 transition sent to another state is stillborn wherever its old arrival state has no other way in
@@ -92,8 +109,9 @@ run each <dir>/suite.json and write its conformance report to <dir>/report.json,
 - one directory per mutant, named by its id (`guard-negate/billing.invoice.PayInvoice/settled/`),
   holding its `suite.json`, the compact model `ir.json` a generated Go or TypeScript package
   embeds beside the suite, and `mutant.json` describing the change;
-- `manifest.json`, an `ess-mutation-manifest/3` listing all of them. A stillborn mutant has an
-  entry and no suite.
+- `manifest.json`, an `ess-mutation-manifest/3` listing all of them, or `/4` where it holds a
+  `sets-drop` or `precedence-swap` mutant or names a component. A stillborn mutant has an entry and
+  no suite.
 
 Run your runner over every `suite.json` and write its conformance report to `report.json` in the
 same directory. The generated Go and TypeScript packages write the report named by
@@ -115,6 +133,29 @@ than the baseline's is inconclusive, and the JSON report says why under `unscore
 scored only against the suite beside it. The baseline report must have passed, as with `--target`,
 and the exit statuses are the ones in the table above: this run exits 3, because nothing survived
 and one mutant is inconclusive.
+
+### Audit one component
+
+A repository that implements one component of a larger system runs only that component's
+scenarios. Scope the emission to it:
+
+```shell-session
+$ ess verify conform mutate --path examples/billing --emit target/mutants \
+    --component invoice-service
+```
+
+Every suite is then the component's, exactly as `ess verify conform synthesize --component
+invoice-service` writes it. A mutant is the component's when the site it mutates belongs to the
+component, by the same membership that command uses: an outcome's guard, `sets`, error or events
+and two outcomes' order belong to the component that handles the command (accepts it, or owns its
+domain), a view's ranking to the component that owns the view, and a transition to a component
+that handles a command performing it. Such a mutant is scored, and a survivor there is counted and
+exits 1 like any other. A mutant on another component's site is that component's to answer: it is
+marked `out_of_scope` in the `ess-mutation-manifest/4`, gets no suite, and `--collect` lists it in
+an `ess-mutation-report/4` naming the component instead of scoring it. Out-of-scope mutants do not
+change the exit status. `--collect --component NAME` refuses an emission made for another
+component or for the whole system, and `--target` takes no `--component`: the built-in targets
+implement whole systems.
 
 ## Read the output
 

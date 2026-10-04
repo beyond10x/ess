@@ -748,8 +748,17 @@ enum ConformCommand {
     /// `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on
     /// ESS-MUTATE-003). Run your runner over each suite and write its conformance report to
     /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
-    /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3;
+    /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3,
+    /// or /4 where it holds a sets-drop or precedence-swap mutant or names a component;
     /// `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+    ///
+    /// For a repository that implements one component, `--emit --component NAME` writes the
+    /// component's suites, as `synthesize --component` writes them, and marks out of scope every
+    /// mutant whose site belongs to another component (a command that component handles, a view
+    /// it owns, a transition its commands perform): it has no suite, and `--collect` lists it in an
+    /// ess-mutation-report/4 naming the component rather than scoring it. A survivor on the
+    /// component's own site is scored and counted. `--collect --component NAME` refuses an emission made for another component or for none.
+    /// `--target` takes no `--component`: the built-in targets implement whole systems.
     #[command(group(
         clap::ArgGroup::new("mode").required(true).args(["target", "emit", "collect"])
     ))]
@@ -769,7 +778,11 @@ enum ConformCommand {
         /// Score the `report.json` a runner wrote beside each suite of an emitted directory.
         #[arg(long, conflicts_with = "path")]
         collect: Option<PathBuf>,
-        /// Where to write the `ess-mutation-report/3` document.
+        /// With `--emit`, scope every suite to this declared component; with `--collect`, require
+        /// the emission to have been scoped to it.
+        #[arg(long, conflicts_with = "target")]
+        component: Option<String>,
+        /// Where to write the `ess-mutation-report/3` document (`/4` for a component).
         #[arg(long)]
         report_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -857,6 +870,8 @@ enum MutateClass {
     ErrorSwap,
     EmitDrop,
     OrderFlip,
+    SetsDrop,
+    PrecedenceSwap,
 }
 
 impl From<MutateClass> for ess_conformance::mutate::MutantClass {
@@ -871,6 +886,8 @@ impl From<MutateClass> for ess_conformance::mutate::MutantClass {
             MutateClass::ErrorSwap => Self::ErrorSwap,
             MutateClass::EmitDrop => Self::EmitDrop,
             MutateClass::OrderFlip => Self::OrderFlip,
+            MutateClass::SetsDrop => Self::SetsDrop,
+            MutateClass::PrecedenceSwap => Self::PrecedenceSwap,
         }
     }
 }
@@ -3847,19 +3864,21 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         class,
         emit,
         collect,
+        component,
         report_out,
         format,
     } = command
     else {
         unreachable!("dispatched on `Mutate` only");
     };
+    let component = component.as_deref();
     match (target, emit, collect) {
         (Some(target), None, None) => {
             conform_mutate(&path, target, &class, report_out.as_deref(), format)
         }
-        (None, Some(emit), None) => conform_mutate_emit(&path, &class, &emit, format),
+        (None, Some(emit), None) => conform_mutate_emit(&path, &class, &emit, component, format),
         (None, None, Some(collect)) => {
-            conform_mutate_collect(&collect, report_out.as_deref(), format)
+            conform_mutate_collect(&collect, component, report_out.as_deref(), format)
         }
         _ => unreachable!("clap requires exactly one of --target, --emit and --collect"),
     }
@@ -3922,6 +3941,7 @@ fn conform_mutate_emit(
     path: &Path,
     classes: &[MutateClass],
     dir: &Path,
+    component: Option<&str>,
     format: Format,
 ) -> Result<ExitCode> {
     use ess_conformance::mutate;
@@ -3937,14 +3957,15 @@ fn conform_mutate_emit(
             dir.display()
         );
     }
-    let emission = match mutate::emit(&raw.parsed, &raw.texts, &mutant_classes(classes)) {
-        Ok(emission) => emission,
-        Err(refusal) if refusal.is_inconclusive() => {
-            eprintln!("{refusal}");
-            return Ok(ExitCode::from(3));
-        }
-        Err(refusal) => return Err(refusal.into()),
-    };
+    let emission =
+        match mutate::emit_for(&raw.parsed, &raw.texts, &mutant_classes(classes), component) {
+            Ok(emission) => emission,
+            Err(refusal) if refusal.is_inconclusive() => {
+                eprintln!("{refusal}");
+                return Ok(ExitCode::from(3));
+            }
+            Err(refusal) => return Err(refusal.into()),
+        };
     for (relative, contents) in &emission.files {
         let file = dir.join(relative);
         if let Some(parent) = file.parent() {
@@ -3980,10 +4001,21 @@ fn conform_mutate_emit(
                 .iter()
                 .filter(|mutant| mutant.unsatisfiable_guard.is_some())
                 .count();
+            let scope = match &manifest.component {
+                Some(component) => format!(
+                    " for component `{component}`, {} out of scope, no suite;",
+                    manifest
+                        .mutants
+                        .iter()
+                        .filter(|mutant| mutant.out_of_scope)
+                        .count()
+                ),
+                None => String::new(),
+            };
             println!(
-                "emitted {} mutant(s) of {} ({} stillborn, no suite; {} with synthesis refusals \
-                 the baseline does not have; {} with a guard no input satisfies) and the baseline \
-                 to {}",
+                "emitted {} mutant(s) of {}{scope} ({} stillborn, no suite; {} with synthesis \
+                 refusals the baseline does not have; {} with a guard no input satisfies) and the \
+                 baseline to {}",
                 manifest.mutants.len(),
                 manifest.specification,
                 stillborn,
@@ -4008,11 +4040,14 @@ fn conform_mutate_emit(
 /// `mutate --collect`: the reports a runner wrote beside an emission's suites, scored.
 fn conform_mutate_collect(
     dir: &Path,
+    component: Option<&str>,
     report_out: Option<&Path>,
     format: Format,
 ) -> Result<ExitCode> {
-    let collected =
-        ess_conformance::mutate::collect(|relative| fs::read_to_string(dir.join(relative)).ok());
+    let collected = ess_conformance::mutate::collect_for(
+        |relative| fs::read_to_string(dir.join(relative)).ok(),
+        component,
+    );
     finish_mutation_audit(collected, report_out, format)
 }
 

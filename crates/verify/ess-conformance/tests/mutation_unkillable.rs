@@ -244,7 +244,16 @@ fn an_ordering_the_domain_does_not_decide_keeps_its_scoring() {
     let spec = ordered();
     let collected = collect(&emitted(&spec, &[MutantClass::GuardBoundary], true).1);
     assert_ne!(collected.mutants.len(), 0);
-    for entry in &collected.mutants {
+    // The strictness swaps, which leave the guard dead. The outward literals (`amount >= 4`,
+    // `amount <= 6`, beyond10x/ess#212) leave it satisfiable, so against these stand-in reports
+    // they survive, which is not what this test is about.
+    let swaps: Vec<_> = collected
+        .mutants
+        .iter()
+        .filter(|entry| !entry.id.ends_with("-outward"))
+        .collect();
+    assert_eq!(swaps.len(), 2, "{:#?}", collected.mutants);
+    for entry in swaps {
         assert_eq!(entry.unsatisfiable_guard, None, "{entry:?}");
         assert_ne!(entry.verdict, Verdict::Equivalent, "{entry:?}");
         assert_ne!(entry.verdict, Verdict::Survived, "{entry:?}");

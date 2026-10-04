@@ -473,6 +473,14 @@ transition only such outcomes perform, is `unwitnessed` rather than `survived`. 
 each mutant's `unsatisfiable_guard`. `--collect` still reads `/2` and `/1` manifests, and refuses
 either when it carries `unsatisfiable_guard`.
 
+`ess-mutation-manifest/4` and `ess-mutation-report/4` are unreleased. The manifest adds the
+`sets-drop` and `precedence-swap` classes, the `component` an emission was scoped to, and each
+mutant's `out_of_scope`; an emission declares `/4` only where it holds one of these, and `/3`
+otherwise, so a `/3` reader still collects it. The report adds `component` and the
+`out_of_scope` list, and is written only for an emission scoped to a component; every other report
+stays `/3`. `--collect` still reads `/3`, `/2` and `/1`, and refuses any of them that carries a
+`/4` class, a `component` or an `out_of_scope` mutant, naming `/4`.
+
 ## Every other family
 
 Each family below is read by a build that admits only the versions listed, and refuses a document
