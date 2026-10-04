@@ -14,6 +14,12 @@
 //! the resolution `{related: {via, field}}` uses). A lookup by any other field is a query — rule 2 of
 //! `docs/design/cross-record-and-stored-field-guards.md` — and stays out of scope.
 //!
+//! **Optional reference (ess/22, beyond10x/ess#304).** The input may be `Optional<…>` of the
+//! identity; the guard is then checked only when present. An absent reference reads no row and
+//! selects no `when_related` branch — it is not a missing row — so the branches that read no
+//! related row (a `when:` over the input, or the default) must answer it exactly once. A present
+//! reference is read as a required one is. Below ess/22 the Optional form is refused naming ess/22.
+//!
 //! **Precedence.** A missing row is answered by the `exists: false` branch before any other branch —
 //! a predicate branch (its predicate is `Unknown`), an input-guarded one, the default — so an
 //! `exists: false` branch carries no `when:`, and an accepting `when:` branch overlapping it is legal.
@@ -29,7 +35,7 @@
 //! `when_subject_state`, `when_state_changes`) or whether it exists (`unknown_instance`), nor with
 //! `input_absent`. `existing_instance:` sits beside it in one command (never on one branch), with
 //! the precedence above.
-use super::{related_value, CommandSpec, OutcomeCondition};
+use super::{related_value, CommandSpec, OutcomeCondition, RelatedVia};
 use crate::{
     entity::EntitySpec, expression::DomainEnvironment, spec::Specification, types::TypeRef,
     types::TypeRegistry,
@@ -82,7 +88,7 @@ impl RawRelatedGuard {
         let OutcomeCondition::Related { via, test, .. } = condition else {
             return None;
         };
-        let via = format!("{}{via}", super::PayloadSource::INPUT_PREFIX);
+        let via = via.to_string();
         Some(match test {
             RelatedTest::Absent => Self {
                 via,
@@ -101,7 +107,7 @@ impl RawRelatedGuard {
     pub(super) fn read(
         self,
         name: &super::OutcomeName,
-    ) -> Result<(String, RelatedTest), ValidationErrors> {
+    ) -> Result<(RelatedVia, RelatedTest), ValidationErrors> {
         let at = |code: ValidationCode, message: String, hint: &str| {
             ValidationErrors::from(
                 ValidationError::new(code, format!("outcomes.{name}.{KEY}"), message)
@@ -156,7 +162,7 @@ impl RawRelatedGuard {
                 ))
             }
         };
-        Ok((field.to_owned(), test))
+        Ok((RelatedVia::Input(field.to_owned()), test))
     }
 }
 
@@ -225,7 +231,7 @@ pub fn via(command: &CommandSpec) -> Option<&str> {
         .outcomes
         .iter()
         .find_map(|outcome| match &outcome.condition {
-            OutcomeCondition::Related { via, .. } => Some(via.as_str()),
+            OutcomeCondition::Related { via, .. } => Some(via.field()),
             _ => None,
         })
 }
@@ -250,11 +256,29 @@ pub fn related_entity<'a>(
     });
     related_value::referenced_entity(
         spec,
-        &read.type_ref,
+        identity_type(&read.type_ref),
         carrier
             .as_ref()
             .map(|(entity, field)| (*entity, field.as_str())),
     )
+}
+
+/// The identity type an input `via` carries: its declared type, with one `Optional` wrapper removed
+/// (ess/22, beyond10x/ess#304). An absent Optional reference names no row and is read as no lookup;
+/// a present one names the row of the entity whose identity is the wrapped type.
+fn identity_type(declared: &TypeRef) -> &TypeRef {
+    match declared {
+        TypeRef::Optional(inner) => inner,
+        other => other,
+    }
+}
+
+/// Whether the input `via` names is Optional, so that an absent reference reads no row and selects
+/// no `when_related` branch (ess/22, beyond10x/ess#304).
+fn via_is_optional(command: &CommandSpec, via: &str) -> bool {
+    command
+        .input_field(via)
+        .is_some_and(|read| read.type_ref.is_optional())
 }
 
 /// The conditions that read the addressed subject or its existence, which a related guard does not
@@ -359,13 +383,13 @@ fn one_related_row(command: &CommandSpec) -> ValidationErrors {
         let OutcomeCondition::Related { via, test, .. } = &outcome.condition else {
             continue;
         };
-        if via != first {
+        if via.field() != first {
             errors.push(
                 ValidationError::at(
                     site(command, outcome),
                     ValidationCode::ConflictingDeclaration,
                     format!(
-                        "outcome `{}` reads the row `input.{via}` names, and a sibling reads the one \
+                        "outcome `{}` reads the row `{via}` names, and a sibling reads the one \
                          `input.{first}` names; a command reads one related row",
                         outcome.name
                     ),
@@ -442,6 +466,13 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             }
             continue;
         }
+        // The Optional form's own format gate answers before every other refusal of the command,
+        // the `wrong_state` composition below included, so a document below ess/22 is told the
+        // format that admits it (beyond10x/ess#304 adversary pass 1).
+        if let Some(refusal) = optional_below_ess_22(spec, command) {
+            errors.push(refusal);
+            continue;
+        }
         let has_wrong_state = command
             .outcomes
             .iter()
@@ -511,10 +542,41 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 types,
                 orders_wrong_state,
             ));
+            if via_is_optional(command, via) {
+                checked.extend(validate_absent(command, via, types));
+            }
         }
         errors.extend(checked);
     }
     errors
+}
+
+/// The refusal of an Optional reference below ess/22 (beyond10x/ess#304), at the first related
+/// branch, where the command reads its related row through an Optional input; `None` otherwise.
+fn optional_below_ess_22(spec: &Specification, command: &CommandSpec) -> Option<ValidationError> {
+    if spec.system().format.major() >= crate::system::FormatVersion::V22.major() {
+        return None;
+    }
+    let via = via(command)?;
+    let read = command
+        .input_field(via)
+        .filter(|read| read.type_ref.is_optional())?;
+    let outcome = command
+        .outcomes
+        .iter()
+        .find(|outcome| matches!(outcome.condition, OutcomeCondition::Related { .. }))?;
+    Some(
+        ValidationError::at(
+            site(command, outcome),
+            ValidationCode::UnsupportedFormatVersion,
+            format!(
+                "`input.{via}` is `{}`; a `when_related` guard that reads through an Optional \
+                 input, checked only when present, requires specification format ess/22",
+                read.type_ref
+            ),
+        )
+        .with_hint("declare `format: ess/22`, or make the input required"),
+    )
 }
 
 /// The entity `via` names, or the refusal that says why it names none.
@@ -543,7 +605,10 @@ fn entity_or_refusal<'a>(
         );
         return None;
     };
-    if !matches!(read.type_ref, TypeRef::Primitive(_) | TypeRef::Named(_)) {
+    if !matches!(
+        identity_type(&read.type_ref),
+        TypeRef::Primitive(_) | TypeRef::Named(_)
+    ) {
         errors.push(
             ValidationError::at(
                 at,
@@ -553,7 +618,10 @@ fn entity_or_refusal<'a>(
                     read.type_ref
                 ),
             )
-            .with_hint("read a required input typed as the other entity's identity"),
+            .with_hint(
+                "read an input typed as the other entity's identity, or as `Optional<…>` of it \
+                 (ess/22)",
+            ),
         );
         return None;
     }
@@ -779,6 +847,100 @@ fn validate_partition(
                     .join(", ")
             ),
         ));
+    }
+    errors
+}
+
+/// The case an absent Optional `via` leaves (ess/22, beyond10x/ess#304): no row is read and no
+/// `when_related` branch is selected, so exactly one of the branches that read no related row —
+/// an input-guarded `when:` branch or the default — must answer every admitted input. Held state
+/// (`wrong_state:`) and the command's own identity (`existing_instance:`) answer before it, as they
+/// do for a present reference.
+fn validate_absent(command: &CommandSpec, via: &str, types: &TypeRegistry) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let guarded: Vec<&super::Outcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| matches!(outcome.condition, OutcomeCondition::When(_)))
+        .collect();
+    let default = command.default_outcome();
+    let uncovered = |detail: String| {
+        ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::NonExhaustiveBranches,
+            format!(
+                "`{}` reads the related row through the Optional `input.{via}`; when it is absent \
+                 no row is read and no `when_related` branch is selected, and {detail}",
+                command.name
+            ),
+        )
+        .with_hint(format!(
+            "declare the branch taken when `input.{via}` is absent: a default, or `when:` \
+             branches over the input that cover it"
+        ))
+    };
+    if guarded.is_empty() {
+        if default.is_none() {
+            errors.push(uncovered("no other branch answers".to_owned()));
+        }
+        return errors;
+    }
+    let guards: Vec<_> = guarded
+        .iter()
+        .map(|outcome| super::finite::FieldGuard {
+            fields: None,
+            input: outcome.condition.predicate(),
+        })
+        .collect();
+    let analyze = if default.is_some() {
+        super::finite::analyze_enum_fields
+    } else {
+        super::finite::analyze_with_fields
+    };
+    let Some(cases) = analyze(
+        &DomainEnvironment::new(types, &[]),
+        &DomainEnvironment::new(types, &command.input),
+        &guards,
+    ) else {
+        if default.is_none() {
+            errors.push(uncovered(
+                "input coverage is open, unsupported, or exceeds 64 assignments without a default"
+                    .to_owned(),
+            ));
+        }
+        return errors;
+    };
+    for case in cases {
+        let selected = if case.selected.is_empty() {
+            usize::from(default.is_some())
+        } else {
+            case.selected.len()
+        };
+        if selected == 1 {
+            continue;
+        }
+        let input = case
+            .input
+            .iter()
+            .map(|(path, value)| format!("{path} = {value}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if selected == 0 {
+            errors.push(uncovered(format!("input [{input}] selects no branch")));
+        } else {
+            errors.push(ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "with `input.{via}` absent, input [{input}] selects {selected} branches: {}",
+                    case.selected
+                        .iter()
+                        .map(|index| guarded[*index].name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
     }
     errors
 }

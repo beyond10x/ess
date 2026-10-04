@@ -2842,8 +2842,8 @@ impl<'a> Resolver<'a> {
         let OutcomeCondition::Related { via, .. } = &outcome.condition else {
             return None;
         };
-        let read = input?.iter().find(|field| &field.name == via)?;
-        match ess_domain::command::related_guard::related_entity(self.spec, command, via) {
+        let read = input?.iter().find(|field| field.name == via.field())?;
+        match ess_domain::command::related_guard::related_entity(self.spec, command, via.field()) {
             Referenced::Entity(entity) => Some((
                 ResolvedRelatedVia::Input {
                     field: read.name.clone(),

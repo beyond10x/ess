@@ -10,7 +10,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch ([`related_absent`]), then the first declared input-guarded refusal whose `when:` holds ([`refused_by_input`]); addressed-row existence and held state; for the ess/22 `wrong_state` composition, the present-related predicate refusal; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
+//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch ([`related_absent`]; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds ([`refused_by_input`]); addressed-row existence and held state; for the ess/22 `wrong_state` composition, the present-related predicate refusal; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch; for an identity nobody holds, its `unknown_instance:` branch, else its one declared not-found refusal, else `wrong_state:` |
@@ -914,8 +914,9 @@ fn selected_subject_refusal(
 /// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
 /// order"). `None` on a command with no related guard, or where the row is stored.
 ///
-/// `existing_instance:` is resolved before this helper on such a command. A related row named
-/// through a stored field of the subject, or through an input the request does not carry,
+/// `existing_instance:` is resolved before this helper on such a command. An absent Optional
+/// reference (ess/22, beyond10x/ess#304) answers `None` without a lookup. A related row named
+/// through a stored field of the subject, or through a required input the request does not carry,
 /// is declined too: nothing here reads it.
 fn related_absent(
     ir: &EssIr,
@@ -937,12 +938,17 @@ fn related_absent(
     let ResolvedCondition::Related { via, entity, .. } = &first.condition else {
         unreachable!("filtered to related guards above")
     };
-    let ResolvedRelatedVia::Input { field, .. } = via else {
+    let ResolvedRelatedVia::Input { field, type_ref } = via else {
         return gap(format!(
             "the guard over a row named by a stored field of `{}`",
             branch(spec, first)
         ));
     };
+    // An absent Optional reference (ess/22, beyond10x/ess#304) reads no row and selects no
+    // related branch: it is not a missing row, and selection carries on without it.
+    if related::absent_optional(type_ref, input.get(field)) {
+        return Ok(None);
+    }
     let Some(identity) = input.get(field) else {
         return gap(format!(
             "the guard over a related row of `{}` with no identity in `{field}`",

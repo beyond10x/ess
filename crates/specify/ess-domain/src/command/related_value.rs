@@ -38,6 +38,13 @@ impl RelatedVia {
     }
 }
 
+impl PartialEq<str> for RelatedVia {
+    /// Compares the field read, without its prefix.
+    fn eq(&self, field: &str) -> bool {
+        self.field() == field
+    }
+}
+
 impl fmt::Display for RelatedVia {
     /// As the document wrote it.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -855,3 +855,164 @@ fn issue_282_forced_and_withheld_externals_keep_their_own_subject_authority() {
         "demo.release.PublishRelease/provider-declined"
     );
 }
+
+// ---- Optional input via for a related row (beyond10x/ess#304, `ess/22`) ---------------------
+
+const ISSUE_304: &str = include_str!("fixtures/related-guard-optional.yaml");
+
+fn issue_304_model() -> EssIr {
+    let raw = RawSpecFile::parse(ISSUE_304).unwrap_or_else(|error| panic!("{error}\n{ISSUE_304}"));
+    let specification = Specification::assemble([(Source::new("issue-304.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("issue #304 model validates:\n{errors}\n{ISSUE_304}"));
+    compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("issue #304 model resolves:\n{diagnostics}"))
+}
+
+fn issue_304_step(
+    ir: &EssIr,
+    store: &Store,
+    command: &str,
+    input: &BTreeMap<String, Node>,
+) -> ess_conformance::interpret::execute::Step {
+    let mut steps = execute(ir, store, &name(command), input, &Externals::Withheld)
+        .unwrap_or_else(|error| panic!("{command} is interpreted: {error}"));
+    assert_eq!(steps.len(), 1, "{command} has one selected outcome");
+    steps.remove(0)
+}
+
+fn issue_304_outcome(step: &ess_conformance::interpret::execute::Step) -> String {
+    step.outcome
+        .as_ref()
+        .map_or_else(|| "none".to_owned(), ToString::to_string)
+}
+
+fn issue_304_created(step: &ess_conformance::interpret::execute::Step, event: &str) -> String {
+    step.events
+        .iter()
+        .find(|published| published.event.to_string() == event)
+        .and_then(|published| published.payload.values().find_map(Node::as_text))
+        .unwrap_or_else(|| panic!("{event} carries the created identity: {:?}", step.events))
+        .to_owned()
+}
+
+fn issue_304_create(ir: &EssIr, store: &Store, command: &str, event: &str) -> (Store, String) {
+    let step = issue_304_step(ir, store, command, &BTreeMap::new());
+    let identity = issue_304_created(&step, event);
+    (step.next, identity)
+}
+
+fn issue_304_publish_input(release_id: &str, candidate: Option<&str>) -> BTreeMap<String, Node> {
+    let mut input = BTreeMap::from([("release_id".to_owned(), Node::Text(release_id.to_owned()))]);
+    if let Some(candidate) = candidate {
+        input.insert("candidate".to_owned(), Node::Text(candidate.to_owned()));
+    }
+    input
+}
+
+#[test]
+fn issue_304_an_absent_optional_reference_reads_no_related_row() {
+    let ir = issue_304_model();
+    let (store, release) = issue_304_create(
+        &ir,
+        &Store::default(),
+        "demo.release.DraftRelease",
+        "demo.release.ReleaseDrafted",
+    );
+    let published = issue_304_step(
+        &ir,
+        &store,
+        "demo.release.PublishRelease",
+        &issue_304_publish_input(&release, None),
+    );
+    assert_eq!(
+        issue_304_outcome(&published),
+        "demo.release.PublishRelease/published",
+        "absence neither looks up a missing row nor selects `no-candidate`"
+    );
+}
+
+#[test]
+fn issue_304_present_and_absent_references_preserve_issue_282_precedence() {
+    let ir = issue_304_model();
+    let (store, candidate) = issue_304_create(
+        &ir,
+        &Store::default(),
+        "demo.release.ProposeCandidate",
+        "demo.release.CandidateProposed",
+    );
+    let (store, release) = issue_304_create(
+        &ir,
+        &store,
+        "demo.release.DraftRelease",
+        "demo.release.ReleaseDrafted",
+    );
+    let proposed = issue_304_step(
+        &ir,
+        &store,
+        "demo.release.PublishRelease",
+        &issue_304_publish_input(&release, Some(&candidate)),
+    );
+    assert_eq!(
+        issue_304_outcome(&proposed),
+        "demo.release.PublishRelease/not-accepted"
+    );
+
+    let accepted = issue_304_step(
+        &ir,
+        &store,
+        "demo.release.AcceptCandidate",
+        &BTreeMap::from([("candidate_id".to_owned(), Node::Text(candidate.clone()))]),
+    );
+    let published = issue_304_step(
+        &ir,
+        &accepted.next,
+        "demo.release.PublishRelease",
+        &issue_304_publish_input(&release, Some(&candidate)),
+    );
+    assert_eq!(
+        issue_304_outcome(&published),
+        "demo.release.PublishRelease/published"
+    );
+
+    let missing = issue_304_step(
+        &ir,
+        &published.next,
+        "demo.release.PublishRelease",
+        &issue_304_publish_input(&release, Some("00000000-0000-4000-8000-999999999999")),
+    );
+    assert_eq!(
+        issue_304_outcome(&missing),
+        "demo.release.PublishRelease/no-candidate",
+        "a present missing identity retains the early related-row answer"
+    );
+
+    let (store, proposed_candidate) = issue_304_create(
+        &ir,
+        &published.next,
+        "demo.release.ProposeCandidate",
+        "demo.release.CandidateProposed",
+    );
+    let wrong_state = issue_304_step(
+        &ir,
+        &store,
+        "demo.release.PublishRelease",
+        &issue_304_publish_input(&release, Some(&proposed_candidate)),
+    );
+    assert_eq!(
+        issue_304_outcome(&wrong_state),
+        "demo.release.PublishRelease/wrong-state",
+        "held state answers before a present-row predicate refusal"
+    );
+
+    let absent = issue_304_step(
+        &ir,
+        &store,
+        "demo.release.PublishRelease",
+        &issue_304_publish_input(&release, None),
+    );
+    assert_eq!(
+        issue_304_outcome(&absent),
+        "demo.release.PublishRelease/wrong-state",
+        "absence skips the related step and leaves held-state selection intact"
+    );
+}
