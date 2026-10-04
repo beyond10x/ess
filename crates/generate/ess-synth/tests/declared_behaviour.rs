@@ -501,9 +501,9 @@ struct Kept {
 fn every_construct_the_story_keeps_owed_keeps_its_whole_command_an_obligation() {
     let cases = [
         Kept {
-            model: RELATED_GUARD,
+            model: Box::leak(related_guard_beside_external().into_boxed_str()),
             command: "kept.shop.PlaceOrder",
-            names: "`when_related:`",
+            names: "`external:` beside `when_related:`",
         },
         Kept {
             model: RELATED_SET,
@@ -597,7 +597,11 @@ const RELATED_GUARD: &str = concat!(
 
 /// Declaration order deliberately disagrees with selection: input refusal, absence, presence,
 /// creation, then existing-instance refusal. Presence must not inherit absence's priority.
-fn related_precedence_model() -> EssIr {
+///
+/// With `external`, an `external:` branch keeps the command owed (story:related-guard-behaviour), so
+/// its obligation contract is the one these plan tests read; without, the command is generated
+/// and runs its suite ([`precedence_case`]).
+fn related_precedence_text(external: bool) -> String {
     let (head, command) = RELATED_GUARD
         .split_once("  - name: kept.shop.PlaceOrder")
         .unwrap();
@@ -618,7 +622,41 @@ fn related_precedence_model() -> EssIr {
             "          kept.shop.OrderPlaced: {order_id: {generated: true}}\n",
             "          kept.shop.OrderPlaced: {order_id: input.order_id}\n      - {name: already-placed, existing_instance: true, error: kept.shop.Conflict}\n",
         );
-    compile_text(&format!("{head}  - name: kept.shop.PlaceOrder{command}"))
+    let external = if external {
+        "      - {name: shop-refused, external: the shop refuses the order, error: kept.shop.Refused}\n"
+    } else {
+        ""
+    };
+    format!("{head}  - name: kept.shop.PlaceOrder{command}{external}")
+}
+
+fn related_precedence_model() -> EssIr {
+    compile_text(&related_precedence_text(true))
+}
+
+/// [`RELATED_GUARD`] beside an `external:` branch, which keeps it owed.
+fn related_guard_beside_external() -> String {
+    format!(
+        "{RELATED_GUARD}      - {{name: shop-refused, external: the shop refuses the order, error: \
+         kept.shop.Refused}}\n"
+    )
+}
+
+/// A `when_related:` guard that no longer keeps its command owed (story:related-guard-behaviour):
+/// [`RELATED_GUARD`] is generated, in every target alike.
+#[test]
+fn the_related_guard_the_story_kept_owed_is_generated() {
+    let ir = compile_text(RELATED_GUARD);
+    for target in [Target::Rust, Target::Go, Target::Web, Target::Clap] {
+        let synthesis = synthesize_for(&ir, target).expect("the model synthesizes");
+        assert_eq!(
+            synthesis
+                .plan
+                .disposition_of(CapabilityKind::CommandBehavior, "kept.shop.PlaceOrder"),
+            Some(&SynthesisDisposition::Generated),
+            "{target:?}"
+        );
+    }
 }
 
 fn related_precedence_contract() -> String {
@@ -1904,4 +1942,677 @@ impl ConformanceTarget for Harnessed {
         *self.forced.borrow_mut() = None;
         Ok(())
     }
+}
+
+// ---- `when_related:`, generated (story:related-guard-behaviour, beyond10x/ess#319) -------------
+
+mod related_guard_served;
+use related_guard_served as related;
+
+const SIGN_IN: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml");
+const RELEASE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-release.yaml");
+const OWNER_LINK: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml");
+const OPTIONAL_REFERENCE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-optional.yaml");
+const STORED_REFERENCE: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml"
+);
+
+/// One related-guard model: its text, system, the command the guard sits on, and the outcomes of
+/// that command a scenario must witness.
+struct RelatedCase {
+    case: &'static str,
+    text: &'static str,
+    system: &'static str,
+    command: &'static str,
+    outcomes: &'static [&'static str],
+}
+
+/// The 0.49 reference example (`website/docs/reference/predicates.md`, "A guard over another
+/// entity's row": the sign-in) and the other required-input fixture. The reference's second
+/// example, the ess/20 release ([`RELEASE`]), moves a release that no `wrong_state:` may answer
+/// below ess/22, so it stays owed for that ([`the_ess_20_release_stays_owed_for_its_unknown_release`]);
+/// its ess/22 form is [`OPTIONAL_CASE`].
+const REQUIRED_INPUT: [RelatedCase; 2] = [
+    RelatedCase {
+        case: "sign-in",
+        text: SIGN_IN,
+        system: "demo",
+        command: "demo.signin.InitiateSignIn",
+        outcomes: &[
+            "InitiateSignIn/outcome/no-configuration",
+            "InitiateSignIn/outcome/no-redirect-entry",
+            "InitiateSignIn/outcome/initiated",
+        ],
+    },
+    RelatedCase {
+        case: "owner-link",
+        text: OWNER_LINK,
+        system: "mini",
+        command: "mini.m.Start",
+        outcomes: &[
+            "Start/outcome/no-item",
+            "Start/outcome/other-owner",
+            "Start/outcome/started",
+        ],
+    },
+];
+
+/// [`related_precedence_text`] without its `external:` branch: `existing_instance:`, a missing
+/// row, an input refusal and a present-row refusal in one command, each answered in the
+/// interpreter's order. The suite synthesized for it witnesses no `already-placed` scenario, so
+/// that branch is generated and built here but not executed.
+fn precedence_case() -> RelatedCase {
+    RelatedCase {
+        case: "precedence",
+        text: Box::leak(related_precedence_text(false).into_boxed_str()),
+        system: "kept",
+        command: "kept.shop.PlaceOrder",
+        outcomes: &[
+            "PlaceOrder/outcome/invalid-quantity",
+            "PlaceOrder/outcome/no-shop",
+            "PlaceOrder/outcome/wrong-region",
+            "PlaceOrder/outcome/placed",
+        ],
+    }
+}
+
+const OPTIONAL_CASE: RelatedCase = RelatedCase {
+    case: "optional",
+    text: OPTIONAL_REFERENCE,
+    system: "demo",
+    command: "demo.release.PublishRelease",
+    outcomes: &[
+        "PublishRelease/outcome/no-candidate",
+        "PublishRelease/outcome/not-accepted",
+        "PublishRelease/outcome/wrong-state",
+        "PublishRelease/outcome/published",
+    ],
+};
+
+const STORED_CASE: RelatedCase = RelatedCase {
+    case: "stored",
+    text: STORED_REFERENCE,
+    system: "demo",
+    command: "demo.tasks.CompleteTask",
+    outcomes: &[
+        "CompleteTask/outcome/blocker-missing",
+        "CompleteTask/outcome/blocked",
+        "CompleteTask/outcome/wrong-state",
+        "CompleteTask/outcome/completed",
+    ],
+};
+
+/// The case's model, served by one network component.
+///
+/// The served entry point starts only where every command it accepts is generated, and the
+/// optional fixture's `AcceptCandidate` moves a candidate no declared outcome answers when it is
+/// unknown; it gains a `wrong_state:` refusal here, beside the guarded command it arranges rows
+/// for, which is unchanged.
+fn related_model(case: &RelatedCase) -> EssIr {
+    let text = case.text.replace(
+        "  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its \
+         held state., fields: []}\n",
+        "  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its \
+         held state., fields: []}\n  - {name: demo.release.CandidateStateConflict, summary: The \
+         candidate cannot move from its held state., fields: []}\n",
+    );
+    let text = if text == case.text {
+        text
+    } else {
+        let accepted =
+            "        payload: {demo.release.CandidateAccepted: {candidate_id: input.candidate_id}}\n";
+        assert!(text.contains(accepted), "{text}");
+        text.replace(
+            accepted,
+            &format!(
+                "{accepted}      - {{name: candidate-conflict, wrong_state: true, error: \
+                 demo.release.CandidateStateConflict}}\n"
+            ),
+        )
+    };
+    related::model(&related::served(&text, "guarded"))
+}
+
+/// The plan generates the guarded command's behaviour, in every target alike.
+fn assert_related_generated(ir: &EssIr, case: &RelatedCase) {
+    for target in [Target::Rust, Target::Go, Target::Web, Target::Clap] {
+        let synthesis = synthesize_for(ir, target).expect("the model synthesizes");
+        assert_eq!(
+            synthesis
+                .plan
+                .disposition_of(CapabilityKind::CommandBehavior, case.command),
+            Some(&SynthesisDisposition::Generated),
+            "{target:?}: `{}` is generated:\n{}",
+            case.command,
+            synthesis.plan.to_markdown()
+        );
+    }
+}
+
+/// Builds the case's generated entry point (Go with the race detector) and runs its suite.
+fn related_suite(
+    case: &RelatedCase,
+    target: Target,
+    faulty: Option<(&str, &str)>,
+) -> BTreeMap<String, Status> {
+    let ir = related_model(case);
+    let label = if faulty.is_some() { "faulty" } else { "honest" };
+    let (root, _) = related::emit(&ir, target, &format!("{}-{label}", case.case));
+    if let Some((from, to)) = faulty {
+        related::mutate(
+            &related::behaviour_path(&root, target, case.system),
+            from,
+            to,
+        );
+    }
+    let component = ir
+        .components()
+        .keys()
+        .next()
+        .expect("one served component")
+        .to_string();
+    let binary = related::build(&root, target, case.system, &component, target == Target::Go);
+    let statuses = related::run(&ir, &binary);
+    let _ = std::fs::remove_dir_all(&root);
+    statuses
+}
+
+fn require_go() {
+    assert!(
+        related::go_available(),
+        "Go is required: the generated Go related-guard behaviour is unchecked without it"
+    );
+}
+
+#[test]
+fn a_related_guard_command_is_generated_and_passes_its_suite_rust() {
+    let precedence = precedence_case();
+    for case in REQUIRED_INPUT.iter().chain([&precedence]) {
+        assert_related_generated(&related_model(case), case);
+        let statuses = related_suite(case, Target::Rust, None);
+        related::assert_passes(&format!("Rust {}", case.case), &statuses, case.outcomes);
+    }
+    // Faulty control: a behaviour that never selects a present-row predicate branch.
+    let statuses = related_suite(
+        &REQUIRED_INPUT[0],
+        Target::Rust,
+        Some((
+            "if let Some(related) = &related {",
+            "if let Some(related) = related.as_ref().filter(|_| false) {",
+        )),
+    );
+    related::assert_fails("Rust sign-in ignoring the predicate", &statuses);
+}
+
+#[test]
+fn a_related_guard_command_is_generated_and_passes_its_suite_go() {
+    require_go();
+    let precedence = precedence_case();
+    for case in REQUIRED_INPUT.iter().chain([&precedence]) {
+        assert_related_generated(&related_model(case), case);
+        let statuses = related_suite(case, Target::Go, None);
+        related::assert_passes(&format!("Go {}", case.case), &statuses, case.outcomes);
+    }
+    let statuses = related_suite(
+        &REQUIRED_INPUT[0],
+        Target::Go,
+        Some((
+            "if related != nil {",
+            "if related != nil && reference == nil {",
+        )),
+    );
+    related::assert_fails("Go sign-in ignoring the predicate", &statuses);
+}
+
+/// The guard reads the related row by identity through the related entity's storage port — the
+/// same `get` every generated behaviour reads its subject with — and the port is a bound of the
+/// behaviour, never a store ess writes.
+#[test]
+fn a_related_guard_reads_the_row_through_the_storage_port() {
+    let ir = related_model(&REQUIRED_INPUT[0]);
+    let rust = synthesize_for(&ir, Target::Rust).expect("Rust");
+    let behaviour = &rust.artifacts["crates/demo-types/src/behaviour.rs"].contents;
+    let (_, signin) = behaviour
+        .split_once("impl<P> crate::signin::obligations::InitiateSignInBehavior for Generated<P>")
+        .expect("the guarded command's behaviour is generated");
+    let signin = signin.split("\nimpl").next().expect("one impl");
+    for read in [
+        "ConfigurationStorage + SignInStorage,",
+        "let reference = Some(&input.tenant);",
+        "reference.and_then(|identity| ConfigurationStorage::get(&self.ports, identity))",
+        "if reference.is_some() && related.is_none() {",
+        "if let Some(related) = &related {",
+    ] {
+        assert!(signin.contains(read), "`{read}` missing:\n{signin}");
+    }
+    let go = synthesize_for(&ir, Target::Go).expect("Go");
+    let behaviour = &go.artifacts["types/behaviour/behaviour.go"].contents;
+    let (_, signin) = behaviour
+        .split_once("func (b *Generated) InitiateSignIn(")
+        .expect("the guarded command's behaviour is generated");
+    let signin = signin.split("\nfunc ").next().expect("one method");
+    for read in [
+        "reference := &input.Tenant",
+        "row, found := b.ports.ConfigurationStorage.Get(*reference)",
+        "if reference != nil && related == nil {",
+        "if related != nil {",
+    ] {
+        assert!(signin.contains(read), "`{read}` missing:\n{signin}");
+    }
+    assert!(
+        !behaviour.contains("type Owed interface"),
+        "nothing of the sign-in model is owed:\n{behaviour}"
+    );
+    for synthesis in [&rust, &go] {
+        assert!(
+            synthesis.plan.obligations().next().is_none(),
+            "the sign-in model owes nothing:\n{}",
+            synthesis.plan.to_markdown()
+        );
+    }
+}
+
+#[test]
+fn an_absent_optional_reference_reads_no_row_rust() {
+    assert_related_generated(&related_model(&OPTIONAL_CASE), &OPTIONAL_CASE);
+    let ir = related_model(&OPTIONAL_CASE);
+    let rust = synthesize_for(&ir, Target::Rust).expect("Rust");
+    let behaviour = &rust.artifacts["crates/demo-types/src/behaviour.rs"].contents;
+    assert!(
+        behaviour.contains("let reference = input.candidate.as_ref();"),
+        "{behaviour}"
+    );
+    let statuses = related_suite(&OPTIONAL_CASE, Target::Rust, None);
+    related::assert_passes("Rust optional", &statuses, OPTIONAL_CASE.outcomes);
+    // Faulty control: an absent reference read as a missing row.
+    let statuses = related_suite(
+        &OPTIONAL_CASE,
+        Target::Rust,
+        Some((
+            "if reference.is_some() && related.is_none() {",
+            "if related.is_none() {",
+        )),
+    );
+    related::assert_fails("Rust optional reading an absent reference", &statuses);
+    // Faulty control: the candidate refusal answered before the release's held state.
+    let statuses = related_suite(
+        &OPTIONAL_CASE,
+        Target::Rust,
+        Some((
+            "        // before any present related row's refusal.\n        {",
+            "        // before any present related row's refusal.\n        if false {",
+        )),
+    );
+    related::assert_fails(
+        "Rust optional refusing the candidate before the held state",
+        &statuses,
+    );
+}
+
+#[test]
+fn an_absent_optional_reference_reads_no_row_go() {
+    require_go();
+    let ir = related_model(&OPTIONAL_CASE);
+    let go = synthesize_for(&ir, Target::Go).expect("Go");
+    let behaviour = &go.artifacts["types/behaviour/behaviour.go"].contents;
+    assert!(
+        behaviour.contains("reference := input.Candidate"),
+        "{behaviour}"
+    );
+    let statuses = related_suite(&OPTIONAL_CASE, Target::Go, None);
+    related::assert_passes("Go optional", &statuses, OPTIONAL_CASE.outcomes);
+    let statuses = related_suite(
+        &OPTIONAL_CASE,
+        Target::Go,
+        Some((
+            "if reference != nil && related == nil {",
+            "if related == nil {",
+        )),
+    );
+    related::assert_fails("Go optional reading an absent reference", &statuses);
+    let statuses = related_suite(
+        &OPTIONAL_CASE,
+        Target::Go,
+        Some((
+            "// before any present related row's refusal.\n\tfor {",
+            "// before any present related row's refusal.\n\tfor false {",
+        )),
+    );
+    related::assert_fails(
+        "Go optional refusing the candidate before the held state",
+        &statuses,
+    );
+}
+
+/// The stored-reference fixture with a `cancel` move out of `Open`, as the interpreter's adversary
+/// arranges it (`ess-conformance/tests/adversary_related_via_stored_pass1.rs`): a task cancelled
+/// while its blocker is open is answered by its held state before the blocker is read, which the
+/// fixture alone cannot reach (a `Done` task's blocker is always `Done`).
+fn cancellable_case() -> RelatedCase {
+    let steps = [
+        (
+            "      states: [Open, Done]\n      terminal: [Done]\n      transitions:\n        - {name: complete, from: [Open], to: Done}\n",
+            "      states: [Open, Done, Cancelled]\n      terminal: [Done, Cancelled]\n      transitions:\n        - {name: complete, from: [Open], to: Done}\n        - {name: cancel, from: [Open], to: Cancelled}\n",
+        ),
+        (
+            "  - name: demo.tasks.TaskCompleted\n    fields: [{name: task_id, type: demo.tasks.TaskId}]\n",
+            "  - name: demo.tasks.TaskCompleted\n    fields: [{name: task_id, type: demo.tasks.TaskId}]\n  - name: demo.tasks.TaskCancelled\n    fields: [{name: task_id, type: demo.tasks.TaskId}]\n",
+        ),
+        (
+            "    may: [demo.tasks.AddTask, demo.tasks.CompleteTask]\n",
+            "    may: [demo.tasks.AddTask, demo.tasks.CompleteTask, demo.tasks.CancelTask]\n",
+        ),
+        (
+            "views:\n",
+            "  - name: demo.tasks.CancelTask\n    input:\n      - {name: task_id, type: demo.tasks.TaskId}\n    outcomes:\n      - name: cancelled\n        moves: demo.tasks.Task.cancel\n        instance: task_id\n        emits: [demo.tasks.TaskCancelled]\n        payload: {demo.tasks.TaskCancelled: {task_id: input.task_id}}\n      - {name: cancel-conflict, wrong_state: true, error: demo.tasks.TaskStateConflict}\nviews:\n",
+        ),
+        (
+            "        - demo.tasks.CompleteTask\n    publishes:\n",
+            "        - demo.tasks.CompleteTask\n        - demo.tasks.CancelTask\n    publishes:\n",
+        ),
+        (
+            "        - demo.tasks.TaskCompleted\n",
+            "        - demo.tasks.TaskCompleted\n        - demo.tasks.TaskCancelled\n",
+        ),
+    ];
+    let mut text = STORED_REFERENCE.to_owned();
+    for (from, to) in steps {
+        assert!(text.contains(from), "the fixture carries `{from}`");
+        text = text.replacen(from, to, 1);
+    }
+    RelatedCase {
+        case: "stored-cancellable",
+        text: Box::leak(text.into_boxed_str()),
+        ..STORED_CASE
+    }
+}
+
+#[test]
+fn a_stored_reference_guard_is_generated_and_passes_its_suite_rust() {
+    assert_related_generated(&related_model(&STORED_CASE), &STORED_CASE);
+    let statuses = related_suite(&STORED_CASE, Target::Rust, None);
+    related::assert_passes("Rust stored", &statuses, STORED_CASE.outcomes);
+    let cancellable = cancellable_case();
+    assert_related_generated(&related_model(&cancellable), &cancellable);
+    let statuses = related_suite(&cancellable, Target::Rust, None);
+    related::assert_passes("Rust stored, cancellable", &statuses, cancellable.outcomes);
+    // Faulty control: the guard reads the addressed task's own row, not the one it stores.
+    let statuses = related_suite(
+        &STORED_CASE,
+        Target::Rust,
+        Some((
+            "reference.and_then(|identity| TaskStorage::get(&self.ports, identity))",
+            "reference.and_then(|_| TaskStorage::get(&self.ports, &input.task_id))",
+        )),
+    );
+    related::assert_fails("Rust stored reading the subject's own row", &statuses);
+    // Faulty control: the stored reference read before the task's held state.
+    let statuses = related_suite(
+        &cancellable_case(),
+        Target::Rust,
+        Some((
+            "        // before any present related row's refusal.\n        {",
+            "        // before any present related row's refusal.\n        if false {",
+        )),
+    );
+    related::assert_fails(
+        "Rust stored reading the reference before the held state",
+        &statuses,
+    );
+}
+
+#[test]
+fn a_stored_reference_guard_is_generated_and_passes_its_suite_go() {
+    require_go();
+    let statuses = related_suite(&STORED_CASE, Target::Go, None);
+    related::assert_passes("Go stored", &statuses, STORED_CASE.outcomes);
+    let cancellable = cancellable_case();
+    let statuses = related_suite(&cancellable, Target::Go, None);
+    related::assert_passes("Go stored, cancellable", &statuses, cancellable.outcomes);
+    let statuses = related_suite(
+        &STORED_CASE,
+        Target::Go,
+        Some((
+            "row, found := b.ports.TaskStorage.Get(*reference)",
+            "row, found := b.ports.TaskStorage.Get(input.TaskId)",
+        )),
+    );
+    related::assert_fails("Go stored reading the subject's own row", &statuses);
+    let statuses = related_suite(
+        &cancellable_case(),
+        Target::Go,
+        Some((
+            "// before any present related row's refusal.\n\tfor {",
+            "// before any present related row's refusal.\n\tfor false {",
+        )),
+    );
+    related::assert_fails(
+        "Go stored reading the reference before the held state",
+        &statuses,
+    );
+}
+
+/// The ess/20 release moves a release whose unknown identity no declared outcome answers: neither
+/// `unknown_instance:` nor `wrong_state:` may sit beside `when_related:` there. That, not the
+/// related guard, keeps it owed.
+#[test]
+fn the_ess_20_release_stays_owed_for_its_unknown_release() {
+    let plan = SynthesisPlan::of(&related::model(RELEASE));
+    match plan.disposition_of(
+        CapabilityKind::CommandBehavior,
+        "demo.release.PublishRelease",
+    ) {
+        Some(SynthesisDisposition::Obligation(obligation)) => {
+            let why = obligation.reason.describes();
+            assert!(why.contains("an unknown identity"), "{why}");
+            assert!(!why.contains("`when_related:`"), "{why}");
+        }
+        other => panic!("the ess/20 release stays owed: {other:?}"),
+    }
+}
+
+/// Models that use no `when_related:` keep their plan bytes: billing and gatepass, as committed.
+#[test]
+fn a_plan_without_when_related_is_byte_identical() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for example in ["billing", "gatepass"] {
+        let ir = compile_directory(&repository.join("examples").join(example));
+        assert!(
+            ir.commands()
+                .values()
+                .all(|command| !command.outcomes.iter().any(|outcome| matches!(
+                    outcome.condition,
+                    ess_compiler::ir::ResolvedCondition::Related { .. }
+                ))),
+            "{example} uses no `when_related:`"
+        );
+        for (target, directory) in [(Target::Rust, "rust"), (Target::Go, "go")] {
+            let synthesis = synthesize_for(&ir, target).expect("the example synthesizes");
+            for file in ["PLAN.md", "plan.json"] {
+                let committed = std::fs::read_to_string(
+                    repository
+                        .join("generated")
+                        .join(directory)
+                        .join(example)
+                        .join(file),
+                )
+                .expect("the committed plan");
+                assert!(
+                    synthesis.artifacts[file].contents == committed,
+                    "{example} {directory} {file} changed"
+                );
+            }
+            // Every generated behaviour is unchanged too: the related read is rendered only for a
+            // command that reads a related row.
+            let behaviours: Vec<_> = synthesis
+                .artifacts
+                .values()
+                .filter(|artifact| {
+                    artifact.path.ends_with("behaviour.rs")
+                        || artifact.path.ends_with("behaviour.go")
+                })
+                .collect();
+            assert_eq!(behaviours.len(), 1, "{example} {directory}");
+            for artifact in behaviours {
+                let committed = std::fs::read_to_string(
+                    repository
+                        .join("generated")
+                        .join(directory)
+                        .join(example)
+                        .join(&artifact.path),
+                )
+                .expect("the committed behaviour");
+                assert!(
+                    artifact.contents == committed,
+                    "{example} {directory} {} changed",
+                    artifact.path
+                );
+            }
+        }
+    }
+}
+
+/// `external:` beside `when_related:` stays owed: the generated order would ask the context more
+/// than once where the addressed row's held state is checked first.
+#[test]
+fn a_related_guard_beside_an_external_branch_stays_owed() {
+    let model = OPTIONAL_REFERENCE.replace(
+        "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n",
+        "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n      - {name: vetoed, external: the release board vetoes it, error: demo.release.CandidateNotAccepted}\n",
+    );
+    assert_ne!(model, OPTIONAL_REFERENCE);
+    let plan = SynthesisPlan::of(&compile_text(&model));
+    match plan.disposition_of(
+        CapabilityKind::CommandBehavior,
+        "demo.release.PublishRelease",
+    ) {
+        Some(SynthesisDisposition::Obligation(obligation)) => assert!(
+            obligation
+                .reason
+                .describes()
+                .contains("`external:` beside `when_related:`"),
+            "{}",
+            obligation.reason.describes()
+        ),
+        other => panic!("an external branch beside a related guard stays owed: {other:?}"),
+    }
+}
+
+/// A component owning `split.shops`, beside [`SPLIT_ORDERS`].
+const SPLIT_SHOPS: &str = "format: ess/18
+system: split
+version: v1
+domain: split.shops
+types:
+  - {name: split.shops.ShopId, kind: newtype, of: Uuid}
+entities:
+  - name: split.shops.Shop
+    identity: {name: shop_id, type: split.shops.ShopId}
+    fields: []
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: split.shops.ShopOpened
+    fields: [{name: shop_id, type: split.shops.ShopId}]
+commands:
+  - name: split.shops.OpenShop
+    input: []
+    outcomes:
+      - name: opened
+        creates: split.shops.Shop
+        instance: shop_id
+        emits: [split.shops.ShopOpened]
+        payload: {split.shops.ShopOpened: {shop_id: {generated: true}}}
+components:
+  - component: shops
+    reached_by: network
+    owns: {domains: [split.shops]}
+    accepts: {commands: [split.shops.OpenShop]}
+    publishes: {events: [split.shops.ShopOpened]}
+";
+
+/// A component owning `split.orders`, whose command reads a `split.shops.Shop` row.
+const SPLIT_ORDERS: &str = "domain: split.orders
+errors:
+  - name: split.orders.NoShop
+events:
+  - name: split.orders.Ordered
+    fields: [{name: shop_id, type: split.shops.ShopId}]
+commands:
+  - name: split.orders.Order
+    input: [{name: shop_id, type: split.shops.ShopId}]
+    outcomes:
+      - name: no-shop
+        when_related: {via: input.shop_id, exists: false}
+        error: split.orders.NoShop
+      - name: ordered
+        emits: [split.orders.Ordered]
+        payload: {split.orders.Ordered: {shop_id: input.shop_id}}
+components:
+  - component: orders
+    reached_by: network
+    owns: {domains: [split.orders]}
+    accepts: {commands: [split.orders.Order]}
+    publishes: {events: [split.orders.Ordered]}
+";
+
+/// A related row of a domain no component accepting the command owns has no storage port in that
+/// component, so the command stays owed (story:related-guard-behaviour, Decisions).
+#[test]
+fn a_related_row_no_accepting_component_stores_stays_owed() {
+    let (owner, orders) = (SPLIT_SHOPS, SPLIT_ORDERS);
+    let compile_two = |owner: &str, orders: &str| {
+        let specification = Specification::assemble(
+            [("shops.yaml", owner), ("orders.yaml", orders)]
+                .into_iter()
+                .map(|(path, text)| {
+                    (
+                        Source::new(path),
+                        RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}")),
+                    )
+                }),
+        )
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        ess_compiler::resolve::compile(&specification, &SourceMap::new())
+            .unwrap_or_else(|error| panic!("{error:?}"))
+    };
+    let plan = SynthesisPlan::of(&compile_two(owner, orders));
+    match plan.disposition_of(CapabilityKind::CommandBehavior, "split.orders.Order") {
+        Some(SynthesisDisposition::Obligation(obligation)) => assert!(
+            obligation
+                .reason
+                .describes()
+                .contains("no component accepting the command stores"),
+            "{}",
+            obligation.reason.describes()
+        ),
+        other => panic!("a related row stored by another component stays owed: {other:?}"),
+    }
+    // One component owning both domains stores the row: the command is generated.
+    let (owner_alone, _) = owner
+        .split_once("components:")
+        .expect("the owner declares its component");
+    let together = orders
+        .replace(
+            "    owns: {domains: [split.orders]}",
+            "    owns: {domains: [split.orders, split.shops]}",
+        )
+        .replace(
+            "    accepts: {commands: [split.orders.Order]}",
+            "    accepts: {commands: [split.orders.Order, split.shops.OpenShop]}",
+        )
+        .replace(
+            "    publishes: {events: [split.orders.Ordered]}",
+            "    publishes: {events: [split.orders.Ordered, split.shops.ShopOpened]}",
+        );
+    let plan = SynthesisPlan::of(&compile_two(owner_alone, &together));
+    assert_eq!(
+        plan.disposition_of(CapabilityKind::CommandBehavior, "split.orders.Order"),
+        Some(&SynthesisDisposition::Generated),
+        "{}",
+        plan.to_markdown()
+    );
 }
