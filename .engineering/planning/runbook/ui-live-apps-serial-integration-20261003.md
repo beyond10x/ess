@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 71
+revision: 72
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -450,3 +450,11 @@ The previous goal turn could not advance implementation or acceptance because ca
 The fixture author returned clean, inactive custody at candidate8e7c21a0c5055635e771c2c5b2b4fa9181bc909e. Handoff4ef2fc376f443cee989aaaed1481985ff0ccd95c91b275b44942d498963f2898 and managed-inspection8df3fe7a5a0732d7b7e9c424830f9a5e757a25b4a4877178a43727e60bd97621 record no command handles, no ignored files and zero author leases. Rust target/lint and review1 verdict remain pending; neither custody return nor the four successful Go probes completes the unit.
 
 Root resumes the existing full413A target preservation operation under plan2b4c0f1f5b192036151fd065daf75003acd47bbf4050740df737869c96d7512d2: fresh source/manifest/process audit, fresh12884901888byte admission, full archive/member/hash verification, postarchive original verification and owning Cargo dry-run. This grants archive and verification only. Original-target cleanup requires a separately reviewed completed recovery receipt. No arithmetic source change, compiler/probe start or new review round is granted. Once preservation and separately admitted cleanup finish, the frozen fixture author reacquires its own lease and completes its existing bounded Rust/lint contract; independent review and serial integration follow. The corrected combined413A package run remains required afterward.
+
+## Unexpected missing arithmetic target; independent fixture lane resumes
+
+The renewed413A archive attempt stopped in preflight with a changed path set before any archive writer started. Both owner and coordinator then observed the original target root missing. No target cleanup was granted or performed by this coordinator; the owner likewise reports no cleanup. Attribution is unknown. Do not claim the original native binaries, WASM files, target-local fixtures or52review link inputs remain present or recoverable from a completed archive: no complete archive exists. Retain the original manifests, prior hash proofs, incomplete-archive retirement receipt and new refusal as separate historical evidence. The owner's independent source/log/external-fixture audit will bound the loss; missing build artifacts are not evidence of source corruption or of a successful cleanup.
+
+Root verified source at2255315a4 remains exactly the two-path arithmetic patch, with subject_fact.rs digestcb3b9fb0d1b4acd7aabf8a43f813e3920133f480ce0fd55dc2d88eef08d9dc20 and counter_limit.rs digest26e00ff65a9ab39c453bd60ad2da24433e567cc61115a0fc094ae65b923cbc44. Original-target recreation, arithmetic compiler/probe execution and further cleanup remain ungranted. Corrected full-package verification must build fresh artifacts and rebind the eventual independent probe; historical log evidence cannot substitute for this.
+
+The separate clean fixture worktree and proven Go evidence are unaffected. Its existing author receives the sole ESS compiler lane to complete the previously required whole retained_replay target and strict affected-target Clippy, each bounded900seconds, with own lease, fresh12884901888byte checks, isolated target, private cold Go cache, outside-Git temporary directory and existing locked/offline/jobs1/debug0/incremental0 settings. No source change, repeated Go counterfactuals, full-package run, publication or integration is granted. Independent whole review1 remains pending those results; its budget is unchanged. User-protected release/backlog roots remain untouched.

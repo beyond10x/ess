@@ -7,7 +7,7 @@ title: Make retained Go replay fixtures honor read-your-writes tokens
 relations:
 - derived_from: story:feature-request-312
 - serves: vision:O2
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 3}
@@ -51,3 +51,9 @@ Independent review1 source audit7d3c0f9a14fb4c83059186d04a98a60ac99d3e64b6fbf64c
 The prior warm-cache retention sentence is superseded by completed owner retirement of the two exclusive, terminal probe caches through go clean -cache. Pre-retirement allocations were84541440 and84574208bytes; each directory now retains only README and trim metadata. Before/after audit digests29666b5263febff7d6686c21a0112a0911aae7d43b785532b4b81f75a80b5f5d and2698f4cbdd46af43d1e8ad144e09a466d46ca2f4e4e0e8588918dad57faffd55 bind the evidence. Source, generated probe fixtures and raw execution logs remain intact. The later Rust wrapper may use the same now-cold exclusive exact-request-token cache.
 
 No compiler grant is active. Resource recovery has priority: preserve and validate the full terminal413A target before any separately authorized owning-tool cleanup, then recheck the12884901888byte start floor before releasing the bounded Rust target and lint. Foreign concurrent storage changes have again lowered free space; a prior above-floor observation is not ongoing admission. User-inventoried release/backlog paths remain untouched.
+
+## Resumed author verification
+
+Fresh coordinator available space24368013312bytes restored execution capacity. The returned custody handoff4ef2fc376f443cee989aaaed1481985ff0ccd95c91b275b44942d498963f2898 binds the clean frozen candidate with no live commands or leases. Root grants the existing author the sole ESS compiler lane after reacquiring its own lease, with a fresh floor check before each command, for one whole Rust retained_replay target and strict affected-target Clippy as previously specified. Both remain bounded900seconds; source and Go probe results remain unchanged. No duplicated counterfactuals or full-package run. Seal actual terminal logs and hashes for existing independent review1.
+
+The separate arithmetic target disappeared before its archival preflight completed, without coordinator cleanup authorization or a completed archive. That absence does not affect this task's source, evidence or isolated future target. Do not borrow or claim missing arithmetic artifacts. The later corrected full-package run remains a separate obligation requiring fresh binaries.
