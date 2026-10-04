@@ -957,3 +957,517 @@ fn an_owner_limit_beyond_the_bound_is_refused_naming_the_bound() {
         "{refused:#?}"
     );
 }
+
+// ESS413A's finite control is deliberately ordinary command arrangement, not a state seed.
+fn counter413a_cas_model() -> String {
+    Shape::retry("retries >= 2")
+        .text()
+        .replace("errors:\n", "errors:\n  - {name: work.tasks.Stale, fields: []}\n")
+        .replace(
+            "      - {name: task_id, type: work.tasks.TaskId}\n    outcomes:",
+            "      - {name: task_id, type: work.tasks.TaskId}\n      - {name: expected_revision, type: Integer}\n    outcomes:",
+        )
+        .replace(
+            "    outcomes:\n      - name: at-limit",
+            "    outcomes:\n      - name: stale\n        when_subject: {predicate: retries != input.expected_revision}\n        error: work.tasks.Stale\n      - name: at-limit",
+        )
+}
+
+#[derive(Debug)]
+struct Counter413aCall {
+    scenario: String,
+    command: String,
+    subject: Option<Node>,
+    expected: Option<i64>,
+    before: Option<i64>,
+    after: Option<i64>,
+    outcome: Option<String>,
+}
+
+struct Counter413aCas {
+    tasks: Tasks,
+    ignore_cas: bool,
+    scenario: RefCell<String>,
+    calls: RefCell<Vec<Counter413aCall>>,
+}
+impl Counter413aCas {
+    fn new(limit: Limit, ignore_cas: bool) -> Self {
+        Self {
+            tasks: Tasks::new(Shape::retry("retries >= 2"), limit),
+            ignore_cas,
+            scenario: RefCell::default(),
+            calls: RefCell::default(),
+        }
+    }
+}
+impl ConformanceTarget for Counter413aCas {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.tasks.identity()
+    }
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.scenario.replace(context.scenario.to_string());
+        self.tasks.begin_scenario(context)
+    }
+    fn end_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.tasks.end_scenario(context)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let command = request.command.clone();
+        let subject = request.input.get("task_id").cloned();
+        let expected = request.input.get("expected_revision").map(integer);
+        let before = self
+            .tasks
+            .rows
+            .borrow()
+            .iter()
+            .find(|row| subject.as_ref() == Some(&row["task_id"]))
+            .map(|row| integer(&row["retries"]));
+        let result = if command.to_string() == "work.tasks.RetryTask"
+            && before.is_some()
+            && before != expected
+            && !self.ignore_cas
+        {
+            SemanticCommandResult::took(OutcomeRef::new(
+                command.clone(),
+                OutcomeName::new("stale").unwrap(),
+            ))
+            .with_error(DeclaredErrorValue::new("work.tasks.Stale".parse().unwrap()))
+            .with_consistency(self.tasks.token())
+        } else {
+            self.tasks.execute_command(request)?
+        };
+        let rows = self.tasks.rows.borrow();
+        let held = if subject.is_some() {
+            rows.iter()
+                .find(|row| subject.as_ref() == Some(&row["task_id"]))
+        } else {
+            rows.last()
+        };
+        self.calls.borrow_mut().push(Counter413aCall {
+            scenario: self.scenario.borrow().clone(),
+            command: command.to_string(),
+            subject: held.map(|row| row["task_id"].clone()),
+            expected,
+            before,
+            after: held.map(|row| integer(&row["retries"])),
+            outcome: result.outcome.as_ref().map(ToString::to_string),
+        });
+        Ok(result)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.tasks.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.tasks.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.tasks.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.tasks.redeliver_event(request)
+    }
+}
+
+#[test]
+fn counter413a_finite_two_cas_executes_both_advances_stale_and_exhaustion_without_setup() {
+    let synthesis = compiled(&counter413a_cas_model());
+    assert!(
+        synthesis.refusals.is_empty(),
+        "finite CAS must be independently classified if refused: {:#?}",
+        refusals(&synthesis)
+    );
+    assert!(
+        synthesis
+            .suite
+            .scenarios
+            .values()
+            .flat_map(|scenario| &scenario.steps)
+            .all(|step| !matches!(step, ScenarioStep::EstablishEntity { .. })),
+        "finite counter arrangement must use ordinary commands, not entity setup"
+    );
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let target = Counter413aCas::new(|revision, _| revision >= 2, false);
+    let report = Runner::for_suite(&synthesis.suite)
+        .run_admitted(&admitted, &target)
+        .into_report();
+    assert_eq!(report.status, ConformanceStatus::Passed, "{report:#?}");
+    let calls = target.calls.borrow();
+    assert!(
+        calls.windows(3).any(|triple| {
+            triple.iter().all(|call| {
+                call.scenario == triple[0].scenario && call.subject == triple[0].subject
+            }) && triple[0].command == "work.tasks.CreateTask"
+                && triple[0].after == Some(0)
+                && triple[1].command == "work.tasks.RetryTask"
+                && triple[1].expected == Some(0)
+                && triple[1].before == Some(0)
+                && triple[1].after == Some(1)
+                && triple[2].command == "work.tasks.RetryTask"
+                && triple[2].expected == Some(1)
+                && triple[2].before == Some(1)
+                && triple[2].after == Some(2)
+        }),
+        "same ordinary instance must actually advance 0 then 1 and hold 2: {calls:#?}"
+    );
+    assert!(
+        calls.iter().any(
+            |call| call.outcome.as_deref() == Some("work.tasks.RetryTask/stale")
+                && call.before.is_some()
+                && call.before != call.expected
+                && call.before == call.after
+        ),
+        "stale must execute without changing revision: {calls:#?}"
+    );
+    assert!(
+        calls.iter().any(
+            |call| call.outcome.as_deref() == Some("work.tasks.RetryTask/at-limit")
+                && call.expected == Some(2)
+                && call.before == Some(2)
+                && call.after == Some(2)
+        ),
+        "exhaustion at exact revision 2 must execute without mutation: {calls:#?}"
+    );
+    drop(calls);
+    for (name, limit, ignore_cas, required_failure) in [
+        (
+            "CAS ignored",
+            (|revision, _| revision >= 2) as Limit,
+            true,
+            "work.tasks.RetryTask/outcome/stale",
+        ),
+        (
+            "limit one early",
+            (|revision, _| revision >= 1) as Limit,
+            false,
+            RETRIED,
+        ),
+        (
+            "limit one late",
+            (|revision, _| revision >= 3) as Limit,
+            false,
+            AT_LIMIT,
+        ),
+    ] {
+        let bad = Counter413aCas::new(limit, ignore_cas);
+        let report = Runner::for_suite(&synthesis.suite)
+            .run_admitted(&admitted, &bad)
+            .into_report();
+        assert!(
+            report
+                .scenarios
+                .iter()
+                .any(|case| case.scenario.to_string() == required_failure
+                    && case.status != Status::Passed),
+            "{name} survived required scenario {required_failure}: {report:#?}"
+        );
+    }
+}
+
+#[test]
+fn counter413a_ordinary_and_shared_related_controls_keep_deterministic_suite_bytes() {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+    for (name, text) in [
+        ("ordinary-two", Shape::retry("retries >= 2").text()),
+        ("shared-related-three", BOARD.to_owned()),
+    ] {
+        let first = compiled(&text);
+        let second = compiled(&text);
+        assert!(first.refusals.is_empty(), "{name}: {:#?}", refusals(&first));
+        let bytes = first.suite.to_canonical_json().unwrap();
+        assert_eq!(bytes, second.suite.to_canonical_json().unwrap());
+        let mut hash = String::with_capacity(64);
+        for byte in Sha256::digest(bytes.as_bytes()) {
+            write!(&mut hash, "{byte:02x}").unwrap();
+        }
+        println!("counter413a canonical {name} sha256={hash}");
+        assert!(first
+            .suite
+            .scenarios
+            .values()
+            .flat_map(|scenario| &scenario.steps)
+            .all(|step| !matches!(step, ScenarioStep::EstablishEntity { .. })));
+    }
+    // The full counter_limit target also runs its unchanged healthy, off-by-one and shared
+    // related-counter execution controls; these digests supplement those semantic assertions.
+}
+
+// Independent public API probe from the #413A final review.
+// Independent public API probe: all preceding author cases are retained byte-for-byte.
+#[test]
+fn independent_extreme_counter_refusals_do_not_claim_a_complete_nearest_value() {
+    for (name, shape, limit) in [
+        (
+            "upper",
+            Shape::retry("retries >= 9223372036854775807"),
+            (|value, _| value == i64::MAX) as Limit,
+        ),
+        (
+            "lower",
+            Shape {
+                step: -1,
+                ..Shape::retry("retries <= -9223372036854775808")
+            },
+            (|value, _| value == i64::MIN) as Limit,
+        ),
+    ] {
+        let synthesis = compiled(&shape.text());
+        let refused = refusals(&synthesis);
+        assert!(
+            !refused.is_empty(),
+            "{name}: extreme state must not become fake coverage"
+        );
+        assert!(
+            refused.iter().all(|reason| !reason.contains("nearest value it holds")),
+            "{name}: incomplete arithmetic must not publish a completeness-derived nearest-value claim: {refused:#?}"
+        );
+        assert!(
+            synthesis
+                .suite
+                .scenarios
+                .values()
+                .flat_map(|scenario| &scenario.steps)
+                .all(|step| !matches!(step, ScenarioStep::EstablishEntity { .. })),
+            "{name}: ordinary arrangement must not be replaced by a seed"
+        );
+        // A refusal is not a blanket removal of useful ordinary scenarios.
+        scenario(&synthesis, RETRIED);
+        let admitted =
+            AdmittedSuite::from_suite(&synthesis.suite).expect("current suite admission");
+        let target = Tasks::new(shape, limit);
+        let report = Runner::for_suite(&synthesis.suite)
+            .run_admitted(&admitted, &target)
+            .into_report();
+        assert_eq!(
+            report.status,
+            ConformanceStatus::Passed,
+            "{name}: ordinary executable scenarios regressed: {report:#?}"
+        );
+        println!(
+            "independent extreme {name}: refused={} scenarios={}",
+            refused.len(),
+            synthesis.suite.scenarios.len()
+        );
+    }
+}
+
+// #413A final review cases: extreme counters moving away from MAX/MIN, a literal past i64,
+// a shared related counter at MAX, and the recorded canonical digests.
+
+/// Every "the nearest value it holds <side> the limit <literal> is <value>" claim in a refusal, as
+/// `(side, literal, value)`.
+fn review2_nearest_claims(refused: &[String]) -> Vec<(String, String, String)> {
+    const MARK: &str = "the nearest value it holds ";
+    let mut claims = Vec::new();
+    for refusal in refused {
+        let mut rest = refusal.as_str();
+        while let Some(at) = rest.find(MARK) {
+            rest = &rest[at + MARK.len()..];
+            let Some((side, tail)) = rest.split_once(" the limit ") else {
+                break;
+            };
+            let Some((literal, tail)) = tail.split_once(" is ") else {
+                break;
+            };
+            let value: String = tail
+                .chars()
+                .take_while(|c| *c == '-' || c.is_ascii_digit() || *c == '.')
+                .collect();
+            claims.push((side.to_owned(), literal.to_owned(), value));
+        }
+    }
+    claims
+}
+
+fn review2_no_entity_setup(synthesis: &Synthesis) -> bool {
+    synthesis
+        .suite
+        .scenarios
+        .values()
+        .flat_map(|scenario| &scenario.steps)
+        .all(|step| !matches!(step, ScenarioStep::EstablishEntity { .. }))
+}
+
+fn review2_run<T: ConformanceTarget>(synthesis: &Synthesis, target: &T) -> ConformanceStatus {
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).expect("suite admission");
+    Runner::for_suite(&synthesis.suite)
+        .run_admitted(&admitted, target)
+        .into_report()
+        .status
+}
+
+/// The two canonical digests the story records as the unchanged baseline
+/// (`ordinary-two 6bf91d8f…`, `shared-related-three 8f56c982…`), asserted as literals. The unit's
+/// own control only compares two compilations by the same code with each other, so it stays green
+/// under any deterministic change to those bytes.
+#[test]
+fn review2_ordinary_and_shared_related_digests_equal_the_recorded_baseline() {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+    for (name, text, expected) in [
+        (
+            "ordinary-two",
+            Shape::retry("retries >= 2").text(),
+            "6bf91d8f43da8103fa8e0f0a9898dc9002b292934f8a60d494769c72d0826c5e",
+        ),
+        (
+            "shared-related-three",
+            BOARD.to_owned(),
+            "8f56c982d3834b1eb7a3290a7a460d79fd2ca8c7fc4d821ad6a5df1748c96958",
+        ),
+    ] {
+        let bytes = compiled(&text).suite.to_canonical_json().unwrap();
+        let mut hash = String::with_capacity(64);
+        for byte in Sha256::digest(bytes.as_bytes()) {
+            write!(&mut hash, "{byte:02x}").unwrap();
+        }
+        assert_eq!(hash, expected, "{name}: canonical suite bytes moved");
+    }
+}
+
+/// A counter that only moves down from 0 never holds anything at or above `i64::MAX`. Every
+/// nearest-value claim a refusal makes must name a value the counter holds (at most 0), and the
+/// ordinary scenarios must still pass a healthy target.
+#[test]
+fn review2_decrement_away_from_max_claims_only_values_it_holds() {
+    let shape = Shape {
+        step: -1,
+        ..Shape::retry("retries >= 9223372036854775807")
+    };
+    let synthesis = compiled(&shape.text());
+    let refused = refusals(&synthesis);
+    println!("review2 away-from-max refusals: {refused:#?}");
+    for (side, literal, value) in review2_nearest_claims(&refused) {
+        let held: i128 = value.parse().unwrap_or(i128::MAX);
+        assert!(
+            held <= 0,
+            "claims {value} is the nearest value held {side} {literal}, but the counter only \
+             holds values <= 0: {refused:#?}"
+        );
+    }
+    assert!(review2_no_entity_setup(&synthesis));
+    scenario(&synthesis, RETRIED);
+    let target = Tasks::new(shape, |value, _| value == i64::MAX);
+    assert_eq!(review2_run(&synthesis, &target), ConformanceStatus::Passed);
+}
+
+/// The at-limit branch of the same counter is unreachable because the counter moves away from the
+/// limit, not because the search stopped at its reach; the refusal must not blame the reach
+/// (`a_unreachable_limit_under_an_unbounded_raise_does_not_claim_the_bound` is the same rule).
+#[test]
+fn review2_decrement_away_from_max_does_not_blame_the_reach() {
+    let shape = Shape {
+        step: -1,
+        ..Shape::retry("retries >= 9223372036854775807")
+    };
+    let refused = refusals(&compiled(&shape.text()));
+    assert!(
+        refused
+            .iter()
+            .filter(|refusal| refusal.contains("work.tasks.RetryTask/at-limit"))
+            .all(|refusal| !refusal.contains("within 16")),
+        "no run holds MAX; the reach is not the cause: {refused:#?}"
+    );
+}
+
+/// The mirror at `i64::MIN`: a counter that only moves up from 0.
+#[test]
+fn review2_increment_away_from_min_claims_only_values_it_holds() {
+    let shape = Shape::retry("retries <= -9223372036854775808");
+    let synthesis = compiled(&shape.text());
+    let refused = refusals(&synthesis);
+    println!("review2 away-from-min refusals: {refused:#?}");
+    for (side, literal, value) in review2_nearest_claims(&refused) {
+        let held: i128 = value.parse().unwrap_or(i128::MIN);
+        assert!(
+            held >= 0,
+            "claims {value} is the nearest value held {side} {literal}, but the counter only \
+             holds values >= 0: {refused:#?}"
+        );
+    }
+    assert!(review2_no_entity_setup(&synthesis));
+    scenario(&synthesis, RETRIED);
+    let target = Tasks::new(shape, |value, _| value == i64::MIN);
+    assert_eq!(review2_run(&synthesis, &target), ConformanceStatus::Passed);
+}
+
+#[test]
+fn review2_increment_away_from_min_does_not_blame_the_reach() {
+    let refused = refusals(&compiled(
+        &Shape::retry("retries <= -9223372036854775808").text(),
+    ));
+    assert!(
+        refused
+            .iter()
+            .filter(|refusal| refusal.contains("work.tasks.RetryTask/at-limit"))
+            .all(|refusal| !refusal.contains("within 16")),
+        "no run holds MIN; the reach is not the cause: {refused:#?}"
+    );
+}
+
+/// A literal one past `i64::MAX`: both windows are unrepresentable. No refusal may claim the
+/// counter's nearest value below it is a small number it reached by stopping early.
+#[test]
+fn review2_literal_past_i64_makes_no_completeness_claim() {
+    let text = Shape::retry("retries >= 9223372036854775808").text();
+    let Ok(raw) = RawSpecFile::parse(&text) else {
+        return;
+    };
+    let Ok(spec) = Specification::assemble([(Source::new("tasks.yaml"), raw)]) else {
+        return;
+    };
+    let Ok(ir) = compile(&spec, &SourceMap::new()) else {
+        return;
+    };
+    let synthesis = synthesize(&ir);
+    let refused = refusals(&synthesis);
+    println!("review2 past-i64 refusals: {refused:#?}");
+    let claims = review2_nearest_claims(&refused);
+    assert!(
+        claims.is_empty(),
+        "a counter stepping by 1 from 0 has no complete nearest value below 2^63 within the \
+         search: {claims:#?}"
+    );
+    assert!(review2_no_entity_setup(&synthesis));
+    let target = Tasks::new(Shape::retry("retries >= 9223372036854775808"), |_, _| false);
+    assert_eq!(review2_run(&synthesis, &target), ConformanceStatus::Passed);
+}
+
+/// The shared related-counter path (`when_related:`) at `i64::MAX`: the owner's counter, raised by
+/// one from 0, must not be described as holding 1 as its nearest value below the limit.
+#[test]
+fn review2_related_owner_counter_at_max_makes_no_completeness_claim() {
+    let text = BOARD.replace("open_cards >= 3", "open_cards >= 9223372036854775807");
+    assert_ne!(text, BOARD);
+    let synthesis = compiled(&text);
+    let refused = refusals(&synthesis);
+    println!("review2 related-max refusals: {refused:#?}");
+    assert!(
+        refused
+            .iter()
+            .any(|refusal| refusal.contains("work.board.AddCard/full")),
+        "the extreme owner state must be refused, not covered: {refused:#?}"
+    );
+    let claims = review2_nearest_claims(&refused);
+    assert!(
+        claims.is_empty(),
+        "no complete nearest value exists below MAX within the search: {claims:#?}"
+    );
+    assert!(review2_no_entity_setup(&synthesis));
+    let board = Board {
+        limit: |open| open == i64::MAX,
+        projects: RefCell::default(),
+        cards: RefCell::default(),
+        minted: Cell::new(0),
+    };
+    assert_eq!(review2_run(&synthesis, &board), ConformanceStatus::Passed);
+}
