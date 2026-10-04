@@ -258,7 +258,7 @@ this block, a count that does not match, and a listed file that has none, are ea
 ```text
 accessor.rs 1 0
 actor.rs 3 2
-binding.rs 34 0
+binding.rs 35 0
 command.rs 13 52
 component.rs 15 9
 domain.rs 5 0
@@ -290,7 +290,7 @@ reason in the table above.** There are two, both pinned at 1.
 ```text
 actor actor.rs 3
 actors actor.rs 1
-binding binding.rs 23
+binding binding.rs 24
 binding primitive_admission.rs 2
 command primitive_admission.rs 2
 command wire.rs 1
