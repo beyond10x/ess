@@ -179,6 +179,7 @@
 
 mod absent_input;
 mod aggregate;
+mod binding_condition;
 mod binding_effects;
 mod bounded_retry;
 mod caller;
@@ -1159,7 +1160,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::DestinationIneligible { .. }
                 | BindingGap::DestinationUnreachable { .. }
                 | BindingGap::UnchangedUnobservable { .. }
-                | BindingGap::EffectUnsettled { .. },
+                | BindingGap::EffectUnsettled { .. }
+                | BindingGap::ConditionUnarranged { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -1595,6 +1597,12 @@ pub enum BindingGap {
         /// Why the chain does not settle.
         why: String,
     },
+    /// The binding's event-payload condition (ess/22, beyond10x/ess#268) cannot be made to hold,
+    /// or to fail, by a trigger this synthesis can vary without changing what else it does.
+    ConditionUnarranged {
+        /// Which side, and why.
+        why: String,
+    },
 }
 
 impl BindingGap {
@@ -1661,6 +1669,11 @@ impl BindingGap {
             Self::EffectUnsettled { .. } => {
                 "let at most one binding act on a row at once, through a branch its state decides, \
                  and end every chain; or cover the row with an authored scenario (ess-scenario/1)"
+            }
+            Self::ConditionUnarranged { .. } => {
+                "let the trigger copy every event member the condition reads from an input it \
+                 does not guard on, or cover the condition with an authored scenario \
+                 (ess-scenario/1)"
             }
         }
     }
@@ -1745,6 +1758,12 @@ impl fmt::Display for BindingGap {
                 "acts on the row `{outcome}` leaves, and where that row comes to rest cannot be \
                  named: {why}"
             ),
+            Self::ConditionUnarranged { why } => {
+                write!(
+                    f,
+                    "invokes only when its event-payload condition holds, and {why}"
+                )
+            }
         }
     }
 }
@@ -2271,6 +2290,7 @@ pub(crate) fn needs_of(
             ScenarioStep::ExecuteCommand { command, .. }
             | ScenarioStep::ExpectInvocation { command, .. }
             | ScenarioStep::ExpectEveryInvocation { command, .. }
+            | ScenarioStep::ExpectNoInvocation { command, .. }
             | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
@@ -2853,6 +2873,7 @@ fn record_refused(id: &ScenarioId, run: &Run, refusals: &mut Vec<Refusal>) {
 /// [`Run::steps`] is kept separate from the arrangement so a caller can inject something *between*
 /// them — which §18's failure scenario needs, because the control it arms must be armed after the
 /// arrangement's own commands have run and before the one that triggers the binding.
+#[derive(Clone)]
 struct Run {
     /// The steps that bring the instance into the state the branch needs.
     setup: Vec<ScenarioStep>,
@@ -12022,86 +12043,253 @@ fn bindings(
             delivery_context::synthesize(ir, binding, suite, refusals);
             continue;
         }
+        // A conditioned binding (ess/22, beyond10x/ess#268) runs only for a payload its condition
+        // holds for, so every publishing branch is a candidate trigger.
+        if let Some(condition) = &binding.condition {
+            conditioned(ir, binding, condition, actors, suite, refusals);
+            continue;
+        }
         let subject = BindingRef::new(binding.name.clone());
         let event_handle = binding.cause.event().expect("event cause");
-        let event = EventRef::from(event_handle);
         let Some((publisher, published_by)) = publisher(ir, event_handle) else {
             refusals.push(Refusal {
                 subject: subject.clone().into(),
                 scenario: None,
                 cause: RefusalCause::BindingUnobservable {
                     binding: subject,
-                    gap: BindingGap::NothingPublishes { event },
+                    gap: BindingGap::NothingPublishes {
+                        event: EventRef::from(event_handle),
+                    },
                 },
             });
             continue;
         };
-        let trigger = match run(ir, publisher, published_by, actors) {
-            Ok(run) => run,
-            Err(cause) => {
-                refusals.push(Refusal {
-                    subject: subject.clone().into(),
-                    scenario: None,
-                    cause,
-                });
+        match run(ir, publisher, published_by, actors) {
+            Ok(run) => {
+                let trigger = binding_condition::Trigger {
+                    publisher,
+                    published_by,
+                    run,
+                };
+                binding_aspects(ir, binding, &trigger, actors, suite, refusals);
+            }
+            Err(cause) => refusals.push(Refusal {
+                subject: subject.into(),
+                scenario: None,
+                cause,
+            }),
+        }
+    }
+}
+
+/// Every aspect of a binding whose event `trigger` publishes: flow, mapping, delivery, on-failure,
+/// and a bounded retry's final failure.
+fn binding_aspects(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    trigger: &binding_condition::Trigger<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    let subject = BindingRef::new(binding.name.clone());
+    let event = EventRef::from(binding.cause.event().expect("event cause"));
+    let binding_condition::Trigger {
+        publisher,
+        published_by,
+        run: trigger,
+    } = trigger;
+    let invoked = ir.command(&binding.command);
+    let source = binding_source(ir, binding, publisher, published_by, trigger);
+    // The row the invoked command addresses, arranged where an accepting branch admits it before
+    // the trigger (beyond10x/ess#267), or the gap that stops every aspect needing it.
+    let prepared = binding_effects::prepare(ir, binding, invoked, published_by, trigger, actors);
+    for aspect in BindingAspect::ALL.map(|(aspect, _)| aspect) {
+        let id = ScenarioId::Binding {
+            binding: subject.clone(),
+            aspect,
+        };
+        let built = match aspect {
+            BindingAspect::Flow => flow(ir, invoked, &prepared, &event),
+            BindingAspect::Mapping => mapping(ir, binding, invoked, trigger, &prepared, &event),
+            BindingAspect::Delivery => delivery(ir, binding, invoked, &prepared, &event),
+            BindingAspect::OnFailure if binding.retry.is_some() => {
+                bounded_retry::exhausted(ir, binding, invoked, trigger, &event, actors)
+            }
+            BindingAspect::OnFailure => on_failure(ir, binding, invoked, &prepared, &event),
+            // Not in `ALL`; produced below for the bindings that make the claim.
+            BindingAspect::FinalFailure
+            | BindingAspect::ConditionFalse
+            | BindingAspect::ConditionAbsent => continue,
+        };
+        let (steps, purpose, extra) = match built {
+            Ok(built) => built,
+            Err(gap) => {
+                refusals.push(Refusal::about(
+                    &id,
+                    RefusalCause::BindingUnobservable {
+                        binding: subject.clone(),
+                        gap,
+                    },
+                ));
                 continue;
             }
         };
-
-        let invoked = ir.command(&binding.command);
-        let source = binding_source(ir, binding, publisher, published_by, &trigger);
-        // The row the invoked command addresses, arranged where an accepting branch admits it
-        // before the trigger (beyond10x/ess#267), or the gap that stops every aspect needing it.
-        let prepared =
-            binding_effects::prepare(ir, binding, invoked, published_by, &trigger, actors);
-        for aspect in BindingAspect::ALL.map(|(aspect, _)| aspect) {
-            let id = ScenarioId::Binding {
-                binding: subject.clone(),
-                aspect,
-            };
-            let built = match aspect {
-                BindingAspect::Flow => flow(ir, invoked, &prepared, &event),
-                BindingAspect::Mapping => {
-                    mapping(ir, binding, invoked, &trigger, &prepared, &event)
-                }
-                BindingAspect::Delivery => delivery(ir, binding, invoked, &prepared, &event),
-                BindingAspect::OnFailure if binding.retry.is_some() => {
-                    bounded_retry::exhausted(ir, binding, invoked, &trigger, &event, actors)
-                }
-                BindingAspect::OnFailure => on_failure(ir, binding, invoked, &prepared, &event),
-                // Not in `ALL`; produced below for the bindings that make the claim.
-                BindingAspect::FinalFailure => continue,
-            };
-            let (steps, purpose, extra) = match built {
-                Ok(built) => built,
-                Err(gap) => {
-                    refusals.push(Refusal::about(
-                        &id,
-                        RefusalCause::BindingUnobservable {
-                            binding: subject.clone(),
-                            gap,
-                        },
-                    ));
-                    continue;
-                }
-            };
-            // `drop` and a bounded retry build their own failure scenario, without the row's rest.
-            let dropping =
-                matches!(binding.on_failure(), ResolvedFailure::Drop) || binding.retry.is_some();
-            binding_effects::name_unsettled(&prepared, aspect, dropping, &id, refusals);
-            let mut depends = source.clone();
-            depends.extend(extra);
-            insert(
-                suite,
-                id,
-                ConformanceScenario::new(purpose, steps, depends),
-                refusals,
-            );
-        }
-        bounded_retry::final_failure(
-            ir, binding, invoked, &trigger, &event, actors, &source, suite, refusals,
+        // `drop` and a bounded retry build their own failure scenario, without the row's rest.
+        let dropping =
+            matches!(binding.on_failure(), ResolvedFailure::Drop) || binding.retry.is_some();
+        binding_effects::name_unsettled(&prepared, aspect, dropping, &id, refusals);
+        let mut depends = source.clone();
+        depends.extend(extra);
+        insert(
+            suite,
+            id,
+            ConformanceScenario::new(purpose, steps, depends),
+            refusals,
         );
     }
+    bounded_retry::final_failure(
+        ir, binding, invoked, trigger, &event, actors, &source, suite, refusals,
+    );
+}
+
+/// A conditioned binding (ess/22, beyond10x/ess#268, beyond10x/ess#194): its positive aspects from
+/// a trigger its condition holds for, refused aspect by aspect where no publishing branch gives
+/// one, and its `condition-false` and `condition-absent` witnesses.
+fn conditioned(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    condition: &ess_compiler::ir::ResolvedBindingCondition,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    let subject = BindingRef::new(binding.name.clone());
+    let witnesses = match binding_condition::witnesses(ir, binding, condition, actors) {
+        Ok(witnesses) => witnesses,
+        Err(cause) => {
+            refusals.push(Refusal {
+                subject: subject.into(),
+                scenario: None,
+                cause,
+            });
+            return;
+        }
+    };
+    match &witnesses.holds {
+        Ok(trigger) => binding_aspects(ir, binding, trigger, actors, suite, refusals),
+        Err(gap) => {
+            let finals = binding
+                .retry
+                .as_ref()
+                .is_some_and(|bound| !bound.final_outcomes.is_empty());
+            let aspects = BindingAspect::ALL
+                .map(|(aspect, _)| aspect)
+                .into_iter()
+                .chain(finals.then_some(BindingAspect::FinalFailure));
+            for aspect in aspects {
+                let id = ScenarioId::Binding {
+                    binding: subject.clone(),
+                    aspect,
+                };
+                refusals.push(Refusal::about(
+                    &id,
+                    RefusalCause::BindingUnobservable {
+                        binding: subject.clone(),
+                        gap: gap.clone(),
+                    },
+                ));
+            }
+        }
+    }
+    let absent = witnesses.absent;
+    for (aspect, witness) in [
+        (
+            BindingAspect::ConditionFalse,
+            Some(witnesses.fails.map(|t| vec![t])),
+        ),
+        (BindingAspect::ConditionAbsent, absent),
+    ] {
+        let Some(witness) = witness else {
+            continue;
+        };
+        let id = ScenarioId::Binding {
+            binding: subject.clone(),
+            aspect,
+        };
+        match witness.and_then(|triggers| never_invoked(ir, binding, &triggers)) {
+            Ok((steps, purpose, depends)) => {
+                let scenario = ConformanceScenario::new(purpose, steps, depends);
+                insert(suite, id, scenario, refusals);
+            }
+            Err(gap) => refusals.push(Refusal::about(
+                &id,
+                RefusalCause::BindingUnobservable {
+                    binding: subject.clone(),
+                    gap,
+                },
+            )),
+        }
+    }
+}
+
+/// A conditioned binding's negative witness (ess/22, beyond10x/ess#268, beyond10x/ess#194): each
+/// trigger publishes a payload the condition does not hold for and the occurrence is observed, and
+/// the binding invokes its command no times for the whole eventual window. Not inferred from an
+/// absent downstream event: the binding may invoke a command that publishes nothing.
+///
+/// Several triggers — one per proved Optional level — run in order in one scenario: the first with
+/// its arrangement, each later one invoked again on that arrangement, which is refused where its
+/// invocation binds an instance a second time.
+fn never_invoked(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    triggers: &[binding_condition::Trigger<'_>],
+) -> Built {
+    let invoked = ir.command(&binding.command);
+    let event = EventRef::from(binding.cause.event().expect("event cause"));
+    let command = CommandRef::new(invoked.name.clone());
+    let mut steps = Vec::new();
+    let mut source: BTreeSet<EssSemanticRef> = [command.clone().into()].into_iter().collect();
+    for (index, trigger) in triggers.iter().enumerate() {
+        if index == 0 {
+            steps.extend(trigger.run.steps());
+        } else if trigger
+            .run
+            .invoke
+            .iter()
+            .any(|step| matches!(step, ScenarioStep::CaptureInstance { .. }))
+        {
+            return Err(BindingGap::ConditionUnarranged {
+                why: "its proved levels need one occurrence each, and invoking its trigger again \
+                      binds an instance a second time"
+                    .into(),
+            });
+        } else {
+            steps.extend(trigger.run.invoke.iter().cloned());
+        }
+        steps.push(ScenarioStep::ExpectEvent {
+            event: event.clone(),
+            payload: BTreeMap::new(),
+            shape: payload_shape(ir, &event),
+        });
+        source.extend(binding_source(
+            ir,
+            binding,
+            trigger.publisher,
+            trigger.published_by,
+            &trigger.run,
+        ));
+    }
+    steps.push(ScenarioStep::ExpectNoInvocation {
+        binding: BindingRef::new(binding.name.clone()),
+        command,
+    });
+    let text = format!(
+        "`{}` invokes `{}` no times for a `{event}` its condition does not hold for",
+        binding.name, invoked.name
+    );
+    Ok((steps, clipped(&text), source))
 }
 
 /// What one binding aspect produces: its steps, its one-line purpose, and what else it depends on.

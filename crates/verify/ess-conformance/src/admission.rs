@@ -201,10 +201,10 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=35) {
+    if !matches!(version.major(), 1..=37) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–35",
+            "execution readers admit suite majors 1–37",
         ));
     }
     if version.major() >= 34 {
@@ -215,23 +215,23 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
         {
             return Err(root["provenance"].error(
                 "InvalidSuite",
-                "scenario_initial_state must be empty in suite/34 and /35",
+                "scenario_initial_state must be empty in suite/34 through /37",
             ));
         }
     } else if p.contains_key("scenario_initial_state") {
         return Err(p["scenario_initial_state"].error(
             "InvalidSuite",
-            "scenario_initial_state requires suite/34 or /35",
+            "scenario_initial_state requires suite/34 through /37",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35 | 37
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /35",
+            "coverage is required exactly for odd suite majors from /5 through /37",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -502,6 +502,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || crate::outcome_shapes::needs_newer(tag, major)
         || crate::absent_input::needs_newer(tag, major)
         || crate::delivery_context::needs_newer(tag, major)
+        || crate::no_invocation::needs_newer(tag, major)
         || (major < crate::grant::ORDINARY && tag == "expect_not_granted")
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
@@ -509,6 +510,9 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     let (required, optional): (&[&str], &[&str]) = match tag {
         _ if crate::delivery_context::step_keys(tag).is_some() => {
             crate::delivery_context::step_keys(tag).unwrap_or_default()
+        }
+        _ if crate::no_invocation::step_keys(tag).is_some() => {
+            crate::no_invocation::step_keys(tag).unwrap_or_default()
         }
         _ if crate::bounded_retry::step_keys(tag, major).is_some() => {
             crate::bounded_retry::step_keys(tag, major).unwrap_or_default()
@@ -700,6 +704,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::one_time_response::admit(suite)?;
     crate::direct_response::admit(suite)?;
     crate::delivery_context::admit(suite)?;
+    crate::no_invocation::admit(suite)?;
     crate::structured_values::admit(suite)?;
     crate::fixtures::admit_format(suite)?;
     crate::absent_input::admit_format(suite)?;

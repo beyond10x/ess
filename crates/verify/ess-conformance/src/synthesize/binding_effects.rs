@@ -374,6 +374,18 @@ fn settle_from<'a>(
     loop {
         let mut acting: Vec<(&ResolvedBinding, &ResolvedOutcome)> = Vec::new();
         for binding in next {
+            // Whether a conditioned binding fires depends on the payload this step publishes
+            // (ess/22, beyond10x/ess#268), which arrangement does not decide: no rest is named.
+            if let Some(condition) = &binding.condition {
+                return Settled::Unsettled {
+                    binding: BindingRef::new(binding.name.clone()),
+                    why: format!(
+                        "whether it runs on a row in `{state}` depends on its event-payload \
+                         condition `{}`, which arrangement does not decide",
+                        condition.plan.predicate
+                    ),
+                };
+            }
             match bound_branch(ir.command(&binding.command), &state) {
                 Ok(Reached::Refused) => {}
                 Ok(Reached::Accepted(branch)) => acting.push((binding, branch)),
@@ -1448,9 +1460,19 @@ pub(super) fn mapped_input(
                             ),
                         });
                     }
-                    let accessor =
-                        crate::accessor::Observation::of(ir, plan, types, &mapped.target_type)
-                            .map_err(|reason| BindingGap::AccessorObservation { reason })?;
+                    // A required input the binding's condition proves present (ess/22,
+                    // beyond10x/ess#194) is observed as its Optional, the value the condition
+                    // guarantees: never an unwrap of a value that could be absent.
+                    let target = if binding.condition.is_some() && !mapped.target_type.is_optional()
+                    {
+                        ess_compiler::ir::ResolvedTypeRef::Optional {
+                            of: Box::new(mapped.target_type.clone()),
+                        }
+                    } else {
+                        mapped.target_type.clone()
+                    };
+                    let accessor = crate::accessor::Observation::of(ir, plan, types, &target)
+                        .map_err(|reason| BindingGap::AccessorObservation { reason })?;
                     ScenarioValue::ObservedAccessor {
                         event: event.clone(),
                         accessor,

@@ -58,7 +58,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
 | `ess/20` | [0.49.0][r49] | `state`, the related row's held lifecycle state, in a `when_related:` predicate. |
 | `ess/21` | Unreleased | `one_time_response:` names required String response fields whose values may be disclosed only by their originating response. |
-| `ess/22` | Unreleased | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present; a command may guard on several related rows named by its input, each with its own `exists: false`. A `{related: …}` value may read through an `Optional<…>` reference, absent where it is, or across two references: `via: [<field>, <field of the row it names>]`. An outcome declaring `returns: true` is answered `200` with the command's response under `response`, in the `OpenAPI` projection and the synthesized Rust and Go servers; below `ess/22` it keeps `202` and no `response` member. An `affects:` entry may move the records it selects: `moves: <Entity>.<transition>`, skipping a selected record outside the move's `from` states (beyond10x/ess#229); below `ess/22` it is refused naming `ess/22`. |
+| `ess/22` | Unreleased | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present; a command may guard on several related rows named by its input, each with its own `exists: false`. A `{related: …}` value may read through an `Optional<…>` reference, absent where it is, or across two references: `via: [<field>, <field of the row it names>]`. An outcome declaring `returns: true` is answered `200` with the command's response under `response`, in the `OpenAPI` projection and the synthesized Rust and Go servers; below `ess/22` it keeps `202` and no `response` member. An `affects:` entry may move the records it selects: `moves: <Entity>.<transition>`, skipping a selected record outside the move's `from` states (beyond10x/ess#229); below `ess/22` it is refused naming `ess/22`. An event binding may carry `when.where`, a finite condition over the event payload; it invokes only when the condition holds, and an Optional member the condition proves present may fill a required input. |
 
 The paragraphs below give each version's rules.
 
@@ -369,6 +369,14 @@ authored `{$instance: …}` inside a list element, a map value or a struct membe
 way. Version 32 is ordinary; 33 carries declared coverage. Rust, Go and TypeScript resolve both
 with report/2. Older readers refuse these envelopes before target
 callbacks. A suite without them keeps its earlier format.
+
+`ess-conformance/36` and `ess-conformance/37` are unreleased. They carry the `ess/22` binding
+condition (beyond10x/ess#268): `expect_no_invocation` requires zero invocations of a binding's
+command for the whole eventual window, and the `condition-false` and `condition-absent` binding
+aspects file the scenarios that use it. Version 36 is ordinary; 37 carries declared coverage.
+Each implies every major below it. Rust, Go and TypeScript execute the step with report/2. Older
+readers refuse these envelopes before target callbacks. A suite without them keeps its earlier
+format.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

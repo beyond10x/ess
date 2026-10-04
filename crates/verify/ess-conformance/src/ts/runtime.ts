@@ -2356,6 +2356,15 @@ export class Harness {
   deadline(): Deadline {
     return { attempts: this.attempts };
   }
+
+  /**
+   * noInvocationDeadline is the window `expect_no_invocation` observes (suite/36): the native and
+   * Go runners' 5000 ms eventual budget read every 100 ms, fifty asks, so a target firing late in
+   * the window fails here exactly as it does there.
+   */
+  noInvocationDeadline(): Deadline {
+    return { attempts: 5000 / 100 };
+  }
 }
 
 /** newHarness returns the harness a run uses, seeded from the specification's own system name. */
@@ -3457,6 +3466,8 @@ export class ScenarioRun {
         }
       case 'expect_every_invocation':
         return this.expectEveryInvocation(index, step);
+      case 'expect_no_invocation':
+        return this.expectNoInvocation(index, step);
       case 'expect_response_payload':
         return expectResponsePayload(this, index, step);
       case 'check_periodic':
@@ -4828,6 +4839,43 @@ export class ScenarioRun {
     return true;
   }
 
+  /**
+   * The binding invoked its command no times under this scenario for the whole observation window
+   * (suite/36, beyond10x/ess#268): any invocation seen fails at once; none passes only once the
+   * window has been read to its end.
+   */
+  async expectNoInvocation(index: number, step: Step): Promise<boolean> {
+    const deadline = this.harness.noInvocationDeadline();
+    for (let attempt = 0; attempt < deadline.attempts; attempt += 1) {
+      let seen: Invocation[];
+      try {
+        seen =
+          (await this.target.observeInvocations({
+            binding: step.binding,
+            command: step.command,
+            correlation: this.correlation,
+            deadline: { attempts: deadline.attempts - attempt },
+          })) ?? [];
+      } catch (error) {
+        if (isUnsupported(error)) {
+          this.recordStatus(statusUnsupported);
+          this.t.diagnostic(
+            this.disclosure === undefined
+              ? errorText(error)
+              : 'ESS-CF-TARGET: protected target observation',
+          );
+          return true;
+        }
+        return this.targetError(index, `observing zero invocations: ${errorText(error)}`);
+      }
+      if (seen.some((invocation) => invocation.command === step.command)) {
+        this.fail(index, 'an invocation the condition does not admit');
+        return true;
+      }
+    }
+    return true;
+  }
+
   recordStatus(status: string): void {
     const rank = [statusPassed, statusSkipped, statusUnsupported, statusError, statusFailed];
     if (rank.indexOf(status) > rank.indexOf(this.status)) this.status = status;
@@ -5801,13 +5849,18 @@ export function scenarioIdentity(id: string, major = 21): void {
     if (segment(2) === 'final-failure' && major < 26) {
       throw new Error('a final-failure binding scenario requires suite/26 or /27');
     }
+    if ((segment(2) === 'condition-false' || segment(2) === 'condition-absent') && major < 36) {
+      throw new Error('zero-invocation observation requires suite/36 or /37');
+    }
     valid =
       k(segment(0)) &&
       (segment(2) === 'delivery' ||
         segment(2) === 'flow' ||
         segment(2) === 'mapping' ||
         segment(2) === 'on-failure' ||
-        segment(2) === 'final-failure');
+        segment(2) === 'final-failure' ||
+        segment(2) === 'condition-false' ||
+        segment(2) === 'condition-absent');
   } else if (parts.length === 3 && segment(1) === 'grant') {
     // The refusal an ungranted actor gets (beyond10x/ess#265) is suite/26 vocabulary.
     if (major < 26) {
@@ -5888,10 +5941,13 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/33': 33,
   'ess-conformance/34': 34,
   'ess-conformance/35': 35,
+  // Zero-invocation observation of a conditioned binding (beyond10x/ess#268).
+  'ess-conformance/36': 36,
+  'ess-conformance/37': 37,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
-const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35]);
+const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
 export function coverageMajor(major: number): boolean {
@@ -5925,7 +5981,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     (major >= 34 && provenance.scenario_initial_state !== 'empty') ||
     (major < 34 && Object.prototype.hasOwnProperty.call(provenance, 'scenario_initial_state'))
   ) {
-    throw new Error('scenario_initial_state must be empty exactly in suite/34 and /35');
+    throw new Error('scenario_initial_state must be empty exactly in suite/34 through /37');
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
@@ -7002,6 +7058,10 @@ export function admitStep(value: Node, major: number): void {
       if (major < 30) throw new Error('delivery context requires suite/30');
       required += ' binding command input';
       optional = 'selecting';
+      break;
+    case 'expect_no_invocation':
+      if (major < 36) throw new Error('zero-invocation observation requires suite/36 or /37');
+      required += ' binding command';
       break;
     case 'resolve_fixtures':
       if (major < 18) throw new Error('fixture resolution requires suite/18 or /19');

@@ -1926,6 +1926,49 @@ pub struct ResolvedSelectionPlan {
     pub types: BTreeMap<QualifiedName, TypeHandle>,
 }
 
+/// A binding's event-payload condition, resolved against the declared event (ess/22,
+/// beyond10x/ess#268, beyond10x/ess#194, [`ess_domain::binding::condition`]).
+///
+/// Evaluated before selection, conversion, mapping and invocation: True invokes, False skips this
+/// binding occurrence, Unknown is an unmet obligation that invokes nothing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedBindingCondition {
+    /// The predicate and every path it reads.
+    #[serde(flatten)]
+    pub plan: ess_domain::binding::condition::ConditionPlan,
+    /// The `event.<members>` paths the condition proves present when it holds, in order: what
+    /// admits an Optional source into a required input.
+    pub present: Vec<String>,
+}
+
+impl ResolvedBindingCondition {
+    /// The resolved form of an admitted plan.
+    pub fn of(plan: ess_domain::binding::condition::ConditionPlan) -> Self {
+        let present = plan
+            .proves_present()
+            .into_iter()
+            .map(|members| {
+                format!(
+                    "{}.{}",
+                    ess_domain::binding::condition::ROOT,
+                    members.join(".")
+                )
+            })
+            .collect();
+        Self { plan, present }
+    }
+
+    /// Whether `members` is proved present when the condition holds.
+    pub fn proves(&self, members: &[String]) -> bool {
+        let written = format!(
+            "{}.{}",
+            ess_domain::binding::condition::ROOT,
+            members.join(".")
+        );
+        self.present.contains(&written)
+    }
+}
+
 /// A binding whose mapping is known to typecheck.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedBinding {
@@ -1940,6 +1983,10 @@ pub struct ResolvedBinding {
     /// binding without a context keeps its bytes. `Some` only for an event cause.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<ResolvedDeliveryContext>,
+    /// The event-payload condition, where the binding declares one (ess/22). Beside the cause, as
+    /// the context is, so a binding without one keeps its bytes.
+    #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
+    pub condition: Option<ResolvedBindingCondition>,
     /// The command it invokes.
     pub command: CommandHandle,
     /// One entry per mapped command input, in the command's declaration order.

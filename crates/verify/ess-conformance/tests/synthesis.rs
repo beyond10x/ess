@@ -365,6 +365,7 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExpectDirectResponse { .. } => "direct response",
             ScenarioStep::DeliverEvent { .. } => "deliver",
             ScenarioStep::ExpectEveryInvocation { .. } => "every invocation",
+            ScenarioStep::ExpectNoInvocation { .. } => "no invocation",
         })
         .collect()
 }

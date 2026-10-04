@@ -3008,6 +3008,18 @@
               "type": "null"
             }
           ]
+        },
+        "where": {
+          "description": "A finite typed predicate over the event payload; the binding invokes only when it holds (ess/22, beyond10x/ess#268). Only for an event cause; see the `condition` module.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false

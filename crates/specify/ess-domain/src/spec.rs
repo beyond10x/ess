@@ -320,6 +320,7 @@ impl Specification {
         errors.extend(crate::binding::periodic::validate_specification(self));
         errors.extend(crate::binding::context::validate_specification(self));
         errors.extend(crate::binding::retry::validate_specification(self));
+        errors.extend(crate::binding::condition::validate_specification(self));
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
         // filter comparing it are checked against the same set of names.

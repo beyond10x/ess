@@ -90,6 +90,52 @@ fn delivery(covered: bool) -> FixtureSuite {
     suite.scenarios.retain(|id, _| ids.contains(id));
     FixtureSuite::Ordinary(AdmittedSuite::from_suite(&suite).unwrap())
 }
+/// A target that ignores the condition and fires at the 31st ask fails both negative witnesses
+/// natively (beyond10x/ess#268); the TypeScript outcomes are then held equal to the native ones, so
+/// its fifty-ask window fails them too.
+fn late_target_fails_both_witnesses(native: &ess_conformance::ExecutedRun, covered: bool) {
+    for id in [
+        "received/binding/condition-absent",
+        "received/binding/condition-false",
+    ] {
+        let status = native
+            .scenarios
+            .iter()
+            .find(|scenario| scenario.scenario.to_string() == id)
+            .map(|scenario| scenario.status);
+        assert_eq!(
+            status,
+            Some(ess_conformance::report::Status::Failed),
+            "{covered}: {id}"
+        );
+    }
+}
+
+/// A conditioned binding's scenarios (suite/36 and /37, beyond10x/ess#268 and beyond10x/ess#194).
+fn condition(covered: bool) -> FixtureSuite {
+    let ir = model(&support_typescript_prerequisite::condition_model("correct"));
+    let ids: Vec<_> = [
+        "condition-absent",
+        "condition-false",
+        "delivery",
+        "flow",
+        "mapping",
+        "on-failure",
+    ]
+    .map(|name| format!("received/binding/{name}").parse().unwrap())
+    .into();
+    if covered {
+        return FixtureSuite::Covered(
+            build(&ir, &[], Scope::System, Origins::Generated)
+                .unwrap()
+                .select(&ids)
+                .unwrap(),
+        );
+    }
+    let mut suite = ess_conformance::synthesize(&ir).suite;
+    suite.scenarios.retain(|id, _| ids.contains(id));
+    FixtureSuite::Ordinary(AdmittedSuite::from_suite(&suite).unwrap())
+}
 fn structured(covered: bool) -> FixtureSuite {
     let source = include_str!("authored_structured_instances.rs");
     let ir = model(include_str!("fixtures/structured-instances.yaml"));
@@ -467,11 +513,25 @@ fn typescript_native_live_callbacks_match_for_all_prerequisite_versions() {
                 ],
             ),
             ("structured", structured(covered), vec!["correct"]),
+            (
+                "condition",
+                condition(covered),
+                vec![
+                    "correct",
+                    "ignore-condition",
+                    "late-ignore-condition",
+                    "fire-on-absence",
+                    "invert-condition",
+                ],
+            ),
         ] {
             for mode in modes {
                 let target = support_typescript_prerequisite::Fixture::new(kind, mode);
                 let native = Runner::for_suite(input.selected().suite())
                     .run_admitted(input.selected(), &target);
+                if mode == "late-ignore-condition" {
+                    late_target_fails_both_witnesses(&native, covered);
+                }
                 let expected: Value = serde_json::from_str(
                     &CountReport::from_run(&native, input.selected())
                         .unwrap()
@@ -504,7 +564,7 @@ fn typescript_native_live_callbacks_match_for_all_prerequisite_versions() {
                             .iter()
                             .filter(|entry| {
                                 entry["method"]
-                                    == if kind == "structured" {
+                                    == if kind == "structured" || kind == "condition" {
                                         "execute"
                                     } else {
                                         "deliver"
@@ -1561,7 +1621,7 @@ fn typescript_one_time_malformed_and_old_authority_refuses_before_callbacks() {
     assert!(checked >= 20, "the malformed vector inventory actually ran");
     let original =
         std::fs::read_to_string(fixture_root.join("one-time-response/valid-string.json")).unwrap();
-    for version in ["ess-conformance/32", "ess-conformance/36"] {
+    for version in ["ess-conformance/32", "ess-conformance/38"] {
         let raw = original.replace("ess-conformance/34", version);
         refused_depth_document(
             &raw,

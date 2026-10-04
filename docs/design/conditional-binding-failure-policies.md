@@ -1,8 +1,39 @@
 # Conditional bindings and per-refusal policies (#268/#194, #269)
 
-Status: coordinator contract approved by final independent design review on 2026-10-03;
-implementation pending. Implement #268/#194 before #269, after #266/#267. Source syntax is
-coordinated ess/22; ess/21 remains the one-time-response allocation.
+Status: coordinator contract approved by final independent design review on 2026-10-03.
+#268/#194 implemented (unit ess-w3-268-194-binding-conditions, 2026-10-04); #269 pending.
+Source syntax is coordinated ess/22; ess/21 remains the one-time-response allocation.
+
+#268/#194 as implemented, and where it stops short of this contract:
+
+- `when.where` is admitted from ess/22 and refused below it naming ess/22, refused on a periodic
+  cause, and resolved by `ess_domain::binding::condition`. The resolved condition sits beside the
+  cause as `ResolvedBinding::condition` (serialized `where`, omitted when absent), as the delivery
+  context does, so unconditioned bindings keep their bytes.
+- The presence proof admits an Optional event field or accessor into a required input in domain
+  validation and in the compiler; the IR keeps the source's declared type.
+- The conformance interpreter evaluates the condition before mapping: False skips, and a proved
+  accessor is observed as its Optional so absence is refused rather than unwrapped. Unknown is
+  that binding's unmet obligation: it invokes nothing, its sibling bindings and every queued
+  delivery still run, and the obligation is reported once they have.
+- Synthesis takes every branch that publishes the event as a candidate trigger, in model order. A
+  member the branch writes as a literal is fixed; one copied from an input is varied, only where no
+  branch guards on that input. The positive aspects use the first branch and value set the
+  condition holds for, and are refused aspect by aspect where no branch gives one. `condition-false`
+  changes one compared leaf from that payload, else takes the first branch that fails with every
+  member present. `condition-absent` carries one occurrence per Optional level the condition proves
+  present, outermost first, each leaving that level out; the condition is then False, or Unknown
+  where a comparison reads the level, and both invoke nothing. A negative witness whose setup or
+  binding chain may publish the event again is not taken, and is refused by name where no other is
+  left. Both are observed by `expect_no_invocation` (suite/36, /37), with a fifty-ask window in the
+  native, Go and TypeScript runtimes. A same-row chain reaching a conditioned binding is unsettled
+  with its reason.
+- **Not done:** generated Rust, Go and web dispatch refuse a conditioned binding by name
+  (`MissingRepresentation`, `bindings.<name>.when.where`) instead of evaluating it. A conditioned
+  binding on an external (delivery-context) event gets no scenarios: each aspect, both condition
+  witnesses included, is refused by name; choosing the delivered payload for the condition is #268
+  slice 2. Browser composition, the diff/14 `binding/predicate-changed` kind, and ess-gen
+  docs/graph/AsyncAPI rendering of the condition are not implemented.
 
 ## Payload condition (#268 and #194)
 

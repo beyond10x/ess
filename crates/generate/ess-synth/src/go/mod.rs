@@ -299,7 +299,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::paging::refuse(ir, plan, crate::Target::Go)?;
     crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Go)?;
     crate::view_query::refuse_colliding_params(ir, plan, crate::Target::Go, port::param_base)?;
-    crate::failure::retry_bound(ir, plan, crate::Target::Go)?;
+    crate::failure::binding_policies(ir, plan, crate::Target::Go)?;
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
     let layout = Layout::admitted(ir, plan, &refusals)?;

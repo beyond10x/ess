@@ -485,6 +485,12 @@ pub(super) fn synthesize(
         .cause
         .event()
         .expect("a delivery context is on an event cause");
+    // The delivered payloads are chosen for the context, not for an event-payload condition (ess/22,
+    // beyond10x/ess#268): see `refuse_conditioned`.
+    if binding.condition.is_some() {
+        refuse_conditioned(&subject, refusals);
+        return;
+    }
     let event = EventRef::from(event_handle);
     let mapped: BTreeSet<&str> = binding
         .mapping
@@ -527,7 +533,9 @@ pub(super) fn synthesize(
             BindingAspect::Mapping => mapping(&delivered),
             BindingAspect::Delivery => delivery(ir, &delivered),
             BindingAspect::OnFailure => on_failure(ir, &delivered),
-            BindingAspect::FinalFailure => continue,
+            BindingAspect::FinalFailure
+            | BindingAspect::ConditionFalse
+            | BindingAspect::ConditionAbsent => continue,
         };
         let (steps, purpose, extra) = match built {
             Ok(built) => built,
@@ -755,4 +763,34 @@ fn on_failure(ir: &EssIr, delivered: &Delivered<'_>) -> Built {
         }
     };
     Ok((steps, clipped(&text), extra))
+}
+
+/// Every aspect of a conditioned external binding, the two condition witnesses included, refused by
+/// name rather than delivered a payload its condition may not hold for (ess/22, beyond10x/ess#268).
+/// Choosing the delivered payload for the condition is slice 2 of #268.
+fn refuse_conditioned(subject: &BindingRef, refusals: &mut Vec<Refusal>) {
+    let aspects = BindingAspect::ALL
+        .map(|(aspect, _)| aspect)
+        .into_iter()
+        .chain([
+            BindingAspect::ConditionFalse,
+            BindingAspect::ConditionAbsent,
+        ]);
+    for aspect in aspects {
+        let id = ScenarioId::Binding {
+            binding: subject.clone(),
+            aspect,
+        };
+        refusals.push(Refusal::about(
+            &id,
+            RefusalCause::BindingUnobservable {
+                binding: subject.clone(),
+                gap: BindingGap::ConditionUnarranged {
+                    why: "it is delivered by an external channel, and choosing the delivered \
+                          payload for its condition is not yet synthesized (#268 slice 2)"
+                        .into(),
+                },
+            },
+        ));
+    }
 }

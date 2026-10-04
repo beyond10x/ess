@@ -4018,6 +4018,7 @@ impl<'a> Resolver<'a> {
             return None;
         }
         let context = self.delivery_context(&binding, path, needles)?;
+        let condition = self.binding_condition(&binding, event_name, path)?;
         let (mapping, selection) = self.selection_mapping(
             &binding,
             &events[event_name],
@@ -4028,6 +4029,7 @@ impl<'a> Resolver<'a> {
             name: binding.name,
             cause: crate::ir::ResolvedBindingCause::Event(event_handle),
             context,
+            condition,
             command: command_handle,
             mapping,
             selection,
@@ -4043,6 +4045,29 @@ impl<'a> Resolver<'a> {
             naming: binding.naming,
             refs: binding.refs,
         })
+    }
+
+    /// The binding's event-payload condition (ess/22, beyond10x/ess#268), resolved: `Some(None)`
+    /// for a binding that declares none. Already admitted by `Specification::validate`, which
+    /// `compile` runs first, so `None` is reached only for a condition that refused there.
+    #[allow(clippy::option_option)]
+    fn binding_condition(
+        &self,
+        binding: &BindingSpec,
+        event: &QualifiedName,
+        path: &str,
+    ) -> Option<Option<crate::ir::ResolvedBindingCondition>> {
+        let Some(predicate) = &binding.condition else {
+            return Some(None);
+        };
+        let plan = ess_domain::binding::condition::ConditionPlan::resolve(
+            predicate,
+            self.spec.events().get(event)?,
+            &self.registry,
+            &format!("{path}.when.where"),
+        )
+        .ok()?;
+        Some(Some(crate::ir::ResolvedBindingCondition::of(plan)))
     }
 
     /// The delivery context an external channel binds (ess/18, beyond10x/ess#195), its fields
@@ -4116,14 +4141,7 @@ impl<'a> Resolver<'a> {
                 MappingSource::HostContext { field } => (field, &context, true),
                 MappingSource::HostRead { field } => (field, &read, false),
                 MappingSource::Literal { value } => {
-                    mapping.push(ResolvedMapping {
-                        target: input.name.clone(),
-                        target_type: input.type_ref.clone(),
-                        value: ResolvedMappingValue::Literal {
-                            value: value.clone(),
-                        },
-                        conversion: None,
-                    });
+                    mapping.push(literal_mapping(input, value));
                     continue;
                 }
                 _ => return None,
@@ -4169,6 +4187,7 @@ impl<'a> Resolver<'a> {
                 read,
             }),
             context: None,
+            condition: None,
             command: command_handle,
             mapping,
             selection: None,
@@ -4316,14 +4335,9 @@ impl<'a> Resolver<'a> {
                         None => complete = false,
                     }
                 }
-                Some(MappingSource::Literal { value }) => resolved.push(ResolvedMapping {
-                    target: input.name.clone(),
-                    target_type: input.type_ref.clone(),
-                    value: ResolvedMappingValue::Literal {
-                        value: value.clone(),
-                    },
-                    conversion: None,
-                }),
+                Some(MappingSource::Literal { value }) => {
+                    resolved.push(literal_mapping(input, value));
+                }
                 Some(MappingSource::Selection { selection, path }) => {
                     match self.mapped_selection(binding, input, selection, path) {
                         Some(mapped) => resolved.push(mapped),
@@ -4452,9 +4466,10 @@ impl<'a> Resolver<'a> {
                 return None;
             }
         };
-        let from = plan.effective_type();
+        let effective = plan.effective_type();
         let to = spec_type_ref(&input.type_ref);
-        if plan.may_miss() && !matches!(to, TypeRef::Optional(_)) {
+        let proved = self.proved_present(binding, segments, &effective, &to);
+        if proved.is_none() && plan.may_miss() && !matches!(to, TypeRef::Optional(_)) {
             self.refuse_mapping(
                 binding,
                 codes::MAPPING_PARTIAL_ACCESSOR,
@@ -4468,6 +4483,8 @@ impl<'a> Resolver<'a> {
             );
             return None;
         }
+        // Assignment reads the present type the condition proves; the IR keeps the source type.
+        let from = proved.unwrap_or_else(|| effective.clone());
         let conversion = if is_assignable(&from, &to) {
             None
         } else {
@@ -4494,7 +4511,7 @@ impl<'a> Resolver<'a> {
         };
         let type_ref = self.type_ref(
             codes::BINDING_UNDECLARED_REFERENCE,
-            &from,
+            &effective,
             &plan.path(),
             &at,
             &[],
@@ -4551,6 +4568,9 @@ impl<'a> Resolver<'a> {
         };
         let from = spec_type_ref(&source.type_ref);
         let to = spec_type_ref(&input.type_ref);
+        let from = self
+            .proved_present(binding, &[field.to_owned()], &from, &to)
+            .unwrap_or(from);
         let conversion = if is_assignable(&from, &to) {
             None
         } else if let Some(crossing) = self
@@ -4596,6 +4616,29 @@ impl<'a> Resolver<'a> {
             },
             conversion,
         })
+    }
+
+    /// The present type of `from` where `binding`'s condition proves every Optional member on
+    /// `members` present and the input `to` is required (beyond10x/ess#194); `None` elsewhere, so
+    /// every other mapping keeps its meaning. The proof reads the same declared members the
+    /// mapping reads, never a spelling prefix.
+    fn proved_present(
+        &self,
+        binding: &BindingSpec,
+        members: &[String],
+        from: &TypeRef,
+        to: &TypeRef,
+    ) -> Option<TypeRef> {
+        use ess_domain::binding::condition;
+        if matches!(to, TypeRef::Optional(_)) {
+            return None;
+        }
+        let predicate = binding.condition.as_ref()?;
+        let event = self.spec.events().get(binding.cause.event()?)?;
+        let plan = condition::ConditionPlan::resolve(predicate, event, &self.registry, "").ok()?;
+        let optional = condition::optional_positions(members, event, &self.registry)?;
+        condition::covers(&plan.proves_present(), members, &optional)
+            .then(|| condition::present_type(from))
     }
 
     fn mapped_field(
@@ -4807,6 +4850,19 @@ struct Members<'a> {
 /// Unbounded recursion on a bounded tree: this walks a [`ResolvedTypeRef`], whose depth is the
 /// parsed [`TypeRef`]'s depth, which [`TypeRef::parse`] refuses past
 /// [`MAX_TYPE_DEPTH`](ess_domain::types::MAX_TYPE_DEPTH).
+/// A literal filling `input`: the text as written, which `ess-domain` checked against the input's
+/// representation.
+fn literal_mapping(input: &ResolvedField, value: &str) -> ResolvedMapping {
+    ResolvedMapping {
+        target: input.name.clone(),
+        target_type: input.type_ref.clone(),
+        value: ResolvedMappingValue::Literal {
+            value: value.to_owned(),
+        },
+        conversion: None,
+    }
+}
+
 fn spec_type_ref(reference: &ResolvedTypeRef) -> TypeRef {
     match reference {
         ResolvedTypeRef::Primitive { name } => TypeRef::Primitive(*name),

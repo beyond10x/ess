@@ -207,6 +207,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 33, Some("0.43.0")),
     ("ess-conformance", 34, None),
     ("ess-conformance", 35, None),
+    ("ess-conformance", 36, None),
+    ("ess-conformance", 37, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

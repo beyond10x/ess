@@ -151,6 +151,7 @@ use crate::types::{
     ConversionRegistry, EnumVariant, Field, Primitive, TypeBody, TypeRef, TypeRegistry,
 };
 
+pub mod condition;
 pub mod context;
 pub mod periodic;
 pub mod retry;
@@ -291,6 +292,10 @@ pub struct RawTrigger {
     /// `context.<field>` (ess/18). Only for an event an external channel delivers.
     #[serde(default)]
     pub context_fields: Option<Vec<Field>>,
+    /// A finite typed predicate over the event payload; the binding invokes only when it holds
+    /// (ess/22, beyond10x/ess#268). Only for an event cause; see the `condition` module.
+    #[serde(default, rename = "where")]
+    pub condition: Option<ess_primitives::predicate::Predicate>,
 }
 
 /// What a binding does.
@@ -915,6 +920,12 @@ pub struct BindingSpec {
     /// The event or periodic cause. Flattening preserves legacy event bytes.
     #[serde(flatten)]
     pub cause: BindingCause,
+    /// The event-payload condition, for an event cause that declares one (ess/22, [`condition`]).
+    ///
+    /// Beside the cause rather than inside it, as the delivery context is in the IR, so that a
+    /// binding without one keeps its bytes.
+    #[serde(rename = "where", default, skip_serializing_if = "Option::is_none")]
+    pub condition: Option<ess_primitives::predicate::Predicate>,
     /// The command it invokes.
     pub command: QualifiedName,
     /// How the event's fields become the command's input, keyed by target field.
@@ -1068,6 +1079,17 @@ impl BindingSpec {
         let mut errors = ValidationErrors::new();
         if let Some(periodic) = self.cause.periodic() {
             errors.extend(periodic.validate(&format!("binding.{}.when.periodic", self.name)));
+            if self.condition.is_some() {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        format!("binding.{}.when.where", self.name),
+                        "a periodic cause publishes no event, so it has no payload for `where:` to \
+                         read",
+                    )
+                    .with_hint("remove `where:`, or react to a declared event"),
+                );
+            }
             if !self.selection_inputs.is_empty() || !self.selections.is_empty() {
                 errors.push(ValidationError::new(
                     ValidationCode::UnsupportedConstruct,
@@ -1229,6 +1251,7 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             }
         }
 
+        let condition = raw.when.condition.clone();
         let cause = match cause_of(&name, raw.when) {
             Ok(cause) => cause,
             Err(error) => return Err(errors.with(error)),
@@ -1236,6 +1259,7 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
         let binding = Self {
             name,
             cause,
+            condition,
             command: raw.invoke.command,
             mapping,
             selection_inputs: raw.selection_inputs,
@@ -1267,6 +1291,7 @@ fn cause_of(name: &BindingName, when: RawTrigger) -> Result<BindingCause, Valida
         periodic,
         context_authority,
         context_fields,
+        condition: _,
     } = when;
     if (context_authority.is_some() || context_fields.is_some()) && periodic.is_some() {
         return Err(ValidationError::new(
@@ -1484,6 +1509,36 @@ impl Ends<'_> {
         self.commands.get(&self.binding.command)
     }
 
+    /// The member paths this binding's condition proves present when it holds: empty without a
+    /// condition, and empty for one that does not resolve, which is refused on its own.
+    fn proved(&self) -> std::collections::BTreeSet<Vec<String>> {
+        match (&self.binding.condition, self.event()) {
+            (Some(condition), Some(event)) => {
+                condition::ConditionPlan::resolve(condition, event, self.types, "")
+                    .map(|plan| plan.proves_present())
+                    .unwrap_or_default()
+            }
+            _ => std::collections::BTreeSet::new(),
+        }
+    }
+
+    /// `read`, with the Optional wrappers the condition proves present removed where `input` is
+    /// required (beyond10x/ess#194); `read` itself everywhere else.
+    fn refined(&self, members: &[String], read: &Field, input: &Field) -> Field {
+        let Some(event) = self.event() else {
+            return read.clone();
+        };
+        if matches!(input.type_ref, TypeRef::Optional(_)) {
+            return read.clone();
+        }
+        match condition::optional_positions(members, event, self.types) {
+            Some(optional) if condition::covers(&self.proved(), members, &optional) => {
+                Field::new(read.name.clone(), condition::present_type(&read.type_ref))
+            }
+            _ => read.clone(),
+        }
+    }
+
     /// A location in the document form, which is what the compiler resolves to a line.
     fn at(&self, suffix: &str) -> String {
         format!("binding.{}.{suffix}", self.binding.name)
@@ -1538,6 +1593,16 @@ impl Ends<'_> {
                     &field.type_ref,
                     &self.at(&format!("when.context_fields.{}", field.name)),
                 ));
+            }
+        }
+        if let (Some(condition), Some(event)) = (&self.binding.condition, self.event()) {
+            if let Err(refused) = condition::ConditionPlan::resolve(
+                condition,
+                event,
+                self.types,
+                &self.at("when.where"),
+            ) {
+                errors.extend(refused);
             }
         }
         if let Some(event) = self.event() {
@@ -1620,7 +1685,8 @@ impl Ends<'_> {
                     return errors;
                 };
                 if let Some((command, input)) = filled {
-                    errors.extend(self.check_types(&at, event, read, command, input));
+                    let read = self.refined(std::slice::from_ref(field), read, input);
+                    errors.extend(self.check_types(&at, event, &read, command, input));
                 }
             }
             MappingSource::EventAccessor { segments } => {
@@ -1630,7 +1696,16 @@ impl Ends<'_> {
                 match crate::accessor::resolve(event, segments, self.types, &at) {
                     Ok(plan) => {
                         if let Some((command, input)) = filled {
-                            if plan.may_miss() && !matches!(input.type_ref, TypeRef::Optional(_)) {
+                            let whole = Field::new(segments.join("."), plan.effective_type());
+                            let refined = self.refined(segments, &whole, input);
+                            if refined != whole {
+                                // Every Optional on the path is proved present by the condition
+                                // (beyond10x/ess#194), so the present type meets the input.
+                                errors
+                                    .extend(self.check_types(&at, event, &refined, command, input));
+                            } else if plan.may_miss()
+                                && !matches!(input.type_ref, TypeRef::Optional(_))
+                            {
                                 errors.push(ValidationError::new(
                                     ValidationCode::PartialAccessor, &at,
                                     format!("{} has effective result {} and may be unavailable; {}.{} requires {}", plan.path(), plan.effective_type(), command.name, input.name, input.type_ref),

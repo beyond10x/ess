@@ -153,6 +153,7 @@ pub mod lanes;
 pub mod leaf_payloads;
 pub mod linearize;
 pub mod mutate;
+pub mod no_invocation;
 pub mod now_offset;
 pub mod occurrence_clock;
 pub mod one_time_response;

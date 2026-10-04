@@ -239,6 +239,57 @@ pub(crate) fn one_time_response(
     }
 }
 
+/// Every binding construct the generated dispatch cannot represent, refused by name: a bounded
+/// retry ([`retry_bound`]) first, then an event-payload condition ([`binding_condition`]).
+pub(crate) fn binding_policies(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    retry_bound(ir, plan, target)?;
+    binding_condition(ir, plan, target)
+}
+
+/// A binding with an event-payload condition (ess/22, beyond10x/ess#268) is refused by every target
+/// that delivers bindings. The command-line target delivers none, so it has nothing to refuse.
+///
+/// The generated dispatch transforms and invokes for every occurrence of the event, and has no
+/// evaluator for the condition: emitting it would invoke where the specification says the binding
+/// skips, and would unwrap an Optional member the condition proves present without checking it.
+/// Each binding is named, so the representation is owed rather than silently wrong.
+pub(crate) fn binding_condition(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    if target == Target::Clap {
+        return Ok(());
+    }
+    let causes = ir
+        .bindings()
+        .values()
+        .filter_map(|binding| {
+            binding.condition.as_ref().map(|condition| {
+                TargetFailureCause::new(
+                    TargetFailureCode::MissingRepresentation,
+                    vec![format!("bindings.{}.when.where", binding.name)],
+                    format!(
+                        "this target's dispatch invokes for every occurrence and cannot evaluate \
+                         the event-payload condition `{}`, so it would invoke where the binding \
+                         skips",
+                        condition.plan.predicate
+                    ),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}
+
 /// A binding with a bounded retry (ess/16, beyond10x/ess#165) is refused by every target that
 /// delivers bindings, as `Json` is. The command-line target delivers none, so it has nothing to
 /// refuse.

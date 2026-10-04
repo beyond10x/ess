@@ -168,6 +168,15 @@ impl ConformanceSuite {
     /// selection over the same suite cannot lower the number again.
     pub fn select_fresh_format_for(&mut self, ir: &ess_compiler::EssIr) {
         self.select_fresh_format();
+        // Zero-invocation observation (ess/22, beyond10x/ess#268) implies every major below it.
+        if crate::no_invocation::used_by(self) {
+            self.provenance.suite_version = SuiteFormat::parse(&format!(
+                "ess-conformance/{}",
+                crate::no_invocation::ORDINARY
+            ))
+            .expect("constant suite version");
+            return;
+        }
         if self.provenance.suite_version.major() < crate::defined_aggregates::ORDINARY
             && crate::defined_aggregates::used_by(ir, self)
         {
@@ -391,7 +400,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -977,6 +986,14 @@ pub enum BindingAspect {
     /// [`ALL`](Self::ALL) produces it beside the four for exactly those bindings, as a scenario or
     /// as a named refusal.
     FinalFailure,
+    /// The binding's event-payload condition does not hold while every Optional member it reads is
+    /// present, and the binding invokes nothing for the whole window (suite/36, ess/22,
+    /// beyond10x/ess#268). Not in [`ALL`](Self::ALL): only a binding with a condition makes it.
+    ConditionFalse,
+    /// An Optional member the condition proves present is absent, and the binding invokes nothing
+    /// for the whole window, before any mapping (suite/36, ess/22, beyond10x/ess#194). Not in
+    /// [`ALL`](Self::ALL).
+    ConditionAbsent,
 }
 
 impl BindingAspect {
@@ -1006,6 +1023,8 @@ impl BindingAspect {
             Self::Delivery => "delivery",
             Self::OnFailure => "on-failure",
             Self::FinalFailure => "final-failure",
+            Self::ConditionFalse => "condition-false",
+            Self::ConditionAbsent => "condition-absent",
         }
     }
 
@@ -1017,6 +1036,8 @@ impl BindingAspect {
             "delivery" => Ok(Self::Delivery),
             "on-failure" => Ok(Self::OnFailure),
             "final-failure" => Ok(Self::FinalFailure),
+            "condition-false" => Ok(Self::ConditionFalse),
+            "condition-absent" => Ok(Self::ConditionAbsent),
             _ => Err(()),
         }
     }
@@ -1026,7 +1047,11 @@ impl BindingAspect {
         Self::ALL
             .iter()
             .map(|(_, written)| *written)
-            .chain([Self::FinalFailure.written()])
+            .chain([
+                Self::FinalFailure.written(),
+                Self::ConditionFalse.written(),
+                Self::ConditionAbsent.written(),
+            ])
             .map(|written| format!("`{written}`"))
             .collect::<Vec<_>>()
             .join(", ")
@@ -2234,6 +2259,20 @@ pub enum ScenarioStep {
         /// What every selected invocation must have received, by declared field name.
         input: BTreeMap<String, ScenarioValue>,
     },
+    /// Require that a binding made **no** invocation of its command under this scenario's
+    /// correlation, for the step's whole eventual window (suite/[`ORDINARY`](crate::no_invocation::ORDINARY),
+    /// ess/22, beyond10x/ess#268).
+    ///
+    /// What a binding whose event-payload condition does not hold owes: any attempt, a refused one
+    /// or one with the wrong input included, fails at once; none passes only at the deadline. No
+    /// input filter, and no inference from absent events: a target that cannot expose invocations
+    /// answers unsupported, never pass.
+    ExpectNoInvocation {
+        /// Whose invocations.
+        binding: BindingRef,
+        /// The command it invokes.
+        command: CommandRef,
+    },
     /// Read a view (§14).
     ///
     /// No freshness field, deliberately. The specification already decided it: `read_your_writes`
@@ -3063,12 +3102,14 @@ mod tests {
             "ess-conformance/33",
             "ess-conformance/34",
             "ess-conformance/35",
+            "ess-conformance/36",
+            "ess-conformance/37",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/36").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/38").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

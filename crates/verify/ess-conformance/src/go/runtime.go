@@ -90,7 +90,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 35
+const newestSuiteMajor = 37
 
 // suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
 // Each major implies every major below it, so one number answers every "does this suite carry X"
@@ -2194,6 +2194,8 @@ func (r *run) step(index int, step Step) bool {
 		return r.deliverEvent(index, step)
 	case "expect_every_invocation":
 		return r.expectEveryInvocation(index, step)
+	case "expect_no_invocation":
+		return r.expectNoInvocation(index, step)
 	case "expect_response_payload":
 		return r.expectResponsePayload(index, step)
 	case "check_periodic":
@@ -4005,7 +4007,7 @@ func scenarioIdentity(id string) error {
 	case len(p) == 3 && p[1] == "authored":
 		valid = q(p[0]) && k(p[2])
 	case len(p) == 3 && p[1] == "binding":
-		valid = k(p[0]) && (p[2] == "delivery" || p[2] == "flow" || p[2] == "mapping" || p[2] == "on-failure" || p[2] == "final-failure")
+		valid = k(p[0]) && (p[2] == "delivery" || p[2] == "flow" || p[2] == "mapping" || p[2] == "on-failure" || p[2] == "final-failure" || p[2] == "condition-false" || p[2] == "condition-absent")
 	case len(p) == 5 && p[1] == "state" && (p[3] == "refuses" || p[3] == "accepts"):
 		valid = q(p[0]) && stateName.MatchString(p[2]) && q(p[4])
 	case len(p) == 6 && p[1] == "transition" && p[3] == "by":
@@ -4056,10 +4058,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	}
 	initial, declaresInitial := p["scenario_initial_state"]
 	if (major >= 34 && initial != "empty") || (major < 34 && declaresInitial) {
-		return suite, fmt.Errorf("scenario_initial_state must be empty exactly in suite/34 and /35")
+		return suite, fmt.Errorf("scenario_initial_state must be empty exactly in suite/34 through /37")
 	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
-		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /35")
+		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /37")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -4087,6 +4089,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		// A bounded retry's final-failure scenario (beyond10x/ess#165) arrived in suite/26 and /27.
 		if strings.HasSuffix(id, "/binding/final-failure") && major < 26 {
 			return suite, fmt.Errorf("a bounded retry requires suite/26 or /27")
+		}
+		// A conditioned binding's negative witnesses (beyond10x/ess#268) arrived in suite/36 and /37.
+		if (strings.HasSuffix(id, "/binding/condition-false") || strings.HasSuffix(id, "/binding/condition-absent")) && major < 36 {
+			return suite, fmt.Errorf("zero-invocation observation requires suite/36 or /37")
 		}
 		// The refusal an ungranted actor gets (beyond10x/ess#265) arrived in suite/26 and /27.
 		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
@@ -4780,6 +4786,11 @@ func admitStep(value any, major int) error {
 		}
 		required += " binding command input"
 		optional = "selecting"
+	case "expect_no_invocation":
+		if major < 36 {
+			return fmt.Errorf("zero-invocation observation requires suite/36 or /37")
+		}
+		required += " binding command"
 	case "resolve_fixtures":
 		if major < 18 {
 			return fmt.Errorf("fixture resolution requires suite/18 or /19")

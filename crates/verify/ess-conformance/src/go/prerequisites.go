@@ -469,6 +469,31 @@ func (r *run) expectEveryInvocation(index int, step Step) bool {
 	return r.assertionFailure(index, "ESS-CF-INVOCATION: empty observation window")
 }
 
+// expectNoInvocation requires that the binding invoked its command no times under this scenario
+// for the whole observation window (suite/36, beyond10x/ess#268): any invocation seen fails at
+// once, none passes only once the window has been read to its end.
+func (r *run) expectNoInvocation(index int, step Step) bool {
+	attempts := r.harness.Deadline().Attempts
+	for attempt := 0; attempt < attempts; attempt++ {
+		seen, err := r.target.ObserveInvocations(InvocationObservationRequest{Binding: step.Binding, Command: step.Command, Correlation: r.correlation, Deadline: Deadline{Attempts: attempts - attempt}})
+		if err != nil {
+			if errors.Is(err, ErrUnsupported) {
+				return r.unsupportedObservation(index, err)
+			}
+			return r.targetFailure(index, err, "observing zero invocations")
+		}
+		for _, invocation := range seen {
+			if invocation.Command == step.Command {
+				return r.assertionFailure(index, "ESS-CF-INVOCATION: unwanted invocation")
+			}
+		}
+		if attempt+1 == attempts {
+			return true
+		}
+	}
+	return r.assertionFailure(index, "ESS-CF-INVOCATION: empty observation window")
+}
+
 func admitStructured(value any, major, depth int) error {
 	if major < 32 {
 		return fmt.Errorf("structured values require suite/32 or /33")

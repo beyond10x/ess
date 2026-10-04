@@ -10,6 +10,7 @@ use crate::{
 use ess_compiler::ir::{ResolvedBinding, ResolvedMappingValue};
 use ess_domain::binding::Failure;
 use ess_primitives::node::Node;
+use ess_primitives::predicate::Truth;
 use std::collections::BTreeMap;
 fn unsupported(reason: &str) -> TargetError {
     TargetError::unsupported("interpreted binding", reason)
@@ -53,15 +54,18 @@ impl Interpreted {
             }
             state.dispatching = true;
         }
+        // An unknown condition is that binding's unmet obligation: its siblings and every queued
+        // delivery still run, and the first such obligation is reported once they have.
+        let mut unmet = None;
         let result = (|| {
             loop {
                 let next = self.scenario.borrow_mut().pending_bindings.pop_front();
                 let Some(next) = next else {
                     break;
                 };
-                self.dispatch_one(&next)?;
+                self.dispatch_one(&next, &mut unmet)?;
             }
-            Ok(())
+            unmet.map_or(Ok(()), Err)
         })();
         let mut state = self.scenario.borrow_mut();
         state.dispatching = false;
@@ -70,7 +74,11 @@ impl Interpreted {
         }
         result
     }
-    fn dispatch_one(&self, delivery: &Delivery) -> Result<(), TargetError> {
+    fn dispatch_one(
+        &self,
+        delivery: &Delivery,
+        unmet: &mut Option<TargetError>,
+    ) -> Result<(), TargetError> {
         let event = &delivery.event;
         let model = self.model("binding dispatch")?;
         for binding in model.bindings().values().filter(|binding| {
@@ -88,6 +96,14 @@ impl Interpreted {
                 (Some(_), _) => continue,
                 (None, _) => None,
             };
+            match holds(binding, &event.payload) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(obligation) => {
+                    unmet.get_or_insert(obligation);
+                    continue;
+                }
+            }
             let input = mapped(model, binding, &event.payload, context)?;
             let attempts = binding
                 .retry
@@ -177,7 +193,7 @@ fn mapped(
                 context.and_then(|values| values.get(field)).cloned()
             }
             ResolvedMappingValue::EventAccessor { plan, types, .. } => expected(
-                crate::accessor::Observation::of(ir, plan, types, &field.target_type)
+                crate::accessor::Observation::of(ir, plan, types, &observed_as(binding, field))
                     .and_then(|observation| observation.evaluate(payload)),
             )?,
             ResolvedMappingValue::Selection {
@@ -247,5 +263,42 @@ impl Interpreted {
             state.published.push(escalation.clone());
         }
         self.dispatch(&escalation, None)
+    }
+}
+
+/// Whether `binding` runs for this occurrence: its condition, before selection, conversion,
+/// mapping and invocation (ess/22, beyond10x/ess#268). False skips this binding alone; Unknown
+/// invokes nothing and is an unmet obligation rather than a skip.
+fn holds(binding: &ResolvedBinding, payload: &BTreeMap<String, Node>) -> Result<bool, TargetError> {
+    let Some(condition) = &binding.condition else {
+        return Ok(true);
+    };
+    match condition.plan.evaluate(payload) {
+        Ok(Truth::True) => Ok(true),
+        Ok(Truth::False) => Ok(false),
+        Ok(Truth::Unknown) => Err(unsupported(
+            "the binding condition is unknown for this occurrence, an unmet obligation that \
+             invokes nothing",
+        )),
+        Err(_) => Err(unsupported(
+            "the binding condition could not read the payload as declared",
+        )),
+    }
+}
+
+/// The type an accessor mapping is observed as: its target, or — where the binding's condition
+/// proved the Optional source present for a required input (beyond10x/ess#194) — the Optional of
+/// it, so an absent value is read as absent and refused below as a missing required input rather
+/// than silently unwrapped.
+fn observed_as(
+    binding: &ResolvedBinding,
+    field: &ess_compiler::ir::ResolvedMapping,
+) -> ess_compiler::ir::ResolvedTypeRef {
+    if binding.condition.is_some() && !field.target_type.is_optional() {
+        ess_compiler::ir::ResolvedTypeRef::Optional {
+            of: Box::new(field.target_type.clone()),
+        }
+    } else {
+        field.target_type.clone()
     }
 }

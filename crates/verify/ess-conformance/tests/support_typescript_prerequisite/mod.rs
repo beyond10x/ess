@@ -32,11 +32,15 @@ impl Fixture {
             kind: kind.into(),
             mode: mode.into(),
             state: RefCell::default(),
-            interpreted: (kind == "structured").then(|| {
-                Interpreted::for_model(super::model(include_str!(
+            interpreted: match kind {
+                "structured" => Some(Interpreted::for_model(super::model(include_str!(
                     "../fixtures/structured-instances.yaml"
-                )))
-            }),
+                )))),
+                // A conditioned binding (beyond10x/ess#268), interpreted honestly or from a model
+                // whose condition is faulty in the way `mode` names.
+                "condition" => Some(Interpreted::for_model(super::model(&condition_model(mode)))),
+                _ => None,
+            },
             trace: Arc::default(),
         }
     }
@@ -261,6 +265,21 @@ impl ConformanceTarget for Fixture {
             json!({"binding":request.binding,"command":request.command}),
         );
         self.failure("invocations")?;
+        if self.kind == "condition" {
+            let seen = self
+                .interpreted
+                .as_ref()
+                .unwrap()
+                .observe_invocations(request)?;
+            // A target whose dispatch is slow: its invocations become visible only from the 31st
+            // ask of the scenario, past an eight-ask window and inside a fifty-ask one.
+            let mut state = self.state.borrow_mut();
+            state.observations += 1;
+            if self.mode == "late-ignore-condition" && state.observations <= 30 {
+                return Ok(Vec::new());
+            }
+            return Ok(seen);
+        }
         let mut state = self.state.borrow_mut();
         state.observations += 1;
         if self.mode == "wrong-then-observation-error" && state.observations == 2 {
@@ -283,6 +302,13 @@ impl ConformanceTarget for Fixture {
         request: ExternalOutcomeControl,
     ) -> Result<(), TargetError> {
         self.record("configure", json!({"force":request.force}));
+        if self.kind == "condition" {
+            return self
+                .interpreted
+                .as_ref()
+                .unwrap()
+                .configure_external_outcome(request);
+        }
         self.state.borrow_mut().forced = true;
         Ok(())
     }
@@ -297,6 +323,9 @@ impl ConformanceTarget for Fixture {
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
         self.record("redeliver", json!({"event":request.event}));
         self.failure("redeliver")?;
+        if self.kind == "condition" {
+            return self.interpreted.as_ref().unwrap().redeliver_event(request);
+        }
         let mut state = self.state.borrow_mut();
         let mut delivery = state.deliveries.last().unwrap().clone();
         if self.mode == "stale-context" {
@@ -586,4 +615,26 @@ fn dispatch_execute(target: &impl ConformanceTarget, args: &Value) -> Result<Val
     Ok(
         json!({"Outcome":result.outcome.map(|outcome|outcome.outcome.to_string()),"Response":result.response,"Error":result.error.as_ref().map(|error|error.error.to_string()),"ErrorPayload":result.error.map(|error|error.fields),"Consistency":result.consistency,"DirectEvents":result.direct_events.into_iter().map(|event|json!({"Event":event.event,"Payload":event.payload})).collect::<Vec<_>>()}),
     )
+}
+
+/// The conditioned-binding model (beyond10x/ess#268, beyond10x/ess#194), honest for `correct` and
+/// faulty in the named way otherwise: a mapping from an always-present field keeps the faulty
+/// conditions compilable.
+pub fn condition_model(mode: &str) -> String {
+    let model = include_str!("../fixtures/binding-condition.yaml");
+    let honest = "      where: [defined(event.order), event.kind == ship]\n";
+    let faulty = |condition: &str| {
+        model.replace(honest, condition).replace(
+            "      order_id: event.order.id\n",
+            "      order_id: event.message_id\n",
+        )
+    };
+    match mode {
+        "ignore-condition" | "late-ignore-condition" => faulty("      where: true\n"),
+        "fire-on-absence" => faulty("      where: event.kind == ship\n"),
+        "invert-condition" => {
+            faulty("      where: {not: [defined(event.order), event.kind == ship]}\n")
+        }
+        _ => model.to_owned(),
+    }
 }
