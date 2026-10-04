@@ -39,10 +39,10 @@ Left out on purpose:
 
 | unit | worktree | build dir | scratch | stage |
 |---|---|---|---|---|
-| U1 | `<worktrees>/ess/wt-5794b43839af` | `<cache>/b10x-target/ess-wt-5794b43839af` (11G) | `<cache>/ess21-completion-20261003/claude-continuation/413a-review2` | adversary pass 2 running; full package green 2611/0/8 |
-| U2 | `<worktrees>/ess/ess-optional-input-via-20261003` | `<cache>/b10x-target/ess-optional-input-304` | `<cache>/ess21-completion-20261003/claude-continuation/304-optional-input` | implementor running |
-| U3 | `<worktrees>/ess/ess-parameterized-transport-20261003` (head `da72325cb`) | `<cache>/b10x-target/ess-transport-391` | `<cache>/ess21-completion-20261003/claude-continuation/391` | not started |
-| U4 | new managed tree `ess-347-guidance-20261004` | `<cache>/b10x-target/ess-347` | `<cache>/ess21-completion-20261003/claude-continuation/347` | not started |
+| U1 | `<worktrees>/ess/wt-5794b43839af` | `<cache>/b10x-target/ess-wt-5794b43839af` (11G) | `<cache>/ess21-completion-20261003/claude-continuation/413a-review2` | merged `ba7623d31`; review pass 2 green (review-result `arithmetic-completeness-413a-20261004-r2`); build dir cleaned |
+| U2 | `<worktrees>/ess/ess-optional-input-via-20261003` | `<cache>/b10x-target/ess-optional-input-304` | `<cache>/ess21-completion-20261003/claude-continuation/304-optional-input` | implementor done (red 10→0 after coordinator-applied test-id correction); adversary pass 1 running |
+| U3 | `<worktrees>/ess/ess-parameterized-transport-20261003` (head `da72325cb`) | `<cache>/b10x-target/ess-transport-391` | `<cache>/ess21-completion-20261003/claude-continuation/391` | implementor running (dispatched after opening commit `a3bf31579`) |
+| U4 | `<worktrees>/ess/ess-347-guidance-20261004` (branch `unit/347-runner-guidance-20261004`, base `a3bf31579`) | `<cache>/b10x-target/ess-347` | `<cache>/ess21-completion-20261003/claude-continuation/347` | merged `5fc5f623c` without an adversary pass (docs plus one pinned test; coordinator verified via two red runner mutations); build dir cleaned (14.2G) |
 
 ## Pre-flight
 
