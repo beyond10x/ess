@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 69
+revision: 70
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -434,3 +434,11 @@ The interrupted413A archive is invalid gzip with4074readable prefix members out 
 The latest root free-space snapshot11847938048bytes is below12884901888. This is a changing host observation, not an attribution of other sessions' writes. The user's release/backlog read-only candidates and all uncleared foreign or missing-marker outputs remain untouched. Existing owner custody requests seek terminal disposable output, not interruption of active work. No bundle acceptance, publication or release follows from resource recovery.
 
 The exact incomplete archive retirement is now terminal: receipt67ca5f45625e76b25d0b51e8490c4223bf92864092950f588fb05c41a3c69de7 records verified absence and29597696allocated bytes removed after fresh path/hash/reference checks. Original target/source and all error/interruption/manifests remain. Available space11877212160bytes remains below the start floor. No original-target cleanup, archive retry or new compiler/probe start occurred.
+
+## Operator custody clarification
+
+The operator confirms the completed292 worker explicitly released both source and cache leases for ess-backlog-synthesis-20261002. Retained final evidence remains in the history-implementation/final evidence set. The reported current inspection shows zero live leases, but this is completed-use evidence only: mixed target/tmp and backlog-input are not approved for disposal.
+
+The operator's current registry inspection reports ess-release-052-final-20261003 and ess-release-052-20261003 as agent-owned, active, with zero live leases and no identified owning session. Neither belongs to that operator's previously reviewed eleven-tree cleanup handoff. Preserve both complete roots pending original-owner and recovery reconciliation; zero leases establish no disposal authority. No file, lease or lifecycle mutation resulted from the operator inspection.
+
+The active ess-w7-server-public integration tree remains under coordinator custody with its live lease. Root refreshed only that own lease and observed11300601856available bytes, below the12884901888start floor. This clarification does not authorize cleanup or change the archive/compiler hold. Source verification, independent acceptance, integration and release remain outstanding.
