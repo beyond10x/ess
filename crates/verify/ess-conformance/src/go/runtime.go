@@ -2008,6 +2008,10 @@ type run struct {
 	replayMode  bool
 	// consistency is the token the last command returned, for a read_your_writes query.
 	consistency string
+	// unreadableView is the read-your-writes query suppressed because the preceding command returned
+	// no token; unreadableCommand names the command that owed it.
+	unreadableView    string
+	unreadableCommand string
 	// lastView is what the last query_view returned, for the expect_view after it.
 	lastView  ViewResult
 	snapshots map[string]subjectSnapshot
@@ -2457,6 +2461,8 @@ func (r *run) establishEntity(index int, step Step) bool {
 	// A pre-setup query cannot establish facts about the newly acknowledged state.
 	r.queried = ""
 	r.lastView = ViewResult{}
+	r.unreadableView = ""
+	r.unreadableCommand = ""
 	return true
 }
 
@@ -2479,6 +2485,16 @@ func (r *run) queryView(index int, step Step) bool {
 	if !ok {
 		return false
 	}
+	if r.lastCommand != "" && r.consistency == "" {
+		// Asking at Current would answer a weaker question than read-your-writes. Remember why no read
+		// was made so expect_view can report the implementation contradiction rather than reusing an
+		// earlier query.
+		r.unreadableView = step.View
+		r.unreadableCommand = r.lastCommand
+		r.queried = ""
+		r.lastView = ViewResult{}
+		return true
+	}
 	result, err := r.target.QueryView(ViewRequest{
 		View:        step.View,
 		Params:      params,
@@ -2493,6 +2509,8 @@ func (r *run) queryView(index int, step Step) bool {
 	if err != nil {
 		return r.targetFailure(index, err, "target callback")
 	}
+	r.unreadableView = ""
+	r.unreadableCommand = ""
 	r.lastView = result
 	if !r.disclosureRows(result.Rows) {
 		return false
@@ -2503,6 +2521,11 @@ func (r *run) queryView(index int, step Step) bool {
 
 // Snapshots own a deep copy: targets may reuse or mutate row maps between queries.
 func (r *run) snapshotSubject(index int, step Step) bool {
+	if r.queried == "" {
+		r.recordStatus(statusError)
+		r.t.Errorf("step %d: ESS-CF-SUITE: no consistent view query preceded the subject snapshot", index)
+		return false
+	}
 	if r.queried != step.View {
 		return r.fail(index, "subject snapshot requires a preceding query of %s", step.View)
 	}
@@ -2551,6 +2574,23 @@ func (r *run) snapshotSubject(index int, step Step) bool {
 }
 
 func (r *run) expectView(index int, step Step, retry bool) bool {
+	if !retry && r.unreadableView == step.View {
+		return r.assertionFailure(
+			index,
+			"ESS-CF-VIEW: `%s` returned no consistency token, so `%s` was not read; asking at Current would answer a weaker question than read-your-writes",
+			r.unreadableCommand,
+			step.View,
+		)
+	}
+	if !retry && r.queried != step.View {
+		r.recordStatus(statusError)
+		if r.queried == "" {
+			r.t.Errorf("step %d: ESS-CF-SUITE: no view had been read before expecting `%s`", index, step.View)
+		} else {
+			r.t.Errorf("step %d: ESS-CF-SUITE: the view last read was `%s`, not `%s`", index, r.queried, step.View)
+		}
+		return false
+	}
 	attempts := 1
 	if retry {
 		attempts = r.harness.Deadline().Attempts
