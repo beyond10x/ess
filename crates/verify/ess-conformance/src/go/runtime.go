@@ -2461,6 +2461,8 @@ func (r *run) establishEntity(index int, step Step) bool {
 	// A pre-setup query cannot establish facts about the newly acknowledged state.
 	r.queried = ""
 	r.lastView = ViewResult{}
+	r.unreadableView = ""
+	r.unreadableCommand = ""
 	return true
 }
 
@@ -2579,6 +2581,15 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 			r.unreadableCommand,
 			step.View,
 		)
+	}
+	if !retry && r.queried != step.View {
+		r.recordStatus(statusError)
+		if r.queried == "" {
+			r.t.Errorf("step %d: ESS-CF-SUITE: no view had been read before expecting `%s`", index, step.View)
+		} else {
+			r.t.Errorf("step %d: ESS-CF-SUITE: the view last read was `%s`, not `%s`", index, r.queried, step.View)
+		}
+		return false
 	}
 	attempts := 1
 	if retry {

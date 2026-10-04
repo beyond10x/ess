@@ -192,6 +192,29 @@ impl ConformanceTarget for Fixture {
         }
         Ok(result)
     }
+    fn establish_entity(&self, request: EntitySetupRequest) -> Result<(), TargetError> {
+        self.record(
+            "establish",
+            json!({
+                "entity": request.entity,
+                "identity": request.identity,
+                "fields": request.fields,
+                "state": request.state,
+            }),
+        );
+        if self.kind == "read-your-writes" {
+            return Ok(());
+        }
+        self.interpreted
+            .as_ref()
+            .ok_or_else(|| {
+                TargetError::unsupported(
+                    "entity setup",
+                    "fixture cannot validate and establish entity state",
+                )
+            })?
+            .establish_entity(request)
+    }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let at_least = match &request.consistency {
             ess_primitives::consistency::QueryConsistency::Current => String::new(),
@@ -416,6 +439,17 @@ impl Drop for DisclosureHost {
         }
     }
 }
+fn dispatch_establish(target: &impl ConformanceTarget, args: &Value) -> Result<Value, TargetError> {
+    let text = |key: &str| args[key].as_str().unwrap();
+    target.establish_entity(EntitySetupRequest {
+        entity: text("Entity").parse().unwrap(),
+        identity: serde_json::from_value(args["Identity"].clone()).unwrap(),
+        fields: fields(&args["Fields"]),
+        state: text("State").parse().unwrap(),
+        correlation: ess_primitives::ids::CorrelationId::new("parity-1").unwrap(),
+    })?;
+    Ok(Value::Null)
+}
 fn dispatch(target: &impl ConformanceTarget, request: &Value) -> Result<Value, TargetError> {
     let args = &request["args"];
     let text = |key: &str| args[key].as_str().unwrap();
@@ -435,6 +469,7 @@ fn dispatch(target: &impl ConformanceTarget, request: &Value) -> Result<Value, T
             Ok(Value::Null)
         }
         "execute" => dispatch_execute(target, args),
+        "establish" => dispatch_establish(target, args),
         "events" => {
             let result = target.observe_events(EventObservationRequest {
                 event: text("Event").parse().unwrap(),

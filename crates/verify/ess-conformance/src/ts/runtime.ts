@@ -3871,6 +3871,9 @@ export class ScenarioRun {
     // A pre-setup query cannot establish facts about the newly acknowledged state.
     this.queried = '';
     this.lastView = [];
+    this.lastTotal = undefined;
+    this.unreadableView = '';
+    this.unreadableCommand = '';
     return true;
   }
 
@@ -4062,6 +4065,15 @@ export class ScenarioRun {
           `\`${step.view}\` was not read; asking at Current would answer a weaker question than ` +
           'read-your-writes',
       );
+    }
+    if (!retry && this.queried !== step.view) {
+      this.recordStatus(statusError);
+      this.failures.push(
+        this.queried === ''
+          ? `step ${index}: ESS-CF-SUITE: no view had been read before expecting \`${step.view}\``
+          : `step ${index}: ESS-CF-SUITE: the view last read was \`${this.queried}\`, not \`${step.view}\``,
+      );
+      return false;
     }
     const attempts = retry ? this.harness.deadline().attempts : 1;
     let last = '';

@@ -28,9 +28,10 @@ use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::report::Status;
 use ess_conformance::scenario::ScenarioInitialState;
 use ess_conformance::target::{
-    ConformanceTarget, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
-    ObservedEvent, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
-    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError,
+    ConformanceTarget, EntitySetupRequest, EventObservationRequest, ExternalOutcomeControl,
+    ImplementationIdentity, ObservedEvent, RedeliveryRequest, ScenarioContext,
+    SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest, SemanticViewResult,
+    TargetError,
 };
 use ess_conformance::{AdmittedSuite, Runner};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -44,6 +45,7 @@ const WITH_TOKEN: &str = "example.call/authored/nonempty-token";
 const NO_PRIOR_WRITE: &str = "example.call/authored/no-prior-write";
 const EVENTUAL: &str = "example.call/authored/eventual-current";
 const STALE: &str = "example.call/authored/stale-read-is-not-reused";
+const RESET_BY_SETUP: &str = "example.call/authored/setup-clears-unreadable-view";
 
 fn model(text: &str) -> ess_compiler::EssIr {
     let raw = RawSpecFile::parse(text).expect("the shared fixture parses");
@@ -127,6 +129,20 @@ fn current_document() -> String {
                      "expectation": {"expect": "counts", "at_least": 0}}
                 ],
                 "source": []
+            },
+            RESET_BY_SETUP: {
+                "purpose": "Successful setup clears a suppressed read before the next assertion",
+                "steps": [
+                    {"step": "execute_command", "command": "example.call.OfferCall"},
+                    {"step": "query_view", "view": "example.call.Calls"},
+                    {"step": "establish_entity", "instance": "established-call",
+                     "entity": "example.call.Call",
+                     "identity": "00000000-0000-4000-8000-000000000002",
+                     "fields": {}, "state": "Open"},
+                    {"step": "expect_view", "view": "example.call.Calls",
+                     "expectation": {"expect": "counts", "at_least": 0}}
+                ],
+                "source": []
             }
         }
     }))
@@ -157,6 +173,7 @@ fn expected() -> BTreeMap<String, String> {
         (NO_PRIOR_WRITE, "passed"),
         (EVENTUAL, "passed"),
         (STALE, "failed"),
+        (RESET_BY_SETUP, "error"),
     ]
     .map(|(scenario, status)| (scenario.to_owned(), status.to_owned()))
     .into()
@@ -182,6 +199,7 @@ impl Probe {
         assert_eq!(queries[NO_PRIOR_WRITE], [QueryConsistency::Current]);
         assert_eq!(queries[EVENTUAL], [QueryConsistency::Current]);
         assert_eq!(queries[STALE], [QueryConsistency::Current]);
+        assert_eq!(queries[RESET_BY_SETUP], []);
     }
 }
 
@@ -211,6 +229,10 @@ impl ConformanceTarget for Probe {
         }
         assert_eq!(request.command.to_string(), "example.call.OfferCall");
         Ok(result)
+    }
+
+    fn establish_entity(&self, _: EntitySetupRequest) -> Result<(), TargetError> {
+        Ok(())
     }
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
@@ -423,7 +445,7 @@ impl TypeScriptPackage {
                 );
             }
         }
-        assert_eq!(outcomes.len(), 6, "every scenario executed:\n{log}");
+        assert_eq!(outcomes.len(), 7, "every scenario executed:\n{log}");
         (outcomes, trace)
     }
 }
@@ -452,9 +474,15 @@ fn live_driver() -> String {
         .0;
     let needle = "response:value.Response??undefined,directEvents";
     assert_eq!(driver.matches(needle).count(), 1);
-    driver.replace(
+    let driver = driver.replace(
         needle,
         "response:value.Response??undefined,consistency:value.Consistency??'',directEvents",
+    );
+    let needle = "configureExternalOutcome:async request=>call('configure',upper(request)),";
+    assert_eq!(driver.matches(needle).count(), 1);
+    driver.replace(
+        needle,
+        "establishEntity:async request=>call('establish',upper(request)),\n configureExternalOutcome:async request=>call('configure',upper(request)),",
     )
 }
 
@@ -493,6 +521,7 @@ fn expected_queries() -> BTreeMap<String, Vec<String>> {
         (NO_PRIOR_WRITE, vec![String::new()]),
         (EVENTUAL, vec![String::new()]),
         (STALE, vec![String::new()]),
+        (RESET_BY_SETUP, Vec::new()),
     ]
     .map(|(scenario, queries)| (scenario.to_owned(), queries))
     .into()
