@@ -6,13 +6,15 @@
 //! the commands and what they printed, and the domain graphs are `b10x-domain-graph/1` documents
 //! derived from `ess specify compile --format json`. The hero's `b10x-code-pair/1` quotes one
 //! declared type from the example's source next to its schema in a fresh `openapi` projection.
-//! Nothing in them is typed by hand, and
+//! The visualise page's `ess-ui-presentation/1` document is written by the pinned `ess-ui` from
+//! this `ess`'s output (see [`presentation`]). Nothing in them is typed by hand, and
 //! `--check` refuses a committed file that differs from a fresh recording.
 //!
 //! The commands run in a scratch directory holding only `examples/billing`, so the paths they
 //! print are the relative paths a reader would type, and the files they write land nowhere in the
 //! repository.
 
+use crate::presentation;
 use anyhow::{bail, ensure, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
@@ -161,12 +163,26 @@ struct Entry {
 }
 
 /// Writes, or with `check` compares, every file under [`DATA`].
-pub(super) fn run(root: &Path, check: bool, ess: Option<&Path>) -> Result<String> {
+pub(super) fn run(
+    root: &Path,
+    check: bool,
+    ess: Option<&Path>,
+    ess_ui: Option<&Path>,
+) -> Result<String> {
     let ess = match ess {
         Some(path) => path.to_path_buf(),
         None => build_ess(root)?,
     };
-    let files = render(root, &ess)?;
+    let ess_ui = match ess_ui {
+        Some(path) => path.to_path_buf(),
+        None => presentation::binary(root)?,
+    };
+    let mut files = render(root, &ess)?;
+    let scratch = Scratch::new()?;
+    files.insert(
+        presentation::FILE.to_owned(),
+        presentation::render(root, &ess, &ess_ui, &scratch.0)?,
+    );
     let directory = root.join(DATA);
     let mut report = String::new();
     let mut stale = Vec::new();
@@ -610,7 +626,7 @@ impl Drop for Scratch {
     }
 }
 
-fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+pub(super) fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     fs::create_dir_all(to).with_context(|| format!("creating {}", to.display()))?;
     for entry in fs::read_dir(from).with_context(|| format!("reading {}", from.display()))? {
         let entry = entry?;

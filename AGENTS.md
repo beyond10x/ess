@@ -138,6 +138,17 @@ the real `ess` binary on `examples/billing` by `cargo xtask site-data`; never ed
 `projection-check` runs `cargo xtask site-data --check`, so a change to what `ess` prints for the
 example, or to the example itself, needs `cargo xtask site-data` in the same change.
 
+The visualise page (`website/docs/visualise.md`, outside the documentation collection, so its MDX
+imports are allowed) renders `<EssPresentation>` from `@beyond10x/ess-ui-templates`, pinned by
+commit in `website/package.json`. Its `website/data/billing.presentation.json` is written by that
+same commit's `ess-ui data` from this `ess`'s compile, synthesize and author output, as part of
+`cargo xtask site-data`. `ess-ui` depends on ESS crates, so it is never a Cargo dependency here:
+`cargo xtask ess-ui` installs it once per pin under `$ESS_UI_ROOT` or `~/.cache/ess-ui` (network),
+CI caches that directory, and `site-data` installs it on first use when missing. Moving the pin is
+a one-line `package.json` change, `npm --prefix website install`, and `cargo xtask site-data`. A
+refusal saying the IR is not the compiled model means `ess-ui`'s pinned ESS release and this
+workspace compile the example differently: move the `ess-ui` pin to a commit built on this release.
+
 Before pushing a release tag, run `task check` and `task web-check` on the commit being tagged.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
