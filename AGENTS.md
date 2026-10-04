@@ -129,12 +129,18 @@ task site-build
 
 This check is separate because `npm ci` fetches the exact public `docs-system` Git revision and
 therefore cannot be part of the offline gate. `.github/workflows/pages.yml` preserves the same
-Rust/WASM, browser-lab and site-build checks without Pages authority; the unified Website publishes
+Rust/WASM realization and site-build checks without Pages authority; the unified Website publishes
 the collected source and the Atlas-generated façade owns the project redirect.
 
-Before pushing a release tag, run `task check` and `task site-lab` on the commit being tagged.
+The landing page is `website/product.json`, rendered by the docs-system product-site template
+(`withProductSite`). Its terminal sessions and domain graph under `website/data/` are recorded from
+the real `ess` binary on `examples/billing` by `cargo xtask site-data`; never edit them by hand.
+`projection-check` runs `cargo xtask site-data --check`, so a change to what `ess` prints for the
+example, or to the example itself, needs `cargo xtask site-data` in the same change.
+
+Before pushing a release tag, run `task check` and `task web-check` on the commit being tagged.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
-The release workflow runs the reusable gate, WASM/browser-lab correctness checks and native
+The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only
 after all succeed. It skips the
 gate only when a green `Gate` already covers the tagged bytes. "Green" means the newest `Gate`

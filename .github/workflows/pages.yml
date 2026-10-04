@@ -1,5 +1,4 @@
 # Atlas-classified former Pages workflow: repository-owned validation only; deployment authority is forbidden.
-# Preserves the Docusaurus and browser-lab build, including its Rust/WASM and task-toolchain gates.
 name: Documentation validation
 
 on:
@@ -49,7 +48,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
-      - name: Build the public documentation and browser lab
+      - name: Build the public documentation
         run: task site-build
 
       # The built site, for `beyond10x/website` `project-site.yml` to deploy to this repository's

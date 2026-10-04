@@ -1,0 +1,17 @@
+{
+  "format": "b10x-terminal/1",
+  "title": "ess / generate and synthesize",
+  "entries": [
+    {
+      "command": "ess generate generate --path examples/billing --kind openapi --out generated",
+      "output": "openapi/email-service.yaml — 7457 byte(s)\nopenapi/invoice-service.yaml — 31928 byte(s)\n2 artifact(s), written to generated",
+      "exitCode": 0
+    },
+    {
+      "command": "ess generate synthesize --path examples/billing --target rust --out billing-rust",
+      "output": "48 capabilities: 40 generated, 4 obligation(s), 4 refused\n17 artifact(s), written to billing-rust",
+      "exitCode": 0
+    }
+  ],
+  "recordedWith": "ess built from this repository, recorded by `cargo xtask site-data` on a copy of examples/billing"
+}

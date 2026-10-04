@@ -7,6 +7,7 @@ mod docs;
 #[path = "../../ess-cli/src/git_checkout.rs"]
 mod git_checkout;
 mod infra_acceptance;
+mod site_data;
 mod support;
 mod whats_changed;
 
@@ -113,6 +114,15 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Record or check the landing page's `ess` sessions and domain graphs under `website/data/`.
+    SiteData {
+        /// Compare byte for byte without writing.
+        #[arg(long)]
+        check: bool,
+        /// An `ess` binary to record with; defaults to building this workspace's.
+        #[arg(long)]
+        ess: Option<PathBuf>,
+    },
     /// Regenerate or check `WHATS-CHANGED.md` from the `changes/` fragments.
     WhatsChanged {
         /// Compare byte for byte without writing.
@@ -185,6 +195,9 @@ fn run(cli: Cli) -> Result<String, String> {
         }
         Command::InfraAcceptance(args) => {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
+        }
+        Command::SiteData { check, ess } => {
+            site_data::run(&root, check, ess.as_deref()).map_err(|error| format!("{error:#}"))
         }
         Command::WhatsChanged { check } => {
             whats_changed::run(&root, check).map_err(|error| format!("{error:#}"))
@@ -1456,7 +1469,7 @@ mod tests {
             .iter()
             .filter_map(|step| step["run"].as_str())
             .collect::<Vec<_>>();
-        assert!(runs.contains(&"task site-lab"));
+        assert!(runs.contains(&"task web-check"));
         assert!(
             !include_str!("../../../../.github/workflows/release.yml").contains("task site-build")
         );
