@@ -1,0 +1,254 @@
+# The explorer draws commands whose answer depends on the stored row (beyond10x/ess#221), and its
+# text inputs reach `.count` boundaries and `example:` values (beyond10x/ess#223).
+#
+# `Bind` creates a key under the identity its input names: `already-bound` answers an identity a
+# key already carries (`existing_instance`), and `too-short` a secret under 12 characters, which
+# the old string pool (`""`, `"a"`, `"b"`) never got past, so no key was ever created. `secret`
+# carries an `example:` and `uses` an Integer one; `label` carries neither and is compared with
+# nothing, so its pool stays the plain one.
+#
+# The stored-row conditions, one command each: `Rotate` refuses the secret already stored
+# (`when_subject` predicate reading the input) and answers an unknown key; `Upgrade` reads the
+# stored enum `plan` (`when_subject` field); `Revoke` refuses a key already revoked
+# (`when_subject_state`, a list, on a refusal naming no subject); `Resume` tells the first report
+# of `Active` from a restatement (`when_state_changes`); `Use` refuses an amount above the stored
+# `uses`. `Grant` reads another entity's row (`when_related`), which the explorer leaves out by
+# name.
+#
+# The targets beside it are `explore-stored-rows-target.mjs` and `explore_stored_rows_target.go`.
+
+format: ess/18
+system: exploredraw
+version: v1
+domain: exploredraw.keys
+
+summary: Keys bound under a chosen identity, rotated, upgraded, suspended, resumed, used and revoked.
+
+types:
+  - {name: exploredraw.keys.KeyId, kind: newtype, of: String}
+  - {name: exploredraw.keys.OwnerId, kind: newtype, of: Uuid}
+  - {name: exploredraw.keys.Plan, kind: enum, variants: [Basic, Pro]}
+
+entities:
+  - name: exploredraw.keys.Key
+    identity: {name: key_id, type: exploredraw.keys.KeyId}
+    fields:
+      - {name: secret, type: String}
+      - {name: label, type: String}
+      - {name: plan, type: exploredraw.keys.Plan}
+      - {name: uses, type: Integer}
+    lifecycle:
+      initial: Active
+      states: [Active, Suspended, Revoked]
+      terminal: [Revoked]
+      transitions:
+        - {name: suspend, from: [Active], to: Suspended}
+        - {name: resume, from: [Active, Suspended], to: Active}
+        - {name: revoke, from: [Active, Suspended], to: Revoked}
+  - name: exploredraw.keys.Owner
+    identity: {name: owner_id, type: exploredraw.keys.OwnerId}
+    fields: []
+    lifecycle:
+      initial: Enrolled
+      states: [Enrolled]
+      terminal: [Enrolled]
+      transitions: []
+
+actors:
+  - name: exploredraw.keys.Admin
+    may:
+      - exploredraw.keys.Bind
+      - exploredraw.keys.Rotate
+      - exploredraw.keys.Upgrade
+      - exploredraw.keys.Revoke
+      - exploredraw.keys.Resume
+      - exploredraw.keys.Suspend
+      - exploredraw.keys.Use
+      - exploredraw.keys.Enrol
+      - exploredraw.keys.Grant
+
+errors:
+  - {name: exploredraw.keys.AlreadyBound, fields: []}
+  - {name: exploredraw.keys.TooShort, fields: []}
+  - {name: exploredraw.keys.UnknownKey, fields: []}
+  - {name: exploredraw.keys.SameSecret, fields: []}
+  - {name: exploredraw.keys.AlreadyRevoked, fields: []}
+  - {name: exploredraw.keys.Stuck, fields: []}
+  - {name: exploredraw.keys.NotActive, fields: []}
+  - {name: exploredraw.keys.Exhausted, fields: []}
+  - {name: exploredraw.keys.NoOwner, fields: []}
+
+events:
+  - name: exploredraw.keys.Bound
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Rotated
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Upgraded
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Kept
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Revoked
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Resumed
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Restated
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Suspended
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Used
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+  - name: exploredraw.keys.Enrolled
+    fields: [{name: owner_id, type: exploredraw.keys.OwnerId}]
+  - name: exploredraw.keys.Granted
+    fields: [{name: key_id, type: exploredraw.keys.KeyId}]
+
+commands:
+  - name: exploredraw.keys.Bind
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+      - {name: secret, type: String, example: "correct-horse-battery"}
+      - {name: label, type: String}
+      - {name: uses, type: Integer, example: 7}
+    outcomes:
+      - name: too-short
+        when: secret.count < 12
+        error: exploredraw.keys.TooShort
+      - name: bound
+        creates: exploredraw.keys.Key
+        instance: key_id
+        sets: {secret: input.secret, label: input.label, plan: Basic, uses: input.uses}
+        emits: [exploredraw.keys.Bound]
+        payload: {exploredraw.keys.Bound: {key_id: input.key_id}}
+      - {name: already-bound, existing_instance: true, error: exploredraw.keys.AlreadyBound}
+
+  - name: exploredraw.keys.Rotate
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+      - {name: secret, type: String}
+    outcomes:
+      - name: same-secret
+        when_subject:
+          predicate: secret == input.secret
+        error: exploredraw.keys.SameSecret
+      - name: rotated
+        updates: exploredraw.keys.Key
+        instance: key_id
+        sets: {secret: input.secret}
+        emits: [exploredraw.keys.Rotated]
+        payload: {exploredraw.keys.Rotated: {key_id: input.key_id}}
+      - {name: unknown-key, unknown_instance: true, error: exploredraw.keys.UnknownKey}
+
+  - name: exploredraw.keys.Upgrade
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+    outcomes:
+      - name: upgraded
+        when_subject: {field: plan, equals: Basic}
+        updates: exploredraw.keys.Key
+        instance: key_id
+        sets: {plan: Pro}
+        emits: [exploredraw.keys.Upgraded]
+        payload: {exploredraw.keys.Upgraded: {key_id: input.key_id}}
+      - name: kept
+        updates: exploredraw.keys.Key
+        instance: key_id
+        emits: [exploredraw.keys.Kept]
+        payload: {exploredraw.keys.Kept: {key_id: input.key_id}}
+
+  - name: exploredraw.keys.Revoke
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+    outcomes:
+      - name: already-revoked
+        when_subject_state: [Revoked]
+        error: exploredraw.keys.AlreadyRevoked
+      - name: revoked
+        moves: exploredraw.keys.Key.revoke
+        instance: key_id
+        emits: [exploredraw.keys.Revoked]
+        payload: {exploredraw.keys.Revoked: {key_id: input.key_id}}
+
+  - name: exploredraw.keys.Resume
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+    outcomes:
+      - name: resumed
+        when_state_changes: true
+        moves: exploredraw.keys.Key.resume
+        instance: key_id
+        emits: [exploredraw.keys.Resumed]
+        payload: {exploredraw.keys.Resumed: {key_id: input.key_id}}
+      - name: restated
+        when_state_changes: false
+        moves: exploredraw.keys.Key.resume
+        instance: key_id
+        emits: [exploredraw.keys.Restated]
+        payload: {exploredraw.keys.Restated: {key_id: input.key_id}}
+      - {name: stuck, error: exploredraw.keys.Stuck}
+
+  - name: exploredraw.keys.Suspend
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+    outcomes:
+      - name: suspended
+        moves: exploredraw.keys.Key.suspend
+        instance: key_id
+        emits: [exploredraw.keys.Suspended]
+        payload: {exploredraw.keys.Suspended: {key_id: input.key_id}}
+      - {name: not-active, wrong_state: true, error: exploredraw.keys.NotActive}
+
+  - name: exploredraw.keys.Use
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: exhausted
+        when_subject:
+          predicate: uses < input.amount
+        error: exploredraw.keys.Exhausted
+      - name: used
+        updates: exploredraw.keys.Key
+        instance: key_id
+        emits: [exploredraw.keys.Used]
+        payload: {exploredraw.keys.Used: {key_id: input.key_id}}
+
+  - name: exploredraw.keys.Enrol
+    input: []
+    outcomes:
+      - name: enrolled
+        creates: exploredraw.keys.Owner
+        instance: owner_id
+        emits: [exploredraw.keys.Enrolled]
+        payload: {exploredraw.keys.Enrolled: {owner_id: {generated: true}}}
+
+  - name: exploredraw.keys.Grant
+    input:
+      - {name: owner_id, type: exploredraw.keys.OwnerId}
+      - {name: key_id, type: exploredraw.keys.KeyId}
+    outcomes:
+      - name: no-owner
+        when_related: {via: input.owner_id, exists: false}
+        error: exploredraw.keys.NoOwner
+      - name: granted
+        updates: exploredraw.keys.Key
+        instance: key_id
+        emits: [exploredraw.keys.Granted]
+        payload: {exploredraw.keys.Granted: {key_id: input.key_id}}
+
+views:
+  - name: exploredraw.keys.Keys
+    source: exploredraw.keys.Key
+    consistency: read_your_writes
+    fields:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+      - {name: state, type: exploredraw.keys.Key.State}
+      - {name: secret, type: String}
+      - {name: label, type: String}
+      - {name: plan, type: exploredraw.keys.Plan}
+      - {name: uses, type: Integer}
+  - name: exploredraw.keys.Owners
+    source: exploredraw.keys.Owner
+    consistency: read_your_writes
+    fields:
+      - {name: owner_id, type: exploredraw.keys.OwnerId}
+      - {name: state, type: exploredraw.keys.Owner.State}

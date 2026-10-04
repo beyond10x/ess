@@ -40,8 +40,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { refusePrivateExploration } from './one_time_response.js';
 import { join } from 'node:path';
 
-import { facts, fromNode, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
-import type { FactSource, Predicate } from './predicate.js';
+import { facts, fromNode, present, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
+import type { FactSource, Operand, Predicate, Truth } from './predicate.js';
 import {
   asNumber,
   byteCompare,
@@ -366,8 +366,161 @@ function parsed(node: Node): Predicate | string {
   }
 }
 
+/**
+ * A command's draw pools. `fieldIntegers` and `fieldTexts` are the pools of the input paths whose
+ * own pool differs from the command's (beyond10x/ess#223): the command's, with the input's
+ * `example:` and, for a text, that example (or the path itself) cut or cycled to n-1, n and n+1
+ * characters for each `.count` literal compared with the input. Every other path draws from the
+ * command's pool.
+ */
+interface Pools {
+  integers: number[];
+  texts: string[];
+  fieldIntegers: Map<string, number[]>;
+  fieldTexts: Map<string, string[]>;
+  /**
+   * The variants of each enum input with an `example:`, and the example where it is not one of
+   * them. Validation admits only a declared variant, so for a validated specification this is the
+   * variants as declared and the draw does not move.
+   */
+  fieldEnums: Map<string, string[]>;
+}
+
+/** The longest text a `.count` boundary is drawn at, synthesis's `MAX_COUNT_WITNESS`. */
+const MAX_COUNT = 1024;
+
+/** The integer pool the input at `path` draws from. */
+function integersAt(pools: Pools, path: string): number[] {
+  return pools.fieldIntegers.get(path) ?? pools.integers;
+}
+
+/** The text pool the input at `path` draws from. */
+function textsAt(pools: Pools, path: string): string[] {
+  return pools.fieldTexts.get(path) ?? pools.texts;
+}
+
+/** The pool an enum input at `path` draws from, `variants` where it has no example. */
+function enumsAt(pools: Pools, path: string, variants: string[]): string[] {
+  return pools.fieldEnums.get(path) ?? variants;
+}
+
+/** `value` as a whole number binary64 holds exactly, if it is one. */
+function safeWhole(value: Node): number | null {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    value === null ||
+    value === undefined
+  )
+    return null;
+  const [number, ok] = asNumber(value);
+  return ok && Number.isSafeInteger(number) ? number : null;
+}
+
+/**
+ * For each input path a `.count` of which a guard compares with a whole literal, the lengths n-1, n
+ * and n+1 of every such literal n, from 0 to `MAX_COUNT`. A guard over the input reads its paths as
+ * they are; a predicate over the stored row reads the input under `input.`, and its other paths
+ * are the row's.
+ */
+function counts(inputGuards: Predicate[], storedGuards: Predicate[]): Map<string, Set<number>> {
+  const found = new Map<string, Set<number>>();
+  const visit =
+    (stored: boolean) =>
+    (node: Predicate): void => {
+      if (node.kind !== 'compare') return;
+      const pairs: [Operand, Operand][] = [
+        [node.left, node.right],
+        [node.right, node.left],
+      ];
+      for (const [fact, literal] of pairs) {
+        if (!fact.isFact || literal.isFact || !fact.path.endsWith('.count')) continue;
+        let path = fact.path.slice(0, -'.count'.length);
+        if (path === '') continue;
+        if (stored) {
+          if (!path.startsWith('input.')) continue;
+          path = path.slice('input.'.length);
+        }
+        const n = safeWhole(literal.literal);
+        if (n === null) continue;
+        for (const length of [n - 1, n, n + 1]) {
+          if (length < 0 || length > MAX_COUNT) continue;
+          if (!found.has(path)) found.set(path, new Set());
+          found.get(path)!.add(length);
+        }
+      }
+    };
+  for (const guard of inputGuards) walk(guard, visit(false));
+  for (const guard of storedGuards) walk(guard, visit(true));
+  return found;
+}
+
+/**
+ * `text` at exactly `length` characters: its first `length` when it has that many, otherwise its
+ * own characters cycled from its start, and `plain`'s when it is empty. Synthesis's rule for a text
+ * cut to a `.count` boundary (`witness.rs` `resize`).
+ */
+function resize(text: string, length: number, plain: string): string {
+  let source = [...text];
+  if (source.length === 0) source = [...plain];
+  if (source.length === 0) return '';
+  const out: string[] = [];
+  for (let index = 0; index < length; index += 1) out.push(source[index % source.length] as string);
+  return out.join('');
+}
+
+/** The kind a value is drawn as once an `Optional` and an identity are looked through. */
+function leafKind(kind: Kind): Kind {
+  while (kind.kind === 'optional' || kind.kind === 'identity') kind = kind.base;
+  return kind;
+}
+
+/**
+ * Gives each input path its own pool where it differs from the command's (beyond10x/ess#223).
+ * `examples` is the command's `examples`, by top-level input name.
+ */
+function fieldPools(
+  pools: Pools,
+  inputs: InputField[],
+  examples: Node,
+  lengths: Map<string, Set<number>>,
+): void {
+  const visit = (path: string, kind: Kind, example: Node, hasExample: boolean): void => {
+    const leaf = leafKind(kind);
+    if (leaf.kind === 'struct') {
+      for (const [name, field] of leaf.fields) visit(`${path}.${name}`, field, undefined, false);
+    } else if (leaf.kind === 'enum') {
+      if (!hasExample || typeof example !== 'string') return;
+      pools.fieldEnums.set(
+        path,
+        leaf.variants.includes(example) ? [...leaf.variants] : [...leaf.variants, example],
+      );
+    } else if (leaf.kind === 'integer') {
+      const n = hasExample ? safeWhole(example) : null;
+      if (n === null) return;
+      pools.fieldIntegers.set(
+        path,
+        [...new Set([n, ...pools.integers])].sort((left, right) => left - right),
+      );
+    } else if (leaf.kind === 'string') {
+      const text = hasExample && typeof example === 'string' ? example : null;
+      const counted = lengths.get(path) ?? new Set<number>();
+      if (text === null && counted.size === 0) return;
+      const set = new Set<string>(pools.texts);
+      if (text !== null) set.add(text);
+      const base = text ?? path;
+      for (const length of counted) set.add(resize(base, length, path));
+      pools.fieldTexts.set(path, sortStrings([...set]));
+    }
+  };
+  for (const [name, kind] of inputs) {
+    const hasExample = isObject(examples) && Object.prototype.hasOwnProperty.call(examples, name);
+    visit(name, kind, hasExample ? examples[name] : undefined, hasExample);
+  }
+}
+
 /** The literals a command's guards compare against, as draw pools. */
-function pools(guards: Predicate[]): { integers: number[]; texts: string[] } {
+function pools(guards: Predicate[]): Pools {
   const integers = new Set<number>(INTEGERS);
   const texts = new Set<string>(TEXTS);
   const literal = (value: Node): void => {
@@ -396,6 +549,9 @@ function pools(guards: Predicate[]): { integers: number[]; texts: string[] } {
   return {
     integers: [...integers].sort((left, right) => left - right),
     texts: sortStrings([...texts]),
+    fieldIntegers: new Map(),
+    fieldTexts: new Map(),
+    fieldEnums: new Map(),
   };
 }
 
@@ -407,8 +563,27 @@ interface Command {
   node: Node;
   inputs: InputField[];
   guards: Map<string, Predicate>;
-  pools: { integers: number[]; texts: string[] };
+  /** Every branch selected by the stored row (beyond10x/ess#221), by outcome name. */
+  rows: Map<string, RowGuard>;
+  pools: Pools;
 }
+
+/**
+ * A condition read from the subject's stored row: its held state (`subject_state`, `state_change`),
+ * one stored enum field (`subject_field`) or a predicate over its stored fields
+ * (`subject_predicate`), each with an optional guard over the input.
+ */
+interface RowGuard {
+  kind: string;
+  states: Set<string>;
+  field: string;
+  equals: string;
+  stored: Predicate | null;
+  input: Predicate | null;
+}
+
+/** Every condition read from the subject's stored row. */
+const ROW_KINDS = ['subject_state', 'state_change', 'subject_field', 'subject_predicate'];
 
 interface Plan {
   ir: Node;
@@ -448,6 +623,99 @@ function effectRefusal(outcome: Node): string | null {
     : `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
 }
 
+/** A stored-row condition as the explorer evaluates it, or why it cannot. */
+function rowOf(condition: Node): RowGuard | string {
+  const row: RowGuard = {
+    kind: String(condition.kind),
+    states: new Set(),
+    field: '',
+    equals: '',
+    stored: null,
+    input: null,
+  };
+  const parse = (node: Node): Predicate | null | string =>
+    node === null || node === undefined ? null : parsed(node);
+  let input: Predicate | null | string = null;
+  switch (row.kind) {
+    case 'subject_state':
+      // One state is written as the state itself, a list (ess/18) as a list.
+      if (typeof condition.state === 'string') row.states.add(condition.state);
+      for (const state of list(condition.state)) row.states.add(String(state));
+      input = parse(condition.predicate);
+      break;
+    case 'state_change':
+      for (const state of list(condition.states)) row.states.add(String(state));
+      input = parse(condition.predicate);
+      break;
+    case 'subject_field':
+      row.field = typeof condition.field === 'string' ? condition.field : '';
+      row.equals = typeof condition.equals === 'string' ? condition.equals : '';
+      input = parse(condition.predicate);
+      break;
+    case 'subject_predicate': {
+      const stored = parse(condition.predicate);
+      if (typeof stored === 'string') return stored;
+      row.stored = stored;
+      input = parse(condition.input);
+      break;
+    }
+  }
+  if (typeof input === 'string') return input;
+  row.input = input;
+  return row;
+}
+
+/** The `existing_instance` branch of a command node, or undefined. */
+function existingOutcome(node: Node): Node | undefined {
+  return list(node.outcomes).find(
+    (outcome: Node) => outcome.condition?.kind === 'existing_instance',
+  );
+}
+
+/**
+ * Where a creating branch puts its identity: the entity, and the input field that names the
+ * identity, or `''` where the implementation generates it.
+ */
+interface Address {
+  entity: string;
+  field: string;
+}
+
+/**
+ * The distinct addresses of a command node's creating branches, in declaration order. Where there
+ * is more than one, which one an `existing_instance` branch reads depends on the branch selected
+ * (`interpret::execute` `existence::existing`).
+ */
+function addresses(node: Node): Address[] {
+  const out: Address[] = [];
+  for (const outcome of list(node.outcomes)) {
+    const subject = outcome?.subject;
+    if (subject?.effect !== 'creates') continue;
+    const instance = subject.instance;
+    const identity = typeof instance?.field?.name === 'string' ? instance.field.name : '';
+    const address: Address = {
+      entity: typeof subject.entity === 'string' ? subject.entity : '',
+      field: '',
+    };
+    for (const payload of list(outcome.payload)) {
+      if (payload?.event !== instance?.event) continue;
+      for (const field of list(payload.fields)) {
+        const kind = field?.value?.kind;
+        if (
+          field?.target === identity &&
+          (kind === 'input_field' || kind === 'input_or_generated')
+        ) {
+          address.field = typeof field.value.field === 'string' ? field.value.field : '';
+        }
+      }
+    }
+    if (!out.some((known) => known.entity === address.entity && known.field === address.field)) {
+      out.push(address);
+    }
+  }
+  return out;
+}
+
 /**
  * What exploration may call and read. With `concurrent` it resolves inputs as `resolveKind` does then
  * and keeps a command no actor may invoke, which is then sent with no actor.
@@ -484,6 +752,10 @@ function plan(ir: Node, concurrent = false): Plan {
     let reason: string | null = null;
     for (const outcome of outcomes) {
       const kind = outcome.condition?.kind;
+      // A condition read from the stored row, and existence of the identity a creation names, are
+      // decided from the model's rows (beyond10x/ess#221). Concurrent exploration does not draw
+      // them: it keeps the commands it always drew.
+      const stored = !concurrent && (kind === 'existing_instance' || ROW_KINDS.includes(kind));
       if (
         reason === null &&
         kind !== 'when' &&
@@ -491,10 +763,15 @@ function plan(ir: Node, concurrent = false): Plan {
         kind !== 'wrong_state' &&
         kind !== 'unknown_instance' &&
         kind !== 'external' &&
-        kind !== 'external_when'
+        kind !== 'external_when' &&
+        !stored
       ) {
         reason = `outcome \`${outcome.name}\` has a \`${kind}\` condition`;
       }
+    }
+    const existing = existingOutcome(node);
+    if (reason === null && existing !== undefined && addresses(node).length > 1) {
+      reason = `outcome \`${existing.name}\` answers an existing instance of creations that name it differently`;
     }
     for (const outcome of outcomes) reason ??= effectRefusal(outcome);
     for (const outcome of outcomes) {
@@ -520,24 +797,54 @@ function plan(ir: Node, concurrent = false): Plan {
       inputs.push([field.name, kind, field.naming?.presence]);
     }
     const guards = new Map<string, Predicate>();
+    const rows = new Map<string, RowGuard>();
+    const ordered: Predicate[] = [];
+    // `inputGuards` read the input as it is; `storedGuards` read the row, and the input under
+    // `input.`.
+    const inputGuards: Predicate[] = [];
+    const storedGuards: Predicate[] = [];
     let later: string | null = null;
     for (const outcome of outcomes) {
       const kind = outcome.condition?.kind;
-      if (reason !== null || later !== null || (kind !== 'when' && kind !== 'external_when'))
+      if (reason !== null || later !== null) continue;
+      if (ROW_KINDS.includes(kind)) {
+        const row = rowOf(outcome.condition);
+        if (typeof row === 'string') {
+          later = `the guard of \`${outcome.name}\`: ${row}`;
+          continue;
+        }
+        rows.set(outcome.name, row);
+        if (row.stored !== null) {
+          ordered.push(row.stored);
+          storedGuards.push(row.stored);
+        }
+        if (row.input !== null) {
+          ordered.push(row.input);
+          inputGuards.push(row.input);
+        }
         continue;
+      }
+      if (kind !== 'when' && kind !== 'external_when') continue;
       const guard = parsed(outcome.condition.predicate);
       if (typeof guard === 'string') later = `the guard of \`${outcome.name}\`: ${guard}`;
-      else guards.set(outcome.name, guard);
+      else {
+        guards.set(outcome.name, guard);
+        ordered.push(guard);
+        inputGuards.push(guard);
+      }
     }
     const actor = actorFor.get(node.name) ?? (concurrent ? '' : undefined);
     if (later === null && actor === undefined) later = 'no actor may invoke it';
+    const drawn = pools(ordered);
+    fieldPools(drawn, inputs, node.examples, counts(inputGuards, storedGuards));
     const command: Command = {
       name: node.name,
       actor: actor ?? '',
       node,
       inputs,
       guards,
-      pools: pools([...guards.values()]),
+      rows,
+      pools: drawn,
     };
     if (reason === null && later === null && undrawable !== null) sendable.set(node.name, command);
     reason ??= undrawable ?? later;
@@ -734,12 +1041,15 @@ function valueAgrees(
  * when none holds) and `externals` the external branches eligible for this input and this subject,
  * in declaration order; at least one of the two is present. A `take` with no ordinary branch
  * carries in `names` the ambiguity it stands in for, reported if no external branch can be
- * arranged.
+ * arranged. `unknown` and `undetermined` carry in `reason` a guard the model cannot
+ * evaluate: over the input, which excludes the command, or over a stored field no command set,
+ * which is redrawn and reported.
  */
 type Decision =
   | { kind: 'take'; outcome: Node; externals: Node[]; names?: string[] }
   | { kind: 'ambiguous'; names: string[] }
-  | { kind: 'unknown'; reason: string };
+  | { kind: 'unknown'; reason: string }
+  | { kind: 'undetermined'; reason: string };
 
 function suppliedOutcome(command: Command): Node | undefined {
   return list(command.node.outcomes).find(
@@ -808,7 +1118,26 @@ function decide(command: Command, input: Row, model: Model): Decision {
     }
     if (truth === TruthTrue) return { kind: 'take', outcome, externals: [] };
   }
+  // Existence (beyond10x/ess#221): a creation naming an identity a record already carries is
+  // refused by `existing_instance`, before the held state and every accepting branch.
+  const existing = existingOutcome(command.node);
+  if (existing !== undefined) {
+    for (const address of addresses(command.node)) {
+      if (address.field === '') continue;
+      const id = readPath(input, address.field);
+      if (id !== undefined && id !== null && model.find(address.entity, id) !== undefined) {
+        return { kind: 'take', outcome: existing, externals: [] };
+      }
+    }
+  }
   if (supplied !== undefined && record === undefined && unknownOutcome(command) === undefined) {
+    return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
+  }
+  // A branch selected by the stored row reads a row that must exist: an identity no record carries
+  // is the unknown-instance answer before any of them is read.
+  if (command.rows.size > 0 && record === undefined) {
+    const missingRecord = unknownOutcome(command);
+    if (missingRecord !== undefined) return { kind: 'take', outcome: missingRecord, externals: [] };
     return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
   }
   // What a step may take where no ordinary branch can be: the eligible external branches alone,
@@ -840,9 +1169,38 @@ function decide(command: Command, input: Row, model: Model): Decision {
     });
   };
 
+  // The held row (beyond10x/ess#221): the branches selected by the stored row — its held state, a
+  // stored field, a predicate over its fields — whose input guard holds too, before every accepting
+  // guard (the precedence order, step 4), the first declared that holds answering. An accepting
+  // guard declared before it that holds as well is the one branch the interpreter
+  // (`interpret::execute::select`, declaration order) and the precedence order answer differently,
+  // so that draw alone the specification does not decide, and it is redrawn.
+  const { held, decision: undecided } = heldBranch(command, outcomes, record as Rec, source, input);
+  if (undecided !== undefined) return undecided;
   const holding: Node[] = [];
+  if (held !== undefined) {
+    const earlier: string[] = [];
+    for (const outcome of outcomes) {
+      if (String(outcome.name) === String(held.name)) break;
+      if (outcome.condition?.kind !== 'when' || isInputRefusal(outcome)) continue;
+      const guard = command.guards.get(outcome.name) as Predicate;
+      const truth = guard.evaluate(source);
+      if (truth === TruthUnknown) {
+        return {
+          kind: 'unknown',
+          reason: `the guard of \`${outcome.name}\` (${guard}) is unknown over a generated input`,
+        };
+      }
+      if (truth === TruthTrue) earlier.push(String(outcome.name));
+    }
+    if (earlier.length > 0) {
+      return orExternal({ kind: 'ambiguous', names: [...earlier, String(held.name)] });
+    }
+    holding.push(held);
+  }
   for (const outcome of outcomes) {
-    if (outcome.condition?.kind !== 'when' || isInputRefusal(outcome)) continue;
+    if (held !== undefined || outcome.condition?.kind !== 'when' || isInputRefusal(outcome))
+      continue;
     const guard = command.guards.get(outcome.name) as Predicate;
     const truth = guard.evaluate(source);
     if (truth === TruthUnknown) {
@@ -885,6 +1243,127 @@ function decide(command: Command, input: Row, model: Model): Decision {
     return orExternal({ kind: 'ambiguous', names });
   }
   return { kind: 'take', outcome: terminal(command, selected, input, model), externals };
+}
+
+/**
+ * Whether a branch selected by the stored row holds for `record` and this input, or the decision a
+ * guard the model cannot evaluate stands for: `unknown` where a path of the input is missing, which
+ * is so for every draw of that input, and `undetermined` where a stored field is unset or null,
+ * which another record need not share.
+ */
+function rowHolds(
+  command: Command,
+  name: string,
+  row: RowGuard,
+  record: Rec,
+  source: FactSource,
+  input: Row,
+): boolean | Decision {
+  let stored: Truth = TruthTrue;
+  let unread: Unread = { path: '', input: false, null: false };
+  switch (row.kind) {
+    case 'subject_state':
+    case 'state_change':
+      stored = row.states.has(String(record.fields.state)) ? TruthTrue : TruthFalse;
+      break;
+    case 'subject_field': {
+      const has = Object.prototype.hasOwnProperty.call(record.fields, row.field);
+      const value = record.fields[row.field];
+      if (!has) {
+        stored = TruthUnknown;
+        unread = { path: row.field, input: false, null: false };
+      } else if (value === null || value === undefined) {
+        stored = TruthUnknown;
+        unread = { path: row.field, input: false, null: true };
+      } else {
+        stored = equal(value, row.equals) ? TruthTrue : TruthFalse;
+      }
+      break;
+    }
+    case 'subject_predicate': {
+      const combined: Row = { ...record.fields, input };
+      stored = (row.stored as Predicate).evaluate(facts(combined));
+      if (stored === TruthUnknown) unread = unreadIn(row.stored as Predicate, combined);
+      break;
+    }
+  }
+  if (stored === TruthFalse) return false;
+  let guard: Truth = TruthTrue;
+  if (row.input !== null) {
+    guard = row.input.evaluate(source);
+    if (guard === TruthUnknown) {
+      return {
+        kind: 'unknown',
+        reason: `the guard of \`${name}\` (${row.input}) is unknown over a generated input`,
+      };
+    }
+  }
+  if (unread.input) {
+    return {
+      kind: 'unknown',
+      reason: `the guard of \`${name}\` (${row.stored}) is unknown over a generated input`,
+    };
+  }
+  if (guard === TruthFalse) return false;
+  if (stored === TruthUnknown) {
+    const why = unread.null ? 'which the row holds as null' : 'which no command set';
+    return {
+      kind: 'undetermined',
+      reason: `${command.name} guard of \`${name}\` reads ${unread.path}, ${why}`,
+    };
+  }
+  return true;
+}
+
+/**
+ * The path that left a stored-row predicate Unknown: a path of the input under `input.` the draw
+ * does not hold, or else a stored field the row does not hold or holds as null.
+ */
+interface Unread {
+  path: string;
+  input: boolean;
+  null: boolean;
+}
+
+/**
+ * What left `predicate` Unknown over `row`: the input is blamed only where one of its paths is
+ * actually missing (beyond10x/ess#221 adversary pass 1).
+ */
+function unreadIn(predicate: Predicate, row: Row): Unread {
+  const source = facts(row);
+  const read = paths(predicate);
+  for (const path of read) {
+    if (path.startsWith('input.') && !present(source, path)) {
+      return { path, input: true, null: false };
+    }
+  }
+  for (const path of read) {
+    if (path.startsWith('input.') || present(source, path)) continue;
+    return { path, input: false, null: source.has(path) };
+  }
+  return { path: read[0] ?? '', input: false, null: false };
+}
+
+/**
+ * The first branch selected by the stored row that holds, in declaration order, or the decision a
+ * branch the model cannot evaluate before it stands for. A branch after the one that holds is not
+ * read, as `interpret::execute::select` stops at the first that holds.
+ */
+function heldBranch(
+  command: Command,
+  outcomes: Node[],
+  record: Rec,
+  source: FactSource,
+  input: Row,
+): { held?: Node; decision?: Decision } {
+  for (const outcome of outcomes) {
+    const row = command.rows.get(outcome.name);
+    if (row === undefined) continue;
+    const holds = rowHolds(command, String(outcome.name), row, record, source, input);
+    if (typeof holds !== 'boolean') return { decision: holds };
+    if (holds) return { held: outcome };
+  }
+  return {};
 }
 
 /**
@@ -1024,11 +1503,11 @@ function drawValue(
     }
     case 'integer':
     case 'decimal':
-      return rng.chance(0.7) ? rng.pick(command.pools.integers) : rng.int(-10, 10000);
+      return rng.chance(0.7) ? rng.pick(integersAt(command.pools, path)) : rng.int(-10, 10000);
     case 'boolean':
       return rng.chance(0.5);
     case 'string':
-      return rng.pick(command.pools.texts);
+      return rng.pick(textsAt(command.pools, path));
     case 'timestamp': {
       // One seeded draw selects a UTC second on a fixed date, never a target clock.
       const second = rng.int(0, 86399);
@@ -1038,7 +1517,7 @@ function drawValue(
     case 'uuid':
       return `00000000-0000-4000-8000-${String(rng.int(0, 999999)).padStart(12, '0')}`;
     case 'enum':
-      return rng.pick(kind.variants);
+      return rng.pick(enumsAt(command.pools, path, kind.variants));
     case 'struct': {
       const value: Row = {};
       for (const [name, field, presence] of kind.fields) {
@@ -1057,6 +1536,19 @@ function drawValue(
 function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
   const supplied = suppliedOutcome(command);
   const instance = supplied?.subject?.instance?.field?.name;
+  // `created` is the input naming the identity an `existing_instance` branch is decided by, and
+  // the entity it is looked up in (beyond10x/ess#221): drawn, as a supplied instance with an
+  // unknown-instance branch is, to name a record or not with even chance.
+  let created = '';
+  let createdEntity = '';
+  if (existingOutcome(command.node) !== undefined) {
+    for (const address of addresses(command.node)) {
+      if (address.field !== '') {
+        created = address.field;
+        createdEntity = address.entity;
+      }
+    }
+  }
   const input: Row = {};
   const refs: [string, string, number][] = [];
   const fresh: [string, string][] = [];
@@ -1065,9 +1557,19 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
     if (name === instance && kind.kind !== 'identity') {
       kind = { kind: 'identity', entity: supplied.subject.entity, base: kind };
     }
+    const probesUnknown = name === instance && unknownOutcome(command) !== undefined;
+    let probed: string = probesUnknown ? supplied.subject.entity : '';
+    if (name === created && !probesUnknown) {
+      kind = {
+        kind: 'identity',
+        entity: createdEntity,
+        base: kind.kind === 'identity' ? kind.base : kind,
+      };
+      probed = createdEntity;
+    }
     let value: Node;
-    if (name === instance && unknownOutcome(command) !== undefined) {
-      const known = model.of(supplied.subject.entity);
+    if (probesUnknown || name === created) {
+      const known = model.of(probed);
       if (known.length > 0 && rng.chance(0.5)) {
         value = drawValue(kind, rng, command, model, name, true, refs);
       } else {
@@ -1082,13 +1584,9 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
             false,
             [],
           );
-          if (
-            drawn !== NO_RECORD &&
-            drawn !== ABSENT &&
-            model.find(supplied.subject.entity, drawn) === undefined
-          ) {
+          if (drawn !== NO_RECORD && drawn !== ABSENT && model.find(probed, drawn) === undefined) {
             value = drawn;
-            fresh.push([name, supplied.subject.entity]);
+            fresh.push([name, probed]);
             break;
           }
         }
@@ -1578,6 +2076,10 @@ export async function explore(
           exclude(p, command.name, decision.reason);
           continue;
         }
+        if (decision.kind === 'undetermined') {
+          undetermined.add(decision.reason);
+          continue;
+        }
         const available = choices(s, command, decision, step.input);
         if (available.length === 0) {
           if (decision.names !== undefined) {
@@ -1688,7 +2190,9 @@ function sameFailure(p: Plan, original: Found, replayed: Found): boolean {
     (kind.kind === 'identity' && optional(kind.base));
   if (
     command === undefined ||
-    (unknownOutcome(command) === undefined && !command.inputs.some(([, kind]) => optional(kind)))
+    (unknownOutcome(command) === undefined &&
+      existingOutcome(command.node) === undefined &&
+      !command.inputs.some(([, kind]) => optional(kind)))
   )
     return true;
   return (

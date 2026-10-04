@@ -45,19 +45,37 @@ same way, for at most 1,000 replays.
 
 `assertExplored` (`AssertExplored`) fails on a disagreement, on a declared outcome of an included
 command that no sequence reached, and on the outcomes of an excluded command. The explorer models a
-subset: `when`, `otherwise` and `wrong_state` conditions; `creates` with an observed identity and
-`moves`/`updates` of a supplied subject; integer, boolean, string and UUID inputs, their newtypes,
-enums and structs of them. Anything else is excluded with the reason in `excluded`, and accepting
-that is an explicit `allowExcluded`. Where two guards both hold — which the model admits over an
-infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a view
-filter or invariant over a field no command set is reported in `undetermined`. Neither fails.
+subset: `when`, `otherwise`, `wrong_state`, `unknown_instance`, `existing_instance` and external
+conditions, and the conditions read from the stored row — `when_subject_state`,
+`when_state_changes` and `when_subject` (a stored field or a predicate over the stored fields);
+`creates` with an observed identity and `moves`/`updates` of a supplied subject; integer, boolean,
+string and UUID inputs, their newtypes, enums and structs of them. Anything else is excluded with
+the reason in `excluded` — `when_related`, which reads another entity's row, among them — and
+accepting that is an explicit `allowExcluded`. Where two guards both hold — which the model admits
+over an infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a
+view filter, invariant or stored-row guard over a field no command set, or one the row holds as
+null, is reported in `undetermined` and the command stays in exploration. Neither fails.
+
+A text input is drawn from `""`, `"a"`, `"b"`, the text literals of the command's guards and its
+own `example:`; for every `.count` a guard compares it with, say `secret.count < 12`, it is also
+drawn at 11, 12 and 13 characters, cut from its example, or from its own name where it has none.
+An Integer or enum input also draws its `example:`. These draws are part of what a seed names, so a
+failure recorded under a release before beyond10x/ess#221 and #223 replays a different sequence
+wherever a command reads its stored row, declares `existing_instance:`, or has a text input with an
+`example:` or a `.count` guard: replay it with the release that recorded it.
 
 The model decides which outcome a step expects in the order Entity Runtime and synthesis use:
 
 1. an input-guarded refusal (an outcome with a `when:` and an `error:`), the first declared whose
    guard holds, before the record, its state or an external branch is read;
-2. otherwise the one accepting `when:` that holds, or the default when none does;
-3. then `wrong_state`, where the outcome from step 2 moves the subject from a state no move of the
+2. then existence: `existing_instance:` where a creation names an identity a record already
+   carries, and `unknown_instance:` where a command reading its stored row names one none carries;
+3. then the branches selected by the stored row (`when_subject_state:`, `when_state_changes:`,
+   `when_subject:`), the first declared that holds, before any accepting guard; where an accepting
+   `when:` declared before it holds too, the draw is reported in `ambiguous` and redrawn, because
+   declaration order and this precedence answer it differently;
+4. otherwise the one accepting `when:` that holds, or the default when none does;
+5. then `wrong_state`, where the outcome from step 3 or 4 moves the subject from a state no move of the
    command starts from. An outcome that moves nothing answers in every state, an eligible external
    branch included.
 

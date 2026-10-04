@@ -415,12 +415,12 @@ Go decodes it with `UseNumber`.
 
 | Type | Value |
 |---|---|
-| `Integer` (or a newtype of it) | with `chance(0.7)`, `pick` from the pool, where the pool is the sorted distinct `{L-1, L, L+1}` for every integer literal `L` in this command's `when` guards, together with `{-1, 0, 1, 2, 3, 100}`. Otherwise `int(-10, 10000)`. |
+| `Integer` (or a newtype of it) | with `chance(0.7)`, `pick` from the pool, where the pool is the sorted distinct `{L-1, L, L+1}` for every integer literal `L` in this command's guards, together with `{-1, 0, 1, 2, 3, 100}` and the input's own `example:` (beyond10x/ess#223). Otherwise `int(-10, 10000)`. |
 | `Boolean` | `chance(0.5)` |
-| `String` (or a newtype of it) | `pick` from the sorted distinct text literals of this command's guards, together with `{"", "a", "b"}` |
+| `String` (or a newtype of it) | `pick` from the sorted distinct text literals of this command's guards, together with `{"", "a", "b"}`, the input's own `example:`, and, for every whole literal `n` a guard compares the input's `.count` with, that example (or, without one, the input's own path) cut or cycled to `n-1`, `n` and `n+1` characters, from 0 to 1,024 (beyond10x/ess#223). That is synthesis's rule (`witness.rs` `resize`, `count_lengths`), and characters are counted as the predicate counts them, in Unicode scalar values. The pool is the input's own: another input of the command does not draw its example or its lengths. |
 | `Uuid` (or a newtype of it) that is not an entity identity | `00000000-0000-4000-8000-` followed by `int(0, 999999)` zero-padded to 12 digits |
-| a newtype that is some entity's identity type | reuse an existing record's id with `chance(0.8)`, and always when the field is the command's supplied instance field; otherwise a fresh value as for its base type |
-| `enum` | `pick` from its variants in declared order |
+| a newtype that is some entity's identity type | reuse an existing record's id with `chance(0.8)`, and always when the field is the command's supplied instance field; otherwise a fresh value as for its base type. Where an `unknown_instance` branch reads the field, or an `existing_instance` branch reads the identity a creation takes from it, `chance(0.5)` names an existing record and otherwise a value no record carries (beyond10x/ess#221) |
+| `enum` | `pick` from its variants in declared order, and the input's own `example:` where it is not one of them (beyond10x/ess#223; validation admits only a declared variant, so for a validated specification the pool is the variants) |
 | `struct` whose every field is in this table | each field, in declaration order |
 
 The pool takes guard literals one either side for the reason witness rule 3 gives
@@ -435,7 +435,13 @@ lifecycle `state`, plus the fields the model has determined. A field no outcome 
 
 **The subset.** A command is included when all of these hold:
 
-- every outcome's condition is `when`, `otherwise` or `wrong_state` (`ir.rs:537-588`);
+- every outcome's condition is `when`, `otherwise`, `wrong_state`, `unknown_instance`, `external`,
+  `external_when`, `existing_instance`, or one read from the stored row — `subject_state`,
+  `state_change`, `subject_field`, `subject_predicate` (beyond10x/ess#221). `related` reads a row
+  of another entity the model does not follow, and `input_absent` sends no input at all; both stay
+  excluded by name. Concurrent exploration keeps the set it had before #221;
+- an `existing_instance` branch reads one address: every creation of the command puts its identity
+  in the same entity, from the same input;
 - every effect is `creates` with instance `observed`, or `moves`/`updates` with instance `supplied`
   (`ir.rs:690-728`);
 - no outcome `replays`;
@@ -468,9 +474,24 @@ wrong state.
    identity, the state it rests in, and every accepting branch the refusal overlaps
    ([input-guard overlap precedence](input-guard-overlap-precedence.md)). No external branch is
    eligible beside it.
-2. **Exactly one other `when` holds**: that outcome. **None holds**: the `otherwise` outcome. If
-   there is none, the draw is ambiguous.
-3. **The outcome from step 2 moves the subject from a state that no move of this command starts
+2. **Existence** (beyond10x/ess#221): where a creation takes its identity from an input that names
+   a record already held, the `existing_instance` branch. Where the command reads the stored row
+   and no record carries the supplied identity, the `unknown_instance` branch, or, without one, an
+   ambiguous draw.
+3. **The held row, then the accepting guards** (beyond10x/ess#221). First the branches selected by
+   the stored row whose input guard holds too — `subject_state` and `state_change` by the held
+   state, the latter's states resolved in the IR; `subject_field` by one stored field;
+   `subject_predicate` by a predicate over the stored fields that reads the input under `input.` —
+   the first declared that holds answering, before any accepting `when` (the precedence order,
+   step 4); a branch after it is not read, as `interpret::execute::select` stops there. Where an
+   accepting `when` declared before that branch holds as well, the interpreter, which reads
+   declaration order, and the precedence order answer differently: that draw, and only that one,
+   is ambiguous. Where no stored-row branch holds, **exactly one accepting `when` holds**: that
+   outcome. **None holds**: the `otherwise` outcome. If there is none, the draw is ambiguous. A
+   stored-row predicate over a stored field the row does not hold, or holds as null, is reported in
+   `undetermined` and the draw redrawn, the command kept; only where a path of the input is missing,
+   or an input guard is Unknown, is the command excluded, as below.
+4. **The outcome from step 3 moves the subject from a state that no move of this command starts
    from**: the command's `wrong_state` outcome. This is how `RawOutcome` defines the branch: "taken
    because the subject is in a state no move starts from" (`command.rs:3025-3032`). An outcome that
    moves nothing answers in every state, and that includes an eligible external branch that moves
@@ -479,8 +500,8 @@ wrong state.
    holds and every one of them moves, each would be the wrong-state answer, so the draw is not
    ambiguous. If the command
    declares no `wrong_state` branch, the model cannot say what happens, and the draw is
-   *ambiguous* (item 4).
-4. **More than one accepting `when` holds, or the selected outcome moves from a state the subject is
+   *ambiguous* (item 5).
+5. **More than one accepting `when` holds, or an accepting `when` holds before the stored-row branch that answers, or the selected outcome moves from a state the subject is
    not in** (although another move of the command starts from it): the draw is **ambiguous**. It is not
    executed. It is counted in `ambiguous` as `command` with the outcome names, and the attempt is
    redrawn. The draft took the first match in declaration order. That is a choice the
@@ -699,7 +720,7 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 | An accepted-survivors file for equivalent mutants | needs an identity story for a mutant across edits of the specification | a stable site id that survives renumbering |
 | Coverage suites (`/5` and above) and `--component` for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
 | Explorer inputs: `Decimal`, lists, `Optional`, unions, maps, timestamps, and types with invariants | exact-number generation and invariant-respecting draws | a generator per type, the same in TS and Go |
-| Explorer conditions: subject fields, subject state, state changes, replays, `preserves` (external outcomes are taken since beyond10x/ess#156: a seeded choice, arranged through `ConfigureExternalOutcome`, reported per branch in `external`) | each needs arranged state | the arranging steps synthesis already has |
+| Explorer conditions: replays, `preserves`, `related` and `input_absent`. Subject fields, subject state, state changes, stored predicates and `existing_instance` are drawn since beyond10x/ess#221, decided from the model's rows; external outcomes are taken since beyond10x/ess#156: a seeded choice, arranged through `ConfigureExternalOutcome`, reported per branch in `external` | each needs arranged state | the arranging steps synthesis already has |
 | Views with `params` or `group_by`; binding-driven events; a persisted exploration report; an explorer in Rust against the reference targets | out of the issue's measured scope | — |
 
 ## What was rejected

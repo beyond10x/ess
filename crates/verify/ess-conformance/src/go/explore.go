@@ -473,6 +473,204 @@ func exploreParse(node any) (predicate, string) {
 type explorePools struct {
 	integers []float64
 	texts    []string
+	// fieldIntegers and fieldTexts are the pools of the input paths whose own pool differs from
+	// the command's (beyond10x/ess#223): the command's, with the input's `example:` and, for a
+	// text, that example (or the path itself) cut or cycled to n-1, n and n+1 characters for each
+	// `.count` literal compared with the input. Every other path draws from the command's pool.
+	fieldIntegers map[string][]float64
+	fieldTexts    map[string][]string
+	// fieldEnums is the variants of each enum input with an `example:`, and the example where it is
+	// not one of them. Validation admits only a declared variant, so for a validated specification
+	// this is the variants as declared and the draw does not move.
+	fieldEnums map[string][]string
+}
+
+// exploreMaxCount is the longest text a `.count` boundary is drawn at, synthesis's
+// MAX_COUNT_WITNESS.
+const exploreMaxCount = 1024
+
+// integersAt is the integer pool the input at path draws from.
+func (p explorePools) integersAt(path string) []float64 {
+	if pool, ok := p.fieldIntegers[path]; ok {
+		return pool
+	}
+	return p.integers
+}
+
+// enumsAt is the pool an enum input at path draws from, variants where it has no example.
+func (p explorePools) enumsAt(path string, variants []string) []string {
+	if pool, ok := p.fieldEnums[path]; ok {
+		return pool
+	}
+	return variants
+}
+
+// textsAt is the text pool the input at path draws from.
+func (p explorePools) textsAt(path string) []string {
+	if pool, ok := p.fieldTexts[path]; ok {
+		return pool
+	}
+	return p.texts
+}
+
+// exploreSafeWhole is value as a whole number a binary64 holds exactly, if it is one.
+func exploreSafeWhole(value Node) (float64, bool) {
+	switch value.(type) {
+	case string, bool, nil:
+		return 0, false
+	}
+	number, ok := numberValue(value)
+	if !ok || !number.IsInt() {
+		return 0, false
+	}
+	whole := number.Num()
+	if whole.CmpAbs(big.NewInt(exploreSafeInteger)) > 0 {
+		return 0, false
+	}
+	return float64(whole.Int64()), true
+}
+
+// exploreCounts is, for each input path a `.count` of which a guard compares with a whole
+// literal, the lengths n-1, n and n+1 of every such literal n, from 0 to exploreMaxCount. A guard
+// over the input reads its paths as they are; a predicate over the stored row reads the input under
+// `input.`, and its other paths are the row's.
+func exploreCounts(inputGuards, storedGuards []predicate) map[string]map[int]bool {
+	counts := map[string]map[int]bool{}
+	visit := func(stored bool) func(predicate) {
+		return func(node predicate) {
+			if node.kind != "compare" {
+				return
+			}
+			for _, pair := range [][2]operand{{node.left, node.right}, {node.right, node.left}} {
+				fact, literal := pair[0], pair[1]
+				if !fact.isFact || literal.isFact {
+					continue
+				}
+				path, counted := strings.CutSuffix(fact.path, ".count")
+				if !counted || path == "" {
+					continue
+				}
+				if stored {
+					if path, counted = strings.CutPrefix(path, "input."); !counted {
+						continue
+					}
+				}
+				n, ok := exploreSafeWhole(literal.literal)
+				if !ok {
+					continue
+				}
+				for _, length := range []float64{n - 1, n, n + 1} {
+					if length < 0 || length > exploreMaxCount {
+						continue
+					}
+					if counts[path] == nil {
+						counts[path] = map[int]bool{}
+					}
+					counts[path][int(length)] = true
+				}
+			}
+		}
+	}
+	for _, guard := range inputGuards {
+		exploreWalk(guard, visit(false))
+	}
+	for _, guard := range storedGuards {
+		exploreWalk(guard, visit(true))
+	}
+	return counts
+}
+
+// exploreResize is text at exactly length characters: its first length when it has that many,
+// otherwise its own characters cycled from its start, and plain's when it is empty. Synthesis's
+// rule for a text cut to a `.count` boundary (`witness.rs` `resize`).
+func exploreResize(text string, length int, plain string) string {
+	source := []rune(text)
+	if len(source) == 0 {
+		source = []rune(plain)
+	}
+	if len(source) == 0 {
+		return ""
+	}
+	out := make([]rune, 0, length)
+	for index := 0; index < length; index++ {
+		out = append(out, source[index%len(source)])
+	}
+	return string(out)
+}
+
+// exploreLeafKind is the kind a value is drawn as once an `Optional` and an identity are looked
+// through.
+func exploreLeafKind(kind exploreKind) exploreKind {
+	for (kind.kind == "optional" || kind.kind == "identity") && kind.base != nil {
+		kind = *kind.base
+	}
+	return kind
+}
+
+// exploreFieldPools gives each input path its own pool where it differs from the command's
+// (beyond10x/ess#223). examples is the command's `examples`, by top-level input name.
+func exploreFieldPools(pools *explorePools, inputs []exploreField, examples map[string]any, counts map[string]map[int]bool) {
+	pools.fieldIntegers = map[string][]float64{}
+	pools.fieldTexts = map[string][]string{}
+	pools.fieldEnums = map[string][]string{}
+	var visit func(path string, kind exploreKind, example Node, hasExample bool)
+	visit = func(path string, kind exploreKind, example Node, hasExample bool) {
+		leaf := exploreLeafKind(kind)
+		switch leaf.kind {
+		case "struct":
+			for _, field := range leaf.fields {
+				visit(path+"."+field.name, field.kind, nil, false)
+			}
+		case "enum":
+			text, isText := example.(string)
+			if !hasExample || !isText {
+				return
+			}
+			pool := append([]string{}, leaf.variants...)
+			if !exploreContains(pool, text) {
+				pool = append(pool, text)
+			}
+			pools.fieldEnums[path] = pool
+		case "integer":
+			n, ok := exploreSafeWhole(example)
+			if !hasExample || !ok {
+				return
+			}
+			set := map[float64]bool{n: true}
+			for _, value := range pools.integers {
+				set[value] = true
+			}
+			pool := make([]float64, 0, len(set))
+			for value := range set {
+				pool = append(pool, value)
+			}
+			sort.Float64s(pool)
+			pools.fieldIntegers[path] = pool
+		case "string":
+			text, isText := example.(string)
+			isText = isText && hasExample
+			if !isText && len(counts[path]) == 0 {
+				return
+			}
+			set := map[string]bool{}
+			for _, value := range pools.texts {
+				set[value] = true
+			}
+			base := path
+			if isText {
+				set[text] = true
+				base = text
+			}
+			for length := range counts[path] {
+				set[exploreResize(base, length, path)] = true
+			}
+			pools.fieldTexts[path] = exploreSet(set)
+		}
+	}
+	for _, field := range inputs {
+		example, hasExample := examples[field.name]
+		visit(field.name, field.kind, example, hasExample)
+	}
 }
 
 // exploreLiterals is the literals a command's guards compare against, as draw pools.
@@ -540,8 +738,25 @@ type exploreCommand struct {
 	node   map[string]any
 	inputs []exploreField
 	guards map[string]predicate
-	pools  explorePools
+	// rows is every branch selected by the stored row (beyond10x/ess#221), by outcome name.
+	rows  map[string]exploreRowGuard
+	pools explorePools
 }
+
+// exploreRowGuard is a condition read from the subject's stored row: its held state
+// (`subject_state`, `state_change`), one stored enum field (`subject_field`) or a predicate over
+// its stored fields (`subject_predicate`), each with an optional guard over the input.
+type exploreRowGuard struct {
+	kind   string
+	states map[string]bool
+	field  string
+	equals string
+	stored *predicate
+	input  *predicate
+}
+
+// exploreRowKinds is every condition read from the subject's stored row.
+var exploreRowKinds = []string{"subject_state", "state_change", "subject_field", "subject_predicate"}
 
 type exploreDeclared struct {
 	command  string
@@ -594,6 +809,104 @@ func exploreEffectRefusal(outcome map[string]any) string {
 	return fmt.Sprintf("outcome `%v` %v its subject from `%v`", outcome["name"], exploreUndefined(effect), exploreUndefined(from))
 }
 
+// exploreRowOf is a stored-row condition as the explorer evaluates it, or why it cannot.
+func exploreRowOf(condition map[string]any) (exploreRowGuard, string) {
+	row := exploreRowGuard{kind: exploreString(condition["kind"]), states: map[string]bool{}}
+	parse := func(node any) (*predicate, string) {
+		if node == nil {
+			return nil, ""
+		}
+		parsed, refusal := exploreParse(node)
+		if refusal != "" {
+			return nil, refusal
+		}
+		return &parsed, ""
+	}
+	var refusal string
+	switch row.kind {
+	case "subject_state":
+		// One state is written as the state itself, a list (ess/18) as a list.
+		if state, ok := condition["state"].(string); ok {
+			row.states[state] = true
+		}
+		for _, state := range exploreStrings(condition["state"]) {
+			row.states[state] = true
+		}
+		row.input, refusal = parse(condition["predicate"])
+	case "state_change":
+		for _, state := range exploreStrings(condition["states"]) {
+			row.states[state] = true
+		}
+		row.input, refusal = parse(condition["predicate"])
+	case "subject_field":
+		row.field = exploreString(condition["field"])
+		row.equals = exploreString(condition["equals"])
+		row.input, refusal = parse(condition["predicate"])
+	case "subject_predicate":
+		row.stored, refusal = parse(condition["predicate"])
+		if refusal == "" {
+			row.input, refusal = parse(condition["input"])
+		}
+	}
+	return row, refusal
+}
+
+// exploreExistingIn is the `existing_instance` branch of a command node, or nil.
+func exploreExistingIn(node map[string]any) map[string]any {
+	for _, item := range exploreList(node["outcomes"]) {
+		outcome := exploreObject(item)
+		if exploreObject(outcome["condition"])["kind"] == "existing_instance" {
+			return outcome
+		}
+	}
+	return nil
+}
+
+// exploreAddress is where a creating branch puts its identity: the entity, and the input field
+// that names the identity, or "" where the implementation generates it.
+type exploreAddress struct {
+	entity string
+	field  string
+}
+
+// exploreAddresses is the distinct addresses of a command node's creating branches, in
+// declaration order. Where there is more than one, which one an `existing_instance` branch reads
+// depends on the branch selected (`interpret::execute` `existence::existing`).
+func exploreAddresses(node map[string]any) []exploreAddress {
+	out := []exploreAddress{}
+	for _, item := range exploreList(node["outcomes"]) {
+		outcome := exploreObject(item)
+		subject := exploreObject(outcome["subject"])
+		if subject["effect"] != "creates" {
+			continue
+		}
+		instance := exploreObject(subject["instance"])
+		identity := exploreString(exploreObject(instance["field"])["name"])
+		address := exploreAddress{entity: exploreString(subject["entity"])}
+		for _, payload := range exploreList(outcome["payload"]) {
+			payload := exploreObject(payload)
+			if payload["event"] != instance["event"] {
+				continue
+			}
+			for _, field := range exploreList(payload["fields"]) {
+				field := exploreObject(field)
+				value := exploreObject(field["value"])
+				if exploreString(field["target"]) == identity && (value["kind"] == "input_field" || value["kind"] == "input_or_generated") {
+					address.field = exploreString(value["field"])
+				}
+			}
+		}
+		known := false
+		for _, earlier := range out {
+			known = known || earlier == address
+		}
+		if !known {
+			out = append(out, address)
+		}
+	}
+	return out
+}
+
 func explorePlanOf(ir map[string]any) *explorePlan {
 	return explorePlanAs(ir, false)
 }
@@ -629,10 +942,17 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		reason := ""
 		for _, outcome := range outcomes {
 			kind := exploreObject(exploreObject(outcome)["condition"])["kind"]
+			// A condition read from the stored row, and existence of the identity a creation names,
+			// are decided from the model's rows (beyond10x/ess#221). Concurrent exploration does not
+			// draw them: it keeps the commands it always drew.
+			stored := !concurrent && (kind == "existing_instance" || exploreContains(exploreRowKinds, fmt.Sprint(kind)))
 			if reason == "" && kind != "when" && kind != "otherwise" && kind != "wrong_state" &&
-				kind != "external" && kind != "external_when" && kind != "unknown_instance" {
+				kind != "external" && kind != "external_when" && kind != "unknown_instance" && !stored {
 				reason = fmt.Sprintf("outcome `%v` has a `%v` condition", exploreObject(outcome)["name"], exploreUndefined(kind))
 			}
+		}
+		if existing := exploreExistingIn(node); reason == "" && existing != nil && len(exploreAddresses(node)) > 1 {
+			reason = fmt.Sprintf("outcome `%v` answers an existing instance of creations that name it differently", existing["name"])
 		}
 		for _, outcome := range outcomes {
 			if reason == "" {
@@ -658,12 +978,36 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			inputs = append(inputs, exploreField{name: exploreString(field["name"]), kind: kind, presence: exploreString(exploreObject(field["naming"])["presence"])})
 		}
 		guards := map[string]predicate{}
+		rows := map[string]exploreRowGuard{}
 		ordered := []predicate{}
+		// inputGuards read the input as it is; storedGuards read the row, and the input under `input.`.
+		inputGuards := []predicate{}
+		storedGuards := []predicate{}
 		later := ""
 		for _, outcome := range outcomes {
 			outcome := exploreObject(outcome)
 			condition := exploreObject(outcome["condition"])
-			if reason != "" || later != "" || (condition["kind"] != "when" && condition["kind"] != "external_when") {
+			if reason != "" || later != "" {
+				continue
+			}
+			if exploreContains(exploreRowKinds, fmt.Sprint(condition["kind"])) {
+				row, refusal := exploreRowOf(condition)
+				if refusal != "" {
+					later = fmt.Sprintf("the guard of `%v`: %s", outcome["name"], refusal)
+					continue
+				}
+				rows[fmt.Sprint(outcome["name"])] = row
+				if row.stored != nil {
+					ordered = append(ordered, *row.stored)
+					storedGuards = append(storedGuards, *row.stored)
+				}
+				if row.input != nil {
+					ordered = append(ordered, *row.input)
+					inputGuards = append(inputGuards, *row.input)
+				}
+				continue
+			}
+			if condition["kind"] != "when" && condition["kind"] != "external_when" {
 				continue
 			}
 			guard, refusal := exploreParse(condition["predicate"])
@@ -673,13 +1017,16 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			}
 			guards[fmt.Sprint(outcome["name"])] = guard
 			ordered = append(ordered, guard)
+			inputGuards = append(inputGuards, guard)
 		}
 		actor, ok := actorFor[name]
 		if later == "" && !ok && !concurrent {
 			later = "no actor may invoke it"
 		}
+		pools := exploreLiterals(ordered)
+		exploreFieldPools(&pools, inputs, exploreObject(node["examples"]), exploreCounts(inputGuards, storedGuards))
 		command := &exploreCommand{
-			name: name, actor: actor, node: node, inputs: inputs, guards: guards, pools: exploreLiterals(ordered),
+			name: name, actor: actor, node: node, inputs: inputs, guards: guards, rows: rows, pools: pools,
 		}
 		if reason == "" && later == "" && undrawable != "" {
 			p.sendable[name] = command
@@ -961,7 +1308,9 @@ func exploreValueAgrees(ir map[string]any, ref, naming map[string]any, expected,
 // branch (nil when none holds) and externals the external branches eligible for this input and
 // this subject, in declaration order; at least one of the two is present. A `take` with no
 // ordinary branch carries in names the ambiguity it stands in for, reported if no external branch
-// can be arranged.
+// can be arranged. `unknown` and `undetermined` carry in reason a guard the model cannot
+// evaluate: over the input, which excludes the command, or over a stored field no command set,
+// which is redrawn and reported.
 type exploreDecision struct {
 	kind      string
 	outcome   map[string]any
@@ -1080,7 +1429,27 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 			return exploreDecision{kind: "take", outcome: outcome}
 		}
 	}
+	// Existence (beyond10x/ess#221): a creation naming an identity a record already carries is
+	// refused by `existing_instance`, before the held state and every accepting branch.
+	if existing := exploreExistingIn(command.node); existing != nil {
+		for _, address := range exploreAddresses(command.node) {
+			if address.field == "" {
+				continue
+			}
+			if id, ok := exploreReadPath(map[string]any(input), address.field); ok && id != nil && model.find(address.entity, id) != nil {
+				return exploreDecision{kind: "take", outcome: existing}
+			}
+		}
+	}
 	if supplied != nil && record == nil && exploreUnknown(command) == nil {
+		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
+	}
+	// A branch selected by the stored row reads a row that must exist: an identity no record
+	// carries is the unknown-instance answer before any of them is read.
+	if len(command.rows) > 0 && record == nil {
+		if missing := exploreUnknown(command); missing != nil {
+			return exploreDecision{kind: "take", outcome: missing}
+		}
 		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
 	}
 	// orExternal is what a step may take where no ordinary branch can be: the eligible external
@@ -1113,9 +1482,41 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		return orExternal(exploreDecision{kind: "ambiguous", names: []string{fmt.Sprintf("no outcome for state %v", record.fields["state"])}})
 	}
 
+	// The held row (beyond10x/ess#221): the branches selected by the stored row — its held state, a
+	// stored field, a predicate over its fields — whose input guard holds too, before every
+	// accepting guard (the precedence order, step 4), the first declared that holds answering. An
+	// accepting guard declared before it that holds as well is the one branch the interpreter
+	// (`interpret::execute::select`, declaration order) and the precedence order answer
+	// differently, so that draw alone the specification does not decide, and it is redrawn.
+	held, undecided := exploreHeld(command, outcomes, record, source, input)
+	if undecided != nil {
+		return *undecided
+	}
 	holding := []map[string]any{}
+	if held != nil {
+		earlier := []string{}
+		for _, outcome := range outcomes {
+			if fmt.Sprint(outcome["name"]) == fmt.Sprint(held["name"]) {
+				break
+			}
+			if exploreObject(outcome["condition"])["kind"] != "when" || exploreIsInputRefusal(outcome) {
+				continue
+			}
+			guard := command.guards[fmt.Sprint(outcome["name"])]
+			switch guard.evaluate(source) {
+			case truthUnknown:
+				return exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%v` (%s) is unknown over a generated input", outcome["name"], guard)}
+			case truthTrue:
+				earlier = append(earlier, fmt.Sprint(outcome["name"]))
+			}
+		}
+		if len(earlier) > 0 {
+			return orExternal(exploreDecision{kind: "ambiguous", names: append(earlier, fmt.Sprint(held["name"]))})
+		}
+		holding = append(holding, held)
+	}
 	for _, outcome := range outcomes {
-		if exploreObject(outcome["condition"])["kind"] != "when" || exploreIsInputRefusal(outcome) {
+		if held != nil || exploreObject(outcome["condition"])["kind"] != "when" || exploreIsInputRefusal(outcome) {
 			continue
 		}
 		guard := command.guards[fmt.Sprint(outcome["name"])]
@@ -1171,6 +1572,115 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		return orExternal(exploreDecision{kind: "ambiguous", names: names})
 	}
 	return exploreDecision{kind: "take", outcome: exploreTerminal(command, selected, input, model), externals: externals}
+}
+
+// exploreRowHolds is whether a branch selected by the stored row holds for record and this input,
+// or the decision a guard the model cannot evaluate stands for: `unknown` where a path of the
+// input is missing, which is so for every draw of that input, and `undetermined` where a stored
+// field is unset or null, which another record need not share.
+func exploreRowHolds(command *exploreCommand, name string, row exploreRowGuard, record *exploreRecord, source factSource, input Row) (bool, *exploreDecision) {
+	stored := truthTrue
+	unread := exploreUnread{}
+	switch row.kind {
+	case "subject_state", "state_change":
+		stored = truthOf(row.states[fmt.Sprint(record.fields["state"])])
+	case "subject_field":
+		value, ok := record.fields[row.field]
+		switch {
+		case !ok:
+			stored, unread = truthUnknown, exploreUnread{path: row.field}
+		case value == nil:
+			stored, unread = truthUnknown, exploreUnread{path: row.field, null: true}
+		default:
+			stored = truthOf(equal(value, row.equals))
+		}
+	case "subject_predicate":
+		combined := Row{}
+		for field, value := range record.fields {
+			combined[field] = value
+		}
+		combined["input"] = map[string]any(input)
+		stored = row.stored.evaluate(facts(combined))
+		if stored == truthUnknown {
+			unread = exploreUnreadIn(*row.stored, combined)
+		}
+	}
+	if stored == truthFalse {
+		return false, nil
+	}
+	guard := truthTrue
+	if row.input != nil {
+		guard = row.input.evaluate(source)
+		if guard == truthUnknown {
+			return false, &exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%s` (%s) is unknown over a generated input", name, *row.input)}
+		}
+	}
+	if unread.input {
+		return false, &exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%s` (%s) is unknown over a generated input", name, *row.stored)}
+	}
+	if guard == truthFalse {
+		return false, nil
+	}
+	if stored == truthUnknown {
+		why := "which no command set"
+		if unread.null {
+			why = "which the row holds as null"
+		}
+		return false, &exploreDecision{kind: "undetermined", reason: fmt.Sprintf("%s guard of `%s` reads %s, %s", command.name, name, unread.path, why)}
+	}
+	return true, nil
+}
+
+// exploreUnread is the path that left a stored-row predicate Unknown: a path of the input under
+// `input.` the draw does not hold, or else a stored field the row does not hold or holds as null.
+type exploreUnread struct {
+	path  string
+	input bool
+	null  bool
+}
+
+// exploreUnreadIn is what left p Unknown over row: the input is blamed only where one of its paths
+// is actually missing (beyond10x/ess#221 adversary pass 1).
+func exploreUnreadIn(p predicate, row Row) exploreUnread {
+	source := facts(row)
+	paths := explorePaths(p)
+	for _, path := range paths {
+		if strings.HasPrefix(path, "input.") && !present(source, path) {
+			return exploreUnread{path: path, input: true}
+		}
+	}
+	for _, path := range paths {
+		if strings.HasPrefix(path, "input.") || present(source, path) {
+			continue
+		}
+		_, bound := source[path]
+		return exploreUnread{path: path, null: bound}
+	}
+	if len(paths) > 0 {
+		return exploreUnread{path: paths[0]}
+	}
+	return exploreUnread{}
+}
+
+// exploreHeld is the first branch selected by the stored row that holds, in declaration order, or
+// the decision a branch the model cannot evaluate before it stands for. A branch after the one
+// that holds is not read, as `interpret::execute::select` stops at the first that holds.
+func exploreHeld(command *exploreCommand, outcomes []map[string]any, record *exploreRecord, source factSource, input Row) (map[string]any, *exploreDecision) {
+	for _, outcome := range outcomes {
+		name := fmt.Sprint(outcome["name"])
+		row, ok := command.rows[name]
+		if !ok {
+			continue
+		}
+		holds, undecided := exploreRowHolds(command, name, row, record, source, input)
+		if undecided != nil {
+			return nil, undecided
+		}
+		if holds {
+			return outcome, nil
+		}
+	}
+	return nil, nil
 }
 
 // exploreEligible is the external branches of a command this input and subject make eligible, in
@@ -1286,13 +1796,13 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 		return exploreDraw(*kind.base, r, command, model, path, false, refs)
 	case "integer", "decimal":
 		if r.Chance(0.7) {
-			return explorePick(r, command.pools.integers), nil
+			return explorePick(r, command.pools.integersAt(path)), nil
 		}
 		return float64(r.Int(-10, 10000)), nil
 	case "boolean":
 		return r.Chance(0.5), nil
 	case "string":
-		return explorePick(r, command.pools.texts), nil
+		return explorePick(r, command.pools.textsAt(path)), nil
 	case "timestamp":
 		// One seeded draw selects a UTC second on a fixed date, never a target clock.
 		second := r.Int(0, 86399)
@@ -1300,7 +1810,7 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 	case "uuid":
 		return fmt.Sprintf("00000000-0000-4000-8000-%012d", r.Int(0, 999999)), nil
 	case "enum":
-		return explorePick(r, kind.variants), nil
+		return explorePick(r, command.pools.enumsAt(path, kind.variants)), nil
 	case "struct":
 		value := map[string]any{}
 		for _, field := range kind.fields {
@@ -1329,6 +1839,17 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 		instance = exploreString(exploreObject(exploreObject(subject["instance"])["field"])["name"])
 		entity = exploreString(subject["entity"])
 	}
+	// created is the input naming the identity an `existing_instance` branch is decided by, and
+	// the entity it is looked up in (beyond10x/ess#221): drawn, as a supplied instance with an
+	// unknown-instance branch is, to name a record or not with even chance.
+	created, createdEntity := "", ""
+	if exploreExistingIn(command.node) != nil {
+		for _, address := range exploreAddresses(command.node) {
+			if address.field != "" {
+				created, createdEntity = address.field, address.entity
+			}
+		}
+	}
 	input := Row{}
 	refs := []exploreRef{}
 	fresh := []exploreRef{}
@@ -1338,10 +1859,19 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 			base := kind
 			kind = exploreKind{kind: "identity", entity: entity, base: &base}
 		}
+		probed := entity
+		if field.name == created && !(field.name == instance && exploreUnknown(command) != nil) {
+			base := kind
+			if kind.kind == "identity" {
+				base = *kind.base
+			}
+			kind = exploreKind{kind: "identity", entity: createdEntity, base: &base}
+			probed = createdEntity
+		}
 		var value Node
 		var err error
-		if field.name == instance && exploreUnknown(command) != nil {
-			if len(model.of(entity)) > 0 && r.Chance(0.5) {
+		if (field.name == instance && exploreUnknown(command) != nil) || field.name == created {
+			if len(model.of(probed)) > 0 && r.Chance(0.5) {
 				value, err = exploreDraw(kind, r, command, model, field.name, true, &refs)
 			} else {
 				base := kind
@@ -1353,9 +1883,9 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 					ignored := []exploreRef{}
 					drawn, problem := exploreDraw(base, r, command, model, field.name, false, &ignored)
 					_, absent := drawn.(exploreAbsentValue)
-					if problem == nil && !absent && model.find(entity, drawn) == nil {
+					if problem == nil && !absent && model.find(probed, drawn) == nil {
 						value, err = drawn, nil
-						fresh = append(fresh, exploreRef{path: field.name, entity: entity})
+						fresh = append(fresh, exploreRef{path: field.name, entity: probed})
 						break
 					}
 				}
@@ -1708,7 +2238,7 @@ func exploreSameFailure(p *explorePlan, original, replayed *exploreFound) bool {
 		if command.name != last.command {
 			continue
 		}
-		strict = exploreUnknown(command) != nil
+		strict = exploreUnknown(command) != nil || exploreExistingIn(command.node) != nil
 		for _, field := range command.inputs {
 			strict = strict || exploreHasOptional(field.kind)
 		}
@@ -1934,6 +2464,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			}
 			if decision.kind == "unknown" {
 				p.exclude(command.name, decision.reason)
+				continue
+			}
+			if decision.kind == "undetermined" {
+				undetermined[decision.reason] = true
 				continue
 			}
 			choices := exploreChoices(s, command, decision, step.input)
