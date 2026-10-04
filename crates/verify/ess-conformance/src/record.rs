@@ -1,5 +1,6 @@
 //! A deterministic recorder: two to four clients driven against one target, written as
-//! `ess-history/1`.
+//! `ess-history/1` — or `ess-history/2` where a call's receipt carries the instant its decision
+//! observed ([`Interleaved::complete_recorded`]).
 //!
 //! The Go and TypeScript runners that drive an adopter's target concurrently are a later story
 //! (`story:concurrent-explorer-runner`). Until they exist, the checker in [`crate::linearize`] needs
@@ -44,7 +45,8 @@ use crate::history::{
 };
 use crate::scenario::{CommandRef, SuiteProvenance};
 use crate::target::{
-    ConformanceTarget, SemanticCommandRequest, SemanticCommandResult, TargetError,
+    ConformanceTarget, RecordedCommandCompletion, SemanticCommandRequest, SemanticCommandResult,
+    TargetError,
 };
 
 /// A target whose calls have an invoke and a return, with other clients' calls in between.
@@ -62,6 +64,20 @@ pub trait Interleaved {
     /// [`TargetError`] where the target gave no answer; the recorder writes the call
     /// [`Completion::Indeterminate`].
     fn complete(&self, pending: Self::Pending) -> Result<SemanticCommandResult, TargetError>;
+
+    /// [`complete`](Self::complete), with the instant the call's decision observed: what the
+    /// recorder writes into the operation's `decision_time` (`ess-history/2`).
+    ///
+    /// The default calls [`complete`](Self::complete) exactly once and records no time. An adapter
+    /// whose target reads a command clock overrides it and carries that call's own receipt in its
+    /// `Pending` until this completion, errors included — never the receipt of whichever call
+    /// happened to decide last.
+    fn complete_recorded(&self, pending: Self::Pending) -> RecordedCommandCompletion {
+        RecordedCommandCompletion {
+            answer: self.complete(pending),
+            decision_time: None,
+        }
+    }
 }
 
 /// Any target, with every call taking effect at its return instant.
@@ -77,6 +93,11 @@ impl<T: ConformanceTarget> Interleaved for Atomic<'_, T> {
 
     fn complete(&self, pending: Self::Pending) -> Result<SemanticCommandResult, TargetError> {
         self.0.execute_command(pending)
+    }
+
+    /// The target's own recorded command, called once at the return instant.
+    fn complete_recorded(&self, pending: Self::Pending) -> RecordedCommandCompletion {
+        self.0.execute_command_recorded(pending)
     }
 }
 
@@ -328,6 +349,7 @@ impl<T: Interleaved> Recording<'_, T> {
             outcome: None,
             rows: None,
             retry_of: None,
+            decision_time: None,
         });
         Ok(InFlight {
             pending: self.target.invoke(request),
@@ -339,9 +361,16 @@ impl<T: Interleaved> Recording<'_, T> {
 
     /// Writes the answer into the operation `flight` reserved, and returns the identity a creating
     /// command published.
+    ///
+    /// The receipt's instant is written before the answer is read, so a call whose answer was lost
+    /// after its decision keeps the instant it decided at.
     fn complete(&mut self, flight: InFlight<T::Pending>) -> Option<String> {
-        let answer = self.target.complete(flight.pending);
+        let RecordedCommandCompletion {
+            answer,
+            decision_time,
+        } = self.target.complete_recorded(flight.pending);
         let returned_at = self.tick();
+        self.operations[flight.index].decision_time = decision_time;
         let Ok(result) = answer else {
             // No answer: the operation stays `Indeterminate`, with no return instant and no outcome.
             self.operations[flight.index].subject_key = flight.subject_key.unwrap_or_default();
@@ -431,7 +460,7 @@ pub fn record<T: Interleaved>(
     }
 
     Ok(History {
-        format: HistoryFormat::EssHistory1,
+        format: HistoryFormat::for_operations(&recording.operations),
         history_id: uuid(seed & 0xffff_ffff_ffff),
         spec_digest: SuiteProvenance::of(ir).spec_digest,
         seed,

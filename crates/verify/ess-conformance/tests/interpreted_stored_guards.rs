@@ -154,12 +154,16 @@ fn stored_and_input_timestamps_compare_by_instant_and_now_stays_unsupplied() {
                 ("limit".into(), Node::Text("2026-01-05T09:00:00Z".into())),
             ]);
             let answer = invoke(&target, "demo.shop.ReportPending", input);
-            if unsupplied_now {
+            if unsupplied_now && expected == "kept-ready" {
+                // The stored predicate holds, so the decision needs the `now` guard beside it, and
+                // no clock was supplied: Unknown, reported as a capability the target lacks.
                 assert!(
                     matches!(answer, Err(TargetError::Unsupported { .. })),
                     "{answer:?}"
                 );
             } else {
+                // Where the stored predicate fails, the branch is ruled out whatever the time: no
+                // clock is needed and none is refused for (beyond10x/ess#244, the occurrence clock).
                 assert_eq!(
                     answer.unwrap().outcome.unwrap().outcome.to_string(),
                     expected

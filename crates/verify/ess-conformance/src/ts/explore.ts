@@ -2480,6 +2480,12 @@ export function assertExplored(result: ExploreResult, options: AssertOptions = {
 // it may be what that creation made, which the checker could only read as shown before anyone
 // asked for it. Every other row is written and judged.
 //
+// A call whose receipt carries the instant its decision observed (a target with
+// `executeCommandRecorded`, or a pending call with `completeRecorded`) has it written as the
+// operation's `decision_time`, and the history is then `ess-history/2`; a history with none is
+// written as `ess-history/1`, byte for byte as before. The instant is the call's own, carried from
+// its decision to its completion; the explorer reads no clock of its own.
+//
 // With `inject`, every fault the specification declares is injected, and no other: a second
 // delivery for each `delivery: at_least_once` binding, a client retry for each command declaring
 // `replays:`, and a delayed or unanswered answer for each command declaring another `external:`
@@ -2495,6 +2501,80 @@ export interface PendingCommand {
    * fails the exploration. A throw from `invokeCommand` is read the same way.
    */
   complete(): Answer<CommandResult>;
+  /**
+   * The answer arriving with this call's own decision receipt, carried from its invoke: called
+   * instead of `complete`, exactly once, where present.
+   */
+  completeRecorded?(): Answer<RecordedCompletion>;
+}
+
+/**
+ * One call's answer and the instant its decision observed: what the explorer writes into the
+ * operation's `decision_time`. `decisionTime` is absent where no decision was observed — a call
+ * refused before its decision edge, a retained answer delivered again, a target with no clock — and
+ * an `error` may carry one: the call decided, and its answer was lost after. `error` is read as a
+ * throw from `complete` is.
+ */
+export interface RecordedCompletion {
+  result?: CommandResult;
+  error?: unknown;
+  /** The instant, in the one spelling `parseDecisionInstant` admits. */
+  decisionTime?: string;
+}
+
+/**
+ * A target whose command edge reads a command clock: `executeCommandRecorded` runs the same command
+ * as `executeCommand`, reads the clock once immediately before deciding, and answers that reading
+ * with the result — never a reading taken after the command.
+ */
+export interface RecordedTarget extends Target {
+  executeCommandRecorded(request: CommandRequest): Answer<RecordedCompletion>;
+}
+
+const DECISION_INSTANT =
+  /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]{0,8}[1-9])?Z$/;
+
+/**
+ * The instant one command decision observed, in its one spelling: RFC 3339 in UTC with `Z`, and a
+ * fraction of one to nine digits only when it is not zero, with no trailing zero. `ess` and the Go
+ * explorer admit the same texts (beyond10x/ess#244). Throws for any other text.
+ */
+export function parseDecisionInstant(text: string): string {
+  const parts = DECISION_INSTANT.exec(text);
+  const number = (index: number): number => Number(parts?.[index] ?? 'NaN');
+  const year = number(1);
+  const month = number(2);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
+  if (
+    parts === null ||
+    month < 1 ||
+    number(3) < 1 ||
+    number(3) > days ||
+    number(4) > 23 ||
+    number(5) > 59 ||
+    number(6) > 59
+  ) {
+    throw new Error(
+      `${JSON.stringify(text)} is not a decision instant: an RFC 3339 instant in UTC with \`Z\`, and a fraction only when it is not zero, with no trailing zero`,
+    );
+  }
+  return text;
+}
+
+/** The instant a clock read, in its one spelling. */
+export function decisionInstantOf(at: Date): string {
+  return parseDecisionInstant(at.toISOString().replace(/\.?0+Z$/, 'Z'));
+}
+
+/** The call's receipt: its own where it carries one, otherwise `complete`'s answer, called once, with no time. */
+export async function completeRecorded(pending: PendingCommand): Promise<RecordedCompletion> {
+  try {
+    if (typeof pending.completeRecorded === 'function') return await pending.completeRecorded();
+    return { result: await pending.complete() };
+  } catch (error) {
+    return { error };
+  }
 }
 
 /**
@@ -2655,7 +2735,8 @@ export class SplitMix64 {
   }
 }
 
-interface Operation {
+/** One operation as the explorer records it and `historyText` writes it. */
+export interface HistoryOperation {
   client: number;
   command: string;
   subjectKey: string;
@@ -2672,7 +2753,11 @@ interface Operation {
   source: string;
   /** What a returned read answered, each row's identity; absent where it records none. */
   rows?: string[];
+  /** The instant the call's decision observed; absent where none was observed. */
+  decisionTime?: string;
 }
+
+type Operation = HistoryOperation;
 
 interface Flight {
   pending: PendingCommand | null;
@@ -2924,7 +3009,15 @@ async function send(h: Recording, request: CommandRequest): Promise<PendingComma
       };
     }
   }
-  return { complete: () => target.executeCommand(request) };
+  const recorded = target as Partial<RecordedTarget> & Target;
+  return {
+    complete: () => target.executeCommand(request),
+    // Executed at the return instant through the target's own recorded command, where it has one.
+    completeRecorded: async () =>
+      typeof recorded.executeCommandRecorded === 'function'
+        ? await recorded.executeCommandRecorded(request)
+        : { result: await target.executeCommand(request) },
+  };
 }
 
 async function invokeCall(
@@ -3048,12 +3141,17 @@ async function completeCall(
     bump(h.injected.unanswered, command.name);
     return null;
   }
-  let result: CommandResult;
-  try {
-    result = await pending.complete();
-  } catch (error) {
-    h.clock += 1;
-    const operation = h.operations[flight.index] as Operation;
+  // The receipt's instant is written before the answer is read: a call lost after its decision
+  // keeps the instant it decided at.
+  const receipt = await completeRecorded(pending);
+  h.clock += 1;
+  const operation = h.operations[flight.index] as Operation;
+  if (receipt.decisionTime !== undefined) {
+    operation.decisionTime = parseDecisionInstant(receipt.decisionTime);
+  }
+  const result = receipt.result;
+  if (result === undefined) {
+    const error = receipt.error;
     if (isUnsupported(error)) {
       operation.dropped = true;
       if (!h.unsupported.some((known) => known.subject === command.name)) {
@@ -3070,8 +3168,6 @@ async function completeCall(
     }
     throw new Error(`\`${command.name}\` failed: ${errorText(error)}`);
   }
-  h.clock += 1;
-  const operation = h.operations[flight.index] as Operation;
   const taken = result.outcome ?? '';
   queueRedeliveries(h, result);
   const created = createdBy(command, result);
@@ -3111,14 +3207,17 @@ function jsonObject(members: [string, string][]): string {
 
 /**
  * The history in the one spelling `ess` reads and writes: compact, keys in declaration order, an
- * absent `returned_at` and `outcome` for a call that never answered.
+ * absent `returned_at` and `outcome` for a call that never answered, and `ess-history/2` exactly
+ * when a written operation records a `decision_time`.
  */
-function historyText(
+export function historyText(
   digest: string,
   seed: number,
   clients: number,
-  operations: Operation[],
+  operations: HistoryOperation[],
 ): string {
+  // `ess-history/2` exactly when a written operation records a decision time.
+  let format = 'ess-history/1';
   // Where each written operation stands among the written ones, from 1, for a retry naming it.
   const position = new Map<number, number>();
   let kept = 0;
@@ -3155,10 +3254,14 @@ function historyText(
     if (operation.retryOf !== 0 && original !== undefined) {
       members.push(['retry_of', quote(uuidOf(BigInt(original)))]);
     }
+    if (operation.decisionTime !== undefined) {
+      format = 'ess-history/2';
+      members.push(['decision_time', quote(operation.decisionTime)]);
+    }
     return jsonObject(members);
   });
   return jsonObject([
-    ['format', quote('ess-history/1')],
+    ['format', quote(format)],
     ['history_id', quote(uuidOf(BigInt(seed) & 0xffffffffffffn))],
     ['spec_digest', quote(digest)],
     ['seed', String(seed)],

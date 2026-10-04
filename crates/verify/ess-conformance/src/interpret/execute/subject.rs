@@ -30,6 +30,7 @@ impl<'a> Held<'a> {
         input: &input::InputFacts<'_>,
         caller: Option<&super::caller::Caller<'_>>,
         outcome: String,
+        now: Option<crate::occurrence_clock::DecisionInstant>,
     ) -> Result<Option<bool>, Undetermined> {
         let (stored, additional) = match condition {
             ResolvedCondition::SubjectState { state, predicate } => (
@@ -64,6 +65,7 @@ impl<'a> Held<'a> {
                         &RowAndInput { row, input },
                         caller,
                         self.fields,
+                        now,
                     ))
                 }),
                 additional.as_ref(),
@@ -89,7 +91,7 @@ impl<'a> Held<'a> {
             ),
             _ => return Ok(None),
         };
-        let input = super::caller::Facts::new(input, caller, &input.command().input);
+        let input = super::caller::Facts::new(input, caller, &input.command().input, now);
         match stored.and(additional.map_or(Truth::True, |guard| guard.evaluate(&input))) {
             Truth::True => Ok(Some(true)),
             Truth::False => Ok(Some(false)),

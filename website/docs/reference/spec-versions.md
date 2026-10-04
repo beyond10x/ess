@@ -450,6 +450,12 @@ completion and outcome, the rows a view read answered, and the `retry_of` of a r
 The document is specified in `models/concurrent-history/` and published as
 `schemas/ess-history.schema.json`.
 
+`ess-history/2`, unreleased, adds one optional operation field, `decision_time`: the UTC instant the
+call's command decision observed. A writer selects it exactly when an operation records one, so a
+history with none is still written as `ess-history/1`, byte for byte; `check-history` reads both,
+and refuses a `decision_time` in an `ess-history/1` document. A reader of `ess-history/1` only
+refuses `ess-history/2` by its `format`.
+
 `ess-history-adapter/1`, introduced in [0.39.0][r39], maps each field of a JSON Lines call log to a
 JSON pointer or declares it `absent`, for `ess verify conform import-history`.
 

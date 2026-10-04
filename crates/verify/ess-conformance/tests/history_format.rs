@@ -309,12 +309,12 @@ fn two_operations_with_one_identity_are_refused_by_name() {
 fn another_format_is_refused_by_name() {
     let digest = billing_digest();
     let mut value = document(&digest, &[]);
-    value["format"] = json!("ess-history/2");
+    value["format"] = json!("ess-history/3");
 
     assert_eq!(
         refusal(&value, &digest),
         HistoryRefusal::UnsupportedFormat {
-            found: Some("ess-history/2".to_owned()),
+            found: Some("ess-history/3".to_owned()),
         }
     );
     value.as_object_mut().expect("an object").remove("format");

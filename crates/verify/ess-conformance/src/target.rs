@@ -12,6 +12,7 @@
 //! | [`fixture_values`](ConformanceTarget::fixture_values) | explicit typed fixture declarations, independently resolved before scenario activity | [`ResolveFixtures`](crate::scenario::ScenarioStep::ResolveFixtures) |
 //! | [`begin_scenario`](ConformanceTarget::begin_scenario) / [`end_scenario`](ConformanceTarget::end_scenario) | scenario isolation (§8): observations from one scenario may not satisfy another | every scenario |
 //! | [`execute_command`](ConformanceTarget::execute_command) | `commands:`, their `outcomes:`, the `error:` a branch declares and what it `emits:` | [`ExecuteCommand`](crate::scenario::ScenarioStep::ExecuteCommand) |
+//! | [`execute_command_recorded`](ConformanceTarget::execute_command_recorded) | a command guard reading `now`: the one instant its decision observed, which an `ess-history/2` operation records | a recorded concurrent history ([`crate::record`], [`crate::sessions`]) |
 //! | [`query_view`](ConformanceTarget::query_view) | `views:` and their `consistency:` | [`QueryView`](crate::scenario::ScenarioStep::QueryView), [`EventuallyView`](crate::scenario::ScenarioStep::EventuallyView) |
 //! | [`observe_events`](ConformanceTarget::observe_events) | `events:` a component `publishes:`, observed away from the command that caused them | [`EventuallyEvent`](crate::scenario::ScenarioStep::EventuallyEvent) |
 //! | [`configure_external_outcome`](ConformanceTarget::configure_external_outcome) | an outcome declared `external:` (§12) | [`ConfigureExternalOutcome`](crate::scenario::ScenarioStep::ConfigureExternalOutcome) |
@@ -183,6 +184,25 @@ pub trait ConformanceTarget {
         &self,
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError>;
+
+    /// [`execute_command`](Self::execute_command), with the decision instant the command edge
+    /// observed: the typed receipt a recorder writes into an `ess-history/2` operation
+    /// (beyond10x/ess#244, [`crate::occurrence_clock`]).
+    ///
+    /// The default calls [`execute_command`](Self::execute_command) exactly once and wraps its
+    /// answer, errors included, with no time. A target that reads a command clock overrides this
+    /// through the same command core its ordinary method runs, and never as execute-then-read-clock:
+    /// the instant is the one the decision used. An error after the decision edge keeps that instant;
+    /// an error before it, and a retained answer delivered again, carry none.
+    fn execute_command_recorded(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> RecordedCommandCompletion {
+        RecordedCommandCompletion {
+            answer: self.execute_command(request),
+            decision_time: None,
+        }
+    }
 
     /// Invokes a command with no input at all — an absent request body, not `{}` — and reports
     /// what is observable of it (suite/26, `input_absent:`; beyond10x/ess#170).
@@ -560,6 +580,22 @@ pub struct SemanticCommandRequest {
     pub input: BTreeMap<String, Node>,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
+}
+
+/// One command's answer and the instant its decision observed, from the command edge to the
+/// recorder (beyond10x/ess#244, [`ConformanceTarget::execute_command_recorded`]).
+///
+/// An in-process value, not a serialized result envelope: only an `ess-history/2` operation's
+/// `decision_time` persists the instant. `decision_time` is `None` where no decision was observed —
+/// a command refused before its decision edge, a retained answer delivered again, a target with no
+/// clock — and never an inferred epoch. An `Err` answer may carry `Some`: the command decided, and
+/// its answer was lost after.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedCommandCompletion {
+    /// What the command answered, or why it did not.
+    pub answer: Result<SemanticCommandResult, TargetError>,
+    /// The instant the decision used, where one was observed.
+    pub decision_time: Option<crate::occurrence_clock::DecisionInstant>,
 }
 
 /// A command to invoke with no input document at all (suite/26, `input_absent:`).

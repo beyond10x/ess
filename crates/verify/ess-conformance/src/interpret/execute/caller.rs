@@ -86,10 +86,14 @@ impl Invocation<'_> {
     }
 }
 
+/// The facts one command decision reads: the input (or a row read with it), the caller's
+/// attributes, and the one instant the decision observed. `now` is that instant and nothing
+/// else — never the base source's own clock, which synthesis fixes at its reference instant.
 pub(super) struct Facts<'a> {
     base: &'a dyn FactSource,
     caller: Option<&'a dyn FactSource>,
     shadowed: bool,
+    now: Option<ess_primitives::time::Rfc3339Instant>,
 }
 
 impl<'a> Facts<'a> {
@@ -97,11 +101,13 @@ impl<'a> Facts<'a> {
         base: &'a dyn FactSource,
         caller: Option<&'a Caller<'_>>,
         roots: &[ResolvedField],
+        now: Option<crate::occurrence_clock::DecisionInstant>,
     ) -> Self {
         Self {
             base,
             caller: caller.map(|caller| &caller.facts as &dyn FactSource),
             shadowed: roots.iter().any(|field| field.name == "caller"),
+            now: now.map(crate::occurrence_clock::DecisionInstant::instant),
         }
     }
 
@@ -147,5 +153,8 @@ impl FactSource for Facts<'_> {
     fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
         self.source(path)
             .is_some_and(|(source, path)| source.orders_text_by_bytes(&path))
+    }
+    fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
+        self.now
     }
 }

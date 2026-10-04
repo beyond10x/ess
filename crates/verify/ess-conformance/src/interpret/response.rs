@@ -411,6 +411,7 @@ commands:
             &super::super::execute::Externals::Open,
             &super::super::execute::Generated::Counter,
             &mut authority,
+            None,
         )
         .unwrap();
         assert_eq!(steps.len(), 2);

@@ -12,10 +12,15 @@ use super::{
 use std::collections::BTreeMap;
 
 /// One shared executor invocation. Only the private history entrypoint supplies an operation id.
+///
+/// `now` is the one instant this command decision observed: every input, subject and related
+/// predicate of the invocation reads it, and nothing in the invocation reads a clock again. `None`
+/// is no instant, which leaves a guard that needs one Unknown.
 pub(super) struct Context<'a> {
     pub(super) input: &'a BTreeMap<String, Node>,
     pub(super) caller: Option<&'a super::caller::Caller<'a>>,
     pub(super) operation: Option<&'a str>,
+    pub(super) now: Option<crate::occurrence_clock::DecisionInstant>,
     pub(super) unresolved: std::cell::RefCell<Option<Undetermined>>,
     pub(super) domains: Domains,
 }
@@ -157,6 +162,8 @@ pub(crate) struct Alternatives {
     pub(crate) unresolved: Option<Undetermined>,
 }
 
+/// One operation of a recorded history, stepped from `state` with the instant its decision recorded
+/// (`ess-history/2`), unchanged on every alternative; `None` where it recorded none.
 pub(crate) fn execute(
     ir: &super::EssIr,
     state: &State,
@@ -164,11 +171,13 @@ pub(crate) fn execute(
     input: &BTreeMap<String, Node>,
     generated: &super::Generated,
     operation: &str,
+    now: Option<crate::occurrence_clock::DecisionInstant>,
 ) -> Result<Alternatives, Undetermined> {
     let context = Context {
         input,
         caller: None,
         operation: Some(operation),
+        now,
         unresolved: std::cell::RefCell::default(),
         domains: Domains::default(),
     };
@@ -344,6 +353,7 @@ mod tests {
                 ]),
                 &super::super::Generated::Counter,
                 operation,
+                None,
             )
             .unwrap();
             assert!(answer.unresolved.is_none(), "{:?}", answer.unresolved);
@@ -484,6 +494,7 @@ commands:
                 .collect(),
             &super::super::Generated::Counter,
             operation,
+            None,
         )
     }
     fn next(

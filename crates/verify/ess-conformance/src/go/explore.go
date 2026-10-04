@@ -67,6 +67,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 //go:embed ir.json
@@ -2823,6 +2824,12 @@ func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 // `rows`, the first in answer order: it may be what that creation made, which the checker could
 // only read as shown before anyone asked for it. Every other row is written and judged.
 //
+// A call whose receipt carries the instant its decision observed (a RecordedTarget, or a
+// RecordedPendingCommand from InvokeCommand) has it written as the operation's `decision_time`, and
+// the history is then `ess-history/2`; a history with none is written as `ess-history/1`, byte for
+// byte as before. The instant is the call's own, carried from its decision to its completion; the
+// explorer reads no clock of its own.
+//
 // With ConcurrentOptions.Inject, every fault the specification declares is injected, and no other:
 // a second delivery for each `delivery: at_least_once` binding, a client retry for each command
 // declaring `replays:`, and a delayed or unanswered answer for each command declaring another
@@ -2853,6 +2860,81 @@ type exploreAtomicCall struct {
 
 func (c exploreAtomicCall) Complete() (CommandResult, error) {
 	return c.target.ExecuteCommand(c.request)
+}
+
+// CompleteRecorded executes the call at its return instant through the target's own recorded
+// command, where it has one.
+func (c exploreAtomicCall) CompleteRecorded() RecordedCompletion {
+	if recorded, ok := c.target.(RecordedTarget); ok {
+		return recorded.ExecuteCommandRecorded(c.request)
+	}
+	result, err := c.target.ExecuteCommand(c.request)
+	return RecordedCompletion{Result: result, Err: err}
+}
+
+// DecisionInstant is the instant one command decision observed, in its one spelling: RFC 3339 in
+// UTC with `Z`, and a fraction of one to nine digits only when it is not zero, with no trailing
+// zero. An `ess-history/2` operation records it as `decision_time` (beyond10x/ess#244).
+type DecisionInstant struct {
+	text string
+}
+
+// ParseDecisionInstant admits exactly the one spelling of an instant: `ess` and the TypeScript
+// explorer admit the same texts.
+func ParseDecisionInstant(text string) (DecisionInstant, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, text)
+	if err != nil || parsed.UTC().Format("2006-01-02T15:04:05.999999999Z07:00") != text {
+		return DecisionInstant{}, fmt.Errorf("%q is not a decision instant: an RFC 3339 instant in UTC with `Z`, and a fraction only when it is not zero, with no trailing zero", text)
+	}
+	return DecisionInstant{text: text}, nil
+}
+
+// DecisionInstantOf is the instant a clock read, in its one spelling, or an error for an instant
+// outside the years 0000 through 9999 an RFC 3339 instant spells, which `ess` would refuse to read.
+func DecisionInstantOf(at time.Time) (DecisionInstant, error) {
+	if year := at.UTC().Year(); year < 0 || year > 9999 {
+		return DecisionInstant{}, fmt.Errorf("the decision instant %s lies outside the years 0000 through 9999 an RFC 3339 instant spells", at.UTC().Format(time.RFC3339Nano))
+	}
+	return ParseDecisionInstant(at.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"))
+}
+
+// String is the one spelling.
+func (d DecisionInstant) String() string {
+	return d.text
+}
+
+// RecordedCompletion is one call's answer and the instant its decision observed: what the explorer
+// writes into the operation's `decision_time`. DecisionTime is nil where no decision was observed —
+// a call refused before its decision edge, a retained answer delivered again, a target with no
+// clock — and an error may carry one: the call decided, and its answer was lost after.
+type RecordedCompletion struct {
+	Result       CommandResult
+	Err          error
+	DecisionTime *DecisionInstant
+}
+
+// RecordedPendingCommand is a call in flight that carries its own decision receipt from its
+// invoke to its return. CompleteRecorded is called instead of Complete, exactly once.
+type RecordedPendingCommand interface {
+	PendingCommand
+	CompleteRecorded() RecordedCompletion
+}
+
+// RecordedTarget is a Target whose command edge reads a command clock: ExecuteCommandRecorded runs
+// the same command as ExecuteCommand, reads the clock once immediately before deciding, and answers
+// that reading with the result — never a reading taken after the command.
+type RecordedTarget interface {
+	ExecuteCommandRecorded(request CommandRequest) RecordedCompletion
+}
+
+// exploreCompleteRecorded is the call's receipt: its own where it carries one, otherwise Complete's
+// answer, called once, with no time.
+func exploreCompleteRecorded(pending PendingCommand) RecordedCompletion {
+	if recorded, ok := pending.(RecordedPendingCommand); ok {
+		return recorded.CompleteRecorded()
+	}
+	result, err := pending.Complete()
+	return RecordedCompletion{Result: result, Err: err}
 }
 
 // ConcurrentOptions is what one concurrent exploration is asked to do.
@@ -3008,6 +3090,8 @@ type exploreOperation struct {
 	source string
 	// rows is what a returned read answered, each row's identity; nil where it records none.
 	rows []string
+	// decisionTime is the instant the call's decision observed, or nil where none was observed.
+	decisionTime *DecisionInstant
 }
 
 type exploreFlight struct {
@@ -3316,8 +3400,20 @@ func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error)
 		h.injected.Unanswered[flight.command.name]++
 		return nil, "", nil
 	}
-	result, err := flight.pending.Complete()
+	// The receipt's instant is written before the answer is read: a call lost after its decision
+	// keeps the instant it decided at.
+	receipt := exploreCompleteRecorded(flight.pending)
 	h.clock++
+	if receipt.DecisionTime != nil {
+		// Only the one spelling is written: a zero DecisionInstant{} or any other value `ess` would
+		// refuse fails the exploration, as the TypeScript recorder does.
+		instant, err := ParseDecisionInstant(receipt.DecisionTime.String())
+		if err != nil {
+			return nil, "", fmt.Errorf("`%s` answered a decision receipt `ess` cannot read: %w", flight.command.name, err)
+		}
+		operation.decisionTime = &instant
+	}
+	result, err := receipt.Result, receipt.Err
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrUnsupported):
@@ -3386,6 +3482,8 @@ func exploreQuote(text string) string {
 // declaration order, an absent `returned_at` and `outcome` for a call that never answered.
 func exploreHistoryBytes(digest string, seed, clients int, operations []exploreOperation) []byte {
 	written := []string{}
+	// format is `ess-history/2` exactly when a written operation records a decision time.
+	format := "ess-history/1"
 	kept := []exploreOperation{}
 	// position is where each written operation stands among the written ones, from 1, for a retry
 	// naming it.
@@ -3428,10 +3526,14 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 		if original := position[operation.retryOf-1]; operation.retryOf != 0 && original != 0 {
 			members = append(members, [2]string{"retry_of", exploreQuote(exploreUUID(uint64(original)))})
 		}
+		if operation.decisionTime != nil {
+			format = "ess-history/2"
+			members = append(members, [2]string{"decision_time", exploreQuote(operation.decisionTime.String())})
+		}
 		written = append(written, exploreJSONObject(members))
 	}
 	return []byte(exploreJSONObject([][2]string{
-		{"format", exploreQuote("ess-history/1")},
+		{"format", exploreQuote(format)},
 		{"history_id", exploreQuote(exploreUUID(uint64(seed) & 0xffffffffffff))},
 		{"spec_digest", exploreQuote(digest)},
 		{"seed", strconv.Itoa(seed)},

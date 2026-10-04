@@ -45,6 +45,8 @@
 //! * a `replays:` branch — answered, or taken by an operation that never answered — is available
 //!   only once the request's origin branch has been taken earlier in that order, and changes
 //!   nothing. A replay with nothing of its request taken before it is not one the model allows.
+//! * an operation recording a `decision_time` (`ess-history/2`) made a decision, so a `replays:`
+//!   branch never answers it: a retained answer delivered again carries no instant of its own.
 //!
 //! Because the rule spans the request, every subject its operations name — an original that never
 //! answered names the instance it would have created, a retry that created another names that one
@@ -53,6 +55,15 @@
 //! searched there too. Where two operations of one request both answered the origin branch, the
 //! violation is reported before any search, naming the subject the second answer created and the
 //! request's operations.
+//!
+//! # The instant a decision observed
+//!
+//! An `ess-history/2` operation may record the instant its command decision observed
+//! ([`Operation::decision_time`]). Every alternative and replay of that operation the search tries
+//! reads that one instant as `now`, unchanged. An operation recording none reads no clock: a guard
+//! that needs one is Unknown, which leaves that alternative unresolved — never a violation, and
+//! never a pass by trying instants nobody recorded. `invoked_at` and `returned_at` are ordering
+//! coordinates and are never read as `now`.
 //!
 //! # What `ess-history/1` does not record, and how the search reads it
 //!
@@ -154,7 +165,7 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::Truth;
 use serde::Serialize;
 
-use crate::history::{Completion, History, Operation, ReturnBound, Verdict};
+use crate::history::{Completion, History, HistoryFormat, Operation, ReturnBound, Verdict};
 use crate::input::TypedFacts;
 use crate::interpret::execute::history::{self as history_execution, State};
 use crate::interpret::execute::{Generated, GeneratedSlot, Undetermined};
@@ -705,6 +716,7 @@ fn step(
             input,
             &prepared.generated,
             operation.operation_id.as_str(),
+            operation.decision_time,
         ) {
             Ok(steps) => steps,
             // The request is not one the model's branches describe from here — an identity already
@@ -746,6 +758,11 @@ fn step(
                 }
                 if request.replays.contains(branch) && !held.taken.contains(&request.id) {
                     // Nothing of this request was retained to replay.
+                    continue;
+                }
+                if request.replays.contains(branch) && operation.decision_time.is_some() {
+                    // A retained answer delivered again decides nothing; an operation recording a
+                    // decision instant made a decision, and a replay is not one (`ess-history/2`).
                     continue;
                 }
             }
@@ -1657,6 +1674,11 @@ fn judge(
 fn only(history: &History, keep: impl Fn(&Operation) -> bool) -> History {
     let mut kept = history.clone();
     kept.operations.retain(|operation| keep(operation));
+    // A part of a history written as `ess-history/2` is written as format 2 only while one of its
+    // operations still records a decision time.
+    if kept.format == HistoryFormat::EssHistory2 {
+        kept.format = HistoryFormat::for_operations(&kept.operations);
+    }
     kept
 }
 

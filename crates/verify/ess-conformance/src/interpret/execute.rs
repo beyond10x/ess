@@ -382,6 +382,7 @@ pub(super) fn without_input(
             input: &BTreeMap::new(),
             caller,
             operation: None,
+            now: None,
             unresolved: std::cell::RefCell::default(),
             domains: history::Domains::default(),
         },
@@ -410,7 +411,28 @@ pub fn execute_generating(
     externals: &Externals,
     generated: &Generated,
 ) -> Result<Vec<Step>, Undetermined> {
-    in_context(
+    execute_at(ir, store, command, input, externals, generated, None)
+}
+
+/// [`execute_generating`], decided at `decision_time`: the one instant this command decision
+/// observed, which every guard of the decision reading the current time reads
+/// ([`crate::occurrence_clock`], beyond10x/ess#244). The clock-free entrypoints pass `None`, and
+/// with `None` a guard that needs the instant is Unknown — [`Undetermined::Undecidable`] — while
+/// every answer decided before such a guard is reached stands.
+///
+/// # Errors
+///
+/// [`Undetermined`] where the model, as this interpreter reads it, determines no answer.
+pub fn execute_at(
+    ir: &EssIr,
+    store: &Store,
+    command: &QualifiedName,
+    input: &BTreeMap<String, Node>,
+    externals: &Externals,
+    generated: &Generated,
+    decision_time: Option<crate::occurrence_clock::DecisionInstant>,
+) -> Result<Vec<Step>, Undetermined> {
+    responding(
         ir,
         store,
         command,
@@ -420,28 +442,15 @@ pub fn execute_generating(
         },
         externals,
         generated,
-    )
-}
-
-pub(super) fn in_context(
-    ir: &EssIr,
-    store: &Store,
-    command: &QualifiedName,
-    input: &Invocation<'_>,
-    externals: &Externals,
-    generated: &Generated,
-) -> Result<Vec<Step>, Undetermined> {
-    responding(
-        ir,
-        store,
-        command,
-        input,
-        externals,
-        generated,
         &mut super::response::Authority::default(),
+        decision_time,
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one command decision: its request, its authorities and its one instant"
+)]
 pub(super) fn responding(
     ir: &EssIr,
     store: &Store,
@@ -450,6 +459,7 @@ pub(super) fn responding(
     externals: &Externals,
     generated: &Generated,
     responses: &mut super::response::Authority,
+    decision_time: Option<crate::occurrence_clock::DecisionInstant>,
 ) -> Result<Vec<Step>, Undetermined> {
     responding_core(
         ir,
@@ -459,6 +469,7 @@ pub(super) fn responding(
             input: input.input,
             caller: input.caller,
             operation: None,
+            now: decision_time,
             unresolved: std::cell::RefCell::default(),
             domains: history::Domains::default(),
         },
@@ -716,7 +727,7 @@ fn select<'s>(
     include_present_related_refusals: bool,
     prioritize_present_related_refusals: bool,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
-    let invocation = caller::Facts::new(facts, caller, &spec.input);
+    let invocation = caller::Facts::new(facts, caller, &spec.input, context.now);
     let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&invocation) {
         Truth::True => Ok(true),
         Truth::False => Ok(false),
@@ -771,7 +782,15 @@ fn select<'s>(
         {
             let held = held_subjects
                 .get(&outcome.name)
-                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
+                .map(|held| {
+                    held.selects(
+                        &outcome.condition,
+                        facts,
+                        caller,
+                        branch(spec, outcome),
+                        context.now,
+                    )
+                })
                 .transpose();
             match held {
                 Ok(Some(Some(true))) => {
@@ -792,7 +811,15 @@ fn select<'s>(
             let held = (!is_present_related_refusal(outcome) || include_present_related_refusals)
                 .then(|| held_subjects.get(&outcome.name))
                 .flatten()
-                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
+                .map(|held| {
+                    held.selects(
+                        &outcome.condition,
+                        facts,
+                        caller,
+                        branch(spec, outcome),
+                        context.now,
+                    )
+                })
                 .transpose();
             let takes = match held {
                 Ok(takes) => takes.flatten(),
@@ -1151,9 +1178,10 @@ fn stored_reference<'s>(
 /// missing related row is answered by its `exists: false` branch first
 /// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order").
 ///
-/// Where a refusal's guard reads the current time, nothing is answered early and [`interpretable`]
-/// names that guard. A request that does not decode is left to the ordinary path, which reports it
-/// in the order it always has.
+/// A refusal's guard reading the current time reads the one instant this decision observed
+/// ([`Context::now`]); with none, the first such guard the order reaches is Unknown, and every
+/// refusal declared before it still answers. A request that does not decode is left to the
+/// ordinary path, which reports it in the order it always has.
 fn refused_by_input(
     ir: &EssIr,
     spec: &ResolvedCommand,
@@ -1173,13 +1201,13 @@ fn refused_by_input(
             _ => None,
         })
         .collect();
-    if refusals.is_empty() || refusals.iter().any(|(_, guard)| reads_now(guard)) {
+    if refusals.is_empty() {
         return Ok(None);
     }
     let Ok(facts) = input::flatten(ir, spec, input) else {
         return Ok(None);
     };
-    let facts = caller::Facts::new(&facts, input.caller, &spec.input);
+    let facts = caller::Facts::new(&facts, input.caller, &spec.input, input.now);
     for (outcome, guard) in refusals {
         match guard.evaluate(&facts) {
             Truth::True => return Ok(Some(vec![refusal(ir, spec, outcome, store, input, None)?])),
@@ -1208,13 +1236,8 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
     for outcome in &spec.outcomes {
         let at = branch(spec, outcome);
-        if let ResolvedCondition::When { predicate }
-        | ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition
-        {
-            if reads_now(predicate) {
-                return gap(format!("the current-time guard of `{at}`"));
-            }
-        }
+        // An input guard reading the current time reads the decision's one instant
+        // ([`Context::now`]). A stored-row predicate reading it is not executed yet.
         match &outcome.condition {
             ResolvedCondition::When { .. }
             | ResolvedCondition::Otherwise
@@ -1225,21 +1248,15 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
             | ResolvedCondition::ExistingInstance
             | ResolvedCondition::InputAbsent
             | ResolvedCondition::SubjectState { .. }
-            | ResolvedCondition::StateChange { .. } => {}
-            ResolvedCondition::SubjectField { predicate, .. } => {
-                if predicate.as_ref().is_some_and(reads_now) {
+            | ResolvedCondition::StateChange { .. }
+            | ResolvedCondition::SubjectField { .. } => {}
+            ResolvedCondition::SubjectPredicate { predicate, .. } => {
+                if reads_now(predicate) {
                     return gap(format!("the current-time guard of `{at}`"));
                 }
             }
-            ResolvedCondition::SubjectPredicate { predicate, input } => {
-                if reads_now(predicate) || input.as_ref().is_some_and(reads_now) {
-                    return gap(format!("the current-time guard of `{at}`"));
-                }
-            }
-
-            ResolvedCondition::Related { test, input, .. } => {
+            ResolvedCondition::Related { test, .. } => {
                 if matches!(test, ResolvedRelatedTest::Holds { predicate } if reads_now(predicate))
-                    || input.as_ref().is_some_and(reads_now)
                 {
                     return gap(format!("the current-time guard of `{at}`"));
                 }
@@ -1252,9 +1269,10 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
     Ok(())
 }
 
-/// Whether a guard compares a fact with the current time (`now`, `now - 60s`; ess/16). The model
-/// holds no clock, so such a guard is not interpreted: comparing the operand as text would take a
-/// branch the specification does not.
+/// Whether a guard compares a fact with the current time (`now`, `now - 60s`; ess/16). An input
+/// guard reads the decision's instant; a stored-row predicate reading it is refused by name until
+/// its evaluation over stored rows exists (family F A3), because comparing the operand as text
+/// would take a branch the specification does not.
 fn reads_now(predicate: &Predicate) -> bool {
     match predicate {
         Predicate::All(children) | Predicate::Any(children) => children.iter().any(reads_now),

@@ -1,0 +1,99 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.offers
+summary: Offers accepted only while the moment the acceptance is decided is not past their expiry.
+types:
+  - {name: demo.offers.OfferId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.offers.Offer
+    identity: {name: offer_id, type: demo.offers.OfferId}
+    fields:
+      - {name: expires_at, type: Timestamp}
+    lifecycle:
+      initial: Open
+      states: [Open, Accepted, Archived]
+      terminal: [Archived]
+      transitions:
+        - {name: accept, from: [Open], to: Accepted}
+        - {name: archive, from: [Accepted], to: Archived}
+errors:
+  - name: demo.offers.Malformed
+    summary: The expiry is before 2001, which no offer carries.
+    fields: []
+  - name: demo.offers.Expired
+    summary: The offer was opened with an expiry already past.
+    fields: []
+  - name: demo.offers.UnknownOffer
+    summary: No offer carries the identity.
+    fields: []
+  - name: demo.offers.NotAccepted
+    summary: Only an accepted offer is archived.
+    fields: []
+events:
+  - name: demo.offers.OfferOpened
+    fields:
+      - {name: offer_id, type: demo.offers.OfferId}
+      - {name: expires_at, type: Timestamp}
+  - name: demo.offers.OfferAccepted
+    fields:
+      - {name: offer_id, type: demo.offers.OfferId}
+  - name: demo.offers.OfferLapsed
+    fields:
+      - {name: offer_id, type: demo.offers.OfferId}
+  - name: demo.offers.OfferArchived
+    fields:
+      - {name: offer_id, type: demo.offers.OfferId}
+commands:
+  - name: demo.offers.OpenOffer
+    input:
+      - {name: expires_at, type: Timestamp}
+    outcomes:
+      - name: opened
+        when: expires_at >= now
+        creates: demo.offers.Offer
+        instance: offer_id
+        sets: {expires_at: input.expires_at}
+        emits: [demo.offers.OfferOpened]
+        payload:
+          demo.offers.OfferOpened: {offer_id: {generated: true}, expires_at: input.expires_at}
+      - name: too-late-to-open
+        error: demo.offers.Expired
+  - name: demo.offers.AcceptOffer
+    input:
+      - {name: offer_id, type: demo.offers.OfferId}
+      - {name: expires_at, type: Timestamp}
+    outcomes:
+      - name: malformed
+        when: "expires_at < '2001-01-01T00:00:00Z'"
+        error: demo.offers.Malformed
+      - name: accepted
+        when_subject_state: Open
+        when: expires_at >= now
+        moves: demo.offers.Offer.accept
+        instance: offer_id
+        emits: [demo.offers.OfferAccepted]
+        payload:
+          demo.offers.OfferAccepted: {offer_id: input.offer_id}
+      - name: lapsed
+        updates: demo.offers.Offer
+        instance: offer_id
+        emits: [demo.offers.OfferLapsed]
+        payload:
+          demo.offers.OfferLapsed: {offer_id: input.offer_id}
+      - name: unknown
+        unknown_instance: true
+        error: demo.offers.UnknownOffer
+  - name: demo.offers.ArchiveOffer
+    input:
+      - {name: offer_id, type: demo.offers.OfferId}
+    outcomes:
+      - name: archived
+        moves: demo.offers.Offer.archive
+        instance: offer_id
+        emits: [demo.offers.OfferArchived]
+        payload:
+          demo.offers.OfferArchived: {offer_id: input.offer_id}
+      - name: not-accepted
+        wrong_state: true
+        error: demo.offers.NotAccepted

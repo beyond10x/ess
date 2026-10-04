@@ -3,7 +3,7 @@ domain: concurrent.history
 types:
   - name: concurrent.history.HistoryFormat
     kind: enum
-    variants: ["ess-history/1"]
+    variants: ["ess-history/1", "ess-history/2"]
 
   - name: concurrent.history.SpecDigest
     kind: newtype
@@ -81,6 +81,8 @@ entities:
         type: Optional<List<String>>
       - name: retry_of
         type: Optional<Uuid>
+      - name: decision_time
+        type: Optional<Timestamp>
     lifecycle:
       initial: Recorded
       states: [Recorded]

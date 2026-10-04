@@ -184,9 +184,9 @@ fn sections() -> Vec<Section> {
         Section {
             heading: "Recorded histories: `history.*`",
             intro: "`ess verify conform check-history` and `ess verify conform import-history` \
-                    refuse an `ess-history/1` document they cannot admit under one of these \
-                    names, before any operation is checked. The message is the name, a colon \
-                    and the detail:\n\n\
+                    refuse an `ess-history/1` or `ess-history/2` document they cannot admit \
+                    under one of these names, before any operation is checked. The message is the \
+                    name, a colon and the detail:\n\n\
                     ```text\n\
                     history.no-clients: `clients` is 0\n\
                     ```",

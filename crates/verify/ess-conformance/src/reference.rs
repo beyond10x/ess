@@ -1676,7 +1676,7 @@ impl ConformanceTarget for Retained {
 ///
 /// It works by not implementing
 /// [`observe_invocations`](ConformanceTarget::observe_invocations) — the trait's own default body is
-/// the refusal — so this type is nothing but the eight forwarding methods, and it cannot drift from
+/// the refusal — so this type is nothing but forwarding methods, and it cannot drift from
 /// what the default says.
 #[derive(Debug)]
 pub struct Untraced<T>(pub T);
@@ -1700,6 +1700,14 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
         self.0.execute_command(request)
+    }
+
+    /// Forwarded: the same implementation, with the instant its own decision observed.
+    fn execute_command_recorded(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> crate::target::RecordedCommandCompletion {
+        self.0.execute_command_recorded(request)
     }
 
     fn execute_command_without_input(

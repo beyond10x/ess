@@ -154,6 +154,7 @@ pub mod leaf_payloads;
 pub mod linearize;
 pub mod mutate;
 pub mod now_offset;
+pub mod occurrence_clock;
 pub mod one_time_response;
 pub mod outcome_shapes;
 pub mod periodic;
