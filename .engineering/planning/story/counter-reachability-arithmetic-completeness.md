@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -87,3 +87,11 @@ The source two-path freeze, original complete package log, first review, full ta
 Fixture correction is reviewed and integrated atff17161b483b40290e081a4323ed0dd219fed537. Root grants the existing owner a serial refresh of its unchanged two-path patch onto that base, preserving all source/failure evidence and proving patch/file digest equality. After that proof, the owner has the sole ESS compiler lane for fresh required full-package verification, strict all-target Clippy and owning/repository formats, using the established plan4 environment and fresh12884901888byte admission before each expensive command. Full unfiltered package bound7200seconds; no runtime omissions, redundant focused reruns or claimed acceptance from ignored cases. Record terminal process handles and source/artifact bindings. No production correction, publication, root-store write or source integration belongs to this grant.
 
 Final whole review remains the second and last round for this unit. Its independent publicMAX/MIN probe remains unexecuted and requires separate admission after package success against fresh hash-bound artifacts. Root's current free22201806848bytes is an observation, not a future admission guarantee. The external original target is absent; its historical binaries/rlibs cannot be reused or claimed preserved.
+
+## Refreshed source and corrected verification environment
+
+Refresh54fe01f083994252d20d4085fe0e60d3d8d6f932ca1d6e2e78e2d86b49ba9e9d proves unchanged two-path patcha9f78c08bdf51955d61dd471578929d0c8877ea7eb4430c5809be7fe6c844d78 onff17161b483b40290e081a4323ed0dd219fed537. Actual runtime prerequisites were checked before the new package attempt.
+
+Run2 exposed inherited Cargo wrapper defaults: removing wrapper environment variables selected sccache from ancestor/user configuration. Root observed the live wrapped compiler and requested correction. The sequence had already completed strict lint and both formats, then begun full-package compilation before its owner stopped it. Preserve that sequence: full command terminated by signal15 after56.852305seconds, not a test failure or acceptance pass; raw log44cb6e4ffe30c5857eb91ea187c278c5a4caa1ccc9771443c0d87e6bd4125d48. No source change or target cleanup occurred.
+
+Root admits corrected strict all-target lint followed by the complete unfiltered package with RUSTC_WRAPPER, RUSTC_WORKSPACE_WRAPPER and both corresponding CARGO_BUILD wrapper variables explicitly empty, no unset entries, and actual child process environment/argv verification. Bind the current refresh above, preserve run2, use separate run3 evidence and outside-Git temporary directory, and retain fresh12GiB starts and7200second bounds. Stop if a wrapper is observed. Do not repeat unchanged green formatting, alter shared Cargo configuration, run the independent probe or infer final package success before its terminal result. Review2 remains the sole final whole review.
