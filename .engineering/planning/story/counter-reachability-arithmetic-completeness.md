@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -55,3 +55,9 @@ The external owner may now implement only the approved arithmetic-completeness c
 ## Focused treatment and remaining integration checks
 
 Frozen production source bbc9d2f51fb3a3f7fbadb539e833143c2e8a8c36d08a3433566fb9514c14833e passed all5arithmetic regressions (126unrelated libtests filtered) and unfiltered counter_limit17/17 with0failed/ignored. Raw logs15cf0fe051ff7fbb9ee5af3f7e5504eca36a64d2691608a150fbe7599b832280 and530c97bf8ed192d29aa8182ae877d0b34f57eb7f43e45650925b4c1752e6ff35. Source hashes unchanged; ordinary-two6bf91d8f and shared-related-three8f56c982 canonical bytes match the baseline. Original2arithmetic reds and initial test-only formatter compilation failure remain retained. Full affected-package, strict lint and independent review remain required; no integration yet. Refresh the worker base after reviewed fixture corrections and the separately diagnosed missing-token generated-runner defect, to avoid rerunning a knowingly stale full-package baseline. Seed413B remains separate/outside50 and no42/43allocation or implementation is authorized by this arithmetic correction.
+
+## Refreshed owning-package validation underway
+
+The unit is fast-forwarded from0beee60c6 to reviewed integration2255315a48a947f363d46cb3c691a57b4879f3b1, retaining exactly two source paths and unchanged treatment bytes. Refreshed patchSHAa9f78c08bdf51955d61dd471578929d0c8877ea7eb4430c5809be7fe6c844d78; subject_fact.rs SHA cb3b9fb0d1b4acd7aabf8a43f813e3920133f480ce0fd55dc2d88eef08d9dc20; counter_limit.rs SHA26e00ff65a9ab39c453bd60ad2da24433e567cc61115a0fc094ae65b923cbc44. Root consumed the refresh and actual tool prerequisite records. Rust1.98.1, Go, Node, TypeScript, Prettier, Task and installed Node type definitions are present; TMP is outside Git and Go cache is unit-exclusive. Fresh preflight free17044844544bytes exceeds the unchanged12884901888 floor.
+
+The sole ESS compiler lane is assigned for strict all-target Clippy, owning package and repository formatting, then the full unfiltered ess-conformance package with --no-fail-fast, no required-runtime skips and a7200second command bound. Lint is starting; no terminal package result is claimed. An earlier grant was not executed before a separate cleanup task ended; the owner explicitly confirmed no refresh/compiler had occurred and resumed the same grant. Final independent whole-unit review and source integration remain due. Optional-input production remains dependent on this completion;412 and transport execution remain held.
