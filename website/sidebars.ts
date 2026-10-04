@@ -56,6 +56,7 @@ const sidebars: SidebarsConfig = {
             'guides/verify/synthesize-a-suite',
             'guides/verify/author-scenarios',
             'guides/verify/runners',
+            'guides/verify/one-time-responses',
             'guides/verify/mutation-audit',
             'guides/verify/explore',
           ],
