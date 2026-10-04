@@ -231,6 +231,11 @@ pub struct Document {
     /// Value-to-tone maps, named by `tone_by.tones`.
     #[serde(default)]
     pub tone_maps: BTreeMap<String, ToneMap>,
+    /// Every name a choice's `options` write that resolved to an enum of the model the document
+    /// was loaded with ([`crate::load_str_with`]), to its qualified name (beyond10x/ess#330).
+    /// Never authored: empty for a document loaded without a model.
+    #[serde(skip)]
+    pub model_enums: BTreeMap<String, String>,
 }
 
 /// Whose grants decide what is visible.
@@ -1304,6 +1309,10 @@ pub struct Choice {
     /// Fixed options, in order.
     #[serde(default)]
     pub options: Vec<ChoiceOption>,
+    /// The row field each option of `reads` sends (beyond10x/ess#328).
+    pub value: Option<String>,
+    /// The row field each option of `reads` shows (beyond10x/ess#328).
+    pub label: Option<String>,
     /// State the value is written to.
     pub binds: Option<Expr>,
     /// Many values.
@@ -1315,6 +1324,53 @@ pub struct Choice {
     pub creatable: Option<Creatable>,
     /// Author remark.
     pub note: Option<String>,
+}
+
+impl Choice {
+    /// The row field the author names as each option's value: `value`, else the read's `key`.
+    pub fn value_field(&self) -> Option<&str> {
+        self.value
+            .as_deref()
+            .or_else(|| self.reads.as_ref()?.key.as_deref())
+    }
+
+    /// The option a row of `reads` offers: the value it sends and the value its label shows.
+    ///
+    /// The value is the row's [`Self::value_field`] when the author names one, and a row without
+    /// that field offers no option, so no other value can be sent in its place. Otherwise it is,
+    /// in order: the row's field named `field` (the form field the choice picks for), its field
+    /// named `identity` (the identity of the entity the view projects, from the binding), its
+    /// `id`, and last the row itself; a field present as `null` is present, and `null` is sent.
+    /// The label is the row's `label` field when the author names one and the row holds a value
+    /// there; otherwise the row's `label`, else its `name`, else the value, a `null` counting as
+    /// absent.
+    pub fn row_option(
+        &self,
+        row: &Value,
+        field: Option<&str>,
+        identity: Option<&str>,
+    ) -> Option<(Value, Value)> {
+        let value = match self.value_field() {
+            Some(named) => row.get(named)?.clone(),
+            None => field
+                .and_then(|field| row.get(field))
+                .or_else(|| identity.and_then(|identity| row.get(identity)))
+                .or_else(|| row.get("id"))
+                .unwrap_or(row)
+                .clone(),
+        };
+        // A label field present as `null` is absent.
+        let present = |key: &str| row.get(key).filter(|cell| !cell.is_null());
+        let label = self
+            .label
+            .as_deref()
+            .and_then(present)
+            .or_else(|| present("label"))
+            .or_else(|| present("name"))
+            .cloned()
+            .unwrap_or_else(|| value.clone());
+        Some((value, label))
+    }
 }
 
 /// One fixed option.

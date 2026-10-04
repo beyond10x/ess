@@ -42,7 +42,8 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
 }
 
 /// Keys that mean something only beside another: a metric's `aggregate`, `field` and `reads`
-/// (beyond10x/ess#358), and a collection's `group_order` and `group_by` (#351).
+/// (beyond10x/ess#358), a collection's `group_order` and `group_by` (#351), and a choice's
+/// `value` and `label` and its `reads` (#328).
 fn keys_together(composite: &Composite, path: &NodePath, sink: &mut Sink) {
     match composite {
         Composite::Metric(metric) => match (metric.aggregate, &metric.field) {
@@ -82,6 +83,20 @@ fn keys_together(composite: &Composite, path: &NodePath, sink: &mut Sink) {
                 "`show_empty_groups` shows the `group_order` values no row has; there is no \
                  `group_order`",
             );
+        }
+        Composite::Choice(choice) if choice.reads.is_none() => {
+            for (key, named) in [("value", &choice.value), ("label", &choice.label)] {
+                if named.is_some() {
+                    sink.push(
+                        "choice_projection",
+                        &path.child(key),
+                        format!(
+                            "`{key}` names a field of the rows `reads` reads, and this choice \
+                             reads no view"
+                        ),
+                    );
+                }
+            }
         }
         _ => {}
     }

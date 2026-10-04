@@ -31,7 +31,9 @@ use ess_compiler::EssIr;
 use ess_domain::component::Reach;
 use ess_domain::types::Primitive;
 use ess_gen::http::{self, Served};
-use ess_ui::binding::{Binding, CommandRoute, ErrorRoute, QueryParam, ViewRoute};
+use ess_ui::binding::{
+    Binding, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, ModelEnums, QueryParam, ViewRoute,
+};
 use ess_ui::{
     Action, ActorSource, Body, Carries, Channel, Composite, Document, Expr, NavPages, NodePath,
     NodeRef, Paging, Reads, Region, RegionKind,
@@ -60,6 +62,8 @@ pub struct Model {
     readable: BTreeSet<DomainHandle>,
     /// The qualified names a document type can name: the model's types, entities and views.
     pub(crate) type_names: BTreeSet<String>,
+    /// Every enum of the model by qualified name, with its variants as a choice offers them.
+    enums: BTreeMap<String, Vec<EnumVariant>>,
 }
 
 /// One view of the model: the bounded context that owns it and the parameters it declares.
@@ -70,6 +74,11 @@ pub(crate) struct View {
     /// Its row fields, by name and by wire name: the variants each holds when it is an enum.
     pub(crate) fields: Fields,
     pub(crate) filter: Option<ess_primitives::predicate::Predicate>,
+    /// The wire name of the row field carrying the identity of the entity it projects, when it
+    /// projects one row per entity and shows the identity.
+    identity: Option<String>,
+    /// Each row field's wire name — the key its rows carry — by its model name.
+    wires: BTreeMap<String, String>,
 }
 
 /// One declared view parameter: its name, and whether a read must bind it — every parameter but
@@ -213,6 +222,15 @@ impl Model {
                             params,
                             fields: fields_of(ir, &view.fields),
                             filter: view.filter.clone(),
+                            identity: identity_of(ir, view),
+                            wires: view
+                                .fields
+                                .iter()
+                                .map(|field| {
+                                    let wire = field.naming.wire.as_ref().unwrap_or(&field.name);
+                                    (field.name.clone(), wire.clone())
+                                })
+                                .collect(),
                         },
                     )
                 })
@@ -231,6 +249,27 @@ impl Model {
                 .chain(ir.entities().keys())
                 .chain(ir.views().keys())
                 .map(ToString::to_string)
+                .collect(),
+            enums: ir
+                .types()
+                .iter()
+                .filter_map(|(name, ty)| match &ty.body {
+                    ResolvedBody::Enum { variants } => Some((
+                        name.to_string(),
+                        variants
+                            .iter()
+                            .map(|variant| EnumVariant {
+                                value: variant.wire().to_owned(),
+                                label: variant
+                                    .naming
+                                    .display
+                                    .clone()
+                                    .unwrap_or_else(|| variant.name().to_owned()),
+                            })
+                            .collect(),
+                    )),
+                    _ => None,
+                })
                 .collect(),
         }
     }
@@ -336,8 +375,8 @@ impl Model {
     }
 
     /// The fields and values the document reads from rows and inputs the model types: a
-    /// `group_by`, `group_order`, an aggregate's `field`, a `label_from` and a form choice's fixed
-    /// options (beyond10x/ess#351, #358, #364, #330).
+    /// `group_by`, `group_order`, an aggregate's `field`, a `label_from`, a form choice's fixed
+    /// options, and a choice's `value` and `label` (beyond10x/ess#351, #358, #364, #330, #328).
     fn values(&self, document: &Document, sink: &mut Sink) {
         for located in document.nodes() {
             let path = &located.path;
@@ -391,6 +430,21 @@ impl Model {
                     }
                 }
                 Composite::Form(form) => self.form_options(form, path, sink),
+                Composite::Choice(choice) => {
+                    let Some((qualified, view)) = choice
+                        .reads
+                        .as_ref()
+                        .and_then(|reads| reads.view.as_deref())
+                        .and_then(|name| self.view(name))
+                    else {
+                        continue;
+                    };
+                    for (key, named) in [("value", &choice.value), ("label", &choice.label)] {
+                        if let Some(named) = named {
+                            wire_field(sink, &path.child(key), &qualified, &view.wires, named);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -488,6 +542,36 @@ impl Model {
             );
         }
     }
+}
+
+/// A choice's `value` or `label` names a key the rows of `view` carry: a field's wire name, since
+/// served rows are keyed by wire name (beyond10x/ess#328). Else reports it under `row_fields`,
+/// naming the wire name to write when `name` is the model name of a field renamed on the wire.
+fn wire_field(
+    sink: &mut Sink,
+    at: &NodePath,
+    view: &str,
+    wires: &BTreeMap<String, String>,
+    name: &str,
+) {
+    if wires.values().any(|wire| wire == name) {
+        return;
+    }
+    let message = match wires.get(name) {
+        Some(wire) => format!(
+            "`{name}` is the model name of a field the rows of `{view}` carry as `{wire}`; a \
+             choice names the key its rows carry, so write `{wire}`"
+        ),
+        None => format!(
+            "`{name}` is no row field of `{view}`; its rows carry {}",
+            wires
+                .values()
+                .map(|wire| format!("`{wire}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    sink.push("row_fields", at, message);
 }
 
 /// `true` when `name` is a row field of `view`; else reports it under `row_fields`.
@@ -1020,6 +1104,11 @@ impl std::error::Error for BindingError {}
 /// with `paging:`, and a read paged by anything but the renderer (`paging:` `server`, `cursor`
 /// or `append`), since every code target refuses paging; and state placed in `server` or
 /// `server_session`, which the served surface does not hold.
+///
+/// A view a choice reads carries its rows' identity field, and every model enum the document's
+/// options name — recorded in [`Document::model_enums`] when it was loaded with
+/// `ess_ui::load_str_with` over this model — is carried with its variants
+/// (beyond10x/ess#328, #330).
 pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Binding, BindingError> {
     let ir = compile_sources(sources, Path::new(&document.model)).map_err(BindingError::Model)?;
     let model = Model::index(&ir);
@@ -1028,6 +1117,7 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
         system: model.system.clone(),
         components: BTreeMap::new(),
         names: BTreeMap::new(),
+        enums: BTreeMap::new(),
     };
     let mut refusals = Vec::new();
     let mut refuse = |at: &NodePath, message: String| {
@@ -1087,6 +1177,8 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
             }
         }
     }
+    choice_identities(document, &model, &mut binding);
+    refusals.extend(model_enums(document, &model, &mut binding));
     refusals.extend(state_refusals(document));
     if refusals.is_empty() {
         Ok(binding)
@@ -1095,6 +1187,55 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
         refusals.dedup();
         Err(BindingError::Refused(refusals))
     }
+}
+
+/// A choice over a view sends the view's identity when it names no field (beyond10x/ess#328):
+/// the route of every view a choice reads carries it, and only such a route, so a binding without
+/// choices keeps its bytes.
+fn choice_identities(document: &Document, model: &Model, binding: &mut Binding) {
+    for located in document.nodes() {
+        if in_declaration(&located.path) {
+            continue;
+        }
+        let Some(Body::Composite(Composite::Choice(choice))) = crate::walk::body_of(located.node)
+        else {
+            continue;
+        };
+        let Some(view) = choice.reads.as_ref().and_then(|reads| reads.view.as_ref()) else {
+            continue;
+        };
+        let Some((qualified, model_view)) = model.view(view) else {
+            continue;
+        };
+        for served in binding.components.values_mut() {
+            if let Some(route) = served.views.get_mut(&qualified) {
+                route.identity.clone_from(&model_view.identity);
+            }
+        }
+    }
+}
+
+/// The model enums the document's options name (beyond10x/ess#330), carried so a renderer holding
+/// only the binding lists their variants; refused when the model does not declare one the
+/// document was loaded with.
+fn model_enums(document: &Document, model: &Model, binding: &mut Binding) -> Vec<Refusal> {
+    let mut refusals = Vec::new();
+    for (written, qualified) in &document.model_enums {
+        if let Some(variants) = model.enums.get(qualified) {
+            binding.names.insert(written.clone(), qualified.clone());
+            binding.enums.insert(qualified.clone(), variants.clone());
+        } else {
+            refusals.push(Refusal {
+                path: NodePath::root().to_string(),
+                message: format!(
+                    "the document was loaded with `{written}` as the enum `{qualified}`, which \
+                     model `{}` does not declare",
+                    model.system
+                ),
+            });
+        }
+    }
+    refusals
 }
 
 /// Why a served view cannot be read as `read` reads it: a view the model pages, a read paged by
@@ -1258,6 +1399,7 @@ impl Surface {
                         let route = ViewRoute {
                             path: route.path,
                             params,
+                            identity: None,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
                         surface.unservable.insert(handle.to_string(), unservable);
@@ -1286,6 +1428,75 @@ fn fields_of(ir: &EssIr, fields: &[ess_compiler::ir::ResolvedField]) -> Fields {
         out.insert(field.name.clone(), variants);
     }
     out
+}
+
+/// The wire name of the row field of `view` carrying the identity of the entity it projects: none
+/// for an aggregate view, whose rows are not one per entity, or a view that does not show it.
+fn identity_of(ir: &EssIr, view: &ResolvedView) -> Option<String> {
+    if view.is_aggregate() {
+        return None;
+    }
+    let identity = &ir.entity(&view.source).identity.name;
+    view.fields
+        .iter()
+        .find(|field| &field.name == identity)
+        .map(|field| {
+            field
+                .naming
+                .wire
+                .clone()
+                .unwrap_or_else(|| field.name.clone())
+        })
+}
+
+/// A name a choice's `options` write resolves in the model as a page parameter's type does
+/// ([`Model::has_type`]): its qualified name, the name below the system, and last the trailing
+/// segments of qualified names, which must end exactly one (beyond10x/ess#330).
+impl ModelEnums for Model {
+    fn system(&self) -> &str {
+        &self.system
+    }
+
+    fn lookup(&self, name: &str) -> EnumLookup {
+        let known = |candidate: &str| {
+            self.type_names.contains(candidate) || self.enums.contains_key(candidate)
+        };
+        // By last segments, only enums count; a name whose last segments end no enum and exactly
+        // one other type names that type, which is then refused as no enum.
+        let qualified: Vec<String> = self.qualify(name, known).map_or_else(
+            || {
+                let suffix = format!(".{name}");
+                let ending = |names: &mut dyn Iterator<Item = &String>| -> Vec<String> {
+                    names
+                        .filter(|candidate| candidate.ends_with(&suffix))
+                        .cloned()
+                        .collect()
+                };
+                let enums = ending(&mut self.enums.keys());
+                if !enums.is_empty() {
+                    return enums;
+                }
+                let others = ending(&mut self.type_names.iter());
+                if others.len() == 1 {
+                    others
+                } else {
+                    Vec::new()
+                }
+            },
+            |found| vec![found],
+        );
+        match qualified.as_slice() {
+            [] => EnumLookup::Unknown,
+            [one] => match self.enums.get(one) {
+                Some(variants) => EnumLookup::Enum {
+                    name: one.clone(),
+                    variants: variants.clone(),
+                },
+                None => EnumLookup::NotEnum { name: one.clone() },
+            },
+            many => EnumLookup::Ambiguous(many.to_vec()),
+        }
+    }
 }
 
 /// The wire variants of the enum `type_ref` holds, through `Optional`, a list and newtypes.

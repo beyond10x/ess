@@ -2473,8 +2473,9 @@ impl App {
         Vec::new()
     }
 
-    /// The options of a choice: `(value, label)`. A row's value is its `field` key when the
-    /// choice belongs to a form field and the row carries one, else its `id`, else the row.
+    /// The options of a choice: `(value, label)`, each row's as [`ess_ui::Choice::row_option`]
+    /// says, with `field` the form field the choice picks for and the view's identity from the
+    /// binding of a bound run (beyond10x/ess#328).
     pub(crate) fn choice_options(
         &self,
         choice: &ess_ui::Choice,
@@ -2491,23 +2492,17 @@ impl App {
         let Some(reads) = &choice.reads else {
             return Vec::new();
         };
+        let identity = reads
+            .view
+            .as_deref()
+            .and_then(|view| self.bound.as_ref()?.view(view)?.identity.as_deref());
         self.read_rows(reads, ctx)
             .map(|result| {
                 result
                     .rows
                     .iter()
-                    .map(|row| {
-                        let value = field
-                            .and_then(|field| row.get(field))
-                            .or_else(|| row.get("id"))
-                            .cloned()
-                            .unwrap_or_else(|| row.clone());
-                        let label = row
-                            .get("label")
-                            .or_else(|| row.get("name"))
-                            .map_or_else(|| display(&value), display);
-                        (value, label)
-                    })
+                    .filter_map(|row| choice.row_option(row, field, identity))
+                    .map(|(value, label)| (value, display(&label)))
                     .collect()
             })
             .unwrap_or_default()

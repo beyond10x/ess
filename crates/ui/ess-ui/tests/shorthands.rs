@@ -463,3 +463,192 @@ fn options_naming_a_model_enum_say_what_to_write_instead() {
     assert!(error.message().contains("`types`"), "{error}");
     assert!(error.message().contains("--model"), "{error}");
 }
+
+/// A model as `ess ui check --model` gives one to the loader: `factory.objective.RiskLevel` is an
+/// enum whose wire spellings differ from its display names, `factory.objective.ObjectiveId` is a
+/// type that is not one, `Level` could be either of two enums, and `Stage` is an enum the
+/// document also declares.
+struct Factory;
+
+impl ess_ui::binding::ModelEnums for Factory {
+    fn system(&self) -> &'static str {
+        "factory"
+    }
+
+    fn lookup(&self, name: &str) -> ess_ui::binding::EnumLookup {
+        use ess_ui::binding::{EnumLookup, EnumVariant};
+        let variant = |value: &str, label: &str| EnumVariant {
+            value: value.to_owned(),
+            label: label.to_owned(),
+        };
+        match name {
+            "factory.objective.RiskLevel" | "objective.RiskLevel" => EnumLookup::Enum {
+                name: "factory.objective.RiskLevel".to_owned(),
+                variants: vec![
+                    variant("low", "Low"),
+                    variant("medium", "Medium"),
+                    variant("high", "High"),
+                ],
+            },
+            "Stage" => EnumLookup::Enum {
+                name: "factory.objective.Stage".to_owned(),
+                variants: vec![variant("model-stage", "Model stage")],
+            },
+            "factory.objective.ObjectiveId" => EnumLookup::NotEnum {
+                name: "factory.objective.ObjectiveId".to_owned(),
+            },
+            "Level" => EnumLookup::Ambiguous(vec![
+                "factory.objective.Level".to_owned(),
+                "factory.release.Level".to_owned(),
+            ]),
+            _ => EnumLookup::Unknown,
+        }
+    }
+}
+
+fn with_stage_options(options: &str) -> String {
+    DOCUMENT.replace(
+        "{name: stage, component: choice, options: Stage}",
+        &format!("{{name: stage, component: choice, options: {options}}}"),
+    )
+}
+
+/// beyond10x/ess#330: with a model, `options` naming one of its enums lists its variants in
+/// declaration order, each sending its wire spelling and showing its display name, in a
+/// standalone choice and in a form field's; the document records which name resolved where.
+#[test]
+fn options_naming_a_model_enum_list_its_variants_when_the_model_is_given() {
+    let text = with_stage_options("factory.objective.RiskLevel").replace(
+        "fields: [title]}",
+        "fields: [title, {field: risk, as: choice, choice: {component: choice, options: objective.RiskLevel}}]}",
+    );
+    let document = ess_ui::load_str_with(&text, &Factory).unwrap_or_else(|error| panic!("{error}"));
+    let expected = options(&[("low", "Low"), ("medium", "Medium"), ("high", "High")]);
+    assert_eq!(
+        choice_options(filter_choices(&document), "stage"),
+        expected.as_slice()
+    );
+    let overlay = &page(&document, "things.list").overlays["edit"];
+    let Composite::Form(form) = composite(&overlay.body) else {
+        panic!("a form")
+    };
+    let field = form
+        .fields
+        .iter()
+        .find(|field| field.field == "risk")
+        .expect("the risk field");
+    let Some(Body::Composite(Composite::Choice(choice))) =
+        field.choice.as_deref().map(|node| &node.body)
+    else {
+        panic!("a choice field")
+    };
+    assert_eq!(choice.options, expected);
+    assert_eq!(
+        document.model_enums,
+        [
+            ("factory.objective.RiskLevel", "factory.objective.RiskLevel"),
+            ("objective.RiskLevel", "factory.objective.RiskLevel"),
+        ]
+        .into_iter()
+        .map(|(written, qualified)| (written.to_owned(), qualified.to_owned()))
+        .collect()
+    );
+}
+
+/// An enum the document declares under `types` is read from the document, as it is without a
+/// model: the model is asked only for a name the document does not declare.
+#[test]
+fn a_document_enum_wins_over_a_model_enum_of_the_same_name() {
+    let document =
+        ess_ui::load_str_with(DOCUMENT, &Factory).unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        choice_options(filter_choices(&document), "stage"),
+        options(&[("lead", "lead"), ("won", "won")]).as_slice()
+    );
+    assert!(document.model_enums.is_empty());
+    assert_eq!(document, self::document(), "the model changes nothing else");
+}
+
+/// A name the model does not resolve to exactly one enum is refused at the options, each kind
+/// of failure in its own words; so is any model name when no model is given.
+#[test]
+fn options_the_model_does_not_resolve_to_one_enum_are_refused_by_kind() {
+    let at = "pages/things.list/sections/filters/choices/stage/options";
+    for (written, model, says) in [
+        (
+            "factory.objective.ObjectiveId",
+            true,
+            "which is not an enum",
+        ),
+        (
+            "Level",
+            true,
+            "`factory.objective.Level`, `factory.release.Level`",
+        ),
+        (
+            "factory.objective.Nothing",
+            true,
+            "names no type of model `factory`",
+        ),
+        ("factory.objective.RiskLevel", false, "no model was given"),
+    ] {
+        let text = with_stage_options(written);
+        let error = if model {
+            ess_ui::load_str_with(&text, &Factory)
+        } else {
+            ess_ui::load_str(&text)
+        }
+        .expect_err(written);
+        assert_eq!(error.path().to_string(), at, "{written}: {error}");
+        assert!(
+            error.message().starts_with("choice options: "),
+            "{written}: {error}"
+        );
+        assert!(error.message().contains(says), "{written}: {error}");
+        assert!(
+            error.message().contains(&format!("`{written}`")),
+            "{written}: {error}"
+        );
+    }
+}
+
+/// A renderer holds no model, only the binding `--model` computed: the binding resolves the
+/// enums it carries, by the name the document writes, and nothing else.
+#[test]
+fn a_binding_resolves_the_model_enums_it_carries() {
+    use ess_ui::binding::{Binding, EnumVariant};
+    let binding: Binding = serde_json::from_str(
+        r#"{
+  "system": "factory",
+  "components": {},
+  "names": {"objective.RiskLevel": "factory.objective.RiskLevel"},
+  "enums": {"factory.objective.RiskLevel": [{"value": "low", "label": "Low"}, {"value": "high", "label": "High"}]}
+}"#,
+    )
+    .expect("the binding reads");
+    assert_eq!(
+        binding.enums["factory.objective.RiskLevel"],
+        [
+            EnumVariant {
+                value: "low".to_owned(),
+                label: "Low".to_owned()
+            },
+            EnumVariant {
+                value: "high".to_owned(),
+                label: "High".to_owned()
+            }
+        ]
+    );
+    let document = ess_ui::load_str_with(&with_stage_options("objective.RiskLevel"), &binding)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        choice_options(filter_choices(&document), "stage"),
+        options(&[("low", "Low"), ("high", "High")]).as_slice()
+    );
+    let error = ess_ui::load_str_with(&with_stage_options("objective.Other"), &binding)
+        .expect_err("an enum the binding does not carry");
+    assert!(
+        error.message().contains("names no type of model `factory`"),
+        "{error}"
+    );
+}

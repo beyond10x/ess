@@ -212,6 +212,8 @@ export interface Binding {
   components: Record<string, ServedComponent>;
   /** Every view and command name as the document writes it, to its qualified name. */
   names: Record<string, string>;
+  /** Every model enum a choice's `options` name, by qualified name (beyond10x/ess#330). */
+  enums?: Record<string, { value: string; label: string }[]>;
 }
 
 /** What one served component answers for the document. */
@@ -224,6 +226,8 @@ export interface ServedComponent {
 export interface ViewRoute {
   path: string;
   params: QueryParam[];
+  /** The row field carrying the identity of the entity the view projects (beyond10x/ess#328). */
+  identity?: string;
 }
 
 /** One view parameter: the name a read binds it by and the query key it travels under. */

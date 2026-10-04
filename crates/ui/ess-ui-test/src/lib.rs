@@ -135,6 +135,11 @@ pub struct TestArgs {
     /// instead of running them.
     #[arg(long, value_name = "OUT")]
     pub playwright: Option<PathBuf>,
+    /// The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`,
+    /// or one file): a choice's `options` naming one of its enums list that enum's variants.
+    /// Reads still come from the fixtures.
+    #[arg(long)]
+    pub model: Option<PathBuf>,
 }
 
 /// Reads a test file.
@@ -149,9 +154,48 @@ pub fn load(file: &Path) -> Result<TestFile, TestError> {
 /// Every file must name `document`. A failing test is an outcome in the report; an error is a
 /// run that could not start.
 pub fn execute(document: &Path, files: &[TestFile]) -> Result<Report, TestError> {
+    execute_with(document, files, None)
+}
+
+/// A choice's `options` naming an enum the document does not declare, recorded where it was
+/// written, when a run has no model to list it from (beyond10x/ess#330). The run still starts:
+/// the options are empty, and a test fails at the step whose page shows such a choice.
+#[derive(Default)]
+struct Deferred(std::cell::RefCell<Vec<(ess_ui::NodePath, String)>>);
+
+impl ess_ui::binding::ModelEnums for Deferred {
+    fn system(&self) -> &'static str {
+        ""
+    }
+
+    fn lookup(&self, name: &str) -> ess_ui::binding::EnumLookup {
+        ess_ui::binding::EnumLookup::Enum {
+            name: name.to_owned(),
+            variants: Vec::new(),
+        }
+    }
+
+    fn lookup_at(&self, name: &str, at: &ess_ui::NodePath) -> ess_ui::binding::EnumLookup {
+        self.0.borrow_mut().push((at.clone(), name.to_owned()));
+        self.lookup(name)
+    }
+}
+
+/// [`execute`], with the enums of the document's model when `model` is given (`--model`).
+///
+/// Without one, a choice's `options` naming an enum the document does not declare lists nothing,
+/// and every test fails at the first step that leaves a page showing such a choice on screen,
+/// naming where it is written and `ess ui test --model`.
+pub fn execute_with(
+    document: &Path,
+    files: &[TestFile],
+    model: Option<&dyn ess_ui::binding::ModelEnums>,
+) -> Result<Report, TestError> {
     check_documents(document, files)?;
-    let doc = ess_ui::load_path(document)
+    let deferred = Deferred::default();
+    let doc = ess_ui::load_path_with(document, model.unwrap_or(&deferred))
         .map_err(|error| TestError(format!("{}: {error}", document.display())))?;
+    let unlisted = deferred.0.into_inner();
     // Absolute, so the fixture paths a test rewrites are not resolved against the document's
     // directory a second time when the document was named by a relative path.
     let base = document
@@ -168,7 +212,7 @@ pub fn execute(document: &Path, files: &[TestFile]) -> Result<Report, TestError>
     for file in files {
         for test in &file.tests {
             let here = dir.path().join(tests.len().to_string());
-            tests.push(run_test(&doc, &base, test, &here));
+            tests.push(run_test(&doc, &base, test, &here, &unlisted));
         }
     }
     dir.close()
@@ -180,7 +224,13 @@ pub fn execute(document: &Path, files: &[TestFile]) -> Result<Report, TestError>
     })
 }
 
-fn run_test(doc: &ess_ui::Document, base: &Path, test: &Test, dir: &Path) -> Outcome {
+fn run_test(
+    doc: &ess_ui::Document,
+    base: &Path,
+    test: &Test,
+    dir: &Path,
+    unlisted: &[(ess_ui::NodePath, String)],
+) -> Outcome {
     let failed = |step: Option<usize>, message: String| Outcome {
         name: test.name.clone(),
         status: Status::Failed,
@@ -191,8 +241,14 @@ fn run_test(doc: &ess_ui::Document, base: &Path, test: &Test, dir: &Path) -> Out
         Ok(runner) => runner,
         Err(message) => return failed(None, format!("setup: {message}")),
     };
+    if let Some(message) = unlisted_on(&runner, unlisted) {
+        return failed(None, format!("setup: {message}"));
+    }
     for (index, step) in test.steps.iter().enumerate() {
         if let Err(message) = runner.step(step) {
+            return failed(Some(index + 1), format!("{step}: {message}"));
+        }
+        if let Some(message) = unlisted_on(&runner, unlisted) {
             return failed(Some(index + 1), format!("{step}: {message}"));
         }
     }
@@ -202,6 +258,28 @@ fn run_test(doc: &ess_ui::Document, base: &Path, test: &Test, dir: &Path) -> Out
         step: None,
         message: None,
     }
+}
+
+/// Why the page on screen cannot be tested without a model: a choice on it, or in a shell, whose
+/// `options` name an enum the document does not declare (beyond10x/ess#330).
+fn unlisted_on(
+    runner: &runner::Runner<'_>,
+    unlisted: &[(ess_ui::NodePath, String)],
+) -> Option<String> {
+    let page = runner.current_page();
+    unlisted
+        .iter()
+        .find(|(at, _)| match at.segments() {
+            [top, ..] if top == "shells" => true,
+            [top, name, ..] if top == "pages" => name == page,
+            _ => false,
+        })
+        .map(|(at, name)| {
+            format!(
+                "{at} names `{name}`, which is no enum type of this document; a model enum is \
+                 listed only with the model: run `ess ui test --model <specification>`"
+            )
+        })
 }
 
 /// Every file names `document`, relative to itself.
@@ -238,6 +316,22 @@ fn check_documents(document: &Path, files: &[TestFile]) -> Result<(), TestError>
 ///
 /// Exits 1 when any test failed.
 pub fn run_to(args: &TestArgs, out: &mut dyn Write) -> Result<ExitCode, TestError> {
+    if let Some(model) = &args.model {
+        return Err(TestError(format!(
+            "--model {}: no model was compiled for it",
+            model.display()
+        )));
+    }
+    run_to_with(args, out, None)
+}
+
+/// [`run_to`] with the model `--model` names already compiled, which the caller does: this crate
+/// reads the enums of a model and never compiles one (beyond10x/ess#330).
+pub fn run_to_with(
+    args: &TestArgs,
+    out: &mut dyn Write,
+    model: Option<&dyn ess_ui::binding::ModelEnums>,
+) -> Result<ExitCode, TestError> {
     let files = args
         .tests
         .iter()
@@ -246,14 +340,17 @@ pub fn run_to(args: &TestArgs, out: &mut dyn Write) -> Result<ExitCode, TestErro
     let io = |error: std::io::Error| TestError(error.to_string());
     if let Some(spec_file) = &args.playwright {
         check_documents(&args.path, &files)?;
-        let document = ess_ui::load_path(&args.path)
-            .map_err(|error| TestError(format!("{}: {error}", args.path.display())))?;
+        let document = match model {
+            Some(model) => ess_ui::load_path_with(&args.path, model),
+            None => ess_ui::load_path(&args.path),
+        }
+        .map_err(|error| TestError(format!("{}: {error}", args.path.display())))?;
         std::fs::write(spec_file, playwright(&files, &document))
             .map_err(|error| TestError(format!("{}: {error}", spec_file.display())))?;
         writeln!(out, "wrote {}", spec_file.display()).map_err(io)?;
         return Ok(ExitCode::SUCCESS);
     }
-    let report = execute(&args.path, &files)?;
+    let report = execute_with(&args.path, &files, model)?;
     match args.format {
         OutputFormat::Json => {
             let text = serde_json::to_string_pretty(&report)
@@ -299,4 +396,12 @@ fn write_text(report: &Report, out: &mut dyn Write) -> std::io::Result<()> {
 /// Runs `args`, writing the report to standard output; the entry point `ess ui test` wraps.
 pub fn run(args: &TestArgs) -> Result<ExitCode, TestError> {
     run_to(args, &mut std::io::stdout().lock())
+}
+
+/// [`run`] with the model `--model` names already compiled: what `ess ui test --model` wraps.
+pub fn run_with_model(
+    args: &TestArgs,
+    model: Option<&dyn ess_ui::binding::ModelEnums>,
+) -> Result<ExitCode, TestError> {
+    run_to_with(args, &mut std::io::stdout().lock(), model)
 }

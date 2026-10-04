@@ -1459,6 +1459,192 @@ fn shelf_report(sections: &str) -> Report {
     report_with(&text, Some(&shelf_model()), &Options::default())
 }
 
+/// The fixture model with two enums named `Shelf`: `shop.stock.Shelf`, whose variants declare
+/// wire spellings and display names apart from their names (`Top` is sent as `top` and shown as
+/// `Top shelf`), held by `AddItem`'s input and the `Items` rows; and `shop.audit.Shelf`.
+fn graded_sources() -> Vec<(String, String)> {
+    let read = |file: &str| {
+        std::fs::read_to_string(crate_dir().join("tests/fixtures/model").join(file))
+            .unwrap_or_else(|error| panic!("{file}: {error}"))
+    };
+    let stock = read("domains/stock.yaml")
+        .replace(
+            "    of: Uuid\n",
+            "    of: Uuid\n  - name: shop.stock.Shelf\n    kind: enum\n    variants:\n      \
+             - name: Top\n        wire: top\n        display: Top shelf\n      - Middle\n      \
+             - name: Bottom\n        wire: bottom\n",
+        )
+        .replace(
+            "      - name: label\n        type: String\n",
+            "      - name: label\n        type: String\n      - name: shelf\n        type: shop.stock.Shelf\n",
+        )
+        // ess/5 maps every payload field.
+        .replace(
+            "            label: input.label\n",
+            "            label: input.label\n            item_id: {generated: true}\n            shelf: input.shelf\n",
+        );
+    let audit = read("domains/audit.yaml")
+        .replace(
+            "    of: Uuid\n",
+            "    of: Uuid\n  - name: shop.audit.Shelf\n    kind: enum\n    variants: [Archive]\n",
+        )
+        .replace(
+            "            note: input.note\n",
+            "            note: input.note\n            entry_id: {generated: true}\n",
+        );
+    [
+        // Variant naming is a format ess/5 construct.
+        (
+            "system.yaml",
+            read("system.yaml").replace("format: ess/1", "format: ess/5"),
+        ),
+        ("components.yaml", read("components.yaml")),
+        ("domains/stock.yaml", stock),
+        ("domains/audit.yaml", audit),
+    ]
+    .map(|(label, text)| (label.to_owned(), text))
+    .to_vec()
+}
+
+fn graded_model() -> Model {
+    model_from_sources(&graded_sources(), Path::new("shop"))
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// A document of model `shop` whose page reads `stock.Items` and holds `sections` besides.
+fn graded_text(sections: &str) -> String {
+    doc(&[
+        ("model", "shop"),
+        (
+            "pages",
+            &format!("{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: stock.Items}}, {sections}]}}}}"),
+        ),
+    ])
+}
+
+/// beyond10x/ess#330: with `--model`, a choice's `options` naming an enum of the model — by its
+/// qualified name, by the name below the system, or by its last segments when only one enum ends
+/// so — lists its variants, in a form field and a standalone choice alike. The form field's
+/// options are still held to the input's variants, so the variants listed are the model's. A
+/// name the model does not resolve to exactly one enum, and any model name without `--model`,
+/// is refused under `options_enum`.
+#[test]
+fn options_enum() {
+    let model = graded_model();
+    let fine = graded_text(
+        "{name: add, component: form, does: stock.AddItem, \
+          fields: [label, {field: shelf, as: choice, choice: {component: choice, options: shop.stock.Shelf}}]}, \
+         {name: pick, component: choice, options: stock.Shelf}",
+    );
+    let report = report_with(&fine, Some(&model), &Options::default());
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+    let document = ess_ui::load_str_with(&fine, &model).unwrap_or_else(|error| panic!("{error}"));
+    let page = &document.pages["p"];
+    let pick = page
+        .sections
+        .iter()
+        .find(|section| section.name == "pick")
+        .expect("the standalone choice");
+    let ess_ui::Body::Composite(ess_ui::Composite::Choice(choice)) = &pick.body else {
+        panic!("a choice")
+    };
+    let listed: Vec<(String, String)> = choice
+        .options
+        .iter()
+        .map(|option| {
+            (
+                option.value.as_str().unwrap_or_default().to_owned(),
+                option.label.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("top", "Top shelf"),
+            ("Middle", "Middle"),
+            ("bottom", "Bottom")
+        ]
+        .map(|(value, label)| (value.to_owned(), label.to_owned()))
+    );
+
+    let drifted = graded_text(
+        "{name: add, component: form, does: stock.AddItem, \
+          fields: [label, {field: shelf, as: choice, choice: {component: choice, options: [top, Middle]}}]}",
+    );
+    let report = report_with(&drifted, Some(&model), &Options::default());
+    trips_in(
+        &report,
+        "model_enum_values",
+        "pages/p/sections/add/fields/shelf/choice/options",
+    );
+
+    for (written, says) in [
+        ("stock.Nothing", "names no type of model `shop`"),
+        ("stock.ItemId", "which is not an enum"),
+        ("Shelf", "`shop.audit.Shelf`, `shop.stock.Shelf`"),
+    ] {
+        let text = graded_text(&format!(
+            "{{name: pick, component: choice, options: {written}}}"
+        ));
+        let report = report_with(&text, Some(&model), &Options::default());
+        let finding = trips_in(&report, "options_enum", "pages/p/sections/pick/options");
+        assert!(finding.message.contains(says), "{written}: {finding:#?}");
+    }
+    let finding = trips_in(
+        &report_with(&fine, None, &Options::default()),
+        "options_enum",
+        "pages/p/sections/add/fields/shelf/choice/options",
+    );
+    assert!(
+        finding.message.contains("no model was given"),
+        "{finding:#?}"
+    );
+}
+
+/// beyond10x/ess#328: `value` and `label` name fields of the rows a choice reads, so a choice
+/// with no `reads` has nothing for them to name.
+#[test]
+fn choice_projection() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+          {name: fixed, component: choice, options: [a, b], value: id, label: name}, \
+          {name: read, component: choice, reads: t.All, value: id, label: name}]}",
+    ));
+    trips_in(&report, "choice_projection", "pages/p/sections/fixed/value");
+    trips_in(&report, "choice_projection", "pages/p/sections/fixed/label");
+    assert_eq!(
+        tripped(&report, "choice_projection").len(),
+        2,
+        "{report:#?}"
+    );
+}
+
+/// beyond10x/ess#328: with `--model`, a choice's `value` and `label` are row fields of the view
+/// it reads, wherever the choice stands: a standalone choice, a form field's, a filter bar's.
+#[test]
+fn a_choice_projection_names_row_fields_of_its_view() {
+    let model = graded_model();
+    let text = graded_text(
+        "{name: fine, component: choice, reads: stock.Items, value: item_id, label: label}, \
+         {name: wrong, component: choice, reads: stock.Items, value: id, label: title}, \
+         {name: add, component: form, does: stock.AddItem, \
+          fields: [{field: label, as: choice, choice: {component: choice, reads: stock.Items, value: missing}}]}, \
+         {name: bar, component: filter_bar, binds: [state.pick], \
+          choices: [{name: pick, component: choice, reads: stock.Items, label: absent}]}",
+    );
+    let report = report_with(&text, Some(&model), &Options::default());
+    for path in [
+        "pages/p/sections/wrong/value",
+        "pages/p/sections/wrong/label",
+        "pages/p/sections/add/fields/label/choice/value",
+        "pages/p/sections/bar/choices/pick/label",
+    ] {
+        trips_in(&report, "row_fields", path);
+    }
+    assert_eq!(tripped(&report, "row_fields").len(), 4, "{report:#?}");
+}
+
 /// beyond10x/ess#351, #358, #364: a `group_by`, an aggregate's `field` and a `label_from` name
 /// row fields of their views.
 #[test]
@@ -1695,4 +1881,45 @@ fn filters_check_model_rows_menu_scope_and_all_unsupported_loads() {
         "navigation/sections/all/from_view/filter",
     );
     assert!(ess_ui::load_str(&doc(&[("shells", "{app: {regions: {main: {kind: page_outlet}}, preload: {policy: before_first_page, views: [{view: t.All, filter: row.id != null}]}}}")])).is_err());
+}
+
+/// beyond10x/ess#328 (adversary pass 1): rows carry wire names, so a choice's `value` and `label`
+/// name the wire name; naming a field by its model name when the view renames it on the wire is
+/// a `row_fields` finding that names the wire name to write.
+#[test]
+fn a_choice_projection_names_the_wire_name_its_rows_carry() {
+    let mut sources = graded_sources();
+    let stock = sources
+        .iter_mut()
+        .find(|(label, _)| label == "domains/stock.yaml")
+        .expect("the stock domain");
+    stock.1 = stock.1.replace(
+        "      - name: label\n        type: String\n      - name: shelf\n        type: shop.stock.Shelf\n    naming:\n      wire: items\n",
+        "      - name: label\n        type: String\n        wire: title\n      - name: shelf\n        type: shop.stock.Shelf\n    naming:\n      wire: items\n",
+    );
+    assert!(stock.1.contains("wire: title"), "the view field is renamed");
+    let model =
+        model_from_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"));
+    let text = graded_text(
+        "{name: model, component: choice, reads: stock.Items, value: item_id, label: label}, \
+         {name: wire, component: choice, reads: stock.Items, value: item_id, label: title}",
+    );
+    let report = report_with(&text, Some(&model), &Options::default());
+    let finding = trips_in(&report, "row_fields", "pages/p/sections/model/label");
+    assert!(finding.message.contains("`title`"), "{finding:#?}");
+    assert_eq!(tripped(&report, "row_fields").len(), 1, "{report:#?}");
+}
+
+/// beyond10x/ess#330 (adversary pass 1): the last segments resolve among enums only. A name whose
+/// last segments end exactly one non-enum and no enum names that type, which is not an enum.
+#[test]
+fn options_by_last_segments_count_enums_only() {
+    let model = graded_model();
+    let text = graded_text("{name: pick, component: choice, options: ItemId}");
+    let report = report_with(&text, Some(&model), &Options::default());
+    let finding = trips_in(&report, "options_enum", "pages/p/sections/pick/options");
+    assert!(
+        finding.message.contains("`shop.stock.ItemId`") && finding.message.contains("not an enum"),
+        "{finding:#?}"
+    );
 }

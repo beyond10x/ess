@@ -1652,6 +1652,7 @@ ess ui load [OPTIONS] --path <PATH>
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document to load |
+| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): a choice's `options` naming one of its enums list that enum's variants |
 
 #### `ess ui check`
 
@@ -1713,5 +1714,6 @@ ess ui test [OPTIONS] --path <PATH> <TESTS>...
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document under test; every test file must name it |
 | `--format` | `<FORMAT>` | no | `text` | Report format. One of `text`, `json`. |
 | `--playwright` | `<OUT>` | no |  | Write the tests as a Playwright spec for the generated React project to this file, instead of running them |
+| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): a choice's `options` naming one of its enums list that enum's variants. Reads still come from the fixtures |
 
 [ess-cli-end]: #

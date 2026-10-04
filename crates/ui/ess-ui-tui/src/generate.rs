@@ -45,7 +45,7 @@ const RESERVED: [&str; 4] = ["build", "deps", "examples", "incremental"];
 /// or the terminal cannot draw it.
 pub fn render(document: &str, binding: &Binding) -> Result<BTreeMap<String, String>, TuiError> {
     let document = unmarked(document);
-    let loaded = ess_ui::load_str(document).map_err(TuiError::Load)?;
+    let loaded = ess_ui::load_str_with(document, binding).map_err(TuiError::Load)?;
     profile::check(&loaded, &TUI).map_err(TuiError::Refused)?;
     let name = crate_name(&loaded.app);
     let json = serde_json::to_string_pretty(binding)

@@ -126,6 +126,9 @@ pub(crate) struct Gen<'d> {
     components: BTreeSet<String>,
     /// The project is bound to a served surface, which streams nothing: a `live:` section polls.
     bound: bool,
+    /// The route table a bound project reads: a choice over a view takes the view's identity
+    /// from it (beyond10x/ess#328).
+    binding: Option<ess_ui::binding::Binding>,
 }
 
 /// How often a bound `live:` section reads again when its read declares no `refresh:` duration.
@@ -231,7 +234,7 @@ fn nav_label(name: &str, page: Option<&Page>) -> String {
 }
 
 impl<'d> Gen<'d> {
-    pub(crate) fn new(doc: &'d Document, bound: bool) -> Self {
+    pub(crate) fn new(doc: &'d Document, binding: Option<&ess_ui::binding::Binding>) -> Self {
         Self {
             doc,
             types: Types::new(&doc.types),
@@ -245,7 +248,8 @@ impl<'d> Gen<'d> {
             section_profile: None,
             locals: Vec::new(),
             components: BTreeSet::new(),
-            bound,
+            bound: binding.is_some(),
+            binding: binding.cloned(),
         }
     }
 
@@ -1122,6 +1126,16 @@ impl<'d> Gen<'d> {
                     .opt(
                         "valueKey",
                         opts.choice_value.as_ref().map(|key| ts::string(key)),
+                    )
+                    .opt("valueField", c.value_field().map(ts::string))
+                    .opt("labelField", c.label.as_deref().map(ts::string))
+                    .opt(
+                        "identity",
+                        c.reads
+                            .as_ref()
+                            .and_then(|reads| reads.view.as_deref())
+                            .and_then(|view| self.binding.as_ref()?.view(view)?.identity.as_deref())
+                            .map(ts::string),
                     )
                     .opt("multiple", c.multiple.then(|| "true".to_owned()))
                     .opt(

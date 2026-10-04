@@ -94,7 +94,7 @@ shorthands:
   operators:
     expr:                    the expanded value is this expression string
     first_present:           the first listed source that has a value
-    each_value_of_enum_type: one entry per value of the named enum type, shaped by `as`
+    each_value_of_enum_type: one entry per value of the named enum type, shaped by `as`; the document's `types` are read first, and a name they do not declare is an enum of the model the document is loaded with (`--model`), whose entries send each variant's wire spelling and show its display name
     remove_inherited:        the inherited entry of that name is removed during page kind merge
     merge_under:             the named overlay is copied and the local props are merged over it
   index:       # every shorthand; the construct carries the same entry under `shorthand`
@@ -671,7 +671,9 @@ constructs:
       - {at: options, accepts: name, expands_to: {each_value_of_enum_type: $value, as: {value: $item, label: $item}}}
     fields:
       reads:     {type: Reads, note: options from a view}
-      options:   {type: {one_of: [{list: {record: {value: json, label: string}}}, {list: string}, name]}, note: fixed options or a named enum type}
+      options:   {type: {one_of: [{list: {record: {value: json, label: string}}}, {list: string}, name]}, note: "fixed options, or a named enum type: one of the document's `types`, else, with `--model`, an enum of the model by its qualified name, the name below the system, or the last segments only one enum ends with"}
+      value:     {type: name, note: "the row field of `reads` each option sends, by its wire name (the key its rows carry; `--model` names the wire name of a field written by its model name); a row without it offers no option. Absent: the read's `key`, else the row field named like the form field the choice picks for, else the identity of the entity the view projects (`--model`), else `id`"}
+      label:     {type: name, note: "the row field of `reads` each option shows, by its wire name; absent, or missing or `null` in a row: the row's `label`, else its `name`, else the value"}
       binds:     {type: expr, note: state the value is written to}
       multiple:  {type: boolean, default: false, note: many values}
       style:     {type: {enum: [dropdown, tags, tree, grouped, radio, segmented, checklist]}, default: dropdown, note: presentation hint}

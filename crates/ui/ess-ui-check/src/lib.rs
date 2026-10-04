@@ -171,8 +171,8 @@ pub const CHECKS: &[Check] = &[
     // With `--model`: form fields and `bind` keys are inputs of their command; columns, record
     // fields and `row.<field>` paths are fields of the view read.
     rule("field_in_model"),
-    // With `--model`: a `group_by`, an aggregate's `field` or a `label_from` names a row field
-    // the view does not have.
+    // With `--model`: a `group_by`, an aggregate's `field`, a `label_from`, or a choice's `value`
+    // or `label` names a row field the view does not have.
     rule("row_fields"),
     // With `--model`: a `group_order` value, or a form choice's fixed option, is no variant of the
     // enum the field holds, or the options leave a variant out.
@@ -182,6 +182,12 @@ pub const CHECKS: &[Check] = &[
     rule("metric_aggregate"),
     // `collection`: `group_order` and `show_empty_groups` order the groups of `group_by`.
     rule("group_order"),
+    // A choice's `options` name an enum of the document, or with `--model` exactly one enum of
+    // the model (beyond10x/ess#330).
+    rule("options_enum"),
+    // `choice`: `value` and `label` name fields of the rows of `reads`, so they need `reads`
+    // (beyond10x/ess#328).
+    rule("choice_projection"),
 ];
 
 fn severity_of(id: &str) -> Severity {
@@ -384,7 +390,11 @@ pub fn check_source(
     options: &Options,
 ) -> Report {
     let mut sink = Sink::default();
-    match ess_ui::load_str(text) {
+    let loaded = match model {
+        Some(model) => ess_ui::load_str_with(text, model),
+        None => ess_ui::load_str(text),
+    };
+    match loaded {
         Err(error) => classify::refusal(text, &error, &mut sink),
         Ok(document) => {
             rules::run(&document, base, options, &mut sink);

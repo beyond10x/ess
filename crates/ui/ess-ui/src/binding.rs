@@ -27,8 +27,88 @@ pub struct Binding {
     pub system: String,
     /// Each `reached_by: network` component that serves something the document names, by name.
     pub components: BTreeMap<String, ServedComponent>,
-    /// Every view and command name as the document writes it, to its qualified name.
+    /// Every view and command name as the document writes it, to its qualified name; and every
+    /// model enum a choice's `options` name.
     pub names: BTreeMap<String, String>,
+    /// Every model enum a choice's `options` name, by qualified name: its variants in declaration
+    /// order (beyond10x/ess#330). Absent from the JSON when the document names none, so a binding
+    /// computed before it keeps its bytes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub enums: BTreeMap<String, Vec<EnumVariant>>,
+}
+
+impl Binding {
+    /// The route of the view the document writes as `name`, or names by its qualified name.
+    pub fn view(&self, name: &str) -> Option<&ViewRoute> {
+        let qualified = self.names.get(name).map_or(name, String::as_str);
+        self.components
+            .values()
+            .find_map(|served| served.views.get(qualified))
+    }
+}
+
+/// One variant of a model enum, as a choice offers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumVariant {
+    /// What is sent: the variant's wire spelling.
+    pub value: String,
+    /// What is shown: the variant's display name, else its name.
+    pub label: String,
+}
+
+/// What a name a choice's `options` write means in a model (beyond10x/ess#330).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnumLookup {
+    /// An enum: its qualified name and its variants in declaration order.
+    Enum {
+        /// The qualified name.
+        name: String,
+        /// The variants, in declaration order.
+        variants: Vec<EnumVariant>,
+    },
+    /// A type, entity or view of the model that is not an enum.
+    NotEnum {
+        /// The qualified name.
+        name: String,
+    },
+    /// Several names of the model, which the written name could each mean.
+    Ambiguous(Vec<String>),
+    /// Nothing of the model.
+    Unknown,
+}
+
+/// The enums a document's `options` may name besides its own `types`: the model's, given to
+/// [`crate::load_str_with`]. `ess_ui_check::Model` resolves them in a compiled model; a
+/// [`Binding`] resolves the ones it carries, so a renderer holding only the binding lists them.
+pub trait ModelEnums {
+    /// The model's system, as a refusal names it.
+    fn system(&self) -> &str;
+    /// What `name`, written as a choice's `options`, means in the model.
+    fn lookup(&self, name: &str) -> EnumLookup;
+    /// [`Self::lookup`] for the `options` at `at`; a caller that defers the model, as `ess ui
+    /// test` without `--model` does, records where each name was written.
+    fn lookup_at(&self, name: &str, at: &crate::NodePath) -> EnumLookup {
+        let _ = at;
+        self.lookup(name)
+    }
+}
+
+impl ModelEnums for Binding {
+    fn system(&self) -> &str {
+        &self.system
+    }
+
+    fn lookup(&self, name: &str) -> EnumLookup {
+        self.names
+            .get(name)
+            .and_then(|qualified| {
+                self.enums.get(qualified).map(|variants| EnumLookup::Enum {
+                    name: qualified.clone(),
+                    variants: variants.clone(),
+                })
+            })
+            .unwrap_or(EnumLookup::Unknown)
+    }
 }
 
 /// What one served component answers for the document.
@@ -47,6 +127,12 @@ pub struct ViewRoute {
     pub path: String,
     /// Its declared parameters, in declaration order.
     pub params: Vec<QueryParam>,
+    /// The row field, by wire name, carrying the identity of the entity the view projects: the
+    /// value a choice over the view sends when it names no field (beyond10x/ess#328). Present only
+    /// for a view a choice reads, and absent from the JSON otherwise, so a binding without choices
+    /// keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
 }
 
 /// One view parameter, carried as a query parameter.

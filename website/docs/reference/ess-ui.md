@@ -93,7 +93,7 @@ Validation: a short form is checked against its `accepts` before it expands; one
 |---|---|
 | `expr` | the expanded value is this expression string |
 | `first_present` | the first listed source that has a value |
-| `each_value_of_enum_type` | one entry per value of the named enum type, shaped by `as` |
+| `each_value_of_enum_type` | one entry per value of the named enum type, shaped by `as`; the document's `types` are read first, and a name they do not declare is an enum of the model the document is loaded with (`--model`), whose entries send each variant's wire spelling and show its display name |
 | `remove_inherited` | the inherited entry of that name is removed during page kind merge |
 | `merge_under` | the named overlay is copied and the local props are merged over it |
 
@@ -999,7 +999,9 @@ One composite replaces dropdowns, tag pickers, tree selects and checkbox lists. 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | options from a view |
-| `options` | one of: list of record \{ `value`: `json`, `label`: `string` \} \| list of `string` \| `name` |   |   | fixed options or a named enum type |
+| `options` | one of: list of record \{ `value`: `json`, `label`: `string` \} \| list of `string` \| `name` |   |   | fixed options, or a named enum type: one of the document's `types`, else, with `--model`, an enum of the model by its qualified name, the name below the system, or the last segments only one enum ends with |
+| `value` | `name` |   |   | the row field of `reads` each option sends, by its wire name (the key its rows carry; `--model` names the wire name of a field written by its model name); a row without it offers no option. Absent: the read's `key`, else the row field named like the form field the choice picks for, else the identity of the entity the view projects (`--model`), else `id` |
+| `label` | `name` |   |   | the row field of `reads` each option shows, by its wire name; absent, or missing or `null` in a row: the row's `label`, else its `name`, else the value |
 | `binds` | `expr` |   |   | state the value is written to |
 | `multiple` | `boolean` |   | `false` | many values |
 | `style` | one of: `dropdown` \| `tags` \| `tree` \| `grouped` \| `radio` \| `segmented` \| `checklist` |   | `dropdown` | presentation hint |
