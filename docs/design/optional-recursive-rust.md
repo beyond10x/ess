@@ -96,3 +96,30 @@ exactly, prefixes the line after LF, and spells a standalone CR visibly as `\r`.
 at the Rust documentation boundary, not normalization of the specification, IR, summary values
 or wire text. The retained prose fixture runs with LF, CRLF, standalone CR and mixed LF/CR across
 its system, domain, component, type, entity, event, command and outcome documentation.
+
+## Format labels and codecs across targets
+
+The remaining request in beyond10x/ess#400 was verified against executed generated code, not
+source text. `tests/optional_recursive_codecs.rs` synthesizes a format enum declared as
+`{name: ExplanationV2, wire: demo.explanation/2}` beside a self-recursive optional struct, and
+runs:
+
+- the Rust server's named, command, event, outcome and system-event codecs and its served entry,
+  in the workspace and single-crate layouts;
+- the shared Web bridge's codecs and served command, built for `wasm32-unknown-unknown` and run
+  under Node;
+- the Go server's codecs and served command under `go test`.
+
+Each writes the declared label, reads only the declared label, and round-trips nested values.
+No Rust or Web emitter change was needed.
+
+The Go target did not check its identifiers. A label used as a variant's name
+(`- demo.explanation/2`), a union label or an explicit name that is not an identifier produced a
+type declaration `go build` could not parse. The Go layout now checks every name it allocates
+before rendering. It refuses with `invalid-identifier`, addressed to the same source the Rust
+target names. An enum variant's refusal names the explicit `{name, wire}` remedy. Valid models
+allocate only valid names, so their output is unchanged.
+
+A mutual optional cycle stays a Rust and Web `recursive-layout` refusal, as decided above. Go
+represents an optional as a pointer, so the same model compiles there; the test keeps both
+controls.

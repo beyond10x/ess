@@ -302,7 +302,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::retry_bound(ir, plan, crate::Target::Go)?;
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
-    let layout = Layout::of(ir, plan, &refusals);
+    let layout = Layout::admitted(ir, plan, &refusals)?;
     accessor::preflight(ir, plan, &layout)?;
     let seams = behaviour::Seams::of(ir, plan, &layout, &refusals);
     invariant::preflight(ir, plan, &layout)?;

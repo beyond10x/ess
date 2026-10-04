@@ -149,6 +149,20 @@ pub fn type_fragment(text: &str) -> String {
         .collect()
 }
 
+/// `true` when `word` is spelled as a Go identifier: a letter or `_`, then letters, digits and
+/// `_`.
+///
+/// Spelling only: an exported name cannot be a keyword, and package names are repaired by
+/// [`package_ident`]. Rust's `is_alphabetic`/`is_alphanumeric` admit a superset of Go's letter and
+/// digit classes, so a name this refuses is never one Go accepts.
+pub fn valid_ident(word: &str) -> bool {
+    let mut characters = word.chars();
+    characters
+        .next()
+        .is_some_and(|first| first == '_' || first.is_alphabetic())
+        && characters.all(|character| character == '_' || character.is_alphanumeric())
+}
+
 /// The unexported method that seals an interface over its variants: `Payee` is sealed by
 /// `isPayee`.
 ///
