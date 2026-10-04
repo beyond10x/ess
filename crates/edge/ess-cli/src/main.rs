@@ -330,6 +330,26 @@ enum VerifyCommand {
         to: PathBuf,
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
+        /// Classify each change as breaking, unknown or compatible for callers, readers and
+        /// history; JSON output is then `ess-diff/14`.
+        #[arg(long)]
+        compatibility: bool,
+        /// Exit 4 when an unacknowledged change is at or above this level, 0 otherwise; a
+        /// refused input or acknowledgements file still exits 1. Implies `--compatibility`.
+        #[arg(long, value_enum)]
+        fail_on: Option<DiffFailOn>,
+        /// The dimensions `--fail-on` considers; repeatable. Default: all three.
+        #[arg(
+            long = "dimension",
+            value_name = "DIMENSION",
+            value_enum,
+            requires = "fail_on"
+        )]
+        dimensions: Vec<DiffDimension>,
+        /// An `ess-diff-acknowledgements/1` JSON file naming change ids `--fail-on` lets pass,
+        /// bound to the `before` and `after` digests of this comparison.
+        #[arg(long, requires = "fail_on")]
+        acknowledgements: Option<PathBuf>,
     },
     /// Report conformance and generated artifacts invalidated by a semantic change.
     Impact {
@@ -428,6 +448,26 @@ enum Format {
 enum MachineFormat {
     Text,
     Json,
+}
+
+/// What `ess verify diff --fail-on` fails on.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DiffFailOn {
+    /// A change breaking in a considered dimension.
+    Breaking,
+    /// A change breaking or unknown in a considered dimension.
+    BreakingOrUnknown,
+}
+
+/// A compatibility dimension `ess verify diff --dimension` selects.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DiffDimension {
+    /// Callers written against `--from` invoking `--to`.
+    Callers,
+    /// Readers written against `--from` reading what `--to` produces.
+    Readers,
+    /// `--to` reading what `--from` already stored or emitted.
+    History,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1445,7 +1485,25 @@ fn verify_area(command: VerifyCommand) -> Result<ExitCode> {
         VerifyCommand::Protocol { command } => protocol::verify(&command),
         VerifyCommand::Bindings(args) => observed_bindings::run(&args),
         VerifyCommand::Conform { command } => conform(command),
-        VerifyCommand::Diff { from, to, format } => diff(&from, &to, format),
+        VerifyCommand::Diff {
+            from,
+            to,
+            format,
+            compatibility,
+            fail_on,
+            dimensions,
+            acknowledgements,
+        } => diff(
+            &from,
+            &to,
+            format,
+            &DiffGateArgs {
+                compatibility,
+                fail_on,
+                dimensions,
+                acknowledgements,
+            },
+        ),
         VerifyCommand::Impact {
             from,
             to,
@@ -2635,7 +2693,20 @@ fn graph(path: &Path, format: GraphFormat) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
+/// The compatibility options of `ess verify diff` (beyond10x/ess#290). All opt-in: without them the
+/// command prints what it always printed and exits as it always exited.
+struct DiffGateArgs {
+    compatibility: bool,
+    fail_on: Option<DiffFailOn>,
+    dimensions: Vec<DiffDimension>,
+    acknowledgements: Option<PathBuf>,
+}
+
+/// The exit status of `ess verify diff --fail-on` finding an unacknowledged change: distinct from
+/// a refused input (1) and a usage error (2).
+const DIFF_GATE_FAILED: u8 = 4;
+
+fn diff(from: &Path, to: &Path, format: MachineFormat, gate: &DiffGateArgs) -> Result<ExitCode> {
     let diagnostic = if matches!(format, MachineFormat::Json) {
         Format::Json
     } else {
@@ -2647,17 +2718,73 @@ fn diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
     let Ok((after, _)) = resolved(to, diagnostic)? else {
         return Ok(ExitCode::from(1));
     };
-    match ess_diff::diff(&before, &after) {
-        Ok(delta) => match format {
-            MachineFormat::Text => print!("{}", ess_diff::render::text(&delta)),
-            MachineFormat::Json => print!("{}", delta.to_canonical_json()),
-        },
+    let compared = if gate.compatibility || gate.fail_on.is_some() {
+        ess_diff::classified(&before, &after)
+    } else {
+        ess_diff::diff(&before, &after)
+    };
+    let delta = match compared {
+        Ok(delta) => delta,
         Err(error) => {
             eprintln!("refused: {error}");
             return Ok(ExitCode::from(1));
         }
+    };
+    let acknowledged = match &gate.acknowledgements {
+        None => None,
+        Some(path) => {
+            let text =
+                fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+            match ess_diff::compatibility::Acknowledgements::from_json(&text, &delta) {
+                Ok(acknowledged) => Some(acknowledged),
+                Err(error) => {
+                    eprintln!("refused: {}: {error}", path.display());
+                    return Ok(ExitCode::from(1));
+                }
+            }
+        }
+    };
+    match format {
+        MachineFormat::Text => print!("{}", ess_diff::render::text(&delta)),
+        MachineFormat::Json => print!("{}", delta.to_canonical_json()),
     }
-    Ok(ExitCode::SUCCESS)
+    let Some(fail_on) = gate.fail_on else {
+        return Ok(ExitCode::SUCCESS);
+    };
+    let (threshold, word) = match fail_on {
+        DiffFailOn::Breaking => (ess_diff::FailOn::Breaking, "breaking"),
+        DiffFailOn::BreakingOrUnknown => {
+            (ess_diff::FailOn::BreakingOrUnknown, "breaking-or-unknown")
+        }
+    };
+    let mut judge = ess_diff::Gate::new(threshold);
+    if !gate.dimensions.is_empty() {
+        judge = judge.dimensions(gate.dimensions.iter().map(|dimension| match dimension {
+            DiffDimension::Callers => ess_diff::Dimension::Callers,
+            DiffDimension::Readers => ess_diff::Dimension::Readers,
+            DiffDimension::History => ess_diff::Dimension::History,
+        }));
+    }
+    let outcome = judge.judge(&delta, acknowledged.as_ref())?;
+    for id in outcome.acknowledged() {
+        eprintln!("acknowledged: {id}");
+    }
+    for id in outcome.failing() {
+        eprintln!("fails --fail-on {word}: {id}");
+    }
+    if outcome.passed() {
+        eprintln!(
+            "gate --fail-on {word}: passed ({} acknowledged)",
+            outcome.acknowledged().len()
+        );
+        Ok(ExitCode::SUCCESS)
+    } else {
+        eprintln!(
+            "gate --fail-on {word}: {} unacknowledged change(s) fail",
+            outcome.failing().len()
+        );
+        Ok(ExitCode::from(DIFF_GATE_FAILED))
+    }
 }
 
 fn impact(

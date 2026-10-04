@@ -1540,6 +1540,10 @@ ess verify diff [OPTIONS] --from <FROM> --to <TO>
 | `--from` | `<FROM>` | yes |  |  |
 | `--to` | `<TO>` | yes |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+| `--compatibility` |  | no |  | Classify each change as breaking, unknown or compatible for callers, readers and history; JSON output is then `ess-diff/14` |
+| `--fail-on` | `<FAIL_ON>` | no |  | Exit 4 when an unacknowledged change is at or above this level, 0 otherwise; a refused input or acknowledgements file still exits 1. Implies `--compatibility`. One of `breaking`, `breaking-or-unknown`. |
+| `--dimension` | `<DIMENSION>`… | no |  | The dimensions `--fail-on` considers; repeatable. Default: all three. One of `callers`, `readers`, `history`. |
+| `--acknowledgements` | `<ACKNOWLEDGEMENTS>` | no |  | An `ess-diff-acknowledgements/1` JSON file naming change ids `--fail-on` lets pass, bound to the `before` and `after` digests of this comparison |
 
 #### `ess verify impact`
 
