@@ -721,7 +721,32 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
                     }
                 )
         });
-    let precedence = if has_related {
+    // A related row named by a stored field of the addressed subject (ess/22, beyond10x/ess#304) is
+    // read at its own step, after that row's existence and held state.
+    let stored = command
+        .outcomes
+        .iter()
+        .find_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                via: ess_compiler::ir::ResolvedRelatedVia::Subject { field, .. },
+                ..
+            } => Some(field),
+            _ => None,
+        });
+    let precedence = if let Some(field) = stored {
+        format!(
+            " Selection precedence: on commands with `when_related:` reading the stored reference \
+             `{field}` of the addressed subject, choose the first declared input refusal whose \
+             guard holds; then check addressed-row existence (`unknown_instance`, else the declared \
+             not-found answer); then the held state, with `wrong_state` only if the selected branch \
+             moves from a state the row does not hold; then read the stored reference as the \
+             subject held it before the branch: absent, it selects no `when_related:` branch; \
+             naming an identity no row carries, `exists: false`; naming a row, the present \
+             `when_related:` predicate refusal whose predicate and optional input guard hold; then \
+             accepting and external branches in declaration order. An accepting branch that moves \
+             nothing answers in every state."
+        )
+    } else if has_related {
         let present_related = if orders_present_related_refusal {
             "then choose the present `when_related:` predicate refusal whose predicate and \
              optional input guard hold; "

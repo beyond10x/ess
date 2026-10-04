@@ -3289,6 +3289,22 @@ fn successors(
     follow: &Follow,
 ) -> Vec<Arrangement> {
     let mut out = Vec::new();
+    // A move reading a related row through a stored field of this row (ess/22,
+    // beyond10x/ess#304) is sent with that reference left out, or naming a row arranged for it.
+    if super::related_guard::stored::field(driver.command).is_some() {
+        if let Ok(mut next) = super::related_guard::stored::step(
+            ir,
+            driver,
+            arrangement,
+            actors,
+            Distinction::PLAIN,
+            arranging,
+        ) {
+            follow.raise(ir, driver, &arrangement.settled, &mut next.settled);
+            out.push(next);
+        }
+        return out;
+    }
     if uses(driver.command) {
         let own = self::hints(driver.command);
         let fields = read_fields(ir, entity, &own);

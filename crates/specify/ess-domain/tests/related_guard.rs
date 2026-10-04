@@ -7,7 +7,7 @@
 //! the other entity's identity only: a lookup by any other field (rule 2 of
 //! `docs/design/cross-record-and-stored-field-guards.md`) stays out of scope.
 use ess_domain::{
-    command::{OutcomeCondition, RelatedTest},
+    command::{OutcomeCondition, RelatedTest, RelatedVia},
     spec::RawSpecFile,
     system::Source,
     Specification,
@@ -751,5 +751,113 @@ fn issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive() {
             .iter()
             .any(|error| error.to_string().contains("absent")),
         "the uncovered Optional-input case is named: {errors}"
+    );
+}
+
+// ---- a stored field of the addressed subject naming the related row (beyond10x/ess#304, `ess/22`)
+
+/// A task stores the task blocking it, and is completed only once that task is done
+/// (beyond10x/ess#304, the subject via).
+pub const STORED_REFERENCE: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml"
+);
+
+const STORED_WRONG_STATE: &str =
+    "      - {name: wrong-state, wrong_state: true, error: demo.tasks.TaskStateConflict}\n";
+
+#[test]
+fn a_stored_reference_via_validates_under_ess_22() {
+    let spec = accepted(STORED_REFERENCE);
+    let command = &spec.commands()[&"demo.tasks.CompleteTask".parse().unwrap()];
+    for outcome in &command.outcomes[..2] {
+        let OutcomeCondition::Related { via, .. } = &outcome.condition else {
+            panic!("a related guard: {outcome:?}")
+        };
+        assert_eq!(
+            *via,
+            RelatedVia::Subject("blocked_by".to_owned()),
+            "a bare field is the addressed subject's stored field"
+        );
+        assert_eq!(via.to_string(), "blocked_by", "written back as authored");
+    }
+
+    // A required stored reference is admitted as well: it is never absent.
+    accepted(&STORED_REFERENCE.replace(
+        "{name: blocked_by, type: Optional<demo.tasks.TaskId>}",
+        "{name: blocked_by, type: demo.tasks.TaskId}",
+    ));
+
+    // Below ess/22 the subject via is refused at its declaration, naming the format that admits
+    // it, before any other refusal of the command.
+    for format in ["ess/21", "ess/20", "ess/18"] {
+        let older = replaced(
+            &replaced(
+                STORED_REFERENCE,
+                "format: ess/22\n",
+                &format!("format: {format}\n"),
+            ),
+            STORED_WRONG_STATE,
+            "",
+        );
+        let errors = refused(&older);
+        assert!(
+            has(&errors, ValidationCode::UnsupportedFormatVersion, "ess/22"),
+            "{format}: {errors}"
+        );
+        assert!(
+            errors.as_slice().iter().any(|error| {
+                let rendered = error.to_string();
+                rendered.contains("when_related")
+                    && rendered.contains("blocker-missing")
+                    && rendered.contains("blocked_by")
+            }),
+            "{format}: the refusal names the subject via at its declaration: {errors}"
+        );
+    }
+}
+
+#[test]
+fn a_stored_reference_via_is_refused_on_creates_and_without_a_subject() {
+    // On a command that creates its subject: there is no row before the branch to read.
+    let on_creates = replaced(
+        STORED_REFERENCE,
+        "    outcomes:\n      - name: added\n",
+        "    outcomes:\n      - name: no-blocker\n        when_related: {via: blocked_by, exists: false}\n        error: demo.tasks.BlockerMissing\n      - name: added\n",
+    );
+    let errors = refused(&on_creates);
+    assert!(
+        has(&errors, ValidationCode::ConflictingDeclaration, "creates"),
+        "{errors}"
+    );
+    assert!(
+        errors.as_slice().iter().any(|error| {
+            let rendered = error.to_string();
+            rendered.contains("AddTask") && rendered.contains("blocked_by")
+        }),
+        "the refusal names the command and the subject via: {errors}"
+    );
+
+    // On a command that addresses no existing subject through its input.
+    let without_subject = replaced(
+        &replaced(STORED_REFERENCE, STORED_WRONG_STATE, ""),
+        "      - name: completed\n        moves: demo.tasks.Task.complete\n        instance: task_id\n",
+        "      - name: completed\n",
+    );
+    let errors = refused(&without_subject);
+    assert!(
+        has(
+            &errors,
+            ValidationCode::UndeclaredReference,
+            "no existing subject"
+        ),
+        "{errors}"
+    );
+
+    // A bare name that is no stored field of the addressed subject.
+    let unknown_field = STORED_REFERENCE.replace("via: blocked_by", "via: waiting_on");
+    let errors = refused(&unknown_field);
+    assert!(
+        has(&errors, ValidationCode::UndeclaredReference, "waiting_on"),
+        "{errors}"
     );
 }

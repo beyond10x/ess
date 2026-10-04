@@ -1,0 +1,78 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.tasks
+summary: A task may store the task blocking it, and is completed only once that task is done.
+types:
+  - {name: demo.tasks.TaskId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.tasks.Task
+    identity: {name: task_id, type: demo.tasks.TaskId}
+    fields:
+      - {name: blocked_by, type: Optional<demo.tasks.TaskId>}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: complete, from: [Open], to: Done}
+errors:
+  - {name: demo.tasks.BlockerMissing, summary: No task carries the identity the task stores as its blocker., fields: []}
+  - {name: demo.tasks.Blocked, summary: The task blocking this one is not done., fields: []}
+  - {name: demo.tasks.TaskStateConflict, summary: The task cannot move from its held state., fields: []}
+events:
+  - name: demo.tasks.TaskAdded
+    fields: [{name: task_id, type: demo.tasks.TaskId}]
+  - name: demo.tasks.TaskCompleted
+    fields: [{name: task_id, type: demo.tasks.TaskId}]
+actors:
+  - name: demo.tasks.Planner
+    may: [demo.tasks.AddTask, demo.tasks.CompleteTask]
+commands:
+  - name: demo.tasks.AddTask
+    input:
+      - {name: blocked_by, type: Optional<demo.tasks.TaskId>}
+    outcomes:
+      - name: added
+        creates: demo.tasks.Task
+        instance: task_id
+        sets: {blocked_by: input.blocked_by}
+        emits: [demo.tasks.TaskAdded]
+        payload: {demo.tasks.TaskAdded: {task_id: {generated: true}}}
+  - name: demo.tasks.CompleteTask
+    input:
+      - {name: task_id, type: demo.tasks.TaskId}
+    outcomes:
+      - name: blocker-missing
+        when_related: {via: blocked_by, exists: false}
+        error: demo.tasks.BlockerMissing
+      - name: blocked
+        when_related: {via: blocked_by, predicate: state != Done}
+        error: demo.tasks.Blocked
+      - {name: wrong-state, wrong_state: true, error: demo.tasks.TaskStateConflict}
+      - name: completed
+        moves: demo.tasks.Task.complete
+        instance: task_id
+        emits: [demo.tasks.TaskCompleted]
+        payload: {demo.tasks.TaskCompleted: {task_id: input.task_id}}
+views:
+  - name: demo.tasks.Tasks
+    source: demo.tasks.Task
+    consistency: read_your_writes
+    fields:
+      - {name: task_id, type: demo.tasks.TaskId}
+      - {name: blocked_by, type: Optional<demo.tasks.TaskId>}
+      - {name: state, type: demo.tasks.Task.State}
+components:
+  - component: task-service
+    reached_by: network
+    owns:
+      domains: [demo.tasks]
+    accepts:
+      commands:
+        - demo.tasks.AddTask
+        - demo.tasks.CompleteTask
+    publishes:
+      events:
+        - demo.tasks.TaskAdded
+        - demo.tasks.TaskCompleted

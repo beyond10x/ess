@@ -41,6 +41,8 @@ use super::{
 };
 use crate::witness::MAX_CANDIDATES;
 
+pub(super) mod stored;
+
 /// The step between the blocks of distinctions the related rows are arranged at: the number
 /// [`super::related`] uses, for the reason it gives (every enum of up to twelve variants reads a
 /// decoy one away from the row as another variant).
@@ -304,6 +306,11 @@ fn selects<'c>(
 }
 
 pub(super) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedCommand) -> bool {
+    // A stored reference is read after the addressed row's existence and held state, and its
+    // present-related refusal answers before every accepting branch (beyond10x/ess#304).
+    if stored::field(command).is_some() {
+        return true;
+    }
     ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
         && command
             .outcomes
@@ -330,6 +337,11 @@ pub(super) fn wrong_state_overlap(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     addressed: &mut Arrangement,
 ) -> Result<BoundInput, RefusalCause> {
+    // The held state answers before a stored reference is read: the subject is sent as its
+    // arrangement left it (beyond10x/ess#304).
+    if stored::field(command).is_some() {
+        return Ok((stored::wrong_state_input(ir, command)?, BTreeMap::new()));
+    }
     let refusal = command
         .outcomes
         .iter()
@@ -419,6 +431,10 @@ pub(super) fn drive(
     input: Option<&BTreeMap<String, Node>>,
     arranging: &[&EntityHandle],
 ) -> Result<super::Invocation, RefusalCause> {
+    // A stored reference is read from the row being driven, which [`stored::step`] is given.
+    if stored::field(driver.command).is_some() {
+        return Err(unarranged());
+    }
     let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
     let field = via.field();
     let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
@@ -452,6 +468,9 @@ pub(super) fn drive(
     // 1).
     // Reached from `ess/20` only: below it the run stopped above.
     if arranging.contains(&entity) {
+        // Where no row one level deep selects the branch — the row would need a related row of
+        // its own again — an Optional reference the branch is answered without is left out
+        // (ess/22, beyond10x/ess#304): no row is read, so none is arranged.
         return nested(
             ir,
             driver,
@@ -461,7 +480,10 @@ pub(super) fn drive(
             bound,
             input,
             arranging,
-        );
+        )
+        .or_else(|cause| {
+            without_reference(ir, driver, instance, actors, distinction, bound, input).ok_or(cause)
+        });
     }
     // An owner the caller already bound for a link input — the one `created_owned` arranged for the
     // subject this run creates — is the owner the run is sent naming: the related row is arranged
@@ -691,6 +713,42 @@ fn nested(
     invocation.steps = steps;
     invocation.source.extend(row.source);
     Ok(invocation)
+}
+
+/// [`drive`] with the Optional input reference the command's related guards read left out (ess/22,
+/// beyond10x/ess#304), where that selects the branch: no row is read, so none is arranged. `None`
+/// for a required reference, a related branch, and a branch the absent reference does not select —
+/// with the caller's input as it is but for the reference, where the caller chose one.
+fn without_reference(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    chosen: Option<&BTreeMap<String, Node>>,
+) -> Option<super::Invocation> {
+    let (ResolvedRelatedVia::Input { field, .. }, _) = read(driver.command)? else {
+        return None;
+    };
+    if !optional(driver.command) {
+        return None;
+    }
+    let input = match chosen {
+        Some(chosen) => {
+            let mut chosen = chosen.clone();
+            chosen.remove(field);
+            selects_absent(ir, driver.command, &chosen)
+                .ok()
+                .flatten()
+                .is_some_and(|branch| branch.name == driver.outcome.name)
+                .then_some(chosen)?
+        }
+        None => absent_input(ir, driver.command, driver.outcome, distinction).ok()?,
+    };
+    Some(super::invoke_with(
+        ir, driver, instance, actors, bound, &input,
+    ))
 }
 
 /// The link inputs over rows of `entity` ([`subject_fact::link_pins`]) the send of `outcome`
@@ -970,7 +1028,7 @@ pub(super) fn absent_input(
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
     let (via, _) = read(command)
-        .filter(|_| optional(command))
+        .filter(|(via, _)| optional(command) || matches!(via, ResolvedRelatedVia::Subject { .. }))
         .ok_or_else(unarranged)?;
     if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
         return Err(unarranged());
@@ -1015,6 +1073,9 @@ pub(super) fn prepare_absent_in(
     distinction: Distinction,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
     let ir = models.arrangement;
+    if stored::field(command).is_some() {
+        return stored::absent_at(models, command, outcome, actors, distinction);
+    }
     let (via, entity) = read(command).ok_or_else(unarranged)?;
     let field = via.field();
     let input = absent_input(ir, command, outcome, distinction)?;
@@ -1071,6 +1132,9 @@ fn arranged_at(
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     let ir = models.arrangement;
+    if stored::field(command).is_some() {
+        return stored::arranged_at(models, command, outcome, actors, distinction, goal);
+    }
     let (via, entity) = read(command).ok_or_else(unarranged)?;
     let field = via.field();
     // A missing row reads no predicate, so no boundary of one is witnessed on it.

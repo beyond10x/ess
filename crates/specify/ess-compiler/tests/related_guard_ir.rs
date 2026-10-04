@@ -178,3 +178,37 @@ const LEGACY_RELATED_IR: [(&str, &str, &str, usize); 4] = [
         13_029,
     ),
 ];
+
+const STORED_REFERENCE: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml"
+);
+
+#[test]
+fn a_stored_reference_lowers_to_resolved_related_via_subject() {
+    let model = ir(STORED_REFERENCE);
+    let command = &model.commands()[&"demo.tasks.CompleteTask".parse().unwrap()];
+    for outcome in &command.outcomes[..2] {
+        let ResolvedCondition::Related { via, entity, .. } = &outcome.condition else {
+            panic!("a related guard: {:?}", outcome.condition)
+        };
+        let ResolvedRelatedVia::Subject { field, type_ref } = via else {
+            panic!("a bare field is read from the addressed subject: {via:?}")
+        };
+        assert_eq!(field, "blocked_by");
+        assert!(
+            type_ref.is_optional(),
+            "the stored field's declared Optional type is retained: {via:?}"
+        );
+        assert_eq!(
+            type_ref.required().written().to_string(),
+            "demo.tasks.TaskId"
+        );
+        assert_eq!(entity.name().to_string(), "demo.tasks.Task");
+        assert_eq!(outcome.test_strategy, TestStrategy::ArrangeRelatedRow);
+    }
+    let canonical = model.to_canonical_json();
+    assert!(
+        canonical.contains(r#""from": "subject""#),
+        "the canonical IR says the reference is read from the subject: {canonical}"
+    );
+}

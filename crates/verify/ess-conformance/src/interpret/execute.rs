@@ -10,7 +10,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds (`refused_by_input`); addressed-row existence and held state; for the ess/22 `wrong_state` composition, the present-related predicate refusal; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
+//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds (`refused_by_input`); addressed-row existence and held state; a related row named by a stored field of the addressed subject (ess/22, `stored_reference`): absent, none; missing, its `exists: false` branch; for the ess/22 `wrong_state` composition and every stored reference, the present-related predicate refusal; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch; for an identity nobody holds, its `unknown_instance:` branch, else its one declared not-found refusal, else `wrong_state:` |
@@ -497,8 +497,13 @@ fn responding_core(
             return Ok(vec![step]);
         }
     }
-    if let Some(steps) = related_absent(ir, spec, store, input, generated, responses)? {
-        return Ok(steps);
+    // A related row named by a stored field of the addressed subject (ess/22, beyond10x/ess#304)
+    // is read after that row's existence and held state, below — not before the input refusals.
+    let stored = related::stored(spec);
+    if stored.is_none() {
+        if let Some(steps) = related_absent(ir, spec, store, input, generated, responses)? {
+            return Ok(steps);
+        }
     }
     if let Some(steps) = refused_by_input(ir, spec, store, input)? {
         return Ok(steps);
@@ -510,7 +515,36 @@ fn responding_core(
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
     let mut held_subjects = BTreeMap::new();
+    if let Some((field, entity)) = stored {
+        let read = stored_reference(
+            ir,
+            spec,
+            store,
+            input,
+            (&facts, command, externals),
+            generated,
+            responses,
+            (field, entity),
+        )?;
+        match read {
+            Stored::Answered(steps) => return Ok(steps),
+            Stored::Absent => {}
+            Stored::Row(row) => {
+                for outcome in &spec.outcomes {
+                    if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
+                        held_subjects.insert(
+                            outcome.name.clone(),
+                            subject::Held::new(ir, ir.entity(entity), row)?,
+                        );
+                    }
+                }
+            }
+        }
+    }
     for outcome in &spec.outcomes {
+        if stored.is_some() && matches!(outcome.condition, ResolvedCondition::Related { .. }) {
+            continue;
+        }
         if let Some(held) = related::held(ir, store, input, &outcome.condition)? {
             held_subjects.insert(outcome.name.clone(), held);
             continue;
@@ -550,7 +584,10 @@ fn responding_core(
         );
     }
     let orders_present_related_refusal = orders_present_related_refusal(ir, spec);
-    if orders_present_related_refusal {
+    // A stored reference was read after the addressed row's existence and held state answered
+    // ([`stored_reference`]); its present-related refusal answers before every accepting branch.
+    let orders_present_related_refusal = orders_present_related_refusal || stored.is_some();
+    if orders_present_related_refusal && stored.is_none() {
         if let Some(steps) = subject_refusals_before_present_related(
             ir,
             spec,
@@ -916,8 +953,9 @@ fn selected_subject_refusal(
 ///
 /// `existing_instance:` is resolved before this helper on such a command. An absent Optional
 /// reference (ess/22, beyond10x/ess#304) answers `None` without a lookup. A related row named
-/// through a stored field of the subject, or through a required input the request does not carry,
-/// is declined too: nothing here reads it.
+/// through a required input the request does not carry is declined: nothing here reads it. One
+/// named through a stored field of the addressed subject is never asked here; it is read at its
+/// own later step ([`stored_reference`]).
 fn related_absent(
     ir: &EssIr,
     spec: &ResolvedCommand,
@@ -959,7 +997,20 @@ fn related_absent(
     if store.instance_typed(entity, identity).is_some() {
         return Ok(None);
     }
-    let Some(absent) = related.iter().find(|outcome| {
+    missing_row(ir, spec, store, input, generated, responses)
+}
+
+/// The command's `exists: false` branch taken, for a related row no row carries the identity of;
+/// `None` where it declares none.
+fn missing_row(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Option<Vec<Transition>>, Undetermined> {
+    let Some(absent) = spec.outcomes.iter().find(|outcome| {
         matches!(
             &outcome.condition,
             ResolvedCondition::Related {
@@ -979,6 +1030,101 @@ fn related_absent(
             "no branch the model allows is described by the given values — `{}`: {why}",
             branch(spec, absent)
         ))),
+    }
+}
+
+/// What reading a stored reference left selection with ([`stored_reference`]).
+enum Stored<'a> {
+    /// The addressed row's existence, its held state, or a missing related row answered.
+    Answered(Vec<Transition>),
+    /// The reference is absent: no row is read and no related branch is selected.
+    Absent,
+    /// The related row the reference names, for the related branches to read.
+    Row(&'a Row),
+}
+
+/// The related row named by a stored field of the addressed subject (`when_related: {via:
+/// <field>}`, ess/22, beyond10x/ess#304), read at its step of the precedence order
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order"): after the
+/// input-guarded refusals, the addressed row's existence — an identity no row holds takes the
+/// command's not-found answer — and its held state — a selected branch moving from a state the
+/// row does not hold takes `wrong_state` — and before every accepting branch.
+///
+/// The field is read from the subject as it was before the branch. Absent, it names no row; an
+/// identity no row carries is answered by the `exists: false` branch; otherwise the row it names is
+/// the one the related branches read.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the stored read shares the command execution's existing authorities"
+)]
+fn stored_reference<'s>(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &'s State,
+    input: &Context<'_>,
+    (facts, command, externals): (&input::InputFacts<'_>, &QualifiedName, &Externals),
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    (field, entity): (&str, &ess_compiler::ir::EntityHandle),
+) -> Result<Stored<'s>, Undetermined> {
+    let subject = spec
+        .outcomes
+        .iter()
+        .filter_map(|outcome| outcome.subject.as_ref())
+        .find(|subject| subject.effect != ResolvedEffect::Creates)
+        .ok_or_else(|| Undetermined::NotInterpreted {
+            construct: "a stored-field related guard with no addressed subject".into(),
+        })?;
+    let ResolvedInstance::Supplied { field: named } = &subject.instance else {
+        return Err(Undetermined::NotInterpreted {
+            construct: "a stored-field related guard without a supplied subject".into(),
+        });
+    };
+    let identity = input.get(&named.name).ok_or_else(|| {
+        Undetermined::Request(format!(
+            "`{}` names its subject in `{}`, and the input has none",
+            spec.name, named.name
+        ))
+    })?;
+    // 3. The addressed row's existence.
+    let Some(addressed) = store.instance_typed(&ir.entity(&subject.entity).name, identity) else {
+        return Ok(Stored::Answered(vec![unknown_instance(
+            ir, spec, store, input, generated, responses,
+        )?]));
+    };
+    // 4. Its held state, for the branch the request selects with no related row read.
+    let selected = select(
+        spec,
+        facts,
+        command,
+        externals,
+        &BTreeMap::new(),
+        input.caller,
+        input,
+        false,
+        false,
+    )?;
+    if let Some(steps) =
+        selected_subject_refusals(ir, spec, store, input, generated, responses, &selected)?
+    {
+        return Ok(Stored::Answered(steps));
+    }
+    // 5. The stored reference, as the subject held it before the branch.
+    match related::reference(ir, store, addressed, field, entity)? {
+        related::Reference::Absent => Ok(Stored::Absent),
+        related::Reference::Row(row) => Ok(Stored::Row(row)),
+        related::Reference::Missing => {
+            match missing_row(ir, spec, store, input, generated, responses)? {
+                Some(steps) => Ok(Stored::Answered(steps)),
+                None => Err(Undetermined::Undecidable {
+                    outcome: "related-row selection".into(),
+                    guard: format!(
+                        "no `{}` row holds the identity `{field}` stores",
+                        ir.entity(entity).name
+                    ),
+                }),
+            }
+        }
     }
 }
 

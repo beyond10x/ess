@@ -611,7 +611,8 @@ pub enum ResolvedCondition {
     /// [`Absent`](ResolvedRelatedTest::Absent) branch: never a predicate branch and never the
     /// default.
     Related {
-        /// The input field carrying the other entity's identity.
+        /// The field carrying the other entity's identity: an input field, or from ess/22 a stored
+        /// field of the addressed subject as it was before the branch (beyond10x/ess#304).
         via: ResolvedRelatedVia,
         /// The entity whose identity that field carries.
         entity: EntityHandle,
@@ -1126,7 +1127,9 @@ pub enum ResolvedRelatedVia {
     Subject {
         /// The entity field.
         field: String,
-        /// Its resolved type: the referenced entity's identity.
+        /// Its resolved type as declared: the referenced entity's identity, or — for a
+        /// `when_related` guard from ess/22 (beyond10x/ess#304) — `Optional<…>` of it, checked only
+        /// when present.
         type_ref: ResolvedTypeRef,
     },
     /// A field of the command's input.

@@ -20,6 +20,18 @@
 //! related row (a `when:` over the input, or the default) must answer it exactly once. A present
 //! reference is read as a required one is. Below ess/22 the Optional form is refused naming ess/22.
 //!
+//! **Stored reference (ess/22, beyond10x/ess#304).** `via` may instead be a bare `<field>`: a stored
+//! field of the subject the command addresses through its input, as it was just before the branch,
+//! typed as the other entity's identity or `Optional<…>` of it ("complete a task only once the task
+//! its stored `blocked_by` names is `Done`"). It is read once the addressed row's existence and
+//! held state have answered — `unknown_instance`, `wrong_state` — and before every accepting branch,
+//! a present-related refusal included; an absent stored reference reads no row and selects no
+//! `when_related` branch, as an absent Optional input does. It is refused on a command that creates
+//! its subject (no row holds the field before the branch) and on one that addresses no existing
+//! subject through its input; beside `wrong_state` it is refused, as an input `via` is, where an
+//! accepting `when_related` branch moves the subject. Below ess/22 a stored field typed as an
+//! identity is refused naming ess/22.
+//!
 //! **Precedence.** A missing row is answered by the `exists: false` branch before any other branch —
 //! a predicate branch (its predicate is `Unknown`), an input-guarded one, the default — so an
 //! `exists: false` branch carries no `when:`, and an accepting `when:` branch overlapping it is legal.
@@ -114,21 +126,18 @@ impl RawRelatedGuard {
                     .with_hint(hint.to_owned()),
             )
         };
-        let Some(field) = self
-            .via
-            .strip_prefix(super::PayloadSource::INPUT_PREFIX)
-            .filter(|field| !field.is_empty())
-        else {
-            return Err(at(
-                ValidationCode::TypeMismatch,
-                format!(
-                    "outcome `{name}` reads the related row through `{}`; `when_related` reads the \
-                     row an input field names, one hop",
-                    self.via
-                ),
-                "write `via: input.<field>`, naming the input field typed as the other entity's \
-                 identity",
-            ));
+        // `input.<field>`, or from ess/22 a bare `<field>` of the addressed subject, which
+        // [`validate`] gates by format (beyond10x/ess#304). Anything else names no field.
+        let via = match self.via.strip_prefix(super::PayloadSource::INPUT_PREFIX) {
+            Some(field) if !field.is_empty() => RelatedVia::Input(field.to_owned()),
+            None if is_bare_field(&self.via) => RelatedVia::Subject(self.via.clone()),
+            _ => {
+                return Err(at(
+                    ValidationCode::TypeMismatch,
+                    not_an_input(name, &self.via),
+                    INPUT_HINT,
+                ))
+            }
         };
         let test = match (self.exists, self.predicate) {
             (Some(false), None) => RelatedTest::Absent,
@@ -162,8 +171,29 @@ impl RawRelatedGuard {
                 ))
             }
         };
-        Ok((RelatedVia::Input(field.to_owned()), test))
+        Ok((via, test))
     }
+}
+
+/// The hint of the refusal of a `via` that names no input field, through ess/21.
+const INPUT_HINT: &str = "write `via: input.<field>`, naming the input field typed as the other \
+                          entity's identity";
+
+/// The refusal message of a `via` that names no input field: the one every format through ess/21
+/// gives, kept for those formats (beyond10x/ess#304).
+fn not_an_input(name: &super::OutcomeName, via: &str) -> String {
+    format!(
+        "outcome `{name}` reads the related row through `{via}`; `when_related` reads the row an \
+         input field names, one hop"
+    )
+}
+
+/// Whether `written` can name a stored field of the addressed subject: one plain segment.
+fn is_bare_field(written: &str) -> bool {
+    !written.is_empty()
+        && !written
+            .chars()
+            .any(|character| character == '.' || character.is_whitespace())
 }
 
 /// Refuses every condition key written beside `when_related:` but `when:`: on one branch each is a
@@ -225,15 +255,58 @@ pub fn uses(command: &CommandSpec) -> bool {
         .any(|outcome| matches!(outcome.condition, OutcomeCondition::Related { .. }))
 }
 
-/// The input field the command's related guards read, where it has any: the first declared.
+/// The field the command's related guards read, where it has any: the first declared.
 pub fn via(command: &CommandSpec) -> Option<&str> {
+    read_via(command).map(RelatedVia::field)
+}
+
+/// Where the command's related guards read the related row's identity, where it has any: the first
+/// declared — an input field, or from ess/22 a stored field of the addressed subject.
+pub fn read_via(command: &CommandSpec) -> Option<&RelatedVia> {
     command
         .outcomes
         .iter()
         .find_map(|outcome| match &outcome.condition {
-            OutcomeCondition::Related { via, .. } => Some(via.field()),
+            OutcomeCondition::Related { via, .. } => Some(via),
             _ => None,
         })
+}
+
+/// The existing subject a stored-field `via` is read from (ess/22, beyond10x/ess#304): the one the
+/// command's branches address through its input, as it was just before the branch. `None` where no
+/// branch addresses one.
+pub fn addressed_subject<'a>(
+    spec: &'a Specification,
+    command: &CommandSpec,
+) -> Option<&'a EntitySpec> {
+    super::subject_fact::common_subject(command)
+        .and_then(|subject| spec.entities().get(&subject.entity))
+}
+
+/// [`related_entity`] for either kind of `via`: through a stored field of the addressed subject
+/// (ess/22), the entity that field's type is the identity of — or the one a `references` relation
+/// the subject declares on the field names.
+pub fn related_entity_via<'a>(
+    spec: &'a Specification,
+    command: &CommandSpec,
+    via: &RelatedVia,
+) -> related_value::Referenced<'a> {
+    match via {
+        RelatedVia::Input(field) => related_entity(spec, command, field),
+        RelatedVia::Subject(field) => {
+            let Some(subject) = addressed_subject(spec, command) else {
+                return related_value::Referenced::NoEntity;
+            };
+            let Some(stored) = subject.fields.iter().find(|held| held.name == *field) else {
+                return related_value::Referenced::NoEntity;
+            };
+            related_value::referenced_entity(
+                spec,
+                identity_type(&stored.type_ref),
+                Some((subject, field.as_str())),
+            )
+        }
+    }
 }
 
 /// The entity whose row a command's related guards read: the one the input `via`'s type is the
@@ -273,12 +346,21 @@ fn identity_type(declared: &TypeRef) -> &TypeRef {
     }
 }
 
-/// Whether the input `via` names is Optional, so that an absent reference reads no row and selects
-/// no `when_related` branch (ess/22, beyond10x/ess#304).
-fn via_is_optional(command: &CommandSpec, via: &str) -> bool {
-    command
-        .input_field(via)
-        .is_some_and(|read| read.type_ref.is_optional())
+/// Whether the field `via` names — an input, or a stored field of the addressed subject — is
+/// Optional, so that an absent reference reads no row and selects no `when_related` branch (ess/22,
+/// beyond10x/ess#304).
+fn via_is_optional(spec: &Specification, command: &CommandSpec, via: &RelatedVia) -> bool {
+    match via {
+        RelatedVia::Input(field) => command
+            .input_field(field)
+            .is_some_and(|read| read.type_ref.is_optional()),
+        RelatedVia::Subject(field) => addressed_subject(spec, command).is_some_and(|subject| {
+            subject
+                .fields
+                .iter()
+                .any(|held| held.name == *field && held.type_ref.is_optional())
+        }),
+    }
 }
 
 /// The conditions that read the addressed subject or its existence, which a related guard does not
@@ -373,29 +455,50 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
     errors
 }
 
+/// Whether two `via`s read from the same place: both the input, or both the addressed subject.
+fn same_kind(one: &RelatedVia, other: &RelatedVia) -> bool {
+    matches!(
+        (one, other),
+        (RelatedVia::Input(_), RelatedVia::Input(_))
+            | (RelatedVia::Subject(_), RelatedVia::Subject(_))
+    )
+}
+
+/// The refusal of a branch reading a related row other than the one `first` names.
+fn second_row(
+    command: &CommandSpec,
+    outcome: &super::Outcome,
+    via: &RelatedVia,
+    first: &RelatedVia,
+) -> ValidationError {
+    ValidationError::at(
+        site(command, outcome),
+        ValidationCode::ConflictingDeclaration,
+        format!(
+            "outcome `{}` reads the row `{via}` names, and a sibling reads the one `{first}` \
+             names; a command reads one related row",
+            outcome.name
+        ),
+    )
+    .with_hint(format!("read the related row through `{first}`"))
+}
+
 /// One related row per command, one `exists: false` branch at most, and one wherever a predicate
 /// branch leaves a missing row unanswered.
 fn one_related_row(command: &CommandSpec) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    let first = via(command).unwrap_or_default();
+    let Some(first) = read_via(command) else {
+        return errors;
+    };
     let mut absent = Vec::new();
     for outcome in &command.outcomes {
         let OutcomeCondition::Related { via, test, .. } = &outcome.condition else {
             continue;
         };
-        if via.field() != first {
-            errors.push(
-                ValidationError::at(
-                    site(command, outcome),
-                    ValidationCode::ConflictingDeclaration,
-                    format!(
-                        "outcome `{}` reads the row `{via}` names, and a sibling reads the one \
-                         `input.{first}` names; a command reads one related row",
-                        outcome.name
-                    ),
-                )
-                .with_hint(format!("read the related row through `input.{first}`")),
-            );
+        // An input `via` beside a stored-field one is refused by [`validate`], once the format has
+        // said whether the stored-field form is admitted at all (beyond10x/ess#304).
+        if via != first && same_kind(via, first) {
+            errors.push(second_row(command, outcome, via, first));
         }
         if *test == RelatedTest::Absent {
             absent.push(&outcome.name);
@@ -437,12 +540,101 @@ fn one_related_row(command: &CommandSpec) -> ValidationErrors {
                 ),
             )
             .with_hint(format!(
-                "declare the branch taken when it does not: `when_related: {{via: input.{first}, \
+                "declare the branch taken when it does not: `when_related: {{via: {first}, \
                  exists: false}}`"
             )),
         );
     }
     errors
+}
+
+/// The refusals answered before any other of a command reading a related row, from ess/18: the
+/// Optional form's format gate, before every other refusal of the command — the `wrong_state`
+/// composition included — so a document below ess/22 is told the format that admits it
+/// (beyond10x/ess#304 adversary pass 1); the stored-field form's gate, at the same place for the
+/// same reason; then an input `via` beside a stored-field one, which reads two rows.
+fn gates(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if let Some(refusal) = optional_below_ess_22(spec, command) {
+        errors.push(refusal);
+        return errors;
+    }
+    let gated = subject_via_below_ess_22(spec, command);
+    if !gated.is_empty() {
+        return gated;
+    }
+    let Some(first) = read_via(command) else {
+        return errors;
+    };
+    for outcome in &command.outcomes {
+        if let OutcomeCondition::Related { via, .. } = &outcome.condition {
+            if !same_kind(via, first) {
+                errors.push(second_row(command, outcome, via, first));
+            }
+        }
+    }
+    errors
+}
+
+/// Whether a present-related predicate refusal answers before every accepting branch: from ess/22
+/// where the command declares `wrong_state` and every present-related branch refuses
+/// (beyond10x/ess#282), and for every stored-field `via`, which is read from the addressed row once
+/// its existence and held state have answered (ess/22, beyond10x/ess#304). The refusal of a
+/// `wrong_state` branch beside a related guard where neither order is stated.
+fn orders_present_refusals(
+    spec: &Specification,
+    command: &CommandSpec,
+    via: &RelatedVia,
+) -> Result<bool, ValidationError> {
+    let has_wrong_state = command
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, OutcomeCondition::WrongState));
+    let (present_related_count, all_present_related_refuse) = command
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            matches!(
+                outcome.condition,
+                OutcomeCondition::Related {
+                    test: RelatedTest::Holds(_),
+                    ..
+                }
+            )
+        })
+        .fold((0_usize, true), |(count, all_refuse), outcome| {
+            (count + 1, all_refuse && outcome.is_refusal())
+        });
+    // An accepting related branch that moves the subject beside `wrong_state`: which answers a
+    // subject the move does not start from is not designed for a stored `via` either, so it is
+    // refused as for an input one (beyond10x/ess#304, correction round 1, decision F1).
+    let accepting_related_move = command.outcomes.iter().any(|outcome| {
+        matches!(outcome.condition, OutcomeCondition::Related { .. })
+            && !outcome.is_refusal()
+            && outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| matches!(subject.effect, super::Effect::Moves { .. }))
+    });
+    let orders = (matches!(via, RelatedVia::Subject(_)) && !accepting_related_move)
+        || (has_wrong_state
+            && spec.system().format.major() >= crate::system::FormatVersion::V22.major()
+            && present_related_count > 0
+            && all_present_related_refuse);
+    if has_wrong_state && !orders {
+        return Err(ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "`{}` selects on a related row (`when_related`) and on a `wrong_state` branch; which of the two answers first is not stated",
+                command.name
+            ),
+        )
+        .with_hint(
+            "guard the command on the related row alone, or split the other guard into a command of its own",
+        ));
+    }
+    Ok(orders)
 }
 
 /// The format gate, the entity `via` names, the predicates against that entity's fields, and the
@@ -466,56 +658,29 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             }
             continue;
         }
-        // The Optional form's own format gate answers before every other refusal of the command,
-        // the `wrong_state` composition below included, so a document below ess/22 is told the
-        // format that admits it (beyond10x/ess#304 adversary pass 1).
-        if let Some(refusal) = optional_below_ess_22(spec, command) {
-            errors.push(refusal);
+        let gated = gates(spec, command);
+        if !gated.is_empty() {
+            errors.extend(gated);
             continue;
         }
-        let has_wrong_state = command
-            .outcomes
-            .iter()
-            .any(|outcome| matches!(outcome.condition, OutcomeCondition::WrongState));
-        let (present_related_count, all_present_related_refuse) = command
-            .outcomes
-            .iter()
-            .filter(|outcome| {
-                matches!(
-                    outcome.condition,
-                    OutcomeCondition::Related {
-                        test: RelatedTest::Holds(_),
-                        ..
-                    }
-                )
-            })
-            .fold((0_usize, true), |(count, all_refuse), outcome| {
-                (count + 1, all_refuse && outcome.is_refusal())
-            });
-        let orders_wrong_state = has_wrong_state
-            && spec.system().format.major() >= crate::system::FormatVersion::V22.major()
-            && present_related_count > 0
-            && all_present_related_refuse;
-        if has_wrong_state && !orders_wrong_state {
-            errors.push(
-                ValidationError::at(
-                    command.site().key("outcomes"),
-                    ValidationCode::ConflictingDeclaration,
-                    format!(
-                        "`{}` selects on a related row (`when_related`) and on a `wrong_state` branch; which of the two answers first is not stated",
-                        command.name
-                    ),
-                )
-                .with_hint(
-                    "guard the command on the related row alone, or split the other guard into a command of its own",
-                ),
-            );
-            continue;
-        }
-        let Some(via) = via(command) else {
+        let Some(first) = read_via(command) else {
             continue;
         };
-        let Some(entity) = entity_or_refusal(spec, command, via, &mut errors) else {
+        let orders_wrong_state = match orders_present_refusals(spec, command, first) {
+            Ok(orders) => orders,
+            Err(refusal) => {
+                errors.push(refusal);
+                continue;
+            }
+        };
+        let via = first;
+        let entity = match via {
+            RelatedVia::Input(field) => entity_or_refusal(spec, command, field, &mut errors),
+            RelatedVia::Subject(field) => {
+                subject_entity_or_refusal(spec, command, field, &mut errors)
+            }
+        };
+        let Some(entity) = entity else {
             continue;
         };
         let mut checked = ValidationErrors::new();
@@ -542,7 +707,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 types,
                 orders_wrong_state,
             ));
-            if via_is_optional(command, via) {
+            if via_is_optional(spec, command, via) {
                 checked.extend(validate_absent(command, via, types));
             }
         }
@@ -557,7 +722,9 @@ fn optional_below_ess_22(spec: &Specification, command: &CommandSpec) -> Option<
     if spec.system().format.major() >= crate::system::FormatVersion::V22.major() {
         return None;
     }
-    let via = via(command)?;
+    let RelatedVia::Input(via) = read_via(command)? else {
+        return None;
+    };
     let read = command
         .input_field(via)
         .filter(|read| read.type_ref.is_optional())?;
@@ -577,6 +744,225 @@ fn optional_below_ess_22(spec: &Specification, command: &CommandSpec) -> Option<
         )
         .with_hint("declare `format: ess/22`, or make the input required"),
     )
+}
+
+/// The refusals of a stored-field `via` below ess/22 (beyond10x/ess#304), one per branch writing
+/// one: where the command could read it from ess/22 — it addresses an existing subject through its
+/// input, creates none, and the subject stores the field typed as one entity's identity — the
+/// format that admits it is named;
+/// otherwise the refusal every earlier format gave a `via` that is not `input.<field>`, unchanged.
+/// Empty from ess/22, and for a command reading its related row through its input.
+fn subject_via_below_ess_22(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if spec.system().format.major() >= crate::system::FormatVersion::V22.major() {
+        return errors;
+    }
+    for outcome in &command.outcomes {
+        let OutcomeCondition::Related {
+            via: RelatedVia::Subject(field),
+            ..
+        } = &outcome.condition
+        else {
+            continue;
+        };
+        // Readable from ess/22 only where the field is typed as one entity's identity, or
+        // `Optional<…>` of it: a field ess/22 refuses too keeps the refusal it always had
+        // (correction round 1, decision F3).
+        let readable = !creates(command)
+            && addressed_subject(spec, command)
+                .is_some_and(|subject| subject.fields.iter().any(|held| held.name == *field))
+            && matches!(
+                related_entity_via(spec, command, &RelatedVia::Subject(field.clone())),
+                related_value::Referenced::Entity(_)
+            );
+        errors.push(if readable {
+            ValidationError::at(
+                site(command, outcome),
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "outcome `{}` reads the related row through `{field}`, a stored field of the \
+                     subject `{}` addresses; a `when_related` guard reading a stored field of the \
+                     addressed subject requires specification format ess/22",
+                    outcome.name, command.name
+                ),
+            )
+            .with_hint("declare `format: ess/22`, or read the identity from the input: `via: input.<field>`")
+        } else {
+            ValidationError::at(
+                site(command, outcome),
+                ValidationCode::TypeMismatch,
+                not_an_input(&outcome.name, field),
+            )
+            .with_hint(INPUT_HINT)
+        });
+    }
+    errors
+}
+
+/// The first branch of the command that creates its subject, where one does.
+fn creating(command: &CommandSpec) -> Option<&super::Outcome> {
+    command.outcomes.iter().find(|outcome| {
+        outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| matches!(subject.effect, super::Effect::Creates))
+    })
+}
+
+fn creates(command: &CommandSpec) -> bool {
+    creating(command).is_some()
+}
+
+/// The hint's tail for a stored-field `via` the command cannot read.
+const FROM_INPUT: &str = "or read the identity from the input: `via: input.<field>`";
+
+/// The subject a stored-field `via` is read from, or the code, message and hint of the refusal
+/// that says why the command has none: it creates its subject, addresses no existing subject
+/// through its input, or addresses more than one.
+fn addressed_or_refusal<'a>(
+    spec: &'a Specification,
+    command: &CommandSpec,
+    field: &str,
+) -> Result<&'a EntitySpec, (ValidationCode, String, String)> {
+    if let Some(created) = creating(command) {
+        return Err((
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "`{}` reads the related row through `{field}`, a stored field of the subject it \
+                 addresses as it was before the branch, and outcome `{}` creates its subject: no \
+                 row holds that field before it",
+                command.name, created.name
+            ),
+            format!("guard a command that moves or updates an existing subject, {FROM_INPUT}"),
+        ));
+    }
+    let (Some(subject), Some(common)) = (
+        addressed_subject(spec, command),
+        super::subject_fact::common_subject(command),
+    ) else {
+        return Err((
+            ValidationCode::UndeclaredReference,
+            format!(
+                "`{}` reads the related row through `{field}`, a stored field of the subject it \
+                 addresses, and it addresses no existing subject through its input",
+                command.name
+            ),
+            format!(
+                "address the subject on the branch that moves or updates it (`instance: <input \
+                 field>`), {FROM_INPUT}"
+            ),
+        ));
+    };
+    let several = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| outcome.subject.as_ref())
+        .filter(|other| other.surface() == super::InstanceSurface::CommandInput)
+        .any(|other| other.entity != common.entity || other.instance != common.instance);
+    if several {
+        return Err((
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "`{}` reads the related row through `{field}`, a stored field of the subject it \
+                 addresses, and its branches address more than one subject",
+                command.name
+            ),
+            format!("address one subject through one input field, {FROM_INPUT}"),
+        ));
+    }
+    Ok(subject)
+}
+
+/// The entity a stored field of the addressed subject names (ess/22, beyond10x/ess#304), or the
+/// refusal that says why it names none: the command creates its subject, so no row holds the field
+/// before the branch; it addresses no existing subject through its input, or more than one; the
+/// subject stores no such field; or the field's type is no entity's identity, nor `Optional<…>` of
+/// one.
+fn subject_entity_or_refusal<'a>(
+    spec: &'a Specification,
+    command: &CommandSpec,
+    field: &str,
+    errors: &mut ValidationErrors,
+) -> Option<&'a EntitySpec> {
+    let outcome = command
+        .outcomes
+        .iter()
+        .find(|outcome| matches!(outcome.condition, OutcomeCondition::Related { .. }))?;
+    let at = site(command, outcome);
+    let refuse = |code: ValidationCode, message: String, hint: String| {
+        ValidationError::at(at.clone(), code, message).with_hint(hint)
+    };
+    let subject = match addressed_or_refusal(spec, command, field) {
+        Ok(subject) => subject,
+        Err((code, message, hint)) => {
+            errors.push(refuse(code, message, hint));
+            return None;
+        }
+    };
+    let from_input = FROM_INPUT;
+    let Some(stored) = subject.fields.iter().find(|held| held.name == field) else {
+        errors.push(refuse(
+            ValidationCode::UndeclaredReference,
+            format!(
+                "`{field}` is not a stored field of `{}`, the subject `{}` addresses",
+                subject.name, command.name
+            ),
+            format!(
+                "stored fields: {}; {from_input}",
+                super::join(subject.fields.iter().map(|held| &held.name))
+            ),
+        ));
+        return None;
+    };
+    if !matches!(
+        identity_type(&stored.type_ref),
+        TypeRef::Primitive(_) | TypeRef::Named(_)
+    ) {
+        errors.push(refuse(
+            ValidationCode::TypeMismatch,
+            format!(
+                "`{field}` of `{}` is `{}`, and `when_related` reads the one row an identity names",
+                subject.name, stored.type_ref
+            ),
+            "store the other entity's identity, or `Optional<…>` of it".to_owned(),
+        ));
+        return None;
+    }
+    match related_entity_via(spec, command, &RelatedVia::Subject(field.to_owned())) {
+        related_value::Referenced::Entity(entity) => Some(entity),
+        related_value::Referenced::NoEntity => {
+            errors.push(refuse(
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{field}` of `{}` is `{}`, which is no entity's identity; `when_related` reads \
+                     the row an identity names, and a lookup by any other field is out of scope",
+                    subject.name, stored.type_ref
+                ),
+                "store the other entity's identity".to_owned(),
+            ));
+            None
+        }
+        related_value::Referenced::Ambiguous(entities) => {
+            errors.push(refuse(
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "`{field}` of `{}` is `{}`, the identity of {}",
+                    subject.name,
+                    stored.type_ref,
+                    entities
+                        .iter()
+                        .map(|entity| format!("`{}`", entity.name))
+                        .collect::<Vec<_>>()
+                        .join(" and ")
+                ),
+                format!(
+                    "give the entities distinct identity types, or declare a `references` relation \
+                     on `{field}` naming one"
+                ),
+            ));
+            None
+        }
+    }
 }
 
 /// The entity `via` names, or the refusal that says why it names none.
@@ -856,7 +1242,11 @@ fn validate_partition(
 /// an input-guarded `when:` branch or the default — must answer every admitted input. Held state
 /// (`wrong_state:`) and the command's own identity (`existing_instance:`) answer before it, as they
 /// do for a present reference.
-fn validate_absent(command: &CommandSpec, via: &str, types: &TypeRegistry) -> ValidationErrors {
+fn validate_absent(
+    command: &CommandSpec,
+    via: &RelatedVia,
+    types: &TypeRegistry,
+) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let guarded: Vec<&super::Outcome> = command
         .outcomes
@@ -869,13 +1259,13 @@ fn validate_absent(command: &CommandSpec, via: &str, types: &TypeRegistry) -> Va
             command.site().key("outcomes"),
             ValidationCode::NonExhaustiveBranches,
             format!(
-                "`{}` reads the related row through the Optional `input.{via}`; when it is absent \
+                "`{}` reads the related row through the Optional `{via}`; when it is absent \
                  no row is read and no `when_related` branch is selected, and {detail}",
                 command.name
             ),
         )
         .with_hint(format!(
-            "declare the branch taken when `input.{via}` is absent: a default, or `when:` \
+            "declare the branch taken when `{via}` is absent: a default, or `when:` \
              branches over the input that cover it"
         ))
     };
@@ -932,7 +1322,7 @@ fn validate_absent(command: &CommandSpec, via: &str, types: &TypeRegistry) -> Va
                 command.site().key("outcomes"),
                 ValidationCode::ConflictingDeclaration,
                 format!(
-                    "with `input.{via}` absent, input [{input}] selects {selected} branches: {}",
+                    "with `{via}` absent, input [{input}] selects {selected} branches: {}",
                     case.selected
                         .iter()
                         .map(|index| guarded[*index].name.as_str())

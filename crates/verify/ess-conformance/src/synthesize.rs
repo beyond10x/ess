@@ -893,9 +893,10 @@ pub const PRECEDENCE_CONTRADICTED: u16 = 19;
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
 /// to point it at.
-const RELATED_UNARRANGED: &str = "the command is selected by a row of another entity its input \
-     names (`when_related:`), which this scenario family does not arrange; cover it with an \
-     authored scenario (ess-scenario/1)";
+const RELATED_UNARRANGED: &str = "the command is selected by the row its `when_related:` guard \
+     reads — the one its input names, or the one a stored field of the subject it addresses names \
+     (ess/22) — which this scenario family does not arrange; cover it with an authored scenario \
+     (ess-scenario/1)";
 
 /// `RefusalCause::CountUnwitnessed`'s number in the `SYNTH` family, the next after
 /// [`crate::aggregate::UNWITNESSED`].
@@ -1264,8 +1265,9 @@ impl fmt::Display for RefusalCause {
                 strategy: strategy @ TestStrategy::ArrangeRelatedRow,
             } => write!(
                 f,
-                "its command's strategy is `{strategy}`: a row of another entity the input names \
-                 selects its branch, and this scenario family arranges none"
+                "its command's strategy is `{strategy}`: the row its `when_related:` guard reads \
+                 — the one its input names, or the one a stored field of the subject it addresses \
+                 names (ess/22) — selects its branch, and this scenario family arranges none"
             ),
             Self::StrategyWithoutGuard { strategy } => {
                 write!(f, "its strategy is `{strategy}` and it declares no guard")
@@ -1610,7 +1612,7 @@ impl fmt::Display for BindingGap {
 
 /// Why a scenario could not get the instance it needed.
 ///
-/// Four shapes, and the difference is which line of the specification an author goes and edits.
+/// Five shapes, and the difference is which line of the specification an author goes and edits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unreachable {
     /// No outcome brings an instance of the entity into existence.
@@ -1645,6 +1647,16 @@ pub enum Unreachable {
         /// The field that links a row to its owner.
         via: String,
     },
+    /// A move on the route reads a related row through a stored field of the row being arranged
+    /// (`when_related: {via: <field>}`, ess/22, beyond10x/ess#304), and no arranging run can set
+    /// that field so the move's branch is selected: left out, or naming a row of the related entity
+    /// arranged one level deep.
+    StoredReference {
+        /// The branch the route runs through.
+        outcome: Box<OutcomeRef>,
+        /// Why neither run can be built.
+        why: Box<str>,
+    },
 }
 
 impl Unreachable {
@@ -1665,6 +1677,12 @@ impl Unreachable {
             Self::OwnerHoldsOne { .. } => {
                 "an owner under `cardinality: one` holds one row, so an order over one owner's \
                  rows has nothing to rank; declare `cardinality: many` if an owner holds several"
+            }
+            Self::StoredReference { .. } => {
+                "an arranging run sends a branch reading a stored reference with the reference \
+                 left out, or naming a row of the related entity arranged one level deep; declare \
+                 the reference `Optional<…>`, give the related entity a route to a row that \
+                 selects the branch, or cover the state with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -1688,6 +1706,12 @@ impl fmt::Display for Unreachable {
                 f,
                 "the rows are read by the owner `{via}` names, and the owning relation is \
                  `cardinality: one`, so an owner holds one row"
+            ),
+            Self::StoredReference { outcome, why } => write!(
+                f,
+                "the route runs through `{outcome}`, which reads a related row through a stored \
+                 field of the row being arranged, and no arranging run sets it to select that \
+                 branch: {why}"
             ),
         }
     }
@@ -3878,7 +3902,21 @@ fn advance(
         // arrangement built selects it, so that is checked rather than assumed. Where the plain
         // witness does not, the route is searched again for a row that does — the same search a
         // branch guarded by the stored fields is arranged with.
-        let moved = if subject_fact::uses(driver.command) {
+        // A move whose command reads a related row through a stored field of this row (ess/22,
+        // beyond10x/ess#304) is sent with that reference left out, or naming a row arranged for it.
+        let moved = if related_guard::stored::field(driver.command).is_some() {
+            related_guard::stored::step(ir, &driver, &arrangement, actors, distinction, arranging)
+                .map_err(|cause| Unreachable::StoredReference {
+                outcome: Box::new(OutcomeRef::new(
+                    CommandRef::new(driver.command.name.clone()),
+                    driver.outcome.name.clone(),
+                )),
+                why: match cause {
+                    RefusalCause::GuardUnsatisfiable { predicate, .. } => predicate.into(),
+                    other => other.to_string().into(),
+                },
+            })?
+        } else if subject_fact::uses(driver.command) {
             match subject_fact::step(ir, entity, &driver, &arrangement, actors) {
                 Some(next) => next,
                 None if arranging.is_empty() => {
@@ -9027,8 +9065,12 @@ fn unknown_instance(
     let mut reached = None;
     for outcome in acting {
         // A command reading a related row through an Optional input (ess/22, #304) reaches the
-        // branch with the reference left out: no related row is read, so none is arranged.
-        let input = if related_guard::optional(command) {
+        // branch with the reference left out: no related row is read, so none is arranged. One
+        // reading it through a stored field of the addressed subject, Optional or not, reads it
+        // only after the subject's existence has answered, and an unknown subject has none.
+        let input = if related_guard::optional(command)
+            || related_guard::stored::field(command).is_some()
+        {
             related_guard::absent_input(ir, command, outcome, Distinction::PLAIN)
         } else {
             reach(ir, command, outcome, Distinction::PLAIN)

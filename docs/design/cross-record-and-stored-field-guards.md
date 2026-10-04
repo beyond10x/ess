@@ -517,7 +517,8 @@ tenant", "the configuration does not register this client".
 - **The row.** `via: input.<field>` names an input whose type is exactly one entity's
   identity, resolved as `{related: {via, field}}` resolves it (`related_value::referenced_entity`,
   a `references` relation on the field a creating branch stores the input in breaking a tie). One
-  hop, from the input only. A lookup by any other field is a query, and stays out of scope.
+  hop, from the input — or, from `ess/22`, from a stored field of the addressed subject (below). A
+  lookup by any other field is a query, and stays out of scope.
 - **An Optional reference (`ess/22`, beyond10x/ess#304).** The input may be `Optional<…>` of that
   identity; the guard is then checked only when present. The `Optional` wrapper is removed only to
   find the entity; `ResolvedRelatedVia` keeps the declared type. An absent reference reads no row
@@ -526,6 +527,27 @@ tenant", "the configuration does not register this client".
   validation refuses the command with `non_exhaustive_branches` naming the absent reference. A
   present reference is read as a required one is. Under `ess/21` and earlier the Optional form is
   refused with `unsupported_format_version` naming `ess/22`.
+- **A stored reference (`ess/22`, beyond10x/ess#304).** `via` may instead be a bare `<field>`: a
+  stored field of the subject the command addresses through its input, read as the subject held
+  it just before the branch — "a task is completed only once the task its stored `blocked_by`
+  names is `Done`" (`via: blocked_by`, `predicate: state != Done`, beside `exists: false` and a
+  default that moves the task). The field is typed as the other entity's identity or
+  `Optional<…>` of it; a `references` relation the subject declares on it breaks a tie, and the IR
+  carries it as `ResolvedRelatedVia::Subject` at its declared type. An absent stored reference
+  reads no row and selects no `when_related` branch, as an absent Optional input does, with the
+  same exhaustiveness rule. It is read at step 5 of [the precedence order](#the-precedence-order):
+  after the input-guarded refusals, the addressed row's existence and its held state, and before
+  every accepting branch — so a present-related refusal answers before an accepting branch it
+  overlaps, `wrong_state:` composes with it unless an accepting `when_related:` branch moves the
+  subject (then refused `conflicting_declaration`, as for an input `via`, until a precedence for
+  it is designed), and a missing row's
+  `exists: false` answers only once the addressed row has. It is refused on a command that
+  creates its subject (`conflicting_declaration`: no row holds the field before the branch), on
+  one that addresses no existing subject through its input, or a field the subject does not
+  store (`undeclared_reference`), and beside an input `via` in one command. Under `ess/21` and
+  earlier a bare `via` the command could read — a stored field typed as one entity's identity — is
+  refused with `unsupported_format_version` naming
+  `ess/22`; any other keeps the `type_mismatch` it always had.
 - **Two tests.** `exists: false` is taken when no row carries the identity. `predicate:` is taken
   when the row exists and the predicate — over its declared stored fields and, as in a
   `when_subject` predicate, the input under `input.` — holds. A missing row makes the predicate
@@ -614,11 +636,25 @@ tenant", "the configuration does not register this client".
   `arrange_related_row` named. Through an Optional reference (`ess/22`, #304) the branch an absent
   reference selects is witnessed once more in its own scenario, on a further instance sent without
   the reference between two related rows a predicate refusal would select, and an unknown addressed
-  identity is sent without the reference; no new scenario id.
+  identity is sent without the reference; no new scenario id. Through a stored reference the row
+  (or its absence) is arranged as above, and the subject's creation is rewritten to name it — the
+  act that wrote the field from its input unchanged, the link `{related: …}` reads — so the
+  command is sent naming only the subject: a present row between decoys on which the same request
+  answers otherwise, an identity no row carries beside rows that carry others, or the field left
+  out between rows a predicate refusal would select. The missing row is witnessed only where the
+  act that writes the field stores an identity unchecked; where every writer refuses an identity
+  no row carries first, no run holds one, and the branch is refused as unreachable
+  (`ESS-SYNTH-003`). A move that brings a row along its lifecycle through such a command is sent
+  with the row's reference left out where that selects it — so rows of an entity that block each
+  other are driven without a second row — and otherwise, for a required reference, naming a row of
+  the related entity arranged one level deep that selects it; where neither run exists the route
+  is refused naming the stored reference, not an unreachable branch
+  (`ess-conformance/tests/related_guard_stored_reference.rs`).
 - **Runtimes.** The interpreted target answers a missing related row by its `exists: false`
   branch, and on a stored row evaluates its related predicates after the addressed row's lifecycle
   and before accepting or external branches ([the precedence order](#the-precedence-order)). An
-  absent Optional reference performs no lookup and selects no related branch. It
+  absent Optional reference performs no lookup and selects no related branch. A stored reference
+  is read from the addressed row once its existence and held state have answered. It
   declines a command with `existing_instance:`, reporting such a scenario `unsupported`.
   Entity Runtime refuses the command with `RelatedGuardUnsupported`: an entity-core operation
   reads its arguments and the one row its request names.
@@ -629,7 +665,7 @@ One order answers every command, whichever branches it declares (coordinator dec
 beyond10x/ess#227 correction 1). Every other design note links here rather than stating an order
 of its own:
 
-1. on a command with a `when_related:` branch, `existing_instance` then `exists: false` (#211 revision); an absent Optional reference (`ess/22`, #304) reads no row, so neither `exists: false` nor step 5 answers it;
+1. on a command with a `when_related:` branch reading an input, `existing_instance` then `exists: false` (#211 revision); an absent Optional reference (`ess/22`, #304) reads no row, so neither `exists: false` nor step 5 answers it;
 2. input-guarded refusals, the first declared whose guard holds (#209, #227);
 3. existence of the addressed row (`unknown_instance`, and `existing_instance` on commands without `when_related`);
 4. the held state: `when_subject_state` and `when_subject` select by it; `wrong_state` answers only
@@ -638,7 +674,10 @@ of its own:
 5. from `ess/22`, where the command also declares `wrong_state`, on a present related row the
    `when_related:` predicate refusal whose predicate and optional input guard hold
    (beyond10x/ess#282); overlapping related refusals remain ambiguous, and commands without this
-   composition retain declaration order;
+   composition retain declaration order. A `when_related:` reading a stored field of the addressed
+   subject (`ess/22`, #304) answers entirely here, whether or not `wrong_state` is declared: its
+   field read as the row held it before the branch, absent selecting no related branch, an
+   identity no row carries `exists: false`, a stored row its predicate refusal;
 6. accepting and external branches in declaration order (#217).
 
 There is no cycle: step 1 applies only to `when_related` commands, which Entity Runtime does not

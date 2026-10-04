@@ -3162,7 +3162,7 @@ pub fn emit(
 /// [`emit`], with every suite scoped to `component` where one is named, as `synthesize
 /// --component` scopes it (beyond10x/ess#236).
 ///
-/// A mutant whose site belongs to another component ([`in_component`]) is that component's to
+/// A mutant whose site belongs to another component (`in_component`) is that component's to
 /// answer, so it is marked `out_of_scope` with no suite, and listed rather than scored; a mutant on
 /// the component's own site is scored, a survivor included. The manifest names the component and is `ess-mutation-manifest/4`, as is
 /// one holding a mutant of a class only `/4` knows; any other is `/3`. Refuses a component the

@@ -1016,3 +1016,103 @@ fn issue_304_present_and_absent_references_preserve_issue_282_precedence() {
         "absence skips the related step and leaves held-state selection intact"
     );
 }
+
+// ---- a stored field of the addressed subject naming the related row (beyond10x/ess#304, `ess/22`)
+
+const STORED_REFERENCE: &str = include_str!("fixtures/related-guard-stored-reference.yaml");
+
+fn stored_reference_model() -> EssIr {
+    let raw = RawSpecFile::parse(STORED_REFERENCE)
+        .unwrap_or_else(|error| panic!("{error}\n{STORED_REFERENCE}"));
+    let specification = Specification::assemble([(Source::new("stored-reference.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("the stored-reference model validates:\n{errors}"));
+    compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("the stored-reference model resolves:\n{diagnostics}"))
+}
+
+/// `AddTask`, storing `blocked_by` where given: the store after it and the new task's identity.
+fn add_task(ir: &EssIr, store: &Store, blocked_by: Option<&str>) -> (Store, String) {
+    let input = blocked_by.map_or_else(BTreeMap::new, |blocker| {
+        BTreeMap::from([("blocked_by".to_owned(), Node::Text(blocker.to_owned()))])
+    });
+    let step = issue_304_step(ir, store, "demo.tasks.AddTask", &input);
+    let identity = issue_304_created(&step, "demo.tasks.TaskAdded");
+    (step.next, identity)
+}
+
+fn complete_task(
+    ir: &EssIr,
+    store: &Store,
+    task: &str,
+) -> ess_conformance::interpret::execute::Step {
+    issue_304_step(
+        ir,
+        store,
+        "demo.tasks.CompleteTask",
+        &BTreeMap::from([("task_id".to_owned(), Node::Text(task.to_owned()))]),
+    )
+}
+
+#[test]
+fn the_interpreter_executes_a_stored_reference_guard() {
+    let ir = stored_reference_model();
+    // A done decoy and an open one either side of the blocker, so no other row decides it.
+    let (store, early) = add_task(&ir, &Store::default(), None);
+    let store = complete_task(&ir, &store, &early).next;
+    let (store, blocker) = add_task(&ir, &store, None);
+    let (store, task) = add_task(&ir, &store, Some(&blocker));
+    let (store, _late) = add_task(&ir, &store, None);
+
+    let refused = complete_task(&ir, &store, &task);
+    assert_eq!(
+        issue_304_outcome(&refused),
+        "demo.tasks.CompleteTask/blocked",
+        "the task its stored `blocked_by` names is open"
+    );
+    assert_eq!(refused.next, store, "a refusal changes nothing");
+
+    let store = complete_task(&ir, &store, &blocker).next;
+    let completed = complete_task(&ir, &store, &task);
+    assert_eq!(
+        issue_304_outcome(&completed),
+        "demo.tasks.CompleteTask/completed",
+        "the blocker is done"
+    );
+
+    // Existence of the addressed row answers before its stored field is read: an identity no
+    // task holds takes the declared not-found answer, never a related-row answer.
+    let unknown = complete_task(&ir, &completed.next, "00000000-0000-4000-8000-999999999999");
+    assert_eq!(
+        issue_304_outcome(&unknown),
+        "demo.tasks.CompleteTask/wrong-state"
+    );
+    // Held state answers before the related row is read.
+    let again = complete_task(&ir, &completed.next, &task);
+    assert_eq!(
+        issue_304_outcome(&again),
+        "demo.tasks.CompleteTask/wrong-state"
+    );
+}
+
+#[test]
+fn the_interpreter_reads_no_row_for_an_absent_stored_reference() {
+    let ir = stored_reference_model();
+    // Open tasks exist; none is named, so none blocks.
+    let (store, _open) = add_task(&ir, &Store::default(), None);
+    let (store, task) = add_task(&ir, &store, None);
+    let (store, _other) = add_task(&ir, &store, None);
+    let completed = complete_task(&ir, &store, &task);
+    assert_eq!(
+        issue_304_outcome(&completed),
+        "demo.tasks.CompleteTask/completed",
+        "an absent stored reference reads no row and selects no related branch"
+    );
+
+    // A present reference no row carries is a missing row, not an absent reference.
+    let (store, dangling) = add_task(&ir, &store, Some("00000000-0000-4000-8000-888888888888"));
+    let missing = complete_task(&ir, &store, &dangling);
+    assert_eq!(
+        issue_304_outcome(&missing),
+        "demo.tasks.CompleteTask/blocker-missing"
+    );
+}
