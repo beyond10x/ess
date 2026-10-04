@@ -1,0 +1,9 @@
+[package]
+name = "adversary-browser-target"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[workspace]
+[dependencies]
+ess-conformance = { path = "../../../../../verify/ess-conformance" }
+ess-primitives = { path = "../../../../../specify/ess-primitives" }

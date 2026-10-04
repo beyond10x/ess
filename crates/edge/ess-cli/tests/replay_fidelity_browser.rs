@@ -215,6 +215,7 @@ impl Fixture {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        browser::legacy_replay_fixture(&generated);
         let (model, suite, replay): (Value, Value, Option<Value>) = if route == 5 {
             let replay: Value =
                 serde_json::from_slice(&fs::read(generated.join("replay.json")).unwrap()).unwrap();
@@ -876,6 +877,7 @@ fn b08_missing_required_authored_parameter_still_refuses() {
         let message = if route == 4 {
             String::from_utf8(output.stdout).unwrap()
         } else {
+            browser::legacy_replay_fixture(&evidence.join("site"));
             let replay = fs::read_to_string(evidence.join("site/replay.json")).unwrap();
             ess_conformance::web_replay::AdmittedReplay::from_json(&replay).unwrap();
             replay
@@ -1396,6 +1398,7 @@ fn adversary2_switching_to_a_distinct_authored_scenario_cancels_pending_play() {
         )
         .unwrap();
         assert!(output.status.success(), "{output:?}");
+        browser::legacy_replay_fixture(&f.site);
         if route == 5 {
             let original = fs::read_to_string(f.site.join("replay.json")).unwrap();
             ess_conformance::web_replay::AdmittedReplay::from_json(&original).unwrap();

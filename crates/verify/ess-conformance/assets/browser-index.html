@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conformance declarations and execution</title>
+<style>body{font:16px system-ui;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#17202a}button,select{font:inherit;margin:.25rem;padding:.45rem}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f7;padding:1rem}nav{position:sticky;top:0;background:white;padding:.5rem 0}#error{color:#a11}details{margin:.5rem 0}#state{font-weight:bold}.muted{color:#555}</style></head>
+<body><h1>Conformance declarations</h1><p>Declarations admitted at emission. Not executed.</p><p id="state">Loading original-file integrity and declaration display…</p><p id="error" role="alert"></p>
+<nav><label>Scenario <select id="scenario"></select></label><button id="cards-back">Previous 200 scenarios</button><button id="cards-next">Next 200 scenarios</button><button id="back">Back</button><button id="step">Step</button><button id="play">Play</button><button id="reset">Reset</button></nav>
+<p id="position"></p><pre id="declaration"></pre><button id="declaration-back">Previous declaration nodes</button><button id="more">Next declaration nodes</button>
+<p class="muted">Each run requires an empty logical modeled-instance/event/invocation namespace. A fresh run name does not establish backend isolation; your installation must enforce that namespace and its clock.</p>
+<details><summary>Complete model declarations</summary><pre id="model"></pre><button id="model-back">Previous model nodes</button><button id="model-more">Next model nodes</button></details>
+<details><summary>Suite, coverage and original-byte identities</summary><pre id="provenance"></pre><button id="suite-back">Previous suite nodes</button><button id="suite-more">Next suite nodes</button></details>
+<section><h2>Execute against your installation</h2><p id="runtime-state">build_required — Execution requires building browser_host.rs with your Rust target installation.</p><a href="README.md">Build and installation instructions</a><br><button id="connect">Connect runtime</button><button id="run" disabled>Run all</button><button id="select" disabled>Use focused coverage scenario</button><button id="abort" disabled>Abort (cleanup unconfirmed)</button><pre id="results"></pre><p id="downloads"></p></section>
+<button id="results-back">Previous result nodes</button><button id="results-more" disabled>Next result nodes</button>
+<button id="restore" disabled>Restore original coverage input</button>
+<script type="module" src="player.js"></script></body></html>

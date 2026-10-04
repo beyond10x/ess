@@ -315,6 +315,43 @@ fn response_replay_supported(
     Ok(())
 }
 
+/// Emit the complete default browser product with original source and execution authority.
+/// Existing `emit`/`emit_input` are explicit legacy declaration-replay APIs.
+pub fn emit_product(
+    sources: &[crate::web_execution::bundle::SourceDocument],
+    execution: &crate::web_execution::bundle::Execution,
+) -> crate::web_execution::Result<BTreeMap<String, Artifact>> {
+    use crate::web_execution::{bundle, host, Error};
+    let (manifest, blobs) = bundle::create(sources, execution)?;
+    let mut out = BTreeMap::new();
+    for blob in blobs {
+        let contents = String::from_utf8(blob.bytes).map_err(|_| Error::InvalidBundle)?;
+        out.insert(blob.path.clone(), Artifact::new(&blob.path, contents));
+    }
+    for (path, contents) in [
+        ("browser.json", manifest.as_str()),
+        ("index.html", include_str!("../assets/browser-index.html")),
+        ("player.js", include_str!("../assets/browser-player.js")),
+        ("worker.js", include_str!("../assets/browser-worker.js")),
+        ("assets/vue.esm-browser.prod.js", VUE),
+        ("assets/vue.LICENSE", VUE_LICENCE),
+        ("rust/browser_host.rs", host::MODULE),
+        ("rust/Cargo.toml.example", host::MANIFEST),
+        ("rust/lib.rs.example", host::LIBRARY),
+        ("README.md", host::README),
+    ] {
+        if out
+            .insert(path.into(), Artifact::new(path, contents.to_owned()))
+            .is_some()
+        {
+            // Original source labels cannot shadow a fixed product resource. Never return an
+            // artifact set whose manifest names different bytes than the published file.
+            return Err(Error::InvalidBundle);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

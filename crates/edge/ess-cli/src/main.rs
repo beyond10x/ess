@@ -600,26 +600,27 @@ enum ConformCommand {
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
     },
-    /// Render the scenarios as a page somebody can press play on.
+    /// Emit a browser conformance product for the scenarios.
     ///
-    /// Emits a specification-neutral player and one generated `model.json`: the entities and their
-    /// lifecycles, what each command outcome does, what each view selects, who may ask, and what a
-    /// binding reacts to. Serve the directory and open `index.html`.
+    /// Writes the original specification files, the admitted suite (`suite.json`) or coverage
+    /// input (`input.json`), a Rust-derived `declarations.json` and a `browser.json` manifest that
+    /// binds them all by digest. Serve the directory and open `index.html` to navigate every
+    /// declaration; the page labels them admitted at emission and not executed.
     ///
-    /// It replays rather than executes. A scenario declares which outcome each command took and the
-    /// page displays declarations and explicit unknowns for unavailable assignment, subject and view
-    /// semantics. Replay establishes no specification coherence, fills no obligation and produces no
-    /// implementation execution report or qualifying conformance evidence.
+    /// Execution needs `rust/browser_host.rs` built for `wasm32-unknown-unknown` with your own
+    /// target installation and copied beside `index.html` as `runner.wasm`; the emitted
+    /// `README.md` gives the commands. The module re-admits the original bytes before any target
+    /// call, and only its Rust runner produces reports.
     Web {
         #[command(flatten)]
         input: SpecPath,
         /// One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection.
         #[arg(long)]
         scenarios: Option<PathBuf>,
-        /// Where to write the player.
+        /// Where to write the product.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Ordinary (4) or declared coverage (5); coverage emits the paired replay document.
+        /// Ordinary (4) or declared coverage (5); coverage emits the complete coverage input.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
         /// An `ess-history/1` document: draw it, checked against the specification, as one lane
@@ -2442,6 +2443,20 @@ fn resolved(path: &Path, format: Format) -> Result<Result<(Box<EssIr>, usize), E
     let loaded = load::specification(path)?;
     match loaded {
         load::LoadedSpec::Compiled { ir, files_read } => Ok(Ok((ir, files_read))),
+        refusal @ load::LoadedSpec::Refused { .. } => Ok(Err(refused(path, format, &refusal)?)),
+    }
+}
+
+/// A compiled specification with the exact original documents it was compiled from.
+type BrowserSpecification = (
+    Box<EssIr>,
+    Vec<ess_conformance::web_execution::bundle::SourceDocument>,
+);
+
+fn resolved_browser(path: &Path, format: Format) -> Result<Result<BrowserSpecification, ExitCode>> {
+    let (loaded, sources) = load::browser_specification(path)?;
+    match loaded {
+        load::LoadedSpec::Compiled { ir, .. } => Ok(Ok((ir, sources))),
         refusal @ load::LoadedSpec::Refused { .. } => Ok(Err(refused(path, format, &refusal)?)),
     }
 }
@@ -4537,7 +4552,7 @@ fn conform_web(
     if suite_format == "5" {
         return coverage::web(input, scenarios, out);
     }
-    let Ok((ir, _)) = resolved(&input.path, input.format)? else {
+    let Ok((ir, original_sources)) = resolved_browser(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
     ess_conformance::admission::model(&ir)?;
@@ -4559,7 +4574,11 @@ fn conform_web(
     }
 
     suite.select_fresh_format_for(&ir);
-    let artifacts = ess_conformance::web::emit(&ir, &suite)?;
+    let admitted = ess_conformance::AdmittedSuite::from_json(&suite.to_canonical_json()?)?;
+    let artifacts = ess_conformance::web::emit_product(
+        &original_sources,
+        &ess_conformance::web_execution::bundle::Execution::Ordinary(admitted),
+    )?;
     write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     println!(
         "{} scenario(s), {} artifact(s){}",

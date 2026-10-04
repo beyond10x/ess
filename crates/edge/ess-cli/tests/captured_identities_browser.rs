@@ -1,6 +1,7 @@
 //! An event expectation comparing captured identities (beyond10x/ess#273) replays in actual Firefox,
-//! in the declaration player `ess verify conform web` writes and in the coverage replay
-//! `--suite-format 5` writes, which admits the paired document before any replay state exists.
+//! in the declaration player and in the coverage replay, each rebuilt from the browser product
+//! `ess verify conform web` writes (ordinary and `--suite-format 5`) after the product's own
+//! bytes are admitted.
 #[path = "support/browser.rs"]
 mod browser;
 
@@ -78,6 +79,7 @@ fn actual_firefox_replays_captured_identities_in_both_players() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        browser::legacy_replay_fixture(&out);
         let server = browser::Server::new(&out);
         let context = browser.open(&format!("{}/index.html", server.url));
         let result = browser.evaluate(&context, EVENTS);

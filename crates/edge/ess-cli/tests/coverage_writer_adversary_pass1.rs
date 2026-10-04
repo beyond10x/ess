@@ -130,6 +130,7 @@ fn browser_refuses_a_command_name_with_a_final_line_feed_before_replay_state() {
     )
     .unwrap();
     assert!(output.status.success(), "{output:?}");
+    browser::legacy_replay_fixture(&site);
     let original = fs::read_to_string(site.join("replay.json")).unwrap();
     ess_conformance::web_replay::AdmittedReplay::from_json(&original).unwrap();
     fs::write(evidence.join("original-replay.json"), &original).unwrap();

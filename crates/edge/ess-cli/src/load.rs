@@ -42,6 +42,10 @@ pub(crate) struct RawLoaded {
 pub(crate) fn raw_specification(path: &Path) -> Result<RawLoaded> {
     let inputs =
         crate::input_discovery::acquire(path, crate::input_discovery::Kind::Specification)?;
+    Ok(parse_specification_inputs(&inputs))
+}
+
+fn parse_specification_inputs(inputs: &[crate::input_discovery::Input]) -> RawLoaded {
     let files_read = inputs.len();
 
     let mut parsed = Vec::new();
@@ -61,29 +65,58 @@ pub(crate) fn raw_specification(path: &Path) -> Result<RawLoaded> {
             Err(error) => problems.push(format!("{}: {error}", source.as_str())),
         }
     }
-    Ok(RawLoaded {
+    RawLoaded {
         parsed,
         texts,
         files_read,
         problems,
-    })
+    }
 }
 
 /// Parses, assembles, validates, and resolves a specification.
 pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
+    Ok(compile_specification(raw_specification(path)?))
+}
+
+/// Retain the same original acquisition used to compile browser source authority.
+pub(crate) fn browser_specification(
+    path: &Path,
+) -> Result<(
+    LoadedSpec,
+    Vec<ess_conformance::web_execution::bundle::SourceDocument>,
+)> {
+    let inputs =
+        crate::input_discovery::acquire(path, crate::input_discovery::Kind::Specification)?;
+    let sources = inputs
+        .iter()
+        .enumerate()
+        .map(
+            |(index, input)| ess_conformance::web_execution::bundle::SourceDocument {
+                path: format!("sources/{index:04}.yaml"),
+                text: input.text.clone(),
+            },
+        )
+        .collect();
+    Ok((
+        compile_specification(parse_specification_inputs(&inputs)),
+        sources,
+    ))
+}
+
+fn compile_specification(raw: RawLoaded) -> LoadedSpec {
     let RawLoaded {
         parsed,
         texts,
         files_read,
         problems,
-    } = raw_specification(path)?;
+    } = raw;
 
     if !problems.is_empty() {
-        return Ok(LoadedSpec::Refused {
+        return LoadedSpec::Refused {
             files_read,
             problems,
             diagnostics: Diagnostics::new(),
-        });
+        };
     }
 
     let labels = parsed
@@ -94,24 +127,24 @@ pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
         Ok(specification) => specification,
         Err(errors) => {
             let diagnostics = ess_compiler::resolve::diagnose_locating(&errors, &texts, &labels);
-            return Ok(LoadedSpec::Refused {
+            return LoadedSpec::Refused {
                 files_read,
                 problems: errors.as_slice().iter().map(ToString::to_string).collect(),
                 diagnostics,
-            });
+            };
         }
     };
 
     match ess_compiler::compile(&assembled, &texts) {
-        Ok(ir) => Ok(LoadedSpec::Compiled {
+        Ok(ir) => LoadedSpec::Compiled {
             ir: Box::new(ir),
             files_read,
-        }),
-        Err(diagnostics) => Ok(LoadedSpec::Refused {
+        },
+        Err(diagnostics) => LoadedSpec::Refused {
             files_read,
             problems: Vec::new(),
             diagnostics,
-        }),
+        },
     }
 }
 

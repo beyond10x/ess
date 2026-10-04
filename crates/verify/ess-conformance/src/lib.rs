@@ -181,6 +181,7 @@ pub mod ts;
 mod typed_fields;
 pub mod view_paging;
 pub mod web;
+pub mod web_execution;
 pub mod web_replay;
 pub mod witness;
 mod witness_memo;

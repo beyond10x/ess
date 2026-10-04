@@ -130,11 +130,14 @@ pub(super) fn web(
     scenarios: Option<&Path>,
     out: Option<&Path>,
 ) -> Result<ExitCode> {
-    let Ok((ir, _)) = super::resolved(&input.path, input.format)? else {
+    let Ok((ir, original_sources)) = super::resolved_browser(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
     let admitted = fresh(&ir, scenarios, None, true)?;
-    let artifacts = ess_conformance::web::emit_input(&ir, &admitted)?;
+    let artifacts = ess_conformance::web::emit_product(
+        &original_sources,
+        &ess_conformance::web_execution::bundle::Execution::Coverage(admitted.clone()),
+    )?;
     super::write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     Ok(
         if admitted

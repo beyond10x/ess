@@ -274,12 +274,14 @@ field does not block a representable child. The Go report clock supports nonnega
 Rust report/run timestamps support the full u64 range. Payload Number meaning is a separate finite
 binary64 boundary. Modeled Binary64 remains unsupported by conformance, including suite/5.
 
-`conform web --suite-format 5` emits a paired `ess-conformance-replay/1` document and matching player.
-The actual player checks the closed projection, exact suite reference and full input before creating
-replay state, then displays selection and refusals. It emits no execution report. The reduced model
-omits literal assignment values and full view evaluation; digest comparison neither reconstructs
-the full compiled model nor authenticates its publisher. Existing players do not acquire these
-checks when handed new metadata; regenerate and distribute the paired bundle together.
+`conform web` emits a browser product: the original specification files, the admitted suite
+(`suite.json`) or, with `--suite-format 5`, the complete coverage input (`input.json`), a
+Rust-derived `declarations.json` and a `browser.json` manifest binding them by digest. The page
+navigates every declaration without executing anything. Building the emitted `rust/browser_host.rs`
+with your own target installation (see the emitted `README.md`) gives `runner.wasm`, which re-admits
+the original bytes before any target call and runs the Rust runner; only those runs produce
+reports. The historical `ess-conformance-replay/1` reader stays available from the library
+(`web::emit_input`) and is no longer what this command writes.
 
 `ess verify impact --suite-input` accepts complete admitted coverage and reports its selection separately.
 Unknown or incomplete inventory and missing parents refuse. Persisted output remains `ess-impact/3`

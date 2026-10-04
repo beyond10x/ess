@@ -1382,11 +1382,11 @@ ess verify conform author [OPTIONS]
 
 #### `ess verify conform web`
 
-Render the scenarios as a page somebody can press play on.
+Emit a browser conformance product for the scenarios.
 
-Emits a specification-neutral player and one generated `model.json`: the entities and their lifecycles, what each command outcome does, what each view selects, who may ask, and what a binding reacts to. Serve the directory and open `index.html`.
+Writes the original specification files, the admitted suite (`suite.json`) or coverage input (`input.json`), a Rust-derived `declarations.json` and a `browser.json` manifest that binds them all by digest. Serve the directory and open `index.html` to navigate every declaration; the page labels them admitted at emission and not executed.
 
-It replays rather than executes. A scenario declares which outcome each command took and the page displays declarations and explicit unknowns for unavailable assignment, subject and view semantics. Replay establishes no specification coherence, fills no obligation and produces no implementation execution report or qualifying conformance evidence.
+Execution needs `rust/browser_host.rs` built for `wasm32-unknown-unknown` with your own target installation and copied beside `index.html` as `runner.wasm`; the emitted `README.md` gives the commands. The module re-admits the original bytes before any target call, and only its Rust runner produces reports.
 
 ```text
 ess verify conform web [OPTIONS]
@@ -1397,8 +1397,8 @@ ess verify conform web [OPTIONS]
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
 | `--scenarios` | `<SCENARIOS>` | no |  | One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection |
-| `--out` | `<OUT>` | no |  | Where to write the player |
-| `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the paired replay document. One of `4`, `5`. |
+| `--out` | `<OUT>` | no |  | Where to write the product |
+| `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the complete coverage input. One of `4`, `5`. |
 | `--history` | `<HISTORY>` | no |  | An `ess-history/1` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
 
 #### `ess verify conform select`
