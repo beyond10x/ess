@@ -696,6 +696,7 @@ dependencies = [
  "schema-contract",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

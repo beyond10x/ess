@@ -567,7 +567,7 @@ ess specify realization generate [OPTIONS] --path <PATH> --spec <SPECIFICATION> 
 
 #### `ess specify transport validate`
 
-Validate and resolve an `ess-transport/1` document
+Validate and resolve an `ess-transport/1` or `/2` document
 
 ```text
 ess specify transport validate [OPTIONS] --path <PATH> --spec <SPECIFICATION>
@@ -575,13 +575,13 @@ ess specify transport validate [OPTIONS] --path <PATH> --spec <SPECIFICATION>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-transport/1` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-transport/1` or `/2` JSON or YAML document |
 | `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
 
 #### `ess specify transport compile`
 
-Compile a document into canonical `ess-transport-ir/1`
+Compile a document into its canonical `ess-transport-ir/1` or `/2` form
 
 ```text
 ess specify transport compile [OPTIONS] --path <PATH> --spec <SPECIFICATION>
@@ -589,7 +589,7 @@ ess specify transport compile [OPTIONS] --path <PATH> --spec <SPECIFICATION>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-transport/1` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-transport/1` or `/2` JSON or YAML document |
 | `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
 | `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
@@ -668,7 +668,7 @@ ess generate <COMMAND>
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
-| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 
 #### `ess generate generate`
 
@@ -691,7 +691,7 @@ ess generate generate [OPTIONS]
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
-| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 
 #### `ess generate cli`
 
@@ -783,7 +783,7 @@ ess generate client [OPTIONS] --component <COMPONENT> --transport <TRANSPORT> --
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--component` | `<COMPONENT>` | yes |  | The component whose published events the publisher sends |
-| `--transport` | `<TRANSPORT>` | yes |  | The `ess-transport/1` document binding those events |
+| `--transport` | `<TRANSPORT>` | yes |  | The `ess-transport/1` or `ess-transport/2` document binding those events |
 | `--target` | `<TARGET>` | yes |  | The language to generate. One of `rust`, `go`. |
 | `--package` | `<PACKAGE>` | yes |  | Native package identity |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |

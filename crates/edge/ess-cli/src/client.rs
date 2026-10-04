@@ -25,7 +25,7 @@ pub struct Args {
     /// The component whose published events the publisher sends.
     #[arg(long)]
     component: String,
-    /// The `ess-transport/1` document binding those events.
+    /// The `ess-transport/1` or `ess-transport/2` document binding those events.
     #[arg(long)]
     transport: PathBuf,
     /// The language to generate.

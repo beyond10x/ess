@@ -499,6 +499,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-realization/1` | [0.8.0][r8] | An authored realization: one exact ESS system bound to its implementations. `ess-realization/2`, introduced in [0.21.0][r21], admits implementation-only selections. |
 | `ess-realization-ir/1` | [0.8.0][r8] | A compiled realization. `ess-realization-ir/2`, introduced in [0.21.0][r21], compiles `ess-realization/2`. |
 | `ess-transport/1`, `ess-transport-ir/1` | [0.52.0][r52] | How the events of one exact ESS travel: broker, subject, envelope, delivery and the stream that captures each subject, and its compiled form. |
+| `ess-transport/2`, `ess-transport-ir/2` | Unreleased | Adds channel subjects whose whole-token `{name}` expressions are bound to required String event payload paths, and its compiled form. A reader of the previous version refuses it. |
 | `ess-protospec/1` | Unreleased (experimental) | Finite communicating participants with typed state and messages, bounded channels, logical timers and safety properties. |
 | `ess-prototrace/1` | Unreleased (experimental) | Ordered protocol actions and observations bound to a model digest, with explicit model or target origin and capture completeness. |
 | `ess-build/1`, `ess-build-ir/1` | [0.9.0][r9] | An authored build and its compiled form. |
@@ -510,6 +511,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-release-bundle/1` | [0.13.0][r13] | Independently released runtime and chart releases, bundled. |
 | `ess-types-report/3` | [0.19.0][r19] | Structural target accounting for a generated type library. The family's first published version is `/3`. |
 | `ess-client-report/1` | [0.52.0][r52] | Accounting for a generated event publisher: its operations and the obligations it leaves to the application. |
+| `ess-client-report/2` | Unreleased | Accounting for a generated event publisher with at least one parameterized subject: each such operation adds its normalized `parameters`. |
 | `ess-normalization-target/1` | [0.19.0][r19] | A normalization library report. `ess-normalization-target/2` and `ess-normalization-target/3`, introduced in [0.20.0][r20], report format-3 recipes and format-4, 5 and 6 recipes respectively. |
 | `ess-openapi-import/1`, `ess-openapi-service-subset/1` | [0.20.0][r20] | An OpenAPI import envelope, and the fixed import profile it names. |
 | `ess-conformance-input/1`, `ess-conformance-replay/1` | [0.21.0][r21] | A retained original suite and its parents, and a paired browser replay. |
