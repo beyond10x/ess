@@ -102,8 +102,8 @@ Compilation and projection remain deterministic and offline. Live Kubernetes imp
 commands named `execute`, `publish`, `publish-conformance`, `fetch`, and `reconcile` are explicit
 credential edges; they do not turn ESS into a continuously running deployment control plane.
 
-The offline repository gate is `task check`. The documentation and browser-lab gate is
-`task site-build` because installing the pinned npm dependency graph requires network access.
+The offline repository gate is `task check`. The documentation gate is `task site-build` because
+installing the pinned npm dependency graph requires network access.
 
 ## Compatibility posture
 

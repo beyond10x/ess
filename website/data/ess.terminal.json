@@ -1,0 +1,27 @@
+{
+  "format": "b10x-terminal/1",
+  "title": "ess / the billing example",
+  "entries": [
+    {
+      "command": "ess specify validate --path examples/billing",
+      "output": "billing v3 — 5 file(s), valid",
+      "exitCode": 0
+    },
+    {
+      "command": "ess specify compile --path examples/billing",
+      "output": "billing v3 — 5 file(s), 26 declaration(s), compiled",
+      "exitCode": 0
+    },
+    {
+      "command": "ess verify conform synthesize --path examples/billing --out suite.json",
+      "output": "note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed\n32 scenario(s) (0 authored), 0 refusal(s), written to suite.json",
+      "exitCode": 0
+    },
+    {
+      "command": "ess verify conform run --suite suite.json --target billing | tail -n 1",
+      "output": "  32 scenarios: 32 passed, 0 failed, 0 error, 0 unsupported",
+      "exitCode": 0
+    }
+  ],
+  "recordedWith": "ess built from this repository, recorded by `cargo xtask site-data` on a copy of examples/billing"
+}

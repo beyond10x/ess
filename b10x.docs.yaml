@@ -63,8 +63,6 @@ surfaces:
     url: https://github.com/beyond10x/ess
   source:
     assets:
-      exclude:
-      - static/lab/billing_web_realized.wasm
       include:
       - static/**/*
     blog:
@@ -78,6 +76,7 @@ surfaces:
       - docs/internal/**
       - docs/plans/**
       - docs/stories/**
+      - docs/visualise.md
       - docs/worklogs/**
       include:
       - docs/**/*.md

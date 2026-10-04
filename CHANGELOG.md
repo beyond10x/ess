@@ -12,6 +12,15 @@
   bounds. [Runnable examples](examples/protocols/README.md) cover terminal-response flushing and
   an RFC 3261 rejection with a lost ACK; existing ESS and conformance-suite formats are unchanged.
 
+### Changed
+
+- The `/ess/` site uses the shared docs-system product-site template, like the other product
+  sites. Its landing page is `website/product.json`; its terminal sessions and the billing domain
+  graph are recorded from the real `ess` binary by `cargo xtask site-data`, which
+  `projection-check` holds to a fresh recording. The browser lab is gone: `/ess/lab` redirects to
+  `/ess/docs/visualise`, and `task site-lab` is replaced by `task web-check`, which still builds
+  the synthesized billing browser realization for WebAssembly and drives its boundary.
+
 ## [0.52.0] — 2026-10-03
 
 ### Added

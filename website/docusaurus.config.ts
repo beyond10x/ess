@@ -1,7 +1,6 @@
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
-import {themes as prismThemes} from 'prism-react-renderer';
-import docsSystemPlugin, {ecosystemFooterGroup, ecosystemNavbarItems} from '@beyond10x/docs-system/docusaurus';
+import {withProductSite} from '@beyond10x/docs-system/product-site';
 import canonicalToUnifiedDocs from './src/canonical';
 
 const config: Config = {
@@ -24,7 +23,15 @@ const config: Config = {
     mermaid: true,
   },
   themes: ['@docusaurus/theme-mermaid'],
-  plugins: [docsSystemPlugin, canonicalToUnifiedDocs],
+  plugins: [
+    canonicalToUnifiedDocs,
+    [
+      '@docusaurus/plugin-client-redirects',
+      {
+        redirects: [{from: '/lab', to: '/docs/visualise'}],
+      },
+    ],
+  ],
   i18n: {defaultLocale: 'en', locales: ['en']},
 
   presets: [
@@ -46,36 +53,31 @@ const config: Config = {
           onUntruncatedBlogPosts: 'throw',
           editUrl: 'https://github.com/beyond10x/ess/tree/main/website/',
         },
-        theme: {customCss: './src/css/custom.css'},
       } satisfies Preset.Options,
     ],
   ],
 
   themeConfig: {
     image: 'img/social-card.png',
-    colorMode: {respectPrefersColorScheme: true},
     navbar: {
       title: 'ESS',
-      logo: {alt: 'ESS', src: 'img/mark.svg', width: 26, height: 26},
       items: [
-        ...ecosystemNavbarItems(),
-        {type: 'docSidebar', sidebarId: 'docsSidebar', position: 'left', label: 'Documentation'},
-        {to: '/docs/examples/specification-to-contracts', label: 'See it work', position: 'left'},
-        {to: '/lab', label: 'Browser lab', position: 'left'},
-        {to: '/releases', label: 'Releases', position: 'left'},
         {
-          href: 'https://github.com/beyond10x/ess',
-          label: 'GitHub',
-          position: 'right',
-          className: 'navbar-github-link',
-          'aria-label': 'GitHub repository',
+          to: '/docs',
+          label: 'Docs',
+          position: 'left',
+          activeBaseRegex: '^/ess/docs(?!/(examples/|visualise|reference/cli|status/))',
         },
+        {to: '/docs/examples/specification-to-contracts', label: 'Example', position: 'left'},
+        {to: '/docs/visualise', label: 'Visualise', position: 'left'},
+        {to: '/docs/reference/cli', label: 'CLI', position: 'left'},
+        {to: '/releases', label: 'Releases', position: 'left'},
+        {to: '/docs/status/where-this-stands', label: 'Status', position: 'left'},
+        {href: 'https://github.com/beyond10x/ess', label: 'GitHub', position: 'right'},
       ],
     },
     footer: {
-      style: 'dark',
       links: [
-        ecosystemFooterGroup(),
         {
           title: 'Documentation',
           items: [
@@ -89,9 +91,9 @@ const config: Config = {
           title: 'Build and verify',
           items: [
             {label: 'Specification to contracts', to: '/docs/examples/specification-to-contracts'},
+            {label: 'Visualise the billing model', to: '/docs/visualise'},
             {label: 'Generate artifacts', to: '/docs/guides/generate-artifacts'},
             {label: 'Verify conformance', to: '/docs/guides/verify-conformance'},
-            {label: 'Browser lab', to: '/lab'},
           ],
         },
         {
@@ -100,22 +102,24 @@ const config: Config = {
             {label: 'Status', to: '/docs/status/where-this-stands'},
             {label: 'Limitations', to: '/docs/status/limitations'},
             {label: 'Roadmap', to: '/docs/status/roadmap'},
+            {label: 'Releases', to: '/releases'},
             {label: 'Source', href: 'https://github.com/beyond10x/ess'},
           ],
         },
+        {
+          title: 'Family',
+          items: [
+            {label: 'Canon', href: 'https://beyond10x.github.io/canon/'},
+            {label: 'ELS', href: 'https://beyond10x.github.io/els/'},
+            {label: 'Loom', href: 'https://beyond10x.github.io/loom/'},
+            {label: 'Commission', href: 'https://beyond10x.github.io/commission/'},
+          ],
+        },
       ],
-      logo: {alt: 'ESS', src: 'img/mark.svg', href: '/', width: 22, height: 22},
-      copyright:
-        '<span class="footer__claim">System intent that compiles, projects, and proves itself.</span>' +
-        'ESS · Apache-2.0 · built with Docusaurus.',
-    },
-    prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
-      additionalLanguages: ['rust', 'yaml', 'json', 'bash'],
+      copyright: 'A beyond10x project · Apache-2.0 · built with Docusaurus and the docs-system product template.',
     },
     mermaid: {theme: {light: 'neutral', dark: 'dark'}},
   } satisfies Preset.ThemeConfig,
 };
 
-export default config;
+export default withProductSite(config, {landing: './product.json', mark: 'ES'});

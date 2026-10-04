@@ -266,6 +266,7 @@ tasks:
       # The diagnostics reference page is rendered from the catalogue each crate exports, so a
       # code added without a catalogue entry, or without regenerating the page, fails here.
       - cargo xtask diagnostics --check
+      - cargo xtask site-data --check
 
   typescript-check:
     desc: Compile and execute the emitted conformance runtime's own TypeScript cases.
@@ -289,21 +290,16 @@ tasks:
     # CI installs them into `$RUNNER_TEMP` and names that path, so both typecheck cases run there.
     # The emitted package runs its own build: its `npm test` is `tsc && node --test dist`.
 
-  site-lab:
-    desc: Build and exercise the WebAssembly module used by the public browser lab.
+  web-check:
+    desc: Build the synthesized billing browser realization for WebAssembly and drive its boundary.
     cmds:
-      - cmp generated/web/billing/bridge.js website/src/pages/lab/_bridge.mjs
-      - node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON website/src/pages/lab/_source.test.mjs
       - cargo build --release --target wasm32-unknown-unknown --manifest-path examples/billing-web/Cargo.toml
-      - mkdir -p website/static/lab
-      - cp examples/billing-web/target/wasm32-unknown-unknown/release/billing_web_realized.wasm website/static/lab/billing_web_realized.wasm
-      - node examples/billing-web/smoke.mjs generated/web/billing/bridge.js website/static/lab/billing_web_realized.wasm
-      - node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON website/src/pages/lab/_run.test.mjs
+      - node examples/billing-web/smoke.mjs generated/web/billing/bridge.js examples/billing-web/target/wasm32-unknown-unknown/release/billing_web_realized.wasm
 
   site-build:
-    desc: Install the pinned public-doc dependencies, exercise the browser lab, and build Docusaurus.
+    desc: Check the WebAssembly realization, install the pinned public-doc dependencies, and build Docusaurus.
     cmds:
-      - task: site-lab
+      - task: web-check
       - npm --prefix website ci
       - npm --prefix website run build
 
