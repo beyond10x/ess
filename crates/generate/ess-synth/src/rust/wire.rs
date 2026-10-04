@@ -87,6 +87,7 @@ pub(crate) fn module(surface: &dyn Surface) -> String {
         if surface.presents_command(&command.name) {
             command_encoder(&mut out, surface, command);
             command_decoder(&mut out, surface, command);
+            response_encoder(&mut out, surface, command);
             outcome_encoder(&mut out, surface, command);
         }
     }
@@ -361,6 +362,42 @@ fn command_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
     );
 }
 
+/// The pattern [`outcome_encoder`] matches one variant with: its bindings, and `..` for the
+/// `response` a branch that answers with it carries and this encoder does not write.
+fn outcome_pattern(variant: &str, bindings: &[String], carries_response: bool) -> String {
+    match (bindings.is_empty(), carries_response) {
+        (true, false) => variant.to_owned(),
+        (true, true) => format!("{variant} {{ .. }}"),
+        (false, false) => format!("{variant} {{ {} }}", bindings.join(", ")),
+        (false, true) => format!("{variant} {{ {}, .. }}", bindings.join(", ")),
+    }
+}
+
+/// The name of the encoder for a command's declared response.
+pub(crate) fn response_encoder_name(command: &QualifiedName) -> String {
+    format!("encode_response_{}", ident(command))
+}
+
+/// A command's declared response, for the `response` member of a branch that answers with it
+/// (`returns: true`, from `ess/22`, beyond10x/ess#423). Only for a command with such a branch, so
+/// every other module keeps its bytes.
+fn response_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCommand) {
+    let answers = command
+        .outcomes
+        .iter()
+        .any(|outcome| ess_gen::http::answers_with_response(surface.ir(), outcome));
+    if !answers {
+        return;
+    }
+    record_encoder(
+        out,
+        &response_encoder_name(&command.name),
+        &format!("{}Response", surface.path(&command.name)),
+        &format!("the response of `{}`", command.name),
+        &command.response,
+    );
+}
+
 /// One command input's decoder.
 fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCommand) {
     let path = surface.path(&command.name);
@@ -451,11 +488,11 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         if outcome.error.is_some() {
             bindings.push("error".to_owned());
         }
-        let pattern = if bindings.is_empty() {
-            format!("{path}Outcome::{variant}")
-        } else {
-            format!("{path}Outcome::{variant} {{ {} }}", bindings.join(", "))
-        };
+        let pattern = outcome_pattern(
+            &format!("{path}Outcome::{variant}"),
+            &bindings,
+            ess_gen::http::answers_with_response(surface.ir(), outcome),
+        );
         let _ = writeln!(out, "        {pattern} => {{");
         let _ = writeln!(
             out,

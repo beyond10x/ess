@@ -306,6 +306,7 @@ fn wire_file(
     for command in ir.commands().values() {
         if presents(CapabilityKind::CommandContract, &command.name) {
             command_decoder(&mut body, &emit, command);
+            response_encoder(&mut body, &emit, command);
         }
     }
     emit.file_at(format!("{}/wire.go", package.dir), provenance, "", &body)
@@ -1335,6 +1336,67 @@ fn published_list(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) 
     });
 }
 
+/// The `response` member of a branch that answers its caller with the command's response
+/// (`returns: true`, from `ess/22`, beyond10x/ess#423): the variant's own `Response`, through the
+/// wire file's encoder. Nothing for any other branch.
+fn direct_response(
+    out: &mut String,
+    emit: &Emit<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) {
+    if http::answers_with_response(emit.ir, outcome) {
+        let _ = writeln!(
+            out,
+            "\t\tbody[\"response\"] = {}(taken.Response)",
+            response_encoder_name(&command.name)
+        );
+    }
+}
+
+/// The end of one declared branch's answer: its `response` member where it answers with one, and
+/// the status the contract declares for it ([`http::outcome_status`]).
+fn answered(
+    out: &mut String,
+    emit: &Emit<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) {
+    direct_response(out, emit, command, outcome);
+    let _ = writeln!(
+        out,
+        "\t\treturn rendered({}, body)",
+        http::outcome_status(emit.ir, outcome)
+    );
+}
+
+/// The name of the wire file's encoder for a command's declared response.
+fn response_encoder_name(command: &QualifiedName) -> String {
+    format!("encodeResponse{}", ident(command))
+}
+
+/// A command's declared response, for the `response` member of a branch that answers with it.
+/// Only for a command with such a branch, so every other wire file keeps its bytes.
+fn response_encoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
+    let answers = command
+        .outcomes
+        .iter()
+        .any(|outcome| http::answers_with_response(emit.ir, outcome));
+    if !answers {
+        return;
+    }
+    record_encoder(
+        out,
+        &response_encoder_name(&command.name),
+        &emit.qualify(
+            emit.layout.package_of(&command.name),
+            emit.layout.response(&command.name),
+        ),
+        &format!("the response of `{}`", command.name),
+        &command.response,
+    );
+}
+
 /// One accepted command: body in, declared outcome out, at the status the contract publishes.
 fn command_handler(
     out: &mut String,
@@ -1419,7 +1481,7 @@ fn command_handler(
         } else {
             out.push_str("\t\t_ = taken\n");
         }
-        let _ = writeln!(out, "\t\treturn rendered({}, body)", http::status(outcome));
+        answered(out, emit, command, outcome);
     }
     if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
         // The declared branch, status and error, nothing published, and no payload: an instance

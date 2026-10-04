@@ -189,6 +189,41 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
     }
 }
 
+/// The branch was taken and its answer is the command's response (`returns: true`, from
+/// [`DIRECT_ANSWER_FORMAT`]).
+///
+/// A `200` and not a `202`: `202` tells a client the request was queued for later processing, and
+/// a branch that returns its result in the same response was carried out, not queued
+/// (beyond10x/ess#424).
+pub const ANSWERED: &str = "200";
+
+/// The first source format whose `returns: true` outcome is answered [`ANSWERED`], with the
+/// command's declared response under `response` (beyond10x/ess#423, beyond10x/ess#424).
+///
+/// Below it the branch keeps the [`TAKEN`] status and the body it was published with, so a client
+/// of an `ess/17` to `ess/21` contract keeps the answer it was told about.
+pub const DIRECT_ANSWER_FORMAT: u32 = 22;
+
+/// Whether `outcome` answers its caller with the command's response, under [`ANSWERED`].
+///
+/// The one answer for the document that declares the body and the servers that write it.
+pub fn answers_with_response(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
+    outcome.returns && outcome.error.is_none() && ir.format().major() >= DIRECT_ANSWER_FORMAT
+}
+
+/// Which status one declared outcome of `ir` is answered with: [`status`], except that a branch
+/// that [answers with the response](answers_with_response) is [`ANSWERED`].
+///
+/// Every surface that writes or declares a command's status reads this, so the document and the
+/// served Rust and Go applications cannot disagree about it.
+pub fn outcome_status(ir: &EssIr, outcome: &ResolvedOutcome) -> &'static str {
+    if answers_with_response(ir, outcome) {
+        ANSWERED
+    } else {
+        status(outcome)
+    }
+}
+
 /// The caller attributes a command reads (ess/16, beyond10x/ess#168), each once, in name order:
 /// every `{caller: <attribute>}` of its values and every `caller.<attribute>` of its guards.
 ///

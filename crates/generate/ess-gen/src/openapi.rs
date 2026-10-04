@@ -43,6 +43,7 @@
 //! | `operationId` | the command's qualified name, verbatim | unique already; any prettifying transformation trades that guarantee for cosmetics |
 //! | request body | the command's `input`, `required` when any input field is | |
 //! | an outcome with no `error` | `202` | below |
+//! | an outcome declaring `returns: true`, from `ess/22` | `200`, with the command's response under `response` | `202` claims the request was queued; this branch was carried out and answered in the same response (beyond10x/ess#424). Below `ess/22` it keeps `202` and its body |
 //! | an outcome whose `error` the input decides | `422` | below |
 //! | an outcome whose `error` is `external` | `502` | below |
 //! | an outcome whose `error` is `wrong_state` | `409` | below |
@@ -208,7 +209,7 @@ use ess_domain::view::Consistency;
 use serde_json::{json, Map, Value};
 
 use crate::artifact::{Artifact, Generator};
-use crate::http::{self, status, CONFLICT, FORBIDDEN, NO_INPUT, READ, REFUSED, UPSTREAM};
+use crate::http::{self, ANSWERED, CONFLICT, FORBIDDEN, NO_INPUT, READ, REFUSED, UPSTREAM};
 use ess_compiler::refs::{ActorRef, BindingRef, CommandRef, ComponentRef, EssSemanticRef};
 
 use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
@@ -385,6 +386,24 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
     }
 }
 
+/// The sentence a document adds when one of its commands has a branch that answers with the
+/// command's response (beyond10x/ess#424), and nothing otherwise, so every other document keeps its
+/// bytes.
+fn direct_answers(ir: &EssIr, component: &ResolvedComponent) -> &'static str {
+    let answers = component.accepts.iter().any(|handle| {
+        ir.command(handle)
+            .outcomes
+            .iter()
+            .any(|outcome| http::answers_with_response(ir, outcome))
+    });
+    if answers {
+        " A branch that returns the command's response is carried out in the request that took \
+         it, so it is answered 200, and its body carries that response under `response`."
+    } else {
+        ""
+    }
+}
+
 /// What a reader of this file needs to know before reading the paths.
 ///
 /// The convention is restated in the artifact and not only in this module's documentation, because
@@ -405,6 +424,7 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
          Events emitted by a branch are published to consumers through the event transport, and \
          the `published` property of every response body lists them too, in publication order.",
     );
+    text.push_str(direct_answers(ir, component));
     if http::grants_checked_on(ir, component) {
         text.push_str(
             "\n\nThe specification declares who may invoke what (`x-ess-may-invoke` on each \
@@ -532,7 +552,7 @@ fn operation(
         consistency: None,
         parameters: idempotency(ir, command).into_iter().collect(),
         request_body: request_body(command),
-        responses: responses(command, checks_grants),
+        responses: responses(ir, command, checks_grants),
     }
 }
 
@@ -727,13 +747,12 @@ fn request_body(command: &ResolvedCommand) -> Option<RequestBody> {
 /// the status, and the schema is `oneOf` the declared branch (or branches, with their
 /// discriminator kept inside) and the standard refusal. They cannot be confused: a branch's body
 /// requires `outcome`, the refusal's is closed over `refused` and `actor`.
-fn responses(command: &ResolvedCommand, checks_grants: bool) -> BTreeMap<String, Response> {
-    let mut grouped: BTreeMap<&'static str, Vec<&ResolvedOutcome>> = BTreeMap::new();
-    for outcome in &command.outcomes {
-        grouped.entry(status(outcome)).or_default().push(outcome);
-    }
-
-    let mut out: BTreeMap<String, Response> = grouped
+fn responses(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    checks_grants: bool,
+) -> BTreeMap<String, Response> {
+    let mut out: BTreeMap<String, Response> = by_status(ir, command)
         .into_iter()
         .map(|(status, outcomes)| {
             let names: Vec<String> = outcomes
@@ -833,6 +852,22 @@ fn responses(command: &ResolvedCommand, checks_grants: bool) -> BTreeMap<String,
     out
 }
 
+/// A command's outcomes, grouped by the status each is answered with ([`http::outcome_status`]),
+/// in declaration order within a status.
+fn by_status<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+) -> BTreeMap<&'static str, Vec<&'a ResolvedOutcome>> {
+    let mut grouped: BTreeMap<&'static str, Vec<&'a ResolvedOutcome>> = BTreeMap::new();
+    for outcome in &command.outcomes {
+        grouped
+            .entry(http::outcome_status(ir, outcome))
+            .or_default()
+            .push(outcome);
+    }
+    grouped
+}
+
 /// What a status means here, for the response's required description.
 fn meaning(status: &str) -> &'static str {
     match status {
@@ -855,6 +890,11 @@ fn meaning(status: &str) -> &'static str {
         FORBIDDEN => {
             "the caller is not one this branch admits: its guard compares the authenticated caller \
              with the input or the record. The same request from an admitted caller is accepted."
+        }
+        ANSWERED => {
+            "the branch the specification declares for this input, carried out in this request: \
+             the body carries the command's response under `response`. Events this branch emits \
+             are published to consumers and listed under `published`."
         }
         _ => {
             "the branch the specification declares for this input. Events this branch emits are \
@@ -881,7 +921,7 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
             );
         }
         roots.extend(types::field_leaves(&command.input));
-        if command.outcomes.iter().any(|o| o.retains_result) {
+        if command.outcomes.iter().any(|o| carries_result(ir, o)) {
             out.insert(
                 format!("{}.Result", command.name),
                 embedded(&types::message(&Message::of_response(command))),
@@ -1066,7 +1106,7 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         }
     }
 
-    if outcome.retains_result {
+    if carries_result(ir, outcome) {
         required.push(Value::String("response".to_owned()));
         properties.insert(
             "response".into(),
@@ -1092,6 +1132,12 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         schema["x-ess-replays"] = json!({"command": command.name, "outcome": replay.origin});
     }
     schema
+}
+
+/// Whether an outcome's body carries the command's response under `response`: a retained result,
+/// or a branch that [answers with it](http::answers_with_response) (beyond10x/ess#423).
+fn carries_result(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
+    outcome.retains_result || http::answers_with_response(ir, outcome)
 }
 
 /// The `published` property of one outcome's response body: the events the branch published, in

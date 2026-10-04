@@ -1120,6 +1120,9 @@ fn outcome_renderer(
         if matches!(&outcome.error, Some(handle) if !ir.error(handle).fields.is_empty()) {
             bindings.push("error".to_owned());
         }
+        if http::answers_with_response(ir, outcome) {
+            bindings.insert(0, "response".to_owned());
+        }
         let pattern = if !bindings.is_empty() {
             format!(
                 "{outcome_type}::{variant} {{ {}, .. }}",
@@ -1138,6 +1141,7 @@ fn outcome_renderer(
             outcome.name.as_str()
         );
         wire::published_list(out, &SERVED, &carried);
+        direct_response(out, ir, command, outcome);
         if let Some(handle) = &outcome.error {
             let declared = ir.error(handle);
             let _ = writeln!(
@@ -1155,10 +1159,33 @@ fn outcome_renderer(
                 );
             }
         }
-        let _ = writeln!(out, "            {}\n        }}", http::status(outcome));
+        let _ = writeln!(
+            out,
+            "            {}\n        }}",
+            http::outcome_status(ir, outcome)
+        );
     }
     unknown_instance_arm(out, ir, command, outcome_type);
     out.push_str("    };\n    body.push('}');\n    (status, body)\n}\n");
+}
+
+/// The `response` member of a branch that answers its caller with the command's response
+/// (`returns: true`, from `ess/22`, beyond10x/ess#423): the variant's own `response`, through the
+/// `wire` module's encoder. Nothing for any other branch.
+fn direct_response(
+    out: &mut String,
+    ir: &ess_compiler::EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+) {
+    if http::answers_with_response(ir, outcome) {
+        let _ = writeln!(
+            out,
+            "            json::member(&mut body, \"response\");\n            \
+             wire::{}(response, &mut body);",
+            wire::response_encoder_name(&command.name)
+        );
+    }
 }
 
 /// Where a served answer's `published` list is written: the handler's own `body`, through the

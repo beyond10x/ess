@@ -384,7 +384,7 @@ pub(super) fn outcome_event_fields<'a>(
     outcome: &'a ResolvedOutcome,
 ) -> Vec<OutcomeEventField<'a>> {
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
-    if super::super::rust::items::response_bearing(outcome) {
+    if super::super::rust::items::carries_response(emit.ir, outcome) {
         used.insert("Response".into(), 1);
         used.insert("ResponsePayloadMatches".into(), 1);
     }
@@ -425,7 +425,7 @@ fn outcome_variant(
     let carried = outcome_event_fields(emit, outcome);
     if carried.is_empty()
         && outcome.error.is_none()
-        && !super::super::rust::items::response_bearing(outcome)
+        && !super::super::rust::items::carries_response(emit.ir, outcome)
     {
         let _ = writeln!(
             out,
@@ -435,7 +435,7 @@ fn outcome_variant(
         return;
     }
     let _ = writeln!(out, "type {variant_name} struct {{");
-    if super::super::rust::items::response_bearing(outcome) {
+    if super::super::rust::items::carries_response(emit.ir, outcome) {
         let _ = writeln!(
             out,
             "\t// Response is the actual response returned by this branch.\n\tResponse {}",
