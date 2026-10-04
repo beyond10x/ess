@@ -27,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 29
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -193,3 +193,11 @@ The fresh disk guard briefly withheld lint. All completed unit target bytes were
 Independent whole review1 reports a native/generated lifecycle mismatch: successful establish_entity clears native last_view and unreadable state, while the two generated runtimes clear the old observation but retain the new unreadableView/unreadableCommand markers. The admitted tokenless command, suppressed query, entity setup, then same-view expectation must yield native suite Error without a view read; stale generated markers instead yield Failed. This is a decisive source finding; no reviewer runtime is claimed. The immutable review record follows the final report.
 
 Author is assigned a regression-first correction in the existing seven paths: execute a current34/historical32 reset scenario against candidate48fdc424 before fixing the two successful-setup reset sites, then prove actual native/Go/TypeScript parity with every original control and affected neighbors retained. Strict lint and format remain required. The author holds the sole ESS compiler lane with fresh12884901888byte floor and unit-exclusive Go cache; no shared cache cleanup. A fresh observation of27512471552free bytes is not attributed to this unit. Freeze the corrected complete candidate for final independent whole review2; no third round or integration before approval. The author-supplied patch hash is source-equivalent but differently hunk-ordered from canonical git diff; final handoff must include the canonical full diff and all seven source hashes.
+
+## Reviewed RYW correction integrated
+
+Final whole-unit review2 approved candidatebcd8685fff937fcde4465ef387c5eef4526772f2 with findings[], publicreviewSHAf8f6e6e248a71d924ddc5959b8ccb5bef4dbd3c0783a69ddfaec234ff68ffdd9. The round-one reset finding is fixed and recorded against the immutable review. Canonical seven-path patchSHA6681f143ae931f6e58661fe432d3ef57979531295a9f7100616fc0dc667d04a0. No reviewer runtime is claimed; complete source, raw evidence and six live binary hashes were independently checked. Both review rounds are closed.
+
+Correction baseline2ccf258d47e7b4aba215b2b2b8627785fdeea41833fc87531997c4ab99354f1f reproduced native Error versus generated stale Failed on successful entity setup. Final seven-scenario current34/historical32 matrices pass in the five-test binary, logd843a7ffdec3da75461c8ff4aa0e43d32d36b68c113b132fd98452ebd2b2af81. Complete affected neighbors84/84 pass, log17bf4b52cb8559652d9007c230f15b4b57b3696e4ac6ab5f43c8f40f55b0d4ca. After extracting the shared fixture setup arm for lint, directly affected new5 plusTypeScript28 pass again, logfe349983bbbce6f4532f02cae9eaa9a8a0587e128f7d63f1e2184cdae62968c4; final strictlint9d0a74817b33cf9f0d1c3453a036785736910b244751b4761e50f76659d1e8e1 and both formatting checks pass. HandoffSHAcc5866331ad47aa41bcba027b3a50e04f5df257917fdc71c0025265519131faf retains all failures and exact metadata.
+
+Bot merge2255315a48a947f363d46cb3c691a57b4879f3b1 integrates the reviewed candidate. Direct comparison of all seven candidate/integration files and whitespace checks passed; both merge identities are the bot. Full owning-package verification is now assigned to the supplemental413A arithmetic unit after refreshing its exact two-path patch onto this commit, with all-target strictlint and owning formats followed by the unfiltered package. No combined package result yet. Browser/final combined/release obligations and parent312 remain open; no GitHub closure/publication occurred.

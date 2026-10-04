@@ -40,7 +40,7 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -112,3 +112,7 @@ Named Rust/Go/Web generation obligations are permitted only at the intermediate3
 ## Prepared tests refresh after reviewed precedence integration
 
 Reviewed #282 candidate31e7362f89464846f069591b313529bbc2f65f9d is integrated fe251b2a4 with14 interpreter-command checks,546 neighboring checks, strict lint, and final independent approval. The prepared Optional-input test commit4cf695b0cb2cc637c6fcd1415cce490385a006b5 remains the starting unit. Existing worker review_292 now refreshes that managed unit onto10fdf93606e568a172d6edfd8cd5b2cd2908dfd7, preserving all prepared304 tests and integrated282 controls. Only source preparation and merge-conflict resolution are assigned; no production implementation or baseline execution is claimed. External412 baseline and the remaining five-file report migration execute first under the serial resource contract. Source22 admission, old-reader refusal, declared Optional type retention, no lookup on absence and present-reference precedence remain the acceptance authority. Stored-reference304 and generated behavior319 remain later units.
+
+## Refresh preparation after runtime parity integration
+
+Reviewed generated RYW candidatebcd8685fff937fcde4465ef387c5eef4526772f2 is integrated2255315a48a947f363d46cb3c691a57b4879f3b1 after final whole review2. Existing Optional-input managed preparation363f95d0a78b9daf4f4cc8b67e2d8c16d0706efb is clean, with no live lease or ignored/untracked files. Assign the available implementation worker a source-only refresh onto this exact integration base, preserving the original715added test lines and all named acceptance controls in the six existing test paths. Resolve necessary merge conflicts without weakening assertions, keep source22 and older-format refusals, and report any semantic or additional-path need before editing it. No production implementation or runtime/compiler execution is granted in this preparation;413A owns the sole ESS lane for refreshed package acceptance and still must be independently reviewed and integrated before dependent production work. No baseline success is inferred from source preparation. Root alone owns canonical planning/integration.
