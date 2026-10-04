@@ -87,6 +87,44 @@ The model is `ir.json`, the compact IR the suite's `spec_digest` is taken over. 
 a package whose `ir.json` does not hash to `suite.json`'s digest; regenerate the package rather than
 editing either file.
 
+### Restart the target between commands
+
+Every sequence runs in one process lifetime unless you ask for restarts. An implementation that
+mints identities from a counter kept only in its process passes every such sequence, and after a
+restart its next creation reuses an identity it has already stored. To check that, give the target
+a `restart` method (Go: implement `RestartTarget`) that stops every process of your implementation
+and starts it again over the same durable state, and ask for restarts:
+
+```ts
+const result = await explore(() => newTarget(), { seeds: 200, steps: 60, restartEvery: 10 });
+assertExplored(result);
+```
+
+```go
+result, err := essconform.Explore(func() essconform.Target { return newTarget() },
+    essconform.ExploreOptions{Seeds: 200, Steps: 60, RestartEvery: 10})
+```
+
+After every `restartEvery` commands of a sequence the explorer restarts the target and reads every
+view again. A row the restart lost fails at the `restart` step of the trace, and a later creation
+that mints an identity a record already carries fails as a reused identity. A restart draws no
+random number, so a seed runs the same commands with restarts as without. A restart is a check
+only once a command has followed it: a restart after the last command of a sequence is followed by
+one more drawn command, and only a restart a command followed counts as performed.
+
+The explorer cannot see your processes. Clearing memory inside a process that keeps running is not
+a restart, because the counter lives in the process and survives it, and a `restart` that answers
+without restarting anything is reported as performed and passes. Both are defects in the target,
+and only its author can rule them out.
+
+`restarts` in the result reports the interval and how many restarts were performed. A target
+without `restart`, or whose `restart` throws `unsupported` (returns `ErrUnsupported`), is reported
+in `restarts.unsupported` and the rest of the exploration runs without restarts. `assertExplored`
+fails on it, and on restarts no sequence was long enough to reach, whatever `allowExcluded` says.
+Without `restartEvery` the result has no `restarts` and nothing changes. Restarts are
+sequential-only: `exploreConcurrent` refuses options carrying `restartEvery`, and Go
+`ConcurrentOptions` has no such field.
+
 ## Check a concurrent history
 
 A suite and the explorer drive a target one call at a time, so a race between two clients never

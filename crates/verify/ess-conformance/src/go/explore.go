@@ -22,6 +22,19 @@
 // explorer no longer expects that command's ordinary branch where an external one is eligible.
 // A branch the target cannot arrange is reported `unarrangeable`, never as a disagreement.
 //
+// # Restarts
+//
+// Every sequence runs in one process lifetime unless the caller asks for restarts. With
+// RestartEvery set, the explorer restarts the target after every that many commands of a sequence
+// through RestartTarget, then reads every view again: the model does not change across a restart,
+// so a row the restarted implementation lost is a disagreement, and an identity a later creation
+// mints again — a counter kept only in the process — is the identity disagreement every creation
+// is already checked for (beyond10x/ess#297). A restart draws nothing, so a seed names the same
+// commands with restarts as without. A restart is a check only once a command has followed it: one
+// after a sequence's last command is followed by one more drawn command, and only a restart a
+// command followed counts in Restarts.Performed. A target that cannot restart is reported in
+// Restarts.Unsupported and never passes.
+//
 // # A port, not a second opinion
 //
 // This file is `src/ts/explore.ts` in Go, function for function. The random draws, their order and
@@ -71,6 +84,33 @@ type ExploreOptions struct {
 	// Seed, when not zero, runs exactly that one sequence and overrides Seeds: how a reported
 	// failure is replayed.
 	Seed int `json:"seed,omitempty"`
+	// RestartEvery, when not zero, restarts the target through RestartTarget after every that many
+	// commands of a sequence and checks every view again. Zero means no restart, which is what an
+	// exploration did before restarts existed.
+	RestartEvery int `json:"restartEvery,omitempty"`
+}
+
+// RestartTarget is what a durable implementation offers so that exploration can restart it.
+// Optional: a target without it, or whose Restart returns ErrUnsupported, has restarts reported
+// unsupported, which never passes.
+//
+// Restart stops every process of the implementation and starts it again over the same durable
+// state, inside the scenario already begun, and returns once the restarted implementation answers
+// requests. Clearing memory inside a process that keeps running is not a restart: a counter that
+// lives in the process survives it, and that counter is what a restart is for.
+type RestartTarget interface {
+	Restart(scenario ScenarioContext) error
+}
+
+// RestartReach is how far the restarts an exploration was asked for got.
+type RestartReach struct {
+	// Every is the interval asked for, in commands.
+	Every int `json:"every"`
+	// Performed is the number of restarts that completed and a command then followed, across every
+	// sequence and none of the shrinking replays.
+	Performed int `json:"performed"`
+	// Unsupported is why the target could not restart, when it could not.
+	Unsupported string `json:"unsupported,omitempty"`
 }
 
 // Exclusion is one command or view left out of every sequence, and why.
@@ -113,6 +153,9 @@ type ExploreResult struct {
 	// order of Outcome. Absent when the specification declares none, so a result without external
 	// branches keeps its bytes.
 	External []ExternalReach `json:"external,omitempty"`
+	// Restarts is how far the restarts RestartEvery asked for got. Absent when none were asked for,
+	// so a result without restarts keeps its bytes.
+	Restarts *RestartReach   `json:"restarts,omitempty"`
 	Failure  *ExploreFailure `json:"failure,omitempty"`
 }
 
@@ -1763,6 +1806,8 @@ type exploreStep struct {
 	// external is the external branch arranged for this step, or empty for the ordinary branch.
 	external string
 	fresh    []exploreRef
+	// restart marks a restart of the target rather than a command.
+	restart bool
 }
 
 var errExploreNoRecord = errors.New("no record")
@@ -1925,6 +1970,8 @@ type exploreSession struct {
 	undetermined map[string]bool
 	// forced is every command the target was asked to arrange a branch for in this sequence.
 	forced map[string]bool
+	// token is the consistency token the last command returned.
+	token string
 }
 
 func exploreRender(value Node, determined bool) string {
@@ -1949,6 +1996,7 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 		}
 		return &exploreDisagreement{kind: "target", detail: "the target threw " + err.Error()}, nil
 	}
+	s.token = result.Consistency
 	name := fmt.Sprint(outcome["name"])
 	if result.Outcome != name {
 		return &exploreDisagreement{kind: "outcome", detail: fmt.Sprintf("the target answered `%s`, the specification says `%s`", result.Outcome, name)}, nil
@@ -2195,7 +2243,29 @@ func exploreInvariants(s *exploreSession) *exploreDisagreement {
 
 // ---- sequences ----------------------------------------------------------------------------------
 
+// exploreNoRestart is why a target without RestartTarget cannot restart.
+const exploreNoRestart = "the target offers no restart"
+
+// exploreRestart restarts the target and reads every view again. The model does not move: what the
+// restarted implementation answers must be what it answered before.
+func exploreRestart(s *exploreSession) (*exploreDisagreement, *exploreUnsupported) {
+	restartable, ok := s.target.(RestartTarget)
+	if !ok {
+		return nil, &exploreUnsupported{reason: exploreNoRestart}
+	}
+	if err := restartable.Restart(ScenarioContext{Scenario: s.scenario, Correlation: s.correlation}); err != nil {
+		if errors.Is(err, ErrUnsupported) {
+			return nil, &exploreUnsupported{reason: err.Error()}
+		}
+		return &exploreDisagreement{kind: "target", detail: "restarting, the target threw " + err.Error()}, nil
+	}
+	return exploreViews(s, s.token), nil
+}
+
 func exploreLine(step *exploreStep) string {
+	if step.restart {
+		return "restart"
+	}
 	line := step.command + " " + exploreRender(map[string]Node(step.input), true)
 	if step.external != "" {
 		line += " [external: " + step.external + "]"
@@ -2336,6 +2406,17 @@ func exploreReplay(p *explorePlan, newTarget func() Target, trace []*exploreStep
 	defer s.close()
 	executed := []*exploreStep{}
 	for _, recorded := range trace {
+		if recorded.restart {
+			found, unsupported := exploreRestart(s)
+			if unsupported != nil {
+				continue
+			}
+			executed = append(executed, recorded)
+			if found != nil {
+				return &exploreFound{kind: found.kind, message: exploreDescribe(found, len(executed)-1, recorded), executed: executed}, nil
+			}
+			continue
+		}
 		command := p.command(recorded.command)
 		if command == nil {
 			continue
@@ -2410,6 +2491,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 	if err != nil {
 		return ExploreResult{}, err
 	}
+	every := options.RestartEvery
+	if every < 0 {
+		return ExploreResult{}, errors.New("the restart interval must be a whole number of steps, zero or more")
+	}
 	p := explorePlanOf(ir)
 	steps := options.Steps
 	if steps == 0 {
@@ -2434,6 +2519,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 	executed := 0
 	sequences := 0
 	var failure *ExploreFailure
+	// performed counts the restarts a command followed; refused is why the target cannot restart,
+	// and stops every later restart.
+	performed := 0
+	refused := ""
 
 	for _, seed := range seeds {
 		if len(p.commands) == 0 || failure != nil {
@@ -2447,8 +2536,13 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		}
 		s.undetermined = undetermined
 		trace := []*exploreStep{}
+		// restarts is the number of restart steps in trace, which are not commands; pending is the
+		// number of them no command has followed yet. A restart is a check only once a command has
+		// followed it, so one after the last command is followed by one more.
+		restarts := 0
+		pending := 0
 		var found *exploreFound
-		for attempts := 0; len(trace) < steps && attempts < steps*exploreAttempts; attempts++ {
+		for attempts := 0; (len(trace)-restarts < steps || pending > 0) && attempts < steps*exploreAttempts; attempts++ {
 			if len(p.commands) == 0 {
 				break
 			}
@@ -2501,9 +2595,28 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			}
 			executed++
 			trace = append(trace, step)
+			performed += pending
+			pending = 0
 			reached[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
 			if disagreement != nil {
 				found = &exploreFound{kind: disagreement.kind, message: exploreDescribe(disagreement, len(trace)-1, step), executed: append([]*exploreStep{}, trace...)}
+				break
+			}
+			// No restart after the command that follows the last scheduled one.
+			if commands := len(trace) - restarts; every == 0 || refused != "" || commands%every != 0 || commands > steps {
+				continue
+			}
+			restart := &exploreStep{restart: true}
+			disagreement, unsupported = exploreRestart(s)
+			if unsupported != nil {
+				refused = unsupported.reason
+				continue
+			}
+			pending++
+			restarts++
+			trace = append(trace, restart)
+			if disagreement != nil {
+				found = &exploreFound{kind: disagreement.kind, message: exploreDescribe(disagreement, len(trace)-1, restart), executed: append([]*exploreStep{}, trace...)}
 				break
 			}
 		}
@@ -2551,6 +2664,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		}
 		return excluded[i].Reason < excluded[j].Reason
 	})
+	var restarts *RestartReach
+	if every > 0 {
+		restarts = &RestartReach{Every: every, Performed: performed, Unsupported: refused}
+	}
 	return ExploreResult{
 		Sequences:        sequences,
 		Steps:            steps,
@@ -2562,6 +2679,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		Undetermined:     exploreSet(undetermined),
 		Ambiguous:        exploreSet(ambiguous),
 		External:         external,
+		Restarts:         restarts,
 		Failure:          failure,
 	}, nil
 }
@@ -2646,6 +2764,15 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 	if len(unarrangeable) > 0 && !options.AllowExcluded {
 		problems = append(problems, fmt.Sprintf("explore: %d external outcome(s) the target could not arrange were never tried:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(unarrangeable), strings.Join(unarrangeable, "\n")))
 	}
+	// Restarts asked for and not performed are never a pass, AllowExcluded or not: a caller that
+	// cannot restart its target does not set RestartEvery.
+	if restarts := result.Restarts; restarts != nil {
+		if restarts.Unsupported != "" {
+			problems = append(problems, fmt.Sprintf("explore: restarts were requested every %d step(s), and the target cannot restart: %s", restarts.Every, restarts.Unsupported))
+		} else if restarts.Performed == 0 {
+			problems = append(problems, fmt.Sprintf("explore: restarts were requested every %d step(s), and no sequence performed one", restarts.Every))
+		}
+	}
 	if len(problems) == 0 {
 		return nil
 	}
@@ -2654,8 +2781,8 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 
 // AssertExplored fails t when an exploration failed, when a declared outcome went unreached, or
 // when an excluded command's outcomes, or external outcomes the target could not arrange, were
-// never tried and AllowExcluded is not set. What the
-// model could not place, and the draws it would not decide, are logged and do not fail.
+// never tried and AllowExcluded is not set, or when restarts were asked for and none was performed.
+// What the model could not place, and the draws it would not decide, are logged and do not fail.
 func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 	t.Helper()
 	for _, note := range result.Undetermined {
@@ -2729,6 +2856,9 @@ func (c exploreAtomicCall) Complete() (CommandResult, error) {
 }
 
 // ConcurrentOptions is what one concurrent exploration is asked to do.
+//
+// It has no RestartEvery: restarts are sequential-only. Concurrent exploration never restarts the
+// target; ExploreOptions.RestartEvery is how a sequence asks for restarts.
 type ConcurrentOptions struct {
 	// Path is the specification `ess` checks each history against, as `--path` takes it.
 	Path string `json:"path,omitempty"`

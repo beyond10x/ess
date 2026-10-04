@@ -184,6 +184,17 @@ scenario ends. `External` reports each external branch as `reached`, `unreached`
 branch is not a disagreement and not `Unreached`; `AssertExplored` fails on it unless
 `AllowExcluded` is set. `External` is absent when the specification declares no external branch.
 
+A target whose implementation keeps durable state can implement `RestartTarget`: `Restart` stops
+every process of the implementation and starts it again over the same state. `RestartEvery: n`
+restarts the target after every `n` commands of a sequence and reads every view again, so a row
+lost in the restart fails, and so does a later creation that mints an identity already stored, as
+a counter kept only in the process does. A restart after a sequence's last command is followed by
+one more command, and `Restarts.Performed` counts only restarts a command followed. A target
+without `RestartTarget`, or whose `Restart` returns `ErrUnsupported`, is reported in
+`Restarts.Unsupported`; `AssertExplored` fails on it, and on restarts no sequence was long enough
+to reach, whatever `AllowExcluded` says. `Restarts` is absent when `RestartEvery` is zero.
+Restarts are sequential-only: `ConcurrentOptions` has none.
+
 ## Concurrent histories
 
 `ExploreConcurrent` drives fresh targets from two to four clients at once and writes each run as
