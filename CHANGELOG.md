@@ -20,6 +20,12 @@
   `projection-check` holds to a fresh recording. The browser lab is gone: `/ess/lab` redirects to
   `/ess/docs/visualise`, and `task site-lab` is replaced by `task web-check`, which still builds
   the synthesized billing browser realization for WebAssembly and drives its boundary.
+- The billing example's `IssueInvoice` takes the issuing instant, `issued_at: Timestamp`, and its
+  `issued` outcome records it. `OutstandingInvoices` ranks by `issued_at desc`, which no outcome
+  set before, so its order was the implementation's and the authored
+  `outstanding-invoices-rank-latest-first` scenario could not be decided. The model still reads no
+  clock: the caller states the instant. The committed suite, projections, synthesized trees and
+  site data are regenerated, and the visualise page now shows that scenario as met.
 
 ## [0.52.0] — 2026-10-03
 

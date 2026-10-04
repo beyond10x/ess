@@ -1,6 +1,6 @@
 # generated from billing v3
-# model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
-# contract digest slice-sha256/2:896b3c2c678cca1be746d76f2890721675fbd9ff3422a6e810b47a74a2ec2c31
+# model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
+# contract digest slice-sha256/2:ec8c06e6331bea675f2d14375841dadd156463041beed1fc6c1183aaa162dca7
 # do not edit: regenerate with `ess generate`
 asyncapi: 3.0.0
 info:
@@ -18,8 +18,8 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
-    contract_digest: slice-sha256/2:896b3c2c678cca1be746d76f2890721675fbd9ff3422a6e810b47a74a2ec2c31
+    source_digest: 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648
+    contract_digest: slice-sha256/2:ec8c06e6331bea675f2d14375841dadd156463041beed1fc6c1183aaa162dca7
 defaultContentType: application/json
 channels:
   billing.email.DeliveryEscalated:

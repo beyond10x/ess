@@ -372,7 +372,13 @@ fn adversary_a_sequential_history_of_the_unfaulted_reference_is_one_the_step_all
     let first = send("billing.invoice.CreateInvoice", create_input());
     let second = send("billing.invoice.CreateInvoice", create_input());
     let second_id = second.direct_events[0].payload["invoice_id"].clone();
-    let issue = BTreeMap::from([("invoice_id".to_owned(), second_id)]);
+    let issue = BTreeMap::from([
+        ("invoice_id".to_owned(), second_id),
+        (
+            "issued_at".to_owned(),
+            Node::Text("2026-01-05T09:00:01Z".to_owned()),
+        ),
+    ]);
     let recorded = send("billing.invoice.IssueInvoice", issue.clone());
     assert_eq!(
         recorded

@@ -9,8 +9,8 @@
 //! # No clock, no randomness
 //!
 //! Invariant 9. Identifiers come from a per-store counter in the `Uuid` wire shape, so two runs of
-//! one suite produce the same ids; `issued_at` stays `None` because nothing here owns a clock —
-//! the conformance runner owns time, and no committed scenario asks for the field.
+//! one suite produce the same ids. `issued_at` is the instant `IssueInvoice` was sent, because
+//! nothing here owns a clock: the caller owns time.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ use billing_types::invoice::{
     IssueInvoiceOutcome, Money, OutstandingInvoices, PayInvoice, PayInvoiceOutcome, Payee,
 };
 use billing_types::obligation::UnmetObligation;
-use billing_types::primitives::{Duration, Timestamp, Uuid};
+use billing_types::primitives::{Duration, Uuid};
 
 /// `amount.amount > 0`, decided on the wire rendering and never on a float.
 ///
@@ -60,20 +60,6 @@ impl Store {
             "00000000-0000-4000-8000-{:012}",
             self.sequence
         )))
-    }
-
-    /// The instant a write happens at, from the same counter and from no clock.
-    ///
-    /// `billing.invoice.OutstandingInvoices` ranks by `issued_at`, so two invoices issued in one
-    /// scenario have to be orderable — and a wall clock would make the declared order depend on how
-    /// fast the machine ran the two commands that filled it.
-    fn instant(&mut self) -> Timestamp {
-        self.sequence += 1;
-        Timestamp(format!(
-            "2020-01-01T00:{:02}:{:02}Z",
-            self.sequence / 60,
-            self.sequence % 60
-        ))
     }
 }
 
@@ -198,10 +184,11 @@ impl IssueInvoiceBehavior for InvoiceRealization {
         // the legal move is a method call and every other state is the declared `wrong-state`.
         match snapshot.refine() {
             AnyInvoice::Draft(invoice) => {
-                let issued_at = store.instant();
+                let issued_at = input.issued_at;
                 let mut issued = AnyInvoice::Issued(invoice.issue()).snapshot();
-                // The one field issuing an invoice fills. It is `Optional<Timestamp>` because a
-                // draft has no issuing instant, and it stops being absent exactly here.
+                // The one field issuing an invoice fills, with the instant the caller sent. It is
+                // `Optional<Timestamp>` because a draft has no issuing instant, and it stops being
+                // absent exactly here.
                 issued.data.issued_at = Some(issued_at);
                 store.invoices.insert(key, issued);
                 Ok(IssueInvoiceOutcome::Issued {
@@ -432,6 +419,7 @@ mod tests {
         realization
             .issue_invoice(IssueInvoice {
                 invoice_id: kept.clone(),
+                issued_at: billing_types::primitives::Timestamp("2026-01-05T09:00:01Z".to_owned()),
             })
             .expect("the obligation is satisfied");
         let rows = realization
@@ -459,6 +447,7 @@ mod tests {
         assert_eq!(
             realization.issue_invoice(IssueInvoice {
                 invoice_id: stranger.clone(),
+                issued_at: billing_types::primitives::Timestamp("2026-01-05T09:00:01Z".to_owned()),
             }),
             Ok(IssueInvoiceOutcome::WrongStateUnknownInstance)
         );

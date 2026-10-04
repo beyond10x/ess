@@ -573,7 +573,15 @@ fn issue_invoice(
     if current != Lifecycle::Draft {
         return wrong_state(ISSUE_INVOICE, current);
     }
-    let issued_at = state.instant();
+    // The `issued` outcome records the instant the caller sent (`sets: {issued_at:
+    // input.issued_at}`). A suite synthesized before the input existed sends none, and then the
+    // counted instant stands in, so such a suite still ranks the invoices in the order it issued
+    // them.
+    let issued_at = request
+        .input
+        .get("issued_at")
+        .and_then(|value| value.as_text())
+        .map_or_else(|| state.instant(), ToOwned::to_owned);
     if let Some(invoice) = state.invoices.get_mut(&id) {
         invoice.state = Lifecycle::Issued;
         invoice.issued_at = Some(issued_at);

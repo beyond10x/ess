@@ -996,8 +996,9 @@ mod tests {
             vec!["page.md:1: ess/13 shipped in 0.35.0".to_owned()]
         );
         // A path or a link is not a bare version.
-        assert!(
-            stale_claims("page.md", "unreleased tag/0.35.0 and docs/2", &released()).is_empty()
+        assert_eq!(
+            stale_claims("page.md", "unreleased tag/0.35.0 and docs/2", &released()),
+            Vec::<String>::new()
         );
     }
 
@@ -1086,7 +1087,10 @@ mod tests {
         // A fixed release inventory keeps this pre-release example valid when the real
         // format registry gains another published version.
         let released = BTreeMap::from([(("ess", 1), "0.1.0")]);
-        assert!(stale_claims("page.md", "The unreleased `ess/2` format.\n", &released).is_empty());
+        assert_eq!(
+            stale_claims("page.md", "The unreleased `ess/2` format.\n", &released),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -1140,7 +1144,7 @@ mod tests {
         let text = "Entity relations shipped in `0.5.0`.\n\
                     ```console\nversion=0.43.0\n\
                     ess generate project helm --chart example --version 1.0.0\n```\n";
-        assert!(readme_defects(README, text, "0.43.0").is_empty());
+        assert_eq!(readme_defects(README, text, "0.43.0"), Vec::<String>::new());
     }
 
     #[test]
@@ -1158,9 +1162,9 @@ mod tests {
     #[test]
     fn a_version_run_is_read_whole() {
         assert_eq!(versions_in("ess 0.27.0"), vec!["0.27.0".to_owned()]);
-        assert!(versions_in("ess-0.27.0-aarch64").is_empty());
-        assert!(versions_in("0.13.2.1").is_empty());
-        assert!(versions_in("draft 2020-12").is_empty());
+        assert_eq!(versions_in("ess-0.27.0-aarch64"), Vec::<String>::new());
+        assert_eq!(versions_in("0.13.2.1"), Vec::<String>::new());
+        assert_eq!(versions_in("draft 2020-12"), Vec::<String>::new());
     }
 
     #[test]

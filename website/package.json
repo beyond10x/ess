@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@beyond10x/docs-system": "git+https://github.com/beyond10x/docs-system.git#acbc7a39a2a495114a507a92e0a0c4c933e81d8f",
-    "@beyond10x/ess-ui-templates": "github:beyond10x/ess-ui-templates#7c3f5aa57151ca24cf8700de9ded31ebd4f2315f",
+    "@beyond10x/ess-ui-templates": "github:beyond10x/ess-ui-templates#655a7e58bc66800c7b891515af2dc16c3a572782",
     "@docusaurus/core": "3.10.2",
     "@docusaurus/faster": "3.10.2",
     "@docusaurus/plugin-client-redirects": "3.10.2",

@@ -230,10 +230,15 @@ func (t *Target) move(request essconform.CommandRequest, transition, outcome, ev
 	}
 	held.state = reached(transition)
 	if transition == "issue" {
-		t.minted++
-		// Counted, not read off a clock: two invoices issued in one scenario have to be orderable,
-		// and a wall clock would make that depend on how fast the test ran.
-		held.issuedAt = fmt.Sprintf("2020-01-01T00:00:%02dZ", t.minted%60)
+		// The `issued` outcome records the instant the caller sent. A suite with no `issued_at`
+		// input gets a counted one, never a clock reading: two invoices issued in one scenario have
+		// to be orderable, and a wall clock would make that depend on how fast the test ran.
+		if sent, ok := request.Input["issued_at"].(string); ok {
+			held.issuedAt = sent
+		} else {
+			t.minted++
+			held.issuedAt = fmt.Sprintf("2020-01-01T00:00:%02dZ", t.minted%60)
+		}
 	}
 	return essconform.CommandResult{
 		Outcome:     outcome,
