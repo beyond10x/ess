@@ -2,11 +2,11 @@
 title: Where this stands
 sidebar_position: 1
 description: Current-source ESS capabilities, a dated release observation, and their evidence boundaries.
+lede: ESS is experimental and standalone. What the current source does, the latest release observed, and the evidence behind each claim.
+source: Capabilities generated from website/data/status.json by cargo xtask site-data; the support block checked by cargo xtask support
 ---
 
 # Where this stands
-
-ESS is experimental and standalone.
 
 ## Latest release
 
@@ -32,27 +32,38 @@ which release introduced it, and the
 
 ## Current source capabilities
 
-- validation and canonical compilation of typed system specifications;
-- name resolution, reusable shapes, entity relations, total handle lookup, inspection, graphing,
-  semantic diff, and impact analysis;
-- outcome-to-entity assignments and parameterized views that make generated scenarios assert the
-  values written by commands;
-- repository Markdown documentation, HTML sites, JSON Schema, OpenAPI, and AsyncAPI generation;
-- offline validation and deterministic TypeScript projection for adopter-owned JSON Schema registries;
-- structural Rust, Go, browser, and Clap synthesis with explicit obligations;
-- semantic conformance-suite generation, authored scenarios, component-scoped and explicitly
-  selected suites, and reference execution, including the specification itself as a target;
-- standalone conformance reports from the Rust runner and the generated Go and TypeScript packages;
-- specification mutation audits against a built-in target or your own runner, seeded command
-  exploration, and linearizability checks of recorded concurrent histories;
-- component descriptors and deterministic build, runtime, release, stack, and deployment models;
-- canonical build IR that round-trips through release verification, digest-pinned OCI release
-  bundles, and affected-only Helm reconciliation behind explicit executor commands;
-- generated Services, stateful workloads, persistent-volume claims and mounts, with schema-valid
-  configuration-neutral Helm defaults;
-- OpenAPI import and projection for the declared service/interface subset;
-- sanitized Kubernetes import, infrastructure analysis, and manifest projection;
-- deterministic fixture and generated-byte checks across the workspace.
+[ess-status-record-begin]: #
+
+Generated from `website/data/status.json`, the file the landing page's status section reads; statuses as of 2026-10-04.
+
+### Specify
+
+- `shipped` [Validation and canonical compilation](../guides/write-a-specification.md) — Name resolution, reusable shapes, entity relations, total handle lookup, inspection and graphing.
+
+### Generate
+
+- `shipped` [Documentation and interface projections](../guides/generate-artifacts.md) — docs, site, schema, openapi and asyncapi; docs-ir on request.
+- `shipped` [JSON Schema registries](../guides/generate-artifacts.md#generated-schemas-in-a-local-registry) — Offline validation and deterministic TypeScript projection for adopter-owned registries.
+- `shipped` [Structural synthesis](../guides/synthesize.md) — rust, go, web and clap targets, with explicit obligations and refusals.
+- `planned` [Obligations as trackable records](roadmap.md) — Today an obligation is an entry in the generated plan, not a record evidence can close.
+
+### Verify
+
+- `shipped` [Conformance suites and runs](../guides/verify-conformance.md) — Authored and component-scoped suites, outcome-to-entity assignments and parameterized views; built-in targets billing, oracle-fixture and interpreted; generated Go and TypeScript runners with standalone reports.
+- `shipped` [Mutation audit](../guides/verify/mutation-audit.md) — Mutates the specification to find rules the synthesized suite does not pin; seeded command exploration and linearizability checks of recorded histories.
+- `shipped` [Semantic diff and impact](../guides/track-change.md) — verify diff and verify impact.
+- `planned` [A conformance target in another process](roadmap.md) — verify conform run reaches only the targets built into ess.
+
+### Infrastructure
+
+- `shipped` [OpenAPI and Kubernetes import](../guides/check-infrastructure.md) — OpenAPI 3.0 and 3.1 service subset; sanitized Kubernetes observations to infrastructure IR, analysis and manifest projection.
+- `shipped` [Component delivery](../guides/deliver/deploy-an-environment.md) — Build, runtime, release, stack and deployment models; generated Services, stateful workloads and volume claims; digest-pinned OCI bundles and affected-only Helm reconciliation behind explicit executor commands.
+
+### UI
+
+- `shipped` [UI documents](../reference/ess-ui.md) — ess-ui/1 documents load, check, render and test headless.
+
+[ess-status-record-end]: #
 
 ### Support boundaries
 

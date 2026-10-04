@@ -106,19 +106,10 @@ const config: Config = {
             {label: 'Source', href: 'https://github.com/beyond10x/ess'},
           ],
         },
-        {
-          title: 'Family',
-          items: [
-            {label: 'Canon', href: 'https://beyond10x.github.io/canon/'},
-            {label: 'ELS', href: 'https://beyond10x.github.io/els/'},
-            {label: 'Loom', href: 'https://beyond10x.github.io/loom/'},
-            {label: 'Commission', href: 'https://beyond10x.github.io/commission/'},
-          ],
-        },
       ],
       copyright: 'A beyond10x project · Apache-2.0 · built with Docusaurus and the docs-system product template.',
     },
   } satisfies Preset.ThemeConfig,
 };
 
-export default withProductSite(config, {landing: './product.json', product: 'ess', mark: 'Es'});
+export default withProductSite(config, {landing: './product.json', product: 'ess'});

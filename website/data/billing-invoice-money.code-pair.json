@@ -1,0 +1,15 @@
+{
+  "format": "b10x-code-pair/1",
+  "from": {
+    "title": "examples/billing/domains/invoice.yaml",
+    "language": "yaml",
+    "code": "  - name: billing.invoice.Money\n    kind: struct\n    fields:\n      - name: amount\n        type: Decimal\n      - name: currency\n        type: String\n    invariants:\n      - amount >= 0\n"
+  },
+  "to": {
+    "title": "generated/openapi/invoice-service.yaml",
+    "language": "yaml",
+    "code": "    billing.invoice.Money:\n      title: Money\n      x-ess-name: billing.invoice.Money\n      x-ess-kind: struct\n      type: object\n      properties:\n        amount:\n          type: string\n          format: decimal\n          pattern: ^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$\n        currency:\n          type: string\n      required:\n      - amount\n      - currency\n      additionalProperties: false\n      x-ess-invariants:\n      - amount >= 0\n"
+  },
+  "via": "ess generate generate --kind openapi",
+  "recordedWith": "ess built from this repository, recorded by `cargo xtask site-data` on a copy of examples/billing"
+}

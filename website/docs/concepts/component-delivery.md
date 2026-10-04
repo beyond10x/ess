@@ -2,6 +2,8 @@
 title: Independent component delivery
 sidebar_position: 3
 description: How ESS checks component delivery consistency, qualifies supplied local reports, and reconciles affected Helm releases.
+status: shipped
+lede: A component belongs to the repository that implements it; a composing product owns only constraints on its releases, and an environment owns only concrete bindings.
 ---
 
 # Independent component delivery
