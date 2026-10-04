@@ -2,6 +2,9 @@
 title: Outlook — making ESS dependable
 sidebar_position: 4
 description: The proposed priorities, vocabulary, and evidence needed for ESS to mature.
+status: planned
+lede: Proposed priorities, vocabulary and evidence for making ESS dependable across the full path from authored intent to generated artifacts and execution evidence.
+source: An architectural assessment of the 0.18.0 source tree, 5 September 2026
 ---
 
 # Outlook — making ESS dependable

@@ -2,6 +2,9 @@
 title: "ESS: executable system specifications"
 sidebar_position: 2
 description: The specification model, the compile pipeline, and the five things derived from one document — docs, contracts, tests, diffs and structural code.
+status: shipped
+lede: A specification describes a system semantically, compiles to one validated model, and that model derives documentation, contracts, conformance tests, semantic diffs and structural code.
+source: Examples from examples/billing, the normative specification
 ---
 
 # ESS: executable system specifications

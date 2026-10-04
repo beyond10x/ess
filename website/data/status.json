@@ -1,0 +1,19 @@
+{
+  "format": "b10x-status/1",
+  "asOf": "2026-10-04",
+  "source": "Maintained with the source; shipped means a command that runs in the current source checkout",
+  "items": [
+    {"label": "Validation and canonical compilation", "status": "shipped", "area": "Specify", "detail": "Name resolution, reusable shapes, entity relations, total handle lookup, inspection and graphing.", "href": "/docs/guides/write-a-specification"},
+    {"label": "Documentation and interface projections", "status": "shipped", "area": "Generate", "detail": "docs, site, schema, openapi and asyncapi; docs-ir on request.", "href": "/docs/guides/generate-artifacts"},
+    {"label": "JSON Schema registries", "status": "shipped", "area": "Generate", "detail": "Offline validation and deterministic TypeScript projection for adopter-owned registries.", "href": "/docs/guides/generate-artifacts#generated-schemas-in-a-local-registry"},
+    {"label": "Structural synthesis", "status": "shipped", "area": "Generate", "detail": "rust, go, web and clap targets, with explicit obligations and refusals.", "href": "/docs/guides/synthesize"},
+    {"label": "Obligations as trackable records", "status": "planned", "area": "Generate", "detail": "Today an obligation is an entry in the generated plan, not a record evidence can close.", "href": "/docs/status/roadmap"},
+    {"label": "Conformance suites and runs", "status": "shipped", "area": "Verify", "detail": "Authored and component-scoped suites, outcome-to-entity assignments and parameterized views; built-in targets billing, oracle-fixture and interpreted; generated Go and TypeScript runners with standalone reports.", "href": "/docs/guides/verify-conformance"},
+    {"label": "Mutation audit", "status": "shipped", "area": "Verify", "detail": "Mutates the specification to find rules the synthesized suite does not pin; seeded command exploration and linearizability checks of recorded histories.", "href": "/docs/guides/verify/mutation-audit"},
+    {"label": "Semantic diff and impact", "status": "shipped", "area": "Verify", "detail": "verify diff and verify impact.", "href": "/docs/guides/track-change"},
+    {"label": "A conformance target in another process", "status": "planned", "area": "Verify", "detail": "verify conform run reaches only the targets built into ess.", "href": "/docs/status/roadmap"},
+    {"label": "OpenAPI and Kubernetes import", "status": "shipped", "area": "Infrastructure", "detail": "OpenAPI 3.0 and 3.1 service subset; sanitized Kubernetes observations to infrastructure IR, analysis and manifest projection.", "href": "/docs/guides/check-infrastructure"},
+    {"label": "Component delivery", "status": "shipped", "area": "Infrastructure", "detail": "Build, runtime, release, stack and deployment models; generated Services, stateful workloads and volume claims; digest-pinned OCI bundles and affected-only Helm reconciliation behind explicit executor commands.", "href": "/docs/guides/deliver/deploy-an-environment"},
+    {"label": "UI documents", "status": "shipped", "area": "UI", "detail": "ess-ui/1 documents load, check, render and test headless.", "href": "/docs/reference/ess-ui"}
+  ]
+}

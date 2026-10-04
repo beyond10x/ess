@@ -11,8 +11,12 @@
       {"label": "See the model", "href": "#domain"}
     ],
     "meta": "Rust · YAML specifications · canonical JSON IR · Apache-2.0",
-    "terminal": "data/ess.terminal.json",
-    "terminalCaption": "Real ess output on examples/billing, recorded by cargo xtask site-data and checked for drift by task check."
+    "art": {
+      "kind": "code-pair",
+      "data": "data/billing-invoice-money.code-pair.json",
+      "caption": "A declared type of examples/billing and the OpenAPI schema ess generates from it, quoted verbatim by cargo xtask site-data and checked for drift by task check."
+    },
+    "kpis": ["capabilities", "shipped", "planned", "entities"]
   },
   "sections": [
     {
@@ -33,7 +37,7 @@
       "kind": "flow",
       "eyebrow": "How it works",
       "title": "From a specification to a verdict.",
-      "lede": "Each step is a command that runs today. The terminal above is these steps on the billing example, recorded rather than typed.",
+      "lede": "Each step is a command that runs today. The terminal below is these steps on the billing example, recorded rather than typed.",
       "steps": [
         {"label": "Author", "title": "system.yaml", "description": "A system, its domains, entities, commands and views, as YAML."},
         {"label": "Validate", "title": "ess specify validate", "description": "Every reference resolves; meaning the model cannot express is refused."},
@@ -41,6 +45,13 @@
         {"label": "Project", "title": "ess generate", "description": "Documentation, schemas and interface contracts from the IR."},
         {"label": "Prove", "title": "ess verify conform", "description": "Synthesize the suite the specification obliges, then run it."}
       ]
+    },
+    {
+      "kind": "terminal",
+      "eyebrow": "See it run",
+      "title": "The same steps, on the billing example.",
+      "lede": "Validate, compile, synthesize the suite the specification obliges and run it against the built-in billing target.",
+      "session": "data/ess.terminal.json"
     },
     {
       "kind": "domain-graph",
@@ -62,28 +73,16 @@
       "eyebrow": "Status",
       "title": "Experimental. Here is exactly what exists.",
       "lede": "Shipped means a command that runs today in the current source. Planned means on the roadmap and not scheduled. Live imports and the commands named execute, publish, fetch and reconcile are explicit credential edges.",
-      "items": [
-        {"label": "Validation and canonical compilation", "status": "shipped", "detail": "Name resolution, reusable shapes, entity relations and total handle lookup.", "href": "/docs/guides/write-a-specification"},
-        {"label": "Documentation and interface projections", "status": "shipped", "detail": "docs, site, schema, openapi and asyncapi; docs-ir on request.", "href": "/docs/guides/generate-artifacts"},
-        {"label": "Structural synthesis", "status": "shipped", "detail": "rust, go, web and clap targets, with explicit obligations and refusals.", "href": "/docs/guides/synthesize"},
-        {"label": "Conformance suites and runs", "status": "shipped", "detail": "Built-in targets billing, oracle-fixture and interpreted; generated Go and TypeScript runners.", "href": "/docs/guides/verify-conformance"},
-        {"label": "Mutation audit", "status": "shipped", "detail": "Mutates the specification to find rules the synthesized suite does not pin.", "href": "/docs/guides/verify/mutation-audit"},
-        {"label": "Semantic diff and impact", "status": "shipped", "detail": "verify diff and verify impact.", "href": "/docs/guides/track-change"},
-        {"label": "OpenAPI and Kubernetes import", "status": "shipped", "detail": "OpenAPI 3.0 and 3.1 service subset; sanitized Kubernetes observations to infrastructure IR.", "href": "/docs/guides/check-infrastructure"},
-        {"label": "Component delivery", "status": "shipped", "detail": "Build, release, stack and deployment models; OCI bundles and affected-only Helm reconciliation behind explicit executor commands.", "href": "/docs/guides/deliver/deploy-an-environment"},
-        {"label": "UI documents", "status": "shipped", "detail": "ess-ui/1 documents load, check, render and test headless.", "href": "/docs/reference/ess-ui"},
-        {"label": "Obligations as trackable records", "status": "planned", "detail": "Today an obligation is an entry in the generated plan, not a record evidence can close.", "href": "/docs/status/roadmap"},
-        {"label": "A conformance target in another process", "status": "planned", "detail": "verify conform run reaches only the targets built into ess.", "href": "/docs/status/roadmap"}
-      ]
+      "items": "data/status.json"
     },
     {
       "kind": "related",
       "eyebrow": "Related tools",
       "title": "Built with ESS, and beside it.",
       "tools": [
-        {"name": "Canon", "description": "A formal language and deterministic calculus for evidence-governed protocols.", "href": "https://beyond10x.github.io/canon/"},
-        {"name": "Loom", "description": "The native agent harness. Its run model is an ESS specification, drawn from the compiled IR on its own site.", "href": "https://beyond10x.github.io/loom/"},
-        {"name": "Commission", "description": "An agent revision commissioned to a durable case; its responsibility model is an ESS specification.", "href": "https://beyond10x.github.io/commission/"}
+        {"id": "canon", "relation": "beside"},
+        {"id": "loom", "relation": "specified-by", "via": "loom.run"},
+        {"id": "commission", "relation": "specified-by", "via": "commission.responsibility"}
       ]
     }
   ]
