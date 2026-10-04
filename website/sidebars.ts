@@ -77,6 +77,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/cli',
         'reference/diagnostics',
+        'reference/entity-runtime-lowering',
         'reference/formats',
         'reference/ess-ui',
         'reference/ess-ui-test',
