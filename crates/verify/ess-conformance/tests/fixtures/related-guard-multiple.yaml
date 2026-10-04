@@ -1,0 +1,172 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.run
+summary: A run starts only on a switch that is not paused, under a capability that is not revoked.
+types:
+  - {name: demo.run.SwitchId, kind: newtype, of: Uuid}
+  - {name: demo.run.CapabilityId, kind: newtype, of: Uuid}
+  - {name: demo.run.RunId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.run.Switch
+    identity: {name: switch_id, type: demo.run.SwitchId}
+    fields: []
+    lifecycle:
+      initial: Active
+      states: [Active, Paused]
+      terminal: [Paused]
+      transitions:
+        - {name: pause, from: [Active], to: Paused}
+  - name: demo.run.Capability
+    identity: {name: capability_id, type: demo.run.CapabilityId}
+    fields: []
+    lifecycle:
+      initial: Granted
+      states: [Granted, Revoked]
+      terminal: [Revoked]
+      transitions:
+        - {name: revoke, from: [Granted], to: Revoked}
+  - name: demo.run.Run
+    identity: {name: run_id, type: demo.run.RunId}
+    fields: []
+    lifecycle:
+      initial: Running
+      states: [Running, Stopped]
+      terminal: [Stopped]
+      transitions:
+        - {name: stop, from: [Running], to: Stopped}
+errors:
+  - {name: demo.run.NoSuchSwitch, summary: No switch carries that identity., fields: []}
+  - {name: demo.run.SwitchIsPaused, summary: The switch is paused., fields: []}
+  - {name: demo.run.NoSuchCapability, summary: No capability carries that identity., fields: []}
+  - {name: demo.run.CapabilityIsRevoked, summary: The capability is revoked., fields: []}
+  - {name: demo.run.RunStateConflict, summary: The run cannot move from its held state., fields: []}
+events:
+  - name: demo.run.SwitchInstalled
+    fields: [{name: switch_id, type: demo.run.SwitchId}]
+  - name: demo.run.SwitchPaused
+    fields: [{name: switch_id, type: demo.run.SwitchId}]
+  - name: demo.run.CapabilityGranted
+    fields: [{name: capability_id, type: demo.run.CapabilityId}]
+  - name: demo.run.CapabilityRevoked
+    fields: [{name: capability_id, type: demo.run.CapabilityId}]
+  - name: demo.run.RunStarted
+    fields: [{name: run_id, type: demo.run.RunId}]
+  - name: demo.run.RunStopped
+    fields: [{name: run_id, type: demo.run.RunId}]
+actors:
+  - name: demo.run.Operator
+    may:
+      - demo.run.InstallSwitch
+      - demo.run.PauseSwitch
+      - demo.run.GrantCapability
+      - demo.run.RevokeCapability
+      - demo.run.StartRun
+      - demo.run.StopRun
+commands:
+  - name: demo.run.InstallSwitch
+    input: []
+    outcomes:
+      - name: installed
+        creates: demo.run.Switch
+        instance: switch_id
+        emits: [demo.run.SwitchInstalled]
+        payload: {demo.run.SwitchInstalled: {switch_id: {generated: true}}}
+  - name: demo.run.PauseSwitch
+    input:
+      - {name: switch_id, type: demo.run.SwitchId}
+    outcomes:
+      - name: paused
+        moves: demo.run.Switch.pause
+        instance: switch_id
+        emits: [demo.run.SwitchPaused]
+        payload: {demo.run.SwitchPaused: {switch_id: input.switch_id}}
+  - name: demo.run.GrantCapability
+    input: []
+    outcomes:
+      - name: granted
+        creates: demo.run.Capability
+        instance: capability_id
+        emits: [demo.run.CapabilityGranted]
+        payload: {demo.run.CapabilityGranted: {capability_id: {generated: true}}}
+  - name: demo.run.RevokeCapability
+    input:
+      - {name: capability_id, type: demo.run.CapabilityId}
+    outcomes:
+      - name: revoked
+        moves: demo.run.Capability.revoke
+        instance: capability_id
+        emits: [demo.run.CapabilityRevoked]
+        payload: {demo.run.CapabilityRevoked: {capability_id: input.capability_id}}
+  - name: demo.run.StartRun
+    input:
+      - {name: switch, type: demo.run.SwitchId}
+      - {name: capability, type: demo.run.CapabilityId}
+    outcomes:
+      - name: no-such-switch
+        when_related: {via: input.switch, exists: false}
+        error: demo.run.NoSuchSwitch
+      - name: switch-paused
+        when_related: {via: input.switch, predicate: state == Paused}
+        error: demo.run.SwitchIsPaused
+      - name: no-such-capability
+        when_related: {via: input.capability, exists: false}
+        error: demo.run.NoSuchCapability
+      - name: capability-revoked
+        when_related: {via: input.capability, predicate: state == Revoked}
+        error: demo.run.CapabilityIsRevoked
+      - name: started
+        creates: demo.run.Run
+        instance: run_id
+        emits: [demo.run.RunStarted]
+        payload: {demo.run.RunStarted: {run_id: {generated: true}}}
+  - name: demo.run.StopRun
+    input:
+      - {name: run_id, type: demo.run.RunId}
+    outcomes:
+      - {name: wrong-state, wrong_state: true, error: demo.run.RunStateConflict}
+      - name: stopped
+        moves: demo.run.Run.stop
+        instance: run_id
+        emits: [demo.run.RunStopped]
+        payload: {demo.run.RunStopped: {run_id: input.run_id}}
+views:
+  - name: demo.run.Switches
+    source: demo.run.Switch
+    consistency: read_your_writes
+    fields:
+      - {name: switch_id, type: demo.run.SwitchId}
+      - {name: state, type: demo.run.Switch.State}
+  - name: demo.run.Capabilities
+    source: demo.run.Capability
+    consistency: read_your_writes
+    fields:
+      - {name: capability_id, type: demo.run.CapabilityId}
+      - {name: state, type: demo.run.Capability.State}
+  - name: demo.run.Runs
+    source: demo.run.Run
+    consistency: read_your_writes
+    fields:
+      - {name: run_id, type: demo.run.RunId}
+      - {name: state, type: demo.run.Run.State}
+components:
+  - component: run-service
+    reached_by: network
+    owns:
+      domains: [demo.run]
+    accepts:
+      commands:
+        - demo.run.InstallSwitch
+        - demo.run.PauseSwitch
+        - demo.run.GrantCapability
+        - demo.run.RevokeCapability
+        - demo.run.StartRun
+        - demo.run.StopRun
+    publishes:
+      events:
+        - demo.run.SwitchInstalled
+        - demo.run.SwitchPaused
+        - demo.run.CapabilityGranted
+        - demo.run.CapabilityRevoked
+        - demo.run.RunStarted
+        - demo.run.RunStopped

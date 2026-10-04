@@ -1057,9 +1057,9 @@ fn existence_identity(command: &ResolvedCommand) -> Result<(), String> {
 
 // ---- a related row (`when_related:`, ess/18, ess/22; beyond10x/ess#319) -------------------------
 
-/// The one related row a command reads: where its identity is named and whose row it is. The
-/// compiler admits one per command (`ess_domain::command::related_guard`), so the first branch
-/// naming it names it for all.
+/// The one related row a command reads: where its identity is named and whose row it is. A
+/// generated command reads one; one reading several (ess/22, beyond10x/ess#283) stays owed
+/// ([`related_composition`]), so the first branch naming it names it for all.
 pub(crate) fn related(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia, &EntityHandle)> {
     command
         .outcomes
@@ -1068,6 +1068,21 @@ pub(crate) fn related(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia,
             ResolvedCondition::Related { via, entity, .. } => Some((via, entity)),
             _ => None,
         })
+}
+
+/// Whether the command's `when_related:` branches read more than one row (ess/22,
+/// beyond10x/ess#283): two `via` fields.
+pub(crate) fn several_rows(command: &ResolvedCommand) -> bool {
+    let mut fields = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related { via, .. } => Some(via.field()),
+            _ => None,
+        });
+    fields
+        .next()
+        .is_some_and(|first| fields.any(|other| other != first))
 }
 
 /// The command's `exists: false` branch, which answers a missing related row.
@@ -1129,6 +1144,15 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
     let Some((via, entity)) = related(command) else {
         return Ok(());
     };
+    // The generated read names one row per command; several rows, each with its own
+    // `exists: false`, answered in the order the interpreter applies (ess/22, beyond10x/ess#283),
+    // stay owed.
+    if several_rows(command) {
+        return Err(
+            "`when_related:` reading several related rows in one command (beyond10x/ess#283)"
+                .to_owned(),
+        );
+    }
     if command.outcomes.iter().any(|outcome| {
         matches!(
             outcome.condition,

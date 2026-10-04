@@ -58,7 +58,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
 | `ess/20` | [0.49.0][r49] | `state`, the related row's held lifecycle state, in a `when_related:` predicate. |
 | `ess/21` | Unreleased | `one_time_response:` names required String response fields whose values may be disclosed only by their originating response. |
-| `ess/22` | Unreleased | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present. |
+| `ess/22` | Unreleased | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present; a command may guard on several related rows named by its input, each with its own `exists: false`. |
 
 The paragraphs below give each version's rules.
 

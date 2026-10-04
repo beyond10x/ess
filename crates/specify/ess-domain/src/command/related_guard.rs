@@ -39,6 +39,14 @@
 //! before the related row is read. A command whose predicate branches have no `exists: false`
 //! sibling leaves a missing row unanswered, and is refused for it.
 //!
+//! **Several rows (ess/22, beyond10x/ess#283).** A command may read more than one row, each named
+//! by an input `via` of its own, with one `exists: false` branch at most per row. Missing rows are
+//! read in the declaration order of their `exists: false` branches and the first answers, before
+//! any present row's predicate; then, after the addressed row's existence and held state, the first
+//! declared present-related predicate refusal whose predicate holds answers before every accepting
+//! branch. Two refusals over one row stay ambiguous. A stored-field `via` stays the only row of its
+//! command. Below ess/22 a second row is refused naming ess/22.
+//!
 //! The guard reads a row the command does not address, so it composes with any subject a branch
 //! names — a `creates:` included — and with a branch that names none. From ess/22 a predicate
 //! refusal composes with `wrong_state:` in one command: addressed-row existence and held state
@@ -272,6 +280,31 @@ pub fn read_via(command: &CommandSpec) -> Option<&RelatedVia> {
         })
 }
 
+/// Every distinct `via` the command's related guards read, in the order first declared: one per
+/// related row. From ess/22 a command may read more than one row through its input
+/// (beyond10x/ess#283); below it, and for a stored-field `via`, a command reads one.
+pub fn read_vias(command: &CommandSpec) -> Vec<&RelatedVia> {
+    let mut vias: Vec<&RelatedVia> = Vec::new();
+    for outcome in &command.outcomes {
+        if let OutcomeCondition::Related { via, .. } = &outcome.condition {
+            if !vias.contains(&via) {
+                vias.push(via);
+            }
+        }
+    }
+    vias
+}
+
+/// Whether the command reads more than one related row, each named by an input field (ess/22,
+/// beyond10x/ess#283). Missing rows are then answered in the declaration order of their
+/// `exists: false` branches, and the present-related predicate refusals in declaration order,
+/// before every accepting branch (`docs/design/cross-record-and-stored-field-guards.md`, "The
+/// precedence order").
+pub fn reads_several_rows(command: &CommandSpec) -> bool {
+    let vias = read_vias(command);
+    vias.len() > 1 && vias.iter().all(|via| matches!(via, RelatedVia::Input(_)))
+}
+
 /// The existing subject a stored-field `via` is read from (ess/22, beyond10x/ess#304): the one the
 /// command's branches address through its input, as it was just before the branch. `None` where no
 /// branch addresses one.
@@ -395,8 +428,8 @@ fn site(command: &CommandSpec, outcome: &super::Outcome) -> ConstructRef {
 }
 
 /// Local declaration checks, which need no registry and no entity: one default at most, one
-/// `exists: false` branch at most, one related row per command, a branch a scenario can reach, and
-/// no second selection strategy beside this one.
+/// `exists: false` branch at most per related row, one stored-field row per command, a branch a
+/// scenario can reach, and no second selection strategy beside this one.
 pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     if let Some(other) = command
@@ -483,43 +516,97 @@ fn second_row(
     .with_hint(format!("read the related row through `{first}`"))
 }
 
-/// One related row per command, one `exists: false` branch at most, and one wherever a predicate
-/// branch leaves a missing row unanswered.
+/// One `exists: false` branch at most per related row, and one wherever a predicate branch over
+/// that row leaves a missing row unanswered. A second stored-field row is refused here; a second
+/// row named by the input is admitted from ess/22 (beyond10x/ess#283), which [`validate`] decides
+/// once the format is known, and an input `via` beside a stored-field one is refused there too.
 fn one_related_row(command: &CommandSpec) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    let Some(first) = read_via(command) else {
+    let vias = read_vias(command);
+    let Some(first) = vias.first().copied() else {
         return errors;
     };
-    let mut absent = Vec::new();
     for outcome in &command.outcomes {
-        let OutcomeCondition::Related { via, test, .. } = &outcome.condition else {
+        let OutcomeCondition::Related { via, .. } = &outcome.condition else {
             continue;
         };
-        // An input `via` beside a stored-field one is refused by [`validate`], once the format has
-        // said whether the stored-field form is admitted at all (beyond10x/ess#304).
-        if via != first && same_kind(via, first) {
+        if via != first
+            && matches!(
+                (via, first),
+                (RelatedVia::Subject(_), RelatedVia::Subject(_))
+            )
+        {
             errors.push(second_row(command, outcome, via, first));
         }
-        if *test == RelatedTest::Absent {
-            absent.push(&outcome.name);
-        }
     }
+    // Several rows named by the input are answered row by row (ess/22, beyond10x/ess#283); any
+    // other command is answered as the one row it reads, whatever else [`validate`] refuses of it.
+    let several = reads_several_rows(command);
+    let groups: Vec<Option<&RelatedVia>> = if several {
+        vias.iter().copied().map(Some).collect()
+    } else {
+        vec![None]
+    };
+    for group in groups {
+        errors.extend(missing_row_answers(
+            command,
+            group.unwrap_or(first),
+            group,
+            several,
+        ));
+    }
+    errors
+}
+
+/// One `exists: false` branch at most over the row `via` names — over every related row where
+/// `group` is `None` — and one wherever a predicate branch reads it.
+fn missing_row_answers(
+    command: &CommandSpec,
+    via: &RelatedVia,
+    group: Option<&RelatedVia>,
+    several: bool,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let reads = |outcome: &&super::Outcome| {
+        matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. }
+                if group.is_none_or(|group| read == group))
+    };
+    let absent: Vec<_> = command
+        .outcomes
+        .iter()
+        .filter(reads)
+        .filter(|outcome| {
+            matches!(
+                &outcome.condition,
+                OutcomeCondition::Related {
+                    test: RelatedTest::Absent,
+                    ..
+                }
+            )
+        })
+        .map(|outcome| &outcome.name)
+        .collect();
     if absent.len() > 1 {
         errors.push(
             ValidationError::at(
                 command.site().key("outcomes"),
                 ValidationCode::ConflictingDeclaration,
                 format!(
-                    "outcomes {} are all `exists: false`, so `{}` declares more than one answer for \
-                     a missing row",
+                    "outcomes {} are all `exists: false`, so `{}` declares more than one answer \
+                         for a missing row{}",
                     super::join(absent.iter()),
-                    command.name
+                    command.name,
+                    if several {
+                        format!(" of the row `{via}` names")
+                    } else {
+                        String::new()
+                    }
                 ),
             )
             .with_hint("keep one `exists: false` branch"),
         );
     }
-    let holds = command.outcomes.iter().any(|outcome| {
+    let holds = command.outcomes.iter().filter(reads).any(|outcome| {
         matches!(
             &outcome.condition,
             OutcomeCondition::Related {
@@ -529,19 +616,28 @@ fn one_related_row(command: &CommandSpec) -> ValidationErrors {
         )
     });
     if holds && absent.is_empty() {
+        let message = if several {
+            format!(
+                "`{}` reads the fields of the row `{via}` names, and a missing row makes every \
+                     predicate over it unknown: no branch answers when that row does not exist",
+                command.name
+            )
+        } else {
+            format!(
+                "`{}` reads the related row's fields, and a missing row makes every predicate \
+                     over it unknown: no branch answers when the row does not exist",
+                command.name
+            )
+        };
         errors.push(
             ValidationError::at(
                 command.site().key("outcomes"),
                 ValidationCode::NonExhaustiveBranches,
-                format!(
-                    "`{}` reads the related row's fields, and a missing row makes every predicate \
-                     over it unknown: no branch answers when the row does not exist",
-                    command.name
-                ),
+                message,
             )
             .with_hint(format!(
-                "declare the branch taken when it does not: `when_related: {{via: {first}, \
-                 exists: false}}`"
+                "declare the branch taken when it does not: `when_related: {{via: {via}, \
+                     exists: false}}`"
             )),
         );
     }
@@ -572,6 +668,49 @@ fn gates(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
                 errors.push(second_row(command, outcome, via, first));
             }
         }
+    }
+    if !errors.is_empty() {
+        return errors;
+    }
+    errors.extend(several_rows_below_ess_22(spec, command));
+    errors
+}
+
+/// The refusals of a second related row named by the input below ess/22 (beyond10x/ess#283), one
+/// per branch reading a row other than the first declared: the format that admits it is named.
+/// Empty from ess/22, and for a command reading one row.
+fn several_rows_below_ess_22(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if spec.system().format.major() >= crate::system::FormatVersion::V22.major()
+        || !reads_several_rows(command)
+    {
+        return errors;
+    }
+    let Some(first) = read_via(command) else {
+        return errors;
+    };
+    for outcome in &command.outcomes {
+        let OutcomeCondition::Related { via, .. } = &outcome.condition else {
+            continue;
+        };
+        if via == first {
+            continue;
+        }
+        errors.push(
+            ValidationError::at(
+                site(command, outcome),
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "outcome `{}` reads the row `{via}` names, and a sibling reads the one `{first}` \
+                     names; a command guarding on more than one related row requires \
+                     specification format ess/22",
+                    outcome.name
+                ),
+            )
+            .with_hint(format!(
+                "declare `format: ess/22`, or read the related row through `{first}`"
+            )),
+        );
     }
     errors
 }
@@ -673,6 +812,10 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 continue;
             }
         };
+        if reads_several_rows(command) {
+            errors.extend(validate_several(spec, command, types));
+            continue;
+        }
         let via = first;
         let entity = match via {
             RelatedVia::Input(field) => entity_or_refusal(spec, command, field, &mut errors),
@@ -965,17 +1108,17 @@ fn subject_entity_or_refusal<'a>(
     }
 }
 
-/// The entity `via` names, or the refusal that says why it names none.
+/// The entity `via` names, or the refusal that says why it names none, at the first branch reading
+/// the row it names.
 fn entity_or_refusal<'a>(
     spec: &'a Specification,
     command: &CommandSpec,
     via: &str,
     errors: &mut ValidationErrors,
 ) -> Option<&'a EntitySpec> {
-    let outcome = command
-        .outcomes
-        .iter()
-        .find(|outcome| matches!(outcome.condition, OutcomeCondition::Related { .. }))?;
+    let outcome = command.outcomes.iter().find(|outcome| {
+        matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. } if read == via)
+    })?;
     let at = site(command, outcome);
     let Some(read) = command.input_field(via) else {
         errors.push(
@@ -1333,6 +1476,406 @@ fn validate_absent(
         }
     }
     errors
+}
+
+/// A command reading more than one related row through its input (ess/22, beyond10x/ess#283): the
+/// entity each `via` names, every predicate checked against its own row's entity, and the joint
+/// partition of every row's fields — or its absence, for an Optional reference — with the input.
+fn validate_several(
+    spec: &Specification,
+    command: &CommandSpec,
+    types: &TypeRegistry,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let mut rows: Vec<(&RelatedVia, &EntitySpec)> = Vec::new();
+    for via in read_vias(command) {
+        if let Some(entity) = entity_or_refusal(spec, command, via.field(), &mut errors) {
+            rows.push((via, entity));
+        }
+    }
+    if !errors.is_empty() {
+        return errors;
+    }
+    for outcome in &command.outcomes {
+        if let OutcomeCondition::Related {
+            via,
+            test: RelatedTest::Holds(predicate),
+            ..
+        } = &outcome.condition
+        {
+            let Some((_, entity)) = rows.iter().find(|(read, _)| *read == via) else {
+                continue;
+            };
+            errors.extend(check(
+                command,
+                entity,
+                types,
+                predicate,
+                &site(command, outcome),
+            ));
+        }
+    }
+    // A predicate the checker refused is not partitioned: its refusal is the repair.
+    if errors.is_empty() {
+        errors.extend(validate_joint_partition(spec, command, &rows, types));
+    }
+    errors
+}
+
+/// One related row's side of [`validate_joint_partition`]: the values its fields take, or `None`
+/// for an absent Optional reference, and the guarded branches over that row its predicates select.
+struct RowCase {
+    values: Option<
+        std::collections::BTreeMap<
+            ess_primitives::facts::FactPath,
+            ess_primitives::facts::FactValue,
+        >,
+    >,
+    selected: Vec<usize>,
+}
+
+/// The joint partition of a command reading several related rows (ess/22, beyond10x/ess#283): every
+/// row's fields — and, for an Optional reference, its absence, which selects none of that row's
+/// branches — crossed with the input, under the finite prover's cap. Missing rows are answered by
+/// their `exists: false` branches before any of this, and take no part in it.
+///
+/// Each combination is answered by exactly one branch where: none is selected and a default
+/// exists; one is; or a present-related predicate refusal is, the first declared answering before
+/// every accepting branch and before the refusals over other rows — but two selected refusals over
+/// the row the first one reads stay ambiguous, as they do on a command reading one row.
+fn validate_joint_partition(
+    spec: &Specification,
+    command: &CommandSpec,
+    rows: &[(&RelatedVia, &EntitySpec)],
+    types: &TypeRegistry,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let guarded = partitioned(command);
+    let default = command.default_outcome();
+    let input_guards: Vec<_> = guarded
+        .iter()
+        .map(|outcome| super::finite::FieldGuard {
+            fields: None,
+            input: outcome.condition.predicate(),
+        })
+        .collect();
+    let inputs = analyze_fields(
+        default.is_some(),
+        &DomainEnvironment::new(types, &[]),
+        &DomainEnvironment::new(types, &command.input),
+        &input_guards,
+    );
+    let sides: Vec<Option<Vec<RowCase>>> = rows
+        .iter()
+        .map(|(via, entity)| row_side(spec, command, &guarded, (via, entity), types))
+        .collect();
+    let total = inputs.as_ref().map(Vec::len).and_then(|cases| {
+        sides
+            .iter()
+            .try_fold(cases, |total, side| total.checked_mul(side.as_ref()?.len()))
+    });
+    let (Some(inputs), Some(_)) = (
+        inputs.as_ref(),
+        total.filter(|total| *total <= super::finite::MAX_ASSIGNMENTS),
+    ) else {
+        if default.is_none() {
+            errors.push(open_coverage(command));
+        } else {
+            errors.extend(accepting_overlaps(
+                command,
+                rows,
+                &guarded,
+                (inputs.as_deref(), &sides),
+            ));
+        }
+        return errors;
+    };
+    let sides: Vec<&Vec<RowCase>> = sides.iter().flatten().collect();
+    let related_of = |index: usize| match &guarded[index].condition {
+        OutcomeCondition::Related { via, .. } => rows.iter().position(|(read, _)| read == &via),
+        _ => None,
+    };
+    let combinations: usize = sides.iter().map(|side| side.len()).product();
+    for input in inputs {
+        for mut number in 0..combinations {
+            // One case of every row, the last row's moving fastest.
+            let mut combination = vec![0_usize; sides.len()];
+            for (at, side) in sides.iter().enumerate().rev() {
+                combination[at] = number % side.len();
+                number /= side.len();
+            }
+            let selected: Vec<usize> = (0..guarded.len())
+                .filter(|index| input.selected.contains(index))
+                .filter(|index| match related_of(*index) {
+                    None => !matches!(guarded[*index].condition, OutcomeCondition::Related { .. }),
+                    Some(at) => sides[at][combination[at]].selected.contains(index),
+                })
+                .collect();
+            let answering = several_selected(&selected, &guarded);
+            let count = if selected.is_empty() {
+                usize::from(default.is_some())
+            } else {
+                answering.len()
+            };
+            if count != 1 {
+                let case: Vec<(&RelatedVia, &RowCase)> = rows
+                    .iter()
+                    .zip(sides.iter().zip(&combination))
+                    .map(|((via, _), (side, at))| (*via, &side[*at]))
+                    .collect();
+                let names: Vec<&str> = answering
+                    .iter()
+                    .map(|index| guarded[*index].name.as_str())
+                    .collect();
+                errors.push(unanswered_case(command, &case, input, (count, &names)));
+            }
+        }
+    }
+    errors
+}
+
+/// The branches the joint partition decides between: every guarded one but those answered before any
+/// row is read or by the addressed row's held state, and the `exists: false` branches, which answer
+/// missing rows.
+fn partitioned(command: &CommandSpec) -> Vec<&super::Outcome> {
+    command
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            !outcome.is_unconditional()
+                && outcome.condition.cause().is_none()
+                && outcome.condition != OutcomeCondition::ExistingInstance
+                && outcome.condition != OutcomeCondition::WrongState
+                && !matches!(
+                    outcome.condition,
+                    OutcomeCondition::Related {
+                        test: RelatedTest::Absent,
+                        ..
+                    }
+                )
+        })
+        .collect()
+}
+
+/// The refusal of a command without a default whose coverage the finite prover declines.
+fn open_coverage(command: &CommandSpec) -> ValidationError {
+    ValidationError::at(
+        command.site().key("outcomes"),
+        ValidationCode::NonExhaustiveBranches,
+        "related-row/input coverage is open, unsupported, or exceeds 64 joint assignments; \
+         declare a genuine default",
+    )
+    .with_hint(
+        "drop the guard from the branch that answers every other related row — usually the \
+         success beside the refusal",
+    )
+}
+
+/// Beside a default, where the joint cases are not enumerated — past the cap, or over a domain the
+/// prover declines — the refusal of every two accepting branches over different rows that can both
+/// hold: each on some case of its own row, with an input both guards admit, any side the prover
+/// declines counting as one that can (beyond10x/ess#283). One request would select both, and only
+/// refusals are ordered across rows, so the partition fails closed rather than admitting it.
+fn accepting_overlaps(
+    command: &CommandSpec,
+    rows: &[(&RelatedVia, &EntitySpec)],
+    guarded: &[&super::Outcome],
+    (inputs, sides): (Option<&[super::finite::FieldCase]>, &[Option<Vec<RowCase>>]),
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let accepting: Vec<(usize, usize)> = guarded
+        .iter()
+        .enumerate()
+        .filter_map(|(index, outcome)| match &outcome.condition {
+            OutcomeCondition::Related {
+                via,
+                test: RelatedTest::Holds(_),
+                ..
+            } if !outcome.is_refusal() => rows
+                .iter()
+                .position(|(read, _)| read == &via)
+                .map(|row| (index, row)),
+            _ => None,
+        })
+        .collect();
+    let holds = |index: usize, row: usize| {
+        sides[row]
+            .as_ref()
+            .is_none_or(|side| side.iter().any(|case| case.selected.contains(&index)))
+    };
+    for (at, (first, first_row)) in accepting.iter().enumerate() {
+        for (second, second_row) in &accepting[at + 1..] {
+            let together = inputs.is_none_or(|inputs| {
+                inputs
+                    .iter()
+                    .any(|case| case.selected.contains(first) && case.selected.contains(second))
+            });
+            if first_row != second_row
+                && together
+                && holds(*first, *first_row)
+                && holds(*second, *second_row)
+            {
+                errors.push(
+                    ValidationError::at(
+                        command.site().key("outcomes"),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "outcomes `{}` and `{}` accept on the rows `{}` and `{}` name, and \
+                             one request may select both: past the {} joint cases validation \
+                             enumerates, two accepting branches over different related rows \
+                             that can both hold are refused",
+                            guarded[*first].name,
+                            guarded[*second].name,
+                            rows[*first_row].0,
+                            rows[*second_row].0,
+                            super::finite::MAX_ASSIGNMENTS
+                        ),
+                    )
+                    .with_hint(
+                        "make the two acceptances exclusive through the input, or merge them \
+                         into one branch",
+                    ),
+                );
+            }
+        }
+    }
+    errors
+}
+
+/// The finite prover over `fields` crossed with `input`: enum domains only beside a default, as the
+/// one-row partition proves them.
+fn analyze_fields(
+    enum_only: bool,
+    fields: &DomainEnvironment<'_>,
+    input: &DomainEnvironment<'_>,
+    guards: &[super::finite::FieldGuard<'_>],
+) -> Option<Vec<super::finite::FieldCase>> {
+    if enum_only {
+        super::finite::analyze_enum_fields(fields, input, guards)
+    } else {
+        super::finite::analyze_with_fields(fields, input, guards)
+    }
+}
+
+/// One row's side of [`validate_joint_partition`]: every assignment of the fields its predicates
+/// read, with the guarded branches over it each selects, and its absence where its reference is
+/// Optional. `None` where the prover declines.
+fn row_side(
+    spec: &Specification,
+    command: &CommandSpec,
+    guarded: &[&super::Outcome],
+    (via, entity): (&RelatedVia, &EntitySpec),
+    types: &TypeRegistry,
+) -> Option<Vec<RowCase>> {
+    let readable = readable_fields(entity, types);
+    let guards: Vec<_> = guarded
+        .iter()
+        .map(|outcome| super::finite::FieldGuard {
+            fields: match &outcome.condition {
+                OutcomeCondition::Related {
+                    via: read,
+                    test: RelatedTest::Holds(predicate),
+                    ..
+                } if read == via => Some(predicate),
+                _ => None,
+            },
+            input: None,
+        })
+        .collect();
+    let cases = analyze_fields(
+        command.default_outcome().is_some(),
+        &DomainEnvironment::new(types, &readable),
+        &DomainEnvironment::new(types, &[]),
+        &guards,
+    )?;
+    let mut side: Vec<RowCase> = cases
+        .into_iter()
+        .map(|case| RowCase {
+            values: Some(case.fields),
+            selected: case
+                .selected
+                .into_iter()
+                .filter(|index| {
+                    matches!(&guarded[*index].condition,
+                        OutcomeCondition::Related { via: read, .. } if read == via)
+                })
+                .collect(),
+        })
+        .collect();
+    if via_is_optional(spec, command, via) {
+        side.push(RowCase {
+            values: None,
+            selected: Vec::new(),
+        });
+    }
+    Some(side)
+}
+
+/// The refusal of one case of [`validate_joint_partition`] that `count` branches — `names` —
+/// answer rather than one.
+fn unanswered_case(
+    command: &CommandSpec,
+    case: &[(&RelatedVia, &RowCase)],
+    input: &super::finite::FieldCase,
+    (count, names): (usize, &[&str]),
+) -> ValidationError {
+    let related = case
+        .iter()
+        .map(|(via, row)| match &row.values {
+            None => format!("{via} absent"),
+            Some(values) if values.is_empty() => format!("{via} present"),
+            Some(values) => values
+                .iter()
+                .map(|(path, value)| format!("{via}: {path} = {value}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let supplied = input
+        .input
+        .iter()
+        .map(|(path, value)| format!("{path} = {value}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    ValidationError::at(
+        command.site().key("outcomes"),
+        if count == 0 {
+            ValidationCode::NonExhaustiveBranches
+        } else {
+            ValidationCode::ConflictingDeclaration
+        },
+        format!(
+            "related [{related}] and input [{supplied}] select {count} branches: {}",
+            names.join(", ")
+        ),
+    )
+}
+
+/// The branches answering among `selected` (indices into `guarded`, in declaration order) on a
+/// command reading several related rows: the first declared present-related predicate refusal,
+/// together with every other selected refusal over the row it reads — which leave it ambiguous —
+/// where one is selected; otherwise every selected branch.
+fn several_selected(selected: &[usize], guarded: &[&super::Outcome]) -> Vec<usize> {
+    let refusal_via = |index: usize| {
+        let outcome = guarded[index];
+        match &outcome.condition {
+            OutcomeCondition::Related {
+                via,
+                test: RelatedTest::Holds(_),
+                ..
+            } if outcome.is_refusal() => Some(via),
+            _ => None,
+        }
+    };
+    let Some(first) = selected.iter().find_map(|index| refusal_via(*index)) else {
+        return selected.to_vec();
+    };
+    selected
+        .iter()
+        .copied()
+        .filter(|index| refusal_via(*index) == Some(first))
+        .collect()
 }
 
 fn selected_count(

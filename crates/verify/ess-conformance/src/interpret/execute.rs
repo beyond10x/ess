@@ -10,7 +10,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds (`refused_by_input`); addressed-row existence and held state; a related row named by a stored field of the addressed subject (ess/22, `stored_reference`): absent, none; missing, its `exists: false` branch; for the ess/22 `wrong_state` composition and every stored reference, the present-related predicate refusal; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
+//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch, the first declared of several rows read through the input (ess/22, `related_absent`; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds (`refused_by_input`); addressed-row existence and held state; a related row named by a stored field of the addressed subject (ess/22, `stored_reference`): absent, none; missing, its `exists: false` branch; for the ess/22 `wrong_state` composition, several related rows and every stored reference, the first declared present-related predicate refusal whose predicate holds; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch; for an identity nobody holds, its `unknown_instance:` branch, else its one declared not-found refusal, else `wrong_state:` |
@@ -641,13 +641,18 @@ fn responding_core(
     Ok(steps)
 }
 
+/// Whether a present-related predicate refusal answers before every accepting branch, after the
+/// addressed row's existence and held state: from ess/22 beside `wrong_state` (beyond10x/ess#282),
+/// and on a command reading several related rows, where the first declared refusal whose
+/// predicate holds answers across them (beyond10x/ess#283).
 fn orders_present_related_refusal(ir: &EssIr, spec: &ResolvedCommand) -> bool {
     ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
         && spec.outcomes.iter().any(is_present_related_refusal)
-        && spec
-            .outcomes
-            .iter()
-            .any(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState))
+        && (related::several(spec)
+            || spec
+                .outcomes
+                .iter()
+                .any(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState)))
 }
 
 #[allow(
@@ -951,6 +956,10 @@ fn selected_subject_refusal(
 /// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
 /// order"). `None` on a command with no related guard, or where the row is stored.
 ///
+/// On a command reading several rows through its input (ess/22, beyond10x/ess#283) the rows are
+/// read in the declaration order of their `exists: false` branches, and the first missing one
+/// answers: a missing row is answered before any present row's predicate, whatever the order.
+///
 /// `existing_instance:` is resolved before this helper on such a command. An absent Optional
 /// reference (ess/22, beyond10x/ess#304) answers `None` without a lookup. A related row named
 /// through a required input the request does not carry is declined: nothing here reads it. One
@@ -964,44 +973,40 @@ fn related_absent(
     generated: &Generated,
     responses: &mut super::response::Authority,
 ) -> Result<Option<Vec<Transition>>, Undetermined> {
-    let related: Vec<&ResolvedOutcome> = spec
-        .outcomes
-        .iter()
-        .filter(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
-        .collect();
-    let Some(first) = related.first() else {
-        return Ok(None);
-    };
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    let ResolvedCondition::Related { via, entity, .. } = &first.condition else {
-        unreachable!("filtered to related guards above")
-    };
-    let ResolvedRelatedVia::Input { field, type_ref } = via else {
-        return gap(format!(
-            "the guard over a row named by a stored field of `{}`",
-            branch(spec, first)
-        ));
-    };
-    // An absent Optional reference (ess/22, beyond10x/ess#304) reads no row and selects no
-    // related branch: it is not a missing row, and selection carries on without it.
-    if related::absent_optional(type_ref, input.get(field)) {
-        return Ok(None);
+    for read in related::reads_in_order(spec) {
+        let ResolvedCondition::Related { via, entity, .. } = &read.condition else {
+            unreachable!("ordered among related guards")
+        };
+        let ResolvedRelatedVia::Input { field, type_ref } = via else {
+            return gap(format!(
+                "the guard over a row named by a stored field of `{}`",
+                branch(spec, read)
+            ));
+        };
+        // An absent Optional reference (ess/22, beyond10x/ess#304) reads no row and selects no
+        // related branch: it is not a missing row, and selection carries on without it.
+        if related::absent_optional(type_ref, input.get(field)) {
+            continue;
+        }
+        let Some(identity) = input.get(field) else {
+            return gap(format!(
+                "the guard over a related row of `{}` with no identity in `{field}`",
+                branch(spec, read)
+            ));
+        };
+        let entity = &ir.entity(entity).name;
+        if store.instance_typed(entity, identity).is_some() {
+            continue;
+        }
+        return missing_row(ir, spec, store, input, generated, responses, Some(field));
     }
-    let Some(identity) = input.get(field) else {
-        return gap(format!(
-            "the guard over a related row of `{}` with no identity in `{field}`",
-            branch(spec, first)
-        ));
-    };
-    let entity = &ir.entity(entity).name;
-    if store.instance_typed(entity, identity).is_some() {
-        return Ok(None);
-    }
-    missing_row(ir, spec, store, input, generated, responses)
+    Ok(None)
 }
 
-/// The command's `exists: false` branch taken, for a related row no row carries the identity of;
-/// `None` where it declares none.
+/// The `exists: false` branch over the row `field` names taken — the command's only one where
+/// `field` is `None` — for a related row no row carries the identity of; `None` where it declares
+/// none.
 fn missing_row(
     ir: &EssIr,
     spec: &ResolvedCommand,
@@ -1009,14 +1014,16 @@ fn missing_row(
     input: &Context<'_>,
     generated: &Generated,
     responses: &mut super::response::Authority,
+    field: Option<&str>,
 ) -> Result<Option<Vec<Transition>>, Undetermined> {
     let Some(absent) = spec.outcomes.iter().find(|outcome| {
         matches!(
             &outcome.condition,
             ResolvedCondition::Related {
+                via,
                 test: ResolvedRelatedTest::Absent,
                 ..
-            }
+            } if field.is_none_or(|field| via.field() == field)
         )
     }) else {
         return Ok(None);
@@ -1114,7 +1121,7 @@ fn stored_reference<'s>(
         related::Reference::Absent => Ok(Stored::Absent),
         related::Reference::Row(row) => Ok(Stored::Row(row)),
         related::Reference::Missing => {
-            match missing_row(ir, spec, store, input, generated, responses)? {
+            match missing_row(ir, spec, store, input, generated, responses, None)? {
                 Some(steps) => Ok(Stored::Answered(steps)),
                 None => Err(Undetermined::Undecidable {
                     outcome: "related-row selection".into(),

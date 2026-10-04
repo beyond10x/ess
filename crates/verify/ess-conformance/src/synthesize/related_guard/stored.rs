@@ -281,7 +281,15 @@ pub(super) fn arranged_at(
     if goal.is_some() && is_absent(outcome) {
         return Err(unarranged());
     }
-    let mut setup = own_arrangement(ir, command, outcome, actors, distinction, (field, entity))?;
+    let mut setup = own_arrangement(
+        ir,
+        command,
+        outcome,
+        actors,
+        distinction,
+        (field, entity),
+        &[],
+    )?;
     let subject = subject_of(command, &setup).ok_or_else(unarranged)?;
     // The subject's own arrangement must not have run this command on it: those runs read the
     // stored reference as it was, and repointing it afterwards would contradict them.
@@ -322,6 +330,7 @@ pub(super) fn arranged_at(
             (OWN, distinction, &[]),
             None,
             goal,
+            None,
             (&BTreeMap::new(), &setup.steps),
         )?;
         surround(
@@ -362,7 +371,15 @@ pub(super) fn absent_at(
     let ir = models.arrangement;
     let (field, entity) = field(command).ok_or_else(unarranged)?;
     let input = absent_input(ir, command, outcome, distinction)?;
-    let mut setup = own_arrangement(ir, command, outcome, actors, distinction, (field, entity))?;
+    let mut setup = own_arrangement(
+        ir,
+        command,
+        outcome,
+        actors,
+        distinction,
+        (field, entity),
+        &[],
+    )?;
     let subject = subject_of(command, &setup).ok_or_else(unarranged)?;
     if runs(&setup.steps, command) {
         return Err(unpointed(
@@ -554,6 +571,7 @@ fn pointed(
         related,
         actors,
         (STORED, distinction, &chain),
+        None,
         None,
         None,
         (&BTreeMap::new(), &[]),

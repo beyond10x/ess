@@ -803,9 +803,10 @@ input typed as exactly one entity's identity; from `ess/22` it may be `Optional<
 identity, and the guard is then checked only when present (see
 [an Optional reference](#an-optional-reference)). The guard composes with `when:` and with any
 subject a branch names, a `creates:` included, and a refusal may carry it without naming one. A
-command reads one related row, declares at most one `exists: false` branch, and declares one
-wherever it has a predicate branch, because a missing row selects no predicate and never the
-default.
+command declares at most one `exists: false` branch over a row, and one wherever a predicate reads
+that row, because a missing row selects no predicate and never the default. Through `ess/21` a
+command reads one related row; from `ess/22` it may read several (see
+[several related rows](#several-related-rows)).
 
 From `ess/20`, the predicate may also read the related row's held lifecycle state as `state`, as a
 `when_subject` predicate reads the addressed subject's from `ess/18`: a release published only for
@@ -859,6 +860,51 @@ instance sent without the reference, between two rows of the related entity that
 refusal would select; a target that reads absence as a missing row, or reads some row of the
 entity, fails it. Where an unknown addressed identity is answered by `wrong_state`, synthesis sends
 it without the reference. The present cases are witnessed as for a required reference.
+
+### Several related rows
+
+From `ess/22` (beyond10x/ess#283), a command may guard on more than one related row, each named
+by an input of its own, required or `Optional<…>`:
+
+```text
+- name: no-such-switch
+  when_related: {via: input.switch, exists: false}
+  error: demo.run.NoSuchSwitch
+- name: switch-paused
+  when_related: {via: input.switch, predicate: state == Paused}
+  error: demo.run.SwitchIsPaused
+- name: no-such-capability
+  when_related: {via: input.capability, exists: false}
+  error: demo.run.NoSuchCapability
+- name: capability-revoked
+  when_related: {via: input.capability, predicate: state == Revoked}
+  error: demo.run.CapabilityIsRevoked
+- name: started
+  creates: demo.run.Run
+  instance: run_id
+```
+
+Each row is checked as a lone row is: its predicates against its own entity, at most one
+`exists: false` branch over it, and one wherever a predicate reads it. Declaration order decides
+between rows. A missing row answers first: the rows are read in the order their `exists: false`
+branches are declared, and the first missing one answers, before any present row's predicate. Then,
+after the addressed row's existence and held state, the first declared predicate refusal whose
+predicate holds answers, before every accepting branch: a paused switch under a revoked capability
+is refused as `switch-paused`. Two refusals over one row that both hold, or two accepting branches
+over different rows, are still `conflicting_declaration`. Validation covers every row's fields, and
+an Optional row's absence, crossed with the input, up to 64 joint cases. Past that cap, or over a
+domain it cannot enumerate, a command needs a default; beside one, two accepting branches over
+different rows that can both hold are still refused as `conflicting_declaration` rather than
+admitted unchecked. A stored-field `via` stays the command's only
+row. Under `ess/21` and earlier a second row is refused as `unsupported_format_version`, naming
+`ess/22`.
+
+Synthesis witnesses each branch with every other row present and arranged so that nothing the
+order answers first is selected there — for a predicate refusal, no earlier-declared refusal over
+that row; for `exists: false`, any row — and sends each refusal the overlaps the order decides:
+both rows missing for the first declared `exists: false`, an earlier Optional reference left out
+beside a missing row, a refusing row beside a missing one, and two refusing rows for the first
+declared refusal. A target that reads the rows in another order, or ignores one, fails.
 
 ### A stored reference
 

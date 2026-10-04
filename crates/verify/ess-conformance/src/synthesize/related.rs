@@ -153,13 +153,46 @@ pub(super) fn arrange_within(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    mut setup: Setup,
+    setup: Setup,
     guarded: Option<Guarded<'_>>,
+    arranging: &[&EntityHandle],
+) -> Result<Setup, RefusalCause> {
+    arrange_within_each(
+        ir,
+        outcome,
+        actors,
+        distinction,
+        setup,
+        guarded.as_slice(),
+        arranging,
+    )
+}
+
+/// [`arrange_except`] for a branch of a command whose guards read several related rows
+/// (beyond10x/ess#283): the reads of every row in `guarded` are left to the guards' arrangement.
+pub(super) fn arrange_except_each(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    setup: Setup,
+    guarded: &[Guarded<'_>],
+) -> Result<Setup, RefusalCause> {
+    arrange_within_each(ir, outcome, actors, distinction, setup, guarded, &[])
+}
+
+fn arrange_within_each(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    mut setup: Setup,
+    guarded: &[Guarded<'_>],
     arranging: &[&EntityHandle],
 ) -> Result<Setup, RefusalCause> {
     let reads = reads(outcome)
         .into_iter()
-        .filter(|read| !is_guarded(ir, outcome, read, guarded));
+        .filter(|read| !guarded_by_any(ir, outcome, read, guarded));
     for (nth, read) in reads.enumerate() {
         check_chain(read.entity, arranging)?;
         let first = RELATED_WITNESS * (1 + distinction.get() + 8 * nth);
@@ -274,6 +307,18 @@ fn check_chain(entity: &EntityHandle, arranging: &[&EntityHandle]) -> Result<(),
         });
     }
     Ok(())
+}
+
+/// Whether `read` reads a row any of `guarded` names ([`is_guarded`]).
+fn guarded_by_any(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    read: &Read<'_>,
+    guarded: &[Guarded<'_>],
+) -> bool {
+    guarded
+        .iter()
+        .any(|guarded| is_guarded(ir, outcome, read, Some(*guarded)))
 }
 
 /// Whether `read` reads the row `guarded` names: through the same input, of the same entity.

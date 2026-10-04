@@ -566,8 +566,9 @@ tenant", "the configuration does not register this client".
   `unknown_instance` and `input_absent`. From `ess/22`, `wrong_state:` may coexist with a
   `when_related:` predicate refusal: the addressed row's wrong state answers first, then a present
   related row may refuse the request. `existing_instance:` sits beside it, answering first
-  ([the precedence order](#the-precedence-order)). One command reads one related row, and declares
-  at most one `exists: false` branch.
+  ([the precedence order](#the-precedence-order)). Through `ess/21` one command reads one related row, and
+  declares at most one `exists: false` branch; from `ess/22` it may read several through its input
+  ([below](#several-related-rows-ess22-beyond10xess283)), with at most one `exists: false` branch each.
 - **Validation.** The rows that exist are partitioned jointly with the input, as the stored-field
   partition does; where the finite prover declines — a comparison with the input, an open domain —
   the command needs a genuine default.
@@ -581,6 +582,48 @@ tenant", "the configuration does not register this client".
   predicate may refuse it, and a related row that admits it reaches the acceptance. A nonmoving
   acceptance remains independent of the moving sibling's source-state requirement. Through
   `ess/21`, the combination retains its `conflicting_declaration` refusal.
+- **Several related rows (`ess/22`, beyond10x/ess#283).** <a id="several-related-rows-ess22-beyond10xess283"></a>
+  A command may guard on more than one row, each named by an input `via` of its own, required or
+  `Optional<…>`: "a run starts only on a switch that is not paused, under a capability that is not
+  revoked" (`no-such-switch` and `switch-paused` through `input.switch`, `no-such-capability` and
+  `capability-revoked` through `input.capability`, beside a default that starts the run). Each row is
+  validated as a lone row is: its entity resolved from its own `via`, its predicates checked against
+  that entity, at most one `exists: false` branch over it, and one wherever a predicate reads it.
+  The precedence across rows is declaration order (the story's decision): at step 1 the rows are
+  read in the declaration order of their `exists: false` branches and the first missing one
+  answers, so any missing row answers before every present row's predicate; at step 5, after the
+  addressed row's existence and held state, the first declared present-related predicate refusal
+  whose predicate and input guard hold answers, across rows, before every accepting branch —
+  whether or not `wrong_state` is declared. Two refusals over one row that both hold stay
+  ambiguous (`conflicting_declaration`), as on a command reading one row, and so do two accepting
+  branches over different rows: only refusals are ordered across rows. Beside `wrong_state:` every
+  present-related branch must refuse, as for one row. Validation partitions every row's fields —
+  and an Optional row's absence, which selects none of its branches — crossed with the input, under
+  the finite prover's 64-assignment cap; past it, or over an open domain, the command needs a
+  genuine default, and beside one every two accepting branches over different rows that can both
+  hold — each on its own row, with an input both guards admit, a side the prover declines counting
+  as one that can — are still refused `conflicting_declaration`: the partition fails closed rather
+  than admitting them unchecked. A stored-field `via` stays alone: a second one is refused, and so
+  is one beside an input `via`, since its row is read at step 5 and no order between the two kinds
+  is designed. Under `ess/21` and earlier a second row is refused with `unsupported_format_version`
+  naming `ess/22`. Synthesis arranges each branch's scenario around the row its guard reads — for a
+  branch reading none, the row it copies a value from or files its creation under, else the first —
+  with every other row present and arranged so that nothing the order answers before the branch is
+  selected there by the input sent: any row beside an `exists: false` branch, no earlier-declared
+  refusal beside a predicate refusal, no branch at all beside anything else. The input is searched
+  with each such row's comparisons to it as well. A refusal over one row is also sent, before its
+  own send, the overlaps the order decides: for an `exists: false` branch, every earlier-declared
+  Optional reference left out, every row whose `exists: false` is declared later missing too, and
+  each other row selecting one of its own branches; for a predicate refusal, each other row
+  selecting an accepting branch or a refusal declared after it. A target reading the rows in another
+  order, stopping at an absent reference, or ignoring one row, fails
+  (`ess-conformance/tests/related_guard_multiple_vias.rs`, `adversary_283_pass1.rs`). A driver
+  running such a command arranges the other rows first, each where no branch answering before the
+  driven one can hold whatever the input; a row no such arrangement reaches — a predicate reading
+  the input — refuses the run naming `arrange_related_row`, and so does an aggregate view sharing
+  one related row between its rows. Generated Rust and Go behaviour (beyond10x/ess#319) reads one
+  related row per command: a command reading several stays an obligation naming them, and its
+  contract states this order.
 - **Held state (`ess/20`, beyond10x/ess#229).** From `ess/20` the predicate also reads the related
   row's held lifecycle state as `state` — "a release needs a candidate in state `Accepted`":
   `predicate: state != Accepted` on the refusal, beside a default that moves the release. It is
@@ -651,9 +694,10 @@ tenant", "the configuration does not register this client".
   is refused naming the stored reference, not an unreachable branch
   (`ess-conformance/tests/related_guard_stored_reference.rs`).
 - **Runtimes.** The interpreted target answers a missing related row by its `exists: false`
-  branch, and on a stored row evaluates its related predicates after the addressed row's lifecycle
-  and before accepting or external branches ([the precedence order](#the-precedence-order)). An
-  absent Optional reference performs no lookup and selects no related branch. A stored reference
+  branch — of several rows, the first declared missing one (#283) — and on a stored row evaluates
+  its related predicates after the addressed row's lifecycle and before accepting or external
+  branches ([the precedence order](#the-precedence-order)). An absent Optional reference performs
+  no lookup and selects no related branch. A stored reference
   is read from the addressed row once its existence and held state have answered. It
   declines a command with `existing_instance:`, reporting such a scenario `unsupported`.
   Entity Runtime refuses the command with `RelatedGuardUnsupported`: an entity-core operation
@@ -665,7 +709,7 @@ One order answers every command, whichever branches it declares (coordinator dec
 beyond10x/ess#227 correction 1). Every other design note links here rather than stating an order
 of its own:
 
-1. on a command with a `when_related:` branch reading an input, `existing_instance` then `exists: false` (#211 revision); an absent Optional reference (`ess/22`, #304) reads no row, so neither `exists: false` nor step 5 answers it;
+1. on a command with a `when_related:` branch reading an input, `existing_instance` then `exists: false` (#211 revision); an absent Optional reference (`ess/22`, #304) reads no row, so neither `exists: false` nor step 5 answers it; several rows read through the input (`ess/22`, #283) are read in the declaration order of their `exists: false` branches, and the first missing one answers;
 2. input-guarded refusals, the first declared whose guard holds (#209, #227);
 3. existence of the addressed row (`unknown_instance`, and `existing_instance` on commands without `when_related`);
 4. the held state: `when_subject_state` and `when_subject` select by it; `wrong_state` answers only
@@ -674,7 +718,10 @@ of its own:
 5. from `ess/22`, where the command also declares `wrong_state`, on a present related row the
    `when_related:` predicate refusal whose predicate and optional input guard hold
    (beyond10x/ess#282); overlapping related refusals remain ambiguous, and commands without this
-   composition retain declaration order. A `when_related:` reading a stored field of the addressed
+   composition retain declaration order. On a command reading several rows through its input
+   (`ess/22`, #283) this step applies with or without `wrong_state`: the first declared
+   present-related predicate refusal whose predicate and input guard hold answers across rows, and
+   two that hold over one row remain ambiguous. A `when_related:` reading a stored field of the addressed
    subject (`ess/22`, #304) answers entirely here, whether or not `wrong_state` is declared: its
    field read as the row held it before the branch, absent selecting no related branch, an
    identity no row carries `exists: false`, a stored row its predicate refusal;
