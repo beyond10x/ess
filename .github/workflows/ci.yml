@@ -105,6 +105,18 @@ jobs:
           cargo fetch --locked
           cargo fetch --locked --manifest-path fuzz/Cargo.toml
 
+      # `projection-check` writes the visualise page's presentation with the `ess-ui` commit
+      # `website/package.json` pins. It is installed here, once per pin, so the lanes stay offline.
+      - name: Restore the pinned ess-ui
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ess-ui
+          key: ess-ui-${{ runner.os }}-${{ hashFiles('website/package.json') }}
+
+      - name: Install the pinned ess-ui
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: cargo xtask ess-ui
+
       # One setup, then each task in turn. Every task runs whatever the one before it did, so one
       # red run names every failing task rather than the first.
       - name: Lint (fmt, Clippy, rustdoc, release record, action)
