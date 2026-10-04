@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 66
+revision: 67
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -414,3 +414,11 @@ Closed own282 and391 target contents were archived and byte-compared before owni
 The original-failure audit accounts for31failed targets/166failed tests; later complete target evidence covers30targets/165failures, leaving only upsert_by_existence_go. The audit is not a combined package pass. New RYW tests initially failed fixture compilation before0/5execution; five full-reference comparisons are corrected with both productionresources unchanged. The next same5test baseline remains conditional on a fresh12GiB floor.
 
 Reviewer explicitly handed root four terminal clean checkouts with no future dependency: ess-current-suite-compat-review-r1-20261003, ess-final-two-review-r2-20261003, ess-authored-aggregate-review-r1-20261004 and ess-authored-aggregate-review-r2-20261004. Fresh ownership/lease/process checks preceded managed archive and finish. Root inspected exact4 eligible GC dry-run results and applied only those4IDs; final receipts prove every path absent and recovery kind archive. Archive manifest hashes respectivelya430ecef179e6c7161907a147dabe9c92bcf9111d07b5988d3e0ecba2aa8df98, a01ef35c5b030e2ba7c5648c315cabe914656aacdea023022d392fea6c8b2833, 0c95271605a283176ed8ba8753fa339655b66118c0f57da1238dd5db82bf5ade and1787628170bb5f8b1181e483e06d147c205212c2d9288de32339231785069ea0. Source commits also remain in integration history; all review reports and evidence stay outside retired checkouts. No author or foreign tree was retired. Their prior allocated total367,144,960bytes is recorded separately from changing global free space. Fresh rootfree14,545,092,608bytes enabled a new conditional author baseline grant, with a fresh author check still required.
+
+## Retained fixture candidate and resource hold
+
+Task retained-replay-fixture-consistency now holds source-clean bot candidate8e7c21a0c5055635e771c2c5b2b4fa9181bc909e. Both token-only and exact-query-token counterfactuals executed actual Go successfully: adversary3/0/0 and full generated package186/0/0 in each stage. Root independently counted the raw events. Formats passed; Rust target and strict lint remain unstarted below the12GiB floor. First independent review is prepared/inprogress without a final verdict. Do not integrate this candidate or413A yet.
+
+Complete413A target recovery plan2b4c0f1f5b192036151fd065daf75003acd47bbf4050740df737869c96d7512d2 inventories every file and accounts for internal hardlinks, with8961126400unique allocated bytes. It explicitly preserves the12GiB start floor for archiving as well. The preceding plan1 grant used the physical gzip bound plus2GiB headroom and had started the owner's archive writer. On the subsequent no-exception hold, that exact own writer was interrupted and exited130. The incomplete archive is29591536logical/29593600allocated bytes, retained as incomplete evidence; no completed archive, Cargo cleanup, link-input extraction, source change or target deletion occurred. This scheduling deviation is retained, not retrospectively called compliant. The original full target and external failed fixtures/logs remain intact. Plan2 and its hold now govern; no floor exception is authorized.
+
+The read-only compiler-intermediate breakdowna86324a4f7ea24b419485e7eef3ae5ba8c214a1f3f7c6ae8f7d907bee32dd15d puts the entire remainder after all executable files and review link inputs at385908736bytes, already including protected fixture/source material. It cannot alone restore the current capacity shortfall, and no such deletion was granted. The user's three release/backlog candidates remain untouched. New compiler/probe/archive starts stay held until fresh available space meets the standing floor; this is not a waiver of the remaining verification or a release claim.

@@ -7,7 +7,7 @@ title: Make retained Go replay fixtures honor read-your-writes tokens
 relations:
 - derived_from: story:feature-request-312
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 3}
@@ -35,3 +35,11 @@ Both failed Rust wrappers and the whole retained_replay target must pass with ac
 The completed413A run's owner verified and retired only its exclusive Go compiler cache through go clean -cache. Receipt19a43826cb1b086233b9d5a425e05f255a39cb42da1ce62a5792fc06c08134c1 records2109902848allocated bytes reclaimed, unchanged source/logs/fixtures/binaries/archives, and an honest limited process audit. The user's three read-only release/backlog candidates were untouched. Fresh coordinator available space13452419072bytes is above the12884901888floor; this is an admission observation, not a forecast.
 
 The existing implementor now owns the sole ESS execution lane. Before each expensive command, record another fresh floor receipt. Preserve a command inventory and immutable original failure packages. Run exactly the adversary projection and full retained generated Go packages after the two-result-token change, then the same two after the exact query-token assertion; each command is bounded180seconds. Only after those counterfactual probes pass, apply the validated one-file correction and run the whole retained_replay Rust target once, strict affected-target lint, owning format and task fmt-check. Rust target/lint commands are bounded900seconds. No redundant separate reruns of the two Rust wrappers and no whole-package run are assigned here. Unexpected failure or insufficient capacity holds the next start. Independent whole-unit review and integration still precede the refreshed413A full-package run. No acceptance success is claimed at dispatch.
+
+## Frozen candidate and proven Go counterfactuals
+
+Local bot candidate8e7c21a0c5055635e771c2c5b2b4fa9181bc909e, tree5de15cb4deb3c32dbaa2020f264471a8f4fc9332, parent3f5b7524633cfb20f178887e2c1a5f54d9eb313b, changes exactly the scoped fixture by6additions/3removals. PatchSHAa1040c6ac78ed660f554232d53dc475f561130e5b1711a001a4449681eff9ba3; fixtureSHA2fe25f862f9256caf4c0f529e3646456bf867ac483206f5c9bd5a1d8e9106699. Author and committer are both the bot. This is a pending candidate, not accepted integration.
+
+The token-only counterfactual passed both actual Go commands: exact adversary projection3pass/0fail/0skip (loge9cd0764b777363aaea9b4cc5d32128e67bb06618ce721babf60824604119314) and whole generated package186pass/0fail/0skip (log2c2f26a8e3b1e683e7ad90cd418b95fea3c94566ddce448a74d2f26fd7f2f726). Adding the exact request-token assertion also passed3/0/0 (log4edd5e74341b709570489e3a047c88d570ab507f57f30dd09a3b1f9c3563f651) and186/0/0 (log80f4c2009c50f4ab0672b831792a117d7d72f82d3e8335ef706bbcbc75cc4e59). Root independently counted the raw JSON events. Original generated failures remain immutable, and the repository fixture byte-matches the final probe. These results prove the token mismatch caused the retained Go failures; the generated runtime itself was unchanged. Owning format and task fmt-check passed.
+
+Whole retained_replay Rust wrapper execution and strict affected-target lint have NOT started: freshfree again fell below12884901888bytes. No native target exists for this unit. Review1 preparation and source audit are pending final author checks; no verdict or review-budget reset is claimed. The existing exclusive exact-request-token Go cache is retained for the later Rust wrapper's generated execution. Source-clean managed tree and live author lease remain handed to the same implementor; no publication or integration.
