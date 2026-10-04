@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 63
+revision: 64
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -146,10 +146,11 @@ The current October resource contract remains one ESS compiler lane, jobs1/debug
 
 ## Immediate next action
 
-1. Refresh the preserved #282 regression branch onto reviewed integrationf24dafb1e, then measure source22 admission red and actual precedence red before the minimal fix. The original eight controls, independent source review and serial #304 Optional-input → stored-reference → #319 sequence remain binding.
-2. Complete final causal and mutation design reviews without relaxing their obligations. Record exact findings and corrections. The causal blocker stays open until actual dispatcher/store/generated/browser proof executes.
-3. Continue #391 publisher/AsyncAPI/NATS implementation under explicit compiler custody; integrate only after complete acceptance and independent review. Address rendering alone cannot clear causal aggregate completion.
-4. Continue every accepted C–I unit, then freeze one final candidate, run required Gates/CI/release checks and deliver one bot PR and verified release. Preserve all stated deferrals; no issue-count shortcut.
+1. Finish the already admitted full ess-conformance package run for the refreshed two-path413A arithmetic correction. Preserve its terminal result and classify every ignored or missing-runtime case. Complete the same independent review, including its one bounded public API probe only when the recorded success, artifact-freshness and disk conditions hold. Integrate only a fully checked and independently approved candidate.
+2. Refresh Optional-input preparatione8e3e8d9 onto that reviewed integration, then execute the actual baseline before minimal production changes. The eleven prepared controls, source22 admission, older-format refusals and reviewed282 precedence remain binding. Stored-reference304 and generated behavior319 follow serially. Read-only implementation/validation mapping can proceed while the compiler lane is occupied.
+3. Retain parameterized transport preparationda72325c and its corrected validation plan49972b16. Actual validator, pinned NATS Rust/Go execution, affected checks and independent review remain due under later explicit compiler custody. Address rendering alone cannot satisfy causal aggregate completion.
+4. Continue every accepted C–I unit, preserving the accepted designs, dependency order and deferrals. Freeze one final candidate only after that work, then run required Gates/CI/release checks and deliver one bot PR and one verified release.
+5. Treat the latest user-supplied release/backlog compiler-child capacity inventory as read-only findings. It grants no cleanup authority. Preserve mixed target roots, backlog-input, scratch/review fixtures and release evidence. An already admitted run may finish; no new expensive start is allowed below the current12GiB floor.
 
 ## Current resource contract from final handoff
 

@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -61,3 +61,7 @@ Frozen production source bbc9d2f51fb3a3f7fbadb539e833143c2e8a8c36d08a3433566fb95
 The unit is fast-forwarded from0beee60c6 to reviewed integration2255315a48a947f363d46cb3c691a57b4879f3b1, retaining exactly two source paths and unchanged treatment bytes. Refreshed patchSHAa9f78c08bdf51955d61dd471578929d0c8877ea7eb4430c5809be7fe6c844d78; subject_fact.rs SHA cb3b9fb0d1b4acd7aabf8a43f813e3920133f480ce0fd55dc2d88eef08d9dc20; counter_limit.rs SHA26e00ff65a9ab39c453bd60ad2da24433e567cc61115a0fc094ae65b923cbc44. Root consumed the refresh and actual tool prerequisite records. Rust1.98.1, Go, Node, TypeScript, Prettier, Task and installed Node type definitions are present; TMP is outside Git and Go cache is unit-exclusive. Fresh preflight free17044844544bytes exceeds the unchanged12884901888 floor.
 
 The sole ESS compiler lane is assigned for strict all-target Clippy, owning package and repository formatting, then the full unfiltered ess-conformance package with --no-fail-fast, no required-runtime skips and a7200second command bound. Lint is starting; no terminal package result is claimed. An earlier grant was not executed before a separate cleanup task ended; the owner explicitly confirmed no refresh/compiler had occurred and resumed the same grant. Final independent whole-unit review and source integration remain due. Optional-input production remains dependent on this completion;412 and transport execution remain held.
+
+## Final review probe conditions
+
+The independent review's prepared command plan bbcc6204c71465c548f9d4d2349033f909e95121082fe5496b615c4d26153601 retains one new public API MAX/MIN arithmetic case and omits repeated author controls covered by the full package run. The coordinator inspected the plan and unchanged probe96346e1e50da2c3297a19f17ca154efb40eb2fdabae1d3cc5f994921ab767436. Execution is conditionally authorized only after the full package command terminates successfully, required runtime execution is accounted for, the two source hashes still match the refreshed freeze, and newly resolved owner-built rlibs are hashed in a retained command inventory. Bounds: rustc compile120seconds, exactly independent_extreme_counter_refusals_do_not_claim_a_complete_nearest_value180seconds, total300seconds. Fresh available disk must be at least12884901888bytes before each start; retain the existing isolated environment and external scratch. A failed condition holds execution; there is no cleanup grant, repeated author control, extra case, source change or substitute acceptance. The package is still running when this decision is recorded; no success or probe execution is claimed.
