@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T20:11:36Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-282",
+  "kind": "story",
+  "revision": 24,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Exact31e7362f8 finalneighbor run exit0: conformance lib126, command integrity4, responses1, one-time execution21, relatedguard6, relatedguardmoves5, domainlib361 and relatedguard admission22; total546passed,0failed/ignored/filtered. Includes lifecycle/related honest and wrong-precedence fault controls, source22 admission and older refusals. Final whole review2 approved; earlier14commandtests and strictalltargetlint/fmtgreen. Broader31target backlog remains separate.",
+    "reference": "sha256:4539b339078fd18de5f275de37976ea52bac6c538152a516dff7333802daff67"
+  }
+}

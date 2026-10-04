@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:17:40Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-282",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Candidate226af8bfe: strict all-target Clippy exit0; full affected3package no-fail-fast terminal exit101 with31failedtargets/166failingtests; refreshed fmt red at two mechanical history test lines; independent Open-external probe in progress. No full green claim.",
+    "reference": "local-evidence:ess21-completion/282/full-affected-refreshed.inventory-by-target.tsv"
+  }
+}

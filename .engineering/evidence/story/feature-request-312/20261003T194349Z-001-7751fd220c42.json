@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:43:49Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Bounded next compatibility slice baseline: adversary_absent_pass2 3pass3fail, adversary_aggdelta_pass1 10pass1fail, adversary_runtime_parity_go 0pass4fail at f5857f857. Dispatch existing Sol source worker on exactly these3testfiles from8a94f4a31; preserve all semantic/legacy controls, no compiler until grant, no production change. Publication-safe copy of the same observation; private original retained locally, not a new test run.",
+    "reference": "sha256:d5898e183edb7959a239b858279db501a8f1e63de69598dd1f4fce408e42b913"
+  }
+}

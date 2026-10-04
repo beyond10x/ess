@@ -113,6 +113,16 @@ impl ConformanceTarget for Fixture {
             json!({"command":request.command,"input":request.input}),
         );
         self.failure("execute")?;
+        if self.kind == "read-your-writes" {
+            let result = SemanticCommandResult::undeclared();
+            return match request.command.to_string().as_str() {
+                "example.call.OpenSession" => Ok(result.with_consistency(
+                    ess_primitives::consistency::ConsistencyToken::new("write").unwrap(),
+                )),
+                "example.call.OfferCall" => Ok(result),
+                command => panic!("unexpected read-your-writes command {command}"),
+            };
+        }
         if let Some(inner) = &self.interpreted {
             return inner.execute_command(request);
         }
@@ -182,12 +192,43 @@ impl ConformanceTarget for Fixture {
         }
         Ok(result)
     }
+    fn establish_entity(&self, request: EntitySetupRequest) -> Result<(), TargetError> {
+        self.record(
+            "establish",
+            json!({
+                "entity": request.entity,
+                "identity": request.identity,
+                "fields": request.fields,
+                "state": request.state,
+            }),
+        );
+        if self.kind == "read-your-writes" {
+            return Ok(());
+        }
+        self.interpreted
+            .as_ref()
+            .ok_or_else(|| {
+                TargetError::unsupported(
+                    "entity setup",
+                    "fixture cannot validate and establish entity state",
+                )
+            })?
+            .establish_entity(request)
+    }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
         self.record(
             "query",
-            json!({"view":request.view,"params":request.params}),
+            json!({"view":request.view,"params":request.params,"at_least":at_least}),
         );
         self.failure("query")?;
+        if self.kind == "read-your-writes" {
+            assert_eq!(request.view.to_string(), "example.call.Calls");
+            return Ok(SemanticViewResult::of(Vec::<BTreeMap<String, Node>>::new()));
+        }
         self.interpreted
             .as_ref()
             .expect("structured query")
@@ -398,6 +439,17 @@ impl Drop for DisclosureHost {
         }
     }
 }
+fn dispatch_establish(target: &impl ConformanceTarget, args: &Value) -> Result<Value, TargetError> {
+    let text = |key: &str| args[key].as_str().unwrap();
+    target.establish_entity(EntitySetupRequest {
+        entity: text("Entity").parse().unwrap(),
+        identity: serde_json::from_value(args["Identity"].clone()).unwrap(),
+        fields: fields(&args["Fields"]),
+        state: text("State").parse().unwrap(),
+        correlation: ess_primitives::ids::CorrelationId::new("parity-1").unwrap(),
+    })?;
+    Ok(Value::Null)
+}
 fn dispatch(target: &impl ConformanceTarget, request: &Value) -> Result<Value, TargetError> {
     let args = &request["args"];
     let text = |key: &str| args[key].as_str().unwrap();
@@ -417,6 +469,7 @@ fn dispatch(target: &impl ConformanceTarget, request: &Value) -> Result<Value, T
             Ok(Value::Null)
         }
         "execute" => dispatch_execute(target, args),
+        "establish" => dispatch_establish(target, args),
         "events" => {
             let result = target.observe_events(EventObservationRequest {
                 event: text("Event").parse().unwrap(),
@@ -475,12 +528,18 @@ fn dispatch(target: &impl ConformanceTarget, request: &Value) -> Result<Value, T
         }
         "mark" | "elapsed" => dispatch_clock(target, request),
         "query" => {
+            let consistency = match text("AtLeast") {
+                "" => ess_primitives::consistency::QueryConsistency::Current,
+                token => ess_primitives::consistency::QueryConsistency::at_least(
+                    ess_primitives::consistency::ConsistencyToken::new(token).unwrap(),
+                ),
+            };
             let result = target.query_view(SemanticViewRequest {
                 view: text("View").parse().unwrap(),
                 params: fields(&args["Params"]),
                 correlation,
                 deadline,
-                consistency: ess_primitives::consistency::QueryConsistency::Current,
+                consistency,
             })?;
             Ok(json!({"Rows":result.rows}))
         }

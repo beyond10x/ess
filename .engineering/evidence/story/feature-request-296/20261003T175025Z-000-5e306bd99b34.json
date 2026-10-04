@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T17:50:25Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-296",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:mutation-audit-design-20261003-r2",
+    "reference": "docs/design/mutation-scope-and-known-failures.md#cli-and-accounting-without-changing-ordinary-truth",
+    "review": "review-result:mutation-audit-design-20261003-r2",
+    "outcome": "fixed"
+  }
+}

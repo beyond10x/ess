@@ -39,7 +39,7 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 22
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"approval":1}}}
@@ -50,12 +50,12 @@ A command with a `when_related` refusal and a `wrong_state` outcome validates, w
 
 ## Acceptance
 
-The two reported #282 shapes must validate and synthesize witnesses under ess/21: an objective guarded by a paused related switch, and a deployment guarded by release approval. The precedence is documented in docs/design/input-guard-overlap-precedence.md and the authoritative cross-record-and-stored-field-guards order.
+The two reported #282 shapes must validate and synthesize witnesses under ess/22: an objective guarded by a paused related switch, and a deployment guarded by release approval. The precedence is documented in docs/design/input-guard-overlap-precedence.md and the authoritative cross-record-and-stored-field-guards order.
 
 Named conformance controls to implement (prospective names, not claims of existing coverage):
 
-- `issue_282_related_refusal_and_wrong_state_validate_under_ess_21`: both reductions validate with declaration order reversed as well.
-- `issue_282_overlap_below_ess_21_keeps_its_refusal`: older supported formats retain their existing refusal/meaning; no silent widening.
+- `issue_282_related_refusal_and_wrong_state_validate_under_ess_22`: both reductions validate with declaration order reversed as well.
+- `issue_282_overlap_below_ess_22_keeps_its_refusal`: older supported formats retain their existing refusal/meaning; no silent widening.
 - `issue_282_wrong_state_precedes_related_predicate_refusal`: where both predicates hold for a moving command, interpreter answers wrong_state, with no success event or storage mutation.
 - `issue_282_related_predicate_refuses_from_an_allowed_state`: correct own state plus a disallowed related row selects the related refusal; allowed related row reaches acceptance.
 - `issue_282_missing_related_row_keeps_its_existing_precedence`: the earlier missing-row branch remains distinguishable from the new predicate step.
@@ -63,7 +63,7 @@ Named conformance controls to implement (prospective names, not claims of existi
 - `issue_282_synthesis_witnesses_both_lifecycle_and_related_refusals`: retained suite contains and executes both branch families against an honest interpreter.
 - `issue_282_wrong_precedence_target_fails_its_suite`: a controlled target that swaps the overlapping refusal order fails the named scenario.
 
-Source test homes are the scoped related_guard, related_guard_moves and interpreted_command_execution targets; implementor confirms exact placement. Real present-related predicate execution is necessary on current main, which declines that form; no simulated success or skip counts as conformance. The ess/21 bundle merge boundary remains subject to the existing coordinated format decision.
+Source test homes are the scoped related_guard, related_guard_moves and interpreted_command_execution targets; implementor confirms exact placement. Real present-related predicate execution is necessary on current main, which declines that form; no simulated success or skip counts as conformance. The ess/22 bundle merge boundary remains subject to the existing coordinated format decision.
 
 ## Origin
 
@@ -94,3 +94,7 @@ The accepted source allocation in the consumer backlog and current integration r
 The full frozen runtime handoff has been applied as local bot integration commit48d5cc77b38f919381d04830475ff6ea4959289f after current released main. The present-related interpreter prerequisite is now present; do not duplicate it or import old carrier ancestry. A read-only scope refresh confirms the named eight controls and narrow files, including interpret/execute/related.rs. Root delegates only FormatVersion::V22 plus its supported-source admission/compatibility plumbing to this serial unit; other format/default/schema projections remain coordinator-owned unless a measured need is reported.
 
 Next unit: ess-serial-282-20261003 from48d5cc77b, branch unit/serial-related-precedence-20261003, own target and assigned scratch. The292 source remains in its own tree and integrates serially. Its implementation and tests must finish; source-read/preparation may proceed independently. Final combined checks and issue closure remain pending.
+
+## Review1 correction boundary — 2026-10-03
+
+Independent review `related-precedence-282-20261003-r1` confirms the Open-external alternative loss with actual0/1red execution and two1/1green controls. The author is correcting that defect and the two repository-formatting lines before final review2. The review's broad description of the31target/166test failures as unrelated baseline drift is not an established classification of every failure: the coordinator retains the complete inventory and requires baseline/requirement-specific diagnosis. No failure is waived by that sentence, and no full affected-package success is claimed.

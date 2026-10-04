@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:22:18Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-282",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Independent prospective Open-external composition regression exit101: actual wrong-state only versus provider-declined plus wrong-state; existing Open and282held-state controls each1/1pass; exact candidate226af8bfe",
+    "reference": "local-evidence:ess21-completion/282/review-pass1/logs/prospective-open-external.log"
+  }
+}

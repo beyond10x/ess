@@ -3615,6 +3615,13 @@ struct Arrangement {
     unwritten: BTreeSet<String>,
 }
 
+/// A wrong-state arrangement, the input sent to it, and identities arranged for that input.
+type RefusalArrangement = (
+    Arrangement,
+    BTreeMap<String, Node>,
+    BTreeMap<String, InstanceName>,
+);
+
 /// The `Optional` fields of `entity` the creating branch `creator` does not write, and nothing but
 /// a later act on the row itself can: absent on the row as it leaves it (beyond10x/ess#239).
 ///
@@ -6389,6 +6396,22 @@ fn expression_value(
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
 ) -> Option<ScenarioValue> {
+    expression_value_at(
+        ir,
+        field,
+        supplied,
+        before,
+        std::slice::from_ref(&field.target),
+    )
+}
+
+fn expression_value_at(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedPayloadField,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    target_location: &[String],
+) -> Option<ScenarioValue> {
     match &field.value {
         ResolvedPayloadValue::SubjectField { field: read, .. } => {
             before.get(read).map(|held| held.value.clone())
@@ -6400,10 +6423,7 @@ fn expression_value(
             .get(&related::key(via, read))
             .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
-            let ScenarioValue::Literal {
-                value: Node::Number(held),
-            } = &before.get(&field.target)?.value
-            else {
+            let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
             };
             let by = ess_primitives::facts::Number::decimal_literal(by)?;
@@ -6430,7 +6450,12 @@ fn expression_value(
         ResolvedPayloadValue::Struct { fields } => {
             let mut leaves = BTreeMap::new();
             for leaf in fields {
-                leaves.insert(leaf.target.clone(), leaf_value(ir, leaf, supplied, before)?);
+                let mut location = target_location.to_vec();
+                location.push(leaf.target.clone());
+                leaves.insert(
+                    leaf.target.clone(),
+                    leaf_value(ir, leaf, supplied, before, &location)?,
+                );
             }
             Some(ScenarioValue::Literal {
                 value: Node::Map(leaves),
@@ -6445,6 +6470,22 @@ fn expression_value(
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => None,
     }
+}
+
+fn before_literal_at<'a>(
+    before: &'a BTreeMap<String, Determined>,
+    location: &[String],
+) -> Option<&'a Node> {
+    let (root, remaining) = location.split_first()?;
+    let ScenarioValue::Literal { value } = &before.get(root)?.value else {
+        return None;
+    };
+    remaining.iter().try_fold(value, |node, member| {
+        let Node::Map(fields) = node else {
+            return None;
+        };
+        fields.get(member)
+    })
 }
 
 /// [`arranged`], or [`arranged_without_fallbacks`], for the invocation `witness` names.
@@ -6663,6 +6704,7 @@ fn leaf_value(
     leaf: &ess_compiler::ir::ResolvedPayloadField,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
 ) -> Option<Node> {
     if leaf.conversion.is_some() {
         return None;
@@ -6673,7 +6715,7 @@ fn leaf_value(
             Some(ScenarioValue::Literal { value }) => Some(value.clone()),
             _ => None,
         },
-        _ => match expression_value(ir, leaf, supplied, before)? {
+        _ => match expression_value_at(ir, leaf, supplied, before, target_location)? {
             ScenarioValue::Literal { value } => Some(value),
             _ => None,
         },
@@ -6699,7 +6741,15 @@ fn determined_leaves(
         && field.conversion.is_none()
         && expression_value(ir, field, supplied, before).is_none()
     {
-        collect_leaves(ir, field, prefix, supplied, before, &mut out);
+        collect_leaves(
+            ir,
+            field,
+            prefix,
+            supplied,
+            before,
+            std::slice::from_ref(&field.target),
+            &mut out,
+        );
     }
     out
 }
@@ -6712,6 +6762,7 @@ fn collect_leaves(
     prefix: &str,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
     out: &mut BTreeMap<String, Node>,
 ) {
     let ResolvedPayloadValue::Struct { fields } = &field.value else {
@@ -6719,11 +6770,13 @@ fn collect_leaves(
     };
     for leaf in fields {
         let path = format!("{prefix}.{}", leaf.target);
+        let mut location = target_location.to_vec();
+        location.push(leaf.target.clone());
         if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
             if leaf.conversion.is_none() {
-                collect_leaves(ir, leaf, &path, supplied, before, out);
+                collect_leaves(ir, leaf, &path, supplied, before, &location, out);
             }
-        } else if let Some(value) = leaf_value(ir, leaf, supplied, before) {
+        } else if let Some(value) = leaf_value(ir, leaf, supplied, before, &location) {
             flatten_leaf(ir, &leaf.target_type, &path, &value, 0, out);
         }
     }
@@ -6812,7 +6865,15 @@ fn shown_leaves(
             row.entry(path)
                 .or_insert_with(|| ScenarioValue::literal(value));
         }
-        undetermined_leaves(ir, field, &field.target, supplied, before, &mut required);
+        undetermined_leaves(
+            ir,
+            field,
+            &field.target,
+            supplied,
+            before,
+            std::slice::from_ref(&field.target),
+            &mut required,
+        );
     }
     required
 }
@@ -6825,6 +6886,7 @@ fn undetermined_leaves(
     prefix: &str,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
     out: &mut Vec<String>,
 ) {
     let ResolvedPayloadValue::Struct { fields } = &field.value else {
@@ -6832,11 +6894,13 @@ fn undetermined_leaves(
     };
     for leaf in fields {
         let path = format!("{prefix}.{}", leaf.target);
+        let mut location = target_location.to_vec();
+        location.push(leaf.target.clone());
         if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
             if leaf.conversion.is_none() {
-                undetermined_leaves(ir, leaf, &path, supplied, before, out);
+                undetermined_leaves(ir, leaf, &path, supplied, before, &location, out);
             }
-        } else if leaf_value(ir, leaf, supplied, before).is_none()
+        } else if leaf_value(ir, leaf, supplied, before, &location).is_none()
             && !may_be_null(ir, &leaf.target_type, 0)
         {
             out.push(path);
@@ -8486,7 +8550,7 @@ fn refused_here(
         .collect();
     let attempt = movers.first().copied()?;
 
-    let (arrangement, input) = refusal_arrangement(ir, handle, state, actors, attempt)
+    let (arrangement, input, bound) = refusal_arrangement(ir, handle, state, actors, attempt)
         .map_err(|cause| refusals.push(Refusal::about(id, cause)))
         .ok()?;
 
@@ -8508,7 +8572,7 @@ fn refused_here(
         Some(&arrangement.instance),
         // The command under test moves the row the arrangement already created, so its input
         // names that row; an owner, where there was one, was arranged inside `arrange`.
-        &BTreeMap::new(),
+        &bound,
     );
     steps.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
@@ -9363,8 +9427,8 @@ fn refusal_arrangement(
     state: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     attempt: &Driver<'_>,
-) -> Result<(Arrangement, BTreeMap<String, Node>), RefusalCause> {
-    let arrangement =
+) -> Result<RefusalArrangement, RefusalCause> {
+    let mut arrangement =
         arrange(ir, handle, state, actors, Distinction::PLAIN, &[]).map_err(|reason| {
             RefusalCause::InstanceRequired {
                 entity: EntityRef::from(handle),
@@ -9387,10 +9451,16 @@ fn refusal_arrangement(
             attempt.command,
             attempt.outcome,
             Distinction::PLAIN,
-        );
+        )
+        .map(|(arrangement, input)| (arrangement, input, BTreeMap::new()));
+    }
+    if related_guard::orders_present_related_refusal(ir, attempt.command) {
+        let (input, bound) =
+            related_guard::wrong_state_overlap(ir, attempt.command, actors, &mut arrangement)?;
+        return Ok((arrangement, input, bound));
     }
     let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;
-    Ok((arrangement, input))
+    Ok((arrangement, input, BTreeMap::new()))
 }
 
 /// Full refusal observation is an explicit compiler obligation of the new source profile.

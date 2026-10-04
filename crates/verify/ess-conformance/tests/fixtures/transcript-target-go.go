@@ -225,7 +225,7 @@ func (b *transcriptTarget) ExecuteCommandWithoutInput(r AbsentInputRequest) (Com
 	})
 }
 func (b *transcriptTarget) QueryView(r ViewRequest) (ViewResult, error) {
-	entry, err := b.next("query_view", r.View, map[string]any{"params": orEmpty(r.Params)})
+	entry, err := b.next("query_view", r.View, map[string]any{"params": orEmpty(r.Params), "at_least": r.AtLeast})
 	if err != nil {
 		return ViewResult{}, err
 	}

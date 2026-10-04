@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T21:16:10Z",
+  "actor": "human:timo",
+  "artifact": "component-design:conditional-aggregate-measures-source22",
+  "kind": "component-design",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Final independent whole-design round2 approved with zero findings; reportSHA6bb003d3b94813b3653ba6fffe623f9fe3732b2814333f0c928edf10d4227053. Design approval only; no implementation acceptance.",
+    "reference": "review-result:conditional-aggregate-measures-363-20261003-r2"
+  }
+}

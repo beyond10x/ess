@@ -275,20 +275,12 @@ fn outcome(
     }
     let held = !matches!(subject.effect, ResolvedEffect::Creates);
     for set in &outcome.sets {
-        let target = entity
+        entity
             .fields
             .iter()
             .find(|field| field.name == set.target)
             .ok_or_else(|| format!("a `sets:` of `{}`, not a field of the entity", set.target))?;
         value(ir, command, set, held.then_some(entity), true)?;
-        if matches!(set.value, ResolvedPayloadValue::Increment { .. })
-            && !integer(ir, &target.type_ref)
-        {
-            return Err(format!(
-                "`{{increment:}}` of `{}`, which is not an `Integer`",
-                set.target
-            ));
-        }
     }
     payloads(ir, command, outcome, held.then_some(entity))
 }
@@ -356,6 +348,12 @@ fn value(
             }
             by.parse::<i64>()
                 .map_err(|_| format!("`{{increment: {by}}}`, which is not a whole number"))?;
+            if !integer(ir, target) {
+                return Err(format!(
+                    "`{{increment:}}` of `{}`, which is not an `Integer`",
+                    field.target
+                ));
+            }
         }
         ResolvedPayloadValue::InputOrGenerated {
             type_ref,

@@ -22,12 +22,13 @@
 //! sibling leaves a missing row unanswered, and is refused for it.
 //!
 //! The guard reads a row the command does not address, so it composes with any subject a branch
-//! names — a `creates:` included — and with a branch that names none. It does not compose with the
-//! guards that read the addressed subject (`when_subject`, `when_subject_state`,
-//! `when_state_changes`, `wrong_state`) or whether it exists (`unknown_instance`), nor with
-//! `input_absent`: on one branch that is two selection authorities, and in one command two
-//! strategies whose precedence nothing states yet. `existing_instance:` sits beside it in one command
-//! (never on one branch), with the precedence above.
+//! names — a `creates:` included — and with a branch that names none. From ess/22 a predicate
+//! refusal composes with `wrong_state:` in one command: addressed-row existence and held state
+//! answer first, then the one present-related refusal selected by the partition, then acceptance.
+//! It does not compose with the other guards that read the addressed subject (`when_subject`,
+//! `when_subject_state`, `when_state_changes`) or whether it exists (`unknown_instance`), nor with
+//! `input_absent`. `existing_instance:` sits beside it in one command (never on one branch), with
+//! the precedence above.
 use super::{related_value, CommandSpec, OutcomeCondition};
 use crate::{
     entity::EntitySpec, expression::DomainEnvironment, spec::Specification, types::TypeRef,
@@ -265,13 +266,13 @@ fn other_authority(condition: &OutcomeCondition) -> Option<&'static str> {
         }
         OutcomeCondition::SubjectState { .. } => Some("a `when_subject_state` guard"),
         OutcomeCondition::StateChange { .. } => Some("a `when_state_changes` guard"),
-        OutcomeCondition::WrongState => Some("a `wrong_state` branch"),
         OutcomeCondition::UnknownInstance => Some("an `unknown_instance` branch"),
         OutcomeCondition::InputAbsent => Some("an `input_absent` branch"),
         // The command's own identity is checked before the related row is read (beyond10x/ess#211,
         // adversary pass 1): an `existing_instance:` refusal answers first, and reads no related row.
         OutcomeCondition::When(_)
         | OutcomeCondition::ExistingInstance
+        | OutcomeCondition::WrongState
         | OutcomeCondition::Related { .. }
         | OutcomeCondition::Otherwise
         | OutcomeCondition::External { .. }
@@ -441,6 +442,45 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             }
             continue;
         }
+        let has_wrong_state = command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, OutcomeCondition::WrongState));
+        let (present_related_count, all_present_related_refuse) = command
+            .outcomes
+            .iter()
+            .filter(|outcome| {
+                matches!(
+                    outcome.condition,
+                    OutcomeCondition::Related {
+                        test: RelatedTest::Holds(_),
+                        ..
+                    }
+                )
+            })
+            .fold((0_usize, true), |(count, all_refuse), outcome| {
+                (count + 1, all_refuse && outcome.is_refusal())
+            });
+        let orders_wrong_state = has_wrong_state
+            && spec.system().format.major() >= crate::system::FormatVersion::V22.major()
+            && present_related_count > 0
+            && all_present_related_refuse;
+        if has_wrong_state && !orders_wrong_state {
+            errors.push(
+                ValidationError::at(
+                    command.site().key("outcomes"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{}` selects on a related row (`when_related`) and on a `wrong_state` branch; which of the two answers first is not stated",
+                        command.name
+                    ),
+                )
+                .with_hint(
+                    "guard the command on the related row alone, or split the other guard into a command of its own",
+                ),
+            );
+            continue;
+        }
         let Some(via) = via(command) else {
             continue;
         };
@@ -465,7 +505,12 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
         }
         // A predicate the checker refused is not partitioned: its refusal is the repair.
         if checked.is_empty() {
-            checked.extend(validate_partition(command, entity, types));
+            checked.extend(validate_partition(
+                command,
+                entity,
+                types,
+                orders_wrong_state,
+            ));
         }
         errors.extend(checked);
     }
@@ -638,6 +683,7 @@ fn validate_partition(
     command: &CommandSpec,
     entity: &EntitySpec,
     types: &TypeRegistry,
+    orders_present_refusals: bool,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let guarded: Vec<&super::Outcome> = command
@@ -648,6 +694,8 @@ fn validate_partition(
                 && outcome.condition.cause().is_none()
                 // Answered before every row-reading branch: by the command's own identity.
                 && outcome.condition != OutcomeCondition::ExistingInstance
+                // From ess/22 this is selected later, against the addressed row's held state.
+                && outcome.condition != OutcomeCondition::WrongState
                 && !matches!(
                     outcome.condition,
                     OutcomeCondition::Related {
@@ -696,11 +744,12 @@ fn validate_partition(
         return errors;
     };
     for case in cases {
-        let selected = if case.selected.is_empty() {
-            usize::from(default.is_some())
-        } else {
-            case.selected.len()
-        };
+        let selected = selected_count(
+            &case.selected,
+            &guarded,
+            default.is_some(),
+            orders_present_refusals,
+        );
         if selected == 1 {
             continue;
         }
@@ -732,4 +781,37 @@ fn validate_partition(
         ));
     }
     errors
+}
+
+fn selected_count(
+    selected: &[usize],
+    guarded: &[&super::Outcome],
+    has_default: bool,
+    orders_present_refusals: bool,
+) -> usize {
+    if selected.is_empty() {
+        return usize::from(has_default);
+    }
+    let related_refusals = selected
+        .iter()
+        .filter(|index| {
+            let outcome = guarded[**index];
+            outcome.is_refusal()
+                && matches!(
+                    outcome.condition,
+                    OutcomeCondition::Related {
+                        test: RelatedTest::Holds(_),
+                        ..
+                    }
+                )
+        })
+        .count();
+    // From ess/22 one selected present-related predicate refusal answers before every accepting
+    // branch. Two such refusals remain ambiguous, as in earlier formats: the new order introduces
+    // no author-declared tie-break between them.
+    if orders_present_refusals && related_refusals == 1 {
+        1
+    } else {
+        selected.len()
+    }
 }

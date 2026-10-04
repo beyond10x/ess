@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:45:41Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-282",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Review1 correction source patch50226754db2dee0d1beec948f24a227b2a0b454dd20c9d3e69771cc9f01de69f: whole interpreted_command_execution14/14,0ignored,exit0; includes independently red Open-external regression nowgreen plus Forced/Withheld/allowed-state controls. Strict conformance all-target Clippy0 and owning fmt0. Wider compatibility reconciliation and final independent review2 remain pending. Publication-safe copy of the same observation; private original retained locally, not a new test run.",
+    "reference": "sha256:30207233e08347d8306af4dab9723bca59dac7985441d09caa57d5055ee02935"
+  }
+}

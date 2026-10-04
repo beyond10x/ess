@@ -145,6 +145,289 @@ fn the_plan_generates_every_fully_declared_command_and_the_view_query() {
 }
 
 #[test]
+fn generated_nested_increment_behaves_in_rust_and_go() {
+    let ir = compile_directory(&fixture_root());
+    let rust = synthesize_for(&ir, Target::Rust).expect("the nested fixture synthesizes to Rust");
+    let go = synthesize_for(&ir, Target::Go).expect("the nested fixture synthesizes to Go");
+    let rust = &rust.artifacts["crates/desk-types/src/behaviour.rs"].contents;
+    let go = &go.artifacts["types/behaviour/behaviour.go"].contents;
+
+    for location in [
+        "before.stats.amount",
+        "before.stats.deeper.amount",
+        "before.maybe_stats.as_ref()",
+    ] {
+        assert!(rust.contains(location), "`{location}` missing:\n{rust}");
+    }
+    for location in [
+        "before.Stats.Amount",
+        "before.Stats.Deeper.Amount",
+        "before.MaybeStats == nil",
+        "before.MaybeStats.Amount",
+    ] {
+        assert!(go.contains(location), "`{location}` missing:\n{go}");
+    }
+
+    let decimal = compile_text(NESTED_DECIMAL_INCREMENT);
+    for target in [Target::Rust, Target::Go] {
+        let synthesis = synthesize_for(&decimal, target).expect("the Decimal model plans");
+        match synthesis
+            .plan
+            .disposition_of(CapabilityKind::CommandBehavior, "decimal.counter.Advance")
+        {
+            Some(SynthesisDisposition::Obligation(obligation)) => assert!(
+                obligation.reason.describes().contains("Integer"),
+                "the nested Decimal refusal names the generated target's Integer boundary: \
+                 {obligation:#?}"
+            ),
+            other => panic!("a nested Decimal increment is owed for {target:?}: {other:#?}"),
+        }
+    }
+}
+
+#[test]
+fn an_optional_struct_event_payload_does_not_read_a_non_stored_root() {
+    let ir = compile_text(OPTIONAL_STRUCT_EVENT_PAYLOAD);
+    let synthesis = synthesize_for(&ir, Target::Rust).expect("the payload behavior plans");
+    assert_eq!(
+        synthesis
+            .plan
+            .disposition_of(CapabilityKind::CommandBehavior, "payload.counter.Advance"),
+        Some(&SynthesisDisposition::Generated),
+        "a fully determined nested payload remains generated"
+    );
+    let behaviour = synthesis
+        .artifacts
+        .values()
+        .find(|artifact| artifact.path.ends_with("src/behaviour.rs"))
+        .expect("the generated behavior source")
+        .contents
+        .as_str();
+    assert!(
+        !behaviour.contains("before.snapshot"),
+        "an event payload root is not a stored entity field:\n{behaviour}"
+    );
+}
+
+#[test]
+fn a_same_named_optional_stored_field_does_not_gate_an_event_payload() {
+    let source = OPTIONAL_STRUCT_EVENT_PAYLOAD.replace(
+        "fields: [{name: amount, type: Integer}]\n    lifecycle:",
+        "fields:\n      - {name: amount, type: Integer}\n      - {name: snapshot, type: 'Optional<payload.counter.Packet>'}\n    lifecycle:",
+    );
+    let ir = compile_text(&source);
+    for (target, forbidden) in [
+        (Target::Rust, "before.snapshot.as_ref()"),
+        (Target::Go, "before.Snapshot == nil"),
+    ] {
+        let synthesis = synthesize_for(&ir, target).expect("the payload behavior plans");
+        assert_eq!(
+            synthesis
+                .plan
+                .disposition_of(CapabilityKind::CommandBehavior, "payload.counter.Advance"),
+            Some(&SynthesisDisposition::Generated),
+            "a fully determined nested payload remains generated for {target:?}"
+        );
+        let scratch = Scratch(Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "declared-behaviour-{target:?}-payload-{}",
+            std::process::id()
+        )));
+        let _ = std::fs::remove_dir_all(&scratch.0);
+        write_tree(&scratch.0, &synthesis);
+        match target {
+            Target::Rust => {
+                let target_dir = scratch.0.join("target");
+                let (built, log) = cargo(
+                    &scratch.0,
+                    &target_dir,
+                    &["check", "--workspace", "--all-targets"],
+                );
+                assert!(built, "the generated Rust payload behavior builds:\n{log}");
+            }
+            Target::Go => {
+                let go = go().expect("Go is required to compile the prospective generated target");
+                let (built, log) = go_tool(&scratch.0, &go, &["build", "./..."]);
+                assert!(built, "the generated Go payload behavior builds:\n{log}");
+            }
+            _ => unreachable!("the test covers the generated Rust and Go targets"),
+        }
+        let behaviour = synthesis
+            .artifacts
+            .values()
+            .find(|artifact| {
+                artifact.path.ends_with("behaviour.rs") || artifact.path.ends_with("behaviour.go")
+            })
+            .expect("the generated behavior source")
+            .contents
+            .as_str();
+        assert!(
+            !behaviour.contains(forbidden),
+            "an output-only payload does not depend on the same-named stored value for {target:?}:\n{behaviour}"
+        );
+    }
+}
+
+#[test]
+fn required_and_creation_struct_payloads_still_build_in_rust_and_go() {
+    let required = OPTIONAL_STRUCT_EVENT_PAYLOAD.replace(
+        "type: 'Optional<payload.counter.Packet>'",
+        "type: payload.counter.Packet",
+    );
+    for (label, source) in [
+        ("required", required.as_str()),
+        ("creation", STRUCT_PAYLOAD_CREATION),
+    ] {
+        let ir = compile_text(source);
+        for target in [Target::Rust, Target::Go] {
+            let synthesis = synthesize_for(&ir, target).expect("the payload behavior plans");
+            let scratch = Scratch(Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+                "declared-behaviour-{target:?}-{label}-payload-{}",
+                std::process::id()
+            )));
+            let _ = std::fs::remove_dir_all(&scratch.0);
+            write_tree(&scratch.0, &synthesis);
+            match target {
+                Target::Rust => {
+                    let target_dir = scratch.0.join("target");
+                    let (built, log) = cargo(
+                        &scratch.0,
+                        &target_dir,
+                        &["check", "--workspace", "--all-targets"],
+                    );
+                    assert!(built, "the generated Rust {label} payload builds:\n{log}");
+                }
+                Target::Go => {
+                    let go =
+                        go().expect("Go is required to compile the prospective generated target");
+                    let (built, log) = go_tool(&scratch.0, &go, &["build", "./..."]);
+                    assert!(built, "the generated Go {label} payload builds:\n{log}");
+                }
+                _ => unreachable!("the test covers the generated Rust and Go targets"),
+            }
+        }
+    }
+}
+
+const OPTIONAL_STRUCT_EVENT_PAYLOAD: &str = "format: ess/20
+system: payload
+version: v1
+domain: payload.counter
+types:
+  - name: payload.counter.Packet
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+entities:
+  - name: payload.counter.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields: [{name: amount, type: Integer}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+errors:
+  - name: payload.counter.Missing
+    fields: [{name: counter_id, type: Uuid}]
+events:
+  - name: payload.counter.Advanced
+    fields: [{name: snapshot, type: 'Optional<payload.counter.Packet>'}]
+commands:
+  - name: payload.counter.Advance
+    input:
+      - {name: counter_id, type: Uuid}
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: advanced
+        updates: payload.counter.Counter
+        instance: counter_id
+        sets: {amount: input.amount}
+        emits: [payload.counter.Advanced]
+        payload:
+          payload.counter.Advanced:
+            snapshot: {amount: input.amount}
+      - name: missing
+        unknown_instance: true
+        error: payload.counter.Missing
+        payload:
+          payload.counter.Missing: {counter_id: input.counter_id}
+components:
+  - component: counter-service
+    owns: {domains: [payload.counter]}
+    accepts: {commands: [payload.counter.Advance]}
+    publishes: {events: [payload.counter.Advanced]}
+    reached_by: network
+";
+
+const STRUCT_PAYLOAD_CREATION: &str = "format: ess/20
+system: payload
+version: v1
+domain: payload.counter
+types:
+  - name: payload.counter.Packet
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+entities:
+  - name: payload.counter.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields: [{name: amount, type: Integer}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - name: payload.counter.Created
+    fields:
+      - {name: counter_id, type: Uuid}
+      - {name: snapshot, type: 'Optional<payload.counter.Packet>'}
+commands:
+  - name: payload.counter.Create
+    input: [{name: amount, type: Integer}]
+    outcomes:
+      - name: created
+        creates: payload.counter.Counter
+        instance: counter_id
+        sets: {amount: input.amount}
+        emits: [payload.counter.Created]
+        payload:
+          payload.counter.Created:
+            counter_id: {generated: true}
+            snapshot: {amount: input.amount}
+components:
+  - component: counter-service
+    owns: {domains: [payload.counter]}
+    accepts: {commands: [payload.counter.Create]}
+    publishes: {events: [payload.counter.Created]}
+    reached_by: network
+";
+
+const NESTED_DECIMAL_INCREMENT: &str = "format: ess/20
+system: decimal
+version: v1
+domain: decimal.counter
+types:
+  - name: decimal.counter.Packet
+    kind: struct
+    fields: [{name: amount, type: Decimal}]
+entities:
+  - name: decimal.counter.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields: [{name: packet, type: decimal.counter.Packet}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+errors:
+  - name: decimal.counter.Missing
+    fields: [{name: counter_id, type: Uuid}]
+events:
+  - {name: decimal.counter.Advanced, fields: []}
+commands:
+  - name: decimal.counter.Advance
+    input: [{name: counter_id, type: Uuid}]
+    outcomes:
+      - name: advanced
+        updates: decimal.counter.Counter
+        instance: counter_id
+        sets: {packet: {amount: {increment: 1}}}
+        emits: [decimal.counter.Advanced]
+      - name: missing
+        unknown_instance: true
+        error: decimal.counter.Missing
+        payload:
+          decimal.counter.Missing: {counter_id: input.counter_id}
+";
+
+#[test]
 fn a_moved_or_written_entity_is_checked_against_its_invariants_before_it_is_stored() {
     let ir = compile_directory(&fixture_root());
     let with_invariant = fixture_with_invariant();
@@ -160,11 +443,11 @@ fn a_moved_or_written_entity_is_checked_against_its_invariants_before_it_is_stor
         "an entity declaring no invariant has no check to call"
     );
     let text = behaviour(&checked);
-    // Every write of the entity — the create, both moves, the three updates — is preceded by the
+    // Every write of the entity — the create, both moves, the four updates — is preceded by the
     // check.
     let puts = text.matches("TicketStorage::put(").count();
     let checks = text.matches(".broken_invariant()").count();
-    assert_eq!(puts, 6, "{text}");
+    assert_eq!(puts, 7, "{text}");
     assert_eq!(checks, puts, "{text}");
     for (position, _) in text.match_indices("TicketStorage::put(") {
         let before = &text[..position];
@@ -194,8 +477,8 @@ fn fixture_with_invariant() -> EssIr {
         let mut text = std::fs::read_to_string(base.join(label)).expect("readable");
         if label == "domains/ticket.yaml" {
             text = text.replace(
-                "      - {name: note, type: Optional<String>}\n    lifecycle:",
-                "      - {name: note, type: Optional<String>}\n    invariants:\n      - estimate >= 0\n    lifecycle:",
+                "      - {name: maybe_stats, type: 'Optional<desk.ticket.Counter>'}\n    lifecycle:",
+                "      - {name: maybe_stats, type: 'Optional<desk.ticket.Counter>'}\n    invariants:\n      - estimate >= 0\n    lifecycle:",
             );
         }
         let raw = RawSpecFile::parse(&text).expect("well formed");
@@ -841,6 +1124,7 @@ fn the_go_behaviours_build_vet_clean_and_pass_their_own_suite() {
         "the Go component's port",
     );
     assert_every_event_named_and_encoded(&ir, &through_port);
+    assert_absent_optional_increment_is_atomic(&through_port);
     drop(through_port);
     let mut served = vec!["served".to_owned()];
     served.extend(route_table(&ir));
@@ -1076,6 +1360,7 @@ fn run_suite(
     let binary = target.join("debug/harness");
     let through_port = run_through(ir, &binary, &["port".to_owned()], "the component's port");
     assert_every_event_named_and_encoded(ir, &through_port);
+    assert_absent_optional_increment_is_atomic(&through_port);
     drop(through_port);
     // `story:generated-server-publishes-and-reads-headers`: the same suite through the generated
     // HTTP dispatcher, reading what each command published from the served answer alone, with
@@ -1086,6 +1371,61 @@ fn run_suite(
     assert_headers_read(&through_server);
     drop(through_server);
     drop(scratch);
+}
+
+/// Makes the optional parent absent through another generated behaviour, then proves the nested
+/// increment returns its existing unmet obligation without moving or rewriting the stored row.
+fn assert_absent_optional_increment_is_atomic(target: &Harnessed) {
+    assert_eq!(
+        target.ask(&serde_json::json!({"op": "reset"}))["ok"],
+        serde_json::json!(true)
+    );
+    let caller = "00000000-0000-4000-8000-000000000777";
+    let opened = target.ask(&serde_json::json!({
+        "op": "command",
+        "command": "desk.ticket.OpenTicket",
+        "input": {"title": "nested", "priority": "Low", "estimate": 1, "note": null},
+        "caller": {"agent_id": caller},
+    }));
+    let ticket_id = opened["answer"]["published"][0]["payload"]["ticket_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the opening event carries its ticket identity: {opened}"));
+    for command in ["desk.ticket.ForgetStats", "desk.ticket.CloseTicket"] {
+        let answer = target.ask(&serde_json::json!({
+            "op": "command",
+            "command": command,
+            "input": {"ticket_id": ticket_id},
+            "caller": {"agent_id": caller},
+        }));
+        assert!(
+            answer["answer"].get("outcome").is_some(),
+            "{command} prepares the absent-parent case: {answer}"
+        );
+    }
+    let before = target.ask(&serde_json::json!({
+        "op": "view",
+        "view": "desk.ticket.Tickets",
+    }));
+    let reopened = target.ask(&serde_json::json!({
+        "op": "command",
+        "command": "desk.ticket.ReopenTicket",
+        "input": {"ticket_id": ticket_id},
+        "caller": {"agent_id": caller},
+    }));
+    assert!(
+        reopened["answer"]["undeclared"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("desk.ticket.ReopenTicket")),
+        "the absent Optional parent returns the existing unmet obligation: {reopened}"
+    );
+    let after = target.ask(&serde_json::json!({
+        "op": "view",
+        "view": "desk.ticket.Tickets",
+    }));
+    assert_eq!(
+        after, before,
+        "the unmet increment stores no partial mutation"
+    );
 }
 
 /// The route table as `name method path` triples, from the mapping the server's routes come from.

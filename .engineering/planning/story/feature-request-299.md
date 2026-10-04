@@ -15,7 +15,7 @@ relations:
 - depends_on: story:feature-request-285
 - depends_on: story:feature-request-228
 - depends_on: story:feature-request-237
-revision: 4
+revision: 5
 ---
 ## Outcome
 
@@ -46,3 +46,7 @@ This story remains draft pending the shared family-design review, typed source s
 The coordinator addressed the seven findings in review-result:filtered-related-read-design-20261003-r1 in docs/design/filtered-related-reads.md: (1) closed exists/count/forall grammar, empty-set and Unknown truth tables, complete-domain authority and scope/cap rules; (2) validated common-subject borrowing and #282/#304 precedence, with row-set emptiness distinct from identity absence; (3) typed RelatedSet condition and shared selector with byte preservation; (4) format-neutral raw capture and pre22 nested-source back-conversion including predicate sequences; (5) an explicit executable target/profile matrix; (6) named healthy and independently faulty controls across those lanes; and (7) governed predecessor edges to #285/#228/#237. All seven outcomes are fixed by this revision; approval remains pending a second independent pass. No runtime completion is claimed.
 
 Source22 is coordinated with the bundle. This story is not dispatchable until its scoped implementation predecessor work is ready; a named unsupported result never closes a required executable target. The full shared guard contract is owned in docs/design/filtered-related-reads.md rather than inferred from older family-F summary paragraphs.
+
+## Current design disposition
+
+Second independent review approved the complete shared row-set/filtered-value contract at 8606b103c (review-result:filtered-related-read-design-20261003-r2). All seven first-round findings were fixed. Design review is complete; implementation and target acceptance remain pending. This supersedes the earlier pending-design-review wording, not the predecessor gates or draft implementation status. The shared normative page is docs/design/filtered-related-reads.md and the syntax allocation is source22. No source21 family allocation remains current. #299 depends on #285 and #228/#237; the shared page also binds the latter stories' row-set implementation.

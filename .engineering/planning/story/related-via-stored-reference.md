@@ -13,6 +13,7 @@ relations:
 - depends_on: story:feature-request-282
 - depends_on: story:related-via-optional-input
 - informed_by: story:related-guard-vocabulary-aligns
+- depends_on: story:counter-reachability-arithmetic-completeness
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/tests/related_guard_obligation.rs

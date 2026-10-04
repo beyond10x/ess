@@ -323,12 +323,14 @@ pub(super) fn increment(
     field: &ResolvedPayloadField,
     by: &str,
     before: Option<&Row>,
+    target_location: &[String],
     history: bool,
 ) -> Result<Value, Undetermined> {
+    let location = target_location.join(".");
     let no_value = || Undetermined::NoValue {
-        what: format!("the exact previous `{}` plus `{by}`", field.target),
+        what: format!("the exact previous `{location}` plus `{by}`"),
     };
-    let held = before.and_then(|row| row.fields.get(&field.target));
+    let held = value_at(before, target_location)?;
     let increment = Number::decimal_literal(by).ok_or_else(no_value)?;
     if let Some(
         unknown @ Value::Unknown {
@@ -336,7 +338,7 @@ pub(super) fn increment(
             origin,
             domain,
         },
-    ) = held
+    ) = held.as_ref()
     {
         if increment == Number::from(0_i64) {
             return Ok(unknown.clone());
@@ -405,6 +407,52 @@ pub(super) fn increment(
     })?);
     input::validate_typed_value(ir, &field.target_type, &value).map_err(Undetermined::Request)?;
     Ok(Value::Known(value))
+}
+
+/// The value at one typed target location in the immutable pre-outcome row.
+fn value_at(before: Option<&Row>, location: &[String]) -> Result<Option<Value>, Undetermined> {
+    let Some((root, rest)) = location.split_first() else {
+        return Ok(None);
+    };
+    let Some(value) = before.and_then(|row| row.fields.get(root)) else {
+        return Ok(None);
+    };
+    nested_value(value, rest, location)
+}
+
+fn nested_value(
+    value: &Value,
+    remaining: &[String],
+    location: &[String],
+) -> Result<Option<Value>, Undetermined> {
+    let Some((member, rest)) = remaining.split_first() else {
+        return Ok(Some(value.clone()));
+    };
+    match value {
+        Value::Object(fields) => match fields.get(member) {
+            Some(value) => nested_value(value, rest, location),
+            None => Ok(None),
+        },
+        Value::Absent | Value::Known(Node::Null) => Ok(None),
+        Value::Known(node) => Ok(node_at(node, remaining).cloned().map(Value::Known)),
+        Value::Unknown { .. } => Err(Undetermined::Undecidable {
+            outcome: "history increment".into(),
+            guard: format!(
+                "the parent value on `{}` before the outcome",
+                location.join(".")
+            ),
+        }),
+    }
+}
+
+fn node_at<'a>(node: &'a Node, location: &[String]) -> Option<&'a Node> {
+    let Some((member, rest)) = location.split_first() else {
+        return Some(node);
+    };
+    let Node::Map(fields) = node else {
+        return None;
+    };
+    node_at(fields.get(member)?, rest)
 }
 
 #[cfg(test)]

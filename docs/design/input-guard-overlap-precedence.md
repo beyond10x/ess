@@ -32,6 +32,14 @@ Where this rule sits among existence, the held state and related rows is
 orders refusals ahead of accepting branches, refusals among themselves and accepting guarded
 branches by the order they are declared in:
 
+From `ess/22`, that order also admits a `when_related:` predicate refusal beside `wrong_state:`
+(beyond10x/ess#282). Once the related row is known to exist and input refusals have been considered,
+the addressed row's lifecycle answers first. A moving acceptance in the wrong state therefore takes
+`wrong_state:`; in an allowed state, a predicate over the present related row may refuse before the
+accepting or external branches. Declaration order cannot reverse those answers, and a nonmoving
+acceptance does not inherit a moving sibling's source-state requirement. Earlier formats through
+`ess/21` retain the combination's validation refusal.
+
 | pair | order |
 |---|---|
 | input-guarded refusal, accepting branch with an input guard: a plain `when:`, the `when:` beside a `when_subject:`, or an external branch's `when:` | the refusal, before any stored row is read or any provider asked |
@@ -39,7 +47,8 @@ branches by the order they are declared in:
 | two input-guarded refusals | the first declared whose guard holds; a witness of one refutes the refusals declared before it, and where no input does, synthesis refuses the scenario naming them (beyond10x/ess#227 correction 1, superseding the unordered rule of #209) |
 | two accepting guarded branches | the first declared whose guard holds (beyond10x/ess#217, below) |
 | an accepting guarded branch and an external branch | the same declaration order: the first declared whose guard holds, an external one where its provider takes it (beyond10x/ess#217, below) |
-| a refusal decided by the stored row, the held state or a provider; the wrong-state branch | unchanged |
+| a present `when_related:` predicate refusal; the wrong-state branch | `wrong_state`, from `ess/22`; earlier formats refuse the combination, and without `wrong_state` related branches retain their prior declaration-order behavior |
+| another refusal decided by the stored row, the held state or a provider; the wrong-state branch | unchanged |
 
 Without a default, validation's finite coverage proof already refuses every overlap it can decide,
 and a guard it cannot decide (a text or a number) requires a default. The rule therefore changes

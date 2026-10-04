@@ -1,4 +1,5 @@
-//! Adversarial parity cases for the generated Go runtime on suite/22–/27 (beyond10x/ess#188).
+//! Adversarial parity cases for suite/22–/27 features in the current generated Go runtime
+//! (beyond10x/ess#188).
 //!
 //! Each case drives a target the reference runner fails through the recorded-transcript replay and
 //! requires the Go runtime to fail the same scenarios. They are the wrong targets the unit's own
@@ -222,7 +223,11 @@ fn ledger_suite() -> ConformanceSuite {
     let suite = ess_conformance::synthesize::synthesize(&ir("bounded-retry.yaml", LEDGER)).suite;
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
+    );
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ess_conformance::scenario::ScenarioInitialState::Empty)
     );
     suite
 }
@@ -349,7 +354,11 @@ fn dialer_suite(data_type: &str) -> ConformanceSuite {
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
+    );
+    assert_eq!(
+        synthesis.suite.provenance.scenario_initial_state,
+        Some(ess_conformance::scenario::ScenarioInitialState::Empty)
     );
     synthesis.suite
 }
@@ -577,7 +586,7 @@ fn run_in(directory: &std::path::Path, program: &str, args: &[&str]) -> (bool, S
 }
 
 #[test]
-fn the_emitted_suite_26_package_is_gofmt_clean_and_passes_go_vet() {
+fn the_emitted_suite_34_package_is_gofmt_clean_and_passes_go_vet() {
     for (label, suite) in [
         ("adv-fmt-dialer", dialer_suite("String")),
         ("adv-fmt-ledger", ledger_suite()),

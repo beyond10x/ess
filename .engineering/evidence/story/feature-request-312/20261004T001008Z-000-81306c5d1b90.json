@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-04T00:10:08Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 29,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:read-your-writes-parity-312-20261004-r1",
+    "reference": "commit:bcd8685fff937fcde4465ef387c5eef4526772f2; reviewed-by:read-your-writes-parity-312-20261004-r2; red-log-sha256:2ccf258d47e7b4aba215b2b2b8627785fdeea41833fc87531997c4ab99354f1f",
+    "review": "review-result:read-your-writes-parity-312-20261004-r1",
+    "outcome": "fixed"
+  }
+}

@@ -1,12 +1,13 @@
 //! A field's presence policy in a suite (beyond10x/ess#139).
 //!
 //! `null_when_absent` and `omitted_when_absent` are carried on a payload leaf as `presence`, and a
-//! runner holding only the suite decides by it: an implementation that swaps the two fails. A
-//! suite that carries one is written as `ess-conformance/24` (ordinary) or `/25` (coverage),
-//! because a reader that predates the key drops it and passes the swap.
+//! runner holding only the suite decides by it: an implementation that swaps the two fails.
+//! Fresh suites declare empty initial state in `ess-conformance/34` (ordinary) or `/35` (coverage).
+//! Historical `/24` and `/25` remain the first compatible formats, because an older reader drops
+//! the key and passes the swap.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::scenario::SuiteFormat;
+use ess_conformance::scenario::{ScenarioInitialState, SuiteFormat};
 use ess_conformance::{Holds, LeafShape, ScenarioStep};
 use ess_domain::types::{Presence, Primitive};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -84,8 +85,13 @@ fn presence_is_written_only_where_declared_and_round_trips() {
 
 #[test]
 fn suite_formats_24_and_25_remain_supported_and_future_versions_refuse() {
-    for version in ["ess-conformance/24", "ess-conformance/25"] {
-        assert!(SuiteFormat::parse(version)
+    assert_eq!(ess_conformance::presence::ORDINARY, 24);
+    assert_eq!(ess_conformance::presence::COVERAGE, 25);
+    for major in [
+        ess_conformance::presence::ORDINARY,
+        ess_conformance::presence::COVERAGE,
+    ] {
+        assert!(SuiteFormat::parse(&format!("ess-conformance/{major}"))
             .expect("well formed")
             .is_supported());
     }
@@ -123,7 +129,7 @@ fn ir(text: &str) -> EssIr {
 }
 
 #[test]
-fn a_suite_with_a_presence_leaf_is_written_as_suite_24() {
+fn a_fresh_suite_with_a_presence_leaf_declares_empty_initial_state() {
     let mut suite = ess_conformance::synthesize::synthesize(&ir(MODEL)).suite;
     let before = suite.provenance.suite_version;
     assert_ne!(before.major(), 24, "no leaf carries a policy yet");
@@ -142,7 +148,11 @@ fn a_suite_with_a_presence_leaf_is_written_as_suite_24() {
     suite.select_fresh_format();
     assert_eq!(
         suite.provenance.suite_version,
-        SuiteFormat::parse("ess-conformance/24").unwrap()
+        SuiteFormat::parse("ess-conformance/34").unwrap()
+    );
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
     );
     assert!(ess_conformance::presence::used_by(&suite));
 }
@@ -153,5 +163,9 @@ fn a_suite_without_one_keeps_its_format() {
     let before = suite.provenance.suite_version;
     suite.select_fresh_format();
     assert_eq!(suite.provenance.suite_version, before);
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
     assert!(!ess_conformance::presence::used_by(&suite));
 }

@@ -12,20 +12,37 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
+- depends_on: story:feature-request-266
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/accessor_cli.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/declared_behaviour.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner/bounded_retry.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner/delivery_context.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/target.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts
+- confidence: cited
+  path: crates/verify/ess-conformance/tests
+- confidence: cited
   path: crates/verify/ess-conformance/tests/synthesis.rs
+- confidence: cited
+  path: docs/design/binding-arrangement-and-drop.md
 - confidence: cited
   path: docs/design/binding-delivery-guarantees.md
 - confidence: cited
   path: models/toolchain/README.md
-revision: 14
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -35,8 +52,10 @@ transitions:
 
 ## Acceptance
 
-- Flow and delivery scenarios arrange the bound command's entity in a state it accepts; no ESS-SYNTH-010 for them.
-- For `drop`, a scenario forces the delivery to fail and asserts that no command is invoked within the eventual window (`ExpectQuiet`).
+- Flow and delivery scenarios arrange the exact mapped destination identity in an eligible state before the trigger; no ESS-SYNTH-010 merely because a wrong_state branch exists.
+- Drop forces one declared refusal after arrangement, observes every attempt's mapped input with ExpectEveryInvocation (empty selecting), then exactly one total attempt with ExpectInvocation (empty input, count1) throughout its eventual window. It reads the unchanged subject afterward. Zero delivery, an extra correct retry, an extra malformed-input retry and a success-effect mutant each fail.
+- ExpectQuiet remains an event observation and is not accepted as evidence of absent command attempts. The historical zero-invocation wording was incompatible with forcing a refusal on the next invocation; this resolves that contradiction in the accepted drop intent.
+- Named fixture scenarios and required native/generated Rust/generated Go execution and native/Go/TypeScript runner controls are bound in docs/design/binding-arrangement-and-drop.md. Existing suite instruction meanings/format remain unchanged. Independent design review is pending before implementation dispatch.
 
 ## Origin
 
@@ -65,3 +84,15 @@ Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), 
 ## Decisions
 
 - **accept, tightened:** for `drop`, the scenario asserts that no command is invoked within the eventual window (`ExpectQuiet`); the "or the refusal states an inherent limit" alternative is removed from the acceptance.
+
+## Current coordinated binding contract
+
+The 2026-10-03 remaining-bundle execution uses docs/design/binding-arrangement-and-drop.md as the concrete contract for #266/#267. Arrangement tracks eventual binding effects and never races a binding with an explicit route command. Drop needs one forced failed attempt and no retry, not an empty event log or zero attempted delivery. Exact total attempt count uses empty input plus the independent every-invocation mapped-input check; unsupported observation cannot pass. Required healthy/faulty controls are named in that document. This is coordinator resolution before implementation, pending independent design review; historical fit/scope prose remains evidence of intake, not current execution authority.
+
+## Design revision 2
+
+The four findings in review-result:binding-arrangement-drop-design-20261003-r1 are fixed in docs/design/binding-arrangement-and-drop.md: reconcile obsolete mapping-only tracing documentation with shipped retry/every-invocation semantics; specify cumulative non-consuming per-correlation snapshots and adapter controls; require pre-trigger mapped destination identity authority with DestinationIdentityUnavailable for post-trigger-only values; and pin QueryView/SnapshotSubject before the trigger plus QueryView/ExpectSubjectUnchanged after count observation. These are prospective source/adapter tests, not completed execution. Independent final design review remains due.
+
+## Current design disposition
+
+Final independent design reviews at aec396fe6 approved the arrangement/drop contract and the conditional/per-refusal contract (review-result:binding-arrangement-drop-design-20261003-r2 and review-result:conditional-binding-design-20261003-r2). All four and three first-round findings, respectively, were fixed. The matching docs/design pages now bind implementation. Prior pending-design wording is historical; implementation, decisive target controls and independent source review are still required. Serial #266 -> #267 -> #268/#194 -> #269 order and the one bundle PR remain unchanged.
