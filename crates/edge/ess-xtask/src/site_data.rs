@@ -129,6 +129,8 @@ struct Terminal {
     entries: Vec<Entry>,
     #[serde(rename = "recordedWith")]
     recorded_with: &'static str,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    tones: BTreeMap<String, &'static str>,
 }
 
 #[derive(Serialize)]
@@ -223,11 +225,13 @@ fn render(root: &Path, ess: &Path) -> Result<BTreeMap<String, String>> {
         for step in session.steps {
             entries.push(record(ess, &scratch.0, step)?);
         }
+        let tones = tones(entries.iter().map(|entry| entry.output.as_str()));
         let document = Terminal {
             format: "b10x-terminal/1",
             title: session.title,
             entries,
             recorded_with: RECORDED_WITH,
+            tones,
         };
         files.insert(session.file.to_owned(), pretty(&document)?);
     }
@@ -294,6 +298,47 @@ fn record(ess: &Path, directory: &Path, step: &Step) -> Result<Entry> {
         output: output.trim_end_matches('\n').to_owned(),
         exit_code,
     })
+}
+
+/// The `tones` of a recorded session: what each verdict word in its output means.
+///
+/// The renderer colours every occurrence of a key, so a bare `failed` would paint the `failed` of
+/// `0 failed` as a failure. A counted verdict is therefore keyed with its count: `32 passed` is
+/// true, `2 failed` or `1 error` false, and `0 failed` or `0 error` muted. `valid` and `compiled`
+/// stand alone. Only words the output actually printed become keys.
+fn tones<'a>(outputs: impl Iterator<Item = &'a str>) -> BTreeMap<String, &'static str> {
+    let mut found = BTreeMap::new();
+    for output in outputs {
+        for line in output.lines() {
+            let words: Vec<&str> = line
+                .split(|c: char| c.is_whitespace() || c == ',' || c == ':')
+                .filter(|word| !word.is_empty())
+                .collect();
+            for (index, word) in words.iter().enumerate() {
+                match *word {
+                    "valid" | "compiled" => {
+                        found.insert((*word).to_owned(), "true");
+                    }
+                    "passed" | "failed" | "error" => {
+                        let Some(count) = index
+                            .checked_sub(1)
+                            .and_then(|previous| words[previous].parse::<u64>().ok())
+                        else {
+                            continue;
+                        };
+                        let tone = match (*word, count) {
+                            (_, 0) => "muted",
+                            ("passed", _) => "true",
+                            _ => "false",
+                        };
+                        found.insert(format!("{count} {word}"), tone);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    found
 }
 
 fn pretty(value: &impl Serialize) -> Result<String> {
@@ -673,6 +718,34 @@ mod tests {
             json!("shop.billing.Invoice");
         let error = domain_graphs(&model).err().unwrap().to_string();
         assert!(error.contains("outside domain shop.order"), "{error}");
+    }
+
+    #[test]
+    fn verdict_words_become_tones_and_a_zero_count_is_muted() {
+        let found = tones(
+            [
+                "billing v3 — 5 file(s), valid",
+                "billing v3 — 5 file(s), 26 declaration(s), compiled",
+                "  32 scenarios: 31 passed, 1 failed, 0 error, 0 unsupported",
+                "48 capabilities: 40 generated, 4 obligation(s), 4 refused",
+            ]
+            .into_iter(),
+        );
+        let expected: BTreeMap<String, &str> = [
+            ("valid", "true"),
+            ("compiled", "true"),
+            ("31 passed", "true"),
+            ("1 failed", "false"),
+            ("0 error", "muted"),
+        ]
+        .into_iter()
+        .map(|(word, tone)| (word.to_owned(), tone))
+        .collect();
+        assert_eq!(found, expected);
+        assert_eq!(
+            tones(["a scenario failed", "error: nothing"].into_iter()).len(),
+            0
+        );
     }
 
     #[test]

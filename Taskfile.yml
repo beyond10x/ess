@@ -267,6 +267,7 @@ tasks:
       # code added without a catalogue entry, or without regenerating the page, fails here.
       - cargo xtask diagnostics --check
       - cargo xtask site-data --check
+      - cargo xtask admonitions
 
   typescript-check:
     desc: Compile and execute the emitted conformance runtime's own TypeScript cases.

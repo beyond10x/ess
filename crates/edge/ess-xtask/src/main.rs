@@ -1,5 +1,6 @@
 //! Repository-only maintenance checks for ESS.
 
+mod admonitions;
 mod cli_reference;
 mod consumer_coverage;
 mod diagnostics;
@@ -114,6 +115,8 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Refuse a published page whose admonition has a space-separated title, `:::note Title`.
+    Admonitions,
     /// Record or check the landing page's `ess` sessions and domain graphs under `website/data/`.
     SiteData {
         /// Compare byte for byte without writing.
@@ -196,6 +199,7 @@ fn run(cli: Cli) -> Result<String, String> {
         Command::InfraAcceptance(args) => {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
         }
+        Command::Admonitions => admonitions::run(&root).map_err(|error| format!("{error:#}")),
         Command::SiteData { check, ess } => {
             site_data::run(&root, check, ess.as_deref()).map_err(|error| format!("{error:#}"))
         }

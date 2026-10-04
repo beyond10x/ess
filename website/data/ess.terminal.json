@@ -23,5 +23,12 @@
       "exitCode": 0
     }
   ],
-  "recordedWith": "ess built from this repository, recorded by `cargo xtask site-data` on a copy of examples/billing"
+  "recordedWith": "ess built from this repository, recorded by `cargo xtask site-data` on a copy of examples/billing",
+  "tones": {
+    "0 error": "muted",
+    "0 failed": "muted",
+    "32 passed": "true",
+    "compiled": "true",
+    "valid": "true"
+  }
 }
