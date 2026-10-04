@@ -41,7 +41,7 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T16:38:51Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-03T16:38:51Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
@@ -231,3 +231,9 @@ Compiler/domain source remains a read-only dependency unless implementation prov
 checked path/name helper is unavailable. No source ESS, conformance, diff, entity runtime,
 TypeScript/Web publisher, consumer transport, producer-context, retry or aggregate-completion scope
 is implied. Any new committed executable or test harness is Rust.
+
+## Transport source refresh after RYW integration
+
+The retained implementation tree ess-parameterized-transport-20261003 is at8606b103c5ca5ac1809eafecea6c9b65ac909d9f with15tracked and2untracked prepared source paths, no live lease and no ignored contents after verified prior target retirement. Its work log distinguishes the earlier13/13 transport run from subsequent unexecuted strict-reader, publisher, AsyncAPI, broker and CI edits. That earlier run is not acceptance of the current patch.
+
+Assign an available implementation worker to preserve and bot-freeze all17current source paths, then merge reviewed integration2255315a48a947f363d46cb3c691a57b4879f3b1 into the managed unit. Source-only preparation: preserve every existing test/assertion and the approved parameterized-address design, including root-composed CLI/CI patches. Necessary merge conflicts may be resolved without changing semantics; additional paths or behavior changes return to root first. No compiler, dependency installation, broker, runtime, publication or canonical planning grant;413A retains the sole ESS execution lane. Report original and refreshed exact source manifests, complete diffs and command plan. The pinned AsyncAPI4.1.1 installation must be restored from its retained lock before later validation, and actual NATS2.15.0 Rust/Go acceptance remains required. This preparation cannot close391 or substitute for the full independent source review after all acceptance checks.
