@@ -198,7 +198,7 @@ Everything the specification leaves open is a port, and the ports are yours to p
 | Port | What you provide |
 |---|---|
 | storage, one trait per entity a generated behaviour or query reads or writes (`InvoiceStorage`) | `get`, `put` and `delete` of a snapshot by identity, and `list` of every stored snapshot |
-| `Context`, where a generated behaviour asks it anything | the caller's attributes, every identity and value the specification says the implementation assigns (a created identity, `{generated: true}`), and whether each `external:` branch is taken |
+| `Context`, where a generated behaviour asks it anything | the caller's attributes, every identity and value the specification says the implementation assigns (a created identity, `{generated: true}`), and whether each `external:` branch is taken, given the executing command input as an `ExternalCommand` |
 
 ESS preserves these ports for your implementations. For network-served components it also
 generates in-memory stores whose `list` answers in identity order. These stores lose all data
@@ -263,7 +263,8 @@ The Go target generates the same behaviours, with the same order of evaluation, 
 `types/behaviour` package: one storage interface per entity (`InvoiceStorage`, with `Get`, `Put`,
 `Delete` and, where a generated query reads it, `List` in an order the store keeps stable), a
 `Context` interface asking only what the model asks (`Caller<Attribute>()`, `Generate<Type>()`,
-`External(command, outcome)`), and `Owed`, every behaviour and query the plan still owes. You hand
+`External(command ExternalCommand, outcome)`, where each `ExternalCommand` wrapper carries
+the executing command input), and `Owed`, every behaviour and query the plan still owes. You hand
 them to `behaviour.New(behaviour.Ports{…})`, and the `*Generated` it returns has the method of
 every seam a component's bundle names, generated or forwarded to `Owed`, so it is a complete bundle
 for every component port. Each package's `Unimplemented` stub covers only what the plan owes. Two
@@ -333,6 +334,12 @@ selects the fallible companion ahead of `Ports.Context`. The existing `Ports` fi
 `New(Ports)` constructor remain unchanged. Missing context answers return a named
 `UnmetObligation`. Generated commands prepare their outcome and event payloads before committing
 storage changes, so an unavailable late context answer leaves stored rows unchanged.
+
+An external decision receives the command input being executed, not only its name: Rust passes
+the borrowed `ExternalCommand<'_>` enum, Go a typed `ExternalCommand` wrapper, through `Context`
+and the fallible companion alike. Compare it with the request your proof was issued for and
+refuse a mismatch. Regenerating changes this signature, so an existing names-only `external`
+implementation stops compiling until it takes the command.
 
 ## Actor grants are generated as data, and a served surface enforces them
 

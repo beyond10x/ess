@@ -191,13 +191,23 @@ pub(super) fn requirements(
 ) -> Uses {
     let storages = storage_names(emit.ir, emit.layout);
     let reserved = emit.layout.package_names();
+    let external_commands = external_names(emit.ir, seams, &reserved, &storages);
     let receiver = fresh(&reserved, "b");
     let mut uses = Uses::default();
     for command in emit.ir.commands().values() {
         if seams.generates(CapabilityKind::CommandBehavior, &command.name.to_string())
             && selected.is_none_or(|selected| selected.commands.contains(&command.name))
         {
-            let _ = Writer::new(emit, command, &storages, &mut uses, &reserved, &receiver).method();
+            let _ = Writer::new(
+                emit,
+                command,
+                &storages,
+                &mut uses,
+                &reserved,
+                &receiver,
+                &external_commands,
+            )
+            .method();
         }
     }
     for view in emit.ir.views().values() {
@@ -224,6 +234,7 @@ pub(super) fn package(
     let emit = Emit::new(ir, layout, layout.behaviour(), None);
     let reserved = layout.package_names();
     let storages = storage_names(ir, layout);
+    let external_commands = external_names(ir, seams, &reserved, &storages);
     let receiver = fresh(&reserved, "b");
     let mut uses = Uses::default();
     let mut methods = String::new();
@@ -234,8 +245,15 @@ pub(super) fn package(
                 kind: CapabilityKind::CommandBehavior,
                 source,
             });
-            let mut writer =
-                Writer::new(&emit, command, &storages, &mut uses, &reserved, &receiver);
+            let mut writer = Writer::new(
+                &emit,
+                command,
+                &storages,
+                &mut uses,
+                &reserved,
+                &receiver,
+                &external_commands,
+            );
             methods.push_str(&writer.method());
         } else if seams.forwards(CapabilityKind::CommandBehavior, &source) {
             forward_behaviour(&mut methods, &emit, &receiver, command);
@@ -266,10 +284,7 @@ pub(super) fn package(
             uses.listed.contains(entity),
         );
     }
-    let context = context_interface(&mut body, &uses);
-    if context {
-        body.push_str(&fallible_context(&emit, &uses));
-    }
+    let context = context_ports(&mut body, &emit, &uses, &external_commands);
     let owed = owed_interface(&mut body, &emit, ir, seams);
     ports_struct(&mut body, &storages, &uses, context, owed);
     let context_field = if context {
@@ -487,6 +502,103 @@ fn storage_interface(
     );
 }
 
+/// Typed wrapper names for commands whose Go body actually asks an external branch. Reserve
+/// bases and the generated package namespace before assigning deterministic collision suffixes.
+fn external_names(
+    ir: &EssIr,
+    seams: &Seams,
+    packages: &BTreeSet<String>,
+    storages: &BTreeMap<QualifiedName, String>,
+) -> BTreeMap<QualifiedName, String> {
+    let candidates: BTreeMap<_, _> = ir
+        .commands()
+        .values()
+        .filter(|command| {
+            seams.generates(CapabilityKind::CommandBehavior, &command.name.to_string())
+                && command.outcomes.iter().any(|outcome| {
+                    matches!(
+                        outcome.condition,
+                        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                    )
+                })
+        })
+        .map(|command| {
+            (
+                command.name.clone(),
+                format!(
+                    "ExternalCommand{}",
+                    name::type_fragment(&command.name.to_string())
+                ),
+            )
+        })
+        .collect();
+    let mut allocated = packages.clone();
+    allocated.extend(storages.values().cloned());
+    allocated.extend(
+        [
+            "ExternalCommand",
+            "Context",
+            "Generated",
+            "Ports",
+            "Owed",
+            "New",
+            "FallibleContext",
+            "NewWithContext",
+            "UnmetContext",
+        ]
+        .map(str::to_owned),
+    );
+    allocated.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
+    let mut reserved = allocated.clone();
+    reserved.extend(candidates.values().cloned());
+    candidates
+        .into_iter()
+        .map(|(command, base)| {
+            let mut wrapper = base.clone();
+            if !allocated.insert(base.clone()) {
+                let mut suffix = 2;
+                loop {
+                    wrapper = format!("{base}{suffix}");
+                    if reserved.insert(wrapper.clone()) {
+                        break;
+                    }
+                    suffix += 1;
+                }
+            }
+            (command, wrapper)
+        })
+        .collect()
+}
+
+/// The closed typed input supplied to an external decision. Values keep Go's ordinary nested
+/// pointer/map/slice aliasing; this is not an immutable deep copy.
+fn external_command(out: &mut String, emit: &Emit<'_>, commands: &BTreeMap<QualifiedName, String>) {
+    if commands.is_empty() {
+        return;
+    }
+    out.push_str("\n// ExternalCommand is the exact executing input supplied to an external decision.\n// It supplies facts, not authority; the context must verify its request-bound proof.\n// Nested pointers, maps and slices retain Go aliasing and must not be mutated.\ntype ExternalCommand interface {\n\tName() string\n\tisExternalCommand()\n}\n");
+    for (command, wrapper) in commands {
+        let input = emit.reference(command);
+        let _ = writeln!(out, "\n// {wrapper} carries the executing `{command}` input.\ntype {wrapper} struct {{\n\t// Input is the actual command value.\n\tInput {input}\n}}\n\n// Name is the canonical qualified command identity.\nfunc ({wrapper}) Name() string {{ return {} }}\n\nfunc ({wrapper}) isExternalCommand() {{}}", go_string(&command.to_string()));
+    }
+}
+
+/// The typed external command, the context port and its fallible companion. `true` where there is
+/// a context port.
+fn context_ports(
+    out: &mut String,
+    emit: &Emit<'_>,
+    uses: &Uses,
+    external_commands: &BTreeMap<QualifiedName, String>,
+) -> bool {
+    external_command(out, emit, external_commands);
+    let context = context_interface(out, uses);
+    if context {
+        out.push_str(&fallible_context(emit, uses));
+    }
+    context
+}
+
 /// The context port: only the methods some generated method asks. `true` where there is one.
 fn context_interface(out: &mut String, uses: &Uses) -> bool {
     if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external {
@@ -529,7 +641,7 @@ fn context_interface(out: &mut String, uses: &Uses) -> bool {
              this\n\t// invocation.\n\t//\n\t// Asked in declaration order, before the branch's \
              input guard is read; the first branch\n\t// answered true whose guard holds is \
              taken. A test forces a branch by answering true for\n\t// it alone; a deployment \
-             asks whatever decides it.\n\tExternal(command string, outcome string) bool\n",
+             asks whatever decides it.\n\tExternal(command ExternalCommand, outcome string) bool\n",
         );
     }
     out.push_str("}\n");
@@ -553,9 +665,9 @@ fn fallible_context(emit: &Emit<'_>, uses: &Uses) -> String {
     if uses.external {
         let _ = writeln!(
             out,
-            "\tTryExternal(command string, outcome string) (bool, {unmet})"
+            "\tTryExternal(command ExternalCommand, outcome string) (bool, {unmet})"
         );
-        let _ = writeln!(helpers, "\n// readExternal prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) readExternal(command string, outcome string) (bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.TryExternal(command, outcome)\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\treturn false, UnmetContext(\"external branch answer\")\n\t}}\n\treturn {receiver}.ports.Context.External(command, outcome), nil\n}}");
+        let _ = writeln!(helpers, "\n// readExternal prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) readExternal(command ExternalCommand, outcome string) (bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.TryExternal(command, outcome)\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\treturn false, UnmetContext(\"external branch answer\")\n\t}}\n\treturn {receiver}.ports.Context.External(command, outcome), nil\n}}");
     }
     out.push_str("}\n");
     out.push_str(&helpers);
@@ -1407,6 +1519,7 @@ struct Writer<'a> {
     emit: &'a Emit<'a>,
     command: &'a ResolvedCommand,
     storages: &'a BTreeMap<QualifiedName, String>,
+    external_commands: &'a BTreeMap<QualifiedName, String>,
     uses: &'a mut Uses,
     lines: Lines,
     reserved: &'a BTreeSet<String>,
@@ -1423,12 +1536,14 @@ impl<'a> Writer<'a> {
         uses: &'a mut Uses,
         reserved: &'a BTreeSet<String>,
         receiver: &'a str,
+        external_commands: &'a BTreeMap<QualifiedName, String>,
     ) -> Self {
         Self {
             ir: emit.ir,
             emit,
             command,
             storages,
+            external_commands,
             uses,
             lines: Lines::new(1),
             reserved,
@@ -1943,8 +2058,9 @@ impl<'a> Writer<'a> {
         let value = self.temp("external");
         let error = self.temp("contextErr");
         let arguments = format!(
-            "{}, {}",
-            go_string(&self.command.name.to_string()),
+            "{}{{Input: {}}}, {}",
+            self.external_commands[&self.command.name],
+            self.locals.input,
             go_string(outcome.name.as_str())
         );
         context_read(

@@ -53,7 +53,7 @@ pub(super) fn implementation(ir: &EssIr, layout: &Layout, uses: &Uses) -> String
         let _ = writeln!(out, "fn try_{method}(&mut self) -> Result<{ty}, {types}::obligation::UnmetObligation> {{ {value} }}");
     }
     if uses.external {
-        let _ = writeln!(out, "fn try_external(&mut self, _command: &'static str, _outcome: &'static str) -> Result<bool, {types}::obligation::UnmetObligation> {{ Err({types}::behaviour::unmet_context(\"external branch answer\")) }}");
+        let _ = writeln!(out, "fn try_external(&mut self, _command: {types}::behaviour::ExternalCommand<'_>, _outcome: &'static str) -> Result<bool, {types}::obligation::UnmetObligation> {{ Err({types}::behaviour::unmet_context(\"external branch answer\")) }}");
     }
     out.push_str("}\n");
     out

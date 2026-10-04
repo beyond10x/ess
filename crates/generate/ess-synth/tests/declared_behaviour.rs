@@ -118,7 +118,7 @@ fn the_plan_generates_every_fully_declared_command_and_the_view_query() {
         "pub trait TicketStorage",
         "pub trait Context",
         "pub struct Generated<P>",
-        "fn external(&mut self, command: &'static str, outcome: &'static str) -> bool;",
+        "fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool;",
         "fn caller_agent_id(&self) -> Option<crate::ticket::AgentId>;",
         "fn generate_desk_ticket_ticket_id(&mut self) -> crate::ticket::TicketId;",
     ] {
@@ -1041,7 +1041,7 @@ fn the_go_target_generates_every_behaviour_the_plan_marks_generated() {
         "type Context interface {",
         "\tCallerAgentId() (ticket.AgentId, bool)",
         "\tGenerateDeskTicketTicketId() ticket.TicketId",
-        "\tExternal(command string, outcome string) bool",
+        "\tExternal(command ExternalCommand, outcome string) bool",
         "type Ports struct {",
         "func New(ports Ports) *Generated {",
     ] {

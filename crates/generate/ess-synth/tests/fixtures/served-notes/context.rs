@@ -1,5 +1,5 @@
 use notebook_server::memory::MemoryPorts;
-use notebook_types::behaviour::{Context, Generated, NoteStorage, TryContext};
+use notebook_types::behaviour::{Context, ExternalCommand, Generated, NoteStorage, TryContext};
 use notebook_types::notes::{
     self,
     obligations::{AddNoteBehavior, ArchiveNoteBehavior, ProbeBehavior, RemoveNoteBehavior},
@@ -13,7 +13,7 @@ impl Context for Legacy {
     fn generate_string(&mut self) -> String {
         "legacy assigned".into()
     }
-    fn external(&mut self, _: &'static str, _: &'static str) -> bool {
+    fn external(&mut self, _: ExternalCommand<'_>, _: &'static str) -> bool {
         false
     }
 }
@@ -26,7 +26,12 @@ fn legacy_context_adapts_without_source_changes() {
         Some("legacy caller")
     );
     assert_eq!(legacy.try_generate_string().unwrap(), "legacy assigned");
-    assert!(!legacy.try_external("command", "outcome").unwrap());
+    assert!(!legacy
+        .try_external(
+            ExternalCommand::NotebookNotesProbe(&notes::Probe {}),
+            "external"
+        )
+        .unwrap());
 }
 
 #[test]
@@ -41,7 +46,13 @@ fn missing_context_answers_are_typed_and_leave_storage_unchanged() {
         "assigned value: String"
     );
     assert_eq!(
-        ports.try_external("command", "outcome").unwrap_err().source,
+        ports
+            .try_external(
+                ExternalCommand::NotebookNotesProbe(&notes::Probe {}),
+                "external"
+            )
+            .unwrap_err()
+            .source,
         "external branch answer"
     );
     let mut generated = Generated::new(ports.clone());

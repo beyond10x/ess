@@ -118,7 +118,7 @@ bindings:
 /// owed, and one extra export reporting how often `Tally` ran.
 const HOST: &str = r#"use std::sync::atomic::{AtomicU32, Ordering};
 
-use ops_types::behaviour::{Context, Generated};
+use ops_types::behaviour::{Context, ExternalCommand, Generated};
 use ops_types::core;
 use ops_types::obligation::UnmetObligation;
 
@@ -128,7 +128,8 @@ static TALLIES: AtomicU32 = AtomicU32::new(0);
 struct Desk;
 
 impl Context for Desk {
-    fn external(&mut self, command: &'static str, outcome: &'static str) -> bool {
+    fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool {
+        let command = command.name();
         match (command, outcome) {
             // The notebook stays full.
             ("ops.core.Note", "busy") => true,

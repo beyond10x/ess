@@ -635,7 +635,7 @@ import (
 type legacyContext struct{}
 func (legacyContext) CallerAuthor() (string, bool) { return "legacy caller", true }
 func (legacyContext) GenerateString() string { return "legacy assigned" }
-func (legacyContext) External(string, string) bool { return false }
+func (legacyContext) External(behaviour.ExternalCommand, string) bool { return false }
 
 func TestContextCompatibility(t *testing.T) {
 	ports := behaviour.Ports{NewMemoryPorts().NoteStorage, legacyContext{}} // Legacy unkeyed construction stays source-compatible.
@@ -652,7 +652,7 @@ func TestContextErrorsBeforeEffects(t *testing.T) {
 	generated := behaviour.NewWithContext(ports, &MemoryContext{})
 	if _, _, err := (&MemoryContext{}).TryCallerAuthor(); err == nil || err.Source != "caller attribute: author" { t.Fatal("caller refusal", err) }
 	if _, err := (&MemoryContext{}).TryGenerateString(); err == nil || err.Source != "assigned value: String" { t.Fatal("assignment refusal", err) }
-	if _, err := (&MemoryContext{}).TryExternal("command", "outcome"); err == nil || err.Source != "external branch answer" { t.Fatal("external refusal", err) }
+	if _, err := (&MemoryContext{}).TryExternal(behaviour.ExternalCommandNotebookNotesProbe{Input: notes.Probe{}}, "external"); err == nil || err.Source != "external branch answer" { t.Fatal("external refusal", err) }
 	if outcome, err := generated.AddNote(notes.AddNote{NoteId: notes.NewNoteId(7), Text: "seven"}); outcome != nil || err == nil || err.Source != "assigned value: String" { t.Fatal("late creation error", outcome, err) }
 	if len(ports.NoteStorage.List()) != 0 { t.Fatal("late event assignment left the created row") }
 	ports.NoteStorage.Put(notes.NoteSnapshot{State: notes.NoteStateActive{}, Data: notes.NoteData{NoteId: notes.NewNoteId(7), Text: "seven"}})

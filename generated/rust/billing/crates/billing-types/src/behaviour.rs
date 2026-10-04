@@ -38,6 +38,24 @@ pub trait InvoiceStorage {
     fn list(&self) -> Vec<crate::invoice::InvoiceSnapshot>;
 }
 
+/// The exact executing command input supplied to an external decision.
+///
+/// This supplies facts, not authority: the context must verify its request-bound proof.
+#[derive(Debug, Clone, Copy)]
+pub enum ExternalCommand<'a> {
+    /// The executing `billing.email.SendEmail` input.
+    BillingEmailSendEmail(&'a crate::email::SendEmail),
+}
+
+impl ExternalCommand<'_> {
+    /// The canonical qualified identity of this command.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::BillingEmailSendEmail(_) => "billing.email.SendEmail",
+        }
+    }
+}
+
 /// What the specification leaves to the implementor's context — a port the implementor provides.
 ///
 /// The caller's attributes, the values the model says the implementation assigns, and the answer
@@ -52,7 +70,7 @@ pub trait Context {
     /// Asked in declaration order, before the branch's input guard is read; the first branch
     /// answered `true` whose guard holds is taken. A test forces a branch by answering `true`
     /// for it alone; a deployment asks whatever decides it.
-    fn external(&mut self, command: &'static str, outcome: &'static str) -> bool;
+    fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool;
 }
 
 /// Context answers that may be unavailable, without fabricated values.
@@ -61,12 +79,12 @@ pub trait TryContext {
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_billing_email_message_id(&mut self) -> Result<crate::email::MessageId, UnmetObligation>;
 /// Decides the named external branch, or names the unavailable answer.
-fn try_external(&mut self, command: &'static str, outcome: &'static str) -> Result<bool, UnmetObligation>;
+fn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation>;
 }
 
 impl<T: Context + ?Sized> TryContext for T {
 fn try_generate_billing_email_message_id(&mut self) -> Result<crate::email::MessageId, UnmetObligation> { Ok(Context::generate_billing_email_message_id(self)) }
-fn try_external(&mut self, command: &'static str, outcome: &'static str) -> Result<bool, UnmetObligation> { Ok(Context::external(self, command, outcome)) }
+fn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation> { Ok(Context::external(self, command, outcome)) }
 }
 
 /// An unavailable runtime context answer, rather than a new planned capability.
@@ -97,7 +115,7 @@ where
     fn send_email(&mut self, input: crate::email::SendEmail) -> Result<crate::email::SendEmailOutcome, UnmetObligation> {
         let _ = &input;
         // `failed`: an external branch, where the context takes it.
-        if self.ports.try_external("billing.email.SendEmail", "failed")? {
+        if self.ports.try_external(ExternalCommand::BillingEmailSendEmail(&input), "failed")? {
             return Ok(crate::email::SendEmailOutcome::Failed { error: crate::email::Undeliverable });
         }
         // `sent`: the default.

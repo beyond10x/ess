@@ -78,6 +78,7 @@ pub(super) fn module(
         return None;
     }
     let storages = storage_names(ir, layout);
+    let external_commands = external_names(ir, plan);
     let mut uses = Uses::default();
     let mut impls = String::new();
     for command in ir.commands().values() {
@@ -92,6 +93,7 @@ pub(super) fn module(
                 layout,
                 command,
                 storages: &storages,
+                external_commands: &external_commands,
                 uses: &mut uses,
                 bounds: Bounds::default(),
             };
@@ -133,6 +135,7 @@ pub(super) fn module(
             uses.listed.contains(entity),
         );
     }
+    external_command(&mut out, layout, &external_commands);
     context_trait(&mut out, &uses);
     fallible_context(&mut out, &uses);
     out.push_str(GENERATED);
@@ -211,6 +214,7 @@ pub(super) fn requirements(
     selected: Option<&crate::served::Reachable>,
 ) -> Uses {
     let storages = storage_names(ir, layout);
+    let external_commands = external_names(ir, plan);
     let mut uses = Uses::default();
     for command in ir.commands().values() {
         if plan.is_generated(CapabilityKind::CommandBehavior, &command.name.to_string())
@@ -221,6 +225,7 @@ pub(super) fn requirements(
                 layout,
                 command,
                 storages: &storages,
+                external_commands: &external_commands,
                 uses: &mut uses,
                 bounds: Bounds::default(),
             }
@@ -271,6 +276,67 @@ pub(super) fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedNa
             )
         })
         .collect()
+}
+
+/// Names for commands whose generated body calls the external port. Reserve every base first so
+/// a collision suffix cannot steal another command's natural name.
+fn external_names(ir: &EssIr, plan: &SynthesisPlan) -> BTreeMap<QualifiedName, String> {
+    let candidates: BTreeMap<_, _> = ir
+        .commands()
+        .values()
+        .filter(|command| {
+            plan.is_generated(CapabilityKind::CommandBehavior, &command.name.to_string())
+                && command.outcomes.iter().any(|outcome| {
+                    matches!(
+                        outcome.condition,
+                        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                    )
+                })
+        })
+        .map(|command| {
+            (
+                command.name.clone(),
+                name::type_fragment(&command.name.to_string()),
+            )
+        })
+        .collect();
+    let mut reserved: BTreeSet<String> = candidates.values().cloned().collect();
+    let mut allocated = BTreeSet::new();
+    candidates
+        .into_iter()
+        .map(|(command, base)| {
+            let mut variant = base.clone();
+            if !allocated.insert(base.clone()) {
+                let mut suffix = 2;
+                loop {
+                    variant = format!("{base}{suffix}");
+                    if reserved.insert(variant.clone()) {
+                        break;
+                    }
+                    suffix += 1;
+                }
+            }
+            (command, variant)
+        })
+        .collect()
+}
+
+/// The executing input, borrowed without conversion; absent when no generated command asks it.
+fn external_command(out: &mut String, layout: &Layout, commands: &BTreeMap<QualifiedName, String>) {
+    if commands.is_empty() {
+        return;
+    }
+    out.push_str("\n/// The exact executing command input supplied to an external decision.\n///\n/// This supplies facts, not authority: the context must verify its request-bound proof.\n#[derive(Debug, Clone, Copy)]\npub enum ExternalCommand<'a> {\n");
+    for (command, variant) in commands {
+        let module = layout.module(layout.owner(command));
+        let input = layout.type_name(command);
+        let _ = writeln!(out, "    /// The executing `{command}` input.\n    {variant}(&'a crate::{module}::{input}),");
+    }
+    out.push_str("}\n\nimpl ExternalCommand<'_> {\n    /// The canonical qualified identity of this command.\n    pub fn name(&self) -> &'static str {\n        match self {\n");
+    for (command, variant) in commands {
+        let _ = writeln!(out, "            Self::{variant}(_) => \"{command}\",");
+    }
+    out.push_str("        }\n    }\n}\n");
 }
 
 /// One entity's storage port.
@@ -349,7 +415,7 @@ fn context_trait(out: &mut String, uses: &Uses) {
              invocation.\n    ///\n    /// Asked in declaration order, before the branch's input \
              guard is read; the first branch\n    /// answered `true` whose guard holds is taken. A \
              test forces a branch by answering `true`\n    /// for it alone; a deployment asks \
-             whatever decides it.\n    fn external(&mut self, command: &'static str, outcome: \
+             whatever decides it.\n    fn external(&mut self, command: ExternalCommand<'_>, outcome: \
              &'static str) -> bool;\n",
         );
     }
@@ -821,6 +887,7 @@ struct Writer<'a> {
     layout: &'a Layout,
     command: &'a ResolvedCommand,
     storages: &'a BTreeMap<QualifiedName, String>,
+    external_commands: &'a BTreeMap<QualifiedName, String>,
     uses: &'a mut Uses,
     bounds: Bounds,
 }
@@ -841,8 +908,8 @@ fn fallible_context(out: &mut String, uses: &Uses) {
         let _ = writeln!(adapter, "fn try_{method}(&mut self) -> Result<{ty}, UnmetObligation> {{ Ok(Context::{method}(self)) }}");
     }
     if uses.external {
-        out.push_str("/// Decides the named external branch, or names the unavailable answer.\nfn try_external(&mut self, command: &'static str, outcome: &'static str) -> Result<bool, UnmetObligation>;\n");
-        adapter.push_str("fn try_external(&mut self, command: &'static str, outcome: &'static str) -> Result<bool, UnmetObligation> { Ok(Context::external(self, command, outcome)) }\n");
+        out.push_str("/// Decides the named external branch, or names the unavailable answer.\nfn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation>;\n");
+        adapter.push_str("fn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation> { Ok(Context::external(self, command, outcome)) }\n");
     }
     out.push_str("}\n");
     adapter.push_str("}\n");
@@ -1299,8 +1366,8 @@ impl Writer<'_> {
             .insert(format!("{}/{}", self.command.name, outcome.name));
         self.bounds.context = true;
         format!(
-            "self.ports.try_external(\"{}\", \"{}\")?",
-            self.command.name, outcome.name
+            "self.ports.try_external(ExternalCommand::{}(&input), \"{}\")?",
+            self.external_commands[&self.command.name], outcome.name
         )
     }
 

@@ -112,7 +112,9 @@ fn owed_methods(out: &mut String, emit: &Emit<'_>, seams: &Seams) -> bool {
         let outcome = emit.reference_outcome(&command.name);
         let unmet = emit.unmet();
         let stub = emit.qualify(emit.layout.package_of(&command.name), "Unimplemented");
-        let _ = writeln!(out, "\nfunc (*memoryOwed) {method}(input {input}) ({outcome}, {unmet}) {{\n\treturn ({stub}{{}}).{method}(input)\n}}");
+        // A package may be called `input`; the parameter must not shadow the stub's package.
+        let local = super::invariant::fresh(&emit.layout.package_names(), "input");
+        let _ = writeln!(out, "\nfunc (*memoryOwed) {method}({local} {input}) ({outcome}, {unmet}) {{\n\treturn ({stub}{{}}).{method}({local})\n}}");
     }
     for view in emit.ir.views().values() {
         if !seams.forwards(CapabilityKind::ViewQuery, &view.name.to_string()) {

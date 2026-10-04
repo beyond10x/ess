@@ -45,6 +45,25 @@ type InvoiceStorage interface {
 	List() []invoice.InvoiceSnapshot
 }
 
+// ExternalCommand is the exact executing input supplied to an external decision.
+// It supplies facts, not authority; the context must verify its request-bound proof.
+// Nested pointers, maps and slices retain Go aliasing and must not be mutated.
+type ExternalCommand interface {
+	Name() string
+	isExternalCommand()
+}
+
+// ExternalCommandBillingEmailSendEmail carries the executing `billing.email.SendEmail` input.
+type ExternalCommandBillingEmailSendEmail struct {
+	// Input is the actual command value.
+	Input email.SendEmail
+}
+
+// Name is the canonical qualified command identity.
+func (ExternalCommandBillingEmailSendEmail) Name() string { return "billing.email.SendEmail" }
+
+func (ExternalCommandBillingEmailSendEmail) isExternalCommand() {}
+
 // Context is what the specification leaves to the implementor's context — a port the
 // implementor provides.
 //
@@ -62,13 +81,13 @@ type Context interface {
 	// Asked in declaration order, before the branch's input guard is read; the first branch
 	// answered true whose guard holds is taken. A test forces a branch by answering true for
 	// it alone; a deployment asks whatever decides it.
-	External(command string, outcome string) bool
+	External(command ExternalCommand, outcome string) bool
 }
 
 // FallibleContext reports unavailable context answers explicitly.
 type FallibleContext interface {
 	TryGenerateBillingEmailMessageId() (email.MessageId, *obligation.UnmetObligation)
-	TryExternal(command string, outcome string) (bool, *obligation.UnmetObligation)
+	TryExternal(command ExternalCommand, outcome string) (bool, *obligation.UnmetObligation)
 }
 
 // readGenerateBillingEmailMessageId prefers the fallible port, then adapts the legacy context.
@@ -84,7 +103,7 @@ func (contextPorts *Generated) readGenerateBillingEmailMessageId() (email.Messag
 }
 
 // readExternal prefers the fallible port, then adapts the legacy context.
-func (contextPorts *Generated) readExternal(command string, outcome string) (bool, *obligation.UnmetObligation) {
+func (contextPorts *Generated) readExternal(command ExternalCommand, outcome string) (bool, *obligation.UnmetObligation) {
 	if contextPorts.context != nil {
 		return contextPorts.context.TryExternal(command, outcome)
 	}
@@ -142,7 +161,7 @@ func NewWithContext(ports Ports, context FallibleContext) *Generated {
 // SendEmail is `billing.email.SendEmail`, generated: every outcome is one the specification fully determines.
 func (b *Generated) SendEmail(input email.SendEmail) (email.SendEmailOutcome, *obligation.UnmetObligation) {
 	// `failed`: an external branch, where the context takes it.
-	external0, contextErr1 := b.readExternal("billing.email.SendEmail", "failed")
+	external0, contextErr1 := b.readExternal(ExternalCommandBillingEmailSendEmail{Input: input}, "failed")
 	if contextErr1 != nil {
 		return nil, contextErr1
 	}

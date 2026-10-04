@@ -34,7 +34,7 @@ use std::rc::Rc;
 use desk_server::desk_service as served;
 use desk_server::{http, json, wire};
 use desk_types::actor::{Actor, Caller};
-use desk_types::behaviour::{Context, Generated, TicketStorage};
+use desk_types::behaviour::{Context, ExternalCommand, Generated, TicketStorage};
 use desk_types::primitives::Uuid;
 use desk_types::ticket;
 
@@ -95,7 +95,8 @@ impl Context for Ports {
         ticket::TicketRef(self.mint())
     }
 
-    fn external(&mut self, command: &'static str, outcome: &'static str) -> bool {
+    fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool {
+        let command = command.name();
         self.0
             .borrow()
             .forced

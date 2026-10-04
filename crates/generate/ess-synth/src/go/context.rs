@@ -56,7 +56,8 @@ pub(super) fn implementation(emit: &Emit<'_>, uses: &Uses) -> String {
         );
     }
     if uses.external {
-        let _ = writeln!(out, "\nfunc (*MemoryContext) TryExternal(command string, outcome string) (bool, {unmet}) {{\n\treturn false, {unavailable}(\"external branch answer\")\n}}");
+        let command = emit.qualify(emit.layout.behaviour(), "ExternalCommand");
+        let _ = writeln!(out, "\nfunc (*MemoryContext) TryExternal(_ {command}, _ string) (bool, {unmet}) {{\n\treturn false, {unavailable}(\"external branch answer\")\n}}");
     }
     if uses
         .assigned

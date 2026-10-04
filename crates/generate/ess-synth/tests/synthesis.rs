@@ -227,7 +227,9 @@ fn send_email_behaviour_is_generated_and_asks_the_context_for_the_providers_answ
     let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     let behaviour = artifact(&synthesis, "crates/billing-types/src/behaviour.rs");
     assert!(
-        behaviour.contains("self.ports.try_external(\"billing.email.SendEmail\", \"failed\")?"),
+        behaviour.contains(
+            "self.ports.try_external(ExternalCommand::BillingEmailSendEmail(&input), \"failed\")?"
+        ),
         "{behaviour}"
     );
 }

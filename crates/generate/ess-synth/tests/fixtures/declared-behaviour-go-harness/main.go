@@ -122,9 +122,9 @@ func (p ports) GenerateDeskTicketTicketRef() ticket.TicketRef {
 }
 
 // External is true for the one branch the step forced.
-func (p ports) External(command string, outcome string) bool {
+func (p ports) External(command behaviour.ExternalCommand, outcome string) bool {
 	forced := (*p.state).forced
-	return len(forced) == 2 && forced[0] == command && forced[1] == outcome
+	return len(forced) == 2 && forced[0] == command.Name() && forced[1] == outcome
 }
 
 // assemble is a fresh system over the ports.
