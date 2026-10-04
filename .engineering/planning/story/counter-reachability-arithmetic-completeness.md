@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -81,3 +81,9 @@ Independent first whole review4dc84d7740cbb73bfd6fbfa36378ce235ecdb9ccb254fa283c
 The original full-run target was unexpectedly absent at the renewed archive preflight. No complete archive or copied old review-link closure exists; do not claim those binaries, target-local fixtures or old rlibs retained. Preflight-refusal1bb2f7569907f254359735017612bc51277d60c9e4ddde82708f2edb7e303372, surviving-evidence5a7d22f3d81e0953cb3ec14288be8ffa4cce265f522df5a196343216699bb44d and target-absence-bound92e78c8c1e9685f535d88dfef1dcb806b3244d8596ef2502bcedd416b2349451 retain the observations. Owner and root performed no original-target cleanup; actor is unknown.
 
 The source two-path freeze, original complete package log, first review, full target manifest, externally retained failed Go fixtures and baseline executable survive and were reverified. First review stays immutable and incomplete; no replayed proof or review-budget reset follows from artifact loss. After the independently accepted fixture integrates, rebuild corrected source, run the required full package, and bind final review's still-unexecuted public MAX/MIN probe to fresh artifacts only. The separate fixture author's required36Rust tests and strict lint now pass; its independent review remains pending.
+
+## Corrected base and full validation admission
+
+Fixture correction is reviewed and integrated atff17161b483b40290e081a4323ed0dd219fed537. Root grants the existing owner a serial refresh of its unchanged two-path patch onto that base, preserving all source/failure evidence and proving patch/file digest equality. After that proof, the owner has the sole ESS compiler lane for fresh required full-package verification, strict all-target Clippy and owning/repository formats, using the established plan4 environment and fresh12884901888byte admission before each expensive command. Full unfiltered package bound7200seconds; no runtime omissions, redundant focused reruns or claimed acceptance from ignored cases. Record terminal process handles and source/artifact bindings. No production correction, publication, root-store write or source integration belongs to this grant.
+
+Final whole review remains the second and last round for this unit. Its independent publicMAX/MIN probe remains unexecuted and requires separate admission after package success against fresh hash-bound artifacts. Root's current free22201806848bytes is an observation, not a future admission guarantee. The external original target is absent; its historical binaries/rlibs cannot be reused or claimed preserved.

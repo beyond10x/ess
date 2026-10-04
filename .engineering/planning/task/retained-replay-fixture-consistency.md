@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: task:retained-replay-fixture-consistency
 kind: task
-status: active
+status: implemented
 title: Make retained Go replay fixtures honor read-your-writes tokens
 relations:
 - derived_from: story:feature-request-312
 - serves: vision:O2
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-04T03:49:21Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Finding and authorization
 
@@ -65,3 +66,9 @@ Frozen candidate8e7c21a0 remains unchanged. The complete retained_replay target 
 Final handoff89f2b3c879794947dca60992667247d12b6eeb6f1b050aea335940e351713ba5 and complete evidence manifestd6e81d35a56bce4274da7b07dbb7cedd94b9316c34d7f90fa6c048e55a11a447 bind source, raw logs, command exits, generated fixtures and retained executable. Root reverified every manifest entry. Native executable digestd6ed48849535a4f179c58037524093eb27e164bd0deeaba3fd32e0fd0ea059d6 remains available. Negative-control reachability extraction3feeb1e251f8d0ab173adb9e936e7be0dc6cb026c30bff8534408aadcdc75ab0 includes complete/incomplete rows, held/external state, refusal mutations, source7 and replay envelope controls.
 
 Author lease and command handles are terminal; source is clean, with only the retained target ignored. No cleanup follows. Existing whole review1 now has the complete author evidence and a managed exact-candidate checkout; no verdict or integration is claimed until its final report. Full combined package acceptance remains due after integration.
+
+## Reviewed integration
+
+Independent whole review1 approves with findings[]. Full reporta865287912bdec244f736642c1f4ac6abf9c17402b8461a8e778752ed902f6f0 and publication-safef902a296495fa71a67ddb6dad080168ade95468a406af9d3501b57ae34c76467 bind the review. Canonical review-result retains the public text with its findings fence normalized to the store's structured form. The reviewer independently audited source, complete manifests, raw event counts and negative-control reachability; author executed the required checks. No independent execution is claimed.
+
+Root integrated the frozen candidate at bot mergeff17161b483b40290e081a4323ed0dd219fed537. The staged one-file patch and fixture digests equal the reviewed/tested values; all crates/ bytes match the reviewed candidate, with only planning/evidence additions outside that tree. Both author and committer are the bot. Review and author leases are released, no process remains and retained binaries/fixtures/logs are preserved. This task's one-file acceptance is complete. Parent312's broader browser/final obligations and the corrected full conformance package run remain open; no issue closure, PR or release is claimed.

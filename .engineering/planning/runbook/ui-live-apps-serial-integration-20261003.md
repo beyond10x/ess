@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 72
+revision: 73
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -149,11 +149,11 @@ The current October resource contract remains one ESS compiler lane, jobs1/debug
 
 ## Immediate next action
 
-1. Complete active task:retained-replay-fixture-consistency: preserve the full package red, execute the admitted token-only and exact-token probes, validate the one-file Go fixture correction and obtain independent whole-unit review before integration. The task owns the sole ESS lane with a fresh12GiB floor check before every expensive start.
-2. Refresh the unchanged two-path413A arithmetic correction after that reviewed integration. Repeat required full-package verification on the corrected combined bytes and complete the one remaining whole independent review, including its bounded public API probe when the success/freshness/capacity conditions hold. First review's package blockers remain visible; no approval or arithmetic source defect is inferred.
-3. Refresh Optional-input preparatione8e3e8d9 onto reviewed413A integration, then execute the actual baseline before minimal production changes. The eleven controls, source22 admission, older-format refusals and reviewed282 precedence remain binding. Defer domain String-to-RelatedVia migration to the next stored-reference slice, then complete generated behavior319 serially.
-4. Retain parameterized transport preparationda72325c and corrected plan49972b16. Actual validator, pinned NATS Rust/Go execution, affected checks and independent review remain due under later execution custody. Complete every remaining accepted C–I obligation before the one final PR, verified merge and release.
-5. Treat the latest user-supplied release/backlog compiler-child inventory as read-only findings with no cleanup authority. Preserve the mixed roots and their evidence. The completed413A run's separately authorized private Go cache retirement is documented by its own receipt; it does not authorize other paths or below-floor starts.
+1. The retained replay fixture task is implemented and integrated atff17161b483b40290e081a4323ed0dd219fed537 after independent whole review1 approved with findings[], complete Rust36/36, actual nested Go189/189, strict target lint and unchanged-source formats. Preserve its retained evidence and target; no required check was skipped.
+2. Refresh the unchanged two-path413A arithmetic correction onto that exact integration. The owner now receives the sole ESS compiler lane to rebuild in its own target, repeat strict all-target lint/formats and the required unfiltered full-package run with actual runtimes. Record fresh floor admission before each expensive start, exact source/command/exit/count/log digests, and retained ignored-case limitations. No source repair or independent probe is implicitly granted. After package success, bind the remaining final whole review and its bounded public API probe to fresh libraries. First review stays closed/incomplete; no budget reset.
+3. After reviewed413A integration, refresh Optional-input preparatione8e3e8d9, execute the real baseline, then make minimal production changes. The eleven controls, source22 admission, old-format refusals and reviewed282 precedence remain binding. Defer domain String-to-RelatedVia migration to the stored-reference slice, then complete generated behavior319 serially.
+4. Retain transport preparationda72325c and command plan49972b16. Actual validator, pinned NATS Rust/Go execution, affected checks and independent review remain required under later execution custody. Finish all accepted C–I obligations before the single final PR, verified merge and release.
+5. User-protected release052 roots and mixed backlog material remain NOT CLEARED. The original413A target disappeared before archive creation; source/logs/external fixtures survive, but fresh build/probe bindings are required. Attribute neither disappearance nor recovered capacity to an unproven actor. Never treat absent artifacts as preserved evidence or as approval to remove other paths.
 
 ## Current resource contract from final handoff
 
