@@ -149,10 +149,14 @@ A refused command takes no branch and publishes nothing, so `no_events:` is the 
 carry. It is checked against the target's whole event log: the log may hold no more of each listed event
 after the send than just before it, counting repeats, and a refusal that hands back events fails.
 So a target that runs the command and only then refuses it fails. The generated runners perform
-these observations through `ObserveEvents` / `observeEvents`; a custom runner must also collect
-the pre-send count before executing the command, then compare it with the post-refusal count.
-See [the target interface](./runners.md) for the event-log and unsupported-observation contract.
-No extra authored step is needed. The act is refused:
+these observations through `ObserveEvents` / `observeEvents`. A custom runner must do the same.
+On reaching the act's `execute_command`, it looks ahead to the `expect_not_granted` that follows.
+Before sending, it observes each `no_events:` event in the scenario's correlation and counts the
+occurrences. After the refusal, it observes each event again in the same correlation. The step
+fails if any count grew. A target that cannot observe its log leaves the scenario `unsupported`,
+never passed. The command's answer and view comparisons cannot replace these observations. See
+[the target interface](./runners.md#hold-your-own-implementation-to-the-suite) for the full
+contract. No extra authored step is needed. The act is refused:
 
 | When | Refusal |
 |---|---|

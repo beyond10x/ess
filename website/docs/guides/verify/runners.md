@@ -75,10 +75,29 @@ uses it even when the command answers `not_granted`. Before sending a command wh
 refusal, it observes those events again in the same correlation context and fails if any count grew.
 A command that publishes and then refuses therefore fails even when its answer contains no events.
 
-A custom suite runner must perform both observations; the pre-send observation is part of the
-`expect_not_granted` contract, not a separate suite step. Comparing views is insufficient for an
-event that changes no view. If the adapter cannot observe the log, report unsupported as described
-below; an answer-only check cannot establish that nothing was published.
+A custom suite runner, one that reads `suite.json` itself instead of using the generated package,
+must do the same. For every `execute_command` or `execute_command_without_input` step whose next
+step is `expect_not_granted`:
+
+1. Look ahead before sending. Read the next step and take its `unpublished` list. The suite has no
+   separate observation step; the pre-send count belongs to `expect_not_granted`.
+2. Count before the send. Observe each listed event once, with the scenario's correlation (the one
+   `BeginScenario` received and every command carries), and count the occurrences of that event.
+   The count reads what the log already holds, so the generated runners pass a deadline that does
+   not wait (`attempts: 1`).
+3. Send the command in that correlation. The step requires the standard refusal naming the actor
+   the step names. A command that ran, or a refusal that hands back events, fails the step.
+4. Count again after the refusal. Observe each listed event with the same correlation, and fail the
+   step if any count is higher than before. Count occurrences rather than comparing sets or
+   payloads: a refused send that publishes a second occurrence equal to an earlier one has still
+   added one.
+5. If the target cannot observe the log, before or after, the scenario is `unsupported` and never
+   passed. If the pre-send count is unavailable, the command is not sent.
+
+Neither the command's answer nor the views can stand in for these observations. The answer carries
+only direct events, so it misses an event published elsewhere before the refusal. Comparing views
+misses an event that changes no view. A runner that checks only the answer or the views has not
+verified `unpublished` and must not report the scenario passed.
 
 A refused command reports both the outcome name and the error, for example
 `{outcome: "rejected", error: "tasks.list.InvalidPriority"}`. A method the implementation cannot
