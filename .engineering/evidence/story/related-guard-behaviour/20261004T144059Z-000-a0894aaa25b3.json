@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T14:40:59Z",
+  "actor": "human:timo",
+  "artifact": "story:related-guard-behaviour",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-synth (full), ess-entity-runtime related_guard (integration tree)",
+    "reference": "baseline: when_related commands kept as hand-written obligations (7 suite tests red 'kept an obligation'); treatment: generated Rust and Go pass related-guard suites over a socket, faulty variants fail, 21 sequences agree with the interpreter; ess-synth 449 passed 0 failed; committed outputs unchanged"
+  }
+}

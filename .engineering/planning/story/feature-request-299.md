@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-299
 kind: story
-status: draft
+status: active
 title: A row selected by a filter can be read in a guard and in sets
 tags:
 - feature-request
@@ -15,7 +15,10 @@ relations:
 - depends_on: story:feature-request-285
 - depends_on: story:feature-request-228
 - depends_on: story:feature-request-237
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-04T15:27:23Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":7}}}
+- {from: "proposed", to: "active", at: "2026-10-04T15:27:23Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":7}}}
 ---
 ## Outcome
 

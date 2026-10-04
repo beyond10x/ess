@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T14:28:15Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-297",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance explorer targets incl. explore_restart and explore_restart_adversary (integration tree)",
+    "reference": "baseline: without restarts a counter-reset target passes (explore_restart red 6 of 8 before the change; adversary 2 red before correction); treatment: counter-reset and second-restart-loss targets fail in Go and TypeScript, 283 passed 0 failed, results without restartEvery byte-identical to base"
+  }
+}

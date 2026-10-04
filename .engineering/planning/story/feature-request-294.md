@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-294
 kind: story
-status: draft
+status: active
 title: 'mutate: no way to declare a known-failing baseline scenario; one failure refuses the whole audit (ESS-MUTATE-001)'
 tags:
 - feature-request
@@ -12,7 +12,10 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-04T15:00:14Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-04T15:00:14Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

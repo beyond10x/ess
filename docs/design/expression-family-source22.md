@@ -691,3 +691,65 @@ This coordinator correction binds the occurrence-clock, typed completion receipt
 contract as part of A3. Both full design-review passes are exhausted. The receipt correction remains
 an explicit independent implementation-review obligation; neither a design edit nor the previous
 named refusal is behavior acceptance.
+
+## Final review decisions (2026-10-04)
+
+A third, final independent review of this page against the integration branch at `26ad39057`
+returned needs-revision with three blockers and sixteen further findings, each with a proposed rule.
+The bundle coordinator adopted the rules below; they bind the implementation units and supersede any
+earlier sentence they contradict.
+
+1. **Collection and text-length reads in suites.** Under suite 40/41, `projection_target` admits
+   collection reads and text-length reads in `satisfies`; `row_facts` binds sequence elements and
+   `.count` the way the Go runtime already does, and `.count` is lifted together with `.utf8_bytes`.
+   Rust, Go and TypeScript runners then agree on `distinct` and `.utf8_bytes` invariants over view rows.
+2. **Timestamp fact-versus-fact comparisons.** The checker tags a resolved `Compare` whose two operands
+   resolve to Timestamp (`{compare: {left, op, right, as: timestamp}}`); a tagged comparison selects
+   suite 40/41 and every suite runtime compares the operands as instants. Synthesis refuses to emit
+   `satisfies` for an untagged Timestamp fact-versus-fact comparison with a named refusal.
+3. **#200 on the generated lane.** #200 includes generated view-parameter application: generated Rust
+   and Go decode the query string through the existing view-query decoder and apply `{param: name}`
+   filters, so a generated view query with `params:` stops being an obligation for the admitted
+   operators.
+4. **Offset parsing.** Rule 3a: an unquoted right side `<binder | root | dotted path> ws? (+|-) ws?
+   <magnitude>` whose base resolves is an `Offset`; a type mismatch is `type_mismatch`, an unresolved
+   base stays a literal. Integer magnitudes follow the current-time digit rules (no leading zero).
+5. **Binder bytes.** One-segment facts that resolve to an in-scope binder keep the compact form and do
+   not select 40/41; only root facts are written `{fact:}`. A root shadowed by a binder is refused at
+   source.
+6. **`input.` in a plain `when:`.** Resolution rewrites `input.<path>` to the root path in the plain
+   command-input environment; a one-segment result is written `{fact: x}`; no evaluator changes.
+7. **Diff.** Conditions are rendered from canonical `to_node`, so a literal that becomes a fact, an
+   offset or a derived selector is reported as a behaviour change; a control proves it.
+8. **Dotted identity and reference sources.** A dotted path supplies an identity or a reference address
+   only when its whole route is required; existence and precedence read it structurally, and their
+   controls repeat with a nested source.
+9. **#225 arrangement.** Equal case: both inputs name one arranged instance. Unequal case: a second
+   instance is arranged, or synthesis refuses with a named ESS-SYNTH reason. Identity tokens admit only
+   `==` and `!=`.
+10. **Suite format ordering.** 40/41 are cumulative over 36–39 and each construct keeps its lower-bound
+    gate. Until the 38/39 readers land, a 40 reader refuses 38/39 vocabulary as unsupported; the final
+    candidate admits 36–41 together.
+11. **`.utf8_bytes` position.** A separate operand variant (`Operand::Derived(Utf8Bytes(path))`), legal
+    only in `Compare` operands; every other position refuses it.
+12. **ESS-VIEW-003 hint.** The hint names `{param: <name>}` for text operators; a control asserts it.
+13. **#228 controls.** Named scenarios `unique_absent_accepts`, `unique_present_refuses`,
+    `second_create_refuses`, `decoy_per_conjunct_accepts` and `composes_with_existing_instance`; an
+    Optional key needs a documented `defined(k)` conjunct, tested.
+14. **Instants in Go and TypeScript.** Both implement the grammar of Rust's `Rfc3339Instant` (up to
+    nine fraction digits, no leap second, lower-case `t`/`z`, ± offset) and share one vector file with
+    Rust.
+15. **Citations** are refreshed by the units that touch them.
+16. **Further lanes.** Mutation gets operators for `Offset` and `Distinct` or an explicit exclusion;
+    `ess-ui-check` filters, `ess-gen` types and selection plans refuse a non-literal text operand
+    unless a unit implements it.
+17. **Non-literal text operands in suites** are dropped from the 40/41 triggers.
+18. **Clock-edge faults** are the authority of the scripted-provider controls; history verdicts check
+    recorder corruption only.
+19. **Byte length edge cases.** The difference from `.count` bound facts is documented, and text with a
+    lone surrogate is Unknown in every lane.
+
+Implementation follows the review's unit cut: U1 resolver and A1, U2 offsets, U3 value paths, U4
+occurrence clock and history 2 (in parallel with U1–U3), U5 `now` over stored rows, U6 `distinct`,
+U7 UTF-8 byte length, U8 row sets and filtered reads, U9 typed text operands; integration in that
+order, with U4 before U5.
