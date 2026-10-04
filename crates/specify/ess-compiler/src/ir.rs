@@ -965,7 +965,7 @@ pub struct ResolvedSetSubject {
 }
 
 /// One `affects:` entry (ess/16): every row of an entity its filter selects comes to hold what its
-/// `sets:` say. Where the entity is the subject's, the subject is not among the rows.
+/// `sets:` say, and from ess/22 takes the entry's move. Where the entity is the subject's, the subject is not among the rows.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedAffect {
     /// The entity whose rows change.
@@ -975,6 +975,11 @@ pub struct ResolvedAffect {
     pub filter: Predicate,
     /// What every selected row comes to hold, in the entity's declaration order.
     pub sets: Vec<ResolvedPayloadField>,
+    /// The move every selected row resting in its `from` states takes; a selected row resting
+    /// elsewhere is skipped (ess/22, beyond10x/ess#229). Left out of the document where the entry
+    /// only sets fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moves: Option<Transition>,
 }
 
 /// Where a determined payload field's value comes from, resolved.

@@ -19,6 +19,8 @@ struct Plan<'a> {
 struct Eligibility<'a> {
     excluded: Option<&'a Node>,
     effect: Option<&'a ResolvedEffect>,
+    /// The subject row a `subject.` operand reads, and its entity.
+    subject: Option<(&'a ResolvedEntity, &'a Row)>,
 }
 
 /// None means this is not an instances outcome. Some(0) is its successful zero-match result.
@@ -52,6 +54,7 @@ pub(super) fn apply(
                 Eligibility {
                     excluded: None,
                     effect: Some(&set.effect),
+                    subject: None,
                 },
             )?,
         });
@@ -62,6 +65,14 @@ pub(super) fn apply(
         let facts = row_facts(ir, &fields, entity, key, row)?;
         for affect in &outcome.affects {
             let affected = ir.entity(&affect.entity);
+            // From ess/22 an entry may move its rows (beyond10x/ess#229): a selected row resting
+            // outside the move's `from` states is skipped, as under `instances:`.
+            let effect = affect
+                .moves
+                .clone()
+                .map_or(ResolvedEffect::Updates, |transition| {
+                    ResolvedEffect::Moves { transition }
+                });
             let keys = select(
                 ir,
                 before,
@@ -71,12 +82,13 @@ pub(super) fn apply(
                 Some(&facts),
                 Eligibility {
                     excluded: (affected.name == entity.name).then_some(key),
-                    effect: None,
+                    effect: affect.moves.is_some().then_some(&effect),
+                    subject: Some((entity, row)),
                 },
             )?;
             plans.push(Plan {
                 entity: affected,
-                effect: ResolvedEffect::Updates,
+                effect,
                 sets: &affect.sets,
                 keys,
             });
@@ -203,6 +215,7 @@ fn select(
         {
             continue;
         }
+        let held = row;
         let row = row_facts(ir, &fields, entity, key, row)?;
         match row.evaluate_with(|candidate| {
             filter.evaluate(&Facts {
@@ -213,6 +226,11 @@ fn select(
         }) {
             Truth::True => selected.push(key.clone()),
             Truth::False => {}
+            // Only a filter that holds selects a row. A filter left unknown because a field it
+            // reads is absent (an `Optional<…>` row or subject field holding nothing, or an
+            // Optional input left out) does not hold, so the row is not selected; one left
+            // unknown by a value the store never observed stays undecidable.
+            Truth::Unknown if only_absent(filter, entity, held, eligibility.subject) => {}
             Truth::Unknown => {
                 return Err(Undetermined::Undecidable {
                     outcome: format!("set effect on {}", entity.name),
@@ -222,6 +240,42 @@ fn select(
         }
     }
     Ok(selected)
+}
+
+/// Whether every row or subject field `filter` reads that holds no value is an `Optional<…>` one
+/// holding nothing: what makes an unknown filter a row left unselected rather than an undecidable
+/// effect. A required field never written, or a value the store holds as unobserved (a generated
+/// value no history recorded), keeps it undecidable. An `input.` operand is supplied or absent,
+/// never unknown.
+fn only_absent(
+    filter: &Predicate,
+    entity: &ResolvedEntity,
+    row: &Row,
+    subject: Option<(&ResolvedEntity, &Row)>,
+) -> bool {
+    filter.fact_paths().into_iter().all(|path| {
+        let segments = path.segments();
+        let (owner, held, field) = match segments.split_first() {
+            Some((first, rest)) if first == "input" && !rest.is_empty() => return true,
+            Some((first, rest)) if first == "subject" && !rest.is_empty() => match subject {
+                Some((owner, held)) => (owner, held, &rest[0]),
+                None => return true,
+            },
+            Some((first, _)) => (entity, row, first),
+            None => return true,
+        };
+        match held.fields.get(field) {
+            Some(Value::Absent) => true,
+            Some(value) => !value.unobserved(),
+            None => {
+                owner.identity.name == *field
+                    || owner
+                        .fields
+                        .iter()
+                        .any(|declared| declared.name == *field && declared.type_ref.is_optional())
+            }
+        }
+    })
 }
 
 struct Facts<'a> {

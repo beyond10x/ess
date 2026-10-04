@@ -14,10 +14,14 @@
 //!   `input.<field>` and `subject.<field>` — the subject as it was before the outcome. Where
 //!   `entity` is the subject's own, the subject itself is not among the rows.
 //!
+//!   From ess/22 (beyond10x/ess#229, `story:related-record-effects`) an entry may also declare
+//!   `moves: <Entity>.<transition>`: every selected row resting in the transition's `from` states
+//!   takes it, and a selected row resting elsewhere is skipped, as under `instances:`.
+//!
 //! `sets:` of either takes a literal, `input.<field>`, `{input: …, else: …}`, `{generated: true}`
 //! or `{cleared: true}`; a source that reads one row (`{subject: …}`, `{related: …}`,
-//! `{increment: …}`) or the caller is refused by name in this first cut, and so is a move inside
-//! `affects:`.
+//! `{increment: …}`) or the caller is refused by name in this first cut. Below ess/22 a move inside
+//! `affects:` is refused naming ess/22.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -57,7 +61,9 @@ pub struct RawAffect {
     /// What every selected row comes to hold.
     #[serde(default, skip_serializing_if = "PayloadTable::is_empty")]
     pub sets: PayloadTable,
-    /// Read so it can be refused by name: a move inside `affects:` is not in this cut.
+    /// The move every selected row resting in its `from` states takes, written
+    /// `<Entity>.<transition>` over `entity` (ess/22, beyond10x/ess#229); a selected row resting
+    /// elsewhere is skipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moves: Option<QualifiedName>,
 }
@@ -83,6 +89,10 @@ pub struct Affect {
     pub filter: Predicate,
     /// What every selected row comes to hold.
     pub sets: BTreeMap<String, PayloadSource>,
+    /// The transition of `entity` every selected row resting in its `from` states takes (ess/22,
+    /// beyond10x/ess#229); `None` where the entry only sets fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moves: Option<String>,
 }
 
 /// Both constructs of one outcome; empty on every outcome that declares neither.
@@ -211,7 +221,39 @@ pub(super) fn set_subject(
     }))
 }
 
-/// `affects:` as written, with a move inside refused by name and a field set twice refused.
+/// Why `moved`, written inside an `affects:` entry over `entity`, is not a transition of that
+/// entity as written — another entity's, or one naming no entity — as the refusal's code, message
+/// and hint; `None` where it names one of `entity`'s.
+fn misnamed_move(
+    name: &str,
+    entity: &QualifiedName,
+    moved: &QualifiedName,
+) -> Option<(ValidationCode, String, &'static str)> {
+    match moved.namespace() {
+        Some(named) if named == *entity => None,
+        Some(named) => Some((
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "outcome `{name}` moves `{moved}` inside an `affects:` entry over `{entity}`; the \
+                 move is a transition of `{named}`, and the entry changes rows of `{entity}` only"
+            ),
+            "name a transition of the entry's own entity, written `<Entity>.<transition>`",
+        )),
+        None => Some((
+            ValidationCode::MissingDeclaration,
+            format!(
+                "outcome `{name}` moves `{moved}` inside `affects:`, which names no entity; a \
+                 move is written as the entity followed by the transition"
+            ),
+            "write it as `billing.invoice.Invoice.settle`",
+        )),
+    }
+}
+
+/// `affects:` as written, with a move naming another entity than the entry's refused and a field
+/// set twice refused. An assembled specification reaches this with such a move already taken off
+/// the entry and refused alone by [`refuse_affect_moves`], which also says whether the format
+/// admits a move at all; the refusal here is the backstop for an outcome converted on its own.
 pub(super) fn affects(
     name: &OutcomeName,
     written: Vec<RawAffect>,
@@ -219,19 +261,22 @@ pub(super) fn affects(
     let mut errors = ValidationErrors::new();
     let mut affects = Vec::with_capacity(written.len());
     for (index, raw) in written.into_iter().enumerate() {
-        if let Some(moved) = &raw.moves {
-            errors.extend(refusal(
-                name,
-                &format!("affects[{index}].moves"),
-                ValidationCode::UnsupportedConstruct,
-                format!(
-                    "outcome `{name}` moves `{moved}` inside `affects:`; a secondary effect sets \
-                     fields in this cut and takes no transition"
-                ),
-                "declare `sets:` on the affected rows, or move them with a command of their own",
-            ));
-            continue;
-        }
+        let moves = match &raw.moves {
+            None => None,
+            Some(moved) => match misnamed_move(name.as_str(), &raw.entity, moved) {
+                None => Some(moved.local().to_owned()),
+                Some((code, message, hint)) => {
+                    errors.extend(refusal(
+                        name,
+                        &format!("affects[{index}].moves"),
+                        code,
+                        message,
+                        hint,
+                    ));
+                    continue;
+                }
+            },
+        };
         let mut sets = BTreeMap::new();
         for entry in raw.sets.0 {
             if sets.contains_key(&entry.target) {
@@ -250,6 +295,7 @@ pub(super) fn affects(
             entity: raw.entity,
             filter: raw.filter,
             sets,
+            moves,
         });
     }
     errors.into_result(affects)
@@ -319,6 +365,10 @@ pub(super) fn written(
         .affects
         .into_iter()
         .map(|affect| RawAffect {
+            moves: affect
+                .moves
+                .as_deref()
+                .map(|transition| affect.entity.child(transition)),
             entity: affect.entity,
             filter: affect.filter,
             sets: PayloadTable(
@@ -328,7 +378,6 @@ pub(super) fn written(
                     .map(|(target, source)| super::PayloadField { target, source })
                     .collect(),
             ),
-            moves: None,
         })
         .collect();
     let Some(set) = effects.instances else {
@@ -346,16 +395,24 @@ pub(super) fn written(
     }
 }
 
-/// The transitions set moves take, for the lifecycle-cause check.
+/// The transitions set moves take, for the lifecycle-cause check: an `instances:` move and, from
+/// ess/22, a move inside an `affects:` entry.
 pub(crate) fn performed(
     commands: &BTreeMap<QualifiedName, CommandSpec>,
 ) -> impl Iterator<Item = (&QualifiedName, &str)> {
-    commands
-        .values()
-        .flat_map(|command| &command.outcomes)
-        .filter(|outcome| !outcome.is_refusal())
+    let accepting = || {
+        commands
+            .values()
+            .flat_map(|command| &command.outcomes)
+            .filter(|outcome| !outcome.is_refusal())
+    };
+    let instances = accepting()
         .filter_map(|outcome| outcome.set_effects.instances.as_ref())
-        .filter_map(|set| set.effect.transition().map(|move_| (&set.entity, move_)))
+        .filter_map(|set| set.effect.transition().map(|move_| (&set.entity, move_)));
+    let affects = accepting()
+        .flat_map(|outcome| &outcome.set_effects.affects)
+        .filter_map(|affect| affect.moves.as_deref().map(|move_| (&affect.entity, move_)));
+    instances.chain(affects)
 }
 
 /// The assignments one outcome declares, with the entity each is over and the key it is written
@@ -455,11 +512,31 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 .subject
                 .as_ref()
                 .and_then(|subject| spec.entities().get(&subject.entity));
+            errors.extend(one_move_per_entity(command, outcome, &site));
             for (index, affect) in outcome.set_effects.affects.iter().enumerate() {
                 let at = site.clone().key("affects").index(index);
+                if affect.moves.is_some() && format.major() < FormatVersion::V22.major() {
+                    // A backstop for a specification assembled without the one header
+                    // [`refuse_affect_moves`] reads.
+                    errors.push(move_below_ess_22(at.clone().key("moves").render()));
+                }
                 if let Some(entity) =
                     declared(spec, &affect.entity, &at.clone().key("entity"), &mut errors)
                 {
+                    if let Some(transition) = &affect.moves {
+                        if entity.states.transition(transition).is_none() {
+                            errors.push(ValidationError::at(
+                                at.clone().key("moves"),
+                                ValidationCode::UndeclaredReference,
+                                format!(
+                                    "outcome `{}` of `{}` moves the rows of `affects[{index}]` \
+                                     along `{transition}`, which `{}` does not declare as a \
+                                     transition",
+                                    outcome.name, command.name, affect.entity
+                                ),
+                            ));
+                        }
+                    }
                     errors.extend(check_filter(
                         command,
                         entity,
@@ -859,6 +936,87 @@ pub(crate) fn refuse_below_ess_16(
     }
 }
 
+/// The refusal of a move inside `affects:` below ess/22, at `at`. The code is the one every format
+/// from ess/16 gave it, `unsupported_construct`; the message names the format that admits it.
+fn move_below_ess_22(at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedConstruct,
+        at,
+        "a move inside `affects:` — `moves: <Entity>.<transition>` on the rows an entry selects — \
+         requires specification format ess/22",
+    )
+    .with_hint(
+        "declare `format: ess/22`, or declare `sets:` on the affected rows and move them with a \
+         command of their own",
+    )
+}
+
+/// Refuses, before any outcome is converted, each move inside an `affects:` entry that cannot be
+/// read (beyond10x/ess#229), at the key written: under a header from `ess/16` below `ess/22` every
+/// such move, naming `ess/22`; from `ess/22` a move naming another entity's transition, or naming
+/// no entity.
+///
+/// The move is taken off the entry and the rest of the entry kept, so the branch converts and the
+/// refusal comes alone: no `empty_declaration` for a command whose only branch it refused, and none
+/// of the reachability checks that follow from that (`non_exhaustive_branches`,
+/// `unreachable_branch`). The transition it named is recorded in `refused_moves` — for a move naming
+/// no entity, the entry's entity's transition of that name — so a transition only it took is not
+/// also reported as one nothing takes. Below `ess/16` the whole `affects:` is
+/// [`refuse_below_ess_16`]'s. A specification of several headers keeps the conversion's refusal of
+/// a misnamed move, and [`validate`]'s of the format.
+pub(crate) fn refuse_affect_moves(
+    files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
+    errors: &mut ValidationErrors,
+    refused_moves: &mut std::collections::BTreeSet<QualifiedName>,
+) {
+    let headers: Vec<Option<FormatVersion>> = files
+        .iter()
+        .filter(|(_, file)| file.system.is_some())
+        .map(|(_, file)| file.format)
+        .collect();
+    let [format] = headers.as_slice() else {
+        return;
+    };
+    let major = format.unwrap_or(FormatVersion::V1).major();
+    if major < FormatVersion::V16.major() {
+        return;
+    }
+    let below_22 = major < FormatVersion::V22.major();
+    for (_, file) in files.iter_mut() {
+        for command in &mut file.commands {
+            for outcome in &mut command.outcomes {
+                for (index, affect) in outcome.affects.iter_mut().enumerate() {
+                    let Some(moved) = &affect.moves else {
+                        continue;
+                    };
+                    let at = format!(
+                        "command.{}.outcomes.{}.affects[{index}].moves",
+                        command.name, outcome.name
+                    );
+                    let refusal = if below_22 {
+                        move_below_ess_22(at)
+                    } else {
+                        let Some((code, message, hint)) =
+                            misnamed_move(outcome.name.as_str(), &affect.entity, moved)
+                        else {
+                            continue;
+                        };
+                        ValidationError::new(code, at, message).with_hint(hint)
+                    };
+                    errors.push(refusal);
+                    let named = if moved.namespace().is_some() {
+                        moved.clone()
+                    } else {
+                        affect.entity.child(moved.local())
+                    };
+                    refused_moves.insert(named);
+                    affect.moves = None;
+                }
+            }
+        }
+    }
+}
+
 /// Reads `{count: changed}` back as the nested mapping it was below `ess/16`.
 pub fn read_below_ess_16(
     format: FormatVersion,
@@ -956,6 +1114,44 @@ fn identity_set(
                 ),
             )
             .with_hint("drop the identity from `sets:`; a set effect changes rows, it names none"),
+        );
+    }
+    errors
+}
+
+/// One transition per entity per outcome (beyond10x/ess#229): a second `affects:` entry declaring
+/// `moves:` over an entity an earlier entry already moves is refused at its `moves`, since a row
+/// both select would have to take two, and no order between their moves is defined.
+fn one_move_per_entity(
+    command: &CommandSpec,
+    outcome: &Outcome,
+    site: &ConstructRef,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let mut moving: BTreeMap<&QualifiedName, usize> = BTreeMap::new();
+    for (index, affect) in outcome.set_effects.affects.iter().enumerate() {
+        if affect.moves.is_none() {
+            continue;
+        }
+        let Some(first) = moving.get(&affect.entity) else {
+            moving.insert(&affect.entity, index);
+            continue;
+        };
+        errors.push(
+            ValidationError::at(
+                site.clone().key("affects").index(index).key("moves"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` of `{}` moves rows of `{}` in `affects[{first}]` and again in \
+                     `affects[{index}]`; an outcome takes one transition per entity, since one \
+                     row both entries select would have to take two",
+                    outcome.name, command.name, affect.entity
+                ),
+            )
+            .with_hint(
+                "keep one moving entry per entity, widen its filter to the rows both select, or \
+                 move the others with a command of their own",
+            ),
         );
     }
     errors

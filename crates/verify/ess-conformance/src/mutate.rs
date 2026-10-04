@@ -2492,7 +2492,24 @@ fn performers(model: &str) -> Option<Performers> {
     for (command, body) in model.get("commands")?.as_object()? {
         for outcome in body.get("outcomes")?.as_array()? {
             // A transition is performed by the outcome's own subject or by its set subject
-            // (`instances:`, ess/16), which carries its effect the same way; `affects:` only sets.
+            // (`instances:`, ess/16), which carries its effect the same way, and from ess/22 by
+            // the move of an `affects:` entry (beyond10x/ess#229).
+            for affect in outcome
+                .get("affects")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let Some(moved) = affect.get("moves") else {
+                    continue;
+                };
+                let entity = affect.get("entity")?.as_str()?;
+                let transition = moved.get("name")?.as_str()?;
+                found
+                    .entry(format!("{entity}.{transition}"))
+                    .or_default()
+                    .push((command.clone(), outcome.get("name")?.as_str()?.to_owned()));
+            }
             for key in ["subject", "instances"] {
                 let Some(subject) = outcome.get(key).filter(|it| !it.is_null()) else {
                     continue;
@@ -4302,5 +4319,87 @@ mod tests {
             assert!(page.contains(&code), "`{code}` is not named in formats.md");
         }
         assert!(page.contains(REPORT_FORMAT));
+    }
+
+    /// A transition only an `affects:` entry's move takes (ess/22, beyond10x/ess#229) is performed
+    /// by that branch, so a `from-drop` or `transition-to` mutant of it is scoped to the component
+    /// handling the branch's command.
+    #[test]
+    fn an_affects_move_performs_its_transition() {
+        let model = r"format: ess/22
+system: demo
+version: v1
+domain: demo.users
+types:
+  - {name: demo.users.UserId, kind: newtype, of: String}
+  - {name: demo.users.SessionId, kind: newtype, of: String}
+entities:
+  - name: demo.users.User
+    identity: {name: user_id, type: demo.users.UserId}
+    lifecycle:
+      initial: Active
+      states: [Active, Inactive]
+      terminal: [Inactive]
+      transitions: [{name: deactivate, from: [Active], to: Inactive}]
+  - name: demo.users.Session
+    identity: {name: session_id, type: demo.users.SessionId}
+    fields: [{name: user_id, type: demo.users.UserId}]
+    lifecycle:
+      initial: Live
+      states: [Live, Ended]
+      terminal: [Ended]
+      transitions: [{name: end, from: [Live], to: Ended}]
+events:
+  - name: demo.users.UserAdded
+    fields: [{name: user_id, type: demo.users.UserId}]
+  - name: demo.users.UserDeactivated
+    fields: [{name: user_id, type: demo.users.UserId}]
+  - name: demo.users.SessionStarted
+    fields: [{name: session_id, type: demo.users.SessionId}]
+commands:
+  - name: demo.users.AddUser
+    outcomes:
+      - name: added
+        creates: demo.users.User
+        instance: user_id
+        emits: [demo.users.UserAdded]
+        payload: {demo.users.UserAdded: {user_id: {generated: true}}}
+  - name: demo.users.StartSession
+    input: [{name: user_id, type: demo.users.UserId}]
+    outcomes:
+      - name: started
+        creates: demo.users.Session
+        instance: session_id
+        emits: [demo.users.SessionStarted]
+        payload: {demo.users.SessionStarted: {session_id: {generated: true}}}
+        sets: {user_id: input.user_id}
+  - name: demo.users.DeactivateUser
+    input: [{name: user_id, type: demo.users.UserId}]
+    outcomes:
+      - name: deactivated
+        moves: demo.users.User.deactivate
+        instance: user_id
+        emits: [demo.users.UserDeactivated]
+        payload: {demo.users.UserDeactivated: {user_id: input.user_id}}
+        affects:
+          - entity: demo.users.Session
+            where: user_id == subject.user_id
+            moves: demo.users.Session.end
+";
+        let raw = ess_domain::spec::RawSpecFile::parse(model).expect("the model parses");
+        let spec = ess_domain::Specification::assemble([(
+            ess_domain::system::Source::new("users.yaml"),
+            raw,
+        )])
+        .unwrap_or_else(|errors| panic!("the model is admitted: {errors}"));
+        let ir = ess_compiler::resolve::compile(&spec, &ess_compiler::source::SourceMap::new())
+            .expect("the model compiles");
+        let found = performers(&ir.to_compact_json()).expect("the model is read");
+        let deactivated = vec![(
+            "demo.users.DeactivateUser".to_owned(),
+            "deactivated".to_owned(),
+        )];
+        assert_eq!(found.get("demo.users.Session.end"), Some(&deactivated));
+        assert_eq!(found.get("demo.users.User.deactivate"), Some(&deactivated));
     }
 }

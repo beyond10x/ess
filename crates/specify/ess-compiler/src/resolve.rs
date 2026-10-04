@@ -2287,10 +2287,15 @@ impl<'a> Resolver<'a> {
                     None => complete = false,
                 }
             }
+            let moves = match &affect.moves {
+                None => None,
+                Some(named) => Some(entity.lifecycle.transition(named)?.clone()),
+            };
             affects.push(crate::ir::ResolvedAffect {
                 entity: handle,
                 filter: affect.filter.clone(),
                 sets,
+                moves,
             });
         }
         complete.then_some((instances, affects))

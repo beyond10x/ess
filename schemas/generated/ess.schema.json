@@ -1502,7 +1502,7 @@
           ]
         },
         "moves": {
-          "description": "Read so it can be refused by name: a move inside `affects:` is not in this cut.",
+          "description": "The move every selected row resting in its `from` states takes, written `<Entity>.<transition>` over `entity` (ess/22, beyond10x/ess#229); a selected row resting elsewhere is skipped.",
           "anyOf": [
             {
               "$ref": "#/definitions/QualifiedName"

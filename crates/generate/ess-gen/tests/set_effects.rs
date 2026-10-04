@@ -55,3 +55,31 @@ fn every_artifact_is_generated_without_a_panic() {
     let all = artifacts(&ir(), |_| true);
     assert!(all.contains("demo.desk.EndTeam"));
 }
+
+#[test]
+fn issue_229_the_documentation_says_an_affects_entry_moves_its_rows() {
+    let from = "            where: team == subject.team\n";
+    assert!(MODEL.contains(from), "{from}");
+    let model = MODEL
+        .replacen("format: ess/16", "format: ess/22", 1)
+        .replacen(
+            from,
+            "            where: team == subject.team\n            moves: demo.desk.Session.park\n",
+            1,
+        );
+    let raw = RawSpecFile::parse(&format!("{model}{COMPONENT}")).unwrap();
+    let spec = Specification::assemble([(Source::new("desk.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let docs = artifacts(&ir, |path| {
+        std::path::Path::new(path)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+    });
+    assert!(
+        docs.contains(
+            "moves every `demo.desk.Session` the filter `team == subject.team` selects to `Parked`"
+        ),
+        "the entry's move is published: {docs}"
+    );
+}

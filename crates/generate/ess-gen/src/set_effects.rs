@@ -54,15 +54,35 @@ pub(crate) fn affects_sentences(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<In
 
 fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
     let entity = ir.entity(&affect.entity);
+    // From ess/22 an entry may move its rows (beyond10x/ess#229); an entry that only sets fields
+    // reads as it always did.
+    let Some(transition) = &affect.moves else {
+        let mut out = vec![
+            Inline::text(" Beside its subject, it changes every "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" the filter "),
+            Inline::code(affect.filter.to_string()),
+            Inline::text(" selects, the subject itself excepted"),
+        ];
+        out.extend(assignments(&affect.sets));
+        out.push(Inline::text("."));
+        return out;
+    };
     let mut out = vec![
-        Inline::text(" Beside its subject, it changes every "),
+        Inline::text(" Beside its subject, it moves every "),
         Inline::code(entity.name.to_string()),
         Inline::text(" the filter "),
         Inline::code(affect.filter.to_string()),
-        Inline::text(" selects, the subject itself excepted"),
+        Inline::text(" selects to "),
+        Inline::code(transition.to.to_string()),
+        Inline::text(", along the declared move "),
+        Inline::code(transition.name.clone()),
+        Inline::text(", the subject itself excepted"),
     ];
     out.extend(assignments(&affect.sets));
-    out.push(Inline::text("."));
+    out.push(Inline::text(
+        "; a selected row resting outside the move's starting states is left as it is.",
+    ));
     out
 }
 

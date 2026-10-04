@@ -257,6 +257,11 @@ impl Specification {
             &mut errors,
             &mut collected.refused.moves,
         );
+        crate::command::set_effects::refuse_affect_moves(
+            &mut files,
+            &mut errors,
+            &mut collected.refused.moves,
+        );
 
         for (source, file) in files {
             parts.push(collected.absorb(&source, file, &mut errors));

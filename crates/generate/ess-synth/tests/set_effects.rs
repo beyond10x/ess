@@ -61,3 +61,28 @@ fn every_direct_workspace_entry_refuses_each_set_effect_by_name() {
         }
     }
 }
+
+#[test]
+fn issue_229_an_affects_entry_that_moves_its_rows_is_refused_by_name() {
+    let from = "            where: team == subject.team\n";
+    assert!(MODEL.contains(from), "{from}");
+    let model = MODEL
+        .replacen("format: ess/16", "format: ess/22", 1)
+        .replacen(
+            from,
+            "            where: team == subject.team\n            moves: demo.desk.Session.park\n",
+            1,
+        );
+    let ir = ir(&model);
+    for target in [Target::Rust, Target::Go] {
+        let failure = synthesize_for(&ir, target)
+            .err()
+            .unwrap_or_else(|| panic!("{target:?} refuses a moving set effect"));
+        let text = format!("{failure:?}");
+        assert!(text.contains(INVITED), "{target:?} names {INVITED}: {text}");
+        assert!(
+            text.contains(&format!("{:?}", TargetFailureCode::MissingRepresentation)),
+            "{text}"
+        );
+    }
+}

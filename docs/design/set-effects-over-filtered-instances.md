@@ -25,6 +25,13 @@ selected rows is an accepted answer. The outcome's own `sets:` applies to every 
 model keeps `subject: None` beside `SetEffects::instances`, so no single-instance reader mistakes the
 branch for one.
 
+**Selection.** Only a filter that holds selects a row, under `instances:` and `affects:` alike (one
+selection in the interpreter). A filter left unknown because a field it reads is absent — an
+`Optional<…>` field of the row or of the subject holding nothing, or an Optional input left out —
+does not hold, so the row is not selected and the outcome still answers. A filter left unknown by a
+required field never written, or by a value no history recorded, stays undecidable (beyond10x/ess#229,
+adversary pass 1; this reaches `ess/16` documents too, which were answered as undecidable before).
+
 **Count.** `{count: changed}` in `payload:` is the number of rows the outcome changed. It is
 admitted only as a whole `payload:` field of an outcome with `instances:`, only into an `Integer`
 field, and refused elsewhere by name (`unsupported_construct`, or `type_mismatch` for the type).
@@ -37,8 +44,8 @@ relation named in place of a filter is not part of this cut.
 
 `sets:` of either takes a literal, `input.<field>`, `{input: …, else: …}`, `{generated: true}` or
 `{cleared: true}`. `{subject: …}`, `{related: …}`, `{increment: …}` and `{caller: …}` read one row or
-the caller and are refused by name under a set effect. A `moves:` inside `affects:` is refused by
-name.
+the caller and are refused by name under a set effect. A `moves:` inside `affects:` is admitted from
+`ess/22` (below).
 
 Refused besides: `instance:` with `instances:` (`conflicting_declaration`); `instances:` on
 `creates:` (`conflicting_declaration`) or on `deletes:`/`preserves:` (`unsupported_construct`);
@@ -89,6 +96,56 @@ runtimes need nothing new.
 
 The count and the unchanged rows are claims about every stored row: they hold on a target no other
 scenario writes to at the same time, which §8 already requires of a shared target.
+
+## Related-record moves (`ess/22`, beyond10x/ess#229)
+
+An `affects:` entry may declare `moves: <Entity>.<transition>` (`story:related-record-effects`):
+deactivating a user ends that user's live sessions. The move names a transition of the entry's own
+`entity` (another entity's is `conflicting_declaration`, an undeclared one `undeclared_reference`),
+and `sets:` beside it is optional. Its semantics are those of an `instances:` move: rows are selected
+from the store before the outcome; a selected row resting in the transition's `from` states takes it
+and comes to hold what `sets:` writes; one resting elsewhere is skipped, not refused; zero rows is an
+accepted answer. The move counts as the cause of its transition for the lifecycle check, and is no
+driver of an arrangement. The compiled entry carries the transition as `moves`, left out of the
+document where the entry only sets fields, so a model without the form keeps its bytes.
+
+Under `ess/16` to `ess/21` the move is refused at `affects[<n>].moves`, before conversion, with
+the code those formats always gave it (`unsupported_construct`) and a message naming `ess/22`. From
+`ess/22` a move naming another entity's transition (`conflicting_declaration`) or no entity
+(`missing_declaration`) is refused at the same key in the same pass. Either way the move is taken off
+the entry and the rest kept, so the branch converts and the refusal comes alone: no
+`empty_declaration`, `non_exhaustive_branches`, `unreachable_branch` or uncaused-transition cascade.
+
+An outcome takes one transition per entity in `affects:`: a second entry declaring `moves:` over an
+entity an earlier entry already moves is `conflicting_declaration` at its `moves`, since a row both
+select would have to take two and no order between them is defined. A moving and a setting entry, or
+any number of setting entries, over one entity are admitted, and apply to a row in the order written.
+
+The `affects:` segment witnesses a moving entry as the `instances:` scenario witnesses a move: its
+changed rows rest in a `from` state other than the arrival wherever the arranging commands reach
+one (a row already resting where the move arrives reads the same whether or not it was taken), one
+row the filter selects rests outside them (another state than the arrival preferred), and after the
+command the changed rows are read in the arrival state, the others as they were. The view that reads
+them back must publish the state. Where no row can show its `sets:` changing, the state alone
+separates them. Where only the arrival state itself is reached, the move is seen through what
+`sets:` writes, and an entry writing nothing is refused by name (`NoWitness`). No witness row of
+`instances:` or `affects:` is arranged by sending the command under test, whose own effect would
+reach the scenario's other rows before it is witnessed; another path is taken, or the optional row
+skipped outside the move is left out as where no arrangement reaches it.
+
+Every row the segment arranges is read back as every entry, in the order written, leaves it: an
+entry over the row's entity whose filter selects the row as arranged writes its `sets:` and, where
+it moves and the row rests in its `from` states, takes its move. So one row two entries select gets
+one expectation, the one the interpreter answers; for an entry no other entry touches the reads are
+the ones written before. Where an entry cannot tell whether it selects a row another entry arranged,
+the scenario is refused by name. `ess-diff/9`'s
+`outcome-set-effect-changed` line for the entry names the move; the generated documentation says
+which rows move where. A transition only such an entry takes is performed by its branch in the
+mutation audit's component scoping.
+
+Entity Runtime and the Rust, Go, Web and Clap targets refuse the moving form by name as they refuse
+every `affects:` (below): a generated seam acts on the one instance its request names, so the
+effect stays an obligation the conformance suite checks.
 
 ## Targets
 

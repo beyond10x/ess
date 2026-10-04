@@ -206,8 +206,34 @@ An outcome with one existing subject can also change other records, with `affect
 Each entry changes every record of `entity` its `where:` selects. `where:` reads that entity's
 fields, `input.<field>` and `subject.<field>` — the subject as it was before the outcome. Where
 `entity` is the subject's own, the subject itself is not among the records. `sets:` takes the
-sources `instances:` does; a move inside `affects:` is refused by name. `affects:` sits beside
-`moves:` or `updates:` with `instance:`, never beside `instances:`.
+sources `instances:` does. `affects:` sits beside `moves:` or `updates:` with `instance:`, never
+beside `instances:`.
+
+From `ess/22` an entry may also move the records it selects (beyond10x/ess#229): deactivating a
+user ends that user's live sessions.
+
+```yaml
+- name: deactivated
+  moves: demo.users.User.deactivate
+  instance: user_id
+  emits: [demo.users.UserDeactivated]
+  payload:
+    demo.users.UserDeactivated: {user_id: input.user_id}
+  affects:
+    - entity: demo.users.Session
+      where: user_id == subject.user_id
+      moves: demo.users.Session.end
+      sets: {revoked: true}
+```
+
+`moves:` names a transition of the entry's own `entity`, written `<Entity>.<transition>`, and
+`sets:` beside it is optional. A selected record resting in one of the transition's `from` states
+takes it and comes to hold what `sets:` writes; one resting elsewhere is left as it is, as under
+`instances:`. The move counts as the transition's cause, but a state only it reaches is not one the
+suite can arrange for another scenario. Below `ess/22` the move is refused, naming `ess/22`. One
+outcome moves the records of one entity at most once: a second entry with `moves:` over the same
+entity is refused. Entries that only set fields may sit beside it, and apply in the order written.
+A record whose filter reads an `Optional<…>` field holding nothing is not selected.
 
 The suite arranges, for each, three records the filter selects, one record per conjunct of the
 filter that fails only that conjunct (or one failing the whole filter), and — for a `moves:` — one

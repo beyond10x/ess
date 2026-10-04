@@ -2642,7 +2642,8 @@ fn paging_contract(paging: &ess_domain::view::Paging) -> crate::change::PagingCo
 }
 
 /// A branch's set effects (ess/16), one line per construct: `instances:` with its verb and filter,
-/// then each `affects:` entry with its filter and what it sets.
+/// then each `affects:` entry with its filter, its move where it takes one (ess/22), and what it
+/// sets.
 fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(set) = &outcome.instances {
@@ -2654,8 +2655,16 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
         ));
     }
     for affect in &outcome.affects {
+        // From ess/22 an entry may move its rows (beyond10x/ess#229); a line without one reads as
+        // it always did.
+        let moves = affect
+            .moves
+            .as_ref()
+            .map_or_else(String::new, |transition| {
+                format!(", moves along `{}` to `{}`", transition.name, transition.to)
+            });
         lines.push(format!(
-            "affects every `{}` where `{}`: {}",
+            "affects every `{}` where `{}`{moves}: {}",
             affect.entity.name(),
             affect.filter,
             written_sets(&affect.sets).join(", ")
