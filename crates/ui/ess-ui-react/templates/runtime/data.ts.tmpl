@@ -515,11 +515,16 @@ export function evaluateParams(
   return params;
 }
 
-/** Runs a read while `enabled`, again when its params change or a command invalidates it. */
+/**
+ * Runs a read while `enabled`, again when its params change or a command invalidates it. With
+ * `fresh`, the first read after mounting does not join an answered read another consumer still
+ * holds: a live node shown again has missed the events played while it was hidden.
+ */
 export function useRead(
   spec: ReadSpec | undefined,
   values: Record<string, unknown>,
   enabled = true,
+  fresh = false,
 ): ReadState {
   const params = evaluateParams(spec, values);
   const key = spec ? `${spec.view}|${stableKey(params)}|${spec.paging ?? ""}` : "";
@@ -528,6 +533,7 @@ export function useRead(
   const [nonce, setNonce] = useState(0);
   const startedNonce = useRef(0);
   const restartNext = useRef(false);
+  const started = useRef(false);
   const [state, setState] = useState<Omit<ReadState, "refetch" | "params"> & {source: number}>({
     status: spec && enabled ? "loading" : "idle",
     rows: [],
@@ -538,7 +544,8 @@ export function useRead(
       return;
     }
     let live = true;
-    const refresh = startedNonce.current !== nonce;
+    const refresh = startedNonce.current !== nonce || (fresh && !started.current);
+    started.current = true;
     startedNonce.current = nonce;
     const restart = restartNext.current;
     restartNext.current = false;

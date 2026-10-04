@@ -188,6 +188,9 @@ pub const CHECKS: &[Check] = &[
     // `choice`: `value` and `label` name fields of the rows of `reads`, so they need `reads`
     // (beyond10x/ess#328).
     rule("choice_projection"),
+    // `header.title_from` names a section that reads: the title's record is its first row
+    // (beyond10x/ess#354).
+    rule("header_record"),
 ];
 
 fn severity_of(id: &str) -> Severity {

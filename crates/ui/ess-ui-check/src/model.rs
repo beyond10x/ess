@@ -396,6 +396,10 @@ impl Model {
                 }
                 continue;
             }
+            if let NodeRef::Header(header) = located.node {
+                self.title_from(document, path, header, sink);
+                continue;
+            }
             let Some(Body::Composite(composite)) = crate::walk::body_of(located.node) else {
                 continue;
             };
@@ -441,13 +445,57 @@ impl Model {
                     };
                     for (key, named) in [("value", &choice.value), ("label", &choice.label)] {
                         if let Some(named) = named {
-                            wire_field(sink, &path.child(key), &qualified, &view.wires, named);
+                            wire_field(
+                                sink,
+                                &path.child(key),
+                                &qualified,
+                                &view.wires,
+                                named,
+                                "a choice",
+                            );
                         }
                     }
                 }
                 _ => {}
             }
         }
+    }
+
+    /// `header.title_from.field` names a key the rows of the named section's view carry, by wire
+    /// name, as a choice's `value` and `label` do (beyond10x/ess#354): a field the rows never
+    /// carry leaves the literal title on screen for good. A dotted field is held by its first
+    /// segment.
+    fn title_from(
+        &self,
+        document: &Document,
+        path: &NodePath,
+        header: &ess_ui::Header,
+        sink: &mut Sink,
+    ) {
+        let Some(from) = &header.title_from else {
+            return;
+        };
+        let page = match path.segments() {
+            [pages, page, ..] if pages == "pages" => document.pages.get(page),
+            _ => None,
+        };
+        let Some((qualified, view)) = page
+            .and_then(|page| page.sections.iter().find(|s| s.name == from.section))
+            .and_then(|section| section.body.reads())
+            .and_then(|reads| reads.view.as_deref())
+            .and_then(|name| self.view(name))
+        else {
+            return;
+        };
+        let field = from.field.split('.').next().unwrap_or(&from.field);
+        wire_field(
+            sink,
+            &path.child("title_from").child("field"),
+            &qualified,
+            &view.wires,
+            field,
+            "a header title",
+        );
     }
 
     /// A form field whose choice lists fixed options, over a command input that is an enum:
@@ -544,23 +592,25 @@ impl Model {
     }
 }
 
-/// A choice's `value` or `label` names a key the rows of `view` carry: a field's wire name, since
-/// served rows are keyed by wire name (beyond10x/ess#328). Else reports it under `row_fields`,
-/// naming the wire name to write when `name` is the model name of a field renamed on the wire.
+/// A choice's `value` or `label`, or a header's `title_from.field` (`subject` names which), names
+/// a key the rows of `view` carry: a field's wire name, since served rows are keyed by wire name
+/// (beyond10x/ess#328, #354). Else reports it under `row_fields`, naming the wire name to write
+/// when `name` is the model name of a field renamed on the wire.
 fn wire_field(
     sink: &mut Sink,
     at: &NodePath,
     view: &str,
     wires: &BTreeMap<String, String>,
     name: &str,
+    subject: &str,
 ) {
     if wires.values().any(|wire| wire == name) {
         return;
     }
     let message = match wires.get(name) {
         Some(wire) => format!(
-            "`{name}` is the model name of a field the rows of `{view}` carry as `{wire}`; a \
-             choice names the key its rows carry, so write `{wire}`"
+            "`{name}` is the model name of a field the rows of `{view}` carry as `{wire}`; \
+             {subject} names the key its rows carry, so write `{wire}`"
         ),
         None => format!(
             "`{name}` is no row field of `{view}`; its rows carry {}",
@@ -869,7 +919,15 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                 body_names(path, &section.body, &mut push);
             }
             NodeRef::Overlay(overlay) => body_names(path, &overlay.body, &mut push),
-            NodeRef::Node(node) => body_names(path, &node.body, &mut push),
+            NodeRef::Node(node) => {
+                // A nested node's `live.on` names events like a section's (beyond10x/ess#354).
+                if let Some(live) = &node.live {
+                    for event in &live.on {
+                        push(path.child("live"), Kind::Event(event));
+                    }
+                }
+                body_names(path, &node.body, &mut push);
+            }
             NodeRef::Action(action) => action_names(path, action, &mut push),
             NodeRef::FormGroup(group) => {
                 if let Some(command) = &group.does {

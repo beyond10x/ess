@@ -1,7 +1,7 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useUiPath } from "../core";
 import { useScope } from "../core";
-import { filterRead, useRead, type ReadSpec } from "../data";
+import { filterRead, useRead, type ReadSpec, type ReadState } from "../data";
 import { evaluate } from "../expr";
 import { isObject, type Json } from "../json";
 
@@ -15,6 +15,8 @@ export interface ChoiceOption {
 export function ChoiceView(props: {
   "data-ui-path"?: string;
   reads?: ReadSpec;
+  /** The rows a live node reads for the choice, its events applied: the options come from them (#354). */
+  data?: ReadState;
   options?: ChoiceOption[];
   binds?: string;
   /** The row key an option's value is read from before `id` (the form field the choice picks for). */
@@ -33,11 +35,13 @@ export function ChoiceView(props: {
 }): ReactNode {
   const scope = useScope();
   const raw = useRead(props.reads, scope.values, props.reads !== undefined);
-  const read = props.reads?.filter === undefined ? raw : filterRead(raw, props.reads.filter, scope.values);
+  const read =
+    props.data ??
+    (props.reads?.filter === undefined ? raw : filterRead(raw, props.reads.filter, scope.values));
   // The option a row offers (beyond10x/ess#328), as `ess_ui::Choice::row_option` says: a named
   // value field is authoritative and a row without it offers nothing; otherwise the field named
   // like the form field, the view's identity, `id`, then the row's `value`.
-  const options: ChoiceOption[] = props.reads
+  const options: ChoiceOption[] = props.reads || props.data
     ? read.rows.reduce<ChoiceOption[]>((offered, row) => {
         if (!isObject(row)) {
           if (props.valueField === undefined) {

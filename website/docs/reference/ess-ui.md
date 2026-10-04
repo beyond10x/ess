@@ -1062,13 +1062,14 @@ inputs: [{field: min_value, as: number, binds: state.min_value}]
 
 Page title, count, primary actions, view switch, filters and live status.
 
-Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale.
+Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale, and never applies events. `title_from` shows a field of the record a section of the page holds (its first row, with its live changes applied) in place of `title`, which stays the text shown until the record holds the field. A header metric takes its own `live`, as any nested composite with `reads` does.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `title` | one of: `string` \| exactly `from_page` |   |   | header title |
+| `title_from` | record \{ `section`: name of a [Section](#section), `field`: `name` \} |   |   | a field of the first row of a section that reads, shown as the title once present; `title` until then |
 | `total` | name of a [Section](#section) |   |   | section whose total is shown |
 | `actions` | list of [Action](#action) |   |   | primary actions |
 | `switch` | list of `name` |   |   | pages from switch\_to, or modes of this page |
@@ -1519,7 +1520,7 @@ fields: [name, website, {field: logo, as: file}]
 
 The composite union — one type whose member is chosen by `component`.
 
-Every composite kind is a member of one union discriminated by `component`; the member's props follow inline beside the fields below, and a key the member does not declare is refused, naming the node's path. A composite written where a nested node is expected, a section and an overlay all hold one member. `header` and `overlay` are composites placed by position, so they are not members. A `component` that names no member names a widget. The bare-name shorthand accepts a member only: a widget is always written `{component: <widget>, args: …}`.
+Every composite kind is a member of one union discriminated by `component`; the member's props follow inline beside the fields below, and a key the member does not declare is refused, naming the node's path. A composite written where a nested node is expected, a section and an overlay all hold one member. `header` and `overlay` are composites placed by position, so they are not members. A `component` that names no member names a widget. The bare-name shorthand accepts a member only: a widget is always written `{component: <widget>, args: …}`. A nested composite with its own `reads` (a tab's node, a header metric, a record's item) takes `live` as a section does: the channel's events change its own rows while it is shown. A node that is not shown (an inactive tab, a collapsed `expand`, a node whose `visible` is false) applies no event and reads its view again when it is shown. `live` on a node that reads nothing is refused, and so is `when_paged_away`.
 
 **Properties**
 
@@ -1530,6 +1531,7 @@ Every composite kind is a member of one union discriminated by `component`; the 
 | `state` | map of `name` → [State](#state) |   |   | state local to this composite |
 | `visible` | `expr` |   |   | shows the composite only when true |
 | `degrades` | [Degrades](#degrades) |   |   | fallbacks for this composite |
+| `live` | [Live](#live) |   |   | how channel events change the composite's own `reads` while it is shown; only on a member with `reads`, without `when_paged_away` |
 | `unmapped` | list of `string` |   |   | gaps found by a retrofit |
 
 **You may also write**
@@ -2164,9 +2166,9 @@ buffer: {type: {list: ChatEvent}, class: channel_buffer}
 
 ### Live
 
-How a section applies a channel's events to its rows.
+How a section, or a nested composite that reads, applies a channel's events to its rows.
 
-`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows.
+`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all.
 
 **Properties**
 
@@ -2802,7 +2804,7 @@ Every construct with its one-line summary, chapter by chapter.
 | [Action](#action) | [Reads, actions and fixtures](#reads-actions-and-fixtures) | One user-triggered effect: run a command (`does`), open an overlay, navigate, export, upload, copy or set UI state. |
 | [FixtureIndex](#fixtureindex) | [Reads, actions and fixtures](#reads-actions-and-fixtures) | Sample data per view and event scripts per channel, so renderers run without a backend. |
 | [Channel](#channel) | [Live data](#live-data) | A live source of ESS events or a live view, with delivery and resume semantics. |
-| [Live](#live) | [Live data](#live-data) | How a section applies a channel's events to its rows. |
+| [Live](#live) | [Live data](#live-data) | How a section, or a nested composite that reads, applies a channel's events to its rows. |
 | [State](#state) | [State placement](#state-placement) | One piece of UI state, its class and where it is stored. |
 | [StateClass](#stateclass) | [State placement](#state-placement) | The kind of a state — the key the placement profile uses. |
 | [Store](#store) | [State placement](#state-placement) | Where a state lives, with its durability, sharing, and reload/reconnect behaviour. |

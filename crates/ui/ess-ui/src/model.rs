@@ -930,6 +930,9 @@ pub enum StaleMark {
 pub struct Node {
     /// Name, state, visibility, degrades and unmapped notes.
     pub common: NodeCommon,
+    /// How channel events change the node's own read, while the node is shown
+    /// (beyond10x/ess#354). Only a composite with its own `reads` takes one.
+    pub live: Option<Live>,
     /// A composite, a widget instance or a primitive.
     pub body: Body,
 }
@@ -938,10 +941,41 @@ impl<'de> Deserialize<'de> for Node {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mapping = Mapping::deserialize(deserializer)?;
         let (frame, rest) = split(mapping, NODE_COMMON_KEYS);
+        let (live, rest) = split(rest, &["live"]);
         let common: NodeCommon = from_mapping(frame).map_err(D::Error::custom)?;
         let body = Body::from_mapping(rest, true).map_err(D::Error::custom)?;
-        Ok(Self { common, body })
+        let live = node_live(live, &body).map_err(D::Error::custom)?;
+        Ok(Self { common, live, body })
     }
+}
+
+/// A nested node's `live` block: admitted only on a composite with its own `reads`, without
+/// `when_paged_away` (a nested node's rows are not paged by a section), and matching events by
+/// the read's `key` when it names no `match` (#320).
+fn node_live(frame: Mapping, body: &Body) -> Result<Option<Live>, String> {
+    let Some(value) = frame.into_iter().next().map(|(_, value)| value) else {
+        return Ok(None);
+    };
+    let mut live: Live =
+        serde_yaml::from_value(value).map_err(|error| format!("`live`: {error}"))?;
+    let Some(reads) = body.live_reads() else {
+        return Err(
+            "`live` applies a channel's events to the node's own `reads`, and this node reads \
+             nothing: give it `reads`, or move `live` to the section that reads"
+                .to_owned(),
+        );
+    };
+    if live.when_paged_away.is_some() {
+        return Err(
+            "`live.when_paged_away` applies to a section's paged rows; a nested node's rows are \
+             not paged by a section, so it takes none"
+                .to_owned(),
+        );
+    }
+    if live.match_field.is_none() {
+        live.match_field.clone_from(&reads.key);
+    }
+    Ok(Some(live))
 }
 
 /// What a node, section or overlay holds.
@@ -961,6 +995,15 @@ impl Body {
         match self {
             Self::Composite(composite) => composite.reads(),
             Self::Widget(_) | Self::Primitive(_) => None,
+        }
+    }
+
+    /// The read a nested node's `live` changes (beyond10x/ess#354): a composite's own read, or the
+    /// read a choice takes its options from.
+    pub fn live_reads(&self) -> Option<&Reads> {
+        match self {
+            Self::Composite(Composite::Choice(choice)) => choice.reads.as_ref(),
+            _ => self.reads(),
         }
     }
 
@@ -1464,6 +1507,9 @@ pub struct FilterWindow {
 pub struct Header {
     /// Header title (`from_page` expanded on pages).
     pub title: Option<String>,
+    /// A field of the record a section of the page holds, shown as the title once the record
+    /// holds it; `title` is shown until then (beyond10x/ess#354).
+    pub title_from: Option<TitleFrom>,
     /// Section whose total is shown.
     pub total: Option<String>,
     /// Primary actions, in order.
@@ -1482,6 +1528,17 @@ pub struct Header {
     pub metrics: Vec<Node>,
     /// Help text or link.
     pub help: Option<Help>,
+}
+
+/// The record field a header shows as its title: the first row the named section holds, with
+/// that section's live changes applied.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TitleFrom {
+    /// A section of the page that reads; its first row is the record.
+    pub section: String,
+    /// The row field shown; a dotted path reads into a nested value.
+    pub field: String,
 }
 
 /// Help text or link.
@@ -2556,7 +2613,7 @@ pub enum Resume {
     Unmapped(UnmappedMarker),
 }
 
-/// How a section applies a channel's events.
+/// How a section, or a nested node that reads, applies a channel's events.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Live {

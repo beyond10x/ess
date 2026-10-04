@@ -273,6 +273,20 @@ fn channel_refs() {
         expression.message.contains("in `visible`"),
         "{expression:?}"
     );
+    // beyond10x/ess#354: a nested node's `live` names a channel like a section's.
+    let nested = page(
+        "{kind: detail_page, title: P, header: {metrics: [{name: open, component: metric, \
+         reads: t.All, aggregate: count, live: {channel: ghost_metric, effect: refetch}}]}, \
+         sections: [{name: summary, reads: t.ById, tabs: [{name: more, form: \
+         {name: list, component: collection, reads: t.All, live: {channel: ghost_tab, effect: insert_top}}}]}]}",
+    );
+    let report = report_with(&nested, None, &Options::default());
+    trips_in(&report, "channel_refs", "pages/p/header/metrics/open/live");
+    trips_in(
+        &report,
+        "channel_refs",
+        "pages/p/sections/summary/tabs/more/form/live",
+    );
 }
 
 #[test]
@@ -288,6 +302,34 @@ fn section_refs() {
         "pages/p/sections/summary/depends_on",
     );
     trips_in(&report, "section_refs", "pages/p/header/total");
+    // beyond10x/ess#354: the section a header title reads its record from.
+    let titled = page(
+        "{kind: detail_page, title: P, header: {title_from: {section: ghost, field: goal}}, \
+         sections: [{name: summary, reads: t.ById}]}",
+    );
+    trips(&titled, "section_refs", "pages/p/header/title_from");
+}
+
+/// beyond10x/ess#354: the section `header.title_from` names holds a record only when it reads.
+#[test]
+fn header_record() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, header: {title_from: {section: note, field: goal}}, \
+         sections: [{name: summary, reads: t.ById}, \
+         {name: note, component: record, fields: [goal]}]}",
+    ));
+    let finding = trips_in(&report, "header_record", "pages/p/header/title_from");
+    assert!(finding.message.contains("note"), "{finding:?}");
+    let fine = report_with(
+        &page(
+            "{kind: detail_page, title: P, header: {title_from: {section: summary, field: goal}}, \
+             sections: [{name: summary, reads: t.ById}]}",
+        ),
+        None,
+        &Options::default(),
+    );
+    assert!(tripped(&fine, "header_record").is_empty(), "{fine:#?}");
+    assert!(tripped(&fine, "section_refs").is_empty(), "{fine:#?}");
 }
 
 #[test]
@@ -959,6 +1001,28 @@ fn degrades_cover() {
         "degrades_cover",
         "pages/p/sections/summary",
     );
+    // beyond10x/ess#354: a nested node's `live` is a use of the live capability like a section's.
+    let nested = doc(&[
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById, \
+             item: [{name: count, component: metric, reads: t.All, aggregate: count, \
+             degrades: {no_live: refuse}, live: {channel: feed, effect: refetch}}]}]}}",
+        ),
+        (
+            "channels",
+            "{feed: {carries: {events: [t.Changed]}, direction: server_to_client, \
+             delivery: every_event, resume: refetch}}",
+        ),
+    ]);
+    let no_live = Options {
+        lacks: vec!["no_live".to_owned()],
+    };
+    trips_in(
+        &report_with(&nested, None, &no_live),
+        "degrades_cover",
+        "pages/p/sections/summary/item/count",
+    );
     let unknown = Options {
         lacks: vec!["no_teleport".to_owned()],
     };
@@ -1047,6 +1111,20 @@ fn event_in_model() {
     let carried = trips_in(&report, "event_in_model", "channels/stock/carries");
     assert!(carried.message.contains("stock.ItemSold"), "{carried:?}");
     trips_in(&report, "view_in_model", "channels/lens/carries");
+    // beyond10x/ess#354: a nested node's `live.on` names events of the model like a section's.
+    let nested = model_report(
+        "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: stock.Items, \
+          item: [{name: count, component: metric, reads: stock.Items, aggregate: count, \
+          live: {channel: stock, on: [stock.ItemAdded, stock.ItemVanished], effect: refetch}}]}]}}",
+        "{stock: {carries: {events: [stock.ItemAdded, stock.ItemSold]}, direction: server_to_client, \
+          delivery: every_event, resume: refetch}}",
+    );
+    let live = trips_in(
+        &nested,
+        "event_in_model",
+        "pages/p/sections/summary/item/count/live",
+    );
+    assert!(live.message.contains("stock.ItemVanished"), "{live:?}");
 }
 
 #[test]
