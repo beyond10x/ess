@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -75,3 +75,9 @@ Root now owns task:retained-replay-fixture-consistency under story:feature-reque
 ## First whole review recorded
 
 Independent first whole review4dc84d7740cbb73bfd6fbfa36378ce235ecdb9ccb254fa283c197e057f7a1cab is now review-result:arithmetic-completeness-413a-20261004-r1. Its publication-safe normalizationf08be95432362c1cf1218688669097d8c34c103d39911a6ef00e68be3297037f removes only the private scratch prefix and clarifies that the owning external coordinator ran the author checks. Both acceptance blockers remain confirmed with origin undecided in the immutable review; no arithmetic implementation defect was found. Disposition escalates the package failures to task:retained-replay-fixture-consistency. Review1 is closed incomplete. Exactly one final whole review remains after the correction and full package verification; no new review budget or repeated author controls are created. The independent MAX/MIN probe remains unexecuted.
+
+## Build artifact custody correction before final verification
+
+The original full-run target was unexpectedly absent at the renewed archive preflight. No complete archive or copied old review-link closure exists; do not claim those binaries, target-local fixtures or old rlibs retained. Preflight-refusal1bb2f7569907f254359735017612bc51277d60c9e4ddde82708f2edb7e303372, surviving-evidence5a7d22f3d81e0953cb3ec14288be8ffa4cce265f522df5a196343216699bb44d and target-absence-bound92e78c8c1e9685f535d88dfef1dcb806b3244d8596ef2502bcedd416b2349451 retain the observations. Owner and root performed no original-target cleanup; actor is unknown.
+
+The source two-path freeze, original complete package log, first review, full target manifest, externally retained failed Go fixtures and baseline executable survive and were reverified. First review stays immutable and incomplete; no replayed proof or review-budget reset follows from artifact loss. After the independently accepted fixture integrates, rebuild corrected source, run the required full package, and bind final review's still-unexecuted public MAX/MIN probe to fresh artifacts only. The separate fixture author's required36Rust tests and strict lint now pass; its independent review remains pending.

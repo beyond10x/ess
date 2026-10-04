@@ -7,7 +7,7 @@ title: Make retained Go replay fixtures honor read-your-writes tokens
 relations:
 - derived_from: story:feature-request-312
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 3}
@@ -57,3 +57,11 @@ No compiler grant is active. Resource recovery has priority: preserve and valida
 Fresh coordinator available space24368013312bytes restored execution capacity. The returned custody handoff4ef2fc376f443cee989aaaed1481985ff0ccd95c91b275b44942d498963f2898 binds the clean frozen candidate with no live commands or leases. Root grants the existing author the sole ESS compiler lane after reacquiring its own lease, with a fresh floor check before each command, for one whole Rust retained_replay target and strict affected-target Clippy as previously specified. Both remain bounded900seconds; source and Go probe results remain unchanged. No duplicated counterfactuals or full-package run. Seal actual terminal logs and hashes for existing independent review1.
 
 The separate arithmetic target disappeared before its archival preflight completed, without coordinator cleanup authorization or a completed archive. That absence does not affect this task's source, evidence or isolated future target. Do not borrow or claim missing arithmetic artifacts. The later corrected full-package run remains a separate obligation requiring fresh binaries.
+
+## Required author acceptance complete
+
+Frozen candidate8e7c21a0 remains unchanged. The complete retained_replay target terminated0 with36passed/0failed/0ignored/0filtered in9.53test seconds; log6432c21b0b026c600d6edbc4ba2a04360f721123fc82fe6ee5ecd21c65d61bbd. Its actual generated Go includes186full-package and3projection pass events with0fail/skip, independently counted by root. Strict affected-target Clippy terminated0 in25.18seconds; log0c14864c84b2d7d81a70a453733557546324dddb795ab21288893de4e3e44726. Their start receipts23376715776 and22745481216bytes met the standing floor. Prior owning/repository formats and diff check remain green on unchanged source.
+
+Final handoff89f2b3c879794947dca60992667247d12b6eeb6f1b050aea335940e351713ba5 and complete evidence manifestd6e81d35a56bce4274da7b07dbb7cedd94b9316c34d7f90fa6c048e55a11a447 bind source, raw logs, command exits, generated fixtures and retained executable. Root reverified every manifest entry. Native executable digestd6ed48849535a4f179c58037524093eb27e164bd0deeaba3fd32e0fd0ea059d6 remains available. Negative-control reachability extraction3feeb1e251f8d0ab173adb9e936e7be0dc6cb026c30bff8534408aadcdc75ab0 includes complete/incomplete rows, held/external state, refusal mutations, source7 and replay envelope controls.
+
+Author lease and command handles are terminal; source is clean, with only the retained target ignored. No cleanup follows. Existing whole review1 now has the complete author evidence and a managed exact-candidate checkout; no verdict or integration is claimed until its final report. Full combined package acceptance remains due after integration.
