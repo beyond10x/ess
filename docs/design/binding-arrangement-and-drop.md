@@ -1,7 +1,10 @@
 # Binding arrangement and drop observation (#266, #267)
 
-Status: coordinator contract approved by final independent design review on 2026-10-03;
-implementation pending. This clarifies the existing eventual-binding model; it adds no source syntax.
+Status: coordinator contract approved by final independent design review on 2026-10-03.
+Synthesis, the interpreter's dispatcher and the native, Go and TypeScript runner controls are
+implemented (`ess-conformance` `synthesize/binding_effects.rs`; `tests/binding_arrangement*.rs`).
+Execution through generated Rust and Go servers and delivery-context destinations are pending. This
+clarifies the existing eventual-binding model; it adds no source syntax.
 
 ## Execution authority
 

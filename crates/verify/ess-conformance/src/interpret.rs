@@ -100,7 +100,9 @@ struct Scenario {
     issued: protected::Issued,
     projection_reads: u64,
     projection_versions: Vec<(u64, Store)>,
-    invocations: Vec<ObservedInvocation>,
+    /// Every attempt a binding made, with the scenario correlation it was made under: a cumulative,
+    /// non-consuming history that `observe_invocations` reads without draining or filtering.
+    invocations: Vec<(ess_primitives::ids::CorrelationId, ObservedInvocation)>,
     pending_bindings: std::collections::VecDeque<bindings::Delivery>,
     dispatching: bool,
     facts: facts::Facts,
@@ -390,15 +392,19 @@ impl ConformanceTarget for Interpreted {
             request.binding, request.command
         );
         self.model(observation.clone())?;
+        // Every attempt under the requested correlation since it began, identical ones included:
+        // the deadline bounds a wait and is no baseline, and no expected input selects here.
         Ok(self
             .scenario
             .borrow()
             .invocations
             .iter()
-            .filter(|invocation| {
-                invocation.binding == request.binding && invocation.command == request.command
+            .filter(|(correlation, invocation)| {
+                *correlation == request.correlation
+                    && invocation.binding == request.binding
+                    && invocation.command == request.command
             })
-            .cloned()
+            .map(|(_, invocation)| invocation.clone())
             .collect())
     }
 

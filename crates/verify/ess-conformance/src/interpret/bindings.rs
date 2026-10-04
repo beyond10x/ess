@@ -93,28 +93,34 @@ impl Interpreted {
                 .retry
                 .as_ref()
                 .map_or(65_536, |bound| bound.attempts);
+            let correlation = event
+                .correlation
+                .clone()
+                .ok_or_else(|| unsupported("event lacks scenario correlation"))?;
             let mut completed = false;
             for _ in 0..attempts {
                 {
+                    // Recorded at the dispatcher-to-command boundary, before the command answers:
+                    // a refused attempt is still an attempt (binding-arrangement-and-drop.md).
                     let mut state = self.scenario.borrow_mut();
                     if state.invocations.len() >= 65_536 {
                         return Err(unsupported("binding invocation budget exhausted"));
                     }
-                    state.invocations.push(ObservedInvocation {
-                        binding: BindingRef::new(binding.name.clone()),
-                        command: CommandRef::new(binding.command.name().clone()),
-                        input: input.clone(),
-                    });
+                    state.invocations.push((
+                        correlation.clone(),
+                        ObservedInvocation {
+                            binding: BindingRef::new(binding.name.clone()),
+                            command: CommandRef::new(binding.command.name().clone()),
+                            input: input.clone(),
+                        },
+                    ));
                 }
                 let result = self.execute_command(SemanticCommandRequest {
                     command: CommandRef::new(binding.command.name().clone()),
                     actor: None,
                     caller: None,
                     input: input.clone(),
-                    correlation: event
-                        .correlation
-                        .clone()
-                        .ok_or_else(|| unsupported("event lacks scenario correlation"))?,
+                    correlation: correlation.clone(),
                 })?;
                 if result.outcome.is_none() {
                     return Err(unsupported(

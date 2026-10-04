@@ -297,14 +297,25 @@ pub trait ConformanceTarget {
     /// The ninth method, and the one §16 warns about: command tracing "may be additional evidence,
     /// but it should not become a requirement for every implementation". So it has a default body
     /// that answers [`TargetError::Unsupported`], and a target that cannot see its own bindings'
-    /// invocations implements the other eight and reports `unsupported` for exactly one scenario
-    /// (§28) — `<binding>/binding/mapping` — while still proving the flow, the delivery and the
-    /// failure policy.
+    /// invocations still compiles and reports `unsupported` for every scenario that asks — never a
+    /// pass. A flow or a delivery whose suite asks only for effects is still proved without it.
+    /// The mapping, an exact retry count, `drop`'s one attempt and no retry, and a conditional
+    /// binding's zero invocations are claims about attempts, and nothing else observes an attempt:
+    /// a refused one publishes no event (`docs/design/binding-arrangement-and-drop.md`).
     ///
-    /// The alternative was to leave the mapping unchecked, and a swapped mapping is the one clause
-    /// of a binding that is silently wrong: `recipient: event.contact` and
-    /// `recipient: event.alternate_contact` are the same shape, the same types and two different
-    /// systems.
+    /// # What the answer is
+    ///
+    /// A cumulative, non-consuming snapshot of **every** attempt `binding` made of `command` under
+    /// `correlation` since that correlation began — recorded at the dispatcher-to-command boundary,
+    /// before the command answers, so a refused attempt is one. Repeated calls and later steps see
+    /// earlier attempts again, identical repeated inputs included. The target does not filter by
+    /// expected input or by success, deduplicate, drain its log, start a new history at a new
+    /// `deadline` (which bounds a wait and is no baseline), or mix in another correlation's
+    /// attempts. A target that cannot keep that promise answers [`TargetError::Unsupported`].
+    ///
+    /// The mapping check was the reason it exists: a swapped mapping is the one clause of a binding
+    /// that is silently wrong — `recipient: event.contact` and `recipient: event.alternate_contact`
+    /// are the same shape, the same types and two different systems.
     fn observe_invocations(
         &self,
         request: InvocationObservationRequest,

@@ -1,0 +1,132 @@
+format: ess/18
+system: jobs
+version: v1
+domain: jobs.job
+summary: >-
+  A job a binding starts. `Create` publishes `Created`, which `created-starts` turns into `Start` on
+  the job just made; `Register` makes a job and publishes nothing a binding reacts to, so a job can
+  also rest in `New`. `Kick` names a job it does not own and `kicked-starts` starts it, so the
+  destination of that binding is a row arranged before the trigger.
+
+types:
+  - {name: jobs.job.JobId, kind: newtype, of: Uuid}
+
+entities:
+  - name: jobs.job.Job
+    identity: {name: job_id, type: jobs.job.JobId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: New
+      states: [New, Started, Stopped]
+      terminal: [Stopped]
+      transitions:
+        - {name: start, from: [New], to: Started}
+        - {name: stop, from: [Started], to: Stopped}
+
+errors:
+  - name: jobs.job.JobStateConflict
+    summary: The job is not in a state this command accepts.
+    fields: []
+  - name: jobs.job.StartUnavailable
+    summary: The runner could not take the job right now.
+    fields: []
+  - name: jobs.job.JobNotFound
+    summary: No job has this identity.
+    fields: []
+
+events:
+  - name: jobs.job.Created
+    fields: [{name: job_id, type: jobs.job.JobId}]
+  - name: jobs.job.Registered
+    fields: [{name: job_id, type: jobs.job.JobId}]
+  - name: jobs.job.Kicked
+    fields: [{name: job_id, type: jobs.job.JobId}]
+  - name: jobs.job.Started
+    fields: [{name: job_id, type: jobs.job.JobId}]
+  - name: jobs.job.Stopped
+    fields: [{name: job_id, type: jobs.job.JobId}]
+
+commands:
+  - name: jobs.job.Create
+    input:
+      - {name: job_id, type: jobs.job.JobId}
+      - {name: label, type: String}
+    outcomes:
+      - name: created
+        creates: jobs.job.Job
+        instance: job_id
+        sets: {label: input.label}
+        emits: [jobs.job.Created]
+        payload: {jobs.job.Created: {job_id: input.job_id}}
+
+  - name: jobs.job.Register
+    input:
+      - {name: job_id, type: jobs.job.JobId}
+      - {name: label, type: String}
+    outcomes:
+      - name: registered
+        creates: jobs.job.Job
+        instance: job_id
+        sets: {label: input.label}
+        emits: [jobs.job.Registered]
+        payload: {jobs.job.Registered: {job_id: input.job_id}}
+
+  - name: jobs.job.Kick
+    input:
+      - {name: job_id, type: jobs.job.JobId}
+    outcomes:
+      - name: kicked
+        emits: [jobs.job.Kicked]
+        payload: {jobs.job.Kicked: {job_id: input.job_id}}
+
+  - name: jobs.job.Start
+    input:
+      - {name: job_id, type: jobs.job.JobId}
+    outcomes:
+      - name: started
+        moves: jobs.job.Job.start
+        instance: job_id
+        emits: [jobs.job.Started]
+        payload: {jobs.job.Started: {job_id: input.job_id}}
+      - name: unavailable
+        external: the runner has no capacity right now
+        error: jobs.job.StartUnavailable
+      - {name: wrong-state, wrong_state: true, error: jobs.job.JobStateConflict}
+      - {name: not-found, unknown_instance: true, error: jobs.job.JobNotFound}
+
+  - name: jobs.job.Stop
+    input:
+      - {name: job_id, type: jobs.job.JobId}
+    outcomes:
+      - name: stopped
+        moves: jobs.job.Job.stop
+        instance: job_id
+        emits: [jobs.job.Stopped]
+        payload: {jobs.job.Stopped: {job_id: input.job_id}}
+      - {name: wrong-state, wrong_state: true, error: jobs.job.JobStateConflict}
+      - {name: not-found, unknown_instance: true, error: jobs.job.JobNotFound}
+
+views:
+  - name: jobs.job.Jobs
+    source: jobs.job.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: jobs.job.JobId}
+      - {name: label, type: String}
+      - {name: state, type: jobs.job.Job.State}
+
+bindings:
+  - id: created-starts
+    when: {event: jobs.job.Created}
+    invoke: {command: jobs.job.Start}
+    mapping: {job_id: event.job_id}
+    delivery: at_least_once
+    on_failure: drop
+
+  - id: kicked-starts
+    when: {event: jobs.job.Kicked}
+    invoke: {command: jobs.job.Start}
+    mapping: {job_id: event.job_id}
+    delivery: at_least_once
+    on_failure: drop

@@ -179,6 +179,7 @@
 
 mod absent_input;
 mod aggregate;
+mod binding_effects;
 mod bounded_retry;
 mod caller;
 mod delivery_context;
@@ -199,9 +200,8 @@ use std::fmt;
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
-    ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedInstance, ResolvedMappingValue,
-    ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
-    ResolvedView,
+    ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedInstance, ResolvedOutcome,
+    ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::{OutcomeName, TestStrategy};
@@ -1127,7 +1127,12 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::DeliverySingleAttempt
                 | BindingGap::RetriedUnforcible { .. }
                 | BindingGap::FinalUnforcible { .. }
-                | BindingGap::ArrangementSetsOff { .. },
+                | BindingGap::ArrangementSetsOff { .. }
+                | BindingGap::DestinationIdentityUnavailable { .. }
+                | BindingGap::DestinationIneligible { .. }
+                | BindingGap::DestinationUnreachable { .. }
+                | BindingGap::UnchangedUnobservable { .. }
+                | BindingGap::EffectUnsettled { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -1508,6 +1513,52 @@ pub enum BindingGap {
         /// The event the binding reacts to.
         event: EventRef,
     },
+    /// The invoked command acts on an existing row, and no identity for it is knowable before the
+    /// trigger runs (beyond10x/ess#267): a field the implementation mints, a value only the
+    /// response carries, or a mapping no arranged row can stand behind. Synthesis does not guess
+    /// the next identity, and does not arrange a row after the binding has started.
+    DestinationIdentityUnavailable {
+        /// The invoked command.
+        command: CommandRef,
+        /// Its input naming the row.
+        input: String,
+        /// Why that identity is not knowable beforehand.
+        why: &'static str,
+    },
+    /// The trigger leaves the row it acts on in a state no accepting branch of the invoked command
+    /// admits, so the binding can only be refused there.
+    DestinationIneligible {
+        /// The invoked command.
+        command: CommandRef,
+        /// The state the row is in when the binding is delivered.
+        state: StateName,
+    },
+    /// The row the invoked command acts on cannot be arranged in a state its accepting branch
+    /// admits.
+    DestinationUnreachable {
+        /// The row's entity.
+        entity: EntityRef,
+        /// The first state tried.
+        state: StateName,
+        /// Why.
+        reason: Box<Unreachable>,
+    },
+    /// The policy is `drop`, and the row the binding addresses cannot be read before the trigger
+    /// and compared after it, which is what tells a dropped failure from a success (beyond10x/ess#267).
+    UnchangedUnobservable {
+        /// Why not.
+        why: &'static str,
+    },
+    /// The branch sets off a binding on its own row, and where the row comes to rest cannot be
+    /// named: two bindings at once, a branch an input decides, a deletion or a cycle
+    /// (beyond10x/ess#266). The scenario keeps what the branch itself does and asserts no view of
+    /// the row.
+    EffectUnsettled {
+        /// The branch that sets the binding off.
+        outcome: OutcomeRef,
+        /// Why the chain does not settle.
+        why: String,
+    },
 }
 
 impl BindingGap {
@@ -1554,6 +1605,26 @@ impl BindingGap {
             Self::ArrangementSetsOff { .. } => {
                 "let some command publish the event without an arrangement that publishes it first; \
                  an attempt count is only a count of the attempts the bound made"
+            }
+            Self::DestinationIdentityUnavailable { .. } => {
+                "map the row's identity from an event field the trigger fills from its own input or \
+                 from the row it acts on, so a scenario can arrange that row before the trigger"
+            }
+            Self::DestinationIneligible { .. } => {
+                "let the trigger leave the row in a state the invoked command accepts, or cover the \
+                 binding with an authored scenario (ess-scenario/1)"
+            }
+            Self::DestinationUnreachable { .. } => {
+                "give the row's entity a route to a state the invoked command accepts; see the \
+                 reason"
+            }
+            Self::UnchangedUnobservable { .. } => {
+                "address a row that exists before the trigger and that the trigger leaves alone, \
+                 and declare a read_your_writes view showing it by identity; or write `escalate:`"
+            }
+            Self::EffectUnsettled { .. } => {
+                "let at most one binding act on a row at once, through a branch its state decides, \
+                 and end every chain; or cover the row with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -1606,6 +1677,38 @@ impl fmt::Display for BindingGap {
                 f,
                 "counts attempts, and every way to publish `{event}` publishes it while arranging"
             ),
+            Self::DestinationIdentityUnavailable {
+                command,
+                input,
+                why,
+            } => write!(
+                f,
+                "invokes `{command}` on an existing row named by `{input}`, and no identity for it \
+                 is knowable before the trigger: {why}"
+            ),
+            Self::DestinationIneligible { command, state } => write!(
+                f,
+                "invokes `{command}` on a row the trigger leaves in `{state}`, which no accepting \
+                 branch admits"
+            ),
+            Self::DestinationUnreachable {
+                entity,
+                state,
+                reason,
+            } => write!(
+                f,
+                "needs a `{entity}` resting where its invoked command accepts it, first `{state}`, \
+                 and {reason}"
+            ),
+            Self::UnchangedUnobservable { why } => write!(
+                f,
+                "drops a failed attempt, and the row it addresses cannot be shown unchanged: {why}"
+            ),
+            Self::EffectUnsettled { outcome, why } => write!(
+                f,
+                "acts on the row `{outcome}` leaves, and where that row comes to rest cannot be \
+                 named: {why}"
+            ),
         }
     }
 }
@@ -1657,6 +1760,25 @@ pub enum Unreachable {
         /// Why neither run can be built.
         why: Box<str>,
     },
+    /// Every step that leaves a row in the state sets off a binding that moves the row on
+    /// (beyond10x/ess#266): acting on it there would race the binding. Not an executed scenario
+    /// and not a skipped green one — the binding's own flow scenario is the witness.
+    BoundAway {
+        /// The state no row rests in.
+        state: StateName,
+        /// The binding that moves it on.
+        binding: BindingRef,
+    },
+    /// A step on the route sets off a binding on the row whose rest cannot be named or observed
+    /// (beyond10x/ess#266).
+    BindingUnsettled {
+        /// The binding.
+        binding: BindingRef,
+        /// The step that sets it off.
+        outcome: Box<OutcomeRef>,
+        /// Why.
+        why: Box<str>,
+    },
 }
 
 impl Unreachable {
@@ -1683,6 +1805,16 @@ impl Unreachable {
                  left out, or naming a row of the related entity arranged one level deep; declare \
                  the reference `Optional<…>`, give the related entity a route to a row that \
                  selects the branch, or cover the state with an authored scenario (ess-scenario/1)"
+            }
+            Self::BoundAway { .. } => {
+                "nothing to change if the binding is meant to move every such row on: its flow \
+                 scenario witnesses the move; otherwise give the entity a route to the state that \
+                 sets no binding off"
+            }
+            Self::BindingUnsettled { .. } => {
+                "let at most one binding act on a row at once, through a branch its state decides, \
+                 end every chain, and declare an unfiltered view showing the row's identity and \
+                 state"
             }
         }
     }
@@ -1712,6 +1844,20 @@ impl fmt::Display for Unreachable {
                 "the route runs through `{outcome}`, which reads a related row through a stored \
                  field of the row being arranged, and no arranging run sets it to select that \
                  branch: {why}"
+            ),
+            Self::BoundAway { state, binding } => write!(
+                f,
+                "every step that leaves it in `{state}` sets off `{binding}`, which moves it on, so \
+                 acting on it there would race the binding; `{binding}/binding/flow` is the witness"
+            ),
+            Self::BindingUnsettled {
+                binding,
+                outcome,
+                why,
+            } => write!(
+                f,
+                "the route runs through `{outcome}`, which sets off `{binding}` on the row, and \
+                 where the row comes to rest cannot be named: {why}"
             ),
         }
     }
@@ -2490,7 +2636,14 @@ fn exercise_run_in(
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
     let absent = not_emitted(ir, &emitted);
     let actor = run.actor.clone();
+    // The row at rest once the bindings this branch sets off on it have run, read eventually
+    // (beyond10x/ess#266): never the state a binding is about to move it out of.
+    let mut run = run;
+    let moving = binding_effects::settle_run(ir, outcome, &mut run, id, refusals);
     let mut views = view_expectations(ir, command, outcome, &run, actors, id, refusals);
+    if moving {
+        views.asserted = binding_effects::eventually(std::mem::take(&mut views.asserted));
+    }
     models.mark(caller::InvocationPhase::Arrange, &mut views.arranged);
 
     let mut steps = run.steps();
@@ -3849,9 +4002,17 @@ fn arrange(
     }
     let mut routed: Vec<(&Driver<'_>, Vec<Driver<'_>>)> = creators
         .filter_map(|creator| {
-            route_from(ir, entity, drivers, born(ir, creator), target).map(|path| (creator, path))
+            // From where the new row rests once the bindings its creation sets off have run
+            // (beyond10x/ess#266), which `created` observes before the route goes on.
+            let start = binding_effects::resting(ir, creator.outcome, born(ir, creator))?;
+            route_from(ir, entity, drivers, &start, target).map(|path| (creator, path))
         })
         .collect();
+    if routed.is_empty() {
+        if let Some(away) = binding_effects::bound_away(ir, drivers, target) {
+            return Err(away);
+        }
+    }
     // Stable: equal lengths keep the drivers' name order.
     routed.sort_by_key(|(_, path)| path.len());
     let mut first: Option<Unreachable> = None;
@@ -3964,6 +4125,9 @@ fn advance(
             next
         };
         arrangement = moved;
+        // Observed where the bindings this move set off on the row leave it, before the next step
+        // (beyond10x/ess#266).
+        binding_effects::settle_moved(ir, entity, driver.outcome, &mut arrangement)?;
     }
     arrangement.state = target.clone();
     Ok(arrangement)
@@ -4217,14 +4381,17 @@ fn created_by<E>(
     });
     source.insert(EventRef::from(event).into());
 
-    Ok(Arrangement {
+    let mut arrangement = Arrangement {
         instance,
         state: born(ir, creator).clone(),
         steps,
         source,
         settled,
         unwritten: unwritten_by(ir, entity, creator.outcome),
-    })
+    };
+    // Where the bindings the creation sets off on the new row leave it, observed (beyond10x/ess#266).
+    binding_effects::settle_created(ir, entity, creator.outcome, &mut arrangement);
+    Ok(arrangement)
 }
 
 /// The row an owned row belongs to, and the input field that points the creating command at it.
@@ -4539,10 +4706,13 @@ fn route_from<'a>(
             if !admits_held_state(&driver.outcome.condition, from) {
                 continue;
             }
-            edges
-                .entry(from.clone())
-                .or_default()
-                .push((transition.to.clone(), *driver));
+            // Where the row rests once the bindings this move sets off on it have run
+            // (beyond10x/ess#266): a state a binding moves the row out of is no place to stop, and
+            // a move whose rest cannot be named is no edge at all.
+            let Some(to) = binding_effects::resting(ir, driver.outcome, &transition.to) else {
+                continue;
+            };
+            edges.entry(from.clone()).or_default().push((to, *driver));
         }
     }
     for outgoing in edges.values_mut() {
@@ -11559,19 +11729,25 @@ fn bindings(
 
         let invoked = ir.command(&binding.command);
         let source = binding_source(ir, binding, publisher, published_by, &trigger);
+        // The row the invoked command addresses, arranged where an accepting branch admits it
+        // before the trigger (beyond10x/ess#267), or the gap that stops every aspect needing it.
+        let prepared =
+            binding_effects::prepare(ir, binding, invoked, published_by, &trigger, actors);
         for aspect in BindingAspect::ALL.map(|(aspect, _)| aspect) {
             let id = ScenarioId::Binding {
                 binding: subject.clone(),
                 aspect,
             };
             let built = match aspect {
-                BindingAspect::Flow => flow(ir, invoked, &trigger, &event),
-                BindingAspect::Mapping => mapping(ir, binding, invoked, &trigger, &event),
-                BindingAspect::Delivery => delivery(ir, binding, invoked, &trigger, &event),
+                BindingAspect::Flow => flow(ir, invoked, &prepared, &event),
+                BindingAspect::Mapping => {
+                    mapping(ir, binding, invoked, &trigger, &prepared, &event)
+                }
+                BindingAspect::Delivery => delivery(ir, binding, invoked, &prepared, &event),
                 BindingAspect::OnFailure if binding.retry.is_some() => {
                     bounded_retry::exhausted(ir, binding, invoked, &trigger, &event, actors)
                 }
-                BindingAspect::OnFailure => on_failure(ir, binding, invoked, &trigger, &event),
+                BindingAspect::OnFailure => on_failure(ir, binding, invoked, &prepared, &event),
                 // Not in `ALL`; produced below for the bindings that make the claim.
                 BindingAspect::FinalFailure => continue,
             };
@@ -11588,6 +11764,10 @@ fn bindings(
                     continue;
                 }
             };
+            // `drop` and a bounded retry build their own failure scenario, without the row's rest.
+            let dropping =
+                matches!(binding.on_failure(), ResolvedFailure::Drop) || binding.retry.is_some();
+            binding_effects::name_unsettled(&prepared, aspect, dropping, &id, refusals);
             let mut depends = source.clone();
             depends.extend(extra);
             insert(
@@ -11623,11 +11803,25 @@ type Built = Result<(Vec<ScenarioStep>, ScenarioPurpose, BTreeSet<EssSemanticRef
 /// arranged. So a dropped binding is provable here only when its consequence is its own.
 /// [`BindingAspect::Mapping`] is what closes that: [`ScenarioStep::ExpectInvocation`] names the
 /// binding, which no event does.
-fn flow(ir: &EssIr, invoked: &ResolvedCommand, trigger: &Run, event: &EventRef) -> Built {
-    let reached = reachable_branch(invoked)?;
+///
+/// # The row the invocation acts on
+///
+/// Where the invoked command acts on an existing row, that row is arranged — or made by the trigger
+/// itself — in a state an accepting branch admits, before the trigger, and the scenario ends by
+/// observing it eventually where the binding leaves it ([`binding_effects::prepare`],
+/// beyond10x/ess#267). A `wrong_state:` branch beside the accepting one is what an ineligible row
+/// reaches, not a second outcome a scenario must choose between.
+fn flow(
+    ir: &EssIr,
+    invoked: &ResolvedCommand,
+    prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
+    event: &EventRef,
+) -> Built {
+    let prepared = prepared.as_ref().map_err(Clone::clone)?;
+    let reached = prepared.reached.clone()?;
     let published = publishes(invoked, reached)?;
 
-    let mut steps = trigger.steps();
+    let mut steps = prepared.steps();
     steps.push(ScenarioStep::ExpectEvent {
         event: event.clone(),
         payload: BTreeMap::new(),
@@ -11640,13 +11834,16 @@ fn flow(ir: &EssIr, invoked: &ResolvedCommand, trigger: &Run, event: &EventRef) 
             shape: payload_shape(ir, event),
         });
     }
+    steps.extend(prepared.settled_row(ir));
 
     let text = format!(
         "`{event}` invokes `{}`, which publishes {}",
         invoked.name,
         listed(&published)
     );
-    Ok((steps, clipped(&text), downstream(ir, invoked, reached)))
+    let mut source = downstream(ir, invoked, reached);
+    source.extend(prepared.source.iter().cloned());
+    Ok((steps, clipped(&text), source))
 }
 
 /// §16: each input receives the value the binding's mapping names for it.
@@ -11659,49 +11856,28 @@ fn flow(ir: &EssIr, invoked: &ResolvedCommand, trigger: &Run, event: &EventRef) 
 /// the resolved mapping: a field of the triggering event becomes
 /// [`ScenarioValue::Observed`], because no generator knows what the upstream implementation
 /// published there, and a literal becomes the text the binding wrote.
+///
+/// Sent through the arranged trigger where the invoked command addresses a row
+/// ([`binding_effects::prepare`]), so the invocation lands on a row that exists; through the plain
+/// trigger where that row cannot be arranged, since what the invocation carries is a reading of the
+/// document whatever it then does.
 fn mapping(
     ir: &EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     trigger: &Run,
+    prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
     event: &EventRef,
 ) -> Built {
     let command = CommandRef::new(invoked.name.clone());
     if binding.mapping.is_empty() {
         return Err(BindingGap::NothingMapped { command });
     }
-    let input: BTreeMap<String, ScenarioValue> = binding
-        .mapping
-        .iter()
-        .map(|mapped| {
-            let value = match &mapped.value {
-                ResolvedMappingValue::HostContext { .. } | ResolvedMappingValue::HostRead { .. } => return Err(BindingGap::AccessorObservation { reason: "PeriodicHostMapping: no event supplies this input".into() }),
-                ResolvedMappingValue::DeliveryContext { .. } => return Err(BindingGap::AccessorObservation { reason: "DeliveryContext: only a delivered event carries a context".into() }),
-                ResolvedMappingValue::Selection { selector, projection, .. } => {
-                    if mapped.conversion.is_some() { return Err(BindingGap::AccessorObservation { reason: "selection result requires an explicit host conversion".into() }); }
-                    let selection = crate::selection::Observation::of(ir, binding, *selector, projection, &mapped.target_type).map_err(|reason| BindingGap::AccessorObservation { reason })?;
-                    ScenarioValue::ObservedSelection { event: event.clone(), selection }
-                }
-                ResolvedMappingValue::EventField { field, .. } => {
-                    ScenarioValue::observed(event.clone(), field.clone())
-                }
-                ResolvedMappingValue::EventAccessor { plan, types, .. } => {
-                    if mapped.conversion.is_some() { return Err(BindingGap::AccessorObservation { reason: format!("OpaqueAccessorConversion: {} to {} requires the declared host implementation", plan.path(), mapped.target_type) }); }
-                    let accessor = crate::accessor::Observation::of(ir, plan, types, &mapped.target_type).map_err(|reason| BindingGap::AccessorObservation { reason })?;
-                    ScenarioValue::ObservedAccessor { event: event.clone(), accessor }
-                }
-                // A literal reaches the model as text and fills a target that is a `String` or an
-                // enum underneath — `ess-domain` refuses any other target — so the text is the value
-                // and no conversion is being invented here.
-                ResolvedMappingValue::Literal { value } => {
-                    ScenarioValue::literal(Node::Text(value.clone()))
-                }
-            };
-            Ok((mapped.target.clone(), value))
-        })
-        .collect::<Result<_, BindingGap>>()?;
+    let input = binding_effects::mapped_input(ir, binding, event)?;
 
-    let mut steps = trigger.steps();
+    let mut steps = prepared
+        .as_ref()
+        .map_or_else(|_| trigger.steps(), binding_effects::Prepared::steps);
     steps.push(ScenarioStep::ExpectEvent {
         event: event.clone(),
         payload: BTreeMap::new(),
@@ -11726,6 +11902,9 @@ fn mapping(
             .into_iter()
             .map(EssSemanticRef::from),
     );
+    if let Ok(prepared) = prepared {
+        source.extend(prepared.source.iter().cloned());
+    }
     Ok((steps, clipped(&text), source))
 }
 
@@ -11747,17 +11926,18 @@ fn delivery(
     ir: &EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
     event: &EventRef,
 ) -> Built {
     // Read before anything else, for the reason `on_failure` reads its policy first.
     if matches!(binding.delivery, Delivery::AtMostOnce) {
         return Err(BindingGap::DeliverySingleAttempt);
     }
-    let reached = reachable_branch(invoked)?;
+    let prepared = prepared.as_ref().map_err(Clone::clone)?;
+    let reached = prepared.reached.clone()?;
     let published = publishes(invoked, reached)?;
 
-    let mut steps = trigger.steps();
+    let mut steps = prepared.steps();
     steps.push(ScenarioStep::ExpectEvent {
         event: event.clone(),
         payload: BTreeMap::new(),
@@ -11780,11 +11960,16 @@ fn delivery(
         });
     }
 
+    // Where the row the invocation acts on rests once both deliveries have run.
+    steps.extend(prepared.settled_row(ir));
+
     let text = format!(
         "`{event}` delivered twice still leaves {} observable, and no count is required",
         listed(&published)
     );
-    Ok((steps, clipped(&text), downstream(ir, invoked, reached)))
+    let mut source = downstream(ir, invoked, reached);
+    source.extend(prepared.source.iter().cloned());
+    Ok((steps, clipped(&text), source))
 }
 
 /// §18: the declared failure policy, with the failure forced.
@@ -11803,19 +11988,21 @@ fn delivery(
 /// |---|---|---|
 /// | `retry` | the consequence happens anyway | one injection forces one failure; a handler that retries reaches the branch that publishes |
 /// | `escalate` | the declared escalation event | since gate G2 the model names it, so this is a reading rather than a hope |
-/// | `drop` | nothing — refused | "give up silently" is the whole content of the word |
+/// | `drop` on a row read before the trigger | one attempt with the mapped input, no retry in the window, the row unchanged | [`binding_effects::dropped`], beyond10x/ess#267 |
+/// | `drop` on nothing that can be read so | refused | "give up silently" leaves nothing else to observe |
 fn on_failure(
     ir: &EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
     event: &EventRef,
 ) -> Built {
     // Read before the failure is forced, so a `drop` refuses for what it is rather than for a
     // missing external branch it would not have used.
     let policy = binding.on_failure();
     if matches!(policy, ResolvedFailure::Drop) {
-        return Err(BindingGap::PolicySilent);
+        let prepared = prepared.as_ref().map_err(Clone::clone)?;
+        return binding_effects::dropped(ir, binding, invoked, prepared, event);
     }
     let forced = invoked
         .outcomes
@@ -11827,14 +12014,16 @@ fn on_failure(
     if let Some(gap) = forced_eligibility(invoked, forced) {
         return Err(gap);
     }
+    let prepared = prepared.as_ref().map_err(Clone::clone)?;
     let forced_ref = OutcomeRef::new(CommandRef::new(invoked.name.clone()), forced.name.clone());
 
-    let mut steps = trigger.setup.clone();
+    let mut steps = prepared.setup.clone();
     steps.push(ScenarioStep::ConfigureExternalOutcome {
         force: forced_ref.clone(),
         times: None,
     });
-    steps.extend(trigger.invoke.iter().cloned());
+    steps.extend(prepared.invoke.iter().cloned());
+    steps.extend(prepared.capture.iter().cloned());
     steps.push(ScenarioStep::ExpectEvent {
         event: event.clone(),
         payload: BTreeMap::new(),
@@ -11850,10 +12039,11 @@ fn on_failure(
     if let Some(component) = accepting_component(ir, &invoked.name) {
         source.insert(component.into());
     }
+    source.extend(prepared.source.iter().cloned());
 
     let text = match policy {
         ResolvedFailure::Retry => {
-            let reached = reachable_branch(invoked)?;
+            let reached = prepared.reached.clone()?;
             let published = publishes(invoked, reached)?;
             for event in &published {
                 steps.push(ScenarioStep::EventuallyEvent {
@@ -11862,6 +12052,7 @@ fn on_failure(
                     shape: payload_shape(ir, event),
                 });
             }
+            steps.extend(prepared.settled_row(ir));
             source.extend(downstream(ir, invoked, reached));
             format!(
                 "`{}` retries a failed `{}` until {} is published",
@@ -11883,8 +12074,8 @@ fn on_failure(
                 invoked.name, binding.name
             )
         }
-        // Refused above, before anything was forced.
-        ResolvedFailure::Drop => unreachable!("`drop` is refused before the failure is forced"),
+        // Its own scenario above, `binding_effects::dropped`.
+        ResolvedFailure::Drop => unreachable!("`drop` is synthesized before the failure is forced"),
         // Its own scenario, `bounded_retry::exhausted`, which `bindings` calls instead.
         ResolvedFailure::BoundedRetry { .. } => {
             unreachable!("a bounded retry is synthesized by `bounded_retry::exhausted`")

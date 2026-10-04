@@ -2009,6 +2009,12 @@ export interface Target {
   /**
    * observeInvocations reports the commands one binding invoked and what it passed.
    *
+   * The answer is a cumulative, non-consuming snapshot of every attempt the binding made of the
+   * command under the request's correlation since it began, recorded before the command answers:
+   * a refused attempt is one, and identical repeated attempts are each one. Do not filter by
+   * expected input or success, deduplicate, drain, restart at a new deadline, or mix in another
+   * correlation. Mapping, exact retry counts and drop's single attempt are proved only through it.
+   *
    * Throw ErrUnsupported where the implementation cannot expose this; the scenario is reported as
    * unsupported rather than failed, which is a different fact.
    */
