@@ -118,8 +118,7 @@ const config: Config = {
       ],
       copyright: 'A beyond10x project · Apache-2.0 · built with Docusaurus and the docs-system product template.',
     },
-    mermaid: {theme: {light: 'neutral', dark: 'dark'}},
   } satisfies Preset.ThemeConfig,
 };
 
-export default withProductSite(config, {landing: './product.json', mark: 'ES'});
+export default withProductSite(config, {landing: './product.json', product: 'ess', mark: 'Es'});

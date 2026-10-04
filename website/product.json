@@ -2,7 +2,7 @@
   "format": "b10x-product-landing/1",
   "product": {
     "name": "ESS",
-    "mark": "ES",
+    "mark": "Es",
     "eyebrow": "Executable system specifications · experimental",
     "promise": ["Specify once.", "Derive contracts.", "Prove the code."],
     "lede": "ESS turns system intent into a validated typed model, deterministic artifacts and an executable conformance suite. A specification is YAML; the compiler resolves every reference, the projections derive documentation and interface contracts from the result, and the same model generates the scenarios an implementation must pass. Nothing it does applies infrastructure.",
