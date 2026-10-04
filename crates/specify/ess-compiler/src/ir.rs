@@ -1049,14 +1049,24 @@ pub enum ResolvedPayloadValue {
     },
     /// A field of the row another row references, as it was immediately before this outcome
     /// (ess/16, beyond10x/ess#166): `{related: {via: customer_id, field: region}}`.
+    ///
+    /// From ess/22 (beyond10x/ess#285) `via` may be `Optional<…>` and `through` may name one
+    /// further reference; where any reference may be absent, `type_ref` is `Optional<…>` and the
+    /// value is absent where a reference is.
     RelatedField {
         /// Where the other row's identity is read.
         via: ResolvedRelatedVia,
-        /// The entity `via` names.
+        /// The further references followed after `via`, in order: each a field of the row the
+        /// reference before it names. Empty for a one-hop read, and then omitted, so a model
+        /// without a chained read keeps its IR bytes.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        through: Vec<ResolvedRelatedHop>,
+        /// The entity the last reference names: `via`'s for a one-hop read.
         entity: EntityHandle,
         /// The field of that entity read.
         field: String,
-        /// Its resolved type.
+        /// The type of the value: the field's resolved type, or `Optional<…>` of it where a
+        /// reference may be absent and the field is not already `Optional<…>`.
         type_ref: ResolvedTypeRef,
     },
     /// An attribute of the authenticated caller (ess/16, beyond10x/ess#168): `{caller:
@@ -1116,6 +1126,31 @@ pub fn related_sentence(
              `{predicate}`",
             entity.name()
         ),
+    }
+}
+
+/// Whether a [`ResolvedPayloadValue::RelatedField`] reading through `via` and then `through` may
+/// find a reference absent (ess/22, beyond10x/ess#285): any of them is `Optional<…>`. Its value is
+/// then absent too.
+pub fn related_may_be_absent(via: &ResolvedRelatedVia, through: &[ResolvedRelatedHop]) -> bool {
+    via.type_ref().is_optional() || through.iter().any(|hop| hop.type_ref.is_optional())
+}
+
+/// One further reference a chained [`ResolvedPayloadValue::RelatedField`] follows (ess/22,
+/// beyond10x/ess#285): the field of the row read so far that holds the next row's identity.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRelatedHop {
+    /// The entity whose row holds the field: the one the reference before names.
+    pub entity: EntityHandle,
+    /// The field.
+    pub field: String,
+    /// Its resolved type as declared: the next entity's identity, or `Optional<…>` of it.
+    pub type_ref: ResolvedTypeRef,
+}
+
+impl fmt::Display for ResolvedRelatedHop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.entity.name(), self.field)
     }
 }
 
@@ -1179,8 +1214,25 @@ impl ResolvedPayloadValue {
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
             Self::RelatedField {
-                via, entity, field, ..
-            } => format!("{}.{field} of the row {via} names", entity.name()),
+                via,
+                through,
+                entity,
+                field,
+                ..
+            } => {
+                let mut named = format!("the row {via} names");
+                for hop in through {
+                    named = format!("the row {hop} of {named}");
+                }
+                if related_may_be_absent(via, through) {
+                    format!(
+                        "{}.{field} of {named}, absent where a reference is",
+                        entity.name()
+                    )
+                } else {
+                    format!("{}.{field} of {named}", entity.name())
+                }
+            }
             Self::CallerAttribute { attribute, .. } => format!("the caller's {attribute}"),
             Self::ChangedCount => "how many rows the outcome changed".to_owned(),
             Self::Increment { by } => format!("its previous value plus {by}"),

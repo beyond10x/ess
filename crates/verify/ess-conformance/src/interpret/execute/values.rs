@@ -45,7 +45,11 @@ pub(super) struct Reads<'a> {
     pub(super) outcome: &'a ResolvedOutcome,
 }
 
-impl Reads<'_> {
+impl<'a> Reads<'a> {
+    /// `{related: …}` (ess/16): the field of the row the reference names, read from the original
+    /// store. From ess/22 (beyond10x/ess#285) a reference may be `Optional<…>` and a chain follows
+    /// one further reference from that row: an absent reference reads no row and yields an absent
+    /// value, and a present one naming no row is the missing row it always was — never absent.
     pub(super) fn related(
         self,
         ir: &EssIr,
@@ -54,6 +58,7 @@ impl Reads<'_> {
     ) -> Result<Option<Value>, Undetermined> {
         let ResolvedPayloadValue::RelatedField {
             via,
+            through,
             entity,
             field,
             type_ref,
@@ -61,37 +66,78 @@ impl Reads<'_> {
         else {
             unreachable!("only related sources use this evaluator")
         };
-        let address = match via {
-            ResolvedRelatedVia::Input { field, .. } => input.get(field).cloned(),
+        let absent = || {
+            checked_read(
+                ir,
+                field,
+                type_ref,
+                &target.target_type,
+                target.conversion.as_deref(),
+                None,
+            )
+        };
+        let first = match via {
+            ResolvedRelatedVia::Input { field, .. } => {
+                sent_reference(via.type_ref(), input.get(field))
+            }
             ResolvedRelatedVia::Subject { field, .. } => match self.before {
-                Some(before) => before
-                    .fields
-                    .get(field)
-                    .map(|value| value.require("the original related row address"))
-                    .transpose()?,
-                None => self
-                    .creation_input(ir, field)
-                    .and_then(|field| input.get(field))
-                    .cloned(),
-            },
-        }
-        .ok_or_else(|| Undetermined::NoValue {
-            what: format!("the related identity named by `{via}` before the outcome"),
-        })?;
-        let entity = ir.entity(entity);
-        input::validate_typed_value(ir, via.type_ref(), &address).map_err(Undetermined::Request)?;
-        input::validate_typed_value(ir, &entity.identity.type_ref, &address)
-            .map_err(Undetermined::Request)?;
-        let row = self
-            .original
-            .instance_typed(&entity.name, &address)
-            .ok_or_else(|| Undetermined::NoValue {
-                what: format!(
-                    "the original related `{}` row named by `{via}`",
-                    entity.name
+                Some(before) => stored_reference(
+                    ir,
+                    via.type_ref(),
+                    before.fields.get(field),
+                    "the original related row address",
+                )?,
+                None => sent_reference(
+                    via.type_ref(),
+                    self.creation_input(ir, field)
+                        .and_then(|field| input.get(field)),
                 ),
-            })?;
-        let value = if *field == entity.identity.name {
+            },
+        };
+        let mut address = match first {
+            Reference::Present(address) => address,
+            Reference::Absent => return absent(),
+            Reference::Missing => {
+                return Err(Undetermined::NoValue {
+                    what: format!("the related identity named by `{via}` before the outcome"),
+                })
+            }
+        };
+        input::validate_typed_value(ir, via.type_ref(), &address).map_err(Undetermined::Request)?;
+        // The entity each reference names: the next hop's, and the last one's is `entity`.
+        let mut named = through
+            .iter()
+            .map(|hop| &hop.entity)
+            .chain(std::iter::once(entity));
+        let mut current = ir.entity(named.next().expect("at least the last entity"));
+        let mut row = self.row(ir, current, &address, &via.to_string())?;
+        for (hop, next) in through.iter().zip(named) {
+            let held = if hop.field == current.identity.name {
+                Some(Value::Known(address.clone()))
+            } else {
+                row.fields.get(&hop.field).cloned()
+            };
+            let next_address = match stored_reference(
+                ir,
+                &hop.type_ref,
+                held.as_ref(),
+                &format!("the related identity `{hop}`"),
+            )? {
+                Reference::Present(address) => address,
+                Reference::Absent => return absent(),
+                Reference::Missing => {
+                    return Err(Undetermined::NoValue {
+                        what: format!("the related identity `{hop}` named through `{via}`"),
+                    })
+                }
+            };
+            input::validate_typed_value(ir, &hop.type_ref, &next_address)
+                .map_err(Undetermined::Request)?;
+            current = ir.entity(next);
+            address = next_address;
+            row = self.row(ir, current, &address, &format!("{via} through {hop}"))?;
+        }
+        let value = if *field == current.identity.name {
             Some(Value::Known(address))
         } else {
             row.fields.get(field).cloned()
@@ -104,6 +150,27 @@ impl Reads<'_> {
             target.conversion.as_deref(),
             value.as_ref(),
         )
+    }
+
+    /// The original row of `entity` that `address` names, after checking the address is that
+    /// entity's identity; its absence is a missing row, never an absent value.
+    fn row(
+        self,
+        ir: &EssIr,
+        entity: &ess_compiler::ir::ResolvedEntity,
+        address: &Node,
+        named_by: &str,
+    ) -> Result<&'a Row, Undetermined> {
+        input::validate_typed_value(ir, &entity.identity.type_ref, address)
+            .map_err(Undetermined::Request)?;
+        self.original
+            .instance_typed(&entity.name, address)
+            .ok_or_else(|| Undetermined::NoValue {
+                what: format!(
+                    "the original related `{}` row named by `{named_by}`",
+                    entity.name
+                ),
+            })
     }
 
     /// E8's creation exception: only the selected branch's unchanged input carrier. Compiler IR
@@ -453,6 +520,53 @@ fn node_at<'a>(node: &'a Node, location: &[String]) -> Option<&'a Node> {
         return None;
     };
     node_at(fields.get(member)?, rest)
+}
+
+/// What a reference a `{related: …}` value follows holds (ess/22, beyond10x/ess#285).
+enum Reference {
+    /// An identity.
+    Present(Node),
+    /// Nothing, and the reference is `Optional<…>`: the value read through it is absent.
+    Absent,
+    /// Nothing, and the reference is required: no value can be determined.
+    Missing,
+}
+
+impl From<Option<Node>> for Reference {
+    fn from(value: Option<Node>) -> Self {
+        value.map_or(Self::Missing, Self::Present)
+    }
+}
+
+/// What a reference the request sent holds.
+fn sent_reference(type_ref: &ResolvedTypeRef, value: Option<&Node>) -> Reference {
+    if super::related::absent_optional(type_ref, value) {
+        return Reference::Absent;
+    }
+    value.cloned().into()
+}
+
+/// What a stored reference holds. Whether an abstract `Optional<…>` value is present is not chosen
+/// here: it is undecidable.
+fn stored_reference(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    value: Option<&Value>,
+    what: &str,
+) -> Result<Reference, Undetermined> {
+    if type_ref.is_optional() {
+        match value.map(|value| value.presence(ir)) {
+            None | Some(Some(false)) => return Ok(Reference::Absent),
+            Some(Some(true)) => {}
+            Some(None) => {
+                return Err(Undetermined::Undecidable {
+                    outcome: "history value read".into(),
+                    guard: format!("whether {what} is present"),
+                })
+            }
+        }
+    }
+    Ok(value.map(|value| value.require(what)).transpose()?.into())
 }
 
 #[cfg(test)]

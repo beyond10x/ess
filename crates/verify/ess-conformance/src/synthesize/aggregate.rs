@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedAggregation, ResolvedBody, ResolvedCondition,
-    ResolvedEffect, ResolvedEntity, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedTypeRef,
-    ResolvedView,
+    ResolvedEffect, ResolvedEntity, ResolvedPayloadValue, ResolvedRelatedHop, ResolvedRelatedVia,
+    ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::entity::{EntitySpec, StateName};
 use ess_domain::name::QualifiedName;
@@ -33,9 +33,10 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{
-    advance, arrange_owner, clipped, created_owned, has_subject_guards, identity_inputs, insert,
-    literal_value, reach, reachable_types, related_guard, route_from, shares_owner, shows,
-    subject_fact, Arrangement, CommandRef, Determined, Refusal, RefusalCause,
+    advance, arrange_first, arrange_owner, clipped, created_owned, has_subject_guards,
+    identity_inputs, insert, literal_value, reach, reachable_types, related, related_guard,
+    route_from, shares_owner, shows, subject_fact, Arrangement, CommandRef, Determined, Refusal,
+    RefusalCause,
 };
 use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
 use crate::scenario::{
@@ -225,7 +226,13 @@ impl Key {
 struct RelatedKey<'ir> {
     /// The creating command's input that names the referenced row.
     via: &'ir str,
-    /// The referenced entity.
+    /// The further references a chained read follows from that row (ess/22, beyond10x/ess#285):
+    /// empty for a one-hop read.
+    through: &'ir [ResolvedRelatedHop],
+    /// Whether the creating command may leave `via` out, leaving the reference — and so the value
+    /// — absent (ess/22, beyond10x/ess#285).
+    optional_via: bool,
+    /// The referenced entity: the one the last reference names.
     entity: &'ir EntityHandle,
     /// The referenced row's field the value is copied from.
     field: &'ir str,
@@ -290,12 +297,14 @@ fn leaves_absent(creator: &Driver<'_>, field: &str) -> bool {
 /// How the scenario gives the field `{related: {via, field}}` fills a value of its choosing, or
 /// why it cannot. Which branch creates the related row is chosen per row, once for every field it
 /// must hold ([`arrange_related`]).
+#[allow(clippy::too_many_arguments)]
 fn related_key<'ir>(
     ir: &'ir EssIr,
     handle: &EntityHandle,
     creator: &Driver<'ir>,
     mapped: &BTreeMap<&'ir str, &'ir str>,
     via: &'ir ResolvedRelatedVia,
+    through: &'ir [ResolvedRelatedHop],
     entity: &'ir EntityHandle,
     field: &'ir str,
 ) -> Result<RelatedKey<'ir>, String> {
@@ -327,8 +336,42 @@ fn related_key<'ir>(
             "nothing creates a `{name}` that sets `{field}` from its input"
         ));
     }
+    // A chained read (ess/22, beyond10x/ess#285) is arranged through a row of each entity it
+    // names, each reference stored from its creating branch's input; a related guard on the
+    // creating command reads one row, never a chain.
+    for hop in through {
+        let named = &ir.entity(&hop.entity).name;
+        if hop.entity == *handle {
+            return Err(format!(
+                "a row it reads through is a `{named}`, which the view would then count"
+            ));
+        }
+        if related_guard::routes(creator.command, creator.outcome) {
+            return Err(format!(
+                "`{}` is chosen by a related row its own arrangement supplies",
+                creator.command.name
+            ));
+        }
+        if !related_creators(ir, &hop.entity)
+            .iter()
+            .any(|driver| filled_from(driver, &hop.field).is_some())
+        {
+            return Err(format!(
+                "nothing creates a `{named}` that sets `{}` from its input",
+                hop.field
+            ));
+        }
+    }
+    let optional_via = via.type_ref().is_optional()
+        && creator
+            .command
+            .input
+            .iter()
+            .any(|input| input.name == via_input && input.type_ref.is_optional());
     Ok(RelatedKey {
         via: via_input,
+        through,
+        optional_via,
         entity,
         field,
     })
@@ -789,12 +832,13 @@ fn scenario(
     {
         if let ResolvedPayloadValue::RelatedField {
             via,
+            through,
             entity: other,
             field,
             ..
         } = &set.value
         {
-            match related_key(ir, handle, creator, &mapped, via, other, field) {
+            match related_key(ir, handle, creator, &mapped, via, through, other, field) {
                 Ok(key) => {
                     related.insert(set.target.as_str(), key);
                 }
@@ -841,14 +885,24 @@ fn scenario(
     // the row then holds it as absent (`synthesize.rs`, `settled`).
     // A field copied from a related row is absent where that row's field is: some branch creating
     // the row fills it from an `Optional` input, and the field is itself `Optional`.
+    // From ess/22 (beyond10x/ess#285) it is absent too where a reference it is read through is:
+    // the creating command leaves its Optional `via` input out, or a chained read's Optional next
+    // reference is left absent by a branch creating the row that holds it.
     let related_absent = |name: &str| {
         related.get(name).is_some_and(|key| {
-            ir.entity(key.entity)
+            (ir.entity(key.entity)
                 .observable_field(key.field)
                 .is_some_and(|field| field.type_ref.is_optional())
                 && related_creators(ir, key.entity)
                     .iter()
-                    .any(|driver| leaves_absent(driver, key.field))
+                    .any(|driver| leaves_absent(driver, key.field)))
+                || key.optional_via
+                || key.through.iter().any(|hop| {
+                    hop.type_ref.is_optional()
+                        && related_creators(ir, &hop.entity)
+                            .iter()
+                            .any(|driver| leaves_absent(driver, &hop.field))
+                })
         })
     };
     let absent_able = |name: &str| {
@@ -2073,7 +2127,12 @@ fn create_row(
     input: &BTreeMap<String, Node>,
 ) -> Result<Created, RefusalCause> {
     let shared = owner.filter(|owner| owner.shared).map(|owner| &owner.row);
-    let referenced = arrange_related(plan, row, distinction, actors, shared)?;
+    let Referenced {
+        named: referenced,
+        read_from,
+        omitted,
+        others,
+    } = arrange_related(plan, (creator, mapped), row, distinction, actors, shared)?;
     let prelude: Vec<ScenarioStep> = referenced
         .iter()
         .flat_map(|(_, row)| row.steps.iter().cloned())
@@ -2111,12 +2170,21 @@ fn create_row(
         &referenced,
     )?;
     for (via, row) in &referenced {
-        point_at(creator, &mut start, via, row, mapped).ok_or_else(|| {
+        let from = (read_from.get(via), others.get(via));
+        point_at(creator, &mut start, via, row, from, mapped).ok_or_else(|| {
             plan.unwitnessed(format!(
                 "the creating command's `{via}` cannot be pointed at the row it reads"
             ))
         })?;
         start.source.extend(row.source.iter().cloned());
+    }
+    for via in &omitted {
+        leave_out(creator, &mut start, via, mapped).ok_or_else(|| {
+            plan.unwitnessed(format!(
+                "the creating command's `{via}` cannot be left out for row `{}`",
+                row.label
+            ))
+        })?;
     }
     Ok(Created {
         reached: start,
@@ -2280,23 +2348,29 @@ fn holds(row: &Arrangement, values: &Wanted<'_>) -> bool {
 /// read, so rows that share an owner share its values and its group.
 fn arrange_related<'p>(
     plan: &Plan<'p>,
+    (creator, mapped): (&Driver<'p>, &BTreeMap<&str, &str>),
     row: &Row,
     distinction: Distinction,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     shared: Option<&(String, Arrangement)>,
-) -> Result<Vec<(&'p str, Arrangement)>, RefusalCause> {
+) -> Result<Referenced<'p>, RefusalCause> {
     let mut wanted: BTreeMap<&str, (RelatedKey<'_>, Wanted<'_>)> = BTreeMap::new();
     for (field, value) in &row.values {
         let Some(key) = plan.related.get(field.as_str()) else {
             continue;
         };
-        wanted
-            .entry(key.via)
-            .or_insert((*key, BTreeMap::new()))
-            .1
-            .insert(key.field, value.clone());
+        let (held, values) = wanted.entry(key.via).or_insert((*key, BTreeMap::new()));
+        // One input read along two paths — once in one hop, once chained — names one row, which
+        // cannot be both (ess/22, beyond10x/ess#285).
+        if held.through != key.through {
+            return Err(plan.unwitnessed(format!(
+                "row `{}` reads `{}` along two paths of references",
+                row.label, key.via
+            )));
+        }
+        values.insert(key.field, value.clone());
     }
-    let mut out = Vec::new();
+    let mut out = Referenced::default();
     for (nth, (via, (key, values))) in wanted.into_iter().enumerate() {
         if let Some((_, owner)) = shared.filter(|(field, _)| field == via) {
             if !holds(owner, &values) {
@@ -2306,22 +2380,208 @@ fn arrange_related<'p>(
                     row.label
                 )));
             }
-            out.push((
+            out.named.push((
                 via,
                 Arrangement {
                     steps: Vec::new(),
                     ..owner.clone()
                 },
             ));
+            out.read_from.insert(via, ReadFrom::Named);
             continue;
         }
         let at = Distinction::further(RELATED_ROWS * (nth + 1) + distinction.get());
-        out.push((
-            via,
-            arrange_referenced(plan, &key, &values, at, actors, &row.label)?,
-        ));
+        match arrange_key_rows(plan, &key, &values, at, actors, &row.label)? {
+            (Some(mut named), from) => {
+                let chains = other_chains(creator, mapped, &key);
+                let pointed =
+                    point_others(plan, &mut named, &chains, at, actors, (&row.label, via))?;
+                out.named.push((via, named));
+                out.read_from.insert(via, from);
+                out.others.insert(via, pointed);
+            }
+            (None, _) => out.omitted.push(via),
+        }
     }
     Ok(out)
+}
+
+/// The chained reads of `creator`'s `sets:` through `key`'s input other than `key`'s own: each a
+/// further reference on the row that input names, and the entity it names (ess/22,
+/// beyond10x/ess#285).
+fn other_chains<'ir>(
+    creator: &Driver<'ir>,
+    mapped: &BTreeMap<&str, &str>,
+    key: &RelatedKey<'_>,
+) -> Vec<(&'ir ResolvedRelatedHop, &'ir EntityHandle)> {
+    let mut out: Vec<(&ResolvedRelatedHop, &EntityHandle)> = Vec::new();
+    for set in &creator.outcome.sets {
+        let ResolvedPayloadValue::RelatedField {
+            via,
+            through,
+            entity,
+            ..
+        } = &set.value
+        else {
+            continue;
+        };
+        let [hop] = through.as_slice() else {
+            continue;
+        };
+        let other = via_input(via, mapped) == Some(key.via) && through.as_slice() != key.through;
+        if other && !out.iter().any(|(held, _)| held.field == hop.field) {
+            out.push((hop, entity));
+        }
+    }
+    out
+}
+
+/// Points every further reference `chains` names on `named` — the row a key's input is pointed at,
+/// which other chained reads of the creating branch follow on along references of their own — at a
+/// row of the entity each names, arranged first; or, where none can be arranged (the view's own
+/// entity, which it would count) and the reference may be absent, leaves it absent. A required
+/// reference no row can be arranged for is refused by name (ess/22, beyond10x/ess#285).
+fn point_others(
+    plan: &Plan<'_>,
+    named: &mut Arrangement,
+    chains: &[(&ResolvedRelatedHop, &EntityHandle)],
+    at: Distinction,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (label, via): (&str, &str),
+) -> Result<BTreeMap<String, Option<Arrangement>>, RefusalCause> {
+    let ir = plan.ir;
+    let mut out = BTreeMap::new();
+    let mut prelude = Vec::new();
+    for (nth, (hop, entity)) in chains.iter().enumerate() {
+        let last = (*entity != plan.handle)
+            .then(|| {
+                arrange_first(
+                    ir,
+                    entity,
+                    std::slice::from_ref(&ir.entity(entity).lifecycle.initial),
+                    actors,
+                    Distinction::further(at.get() + RELATED_ROWS / 2 + nth),
+                    &[plan.handle],
+                )
+                .ok()
+            })
+            .flatten()
+            .filter(|last| related::rewrite_reference(ir, named, &hop.field, Some(&last.instance)));
+        match last {
+            Some(last) => {
+                prelude.extend(last.steps.iter().cloned());
+                named.source.extend(last.source.iter().cloned());
+                out.insert(hop.field.clone(), Some(last));
+            }
+            None if hop.type_ref.is_optional()
+                && related::rewrite_reference(ir, named, &hop.field, None) =>
+            {
+                out.insert(hop.field.clone(), None);
+            }
+            None => {
+                return Err(plan.unwitnessed(format!(
+                    "row `{label}` reads `{via}` along two chains of references, and `{hop}` can \
+                     be pointed at no row the arrangement makes"
+                )))
+            }
+        }
+    }
+    prelude.append(&mut named.steps);
+    named.steps = prelude;
+    Ok(out)
+}
+
+/// Where the values a row copies through one input are read (ess/22, beyond10x/ess#285).
+enum ReadFrom {
+    /// The row the input is pointed at holds them.
+    Named,
+    /// A chained read: the last row it reaches holds them.
+    Last(Arrangement),
+    /// A reference on the way was left absent, so every value read is absent.
+    Absent,
+}
+
+/// The related rows a created row reads its keys from ([`arrange_related`]).
+#[derive(Default)]
+struct Referenced<'p> {
+    /// The row each input is pointed at, by input. A chained read's carries the steps of the rows
+    /// it reaches through, first.
+    named: Vec<(&'p str, Arrangement)>,
+    /// Where each pointed input's values are read.
+    read_from: BTreeMap<&'p str, ReadFrom>,
+    /// The rows the further references of other chained reads through each input name, by the
+    /// reference's field — `None` where it is left absent ([`point_others`]).
+    others: BTreeMap<&'p str, BTreeMap<String, Option<Arrangement>>>,
+    /// The Optional inputs left out, leaving the reference and every value read through it absent
+    /// (ess/22, beyond10x/ess#285).
+    omitted: Vec<&'p str>,
+}
+
+/// The rows one input a row's keys are read through is arranged as: the row the input is pointed
+/// at, and where the values are read — or no row, where the input is left out.
+///
+/// A one-hop read is arranged as [`arrange_referenced`] arranges it, and only where that cannot
+/// leave every value absent is its Optional input left out instead (ess/22, beyond10x/ess#285).
+/// A chained read gets a row of the last entity holding the values and a row of the entity `via`
+/// names whose next reference is pointed at it; where every value is absent, that next reference
+/// is left absent instead, where it may be, else the input is left out, else the last row holds
+/// the values absent.
+fn arrange_key_rows(
+    plan: &Plan<'_>,
+    key: &RelatedKey<'_>,
+    values: &Wanted<'_>,
+    distinction: Distinction,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    label: &str,
+) -> Result<(Option<Arrangement>, ReadFrom), RefusalCause> {
+    let all_absent = !values.is_empty() && values.values().all(|value| *value == Node::Null);
+    let [hop] = key.through else {
+        if !key.through.is_empty() {
+            return Err(plan.unwitnessed(format!(
+                "row `{label}` reads through `{}` across more than two references",
+                key.via
+            )));
+        }
+        return match arrange_referenced(plan, key, values, distinction, actors, label) {
+            Ok(row) => Ok((Some(row), ReadFrom::Named)),
+            Err(_) if all_absent && key.optional_via => Ok((None, ReadFrom::Absent)),
+            Err(error) => Err(error),
+        };
+    };
+    let ir = plan.ir;
+    let name = &ir.entity(&hop.entity).name;
+    let middle = |to: Option<&crate::scenario::InstanceName>| {
+        let mut row = arrange_first(
+            ir,
+            &hop.entity,
+            std::slice::from_ref(&ir.entity(&hop.entity).lifecycle.initial),
+            actors,
+            distinction,
+            &[plan.handle],
+        )
+        .ok()?;
+        related::rewrite_reference(ir, &mut row, &hop.field, to).then_some(row)
+    };
+    if all_absent && hop.type_ref.is_optional() {
+        if let Some(named) = middle(None) {
+            return Ok((Some(named), ReadFrom::Absent));
+        }
+    }
+    if all_absent && key.optional_via {
+        return Ok((None, ReadFrom::Absent));
+    }
+    let last = arrange_referenced(plan, key, values, distinction, actors, label)?;
+    let mut named = middle(Some(&last.instance)).ok_or_else(|| {
+        plan.unwitnessed(format!(
+            "no `{name}` can be created naming the row that row `{label}` reads through `{}`",
+            key.via
+        ))
+    })?;
+    let mut steps = last.steps.clone();
+    steps.append(&mut named.steps);
+    named.steps = steps;
+    named.source.extend(last.source.iter().cloned());
+    Ok((Some(named), ReadFrom::Last(last)))
 }
 
 /// The distinction the owners of [`related_owners`] are arranged at, one apart per owner.
@@ -2493,13 +2753,26 @@ fn arrange_referenced(
 
 /// Points the creating command's input `via` at the referenced row `row`, in the step that runs it
 /// and in what it settled: the fields it fills from `via`, and those it copies from `row`.
+///
+/// A chained read's values are read from the last row it reaches, and a read through a reference
+/// left absent copies absent values (ess/22, beyond10x/ess#285).
 fn point_at(
     creator: &Driver<'_>,
     start: &mut Arrangement,
     via: &str,
     row: &Arrangement,
+    (from, others): (
+        Option<&ReadFrom>,
+        Option<&BTreeMap<String, Option<Arrangement>>>,
+    ),
     mapped: &BTreeMap<&str, &str>,
 ) -> Option<()> {
+    let absent = Determined {
+        value: ScenarioValue::literal(Node::Null),
+        type_ref: ResolvedTypeRef::Primitive {
+            name: Primitive::String,
+        },
+    };
     let command = CommandRef::new(creator.command.name.clone());
     let pointed = ScenarioValue::instance(row.instance.clone());
     let step = start.steps.iter_mut().rev().find_map(|step| match step {
@@ -2520,9 +2793,27 @@ fn point_at(
         let value = match &set.value {
             ResolvedPayloadValue::InputField { field, .. } if field == via => Some(pointed.clone()),
             ResolvedPayloadValue::RelatedField {
-                via: read, field, ..
+                via: read,
+                through,
+                field,
+                ..
             } if via_input(read, mapped) == Some(via) => {
-                row.settled.get(field).map(|held| held.value.clone())
+                // A one-hop read reads the row the input names; a chained one the row its next
+                // reference names there — another chain's ([`point_others`]) or the key's own —
+                // and nothing where that reference was left absent (ess/22, beyond10x/ess#285).
+                let other = through
+                    .first()
+                    .and_then(|hop| others.and_then(|others| others.get(&hop.field)));
+                match (through.is_empty(), other, from) {
+                    (true, _, _) | (false, None, None | Some(ReadFrom::Named)) => {
+                        row.settled.get(field)
+                    }
+                    (false, Some(Some(last)), _) | (false, None, Some(ReadFrom::Last(last))) => {
+                        last.settled.get(field)
+                    }
+                    (false, Some(None), _) | (false, None, Some(ReadFrom::Absent)) => Some(&absent),
+                }
+                .map(|held| held.value.clone())
             }
             _ => continue,
         };
@@ -2540,6 +2831,55 @@ fn point_at(
                 start.settled.remove(&set.target);
             }
         }
+    }
+    Some(())
+}
+
+/// Leaves the creating command's Optional input `via` out (ess/22, beyond10x/ess#285), in the step
+/// that runs it and in what it settled: the fields it fills from `via`, and those it copies through
+/// it, are absent.
+fn leave_out(
+    creator: &Driver<'_>,
+    start: &mut Arrangement,
+    via: &str,
+    mapped: &BTreeMap<&str, &str>,
+) -> Option<()> {
+    let command = CommandRef::new(creator.command.name.clone());
+    let step = start.steps.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: run,
+            input,
+            ..
+        } if *run == command => Some(input),
+        _ => None,
+    })?;
+    step.remove(via);
+    for set in creator
+        .outcome
+        .sets
+        .iter()
+        .filter(|set| set.conversion.is_none())
+    {
+        let reads = match &set.value {
+            ResolvedPayloadValue::InputField { field, .. } => field == via,
+            ResolvedPayloadValue::RelatedField { via: read, .. } => {
+                via_input(read, mapped) == Some(via)
+            }
+            _ => false,
+        };
+        if !reads {
+            continue;
+        }
+        if !set.target_type.is_optional() {
+            return None;
+        }
+        start.settled.insert(
+            set.target.clone(),
+            Determined {
+                value: ScenarioValue::literal(Node::Null),
+                type_ref: set.target_type.clone(),
+            },
+        );
     }
     Some(())
 }

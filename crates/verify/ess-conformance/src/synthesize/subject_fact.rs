@@ -3056,17 +3056,23 @@ fn creations(
 /// entity that row is of, and each target field with the related field it copies.
 type Copies<'a> = (&'a EntityHandle, Vec<(&'a str, &'a str)>);
 
-/// Every `{related: {via: input.f, field: g}}` of `outcome`'s `sets:`, by the input `f`.
+/// Every `{related: {via: input.f, field: g}}` of `outcome`'s `sets:`, by the input `f`. A chained
+/// read (ess/22, beyond10x/ess#285) names a row of another entity than the one it copies from, and
+/// is not one of them.
 fn copies_by_input(outcome: &ResolvedOutcome) -> BTreeMap<&str, Copies<'_>> {
     let mut out: BTreeMap<&str, Copies<'_>> = BTreeMap::new();
     for set in outcome.sets.iter().filter(|set| set.conversion.is_none()) {
         if let ResolvedPayloadValue::RelatedField {
             via: ess_compiler::ir::ResolvedRelatedVia::Input { field: via, .. },
+            through,
             entity: related,
             field,
             ..
         } = &set.value
         {
+            if !through.is_empty() {
+                continue;
+            }
             out.entry(via.as_str())
                 .or_insert_with(|| (related, Vec::new()))
                 .1

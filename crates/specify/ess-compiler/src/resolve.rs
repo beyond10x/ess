@@ -60,15 +60,15 @@ use ess_primitives::error::{
 
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
-    ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle, EssIr,
-    EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation, ResolvedBinding,
-    ResolvedBody, ResolvedCommand, ResolvedCommandGroup, ResolvedCommandLineSurface,
-    ResolvedComponent, ResolvedComponentSetting, ResolvedCondition, ResolvedConversion,
-    ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
-    ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
-    ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
-    ResolvedWorkload, TypeHandle, ViewHandle,
+    related_may_be_absent, ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle,
+    ErrorHandle, EssIr, EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation,
+    ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCommandGroup,
+    ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedCondition,
+    ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
+    ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping, ResolvedMappingValue,
+    ResolvedOutcome, ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue,
+    ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRelation, ResolvedSubject,
+    ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -2807,12 +2807,16 @@ impl<'a> Resolver<'a> {
             PayloadSource::Struct { fields } => {
                 return self.struct_field(command, outcome, block, target, fields, input, subject);
             }
-            PayloadSource::RelatedField { via, field } => self.related_field(
+            PayloadSource::RelatedField {
+                via,
+                through,
+                field,
+            } => self.related_field(
                 command,
                 outcome,
                 block,
                 (target, source),
-                (via, field),
+                (via, through, field),
                 input,
                 subject,
             )?,
@@ -2879,6 +2883,10 @@ impl<'a> Resolver<'a> {
     /// `{related: {via, field}}` (ess/16, #166): the entity `via` names, by the rule
     /// `ess-domain` validated it with, and the field read there. The value and the type it is read
     /// at; the caller checks that type against the target.
+    ///
+    /// From ess/22 (beyond10x/ess#285) `via` may be `Optional<…>` and `through` names further
+    /// references, each resolved by the same rule on the entity the reference before names; where
+    /// any may be absent, the value's type is `Optional<…>` of the field's.
     #[allow(clippy::too_many_arguments)]
     fn related_field(
         &mut self,
@@ -2886,7 +2894,7 @@ impl<'a> Resolver<'a> {
         outcome: &ess_domain::command::Outcome,
         block: SourceBlock<'_>,
         (target, source): (&ResolvedField, &PayloadSource),
-        (via, field): (&RelatedVia, &String),
+        (via, through, field): (&RelatedVia, &[String], &String),
         input: Option<&[ResolvedField]>,
         subject: Option<&ResolvedEntity>,
     ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
@@ -2914,21 +2922,16 @@ impl<'a> Resolver<'a> {
         let carrier = carrier
             .as_ref()
             .map(|(entity, field)| (*entity, field.as_str()));
+        // An `Optional<…>` reference (ess/22) names the entity its required type is the identity
+        // of; a required one is its own required type, so a one-hop read resolves as before.
         let entity = read_via.and_then(|read| {
-            match referenced_entity(spec, &spec_type_ref(&read.type_ref), carrier) {
+            match referenced_entity(spec, &spec_type_ref(read.type_ref.required()), carrier) {
                 Referenced::Entity(entity) => Some(entity),
                 Referenced::NoEntity | Referenced::Ambiguous(_) => None,
             }
         });
-        let held = entity.and_then(|entity| {
-            if entity.identity.name == *field {
-                Some(&entity.identity)
-            } else {
-                entity.field(field)
-            }
-        });
-        let (Some(read_via), Some(entity), Some(held)) = (read_via, entity, held) else {
-            self.refuse_payload(
+        let unresolved = |resolver: &mut Self| {
+            resolver.refuse_payload(
                 command,
                 outcome,
                 block,
@@ -2941,36 +2944,59 @@ impl<'a> Resolver<'a> {
                 ),
                 Vec::new(),
             );
+        };
+        let (Some(read_via), Some(mut entity)) = (read_via, entity) else {
+            unresolved(self);
             return None;
         };
-        let read = self
-            .fields(
-                codes::COMMAND_TYPE_MISMATCH,
-                std::slice::from_ref(held),
-                &entity.name,
-                &format!("entities.{}", entity.name),
-                &[format!("name: {}", entity.name)],
-            )?
-            .pop()?;
-        let via = match via {
-            RelatedVia::Subject(_) => ResolvedRelatedVia::Subject {
-                field: read_via.name.clone(),
-                type_ref: read_via.type_ref.clone(),
-            },
-            RelatedVia::Input(_) => ResolvedRelatedVia::Input {
-                field: read_via.name.clone(),
-                type_ref: read_via.type_ref.clone(),
-            },
-        };
-        Some((
-            ResolvedPayloadValue::RelatedField {
-                via,
+        let mut hops = Vec::new();
+        for hop in through {
+            let Some(held) = entity_field(entity, hop) else {
+                unresolved(self);
+                return None;
+            };
+            let resolved = self.entity_field_resolved(entity, held)?;
+            let next = match referenced_entity(
+                spec,
+                &spec_type_ref(resolved.type_ref.required()),
+                Some((entity, hop.as_str())),
+            ) {
+                Referenced::Entity(next) => next,
+                Referenced::NoEntity | Referenced::Ambiguous(_) => {
+                    unresolved(self);
+                    return None;
+                }
+            };
+            hops.push(ResolvedRelatedHop {
                 entity: EntityHandle::new(entity.name.clone()),
-                field: read.name,
-                type_ref: read.type_ref.clone(),
-            },
-            read.type_ref,
-        ))
+                field: resolved.name,
+                type_ref: resolved.type_ref,
+            });
+            entity = next;
+        }
+        let Some(held) = entity_field(entity, field) else {
+            unresolved(self);
+            return None;
+        };
+        let read = self.entity_field_resolved(entity, held)?;
+        Some(related_value(via, read_via, hops, entity, read))
+    }
+
+    /// `held`, a field of `entity` a `{related: …}` source reads or follows, resolved as the entity
+    /// declares it.
+    fn entity_field_resolved(
+        &mut self,
+        entity: &EntitySpec,
+        held: &ess_domain::types::Field,
+    ) -> Option<ResolvedField> {
+        self.fields(
+            codes::COMMAND_TYPE_MISMATCH,
+            std::slice::from_ref(held),
+            &entity.name,
+            &format!("entities.{}", entity.name),
+            &[format!("name: {}", entity.name)],
+        )?
+        .pop()
     }
 
     /// `{caller: <attribute>}` (ess/16, #168): the attribute as the actors that may invoke the
@@ -4934,6 +4960,51 @@ fn payload_read(read: &ResolvedField, response: bool) -> ResolvedPayloadValue {
             field: read.name.clone(),
             type_ref: read.type_ref.clone(),
         }
+    }
+}
+
+/// The resolved `{related: …}` value reading `read` of `entity` through `via` (as `read_via`
+/// resolved) and `hops`, and the type it is read at. A reference that may be absent leaves the
+/// value absent (ess/22, beyond10x/ess#285): it is read at `Optional<…>` of the field's type, unless
+/// the field is already `Optional<…>`.
+fn related_value(
+    via: &RelatedVia,
+    read_via: &ResolvedField,
+    hops: Vec<ResolvedRelatedHop>,
+    entity: &EntitySpec,
+    read: ResolvedField,
+) -> (ResolvedPayloadValue, ResolvedTypeRef) {
+    let (field, type_ref) = (read_via.name.clone(), read_via.type_ref.clone());
+    let via = match via {
+        RelatedVia::Subject(_) => ResolvedRelatedVia::Subject { field, type_ref },
+        RelatedVia::Input(_) => ResolvedRelatedVia::Input { field, type_ref },
+    };
+    let type_ref = if related_may_be_absent(&via, &hops) && !read.type_ref.is_optional() {
+        ResolvedTypeRef::Optional {
+            of: Box::new(read.type_ref),
+        }
+    } else {
+        read.type_ref
+    };
+    (
+        ResolvedPayloadValue::RelatedField {
+            via,
+            through: hops,
+            entity: EntityHandle::new(entity.name.clone()),
+            field: read.name,
+            type_ref: type_ref.clone(),
+        },
+        type_ref,
+    )
+}
+
+/// The field `name` of `entity`, its identity included: what a `{related: …}` reference or read
+/// names on the row it reaches.
+fn entity_field<'e>(entity: &'e EntitySpec, name: &str) -> Option<&'e ess_domain::types::Field> {
+    if entity.identity.name == name {
+        Some(&entity.identity)
+    } else {
+        entity.field(name)
     }
 }
 

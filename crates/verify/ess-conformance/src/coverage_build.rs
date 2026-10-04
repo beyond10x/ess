@@ -399,7 +399,8 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::AggregateUnscoped { .. }
         | RefusalCause::AggregateUnwitnessed { .. }
         | RefusalCause::InvariantUnobservable { .. }
-        | RefusalCause::RefusalUndeclared { .. } => Effect::CheckNotEmitted,
+        | RefusalCause::RefusalUndeclared { .. }
+        | RefusalCause::AbsenceUnwitnessed { .. } => Effect::CheckNotEmitted,
         RefusalCause::NoWitness(_)
         | RefusalCause::GuardUnevaluable(_)
         | RefusalCause::GuardUnsatisfiable { .. }

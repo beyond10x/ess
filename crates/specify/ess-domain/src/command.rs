@@ -1018,9 +1018,18 @@ pub enum PayloadSource {
     /// `via` holds the other row's identity — a field of the subject as it was before the outcome,
     /// or `input.<field>` — and `field` is read from that row. Which entity `via` names is
     /// [`related_value::referenced_entity`]'s answer.
+    ///
+    /// From `ess/22` (beyond10x/ess#285) `via` may be `Optional<…>`, and a list of two names a
+    /// second reference: `{related: {via: [objective_id, initiative_id], field: outcome_id}}`
+    /// reads `initiative_id` of the row `objective_id` names, then `outcome_id` of the row that
+    /// names. Either reference absent leaves the value absent.
     RelatedField {
         /// Where the other row's identity is read.
         via: RelatedVia,
+        /// The further references followed, in order, each a field of the row the one before
+        /// names. Empty for a one-hop read, and then not serialized.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        through: Vec<String>,
         /// The field of the referenced row.
         field: String,
     },
@@ -1065,8 +1074,16 @@ impl fmt::Display for PayloadSource {
             Self::Generated => f.write_str("implementation-generated"),
             Self::Cleared => f.write_str("cleared"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
-            Self::RelatedField { via, field } => {
-                write!(f, "field `{field}` of the row `{via}` names")
+            Self::RelatedField {
+                via,
+                through,
+                field,
+            } => {
+                write!(f, "field `{field}` of the row `{via}` names")?;
+                for hop in through {
+                    write!(f, " through `{hop}`")?;
+                }
+                Ok(())
             }
             Self::CallerAttribute { attribute } => write!(f, "the caller's `{attribute}`"),
             Self::ChangedCount => f.write_str("{count: changed}"),
@@ -1164,6 +1181,10 @@ enum RawPayloadSource {
     Caller(caller_value::RawCallerSource),
     Count(set_effects::RawCountSource),
     Nested(RawNestedSources),
+    /// A list of texts, read only as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285) and
+    /// refused anywhere else; the schema gives it there and nowhere else.
+    #[schemars(skip)]
+    Texts(Vec<String>),
 }
 
 /// `{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is
@@ -1184,14 +1205,23 @@ struct RawRelatedSource {
 #[derive(serde::Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RawRelated {
-    /// A field of the subject, or `input.<field>`.
-    via: String,
+    /// A field of the subject, or `input.<field>`; from `ess/22` (beyond10x/ess#285) also a list
+    /// of two: that, then a field of the row it names.
+    via: RawRelatedVia,
     /// A field of the entity `via` names.
     field: String,
 }
 
+/// `via:` as written: one reference, or (ess/22, beyond10x/ess#285) a chain of them.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum RawRelatedVia {
+    One(String),
+    Chain(#[schemars(length(min = 2, max = 2))] Vec<String>),
+}
+
 impl RawRelatedSource {
-    /// The mapping `{related: {via: <text>, field: <text>}}`, and nothing else.
+    /// The mapping `{related: {via: <text or list of texts>, field: <text>}}`, and nothing else.
     fn recognise(entries: &[(String, RawPayloadSource)]) -> Option<Self> {
         let [(key, RawPayloadSource::Nested(RawNestedSources(inner)))] = entries else {
             return None;
@@ -1199,7 +1229,12 @@ impl RawRelatedSource {
         let (mut via, mut field) = (None, None);
         for (name, value) in inner {
             match (name.as_str(), value) {
-                ("via", RawPayloadSource::Text(text)) => via = Some(text.clone()),
+                ("via", RawPayloadSource::Text(text)) => {
+                    via = Some(RawRelatedVia::One(text.clone()));
+                }
+                ("via", RawPayloadSource::Texts(chain)) => {
+                    via = Some(RawRelatedVia::Chain(chain.clone()));
+                }
                 ("field", RawPayloadSource::Text(text)) => field = Some(text.clone()),
                 _ => return None,
             }
@@ -1269,6 +1304,19 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
 
             fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
                 Ok(RawPayloadSource::Decimal(value))
+            }
+
+            // Read so that a chained `via:` (ess/22, beyond10x/ess#285) reaches the related
+            // source's shape; a list anywhere else is refused when the source is read.
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut texts = Vec::new();
+                while let Some(text) = seq.next_element::<String>()? {
+                    texts.push(text);
+                }
+                Ok(RawPayloadSource::Texts(texts))
             }
 
             // Every keyword's value is itself a source-shaped YAML value (`true`, a field name, a
@@ -1452,14 +1500,43 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 .ok_or("a decimal literal must be a finite number"),
             RawPayloadSource::Explicit(explicit) => Self::from_explicit(explicit),
             RawPayloadSource::Related(RawRelatedSource {
-                related: RawRelated { via, field },
+                related:
+                    RawRelated {
+                        via: RawRelatedVia::One(via),
+                        field,
+                    },
             }) => Ok(Self::RelatedField {
                 // Kept as written. Each name is checked where the format is known
                 // (`value_expression`): below `ess/16` this is a nested mapping, and its texts are
                 // whatever the struct's leaves were given.
                 via: RelatedVia::parse(&via),
+                through: Vec::new(),
                 field,
             }),
+            // A chain is two references and no other number (ess/22, beyond10x/ess#285): the
+            // format that admits it is checked where it is known (`value_expression`).
+            RawPayloadSource::Related(RawRelatedSource {
+                related:
+                    RawRelated {
+                        via: RawRelatedVia::Chain(chain),
+                        field,
+                    },
+            }) => match <[String; 2]>::try_from(chain) {
+                Ok([first, second]) => Ok(Self::RelatedField {
+                    via: RelatedVia::parse(&first),
+                    through: vec![second],
+                    field,
+                }),
+                Err(_) => Err(
+                    "a chained `{related: {via: […]}}` names exactly two references: \
+                     `via: [<field>, <field of the row it names>]`; one reference is written \
+                     `via: <field>`",
+                ),
+            },
+            RawPayloadSource::Texts(_) => Err(
+                "a list is read only as the `via:` of `{related: {via: [<field>, <field>], field: \
+                 <field>}}`",
+            ),
             RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
             RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
@@ -1605,9 +1682,21 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::Generated => explicit(&|e| e.generated = Some(true)),
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
-            PayloadSource::RelatedField { via, field } => Self::Related(RawRelatedSource {
+            PayloadSource::RelatedField {
+                via,
+                through,
+                field,
+            } => Self::Related(RawRelatedSource {
                 related: RawRelated {
-                    via: via.to_string(),
+                    via: if through.is_empty() {
+                        RawRelatedVia::One(via.to_string())
+                    } else {
+                        RawRelatedVia::Chain(
+                            std::iter::once(via.to_string())
+                                .chain(through.iter().cloned())
+                                .collect(),
+                        )
+                    },
                     field: field.clone(),
                 },
             }),

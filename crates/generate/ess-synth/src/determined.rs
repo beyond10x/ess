@@ -408,8 +408,17 @@ fn value(
                 value(ir, command, source, held, sets)?;
             }
         }
-        ResolvedPayloadValue::RelatedField { .. } => {
-            return Err(format!("`{{related:}}` for `{}`", field.target));
+        // Every `{related:}` value stays owed; an ess/22 form (beyond10x/ess#285) says which, so a
+        // reader knows the generated behaviour would have to follow two rows or an absent one.
+        ResolvedPayloadValue::RelatedField { via, through, .. } => {
+            let form = if !through.is_empty() {
+                " across two references"
+            } else if via.type_ref().is_optional() {
+                " through an Optional reference"
+            } else {
+                ""
+            };
+            return Err(format!("`{{related:}}`{form} for `{}`", field.target));
         }
         ResolvedPayloadValue::ChangedCount => {
             return Err(format!("`{{count: changed}}` for `{}`", field.target));

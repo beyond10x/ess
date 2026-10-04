@@ -2,8 +2,10 @@
 //! references (source format `ess/16`, beyond10x/ess#166, `docs/design/value-expressions.md` E8).
 //!
 //! The subject (or the command's input) holds the other row's identity; the value lives on that
-//! row. One hop, and only through an identity that is always there. What this module owns is the
-//! one question the validator and the compiler must answer alike: **which entity `via` names**.
+//! row. From `ess/22` (beyond10x/ess#285) the reference may be `Optional<…>` — the value is then
+//! absent where it is — and `via` may name a second reference on that row. What this module owns
+//! is the one question the validator and the compiler must answer alike: **which entity a
+//! reference names**.
 
 use std::fmt;
 
@@ -72,7 +74,8 @@ pub enum Referenced<'a> {
 /// relation of cardinality `one` the subject declares on the field, or an `owns` relation another
 /// entity declares over the subject through the field — its owner. Without one, the entity whose identity is exactly `via_type` does, where
 /// there is one. The identity must be the type itself — not `Optional<…>`, not `List<…>` — because
-/// the source reads one row that is always there; callers refuse the wrappers before asking.
+/// the source reads one row; callers refuse a list, and pass an `Optional<…>` reference (ess/22,
+/// beyond10x/ess#285) unwrapped, before asking.
 pub fn referenced_entity<'a>(
     spec: &'a Specification,
     via_type: &TypeRef,
@@ -148,7 +151,14 @@ pub fn read_below_ess_16(
 fn nested(source: &mut super::PayloadSource) {
     use super::{PayloadField, PayloadSource};
     match source {
-        PayloadSource::RelatedField { via, field } => {
+        // A chained `via:` was no mapping before `ess/22` (beyond10x/ess#285) — a list of texts
+        // was refused when read — so it has no earlier meaning to restore, and stays the source
+        // for the format check to refuse.
+        PayloadSource::RelatedField {
+            via,
+            through,
+            field,
+        } if through.is_empty() => {
             let leaf = |target: &str, text: String| PayloadField {
                 target: target.to_owned(),
                 source: PayloadSource::parse(&text),

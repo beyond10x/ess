@@ -347,9 +347,7 @@ fn check(
             "`{cleared: true}` clears a whole entity field, not a field inside a nested mapping",
         )),
         PayloadSource::SubjectField { field } => check_subject(context, at, target, field, errors),
-        PayloadSource::RelatedField { via, field } => {
-            check_related(context, at, target, via, field, errors);
-        }
+        PayloadSource::RelatedField { .. } => check_related(context, at, target, source, errors),
         PayloadSource::CallerAttribute { attribute } => {
             super::caller_value::check_source(
                 context.spec,
@@ -458,42 +456,146 @@ fn related_via<'a>(
     }
 }
 
-/// The one entity a `{related: …}` source's `via`, of type `via_type`, names, or a refusal saying
-/// why there is none: a reference that may be absent or is several, a type that is no entity's
-/// identity, or one several entities share with no relation to decide.
+/// One reference a `{related: …}` source follows: its `via`, or (ess/22, beyond10x/ess#285) the
+/// field of the row `via` names that a chained `via:` names second.
+#[derive(Clone, Copy)]
+enum Reference<'r> {
+    Via(&'r RelatedVia),
+    Hop {
+        entity: &'r crate::entity::EntitySpec,
+        field: &'r str,
+    },
+}
+
+impl std::fmt::Display for Reference<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Via(via) => write!(f, "`{via}`"),
+            Self::Hop { entity, field } => write!(f, "`{}.{field}`", entity.name),
+        }
+    }
+}
+
+/// The one entity a reference of type `via_type` names, and whether the reference may be absent;
+/// or a refusal saying why there is none: a reference that is several, one that may be absent
+/// below `ess/22`, a type that is no entity's identity, or one several entities share with no
+/// relation to decide.
+///
+/// From `ess/22` (beyond10x/ess#285) a reference may be `Optional<…>` of an identity: the row is
+/// read where it is present, and the value is absent where it is not.
 fn related_entity<'a>(
     context: &Context<'a>,
     at: &ConstructRef,
-    via: &RelatedVia,
+    reference: Reference<'_>,
     via_type: &TypeRef,
     carrier: Option<(&crate::entity::EntitySpec, &str)>,
     errors: &mut ValidationErrors,
-) -> Option<&'a crate::entity::EntitySpec> {
-    if !matches!(via_type, TypeRef::Primitive(_) | TypeRef::Named(_)) {
-        errors.push(
-            ValidationError::at(
-                at.clone(),
-                ValidationCode::TypeMismatch,
-                format!(
-                    "`{via}` is `{via_type}`, and `{{related: …}}` follows one reference that is \
-                     always there"
-                ),
-            )
-            .with_hint("read a required field typed as the other entity's identity"),
-        );
-        return None;
-    }
-    let entities = match referenced_entity(context.spec, via_type, carrier) {
-        Referenced::Entity(entity) => return Some(entity),
+) -> Option<(&'a crate::entity::EntitySpec, bool)> {
+    let (identity_type, absent) = reference_identity(context, at, reference, via_type, errors)?;
+    let entities = match referenced_entity(context.spec, identity_type, carrier) {
+        Referenced::Entity(entity) => return Some((entity, absent)),
         Referenced::NoEntity => {
             errors.push(ValidationError::at(
                 at.clone(),
                 ValidationCode::TypeMismatch,
-                format!("`{via}` is `{via_type}`, which is no entity's identity"),
+                format!("{reference} is `{via_type}`, which is no entity's identity"),
             ));
             return None;
         }
         Referenced::Ambiguous(entities) => entities,
+    };
+    errors.push(ambiguous(context, at, reference, via_type, &entities));
+    None
+}
+
+/// The identity type a reference of `via_type` carries, and whether it may be absent; or a
+/// refusal: a collection, or below `ess/22` an `Optional<…>`.
+fn reference_identity<'t>(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    reference: Reference<'_>,
+    via_type: &'t TypeRef,
+    errors: &mut ValidationErrors,
+) -> Option<(&'t TypeRef, bool)> {
+    let optional_admitted = context.spec.system().format.major() >= FormatVersion::V22.major();
+    Some(match via_type {
+        TypeRef::Primitive(_) | TypeRef::Named(_) => (via_type, false),
+        TypeRef::Optional(inner)
+            if optional_admitted
+                && matches!(**inner, TypeRef::Primitive(_) | TypeRef::Named(_)) =>
+        {
+            (&**inner, true)
+        }
+        TypeRef::Optional(inner)
+            if matches!(**inner, TypeRef::Primitive(_) | TypeRef::Named(_)) =>
+        {
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::TypeMismatch,
+                    format!(
+                        "{reference} is `{via_type}`, and below specification format ess/22 \
+                         `{{related: …}}` follows one reference that is always there"
+                    ),
+                )
+                .with_hint(
+                    "declare `format: ess/22` to read through an Optional reference — the value \
+                     is then absent where the reference is — or read a required field typed as \
+                     the other entity's identity",
+                ),
+            );
+            return None;
+        }
+        _ => {
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::TypeMismatch,
+                    format!(
+                        "{reference} is `{via_type}`, and `{{related: …}}` follows one reference \
+                         that is always there{}",
+                        if optional_admitted {
+                            " or, from ess/22, one that may be absent"
+                        } else {
+                            ""
+                        }
+                    ),
+                )
+                .with_hint("read a field typed as the other entity's identity"),
+            );
+            return None;
+        }
+    })
+}
+
+/// The refusal of a reference whose type several entities are identified by, with no relation to
+/// say which, and a hint naming a remedy that validates where the reference is read.
+fn ambiguous(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    reference: Reference<'_>,
+    via_type: &TypeRef,
+    entities: &[&crate::entity::EntitySpec],
+) -> ValidationError {
+    let named = entities
+        .iter()
+        .map(|entity| format!("`{}`", entity.name))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let via = match reference {
+        Reference::Via(via) => via,
+        Reference::Hop { entity, field } => {
+            return ValidationError::at(
+                at.clone(),
+                ValidationCode::ConflictingDeclaration,
+                format!("{reference} is `{via_type}`, the identity of {named}"),
+            )
+            .with_hint(format!(
+                "say which: declare `relations: [{{name: …, kind: references, target: \
+                 <entity>, cardinality: one, via: {field}}}]` on `{}`",
+                entity.name
+            ));
+        }
     };
     let hint = match (via, context.subject) {
         (RelatedVia::Subject(name), Some((subject, _))) => format!(
@@ -537,56 +639,42 @@ fn related_entity<'a>(
               types instead"
             .to_owned(),
     };
-    errors.push(
-        ValidationError::at(
-            at.clone(),
-            ValidationCode::ConflictingDeclaration,
-            format!(
-                "`{via}` is `{via_type}`, the identity of {}",
-                entities
-                    .iter()
-                    .map(|entity| format!("`{}`", entity.name))
-                    .collect::<Vec<_>>()
-                    .join(" and ")
-            ),
-        )
-        .with_hint(hint),
-    );
-    None
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::ConflictingDeclaration,
+        format!("`{via}` is `{via_type}`, the identity of {named}"),
+    )
+    .with_hint(hint)
 }
 
 /// `{related: {via, field}}` (`ess/16`, beyond10x/ess#166): `field` of the row `via` names.
 ///
 /// `via` is a field of the subject before the outcome (so an existing subject, as for
-/// `{subject: …}`) or of the input, typed as exactly one entity's identity — never `Optional` or a
-/// collection, because the source reads one row that is always there. A `references` relation the
-/// subject declares on `via` says which entity where the type alone names several.
+/// `{subject: …}`) or of the input, typed as exactly one entity's identity — below `ess/22` never
+/// `Optional`, and never a collection, because the source reads one row. A `references` relation
+/// the subject declares on `via` says which entity where the type alone names several.
+///
+/// From `ess/22` (beyond10x/ess#285) `via` may be `Optional<…>` of an identity, and `through`
+/// names one further reference: a field of the row `via` names, typed the same way, which the
+/// relation that row's entity declares on it decides as the subject's does. Where any reference
+/// may be absent, so may the value, and the target must admit that.
 fn check_related(
     context: &Context<'_>,
     at: &ConstructRef,
     target: &Field,
-    via: &RelatedVia,
-    field: &str,
+    source: &PayloadSource,
     errors: &mut ValidationErrors,
 ) {
-    if context.spec.system().format.major() < FormatVersion::V16.major() {
-        errors.push(
-            ValidationError::at(
-                at.clone(),
-                ValidationCode::UnsupportedFormatVersion,
-                "a `{related: …}` source requires specification format ess/16",
-            )
-            .with_hint("write `format: ess/16` on the source that declares the system"),
-        );
+    let PayloadSource::RelatedField {
+        via,
+        through,
+        field,
+    } = source
+    else {
         return;
-    }
-    if !is_field_name(via.field()) || !is_field_name(field) {
-        errors.push(ValidationError::at(
-            at.clone(),
-            ValidationCode::UndeclaredReference,
-            "`{related: …}` names one field in `via:` (a field of the subject, or \
-             `input.<field>`) and one field in `field:`",
-        ));
+    };
+    if let Some(refused) = related_shape_refused(context, at, via, through, field) {
+        errors.push(refused);
         return;
     }
     let Some((via_type, carrier)) = related_via(context, at, via, errors) else {
@@ -595,44 +683,162 @@ fn check_related(
     let carrier = carrier
         .as_ref()
         .map(|(entity, field)| (*entity, field.as_str()));
-    let Some(entity) = related_entity(context, at, via, via_type, carrier, errors) else {
+    let Some((mut entity, mut absent)) =
+        related_entity(context, at, Reference::Via(via), via_type, carrier, errors)
+    else {
         return;
     };
-    let read = if entity.identity.name == field {
-        Some(&entity.identity)
-    } else {
-        entity.field(field)
+    for hop in through {
+        let Some(held) = entity_field(entity, hop) else {
+            errors.push(not_a_field(at, entity, hop));
+            return;
+        };
+        let reference = Reference::Hop { entity, field: hop };
+        let Some((next, may_be_absent)) = related_entity(
+            context,
+            at,
+            reference,
+            &held.type_ref,
+            Some((entity, hop.as_str())),
+            errors,
+        ) else {
+            return;
+        };
+        entity = next;
+        absent |= may_be_absent;
+    }
+    let Some(read) = entity_field(entity, field) else {
+        errors.push(not_a_field(at, entity, field));
+        return;
     };
-    let Some(read) = read else {
-        errors.push(
+    let value_type = if absent && !matches!(read.type_ref, TypeRef::Optional(_)) {
+        TypeRef::Optional(Box::new(read.type_ref.clone()))
+    } else {
+        read.type_ref.clone()
+    };
+    let conversions = &context.resolved.conversions;
+    if conversions.permits(&value_type, &target.type_ref) {
+        return;
+    }
+    if absent && conversions.permits(&read.type_ref, &target.type_ref) {
+        errors.push(absent_into_required(at, entity, field, target));
+        return;
+    }
+    errors.push(mismatch(
+        at,
+        &format!("`{}.{field}`", entity.name),
+        &value_type,
+        target,
+    ));
+}
+
+/// The refusal of a `{related: …}` source's shape where the format or the names refuse it: below
+/// `ess/16`; a chained `via:` below `ess/22` (beyond10x/ess#285); a name that is not one field.
+fn related_shape_refused(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    via: &RelatedVia,
+    through: &[String],
+    field: &str,
+) -> Option<ValidationError> {
+    let format = context.spec.system().format;
+    if format.major() < FormatVersion::V16.major() {
+        return Some(
             ValidationError::at(
                 at.clone(),
-                ValidationCode::UndeclaredReference,
-                format!("`{field}` is not a field of `{}`", entity.name),
+                ValidationCode::UnsupportedFormatVersion,
+                "a `{related: …}` source requires specification format ess/16",
             )
-            .with_hint(format!(
-                "`{}` holds: {}",
-                entity.name,
-                std::iter::once(entity.identity.name.as_str())
-                    .chain(entity.fields.iter().map(|field| field.name.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
+            .with_hint("write `format: ess/16` on the source that declares the system"),
         );
-        return;
-    };
-    if !context
-        .resolved
-        .conversions
-        .permits(&read.type_ref, &target.type_ref)
+    }
+    if !through.is_empty() && format.major() < FormatVersion::V22.major() {
+        return Some(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "a chained `via:` — `{related: {via: [<field>, <field>], …}}`, read across two \
+                 references — requires specification format ess/22",
+            )
+            .with_hint(
+                "declare `format: ess/22`, or copy the value onto the row the first reference \
+                 names and read it in one hop",
+            ),
+        );
+    }
+    if !is_field_name(via.field())
+        || !is_field_name(field)
+        || through.iter().any(|hop| !is_field_name(hop))
     {
-        errors.push(mismatch(
-            at,
-            &format!("`{}.{field}`", entity.name),
-            &read.type_ref,
-            target,
+        // Below ess/22 the sentence it always was; from ess/22 it names the chained form too.
+        let named = if format.major() >= FormatVersion::V22.major() {
+            "`{related: …}` names one field in `via:` (a field of the subject, or \
+             `input.<field>`, or a list of that and one field of the row it names) and one field \
+             in `field:`"
+        } else {
+            "`{related: …}` names one field in `via:` (a field of the subject, or \
+             `input.<field>`) and one field in `field:`"
+        };
+        return Some(ValidationError::at(
+            at.clone(),
+            ValidationCode::UndeclaredReference,
+            named,
         ));
     }
+    None
+}
+
+/// The refusal of a value read through a reference that may be absent into a target that cannot be
+/// left absent (ess/22, beyond10x/ess#285).
+fn absent_into_required(
+    at: &ConstructRef,
+    entity: &crate::entity::EntitySpec,
+    field: &str,
+    target: &Field,
+) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::TypeMismatch,
+        format!(
+            "`{}.{field}` is read through a reference that may be absent, and then the value is \
+             absent too; `{}` requires `{}`, which cannot be left absent",
+            entity.name, target.name, target.type_ref
+        ),
+    )
+    .with_hint(format!(
+        "declare `{}` as `Optional<{}>`, or read through references that are always there",
+        target.name, target.type_ref
+    ))
+}
+
+/// The field `name` of `entity`, its identity included.
+fn entity_field<'e>(entity: &'e crate::entity::EntitySpec, name: &str) -> Option<&'e Field> {
+    if entity.identity.name == name {
+        Some(&entity.identity)
+    } else {
+        entity.field(name)
+    }
+}
+
+/// `name` is no field of `entity`, with the fields it holds as the hint.
+fn not_a_field(
+    at: &ConstructRef,
+    entity: &crate::entity::EntitySpec,
+    name: &str,
+) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::UndeclaredReference,
+        format!("`{name}` is not a field of `{}`", entity.name),
+    )
+    .with_hint(format!(
+        "`{}` holds: {}",
+        entity.name,
+        std::iter::once(entity.identity.name.as_str())
+            .chain(entity.fields.iter().map(|field| field.name.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 /// The subject's field, before this outcome.

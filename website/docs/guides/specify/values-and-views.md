@@ -36,7 +36,7 @@ the input or a literal:
 | `{increment: <number>}` | `sets:` | the target is a required `Integer` (a whole number) or `Decimal`; a negative number decrements |
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
 | `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
-| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity |
+| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity; from `ess/22` also `Optional<…>` of it, or a list of two references |
 | `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
@@ -90,16 +90,46 @@ of the subject's owner; an input is settled by the relation on the field the bra
 or on the identity the branch names its instance by. The field may be the subject's identity: an
 entity keyed by `user_id` that declares `{name: user, kind: references, target: User,
 cardinality: one, via: user_id}` reads the user with the same id. `field` is a field of that
-entity, typed as the target admits. One hop only. `{related: …}` is written alone and holds
-exactly `via` and `field`; any other mapping under `related` is a nested mapping, and below
-`ess/16` so is this one.
+entity, typed as the target admits. `{related: …}` is written alone and holds exactly `via` and
+`field`; any other mapping under `related` is a nested mapping, and below `ess/16` so is this one.
+
+From source `ess/22` the reference may be `Optional<…>`, and `via` may name a second reference —
+a field of the row the first one names — as a list of two:
+
+```yaml
+- name: booked
+  creates: demo.costs.CostEntry
+  instance: entry_id
+  sets:
+    objective_id: input.objective_id
+    # the outcome of the initiative of the entry's objective; absent where the objective has none
+    outcome_id: {related: {via: [objective_id, initiative_id], field: outcome_id}}
+```
+
+Each reference is resolved as `via` is: the relation on the field says which entity it names, or
+the one entity identified by its type. Where any reference may be absent the value may be too,
+so the target must be `Optional<…>`; a required target is refused with `type_mismatch`. An absent
+reference reads no row and copies an absent value. A present reference that names no row is still
+a missing row, never an absent value. Two references is the limit: a list of one or of three is
+refused when the document is read. Below `ess/22` an `Optional<…>` reference is refused with
+`type_mismatch` and a list with `unsupported_format_version`, both naming `ess/22`. A view still
+reads one entity: group by the copied field rather than by a field of another entity.
 
 The scenario creates the referenced row between two others of its entity, points the subject at
 it, and asserts that row's value, so an implementation that reads another row, the first or the
 last, fails. Where the specification has an `updates:` branch that changes the field read, the
 scenario runs it on the referenced row just before the branch and asserts the new value, so an
-implementation that copied the value earlier fails too. Below `ess/16` the source is refused with
-`unsupported_format_version`, and Entity Runtime lowering refuses it.
+implementation that copied the value earlier fails too. A chained read gets the same between-decoys
+arrangement for each entity it passes through, and a branch that changes the middle row's reference
+is run on it just before the branch, so an implementation following the reference as first written
+fails. For each reference that may be absent, the scenario runs the branch once more with that
+reference left out and every other present, and asserts the value absent on the row it writes and
+on the event (left out or `null`), so an implementation that reads absence as a missing row, or
+copies some row's value anyway, fails. A reference that may be absent and that no run can leave
+absent is reported as `ESS-SYNTH-020`, naming it; the scenario stands.
+Below `ess/16` the source is refused with `unsupported_format_version`, and Entity
+Runtime lowering refuses it. Generated Rust and Go behaviour keeps a command with a `{related: …}`
+value an obligation.
 
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.

@@ -2744,8 +2744,12 @@
           "type": "string"
         },
         "via": {
-          "description": "A field of the subject, or `input.<field>`.",
-          "type": "string"
+          "description": "A field of the subject, or `input.<field>`; from `ess/22` (beyond10x/ess#285) also a list of two: that, then a field of the row it names.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedVia"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -2794,6 +2798,22 @@
         }
       },
       "additionalProperties": false
+    },
+    "RawRelatedVia": {
+      "description": "`via:` as written: one reference, or (ess/22, beyond10x/ess#285) a chain of them.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      ]
     },
     "RawReplicas": {
       "description": "A replica range.",

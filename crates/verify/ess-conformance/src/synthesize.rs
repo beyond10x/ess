@@ -605,6 +605,14 @@ impl fmt::Display for Refusal {
     /// `Invoice/state/Paid/refuses/IssueInvoice` share a subject and are different checks.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.scenario {
+            // The scenario exists; one absence it should witness is missing from it (ess/22,
+            // beyond10x/ess#285).
+            Some(id) if matches!(self.cause, RefusalCause::AbsenceUnwitnessed { .. }) => writeln!(
+                f,
+                "refusal[{}]: {} has a scenario `{id}` that leaves an absent reference unwitnessed",
+                self.code(),
+                self.subject
+            ),
             Some(id) => writeln!(
                 f,
                 "refusal[{}]: {} has no scenario `{id}`",
@@ -863,6 +871,15 @@ pub enum RefusalCause {
     /// walk have come to disagree about what a type accepts, which would otherwise surface as a
     /// guard that mysteriously cannot be decided.
     WitnessRejected(ShapeErrors),
+    /// A reference a branch's `{related: …}` value follows may be absent, and no arrangement leaves
+    /// it absent to witness the absent value (ess/22, beyond10x/ess#285). The branch's scenario
+    /// stands; this names the coverage it lacks.
+    AbsenceUnwitnessed {
+        /// The reference, as `<entity>.<field>` or `input.<field>`.
+        reference: String,
+        /// Why it could not be left absent.
+        reason: String,
+    },
     /// A synthesized step requires a branch for an input the guards answer otherwise
     /// (beyond10x/ess#280): an input-guarded refusal, or an accepting `when:` branch declared
     /// before it, claims the input first, or the branch's own `when:` refutes it.
@@ -889,6 +906,10 @@ pub enum RefusalCause {
 /// `RefusalCause::PrecedenceContradicted`'s number in the `SYNTH` family, the next after
 /// [`COUNT_UNWITNESSED`].
 pub const PRECEDENCE_CONTRADICTED: u16 = 19;
+
+/// `RefusalCause::AbsenceUnwitnessed`'s number in the `SYNTH` family, the next after
+/// [`PRECEDENCE_CONTRADICTED`] (ess/22, beyond10x/ess#285).
+pub const ABSENCE_UNWITNESSED: u16 = 20;
 
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
@@ -1066,9 +1087,15 @@ impl RefusalCause {
                 "nothing to change in the specification; this is a defect in ess to report, with \
                  the specification that produced it"
             }
+            Self::AbsenceUnwitnessed { .. } => ABSENCE_REPAIR,
         }
     }
 }
+
+/// The repair for an absent reference no arrangement leaves absent (ess/22, beyond10x/ess#285).
+const ABSENCE_REPAIR: &str = "fill the reference from an Optional input that the branch, or the \
+     branch creating the row that holds it, can be sent without; or cover the absent value with an \
+     authored scenario (ess-scenario/1)";
 
 // The code, the meaning and the repair of every synthesis refusal, from one list. A `help:` line
 // may be more specific than the repair here, because some causes carry the reason that decides
@@ -1186,6 +1213,12 @@ crate::authored::diagnostic_catalogue! {
              branch answers first under the precedence order.",
             "nothing to change in the specification; this is a defect in ess to report, with the \
              specification that produced it";
+        Self::AbsenceUnwitnessed { .. } => ABSENCE_UNWITNESSED,
+            "A reference a `{related: …}` value follows may be absent, and no arrangement leaves \
+             it absent to witness the absent value; the branch's scenario stands without it.",
+            "fill the reference from an Optional input that the branch, or the branch creating \
+             the row that holds it, can be sent without; or cover the absent value with an \
+             authored scenario (ess-scenario/1)";
     }
 }
 
@@ -1303,6 +1336,9 @@ impl fmt::Display for RefusalCause {
                 f,
                 "a step requires `{required}` for {input}, which its own guard ({guard}) refutes"
             ),
+            Self::AbsenceUnwitnessed { reference, reason } => {
+                write!(f, "no arrangement leaves `{reference}` absent: {reason}")
+            }
             Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
                 value,
@@ -2422,10 +2458,65 @@ fn outcome_scenario_in(
             source.extend(depends);
         }
     }
+    if again {
+        let (more, depends) = absent_references(models, command, outcome, actors, &id, refusals);
+        steps.extend(more);
+        source.extend(depends);
+    }
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
     ))
+}
+
+/// The absent-reference witnesses of one branch's scenario (ess/22, beyond10x/ess#285): the branch
+/// copying a value through a reference that may be absent is run once more per such reference, on
+/// a further instance with that reference left absent and every other present, and the copied
+/// value is asserted absent — so a target reading absence as a missing row, or copying some row's
+/// value anyway, fails the scenario. A run that cannot be built, and a reference no run can leave
+/// absent, leave the scenario standing; each is refused under its id naming the reference.
+fn absent_references(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let ir = models.arrangement;
+    let (mut steps, mut source) = (Vec::new(), BTreeSet::new());
+    for point in 0..related::absence_points(ir, command, outcome).len() {
+        let mut failed = Vec::new();
+        let witness = Witness::RelatedValueAbsent(point);
+        if let Some((more, depends, _)) =
+            exercise_as(models, command, outcome, actors, id, &mut failed, witness)
+        {
+            steps.extend(more);
+            source.extend(depends);
+            continue;
+        }
+        let cause = match failed.into_iter().next() {
+            Some(Refusal {
+                cause: cause @ RefusalCause::AbsenceUnwitnessed { .. },
+                ..
+            }) => cause,
+            other => RefusalCause::AbsenceUnwitnessed {
+                reference: related::point_reference(ir, outcome, point),
+                reason: other.map_or_else(
+                    || "the run that leaves it absent could not be built".to_owned(),
+                    |refusal| refusal.cause.to_string(),
+                ),
+            },
+        };
+        refusals.push(Refusal::about(id, cause));
+    }
+    for (reference, reason) in related::unwitnessable(ir, command, outcome) {
+        refusals.push(Refusal::about(
+            id,
+            RefusalCause::AbsenceUnwitnessed { reference, reason },
+        ));
+    }
+    (steps, source)
 }
 
 /// Further related rows one branch's scenario is witnessed on (ess/18, beyond10x/ess#211): a
@@ -2554,6 +2645,10 @@ enum Witness {
     /// out, between related rows that select a refusal (ess/22, beyond10x/ess#304,
     /// [`related_guard::prepare_absent_in`]), at the `n`th further distinction.
     RelatedAbsent(usize),
+    /// A further instance whose `{related: …}` sources follow the `n`th reference that may be
+    /// absent ([`related::absence_points`]) left absent, and so copy an absent value (ess/22,
+    /// beyond10x/ess#285, [`arranged_with_absent_reference`]).
+    RelatedValueAbsent(usize),
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -2653,7 +2748,8 @@ fn exercise_run_in(
     }
     for event in &emitted {
         let literals = determined_payload(ir, outcome, event, &run.input, &run.before_settled);
-        let shape = crate::response::event_shape(ir, event, outcome);
+        let mut shape = crate::response::event_shape(ir, event, outcome);
+        absent_by_reference_leaves(ir, outcome, event, &run, &mut shape);
         let mut references = determined_identities(
             ir,
             outcome,
@@ -2901,7 +2997,7 @@ fn run_as(
                 related_at = Distinction::further(nth);
                 related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
             }
-            Witness::LiteralFallbacks | Witness::Listed(_) => {
+            Witness::LiteralFallbacks | Witness::Listed(_) | Witness::RelatedValueAbsent(_) => {
                 return Err(related_guard::unarranged())
             }
         }
@@ -2970,8 +3066,16 @@ fn run_as(
     });
     // A creation guarded by a related row (ess/18, #211) is sent after that row's own creation,
     // which may publish the same event — a folder inside a folder. So the new row is bound here,
-    // from this command's events, and later steps name it rather than the first occurrence.
-    if related {
+    // from this command's events, and later steps name it rather than the first occurrence. So is
+    // the row a further run of a creating branch makes for its absent-reference witness (ess/22,
+    // beyond10x/ess#285): the scenario already ran the branch once.
+    let captured = if let Witness::RelatedValueAbsent(point) = witness {
+        related_at = Distinction::further(ABSENT_REFERENCE_WITNESS + point);
+        true
+    } else {
+        false
+    };
+    if related || captured {
         if let Some(ResolvedSubject {
             entity,
             effect: ResolvedEffect::Creates,
@@ -5958,6 +6062,12 @@ fn determined_fields(
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
                 {
+                    // ess/22 (#285): a value read through a reference that may be absent is absent
+                    // where it is, and an absent top-level field may be published left out or as
+                    // `null`, which an exact payload comparison cannot say. The row asserts it.
+                    if value == Node::Null && absent_by_reference(&field.value) {
+                        continue;
+                    }
                     values.insert(field.target.clone(), value);
                 } else {
                     // beyond10x/ess#179: a struct with an undetermined leaf is still asserted
@@ -5974,6 +6084,56 @@ fn determined_fields(
         }
     }
     values
+}
+
+/// Requires every top-level field of `event` that a `{related: …}` source copies through a
+/// reference this run left absent to be absent — left out or `null`, either spelling (ess/22,
+/// beyond10x/ess#285): its leaf is made to admit no present value. The payload cannot say it — an
+/// exact `null` there would fail an implementation leaving the field out — and the leaf can,
+/// with nothing a runner does not already read.
+fn absent_by_reference_leaves(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    event: &EventRef,
+    run: &Run,
+    shape: &mut PayloadShape,
+) {
+    let Some(payload) = outcome
+        .payload
+        .iter()
+        .find(|payload| EventRef::from(&payload.event) == *event)
+    else {
+        return;
+    };
+    for field in &payload.fields {
+        let absent = absent_by_reference(&field.value)
+            && expression_value(ir, field, &run.input, &run.before_settled)
+                == Some(ScenarioValue::literal(Node::Null));
+        if !absent {
+            continue;
+        }
+        let presence = shape
+            .leaves()
+            .get(&field.target)
+            .and_then(|leaf| leaf.presence);
+        shape.insert(
+            field.target.clone(),
+            LeafShape {
+                holds: Holds::Enum {
+                    variants: Vec::new(),
+                },
+                optional: true,
+                presence,
+            },
+        );
+    }
+}
+
+/// Whether `value` is a `{related: …}` read through a reference that may be absent (ess/22,
+/// beyond10x/ess#285).
+fn absent_by_reference(value: &ResolvedPayloadValue) -> bool {
+    matches!(value, ResolvedPayloadValue::RelatedField { via, through, .. }
+        if ess_compiler::ir::related_may_be_absent(via, through))
 }
 
 /// What the specification declares an event carries, flattened to leaves a runner can check (§13).
@@ -6145,7 +6305,24 @@ fn view_expectations(
         return out;
     };
     let (instance, settled) = (run.instance.as_ref(), &run.settled);
-    let identity = identity_of(subject, instance);
+    // The row a further run of a creating branch made for its absent-reference witness is named
+    // by the capture that run made, not by the first event that published an identity (ess/22,
+    // beyond10x/ess#285).
+    let absent_run = |captured: &InstanceName| {
+        (0..related::absence_points(ir, command, outcome).len()).any(|point| {
+            *captured
+                == instance_name(
+                    &ir.entity(&subject.entity).name,
+                    Distinction::further(ABSENT_REFERENCE_WITNESS + point),
+                )
+        })
+    };
+    let identity = match (instance, &subject.instance) {
+        (Some(captured), ResolvedInstance::Observed { .. }) if absent_run(captured) => {
+            Some(ScenarioValue::instance(captured.clone()))
+        }
+        _ => identity_of(subject, instance),
+    };
     let identity = identity.as_ref();
     let projections = row_projections(ir);
     let Some(views) = projections.get(&subject.entity) else {
@@ -6717,11 +6894,15 @@ fn expression_value_at(
         ResolvedPayloadValue::SubjectField { field: read, .. } => {
             before.get(read).map(|held| held.value.clone())
         }
-        // ess/16 (#166): the referenced row's value, which `related::arrange` settled.
+        // ess/16 (#166): the referenced row's value, which `related::arrange` settled — absent
+        // where a reference it follows was left absent (ess/22, beyond10x/ess#285).
         ResolvedPayloadValue::RelatedField {
-            via, field: read, ..
+            via,
+            through,
+            field: read,
+            ..
         } => before
-            .get(&related::key(via, read))
+            .get(&related::key(via, through, read))
             .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
             let Node::Number(held) = before_literal_at(before, target_location)? else {
@@ -6802,6 +6983,9 @@ fn arranged_as(
         Witness::Full => arranged(ir, command, outcome, actors, routed),
         Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
         Witness::Listed(nth) => arranged_in_listed_state(ir, command, outcome, actors, nth),
+        Witness::RelatedValueAbsent(point) => {
+            arranged_with_absent_reference(ir, command, outcome, actors, point)
+        }
         // Only a command reading a related row builds one, and `run_as` arranges it there.
         Witness::RelatedBoundary { .. } | Witness::RelatedAbsent(_) => {
             Err(related_guard::unarranged())
@@ -6868,6 +7052,68 @@ fn arranged_in_listed_state(
     let (observed, view) = observe_subject_state(ir, outcome, &instance, held)?;
     setup.steps.extend(observed);
     setup.source.insert(view.into());
+    Ok((setup, input))
+}
+
+/// The distinction the first absent-reference witness is arranged under, and the next ones one
+/// apart (ess/22, beyond10x/ess#285): past every further instance a candidate search numbers, and
+/// past the literal-fallback and listed-state runs, so their rows and identities are their own.
+const ABSENT_REFERENCE_WITNESS: usize = 2 * crate::witness::MAX_CANDIDATES + 1;
+
+/// The arrangement and input of [`Witness::RelatedValueAbsent`] (ess/22, beyond10x/ess#285): a
+/// further instance with the `point`th reference its `{related: …}` sources follow that may be
+/// absent left absent and every other present ([`related::arrange_absent`]), and the input it
+/// leaves out removed.
+///
+/// Only for a branch its input selects, as for [`Witness::LiteralFallbacks`]: a guard over the
+/// held state or the stored row is arranged by searches that fix the plain witness.
+fn arranged_with_absent_reference(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    point: usize,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let unarranged = |reason: &str| RefusalCause::AbsenceUnwitnessed {
+        reference: related::point_reference(ir, outcome, point),
+        reason: reason.to_owned(),
+    };
+    if subject_fact::routes(command, outcome) || has_subject_guards(command) {
+        return Err(unarranged(
+            "the branch is chosen by its subject's stored fields, whose search fixes the plain \
+             witness and is not run again for a further instance",
+        ));
+    }
+    let points = related::absence_points(ir, command, outcome);
+    let Some(&at) = points.get(point) else {
+        return Err(unarranged("it is no reference the branch's reads follow"));
+    };
+    let distinction = Distinction::further(ABSENT_REFERENCE_WITNESS + point);
+    let setup = prepare_subject(ir, outcome, actors, None, distinction)?;
+    let Some((setup, omitted)) =
+        related::arrange_absent(ir, command, outcome, actors, (distinction, at), setup)?
+    else {
+        return Err(unarranged(
+            "the arrangement points it at a row it needs, or the row that stores it was created \
+             by a branch that fills it from no Optional input",
+        ));
+    };
+    let input = reach(ir, command, outcome, distinction)?;
+    let input = existence::fresh_created(ir, command, outcome, input, true)?;
+    let mut input = freshened(
+        ir,
+        command,
+        outcome,
+        input,
+        setup.before.as_ref(),
+        &setup.settled,
+    );
+    for field in &omitted {
+        input.remove(field);
+    }
+    if !subject_fact::input_selects(ir, command, outcome, &input).unwrap_or(false) {
+        return Err(unarranged("the branch is not selected once it is left out"));
+    }
     Ok((setup, input))
 }
 

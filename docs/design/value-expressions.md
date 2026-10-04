@@ -326,6 +326,62 @@ expression: entity-core has no join. `ess-gen` documentation describes it as it 
 other source (`demo.shipping.Customer.region of the row subject.customer_id names`). `ess-synth`
 renders no payload source except a response field. Neither has anything to refuse.
 
+### E8a — Optional and chained `{related: …}` (#285, `ess/22`)
+
+A cost entry names its objective, the objective names an `Optional` initiative, and the
+initiative names an outcome. A view grouping costs per outcome needs the outcome copied onto the
+entry, two references away and behind one that may be absent:
+
+```yaml
+sets:
+  objective_id: input.objective_id
+  outcome_id: {related: {via: [objective_id, initiative_id], field: outcome_id}}
+```
+
+- **Optional reference.** From `ess/22` a reference may be `Optional<…>` of an identity: `via`
+  itself, or a further reference. Where it is absent no row is read and the value is absent. A
+  present reference naming no row is the missing row it always was — never an absent value.
+- **Chain.** `via` may be a list of exactly two: the first is read as a one-hop `via` is; the
+  second is a field of the row the first names, and the relation that row's entity declares on it
+  (or the one entity its type identifies) says which entity it names. A list of one or three, or a
+  list anywhere but `via:`, is refused when the document is read: lists were refused there before,
+  so nothing older changes meaning.
+- **Typing.** Where any reference may be absent, the value is `Optional<…>` of the field read, and
+  a target that cannot be left absent is `type_mismatch` naming the absence.
+- **Format.** Below `ess/22` an `Optional` reference keeps its `type_mismatch` and names `ess/22`;
+  a chain is `unsupported_format_version` naming `ess/22`.
+- **Not adopted.** A view that groups by a field of a referenced entity (a join): a view reads one
+  entity, and a copied field serves the grouping.
+
+**IR.** `related_field` gains `through`, the further references in order, each `{entity, field,
+type_ref}` with the entity whose row holds the field and its declared type; `entity` is the last
+entity named, and `type_ref` is `Optional<…>` where a reference may be absent
+(`ess_compiler::ir::related_may_be_absent`). `through` is omitted when empty, so a one-hop model's
+IR bytes do not move.
+
+**Interpreter.** References are read from the original store in order; an absent one ends the read
+with an absent value, and a present one naming no row is undetermined, as a one-hop missing row
+is.
+
+**Synthesis.** A chained read arranges the last entity's row between two decoys, as E8 does, and a
+row of the entity `via` names whose second reference is pointed at it, between two decoys of its
+own pointed crosswise at the last entity's decoys. Every row of the chain is read as it is at the
+branch: an `updates:` branch that changes the middle row's reference from its input is run on it
+last, pointing it at a further row, and one that changes the field read is run on the row then
+named. Reads that share a first reference — one hop and chained, or two chains — share the row it
+names: each further reference is pointed on that row, left absent where no row can be arranged and
+it may be, and refused by name where it is required. Each reference that may be absent gets a run
+of its own, under a distinction of its own, with that reference left absent and every other present:
+the Optional input left out, the existing subject created without the reference it stores, or the
+middle row created without its Optional reference. The value is asserted absent on the row the branch
+writes, and on the event the field's leaf is required to admit no present value, so it may be left
+out or published as `null` and nothing else. A reference that may be absent and that no run can
+leave absent is refused by name under the scenario's id (`ESS-SYNTH-020`); the scenario stands.
+Aggregate views group by such a copied key: an absent group is arranged by the same means,
+or by the last row's own `Optional` field as before, and other chained reads through the key's input
+are pointed on the row it names. `ess-synth` keeps the command an
+obligation naming the form (`{related:}` through an Optional reference, or across two references).
+
 ### E9 — `{caller: <attribute>}` and `caller.<attribute>` (#168, `ess/16`)
 
 A value read from the authenticated caller, and a guard operand comparing it with an input or a
@@ -336,6 +392,6 @@ command steps, and synthesis under two caller assignments.
 ## Not in this design
 
 - Arbitrary arithmetic, string functions or conditionals beyond E4's one fallback.
-- A source read through more than one reference, or through an `Optional` or list reference (E8).
+- A source read through more than two references, or through a list reference (E8, E8a).
 - A guard reading a related row (for example, refusing when the referenced customer is `Closed`).
 - Per-leaf struct comparison in suites (E5).
