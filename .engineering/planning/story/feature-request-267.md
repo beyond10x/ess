@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-267
 kind: story
-status: proposed
+status: active
 title: Binding flow, delivery and drop are synthesized into commands with wrong_state
 tags:
 - feature-request
@@ -42,9 +42,10 @@ scope:
   path: docs/design/binding-delivery-guarantees.md
 - confidence: cited
   path: models/toolchain/README.md
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-04T13:32:48Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"review_outcome":5}}}
 ---
 ## Outcome
 
