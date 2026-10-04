@@ -1464,3 +1464,66 @@ func TestMarkedExplorer(t *testing.T){
         assert!(result.outcomes.is_empty());
     }
 }
+
+/// The `ess-conformance-execution/1` context a protected one-time Go run writes carries the fixed
+/// redacted label, the host's build and two digests: no target-returned identity, no captured
+/// value and no hash of either (beyond10x/ess#296).
+#[test]
+fn go_execution_context_of_a_protected_run_carries_only_the_redacted_label_and_digests() {
+    use ess_conformance::known_failures::{sha256, ExecutionContext};
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-execution");
+    let path = root.join("healthy.json");
+    let admitted = AdmittedSuite::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let directory = support_go::package(
+        "one-time-execution-context",
+        admitted.suite(),
+        &[("parity_test.go", &one_time_driver())],
+    );
+    let build = format!("sha256:{}", "c".repeat(64));
+    let context = directory.join("execution.json");
+    let _ = std::fs::remove_file(&context);
+    let host = support_go_one_time::Host::start(support_one_time::Mode::IdentitySuccess);
+    let result = support_go::go_test(
+        &directory,
+        "TestParity",
+        &[
+            ("PARITY_ADDRESS", &host.address),
+            ("PARITY_DOCUMENT", path.to_str().unwrap()),
+            ("ESS_IMPLEMENTATION_BUILD", &build),
+            ("ESS_EXECUTION_CONTEXT_OUT", context.to_str().unwrap()),
+        ],
+    );
+    let snapshot = host.stop();
+    let report = std::fs::read_to_string(directory.join("report.json"))
+        .unwrap_or_else(|error| panic!("no report: {error}\n{}", result.log));
+    let text = std::fs::read_to_string(&context)
+        .unwrap_or_else(|error| panic!("no execution context: {error}\n{}", result.log));
+    for secret in snapshot
+        .plaintexts
+        .iter()
+        .map(String::as_str)
+        .chain([support_one_time::FIRST])
+        .filter(|secret| !secret.is_empty())
+    {
+        assert!(
+            !text.contains(secret),
+            "a protected value entered the context"
+        );
+        let hashed = sha256(secret.as_bytes());
+        assert!(
+            !text.contains(&hashed["sha256:".len()..]),
+            "a protected value's hash entered the context"
+        );
+    }
+    let read = ExecutionContext::from_json(&text).unwrap_or_else(|refusal| panic!("{refusal}"));
+    read.admit(&report, &admitted)
+        .unwrap_or_else(|refusal| panic!("{refusal}"));
+    assert_eq!(read.implementation(), "one-time-protected-target ");
+    assert_eq!(read.implementation_build(), build);
+    assert_eq!(
+        read.to_canonical_json(),
+        text,
+        "Go writes the canonical bytes"
+    );
+}

@@ -148,6 +148,7 @@ pub mod grant;
 pub mod history;
 pub mod input;
 pub mod interpret;
+pub mod known_failures;
 pub mod lanes;
 pub mod leaf_payloads;
 pub mod linearize;

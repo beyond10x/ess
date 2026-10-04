@@ -157,9 +157,69 @@ change the exit status. `--collect --component NAME` refuses an emission made fo
 component or for the whole system, and `--target` takes no `--component`: the built-in targets
 implement whole systems.
 
+### Audit past known failures
+
+A retrofit describes the behaviour a system is meant to have, and some of it is not there yet. One
+failing baseline scenario refuses the whole audit with `ESS-MUTATE-001`, and it still does by
+default. To audit the rest, declare exactly the scenarios that build is known to fail in an
+[`ess-known-failures/1`](../../reference/formats.md#change-and-conformance-records) document, outside
+the specification:
+
+```json
+{
+  "failures": [
+    {
+      "reason": "cancelling also announces the invoice paid",
+      "scenario": "billing.invoice.CancelInvoice/outcome/cancelled",
+      "tracking": "ORDERS-412"
+    }
+  ],
+  "format": "ess-known-failures/1",
+  "implementation": "billing-service 4.2.0",
+  "implementation_build": "sha256:…",
+  "spec_digest": "…",
+  "suite_digest": "sha256:…"
+}
+```
+
+The declaration is bound to everything that produced the failure: the specification digest, the
+SHA-256 of the exact baseline suite bytes (`baseline/suite.json` of an emission), the
+implementation label the report names, and the public build, which the host states before the run
+and never takes from the target. Scenario IDs match exactly. Pass it with `--known-failing FILE`:
+
+- `--emit DIR --known-failing FILE` checks it against the baseline it writes, copies it to
+  `DIR/known-failures.json` and binds it in an `ess-mutation-manifest/4`. Run each suite with your
+  runner and also write the host's
+  [`ess-conformance-execution/1`](../../reference/formats.md#change-and-conformance-records) beside
+  each `report.json` as `execution.json`; the generated Go and TypeScript runners do when
+  `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` are set. `--collect DIR` then scores
+  under the bound declaration only: a different file given again, or one given to an emission that
+  bound none, is refused, so the audit cannot change after its reports exist.
+- `--target … --known-failing FILE` binds the running `ess` executable's SHA-256 as the build.
+
+Each declared scenario must have failed in the baseline. One that passed is stale and refused, and
+one that ended `error`, `unsupported` or `skipped` is refused; a failure the declaration does not
+name still refuses with `ESS-MUTATE-001`. Each mutant is then scored on the scenarios the baseline
+passed and nothing else: a declared scenario never kills, nor does a scenario the baseline's suite
+does not hold. Such a scenario that the mutant changed, or added, could have killed it had the
+baseline passed it, so the mutant is inconclusive instead of a survivor; one with no eligible
+scenario at all is inconclusive, unless a gained or baseline synthesis refusal makes it unwitnessed. The report is an `ess-mutation-report/4` naming the declaration
+and each mutant's `exclusions`, the text lists every known failure straight after its summary line,
+and a refused declaration exits 2.
+
+A matching declaration never makes conformance pass. `ess verify conform run` and `report` take the
+same `--known-failing FILE` with `--accounting-out FILE` and write the failures, split into the
+declared and the unexpected, in a separate
+[`ess-known-failure-accounting/1`](../../reference/formats.md#change-and-conformance-records); the
+report, its verdict and the exit status are what they are without it. For a report a generated
+runner wrote with its execution context, `ess verify conform report --suite SUITE --observed-report
+REPORT --execution-context CONTEXT --known-failing FILE --accounting-out FILE` writes the
+accounting alone and rewrites nothing.
+
 ## Read the output
 
-The text output prints one summary line, then the baseline scenarios not scored, then survivors,
+The text output prints one summary line, then any declared known failures, then the baseline
+scenarios not scored, then survivors,
 unwitnessed, inconclusive, equivalent, stillborn and killed mutants, one line each. `--report-out` writes an
 [`ess-mutation-report/3`](../../reference/formats.md#change-and-conformance-records) document, and
 `--format json` prints the same bytes.

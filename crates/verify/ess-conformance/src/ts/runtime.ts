@@ -60,6 +60,7 @@ import type { OneTimeTrace } from './one_time_response.js';
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { normalize } from 'node:path';
 
 import {
   admitPredicateLeaf,
@@ -2640,6 +2641,9 @@ export async function runWith(
   suiteJSON: string,
 ): Promise<void> {
   const config = reportConfiguration();
+  // The host's public build identity is fixed here, before the suite is admitted and before any
+  // target is made, and never derived from what a target answers (beyond10x/ess#296).
+  const execution = executionContextConfiguration(config.version);
   let suite: Suite;
   try {
     suite = admitRunInput(suiteJSON);
@@ -2772,7 +2776,7 @@ export async function runWith(
     }
   }
   if (config.version === '2') {
-    writeCountReport(t, suite, identity, results, terminated, config.strict);
+    writeCountReport(t, suite, identity, results, terminated, config.strict, execution);
   } else {
     // report/1 retains its frozen three-category diagnostic vocabulary.
     const legacy = results.map((result) => ({
@@ -7512,6 +7516,7 @@ export function writeCountReport(
   results: ScenarioResult[],
   terminated: number,
   strict: boolean,
+  execution?: ExecutionContextConfig,
 ): void {
   const refusal = accountForEveryScenario(suite, terminated);
   if (refusal !== null) {
@@ -7532,6 +7537,15 @@ export function writeCountReport(
   const path = process.env.ESS_REPORT_OUT ?? '';
   if (path !== '') {
     writeFileSync(path, encoded, 'utf8');
+    // Written before any strict verdict is thrown: the context states which build produced the
+    // report that was written, whatever that report says.
+    if (execution !== undefined) {
+      writeFileSync(
+        execution.out,
+        countCanonical(executionContextDocument(suite, identity, encoded, execution.build)),
+        'utf8',
+      );
+    }
   }
   if (strict && document.conformance_status !== 'passed') {
     if (suite.coverage === undefined) {
@@ -7544,6 +7558,82 @@ export function writeCountReport(
   t.diagnostic(
     `report/2: ${String(document.execution_status)}, written to ${path === '' ? '(nowhere)' : path}`,
   );
+}
+
+// ---- host execution provenance (`ess-conformance-execution/1`, beyond10x/ess#296) ----------------
+
+/** The host's public build identity, and where the context binding it to the report is written. */
+export interface ExecutionContextConfig {
+  build: string;
+  out: string;
+}
+
+/** Whether a build identity is `sha256:` and 64 lowercase hexadecimal digits. */
+export function publicBuild(build: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/.test(build);
+}
+
+/**
+ * Reads ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT, which are given together or not at
+ * all, before the suite runs.
+ *
+ * The build is the SHA-256 of the immutable target build, which only the host knows: it is never
+ * derived from anything a target answers, and a protected one-time run's report label stays its
+ * fixed redacted label. The context binds the report written to ESS_REPORT_OUT, so it needs
+ * report/2 written there, and a file of its own. No variable here changes any verdict.
+ */
+export function executionContextConfiguration(version: string): ExecutionContextConfig | undefined {
+  const has = (name: string): boolean => Object.prototype.hasOwnProperty.call(process.env, name);
+  const buildSet = has('ESS_IMPLEMENTATION_BUILD');
+  const outSet = has('ESS_EXECUTION_CONTEXT_OUT');
+  if (!buildSet && !outSet) {
+    return undefined;
+  }
+  if (!buildSet || !outSet) {
+    throw new Error(
+      'ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT are given together or not at all',
+    );
+  }
+  if (version !== '2') {
+    throw new Error('an execution context requires explicit ESS_REPORT_FORMAT=2');
+  }
+  const report = process.env.ESS_REPORT_OUT ?? '';
+  if (report === '') {
+    throw new Error(
+      'an execution context requires ESS_REPORT_OUT: it binds the report written there',
+    );
+  }
+  const build = process.env.ESS_IMPLEMENTATION_BUILD as string;
+  if (!publicBuild(build)) {
+    throw new Error('ESS_IMPLEMENTATION_BUILD must be sha256: and 64 lowercase hexadecimal digits');
+  }
+  const out = process.env.ESS_EXECUTION_CONTEXT_OUT as string;
+  if (out === '' || normalize(out) === normalize(report)) {
+    throw new Error('ESS_EXECUTION_CONTEXT_OUT must name a file other than ESS_REPORT_OUT');
+  }
+  return { build, out };
+}
+
+/**
+ * The closed `ess-conformance-execution/1` envelope: the exact report and suite bytes' digests, the
+ * report's own implementation label and the host's build. No values, timestamps, host text or
+ * commands.
+ */
+export function executionContextDocument(
+  suite: Suite,
+  identity: Identity,
+  report: string,
+  build: string,
+): { [key: string]: Node } {
+  const sha = (text: string): string =>
+    `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
+  return {
+    format: 'ess-conformance-execution/1',
+    implementation: `${identity.name} ${identity.version}`,
+    implementation_build: build,
+    report_digest: sha(report),
+    suite_digest: sha(suite.original),
+  };
 }
 
 /** Canonical report/2 contains only unsigned integer scalars; the digits avoid binary64 loss. */

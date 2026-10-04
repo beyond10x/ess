@@ -1436,6 +1436,8 @@ ess verify conform run [OPTIONS] --target <TARGET>
 | `--report-format` | `<REPORT_FORMAT>` | no | `1` | Report contract version; JSON/YAML detailed v2 is ess-conformance-run/2. One of `1`, `2`. |
 | `--strict` |  | no |  | Require passed complete conformance (unavailable for legacy unknown coverage) |
 | `--allow-incomplete` |  | no |  | Explicitly retain diagnostic execution exit behavior |
+| `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration: scenarios this build of the target is known to fail, bound to the exact suite bytes, specification, implementation and build (the running `ess` executable's SHA-256). Accounted in `--accounting-out`; the report, its verdict and the exit status are unchanged. Requires `--report-format 2` and `--report-out`. A declaration that does not bind this run, or names a scenario that did not fail, exits 2 and writes nothing |
+| `--accounting-out` | `<ACCOUNTING_OUT>` | no |  | Where to write the `ess-known-failure-accounting/1` document: a new file, not an input and not `--report-out` |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
 #### `ess verify conform report`
@@ -1448,17 +1450,25 @@ Refused, writing nothing: a result for a scenario the suite does not contain, a 
 
 Exit 0: the report was written, whatever its verdict. Exit 2: an input was refused.
 
+Known failures (`--known-failing`, an `ess-known-failures/1` declaration) are accounted in a separate `ess-known-failure-accounting/1` document and never change a report or its verdict. With `--results`, they also need `--implementation-build` (the SHA-256 of the immutable target build, known to the host before the run) and `--execution-context-out`, where the `ess-conformance-execution/1` context binding that build to the report is written. A runner that wrote report/2 and its own context itself — the generated Go and TypeScript runners, given `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` — is accounted with `--observed-report`, `--execution-context`, `--known-failing` and `--accounting-out`, which rewrite nothing and write only the accounting. Every output is a new file; refused inputs exit 2 before anything is written.
+
 ```text
-ess verify conform report [OPTIONS] --suite <SUITE> --results <RESULTS> --implementation <IMPLEMENTATION> --report-out <REPORT_OUT>
+ess verify conform report [OPTIONS] --suite <SUITE>
 ```
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--suite` | `<SUITE>` | yes |  | The suite the runner executed, exactly the bytes it was given |
-| `--results` | `<RESULTS>` | yes |  | The runner's `ess-conformance-results/1` document |
-| `--implementation` | `<IMPLEMENTATION>` | yes |  | The implementation the runner held to the suite, as the report names it |
-| `--report-out` | `<REPORT_OUT>` | yes |  | Where to write the canonical `ess-conformance-report/2` |
+| `--results` | `<RESULTS>` | no |  | The runner's `ess-conformance-results/1` document |
+| `--implementation` | `<IMPLEMENTATION>` | no |  | The implementation the runner held to the suite, as the report names it |
+| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the canonical `ess-conformance-report/2` |
 | `--runner` | `<RUNNER>` | no |  | The runner that produced the results, as `<name>@<version>` |
+| `--observed-report` | `<OBSERVED_REPORT>` | no |  | Account a report/2 a runner wrote itself, from its original bytes; writes only `--accounting-out` |
+| `--execution-context` | `<EXECUTION_CONTEXT>` | no |  | The `ess-conformance-execution/1` context the runner's host wrote beside `--observed-report` |
+| `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration to account the report's failures against |
+| `--accounting-out` | `<ACCOUNTING_OUT>` | no |  | Where to write the `ess-known-failure-accounting/1` document, as a new file |
+| `--implementation-build` | `<IMPLEMENTATION_BUILD>` | no |  | With `--results` and `--known-failing`: the `sha256:` identity of the target build the results came from, which the host knew before the run |
+| `--execution-context-out` | `<EXECUTION_CONTEXT_OUT>` | no |  | With `--results` and `--known-failing`: where to write the execution context, as a new file |
 
 #### `ess verify conform mutate`
 
@@ -1468,7 +1478,7 @@ Derives mutants from the specification — one altering edit each — synthesize
 
 A baseline scenario the target reports unsupported or skipped did not execute: it is listed, not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that no scored scenario killed is inconclusive when a scenario it changed was not scored; otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no input, decided only for equality, membership and truth tests of input fields against literals; otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals the baseline does not have, when it is on an outcome whose scenario the baseline refused, or when it is a from-drop or transition-to mutant on a transition only such outcomes perform. It survives when every scored scenario passed and each scenario it left unscored is the baseline's own, unchanged.
 
-Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, or none ran that was not equivalent.
+Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, or none ran that was not equivalent. Exit 2: the `--known-failing` declaration was refused. Known failures are listed first in the text and never count as a pass: the audit makes no conformance claim.
 
 For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3, or /4 where it holds a sets-drop or precedence-swap mutant or names a component; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
 
@@ -1486,7 +1496,8 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 | `--emit` | `<EMIT>` | no |  | Write the baseline's and every mutant's suite, and a manifest, into this new or empty directory; run nothing |
 | `--collect` | `<COLLECT>` | no |  | Score the `report.json` a runner wrote beside each suite of an emitted directory |
 | `--component` | `<COMPONENT>` | no |  | With `--emit`, scope every suite to this declared component; with `--collect`, require the emission to have been scoped to it |
-| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component) |
+| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component or a declaration) |
+| `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail. They are excluded from scoring rather than refused, and each mutant is scored on the scenarios the baseline passed: a declared scenario, or one the baseline's suite does not hold, never kills. Every failure it does not name still refuses with ESS-MUTATE-001. With `--target` it binds the running `ess` executable's SHA-256 as the build; `--emit` copies it into the emission and binds it there (ess-mutation-manifest/4); `--collect` uses only the declaration the emission bound, and refuses any other. A refused declaration exits 2 |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
 #### `ess verify conform check-history`

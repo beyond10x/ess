@@ -433,6 +433,29 @@ impl CountReport {
         self.0.producer_profile.runner.as_ref()
     }
 }
+
+impl CountReport {
+    /// The implementation label the report names, exactly as written.
+    pub fn implementation(&self) -> &str {
+        &self.0.implementation
+    }
+
+    /// Every scenario of the report, by ID, with the category it ended in: `passed`, `failed`,
+    /// `error`, `unsupported` or `skipped`, as the producer wrote it (beyond10x/ess#296).
+    pub fn statuses(&self) -> std::collections::BTreeMap<String, &'static str> {
+        let o = &self.0.outcomes;
+        [
+            ("passed", &o.passed),
+            ("failed", &o.failed),
+            ("error", &o.error),
+            ("unsupported", &o.unsupported),
+            ("skipped", &o.skipped),
+        ]
+        .into_iter()
+        .flat_map(|(status, ids)| ids.iter().map(move |id| (id.to_string(), status)))
+        .collect()
+    }
+}
 fn execution(profile: ProducerProfile, c: &ScenarioCounts) -> Result<CountStatus, AdmissionError> {
     if (matches!(profile, ProducerProfile::Rust | ProducerProfile::External) && c.skipped != 0)
         || (profile == ProducerProfile::Go && (c.error != 0 || c.unsupported != 0))

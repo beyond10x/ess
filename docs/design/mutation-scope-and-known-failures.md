@@ -258,3 +258,30 @@ marking a spec outcome as optional or intended would mix implementation state in
 dropping event expectations removes the very obligation under audit. These alternatives are
 rejected. This proposal instead separates explicit audit eligibility from unchanged conformance
 truth, and uses a compiler-valid event substitution with an honest unavailable-site result.
+
+## Implementation decisions for #294 and #296
+
+Recorded with the implementation; the review status above is unchanged.
+
+- Baseline-passing eligibility, `no_baseline_control` and witness-free `inconclusive` apply when a
+  declaration is bound. Without one the scorer and `ess-mutation-report/3` keep their released
+  meaning and bytes: every scenario the baseline executed, and every scenario new to a mutant's
+  suite, is still scored.
+- A gained or baseline synthesis refusal still makes an otherwise unkilled mutant `unwitnessed`
+  ahead of `inconclusive`, as before; both exit 3.
+- `--target` builds are the SHA-256 of the running `ess` executable, compared to the declaration
+  before any target is made. Its suite, specification and scenario IDs are checked against the
+  admitted baseline suite before that suite runs; its implementation label once the target names
+  itself.
+- Every `ess-mutation-manifest/4` suite records `suite_digest`, and `/4` collection reads report/2
+  only. Under a declaration, the baseline's missing `execution.json` refuses the collection
+  (`Uncollectable`), a mismatched one refuses it as `known-failures.identity`, and a mutant's
+  missing or mismatched one makes that mutant `inconclusive`.
+- `run --known-failing` requires `--report-format 2` and `--report-out`; the accounting is computed
+  from the exact report/2 bytes before either file is written, and its summary goes to standard
+  error. `report --results --known-failing` creates the report, the context and the accounting as
+  new files. Generated runners read `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT`
+  together, only with `ESS_REPORT_FORMAT=2` and `ESS_REPORT_OUT`, before any target is made.
+- No generated runner produces `skipped` under report/2 on current suites (Go assigns no skipped
+  status under report/2, and the TypeScript runtime's `UNEXECUTED_STEPS` is empty), so the Skipped
+  category is exercised through admitted rewrites of actual reports, not through an actual skip.

@@ -10,6 +10,7 @@ mod client;
 mod coverage;
 mod git_checkout;
 mod input_discovery;
+mod known_failures;
 mod load;
 mod model_types;
 mod normalize;
@@ -681,6 +682,18 @@ enum ConformCommand {
         /// Explicitly retain diagnostic execution exit behavior.
         #[arg(long)]
         allow_incomplete: bool,
+        /// An `ess-known-failures/1` declaration: scenarios this build of the target is known to
+        /// fail, bound to the exact suite bytes, specification, implementation and build (the
+        /// running `ess` executable's SHA-256). Accounted in `--accounting-out`; the report, its
+        /// verdict and the exit status are unchanged. Requires `--report-format 2` and
+        /// `--report-out`. A declaration that does not bind this run, or names a scenario that did
+        /// not fail, exits 2 and writes nothing.
+        #[arg(long, requires_all = ["accounting_out", "report_out"])]
+        known_failing: Option<PathBuf>,
+        /// Where to write the `ess-known-failure-accounting/1` document: a new file, not an input
+        /// and not `--report-out`.
+        #[arg(long, requires = "known_failing")]
+        accounting_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
@@ -698,22 +711,67 @@ enum ConformCommand {
     /// unsupported, and a `suite_digest` that is not the admitted suite's.
     ///
     /// Exit 0: the report was written, whatever its verdict. Exit 2: an input was refused.
+    ///
+    /// Known failures (`--known-failing`, an `ess-known-failures/1` declaration) are accounted in a
+    /// separate `ess-known-failure-accounting/1` document and never change a report or its verdict.
+    /// With `--results`, they also need `--implementation-build` (the SHA-256 of the immutable
+    /// target build, known to the host before the run) and `--execution-context-out`, where the
+    /// `ess-conformance-execution/1` context binding that build to the report is written. A runner
+    /// that wrote report/2 and its own context itself — the generated Go and TypeScript runners,
+    /// given `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` — is accounted with
+    /// `--observed-report`, `--execution-context`, `--known-failing` and `--accounting-out`, which
+    /// rewrite nothing and write only the accounting. Every output is a new file; refused inputs
+    /// exit 2 before anything is written.
     Report {
         /// The suite the runner executed, exactly the bytes it was given.
         #[arg(long)]
         suite: PathBuf,
         /// The runner's `ess-conformance-results/1` document.
-        #[arg(long)]
-        results: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "observed_report",
+            conflicts_with = "observed_report"
+        )]
+        results: Option<PathBuf>,
         /// The implementation the runner held to the suite, as the report names it.
-        #[arg(long)]
-        implementation: String,
+        #[arg(
+            long,
+            required_unless_present = "observed_report",
+            conflicts_with = "observed_report"
+        )]
+        implementation: Option<String>,
         /// Where to write the canonical `ess-conformance-report/2`.
-        #[arg(long)]
-        report_out: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "observed_report",
+            conflicts_with = "observed_report"
+        )]
+        report_out: Option<PathBuf>,
         /// The runner that produced the results, as `<name>@<version>`.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "observed_report")]
         runner: Option<String>,
+        /// Account a report/2 a runner wrote itself, from its original bytes; writes only
+        /// `--accounting-out`.
+        #[arg(long, requires_all = ["execution_context", "known_failing", "accounting_out"])]
+        observed_report: Option<PathBuf>,
+        /// The `ess-conformance-execution/1` context the runner's host wrote beside
+        /// `--observed-report`.
+        #[arg(long, requires = "observed_report")]
+        execution_context: Option<PathBuf>,
+        /// An `ess-known-failures/1` declaration to account the report's failures against.
+        #[arg(long, requires = "accounting_out")]
+        known_failing: Option<PathBuf>,
+        /// Where to write the `ess-known-failure-accounting/1` document, as a new file.
+        #[arg(long, requires = "known_failing")]
+        accounting_out: Option<PathBuf>,
+        /// With `--results` and `--known-failing`: the `sha256:` identity of the target build the
+        /// results came from, which the host knew before the run.
+        #[arg(long, requires = "known_failing", conflicts_with = "observed_report")]
+        implementation_build: Option<String>,
+        /// With `--results` and `--known-failing`: where to write the execution context, as a new
+        /// file.
+        #[arg(long, requires = "known_failing", conflicts_with = "observed_report")]
+        execution_context_out: Option<PathBuf>,
     },
     /// Audit the suite with specification mutants, each replayed against a reference target.
     ///
@@ -741,7 +799,9 @@ enum ConformCommand {
     /// unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
     /// a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing
     /// (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at
-    /// least one was unwitnessed or inconclusive, or none ran that was not equivalent.
+    /// least one was unwitnessed or inconclusive, or none ran that was not equivalent. Exit 2: the
+    /// `--known-failing` declaration was refused. Known failures are listed first in the text and
+    /// never count as a pass: the audit makes no conformance claim.
     ///
     /// For an implementation of your own, split the audit in two. `--emit DIR` writes the
     /// baseline suite to `DIR/baseline/suite.json`, every mutant's suite to
@@ -782,9 +842,20 @@ enum ConformCommand {
         /// the emission to have been scoped to it.
         #[arg(long, conflicts_with = "target")]
         component: Option<String>,
-        /// Where to write the `ess-mutation-report/3` document (`/4` for a component).
+        /// Where to write the `ess-mutation-report/3` document (`/4` for a component or a
+        /// declaration).
         #[arg(long)]
         report_out: Option<PathBuf>,
+        /// An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail.
+        /// They are excluded from scoring rather than refused, and each mutant is scored on the
+        /// scenarios the baseline passed: a declared scenario, or one the baseline's suite does not
+        /// hold, never kills. Every failure it does not name still refuses with ESS-MUTATE-001.
+        /// With `--target` it binds the running `ess` executable's SHA-256 as the build; `--emit`
+        /// copies it into the emission and binds it there (ess-mutation-manifest/4); `--collect`
+        /// uses only the declaration the emission bound, and refuses any other. A refused
+        /// declaration exits 2.
+        #[arg(long)]
+        known_failing: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
@@ -3339,19 +3410,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         command @ ConformCommand::Run { .. } => conform_run(command),
-        ConformCommand::Report {
-            suite,
-            results,
-            implementation,
-            report_out,
-            runner,
-        } => Ok(conform_report(
-            &suite,
-            &results,
-            &implementation,
-            &report_out,
-            runner.as_deref(),
-        )),
+        command @ ConformCommand::Report { .. } => Ok(conform_report_mode(command)),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
         ConformCommand::CheckHistory {
             path,
@@ -3370,6 +3429,71 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
 }
 
 /// `ess verify conform report`: 0 written, 2 refused.
+/// `ess verify conform report`, by its mode: supplied results (with known-failure accounting where
+/// a declaration is given), or the accounting alone of a report a runner wrote itself.
+fn conform_report_mode(command: ConformCommand) -> ExitCode {
+    let ConformCommand::Report {
+        suite,
+        results,
+        implementation,
+        report_out,
+        runner,
+        observed_report,
+        execution_context,
+        known_failing,
+        accounting_out,
+        implementation_build,
+        execution_context_out,
+    } = command
+    else {
+        unreachable!("dispatched on `Report` only");
+    };
+    if let Some(observed) = observed_report {
+        let (Some(context), Some(declaration), Some(out)) =
+            (execution_context, known_failing, accounting_out)
+        else {
+            unreachable!("clap requires them with --observed-report");
+        };
+        return known_failures::report_observed(&suite, &observed, &context, &declaration, &out);
+    }
+    let (Some(results), Some(implementation), Some(report_out)) =
+        (results, implementation, report_out)
+    else {
+        unreachable!("clap requires them without --observed-report");
+    };
+    let Some(declaration) = known_failing else {
+        return conform_report(
+            &suite,
+            &results,
+            &implementation,
+            &report_out,
+            runner.as_deref(),
+        );
+    };
+    let (Some(build), Some(context), Some(accounting)) =
+        (implementation_build, execution_context_out, accounting_out)
+    else {
+        eprintln!(
+            "known-failures.provenance: --known-failing with --results also needs \
+             --implementation-build, --execution-context-out and --accounting-out: the build the \
+             results came from is the host's to state, before the run"
+        );
+        return ExitCode::from(known_failures::REFUSED);
+    };
+    known_failures::report_results(
+        &suite,
+        &results,
+        &implementation,
+        runner.as_deref(),
+        (&declaration, &build),
+        &known_failures::ResultsOutputs {
+            report: &report_out,
+            context: &context,
+            accounting: &accounting,
+        },
+    )
+}
+
 fn conform_report(
     suite: &Path,
     results: &Path,
@@ -3730,6 +3854,8 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         report_format,
         strict,
         allow_incomplete: _,
+        known_failing,
+        accounting_out,
         format,
     } = command
     else {
@@ -3738,6 +3864,7 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
     if strict && report_format != "2" {
         bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
     }
+    let inputs: Vec<PathBuf> = suite.iter().chain(suite_input.iter()).cloned().collect();
     if matches!(target, ReferenceTarget::Interpreted) && path.is_none() {
         bail!(
             "`--target interpreted` requires `--path`: the interpreter executes the \
@@ -3771,6 +3898,18 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
     if suite.provenance.scenario_initial_state.is_some() {
         eprintln!("Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.");
     }
+    // The declaration binds this run before the target is made (beyond10x/ess#296).
+    let known = match known_failures::RunRequest::from_flags(
+        known_failing.zip(accounting_out),
+        report_out.as_deref(),
+        inputs.iter(),
+        &report_format,
+    )
+    .and_then(|request| request.map(|request| request.bind(&admitted)).transpose())
+    {
+        Ok(known) => known,
+        Err(code) => return Ok(code),
+    };
     let interpreted = match target {
         ReferenceTarget::Interpreted => match interpreter_for(&path, suite, format)? {
             Ok(interpreter) => Some(interpreter),
@@ -3790,14 +3929,20 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
                 .expect("the interpreted target was built from `--path` above"),
         ),
     })?;
-    render_conformance_report(
-        &report,
-        &admitted,
-        &report_format,
-        strict,
-        report_out.as_deref(),
-        format,
-    )
+    let render = || {
+        render_conformance_report(
+            &report,
+            &admitted,
+            &report_format,
+            strict,
+            report_out.as_deref(),
+            format,
+        )
+    };
+    match known {
+        None => render(),
+        Some(known) => known.finish(&report, &admitted, render),
+    }
 }
 
 /// The interpreter over the specification at `path`, refused unless the suite was synthesized from it.
@@ -3866,20 +4011,48 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         collect,
         component,
         report_out,
+        known_failing,
         format,
     } = command
     else {
         unreachable!("dispatched on `Mutate` only");
     };
     let component = component.as_deref();
+    let declaration = match known_failing.as_deref().map(|file| {
+        fs::read_to_string(file).map_err(|error| {
+            format!(
+                "known-failures.unreadable: reading the known-failure declaration {}: {error}",
+                file.display()
+            )
+        })
+    }) {
+        None => None,
+        Some(Ok(text)) => Some(text),
+        Some(Err(message)) => {
+            eprintln!("{message}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
+        }
+    };
+    let declaration = declaration.as_deref();
     match (target, emit, collect) {
-        (Some(target), None, None) => {
-            conform_mutate(&path, target, &class, report_out.as_deref(), format)
+        (Some(target), None, None) => conform_mutate(
+            &path,
+            target,
+            &class,
+            report_out.as_deref(),
+            format,
+            declaration,
+        ),
+        (None, Some(emit), None) => {
+            conform_mutate_emit(&path, &class, &emit, component, format, declaration)
         }
-        (None, Some(emit), None) => conform_mutate_emit(&path, &class, &emit, component, format),
-        (None, None, Some(collect)) => {
-            conform_mutate_collect(&collect, component, report_out.as_deref(), format)
-        }
+        (None, None, Some(collect)) => conform_mutate_collect(
+            &collect,
+            component,
+            report_out.as_deref(),
+            format,
+            declaration,
+        ),
         _ => unreachable!("clap requires exactly one of --target, --emit and --collect"),
     }
 }
@@ -3891,8 +4064,9 @@ fn conform_mutate(
     classes: &[MutateClass],
     report_out: Option<&Path>,
     format: Format,
+    declaration: Option<&str>,
 ) -> Result<ExitCode> {
-    use ess_conformance::mutate;
+    use ess_conformance::mutate::{self, KnownFailing};
 
     // The loader's own refusal path first, so a specification that does not compile is reported
     // exactly as `run` reports it, and exits 1.
@@ -3901,25 +4075,43 @@ fn conform_mutate(
     };
     let raw = load::raw_specification(path)?;
     let classes = mutant_classes(classes);
+    // The built-in targets run inside this executable, so its bytes are their build, read before
+    // any target is made.
+    let build = match declaration
+        .map(|_| known_failures::executable_build())
+        .transpose()
+    {
+        Ok(build) => build,
+        Err(message) => {
+            eprintln!("{message}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
+        }
+    };
+    let known = declaration
+        .zip(build.as_deref())
+        .map(|(declaration, build)| KnownFailing { declaration, build });
     let audited = match target {
-        ReferenceTarget::Billing => mutate::audit(
+        ReferenceTarget::Billing => mutate::audit_with(
             &raw.parsed,
             &raw.texts,
             &classes,
             ess_conformance::reference::Billing::new,
+            known,
         ),
-        ReferenceTarget::OracleFixture => mutate::audit(
+        ReferenceTarget::OracleFixture => mutate::audit_with(
             &raw.parsed,
             &raw.texts,
             &classes,
             ess_conformance::reference::Oracle::new,
+            known,
         ),
-        ReferenceTarget::Interpreted => mutate::audit(
+        ReferenceTarget::Interpreted => mutate::audit_with(
             &raw.parsed,
             &raw.texts,
             &classes,
             // The unchanged specification, as every mutant's target implements it.
             || ess_conformance::interpret::Interpreted::for_model((*ir).clone()),
+            known,
         ),
     };
     finish_mutation_audit(audited, report_out, format)
@@ -3943,6 +4135,7 @@ fn conform_mutate_emit(
     dir: &Path,
     component: Option<&str>,
     format: Format,
+    declaration: Option<&str>,
 ) -> Result<ExitCode> {
     use ess_conformance::mutate;
 
@@ -3957,15 +4150,24 @@ fn conform_mutate_emit(
             dir.display()
         );
     }
-    let emission =
-        match mutate::emit_for(&raw.parsed, &raw.texts, &mutant_classes(classes), component) {
-            Ok(emission) => emission,
-            Err(refusal) if refusal.is_inconclusive() => {
-                eprintln!("{refusal}");
-                return Ok(ExitCode::from(3));
-            }
-            Err(refusal) => return Err(refusal.into()),
-        };
+    let emission = match mutate::emit_with(
+        &raw.parsed,
+        &raw.texts,
+        &mutant_classes(classes),
+        component,
+        declaration,
+    ) {
+        Ok(emission) => emission,
+        Err(refusal) if refusal.is_inconclusive() => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(3));
+        }
+        Err(refusal @ mutate::AuditRefusal::KnownFailures(_)) => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
+        }
+        Err(refusal) => return Err(refusal.into()),
+    };
     for (relative, contents) in &emission.files {
         let file = dir.join(relative);
         if let Some(parent) = file.parent() {
@@ -4043,10 +4245,12 @@ fn conform_mutate_collect(
     component: Option<&str>,
     report_out: Option<&Path>,
     format: Format,
+    declaration: Option<&str>,
 ) -> Result<ExitCode> {
-    let collected = ess_conformance::mutate::collect_for(
+    let collected = ess_conformance::mutate::collect_with(
         |relative| fs::read_to_string(dir.join(relative)).ok(),
         component,
+        declaration,
     );
     finish_mutation_audit(collected, report_out, format)
 }
@@ -4064,6 +4268,10 @@ fn finish_mutation_audit(
         Err(refusal) if refusal.is_inconclusive() => {
             eprintln!("{refusal}");
             return Ok(ExitCode::from(3));
+        }
+        Err(refusal @ ess_conformance::mutate::AuditRefusal::KnownFailures(_)) => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
         }
         Err(refusal) => return Err(refusal.into()),
     };

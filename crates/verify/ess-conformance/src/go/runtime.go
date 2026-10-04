@@ -39,6 +39,7 @@ import (
 	"math"
 	"math/big"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -1738,6 +1739,12 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("report configuration: %v", err)
 	}
+	// The host's public build identity is fixed here, before the suite is admitted and before any
+	// target is made, and never derived from what a target answers (beyond10x/ess#296).
+	execution, err := executionContextConfiguration(config.version)
+	if err != nil {
+		t.Fatalf("execution context configuration: %v", err)
+	}
 	suite, err := admitRunInput(suiteJSON)
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
@@ -1830,7 +1837,10 @@ func Run(t *testing.T, newTarget func() Target) {
 		}
 	}
 	if config.version == "2" {
-		writeCountReport(t, suite, identity, results, terminated, config.strict)
+		encoded := writeCountReport(t, suite, identity, results, terminated, config.strict)
+		if execution != nil && encoded != nil {
+			writeExecutionContext(t, suite, identity, encoded, *execution)
+		}
 	} else {
 		writeReport(t, suite, identity, results, terminated)
 	}
@@ -5185,27 +5195,32 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 		"execution_status": execution, "conformance_status": conformance, "counts": counts, "outcomes": outcomes, "coverage": coverage, "policy": "complete-selection/1", "completed_at": uint64(now),
 	}, nil
 }
-func writeCountReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, terminated int, strict bool) {
+
+// writeCountReport writes report/2 where ESS_REPORT_OUT names, and returns the exact bytes it
+// wrote there; nil where it wrote nothing.
+func writeCountReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, terminated int, strict bool) []byte {
 	t.Helper()
 	if err := accountForEveryScenario(suite, terminated); err != nil {
 		t.Errorf("report/2 refused: %v", err)
-		return
+		return nil
 	}
 	document, err := countDocument(suite, identity, results, countReportNow())
 	if err != nil {
 		t.Errorf("report/2 refused: %v", err)
-		return
+		return nil
 	}
 	encoded, err := countCanonical(document)
 	if err != nil {
 		t.Errorf("report/2 encoding: %v", err)
-		return
+		return nil
 	}
+	var written []byte
 	if path := os.Getenv("ESS_REPORT_OUT"); path != "" {
 		if err := os.WriteFile(path, encoded, 0o644); err != nil {
 			t.Errorf("writing report/2: %v", err)
-			return
+			return nil
 		}
+		written = encoded
 	}
 	if strict && document["conformance_status"] != "passed" {
 		if suite.coverage == nil {
@@ -5213,6 +5228,88 @@ func writeCountReport(t *testing.T, suite Suite, identity Identity, results []sc
 		} else {
 			t.Errorf("strict conformance: %s", document["conformance_status"])
 		}
+	}
+	return written
+}
+
+// ---- host execution provenance (`ess-conformance-execution/1`, beyond10x/ess#296) -------------
+
+// executionContextConfig is the host's public build identity, and where the context binding it to
+// the report is written.
+type executionContextConfig struct {
+	build string
+	out   string
+}
+
+// publicBuild reports whether a build identity is `sha256:` and 64 lowercase hexadecimal digits.
+func publicBuild(build string) bool {
+	hex, ok := strings.CutPrefix(build, "sha256:")
+	if !ok || len(hex) != 64 {
+		return false
+	}
+	for _, r := range hex {
+		if !(r >= '0' && r <= '9') && !(r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// executionContextConfiguration reads ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT, which
+// are given together or not at all, before the suite runs.
+//
+// The build is the SHA-256 of the immutable target build, which only the host knows: it is never
+// derived from anything a target answers, and a protected one-time run's report label stays its
+// fixed redacted label. The context binds the report written to ESS_REPORT_OUT, so it needs
+// report/2 written there, and a file of its own. No variable here changes any verdict.
+func executionContextConfiguration(version string) (*executionContextConfig, error) {
+	build, buildSet := os.LookupEnv("ESS_IMPLEMENTATION_BUILD")
+	out, outSet := os.LookupEnv("ESS_EXECUTION_CONTEXT_OUT")
+	if !buildSet && !outSet {
+		return nil, nil
+	}
+	if !buildSet || !outSet {
+		return nil, fmt.Errorf("ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT are given together or not at all")
+	}
+	if version != "2" {
+		return nil, fmt.Errorf("an execution context requires explicit ESS_REPORT_FORMAT=2")
+	}
+	report := os.Getenv("ESS_REPORT_OUT")
+	if report == "" {
+		return nil, fmt.Errorf("an execution context requires ESS_REPORT_OUT: it binds the report written there")
+	}
+	if !publicBuild(build) {
+		return nil, fmt.Errorf("ESS_IMPLEMENTATION_BUILD must be sha256: and 64 lowercase hexadecimal digits")
+	}
+	if out == "" || filepath.Clean(out) == filepath.Clean(report) {
+		return nil, fmt.Errorf("ESS_EXECUTION_CONTEXT_OUT must name a file other than ESS_REPORT_OUT")
+	}
+	return &executionContextConfig{build: build, out: out}, nil
+}
+
+// executionContextDocument is the closed `ess-conformance-execution/1` envelope: the exact report
+// and suite bytes' digests, the report's own implementation label and the host's build. No values,
+// timestamps, host text or commands.
+func executionContextDocument(suite Suite, identity Identity, report []byte, build string) map[string]any {
+	return map[string]any{
+		"format":               "ess-conformance-execution/1",
+		"implementation":       identity.Name + " " + identity.Version,
+		"implementation_build": build,
+		"report_digest":        fmt.Sprintf("sha256:%x", sha256.Sum256(report)),
+		"suite_digest":         fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(suite.original))),
+	}
+}
+
+// writeExecutionContext writes the context of `report`, the bytes report/2 was written as.
+func writeExecutionContext(t *testing.T, suite Suite, identity Identity, report []byte, execution executionContextConfig) {
+	t.Helper()
+	encoded, err := countCanonical(executionContextDocument(suite, identity, report, execution.build))
+	if err != nil {
+		t.Errorf("execution context encoding: %v", err)
+		return
+	}
+	if err := os.WriteFile(execution.out, encoded, 0o644); err != nil {
+		t.Errorf("writing the execution context: %v", err)
 	}
 }
 
