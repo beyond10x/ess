@@ -165,6 +165,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-038` | An act expects the refusal an ungranted actor gets, and the actor holds the grant. | Act as an actor the specification does not grant the command, or drop `refused: not_granted` and claim what the command answers. |
 | `ESS-AUTHOR-039` | An act expects the refusal an ungranted actor gets, and names no actor or claims what only a command that ran answers. | A refused command takes no branch, reports no declared error and returns nothing: keep `actor:` beside `refused: not_granted`, drop `outcome`, `error`, `response`, `events` and `capture`, and list under `no_events:` what must not appear anywhere in the target's log after the refused send. |
 | `ESS-AUTHOR-040` | An act sends a served command no actor is granted, which every caller is refused. | Grant the command to an actor with `may:` and send the act as that actor, or write `refused: not_granted` with an `actor:` the specification declares. |
+| `ESS-AUTHOR-041` | An act expects a branch the command's guards do not take for the input it sends. | Send an input the expected branch's `when:` admits and no branch answered before it claims, or expect the branch that input takes: input-guarded refusals answer first, the first declared of them, then accepting `when:` and external branches in declaration order, and the default only where no `when:` holds. |
 
 ## Synthesis: `ESS-SYNTH`
 
