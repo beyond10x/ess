@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 70
+revision: 71
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -442,3 +442,11 @@ The operator confirms the completed292 worker explicitly released both source an
 The operator's current registry inspection reports ess-release-052-final-20261003 and ess-release-052-20261003 as agent-owned, active, with zero live leases and no identified owning session. Neither belongs to that operator's previously reviewed eleven-tree cleanup handoff. Preserve both complete roots pending original-owner and recovery reconciliation; zero leases establish no disposal authority. No file, lease or lifecycle mutation resulted from the operator inspection.
 
 The active ess-w7-server-public integration tree remains under coordinator custody with its live lease. Root refreshed only that own lease and observed11300601856available bytes, below the12884901888start floor. This clarification does not authorize cleanup or change the archive/compiler hold. Source verification, independent acceptance, integration and release remain outstanding.
+
+## Capacity restored and verification resumption
+
+The previous goal turn could not advance implementation or acceptance because capacity remained below the start floor. On this resumed goal turn, fresh available space24368013312bytes clears that condition. The change in host capacity is observed, not attributed to any particular cleanup. User-protected release052 roots remain explicitly NOT CLEARED, regardless of zero live leases or absent compiler references; no cleanup of them is authorized.
+
+The fixture author returned clean, inactive custody at candidate8e7c21a0c5055635e771c2c5b2b4fa9181bc909e. Handoff4ef2fc376f443cee989aaaed1481985ff0ccd95c91b275b44942d498963f2898 and managed-inspection8df3fe7a5a0732d7b7e9c424830f9a5e757a25b4a4877178a43727e60bd97621 record no command handles, no ignored files and zero author leases. Rust target/lint and review1 verdict remain pending; neither custody return nor the four successful Go probes completes the unit.
+
+Root resumes the existing full413A target preservation operation under plan2b4c0f1f5b192036151fd065daf75003acd47bbf4050740df737869c96d7512d2: fresh source/manifest/process audit, fresh12884901888byte admission, full archive/member/hash verification, postarchive original verification and owning Cargo dry-run. This grants archive and verification only. Original-target cleanup requires a separately reviewed completed recovery receipt. No arithmetic source change, compiler/probe start or new review round is granted. Once preservation and separately admitted cleanup finish, the frozen fixture author reacquires its own lease and completes its existing bounded Rust/lint contract; independent review and serial integration follow. The corrected combined413A package run remains required afterward.
