@@ -565,6 +565,10 @@ pub struct Page {
     pub switch_to: Vec<String>,
     /// Extra condition beyond grants.
     pub visible: Option<Expr>,
+    /// The ESS actor whose grants the commands of the page are bound to (beyond10x/ess#284), as
+    /// written: `ess ui check --model` resolves it and holds every command the page binds to it.
+    /// Renderers do not read it.
+    pub actor: Option<String>,
     /// How sections are arranged.
     pub layout: PageLayout,
     /// Page state.

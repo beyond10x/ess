@@ -44,7 +44,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `enum` | `{enum: [a, b]}` | `{enum: [light, dark]}` |   |
 | `one_of` | `{one_of: [T1, T2]}` | `{one_of: [duration, expr]}` |   |
 | `record` | `{record: {field: T}}` | `{record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}` |   |
-| `ref` | `{ref: kind}` | `{ref: view}` | view, command and event resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event]` |
+| `ref` | `{ref: kind}` | `{ref: view}` | view, command, event and actor resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event, actor]` |
 | `const` | `{const: value}` | `{const: ess-ui/1}` |   |
 
 ### Expressions
@@ -546,7 +546,7 @@ Routes, layouts, page templates, and the section as the unit of loading.
 
 One route — its state, layout, header, sections and overlays.
 
-A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch; switching keeps every current param the target page declares, by name, so sibling views of one record stay on that record.
+A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch; switching keeps every current param the target page declares, by name, so sibling views of one record stay on that record. `actor` names the ESS actor the page is built for: checked against the model, every command the page sends (its sections, header and overlays) must be in that actor's `may`, as the served surface would refuse it otherwise. A page without `actor` is checked as before; renderers do not read it.
 
 **Properties**
 
@@ -560,6 +560,7 @@ A page owns the state a link should reproduce (filters, paging, selection) and c
 | `aliases` | list of `string` |   |   | legacy route paths |
 | `switch_to` | list of name of a [Page](#page) |   |   | sibling pages offered in the header |
 | `visible` | `expr` |   |   | extra condition beyond grants, such as a feature flag |
+| `actor` | name of an ESS `actor` |   |   | the ESS actor whose grants bind every command the page sends; with a model, each must be granted to it |
 | `layout` | [PageLayout](#pagelayout) |   | `stack` | how sections are arranged |
 | `state` | map of `name` → optional [State](#state) |   |   | page state |
 | `header` | [header](#header) |   |   | title, total, actions, live status |

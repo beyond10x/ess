@@ -1232,6 +1232,47 @@ fn section_readable() {
     assert_eq!(tripped(&report, "section_readable").len(), 1);
 }
 
+#[test]
+fn actor_in_model() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, actor: stock.Cashier, \
+          sections: [{name: summary, reads: stock.Items}]}}",
+        QUIET,
+    );
+    let finding = trips_in(&report, "actor_in_model", "pages/p/actor");
+    assert!(finding.message.contains("`stock.Cashier`"), "{finding:?}");
+    assert_eq!(tripped(&report, "actor_in_model").len(), 1);
+    let named = model_report(
+        "{p: {kind: detail_page, title: P, actor: stock.Clerk, \
+          sections: [{name: summary, reads: stock.Items}]}}",
+        QUIET,
+    );
+    assert!(
+        tripped(&named, "actor_in_model").is_empty(),
+        "{:#?}",
+        named.findings
+    );
+}
+
+#[test]
+fn page_actor_grants() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, actor: stock.Clerk, sections: [{name: summary, \
+          reads: stock.Items, actions: [{name: add, does: stock.AddItem}, \
+          {name: note, does: audit.RecordEntry}]}]}}",
+        QUIET,
+    );
+    let finding = trips_in(
+        &report,
+        "page_actor_grants",
+        "pages/p/sections/summary/actions/note",
+    );
+    for named in ["page `p`", "`shop.stock.Clerk`", "`shop.audit.RecordEntry`"] {
+        assert!(finding.message.contains(named), "{named}: {finding:?}");
+    }
+    assert_eq!(tripped(&report, "page_actor_grants").len(), 1);
+}
+
 /// The fixture model with one more view, `shop.stock.Labelled`, that declares a required and an
 /// optional parameter.
 fn param_model() -> Model {

@@ -45,8 +45,8 @@ type_rule:
     enum:     {form: {enum: [a, b]}, example: {enum: [light, dark]}}
     one_of:   {form: {one_of: [T1, T2]}, example: {one_of: [duration, expr]}}
     record:   {form: {record: {field: T}}, example: {record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}}
-    ref:      {form: {ref: kind}, kinds: [shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event], example: {ref: view},
-               note: "view, command and event resolve in the ESS model; the others in the document"}
+    ref:      {form: {ref: kind}, kinds: [shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event, actor], example: {ref: view},
+               note: "view, command, event and actor resolve in the ESS model; the others in the document"}
     const:    {form: {const: value}, example: {const: ess-ui/1}}
 
 expressions:
@@ -387,7 +387,10 @@ constructs:
       sections, each loading on its own. Start from a page kind and declare only what differs.
       `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as
       a view switch; switching keeps every current param the target page declares, by name, so
-      sibling views of one record stay on that record.
+      sibling views of one record stay on that record. `actor` names the ESS actor the page is
+      built for: checked against the model, every command the page sends (its sections, header
+      and overlays) must be in that actor's `may`, as the served surface would refuse it
+      otherwise. A page without `actor` is checked as before; renderers do not read it.
     inheritance:
       from: kind
       merge: shorthands.inheritance
@@ -406,6 +409,7 @@ constructs:
       aliases:   {type: {list: string}, note: legacy route paths}
       switch_to: {type: {list: {ref: page}}, note: sibling pages offered in the header}
       visible:   {type: expr, note: "extra condition beyond grants, such as a feature flag"}
+      actor:     {type: {ref: actor}, note: "the ESS actor whose grants bind every command the page sends; with a model, each must be granted to it"}
       layout:    {type: PageLayout, default: stack, note: how sections are arranged}
       state:     {type: {map: {key: name, value: {optional: State}}}, note: page state}
       header:    {type: header, note: "title, total, actions, live status"}
