@@ -13,6 +13,7 @@
 //! nothing here owns a clock: the caller owns time.
 
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -27,7 +28,8 @@ use billing_types::invoice::{
     IssueInvoiceOutcome, Money, OutstandingInvoices, PayInvoice, PayInvoiceOutcome, Payee,
 };
 use billing_types::obligation::UnmetObligation;
-use billing_types::primitives::{Duration, Uuid};
+use billing_types::primitives::invariant::{compare, Fact, Op};
+use billing_types::primitives::{Duration, Timestamp, Uuid};
 
 /// `amount.amount > 0`, decided on the wire rendering and never on a float.
 ///
@@ -322,8 +324,35 @@ impl OutstandingInvoicesQuery for InvoiceRealization {
         // The declared `order_by: issued_at desc`. The rows come out of a map keyed by identity,
         // and answering in that order would be answering in whichever order the store happened to
         // have — which is the promise this line exists to keep.
-        rows.sort_by(|left, right| right.issued_at.cmp(&left.issued_at));
+        rows.sort_by(|left, right| by_instant(right.issued_at.as_ref(), left.issued_at.as_ref()));
         Ok(rows)
+    }
+}
+
+/// Two `Optional<Timestamp>` values, ordered by the instants they name and not their spellings:
+/// `2026-01-05T10:00:01+02:00` is before `2026-01-05T09:00:03Z` although its text is greater. The
+/// instant is read by the generated `invariant::compare`, the reading the conformance runner
+/// gives. Absent is before every present value; text that names no instant orders by its bytes.
+fn by_instant(left: Option<&Timestamp>, right: Option<&Timestamp>) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            let holds = |op| {
+                compare(
+                    Some(Fact::text(&left.0)),
+                    op,
+                    Some(Fact::text(&right.0)),
+                    true,
+                    false,
+                )
+            };
+            match (holds(Op::Lt), holds(Op::Gt)) {
+                (Some(true), _) => Ordering::Less,
+                (_, Some(true)) => Ordering::Greater,
+                (Some(false), Some(false)) => Ordering::Equal,
+                _ => left.0.as_bytes().cmp(right.0.as_bytes()),
+            }
+        }
+        (left, right) => left.is_some().cmp(&right.is_some()),
     }
 }
 

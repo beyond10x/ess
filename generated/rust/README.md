@@ -22,7 +22,7 @@ implementations into a runnable system without ever choosing — zero implementa
 obligation is an unsatisfied obligation, two is an ambiguity error naming both (gap register D-2,
 whose home is [`the linker never chooses`](../../docs/design/linker-never-chooses.md)).
 The realization tests execute the committed conformance suite, unchanged, against
-that linked system: 33 of 33 scenarios must pass, and the deliberately corrupted variant
+that linked system: 34 of 34 scenarios must pass, and the deliberately corrupted variant
 beside the honest one must fail exactly the scenario that exists to catch it.
 
 ## The second transport, and the record two applications write

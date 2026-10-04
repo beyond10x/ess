@@ -18,9 +18,8 @@ the build. Entity relations and the account field visible in the billing example
 
 ## The source
 
-**[See this specification drawn](https://beyond10x.github.io/ess/docs/visualise)** — the
-invoicing domain as the compiler resolves it, and the conformance run it obliges, both recorded
-from the real `ess` binary.
+The ESS product site's Visualise page draws this specification: the invoicing domain as the
+compiler resolves it, and the conformance run it obliges, both recorded from the real `ess` binary.
 
 One command, from `examples/billing/domains/invoice.yaml`:
 

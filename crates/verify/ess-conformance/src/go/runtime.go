@@ -3539,7 +3539,7 @@ func ranked(view string, orderBy []string, rows []Row) (bool, string, bool) {
 					view, key[0],
 				), true
 			}
-			order, ok := compare(left, right)
+			order, ok := rankOrder(left, right)
 			if !ok {
 				return false, fmt.Sprintf(
 					"`%s` holds values of two kinds in `%s`, which have no order between them",
@@ -3563,6 +3563,147 @@ func ranked(view string, orderBy []string, rows []Row) (bool, string, bool) {
 		}
 	}
 	return true, "", false
+}
+
+// rankOrder orders two values of one ranking key. Two texts that each name an RFC 3339 instant
+// are ordered by those instants, not by their spellings: a `Timestamp` travels as text, and
+// `2026-01-05T10:00:01+02:00` is before `2026-01-05T09:00:03Z` although its text is greater.
+// Everything else orders as compare does. The Rust runner's `compare_nodes` reads rows the same way.
+func rankOrder(left, right Node) (int, bool) {
+	leftText, leftIsText := left.(string)
+	rightText, rightIsText := right.(string)
+	if leftIsText && rightIsText {
+		leftSeconds, leftNanos, leftOk := instant(leftText)
+		rightSeconds, rightNanos, rightOk := instant(rightText)
+		if leftOk && rightOk {
+			switch {
+			case leftSeconds < rightSeconds:
+				return -1, true
+			case leftSeconds > rightSeconds:
+				return 1, true
+			case leftNanos < rightNanos:
+				return -1, true
+			case leftNanos > rightNanos:
+				return 1, true
+			}
+			return 0, true
+		}
+	}
+	return compare(left, right)
+}
+
+// instant is the instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds;
+// ok is false where it names none. The production `ess_primitives::time::Rfc3339Instant` parses
+// and nothing wider: a `T` or `t` separator, seconds 00–59, up to nine fraction digits, and `Z`,
+// `z` or a `±HH:MM` offset.
+func instant(value string) (int64, int64, bool) {
+	digits := func(from int, to int) (int64, bool) {
+		if from >= to || to > len(value) {
+			return 0, false
+		}
+		var total int64
+		for index := from; index < to; index++ {
+			if value[index] < '0' || value[index] > '9' {
+				return 0, false
+			}
+			total = total*10 + int64(value[index]-'0')
+		}
+		return total, true
+	}
+	at := func(index int, expected string) bool {
+		return index < len(value) && strings.IndexByte(expected, value[index]) >= 0
+	}
+	if !at(4, "-") || !at(7, "-") || !at(10, "Tt") || !at(13, ":") || !at(16, ":") {
+		return 0, 0, false
+	}
+	year, yearOk := digits(0, 4)
+	month, monthOk := digits(5, 7)
+	day, dayOk := digits(8, 10)
+	if !yearOk || !monthOk || !dayOk {
+		return 0, 0, false
+	}
+	leap := (year%4 == 0 && year%100 != 0) || year%400 == 0
+	var length int64
+	switch month {
+	case 1, 3, 5, 7, 8, 10, 12:
+		length = 31
+	case 4, 6, 9, 11:
+		length = 30
+	case 2:
+		length = 28
+		if leap {
+			length = 29
+		}
+	default:
+		return 0, 0, false
+	}
+	if day < 1 || day > length {
+		return 0, 0, false
+	}
+	hour, hourOk := digits(11, 13)
+	minute, minuteOk := digits(14, 16)
+	second, secondOk := digits(17, 19)
+	if !hourOk || !minuteOk || !secondOk || hour > 23 || minute > 59 || second > 59 {
+		return 0, 0, false
+	}
+	position := 19
+	var nanos int64
+	if at(position, ".") {
+		start := position + 1
+		end := start
+		for end < len(value) && value[end] >= '0' && value[end] <= '9' {
+			end++
+		}
+		width := end - start
+		if width == 0 || width > 9 {
+			return 0, 0, false
+		}
+		fraction, ok := digits(start, end)
+		if !ok {
+			return 0, 0, false
+		}
+		for padding := width; padding < 9; padding++ {
+			fraction *= 10
+		}
+		nanos = fraction
+		position = end
+	}
+	var offset int64
+	rest := value[position:]
+	switch {
+	case rest == "Z" || rest == "z":
+		offset = 0
+	case len(rest) == 6 && (rest[0] == '+' || rest[0] == '-') && rest[3] == ':':
+		hours, hoursOk := digits(position+1, position+3)
+		minutes, minutesOk := digits(position+4, position+6)
+		if !hoursOk || !minutesOk || hours > 23 || minutes > 59 {
+			return 0, 0, false
+		}
+		offset = hours*3600 + minutes*60
+		if rest[0] == '-' {
+			offset = -offset
+		}
+	default:
+		return 0, 0, false
+	}
+	shifted := year
+	if month <= 2 {
+		shifted--
+	}
+	era := shifted
+	if era < 0 {
+		era -= 399
+	}
+	era /= 400
+	yearOfEra := shifted - era*400
+	shiftedMonth := month - 3
+	if month <= 2 {
+		shiftedMonth = month + 9
+	}
+	dayOfYear := (153*shiftedMonth+2)/5 + day - 1
+	dayOfEra := yearOfEra*365 + yearOfEra/4 - yearOfEra/100 + dayOfYear
+	days := era*146097 + dayOfEra - 719468
+	return days*86400 + hour*3600 + minute*60 + second - offset, nanos, true
 }
 
 // compare orders two row values, reporting false where nothing orders them.

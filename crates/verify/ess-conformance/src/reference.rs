@@ -53,6 +53,7 @@ use std::collections::BTreeMap;
 use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::ids::CorrelationId;
 use ess_primitives::node::Node;
+use ess_primitives::time::Rfc3339Instant;
 
 use crate::scenario::{BindingRef, CommandRef, ErrorRef, EventRef, OutcomeRef};
 use crate::target::{
@@ -445,7 +446,9 @@ impl ConformanceTarget for Billing {
                     .values()
                     .filter(|invoice| invoice.state == Lifecycle::Issued)
                     .collect();
-                outstanding.sort_by(|left, right| right.issued_at.cmp(&left.issued_at));
+                outstanding.sort_by(|left, right| {
+                    by_instant(right.issued_at.as_deref(), left.issued_at.as_deref())
+                });
                 Ok(SemanticViewResult::of(outstanding.into_iter().map(row)))
             }
             // `eventual`. A read demanding `AtLeast(token)` is the one case where the target waits
@@ -764,6 +767,22 @@ fn instance(request: &SemanticCommandRequest) -> Option<String> {
 }
 
 /// One row of either view: what both of them project.
+/// Two `Optional<Timestamp>` values, ordered by the instants they name and not their spellings:
+/// `2026-01-05T10:00:01+02:00` is before `2026-01-05T09:00:03Z` although its text is greater.
+/// Absent is before every present value; text that names no instant orders by its bytes.
+fn by_instant(left: Option<&str>, right: Option<&str>) -> std::cmp::Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => match (
+            Rfc3339Instant::parse_rfc3339(left),
+            Rfc3339Instant::parse_rfc3339(right),
+        ) {
+            (Some(left), Some(right)) => left.cmp(&right),
+            _ => left.as_bytes().cmp(right.as_bytes()),
+        },
+        (left, right) => left.is_some().cmp(&right.is_some()),
+    }
+}
+
 fn row(invoice: &Invoice) -> ViewRow {
     let mut fields = ViewRow::new();
     fields.insert("invoice_id".to_owned(), Node::Text(invoice.id.clone()));

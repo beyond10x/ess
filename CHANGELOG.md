@@ -26,6 +26,12 @@
   `outstanding-invoices-rank-latest-first` scenario could not be decided. The model still reads no
   clock: the caller states the instant. The committed suite, projections, synthesized trees and
   site data are regenerated, and the visualise page now shows that scenario as met.
+- A declared order over RFC 3339 instants is checked by instant, not by text: the Rust runner and
+  the emitted Go and TypeScript runtimes rank two texts that each name an instant by that instant,
+  so `2026-01-05T10:00:01+02:00` ranks before `2026-01-05T09:00:03Z`. The reference target and the
+  billing realization sort `issued_at` the same way. A second authored billing scenario,
+  `outstanding-invoices-rank-by-instant`, issues the later instant first and spells the earlier
+  one with an offset, so a target that ranks by issue order or by text now fails the suite.
 
 ## [0.52.0] — 2026-10-03
 
