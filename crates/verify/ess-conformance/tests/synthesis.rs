@@ -423,6 +423,7 @@ fn under_test(steps: &[ScenarioStep]) -> &[ScenarioStep] {
                 step,
                 ScenarioStep::ExpectError { .. }
                     | ScenarioStep::ExpectEvent { .. }
+                    | ScenarioStep::ExpectEventValues { .. }
                     | ScenarioStep::ExpectNoEvent { .. }
                     | ScenarioStep::EventuallyEvent { .. }
                     | ScenarioStep::QueryView { .. }
@@ -1227,7 +1228,9 @@ fn a_scenario_that_moves_an_instance_names_the_one_an_earlier_step_created() {
             "outcome",
             "execute",
             "outcome",
-            "event",
+            // `InvoicePaid` carries the invoice the run paid, compared with the captured instance
+            // (beyond10x/ess#273).
+            "event values",
             // `settle` leaves the invoice `Paid`, which `OutstandingInvoices` does not hold — so
             // both rows its declared order is compared over are further invoices, each created and
             // issued after the branch has been required and before the view is read.

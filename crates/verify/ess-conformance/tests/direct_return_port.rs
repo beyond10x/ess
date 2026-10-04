@@ -1,4 +1,6 @@
 //! Direct returns reserve new formats beside the released round-three vocabulary.
+mod support_versions;
+
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::authored;
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -62,7 +64,15 @@ fn released_round_three_suites_keep_exact_bytes_and_meaning() {
         let admitted = AdmittedSuite::from_json(expected).unwrap();
         assert_eq!(admitted.original_json(), expected);
         assert_eq!(admitted.suite().provenance.suite_version.major(), major);
-        let fresh: serde_json::Value = serde_json::from_str(&actual).unwrap();
+        // The released scenarios plus the captured identities each event now compares
+        // (beyond10x/ess#273), and nothing else: without those comparisons, the scenarios are the
+        // released ones.
+        let before = support_versions::without_captured_identities(&actual);
+        assert_ne!(
+            serde_json::from_str::<serde_json::Value>(&before).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&actual).unwrap()
+        );
+        let fresh: serde_json::Value = serde_json::from_str(&before).unwrap();
         let legacy: serde_json::Value = serde_json::from_str(expected).unwrap();
         assert_eq!(fresh["scenarios"], legacy["scenarios"]);
         for field in [

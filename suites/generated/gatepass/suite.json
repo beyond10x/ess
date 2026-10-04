@@ -265,13 +265,20 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "gatepass.visit.VisitorAdmitted",
           "payload": {
             "badge": {
-              "printed_at": "2020-01-01T00:00:00Z",
-              "serial": "badge.serial",
-              "signature": "AA=="
+              "kind": "literal",
+              "value": {
+                "printed_at": "2020-01-01T00:00:00Z",
+                "serial": "badge.serial",
+                "signature": "AA=="
+              }
+            },
+            "visit_id": {
+              "kind": "instance",
+              "instance": "visit"
             }
           },
           "shape": {
@@ -1381,8 +1388,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "gatepass.visit.VisitorDeparted",
+          "payload": {
+            "visit_id": {
+              "kind": "instance",
+              "instance": "visit"
+            }
+          },
           "shape": {
             "visit_id": {
               "holds": "primitive",
@@ -2588,13 +2601,20 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "gatepass.visit.VisitorAdmitted",
           "payload": {
             "badge": {
-              "printed_at": "2020-01-01T00:00:00Z",
-              "serial": "badge.serial",
-              "signature": "AA=="
+              "kind": "literal",
+              "value": {
+                "printed_at": "2020-01-01T00:00:00Z",
+                "serial": "badge.serial",
+                "signature": "AA=="
+              }
+            },
+            "visit_id": {
+              "kind": "instance",
+              "instance": "visit"
             }
           },
           "shape": {
@@ -2838,8 +2858,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "gatepass.visit.VisitorDeparted",
+          "payload": {
+            "visit_id": {
+              "kind": "instance",
+              "instance": "visit"
+            }
+          },
           "shape": {
             "visit_id": {
               "holds": "primitive",

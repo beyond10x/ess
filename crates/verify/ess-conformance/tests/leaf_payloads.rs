@@ -162,6 +162,22 @@ fn lead_set(scenario: &ConformanceScenario) -> (BTreeMap<String, Node>, Vec<Stri
             } if event.to_string() == "demo.dialer.LeadSet" => {
                 Some((payload.clone(), shape.leaves().keys().cloned().collect()))
             }
+            // The literal half of an expectation that also compares a captured identity
+            // (beyond10x/ess#273).
+            ScenarioStep::ExpectEventValues {
+                event,
+                payload,
+                shape,
+            } if event.to_string() == "demo.dialer.LeadSet" => Some((
+                payload
+                    .iter()
+                    .filter_map(|(key, value)| match value {
+                        ScenarioValue::Literal { value } => Some((key.clone(), value.clone())),
+                        _ => None,
+                    })
+                    .collect(),
+                shape.leaves().keys().cloned().collect(),
+            )),
             _ => None,
         })
         .expect("the event is expected")
@@ -337,6 +353,14 @@ fn a_leaf_payload_key_naming_no_leaf_of_the_shape_is_refused() {
     for scenario in suite.scenarios.values_mut() {
         for step in &mut scenario.steps {
             if let ScenarioStep::ExpectEvent { payload, .. } = step {
+                if let Some(value) = payload.remove("lead.number") {
+                    payload.insert("lead.numbr".to_owned(), value);
+                    renamed = true;
+                }
+            }
+            // The same leaf, where the expectation also compares a captured identity
+            // (beyond10x/ess#273).
+            if let ScenarioStep::ExpectEventValues { payload, .. } = step {
                 if let Some(value) = payload.remove("lead.number") {
                     payload.insert("lead.numbr".to_owned(), value);
                     renamed = true;

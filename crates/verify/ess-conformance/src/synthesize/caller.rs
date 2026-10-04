@@ -925,8 +925,12 @@ fn recaptured(ir: &EssIr, value: serde_json::Value) -> Option<serde_json::Value>
             return None;
         }
         replace_observed(&mut step, &captured);
-        let expected = (step.get("step").and_then(serde_json::Value::as_str)
-            == Some("expect_event"))
+        // Either expectation form: an event carrying a captured identity is expected through
+        // `expect_event_values` (beyond10x/ess#273).
+        let expected = matches!(
+            step.get("step").and_then(serde_json::Value::as_str),
+            Some("expect_event" | "expect_event_values")
+        )
         .then(|| {
             step.get("event")
                 .and_then(serde_json::Value::as_str)

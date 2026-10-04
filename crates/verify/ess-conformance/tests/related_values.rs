@@ -211,6 +211,25 @@ fn asserted_region(scenario: &ConformanceScenario, event: &str) -> Option<Node> 
                 payload,
                 ..
             } if seen.to_string() == event => Some(payload.get("region").cloned()),
+            // The literal half of an expectation that also compares a captured identity
+            // (beyond10x/ess#273).
+            ScenarioStep::ExpectEventValues {
+                event: seen,
+                payload,
+                ..
+            } if seen.to_string() == event => {
+                let payload: std::collections::BTreeMap<String, ess_primitives::node::Node> =
+                    payload
+                        .iter()
+                        .filter_map(|(key, value)| match value {
+                            ess_conformance::ScenarioValue::Literal { value } => {
+                                Some((key.clone(), value.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                Some(payload.get("region").cloned())
+            }
             _ => None,
         })
         .unwrap_or_else(|| panic!("`{event}` is expected"))

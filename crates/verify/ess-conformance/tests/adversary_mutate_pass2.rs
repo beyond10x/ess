@@ -252,8 +252,11 @@ fn legacy_report_one_and_current_report_two_collect_the_same_mutation_results() 
         "the real reference kills an error swap"
     );
     let suite_path = format!("{BASELINE_DIR}/{SUITE_FILE}");
-    let original = AdmittedSuite::from_json(&written[&suite_path]).unwrap();
-    let legacy_text = support_versions::legacy_json(&written[&suite_path], 4);
+    // The baseline suite as a pre-#273 synthesizer wrote it: suite/4 has no step comparing a captured
+    // identity, so a genuine /4 document carries none.
+    let current_text = support_versions::without_captured_identities(&written[&suite_path]);
+    let original = AdmittedSuite::from_json(&current_text).unwrap();
+    let legacy_text = support_versions::legacy_json(&current_text, 4);
     let legacy = AdmittedSuite::from_json(&legacy_text).expect("genuine suite/4 vocabulary");
     assert_eq!(legacy.suite().scenarios, original.suite().scenarios);
     assert_eq!(

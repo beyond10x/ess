@@ -169,7 +169,12 @@ fn the_json_reader_refuses_the_step_below_26_and_an_input_on_it() {
         } else {
             &json
         };
-        let legacy = support_versions::legacy_json(source, older);
+        // Written as a pre-#273 synthesizer wrote it, so the input-less step is the vocabulary each
+        // older major refuses first.
+        let legacy = support_versions::legacy_json(
+            &support_versions::without_captured_identities(source),
+            older,
+        );
         let error = AdmittedSuite::from_json(&legacy)
             .expect_err("a legacy suite carrying the input-less step is refused");
         assert_eq!(

@@ -637,7 +637,10 @@ fn a_non_scoped_first_key_gets_its_own_b_row() {
 
 #[test]
 fn an_explicitly_pinned_older_suite_with_an_aggregate_scenario_is_refused() {
-    let mut suite = synthesis(METRICS).suite;
+    // As a pre-#273 synthesizer wrote it: suite/15 has no step comparing a captured identity.
+    let synthesized = serde_json::to_string(&synthesis(METRICS).suite).unwrap();
+    let mut suite: ess_conformance::ConformanceSuite =
+        serde_json::from_str(&support_versions::without_captured_identities(&synthesized)).unwrap();
     suite.provenance.suite_version = SuiteFormat::parse("ess-conformance/15").unwrap();
     suite.provenance.scenario_initial_state = None;
     let error = ess_conformance::admission::suite(&suite).expect_err("refused");
@@ -661,8 +664,10 @@ fn a_refusal_only_suite_carrying_an_aggregate_refusal_is_written_at_coverage_17(
     );
     let original = input.selected().original_json();
     assert!(original.contains("ESS-SYNTH-016"), "{original}");
-    // The same document labelled with the coverage major before the construct is refused.
-    let older = support_versions::legacy_json(original, 15);
+    // The same document labelled with the coverage major before the construct is refused, as a
+    // pre-#273 synthesizer wrote it (no step comparing a captured identity).
+    let older =
+        support_versions::legacy_json(&support_versions::without_captured_identities(original), 15);
     assert_ne!(older, original);
     let error = AdmittedSuite::from_json(&older).expect_err("an aggregate refusal needs suite/17");
     assert!(error.to_string().contains("suite/17"), "{error}");

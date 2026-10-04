@@ -1538,17 +1538,44 @@ fn a_value_read_off_an_event_nothing_required_is_refused() {
 #[test]
 fn a_reference_where_the_suite_compares_a_value_it_carries_is_refused() {
     // `ExpectEvent`'s payload is compared against values the suite holds, so a reference there is a
-    // claim the format cannot make — refused rather than silently dropped.
+    // claim the format cannot make — refused rather than silently dropped — at any field that is
+    // not the instance's identity.
     let ir = example("billing");
     let body = format!(
         "arrange:\n  - instance: made\n    entity: billing.invoice.Invoice\n\
          {CREATED}    events:\n      - event: billing.invoice.InvoiceCreated\n        \
-         payload: {{invoice_id: {{$instance: made}}}}\n"
+         payload: {{amount: {{$instance: made}}}}\n"
     );
     assert!(matches!(
         cause(&ir, &document(&body)),
-        Cause::NotComparable { field, .. } if field == "invoice_id"
+        Cause::NotComparable { field, .. } if field == "amount"
     ));
+}
+
+#[test]
+fn a_captured_instance_at_an_event_field_typed_as_its_identity_is_compared() {
+    // beyond10x/ess#273: the identity resolves as an input's does, so the event's `invoice_id` is
+    // compared with the invoice the run captured, in an `expect_event_values` step.
+    let ir = example("billing");
+    let body = format!(
+        "{ARRANGED}{CREATED}{CAPTURED}  - at: 2026-01-05T09:00:01Z\n    \
+         command: billing.invoice.IssueInvoice\n    input:\n      \
+         invoice_id: {{$instance: made}}\n      issued_at: 2026-01-05T09:00:01Z\n    \
+         outcome: issued\n    events:\n      - event: billing.invoice.InvoiceIssued\n        \
+         payload: {{invoice_id: {{$instance: made}}}}\n"
+    );
+    let authoring = authoring(&ir, &document(&body));
+    assert!(authoring.is_complete(), "{:#?}", authoring.refusals);
+    let scenario = authoring.scenarios.values().next().expect("one scenario");
+    assert!(scenario.steps.iter().any(|step| matches!(
+        step,
+        ScenarioStep::ExpectEventValues { event, payload, .. }
+            if event.to_string() == "billing.invoice.InvoiceIssued"
+                && payload.get("invoice_id")
+                    == Some(&ess_conformance::ScenarioValue::instance(
+                        ess_conformance::InstanceName::new("made").unwrap()
+                    ))
+    )));
 }
 
 #[test]
@@ -1918,7 +1945,7 @@ fn refusable() -> Vec<(&'static str, Vec<String>)> {
         )),
         billing(format!(
             "{ARRANGED}{CREATED}    events:\n      - event: billing.invoice.InvoiceCreated\n        \
-             payload: {{invoice_id: {{$instance: made}}}}\n"
+             payload: {{amount: {{$instance: made}}}}\n"
         )),
         billing(format!(
             "{ARRANGED}{CREATED}{CAPTURED}  - at: 2026-01-05T09:00:01Z\n    \

@@ -544,8 +544,25 @@ fn go_requires_a_null_leaf_value_on_an_event_to_be_carried_as_the_reference_runn
         .unwrap();
     let step = steps
         .iter_mut()
-        .find(|step| step["step"] == "expect_event" && step["event"] == "demo.dialer.LeadSet")
+        .find(|step| {
+            (step["step"] == "expect_event" || step["step"] == "expect_event_values")
+                && step["event"] == "demo.dialer.LeadSet"
+        })
         .expect("lead-set asserts LeadSet");
+    // The `expect_event` form this case was written against: where the step also compares a
+    // captured identity (beyond10x/ess#273) it is `expect_event_values`, whose literal values are
+    // that payload.
+    if step["step"] == "expect_event_values" {
+        let literals: serde_json::Map<String, serde_json::Value> = step["payload"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(_, value)| value["kind"] == "literal")
+            .map(|(key, value)| (key.clone(), value["value"].clone()))
+            .collect();
+        step["step"] = serde_json::json!("expect_event");
+        step["payload"] = serde_json::Value::Object(literals);
+    }
     step["payload"]["lead.data"] = serde_json::Value::Null;
     let suite: ConformanceSuite = serde_json::from_value(document).unwrap();
 

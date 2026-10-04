@@ -9,6 +9,8 @@
 //!
 //! The suites are run against a hand-written target answering the model, which must pass every
 //! scenario, and against targets whose limit is moved one step either way, each of which must fail.
+mod support_versions;
+
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
@@ -1325,7 +1327,15 @@ fn review2_ordinary_and_shared_related_digests_equal_the_recorded_baseline() {
             "8f56c982d3834b1eb7a3290a7a460d79fd2ca8c7fc4d821ad6a5df1748c96958",
         ),
     ] {
-        let bytes = compiled(&text).suite.to_canonical_json().unwrap();
+        // The bytes as recorded, before beyond10x/ess#273 compared the captured identities events
+        // carry: every other byte is still held to the baseline.
+        let fresh = compiled(&text).suite.to_canonical_json().unwrap();
+        let bytes = serde_json::from_str::<ess_conformance::ConformanceSuite>(
+            &support_versions::without_captured_identities(&fresh),
+        )
+        .unwrap()
+        .to_canonical_json()
+        .unwrap();
         let mut hash = String::with_capacity(64);
         for byte in Sha256::digest(bytes.as_bytes()) {
             write!(&mut hash, "{byte:02x}").unwrap();

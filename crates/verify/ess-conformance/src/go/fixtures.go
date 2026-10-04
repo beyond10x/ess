@@ -223,18 +223,21 @@ func (r *run) expectEventValues(index int, step Step) bool {
 	if !ok {
 		return false
 	}
-	// Match the Rust runner: select the first direct occurrence by name, never by its values.
+	// Match the Rust runner: select the first direct occurrence by name, never by its values, and
+	// once the values are resolved report exactly what `expect_event` reports, continuing where it
+	// continues (beyond10x/ess#273 synthesizes this step wherever an event carries a captured
+	// identity).
 	for _, event := range r.last.DirectEvents {
 		if event.Event != step.Event {
 			continue
 		}
 		if reason := payloadCarries(event.Payload, payload); reason != "" {
-			return r.fail(index, "`%s` carried different fixture values: %s", step.Event, reason)
+			return r.assertionFailure(index, "ESS-CF-PAYLOAD: `%s` was emitted, and %s", step.Event, reason)
 		}
 		if reason := holds(event.Payload, step.Shape); reason != "" {
-			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "`%s` was emitted, and %s", step.Event, reason)
 		}
 		return true
 	}
-	return r.fail(index, "`%s` was not emitted", step.Event)
+	return r.assertionFailure(index, "ESS-CF-EVENT: `%s` was not emitted", step.Event)
 }

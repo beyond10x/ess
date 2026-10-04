@@ -3063,14 +3063,17 @@ impl Compiler<'_> {
         let fields = declared.fields.clone();
         self.reach(&fields);
         self.source.insert(event.clone().into());
-        let (fixtures, literals): (BTreeMap<_, _>, BTreeMap<_, _>) = claim
+        let (references, literals): (BTreeMap<_, _>, BTreeMap<_, _>) = claim
             .payload
             .iter()
             .map(|(field, value)| (field.clone(), value.clone()))
-            .partition(|(_, value)| matches!(value, Written::Fixture(_)));
+            .partition(|(field, value)| {
+                matches!(value, Written::Fixture(_))
+                    || self.compares_identity(field, value, &fields)
+            });
         let payload = self.literals(&literals, &fields, &Surface::Payload(event.clone()));
         let mut dynamic = self.values(
-            &fixtures,
+            &references,
             &fields,
             &Surface::Payload(event.clone()),
             Completeness::Partial,
@@ -3095,6 +3098,28 @@ impl Compiler<'_> {
                 shape,
             });
         }
+    }
+
+    /// Whether an event payload's `value` for `field` is an identity the run captured, compared as
+    /// the identity it resolves to (beyond10x/ess#273): a whole-field `{$instance: …}` naming an
+    /// arranged instance, written for a declared field typed as that instance's identity. Every
+    /// other reference stays with [`literals`](Self::literals), which refuses it as
+    /// `NotComparable` as before.
+    fn compares_identity(&self, field: &str, value: &Written, fields: &[ResolvedField]) -> bool {
+        let Written::Instance(instance) = value else {
+            return false;
+        };
+        let Some(identity) = self
+            .arranged
+            .get(instance)
+            .and_then(|entity| self.ir.entity_identity(entity))
+        else {
+            return false;
+        };
+        fields
+            .iter()
+            .find(|declared| declared.name == field)
+            .is_some_and(|declared| declared.type_ref.required() == identity.required())
     }
 
     /// Binding an identity an act published.

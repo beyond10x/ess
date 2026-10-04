@@ -3772,7 +3772,10 @@ export class ScenarioRun {
     const event = this.last.directEvents?.find((observed) => observed.event === step.event);
     if (!event) return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
     if (!matches(event.payload, step.payload ?? {}))
-      return this.fail(index, `\`${step.event}\` carried different fixture values`);
+      return this.fail(
+        index,
+        `ESS-CF-PAYLOAD: \`${step.event}\` was emitted, and it did not carry ${describe(step.payload ?? {})}`,
+      );
     const reason = holds(event.payload, step.shape ?? {});
     return reason === '' || this.fail(index, `\`${step.event}\` was emitted, and ${reason}`);
   }

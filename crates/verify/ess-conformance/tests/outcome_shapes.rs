@@ -228,10 +228,11 @@ fn issue_342_guarded_delete_never_asserts_the_removed_subject() {
         .keys()
         .any(|id| id.to_string() == "repro.cart.Cart/invariant/after/repro.cart.CloseCart/closed"));
     assert!(closed.steps[absent + 1..].iter().any(|step| matches!(step, ScenarioStep::ExpectOutcome { outcome } if outcome.to_string() == "repro.cart.CloseCart/missing")));
-    assert!(closed
-        .steps
-        .iter()
-        .any(|step| matches!(step, ScenarioStep::ExpectEvent { .. })));
+    // Either form: the event also carries the closed cart's identity (beyond10x/ess#273).
+    assert!(closed.steps.iter().any(|step| matches!(
+        step,
+        ScenarioStep::ExpectEvent { .. } | ScenarioStep::ExpectEventValues { .. }
+    )));
 }
 
 #[test]

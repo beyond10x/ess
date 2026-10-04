@@ -73,7 +73,7 @@ function groupSteps(steps) {
     if (outcomes.length === 1 && outcomes[0].command === act.command) act.outcome = outcomes[0].outcome
     else if (act.command) act.diagnostics.push('Unknown: a single matching outcome declaration is required.')
     act.captures = act.steps.filter((s) => s.declaration.step === 'capture_instance').map((s) => s.declaration)
-    act.events = act.steps.filter((s) => s.declaration.step === 'expect_event').map((s) => s.declaration)
+    act.events = act.steps.filter((s) => ['expect_event', 'expect_event_values'].includes(s.declaration.step)).map((s) => s.declaration)
     act.inputs = Object.entries(act.input).map(([name, value]) => ({ name, value, text: valueText(value) }))
     const outcome = commandsByName.get(act.command)?.outcomes.find((o) => o.name === act.outcome)
     for (const event of outcome?.emits ?? []) for (const b of model.bindings.filter((b) => b.event === event)) {

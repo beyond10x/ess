@@ -60,16 +60,32 @@ impl std::error::Error for AdmissionError {}
 /// suites this repository already writes, which is a different rule from the one being fixed. The
 /// browser adapter's `primitiveAdmits` applies the identical rule to the identical document, so the
 /// two admitters cannot disagree about one suite.
+///
+/// An `expect_event_values` step's literals are held to the same rule (beyond10x/ess#273 writes an
+/// event's literals there whenever it also compares a captured identity); a reference resolves at
+/// run time and has no value to check here.
 fn payload_agrees_with_its_shape(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     for (id, scenario) in &suite.scenarios {
         for (position, step) in scenario.steps.iter().enumerate() {
-            let (ScenarioStep::ExpectEvent { payload, shape, .. }
-            | ScenarioStep::EventuallyEvent { payload, shape, .. }) = step
-            else {
-                continue;
+            let (literals, shape): (std::collections::BTreeMap<&String, &Node>, _) = match step {
+                ScenarioStep::ExpectEvent { payload, shape, .. }
+                | ScenarioStep::EventuallyEvent { payload, shape, .. } => {
+                    (payload.iter().collect(), shape)
+                }
+                ScenarioStep::ExpectEventValues { payload, shape, .. } => (
+                    payload
+                        .iter()
+                        .filter_map(|(field, value)| match value {
+                            crate::ScenarioValue::Literal { value } => Some((field, value)),
+                            _ => None,
+                        })
+                        .collect(),
+                    shape,
+                ),
+                _ => continue,
             };
             for (field, leaf) in shape.leaves() {
-                let Some(value) = payload.get(field) else {
+                let Some(value) = literals.get(field).copied() else {
                     continue;
                 };
                 if matches!(value, Node::Null) || leaf.holds.admits(value) {
@@ -781,8 +797,11 @@ pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     let mut found = Vec::new();
     for (id, scenario) in &suite.scenarios {
         for (index, step) in scenario.steps.iter().enumerate() {
+            // `expect_event_values` carries the same declared shape (beyond10x/ess#273 synthesizes
+            // one wherever an event carries a captured identity).
             if let ScenarioStep::ExpectEvent { shape, .. }
-            | ScenarioStep::EventuallyEvent { shape, .. } = step
+            | ScenarioStep::EventuallyEvent { shape, .. }
+            | ScenarioStep::ExpectEventValues { shape, .. } = step
             {
                 for (name, leaf) in shape.leaves() {
                     if matches!(

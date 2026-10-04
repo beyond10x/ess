@@ -248,9 +248,31 @@ Each reference resolves to the identity the run bound for that instance, and the
 receives the list or mapping with those identities in place. A reference at a position of
 any other type is refused as `ESS-AUTHOR-022`, naming the position (`labels[1]`,
 `pair.note`, `tags[owner]`, `target.value`); one at a member the model does not declare, or
-inside a value of the wrong shape, is refused naming the member or the position. One inside an event payload or an error is refused as
-`ESS-AUTHOR-021`, as a whole-field one is. A suite carrying such a value is suite/32 (/33
-with coverage); Rust, Go and TypeScript resolve it with report/2.
+inside a value of the wrong shape, is refused naming the member or the position. One nested
+inside an event payload or an error is refused as `ESS-AUTHOR-021`. A suite carrying such a
+value is suite/32 (/33 with coverage); Rust, Go and TypeScript resolve it with report/2.
+
+## Compare an event's identity with a captured instance
+
+An expected event may name a captured instance for a payload field typed as that instance's
+identity, so an implementation that drops the identity, or publishes another one, fails:
+
+```yaml
+    events:
+      - event: billing.invoice.InvoicePaid
+        payload: {invoice_id: {$instance: invoice}, amount: {amount: 10, currency: EUR}}
+```
+
+The reference resolves to the identity the run bound, as it does in a command input, and the
+event must carry exactly that value. The act compiles into an `expect_event_values` step, so the
+suite is written at `ess-conformance/18` or later; Rust, Go and TypeScript resolve it, and browser
+replay shows it as a declaration. A reference at a field of any other type, including another
+entity's identity, an error field, or a position nested inside a payload field, is refused as
+`ESS-AUTHOR-021`.
+
+Synthesis makes the same comparison wherever the arrangement determines an identity an event
+carries: an input sent as a captured instance, the subject's own identity (`{subject: <identity>}`),
+and a related row's identity read through `{related: …}`.
 
 ## Observe outcomes selected by held state
 

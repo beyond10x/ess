@@ -298,7 +298,7 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
 fn response_replay_supported(
     suite: &ConformanceSuite,
 ) -> Result<(), crate::admission::AdmissionError> {
-    if crate::fixtures::used_by(suite) {
+    if crate::fixtures::provisioned_by(suite) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedVocabulary",
             "$suite.scenarios",

@@ -1,0 +1,85 @@
+format: ess/16
+system: desk
+version: v1
+domain: desk.tickets
+types:
+  - {name: desk.tickets.QueueId, kind: newtype, of: Uuid}
+  - {name: desk.tickets.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: desk.tickets.Queue
+    identity: {name: queue_id, type: desk.tickets.QueueId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: desk.tickets.Ticket
+    identity: {name: ticket_id, type: desk.tickets.TicketId}
+    fields:
+      - {name: queue_id, type: desk.tickets.QueueId}
+    lifecycle:
+      initial: Filed
+      states: [Filed, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Filed], to: Closed}
+events:
+  - name: desk.tickets.QueueOpened
+    fields:
+      - {name: queue_id, type: desk.tickets.QueueId}
+      - {name: label, type: String}
+  - name: desk.tickets.TicketFiled
+    fields:
+      - {name: ticket_id, type: desk.tickets.TicketId}
+      - {name: queue_id, type: desk.tickets.QueueId}
+  - name: desk.tickets.TicketClosed
+    fields:
+      - {name: ticket_id, type: desk.tickets.TicketId}
+      - {name: closed, type: Optional<desk.tickets.TicketId>}
+      - {name: queue_id, type: desk.tickets.QueueId}
+errors:
+  - name: desk.tickets.NotOpen
+    fields: []
+commands:
+  - name: desk.tickets.OpenQueue
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: desk.tickets.Queue
+        instance: queue_id
+        emits: [desk.tickets.QueueOpened]
+        payload:
+          desk.tickets.QueueOpened:
+            queue_id: {generated: true}
+            label: input.label
+        sets:
+          label: input.label
+  - name: desk.tickets.FileTicket
+    input:
+      - {name: queue_id, type: desk.tickets.QueueId}
+    outcomes:
+      - name: filed
+        creates: desk.tickets.Ticket
+        instance: ticket_id
+        emits: [desk.tickets.TicketFiled]
+        payload:
+          desk.tickets.TicketFiled:
+            ticket_id: {generated: true}
+            queue_id: input.queue_id
+        sets:
+          queue_id: input.queue_id
+  - name: desk.tickets.CloseTicket
+    input:
+      - {name: ticket_id, type: desk.tickets.TicketId}
+    outcomes:
+      - name: closed
+        moves: desk.tickets.Ticket.close
+        instance: ticket_id
+        emits: [desk.tickets.TicketClosed]
+        payload:
+          desk.tickets.TicketClosed:
+            ticket_id: input.ticket_id
+            closed: {subject: ticket_id}
+            queue_id: {related: {via: queue_id, field: queue_id}}
+      - name: wrong-state
+        wrong_state: true
+        error: desk.tickets.NotOpen

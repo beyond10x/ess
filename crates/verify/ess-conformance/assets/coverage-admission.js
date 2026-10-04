@@ -402,7 +402,7 @@ const payloadAgreesWithShape = (payload, declared) => {
 }
 const stepFields = {
   configure_external_outcome: ['force', ''], execute_command: ['command', 'actor input'], expect_outcome: ['outcome', ''],
-  expect_error: ['error', 'fields'], expect_event: ['event', 'payload shape'], eventually_event: ['event', 'payload shape'],
+  expect_error: ['error', 'fields'], expect_event: ['event', 'payload shape'], expect_event_values: ['event payload', 'shape'], eventually_event: ['event', 'payload shape'],
   expect_no_event: ['event', ''], redeliver_event: ['event', ''], capture_instance: ['instance entity event field', ''],
   expect_invocation: ['binding command', 'input'], query_view: ['view', 'params'], expect_view: ['view expectation', ''],
   eventually_view: ['view expectation', 'params'], mark_instant: ['instant', ''], expect_not_before: ['instant elapsed', ''],
@@ -422,7 +422,16 @@ function step(value, major) {
       case 'step': break
       case 'actor': nullable(field, qualified); break
       case 'input': case 'params': result[key] = values(field); break
-      case 'fields': case 'payload': object(field); result[key] = node(field); break
+      case 'fields': case 'payload':
+        // Captured identities and literals an event must carry (suite/18, beyond10x/ess#273), as the
+        // references a command input holds; a fixture value is not one this replay can resolve.
+        if (value.step === 'expect_event_values') {
+          require(major >= 18, 'event value expectations require suite/18')
+          result[key] = values(field)
+          require(keys(result[key]).length > 0, 'an event value assertion must compare at least one field')
+          break
+        }
+        object(field); result[key] = node(field); break
       case 'shape': result[key] = shape(field); break
       case 'expectation':
         result[key] = expectation(field)
@@ -436,7 +445,11 @@ function step(value, major) {
       default: qualified(field)
     }
   }
-  if (own(result, 'payload') && own(result, 'shape')) payloadAgreesWithShape(result.payload, result.shape)
+  // An `expect_event_values` step's literals are held to its shape as `expect_event`'s are (#273); a
+  // reference resolves at run time and has no value to check here. `admission.rs` applies the same rule.
+  if (own(result, 'payload') && own(result, 'shape')) payloadAgreesWithShape(value.step === 'expect_event_values'
+    ? Object.fromEntries(Object.entries(result.payload).filter(([, held]) => held.kind === 'literal').map(([key, held]) => [key, held.value]))
+    : result.payload, result.shape)
   return result
 }
 const includes = (selection, origin) => selection.origins === 'generated_and_authored' || selection.origins === origin
@@ -528,7 +541,7 @@ export async function admitSuite(original) {
     const purpose = text(scenario.purpose)
     require(trim(purpose) !== '' && [...purpose].length <= 200 && !/[\x00-\x1f\x7f-\x9f]/.test(purpose), 'invalid scenario purpose')
     array(scenario.source).forEach(reference)
-    meaning[id] = { purpose, steps: array(scenario.steps).map(value => step(value, p.suite_version === 'ess-conformance/5' ? 5 : 9)), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
+    meaning[id] = { purpose, steps: array(scenario.steps).map(value => step(value, Number(p.suite_version.slice('ess-conformance/'.length)))), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
   }
   inventory(document)
   return { original, document, meaning, digest: await digest(original) }
@@ -614,7 +627,7 @@ export async function admitReplay(original) {
   const scenarios = Object.fromEntries(keys(selected.document.scenarios).map(id => [id, { ...selected.document.scenarios[id], steps: selected.document.scenarios[id].steps.map(value => {
     const result = { ...value }
     for (const key of ['input', 'params']) if (own(result, key)) result[key] = values(result[key])
-    for (const key of ['payload', 'fields']) if (own(result, key)) result[key] = node(result[key])
+    for (const key of ['payload', 'fields']) if (own(result, key)) result[key] = value.step === 'expect_event_values' ? values(result[key]) : node(result[key])
     return result
   }) }]))
   return { model: projection, suite: { provenance: p, scenarios }, description }

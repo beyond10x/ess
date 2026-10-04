@@ -2654,25 +2654,16 @@ fn exercise_run_in(
     for event in &emitted {
         let literals = determined_payload(ir, outcome, event, &run.input, &run.before_settled);
         let shape = crate::response::event_shape(ir, event, outcome);
-        let mut payload = crate::fixtures::event_values(outcome, event, &run.input);
-        if payload.is_empty() {
-            steps.push(ScenarioStep::ExpectEvent {
-                event: event.clone(),
-                payload: literals,
-                shape,
-            });
-        } else {
-            payload.extend(
-                literals
-                    .into_iter()
-                    .map(|(key, value)| (key, ScenarioValue::literal(value))),
-            );
-            steps.push(ScenarioStep::ExpectEventValues {
-                event: event.clone(),
-                payload,
-                shape,
-            });
-        }
+        let mut references = determined_identities(
+            ir,
+            outcome,
+            event,
+            &run.input,
+            &run.before_settled,
+            run.instance.as_ref(),
+        );
+        references.extend(crate::fixtures::event_values(outcome, event, &run.input));
+        steps.push(expect_event_step(event, literals, references, shape));
     }
     if outcome.returns {
         match crate::direct_response::Observation::of(
@@ -5826,6 +5817,82 @@ fn determined_payload(
         .find(|payload| EventRef::from(&payload.event) == *event)
         .map(|determined| determined_fields(ir, &determined.fields, supplied, before))
         .unwrap_or_default()
+}
+
+/// The identity-typed payload fields of `event` this run determines, each as the instance it
+/// resolves to (beyond10x/ess#273): an input carrying a bound instance, the subject's own identity,
+/// and an identity the arrangement settled — a related row's, or one the subject holds.
+///
+/// The half [`determined_payload`] leaves to the shape: the suite cannot write the identity the
+/// target mints as a literal, but it can name the instance that captured it, which the runner
+/// resolves before comparing. An implementation that drops such a field, or publishes another
+/// identity in its place, then fails the scenario. A field filled through a declared conversion is
+/// left out, for the reason [`determined_payload`] states for literals.
+fn determined_identities(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    event: &EventRef,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    subject: Option<&InstanceName>,
+) -> BTreeMap<String, ScenarioValue> {
+    let subject_identity = outcome
+        .subject
+        .as_ref()
+        .filter(|held| !matches!(held.effect, ResolvedEffect::Creates))
+        .map(|held| &ir.entity(&held.entity).identity.name);
+    let mut values = BTreeMap::new();
+    let Some(payload) = outcome
+        .payload
+        .iter()
+        .find(|payload| EventRef::from(&payload.event) == *event)
+    else {
+        return values;
+    };
+    for field in payload.fields.iter().filter(|it| it.conversion.is_none()) {
+        let value = match &field.value {
+            ResolvedPayloadValue::InputField { field: input, .. } => supplied.get(input).cloned(),
+            ResolvedPayloadValue::SubjectField { field: read, .. }
+                if Some(read) == subject_identity =>
+            {
+                subject.cloned().map(ScenarioValue::instance)
+            }
+            _ => expression_value(ir, field, supplied, before),
+        };
+        if let Some(value @ ScenarioValue::Instance { .. }) = value {
+            values.insert(field.target.clone(), value);
+        }
+    }
+    values
+}
+
+/// The expectation that `event` was published: its determined literals and, where this run
+/// determines any, its identities ([`determined_identities`]), which make it an
+/// `expect_event_values` step (suite/18).
+fn expect_event_step(
+    event: &EventRef,
+    literals: BTreeMap<String, Node>,
+    identities: BTreeMap<String, ScenarioValue>,
+    shape: PayloadShape,
+) -> ScenarioStep {
+    if identities.is_empty() {
+        return ScenarioStep::ExpectEvent {
+            event: event.clone(),
+            payload: literals,
+            shape,
+        };
+    }
+    let mut payload = identities;
+    payload.extend(
+        literals
+            .into_iter()
+            .map(|(key, value)| (key, ScenarioValue::literal(value))),
+    );
+    ScenarioStep::ExpectEventValues {
+        event: event.clone(),
+        payload,
+        shape,
+    }
 }
 
 /// The `expect_error` step for the error `outcome` reports, comparing each field the
@@ -10044,11 +10111,19 @@ fn from_source(
         outcome: outcome_ref.clone(),
     });
     for event in outcome.emits.iter().map(EventRef::from) {
-        steps.push(ScenarioStep::ExpectEvent {
-            payload: determined_payload(ir, outcome, &event, &supplied, &arrangement.settled),
-            shape: crate::response::event_shape(ir, &event, outcome),
-            event,
-        });
+        steps.push(expect_event_step(
+            &event,
+            determined_payload(ir, outcome, &event, &supplied, &arrangement.settled),
+            determined_identities(
+                ir,
+                outcome,
+                &event,
+                &supplied,
+                &arrangement.settled,
+                Some(&arrangement.instance),
+            ),
+            crate::response::event_shape(ir, &event, outcome),
+        ));
     }
     let determined = settled(ir, outcome, &supplied, &arrangement.settled);
     let before = arrangement.settled.clone();

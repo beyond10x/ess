@@ -396,7 +396,11 @@ fn go_refuses_a_leaf_path_below_suite_26_and_one_naming_no_leaf_of_its_shape() {
             .unwrap();
         let payload = steps
             .iter_mut()
-            .find(|step| step["step"] == "expect_event" && step["event"] == "demo.dialer.LeadSet")
+            // Either form: the expectation also compares a captured identity (beyond10x/ess#273).
+            .find(|step| {
+                (step["step"] == "expect_event" || step["step"] == "expect_event_values")
+                    && step["event"] == "demo.dialer.LeadSet"
+            })
             .unwrap()["payload"]
             .as_object_mut()
             .unwrap();

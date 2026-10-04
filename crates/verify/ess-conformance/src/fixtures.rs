@@ -234,6 +234,22 @@ pub(crate) fn used_by(suite: &ConformanceSuite) -> bool {
     })
 }
 
+/// Whether the suite carries a value only an independently provisioned fixture supplies.
+///
+/// Narrower than [`used_by`]: an `expect_event_values` step comparing captured identities and
+/// literals (beyond10x/ess#273) needs suite/18 but no fixture provider, so a reader that cannot
+/// resolve fixture values can still read it.
+pub(crate) fn provisioned_by(suite: &ConformanceSuite) -> bool {
+    suite.scenarios.values().any(|scenario| {
+        scenario.steps.iter().any(|step| {
+            matches!(step, ScenarioStep::ResolveFixtures { .. })
+                || values(step)
+                    .into_iter()
+                    .any(|value| matches!(value, ScenarioValue::Fixture { .. }))
+        })
+    })
+}
+
 /// Refuse an explicitly pinned older format before serialization or target effects.
 pub(crate) fn admit_format(
     suite: &ConformanceSuite,

@@ -581,10 +581,33 @@ fn with_lead_set_step(
             .as_array_mut()
             .unwrap()
             .iter_mut()
-            .find(|step| step["step"] == "expect_event" && step["event"] == LEAD_SET)
+            .find(|step| {
+                (step["step"] == "expect_event" || step["step"] == "expect_event_values")
+                    && step["event"] == LEAD_SET
+            })
             .expect("lead-set asserts LeadSet");
+        as_expect_event(step);
         edit(step);
     })
+}
+
+/// The `LeadSet` assertion in the `expect_event` form the cases here edit. Where it also compares a
+/// captured identity (beyond10x/ess#273) the suite writes it as `expect_event_values`, whose literal
+/// values are that payload; the identity is dropped, so the step is the one these cases were
+/// written against.
+fn as_expect_event(step: &mut serde_json::Value) {
+    if step["step"] != "expect_event_values" {
+        return;
+    }
+    let literals: serde_json::Map<String, serde_json::Value> = step["payload"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, value)| value["kind"] == "literal")
+        .map(|(key, value)| (key.clone(), value["value"].clone()))
+        .collect();
+    step["step"] = serde_json::json!("expect_event");
+    step["payload"] = serde_json::Value::Object(literals);
 }
 
 fn number(value: f64) -> Node {

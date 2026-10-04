@@ -433,12 +433,17 @@ fn admission_documents(suite: &ConformanceSuite, root: &std::path::Path) -> std:
     let docs = root.join("docs");
     std::fs::create_dir_all(&docs).unwrap();
     let ordinary = AdmittedSuite::from_suite(suite).unwrap();
+    // Every document as a pre-#273 synthesizer wrote it: no major below /18 has a step comparing a
+    // captured identity, so a genuine older document carries none.
     std::fs::write(
         docs.join("ordinary-14.json"),
-        support_versions::legacy_json(ordinary.original_json(), 14),
+        support_versions::legacy_json(
+            &support_versions::without_captured_identities(ordinary.original_json()),
+            14,
+        ),
     )
     .unwrap();
-    let unscoped = unscoped_coverage();
+    let unscoped = support_versions::without_captured_identities(&unscoped_coverage());
     for major in [11, 15, 17] {
         std::fs::write(
             docs.join(format!("coverage-{major}.json")),
