@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-04T00:54:20Z",
+  "actor": "human:timo",
+  "artifact": "story:counter-reachability-arithmetic-completeness",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:arithmetic-completeness-413a-20261004-r1",
+    "reference": "task:retained-replay-fixture-consistency; terminal-log-sha256:b4ff23325419aaf72d5b84c5247c5b1bc28a007106612e1c80c469ad171c1b0b",
+    "review": "review-result:arithmetic-completeness-413a-20261004-r1",
+    "outcome": "escalated"
+  }
+}

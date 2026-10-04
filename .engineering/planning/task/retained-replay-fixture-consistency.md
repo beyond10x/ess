@@ -7,7 +7,7 @@ title: Make retained Go replay fixtures honor read-your-writes tokens
 relations:
 - derived_from: story:feature-request-312
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 3}
@@ -29,3 +29,9 @@ No probe or build starts below12884901888free bytes. Only one ESS execution lane
 ## Acceptance
 
 Both failed Rust wrappers and the whole retained_replay target must pass with actual Go execution, no skipped required checks and no assertion removed. Recheck negative controls that previously passed from the unrelated early token failure; complete/incomplete rows, replay mutation, exact integers and retained input callbacks must reach their intended assertions. Exact token propagation must be exercised on original and replay reads. Run strict affected-target lint, owning formatter and task fmt-check, then obtain independent whole-unit review. Retain baseline, treatment, source and execution digests. Integrate serially before refreshing413A; the final full package run is still required on the combined corrected bytes. No issue closure or release claim follows from this task alone.
+
+## Execution custody admitted after owned cache recovery
+
+The completed413A run's owner verified and retired only its exclusive Go compiler cache through go clean -cache. Receipt19a43826cb1b086233b9d5a425e05f255a39cb42da1ce62a5792fc06c08134c1 records2109902848allocated bytes reclaimed, unchanged source/logs/fixtures/binaries/archives, and an honest limited process audit. The user's three read-only release/backlog candidates were untouched. Fresh coordinator available space13452419072bytes is above the12884901888floor; this is an admission observation, not a forecast.
+
+The existing implementor now owns the sole ESS execution lane. Before each expensive command, record another fresh floor receipt. Preserve a command inventory and immutable original failure packages. Run exactly the adversary projection and full retained generated Go packages after the two-result-token change, then the same two after the exact query-token assertion; each command is bounded180seconds. Only after those counterfactual probes pass, apply the validated one-file correction and run the whole retained_replay Rust target once, strict affected-target lint, owning format and task fmt-check. Rust target/lint commands are bounded900seconds. No redundant separate reruns of the two Rust wrappers and no whole-package run are assigned here. Unexpected failure or insufficient capacity holds the next start. Independent whole-unit review and integration still precede the refreshed413A full-package run. No acceptance success is claimed at dispatch.

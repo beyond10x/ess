@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -71,3 +71,7 @@ The independent review's prepared command plan bbcc6204c71465c548f9d4d2349033f90
 The refreshed full package command terminated101 after1128.553625seconds:337result summaries,2609passed,2failed,8ignored,0filtered. Terminal rawlogSHAb4ff23325419aaf72d5b84c5247c5b1bc28a007106612e1c80c469ad171c1b0b. Both failures are in retained_replay; actual generated Go reported153pass events,33fail events,0skips. Seven existing ignored integration cases plus one ignored doc example are explicitly retained; no required-runtime skip notice was observed. Strict all-target lint, owning format and task fmt-check passed. The two arithmetic source files and patch remain unchanged and both finite canonical hashes match baseline, but the package remains red. The independent probe's success condition is unmet and execution is held; no final approval or integration is claimed.
 
 Root now owns task:retained-replay-fixture-consistency under story:feature-request-312 to resolve the fixture/token contract mismatch supported by source diagnosis. This is separate from the two arithmetic edits; causal treatment proof remains due. Refresh this unit after the separately reviewed fixture correction and satisfy the whole-package and final independent-review requirements. The execution lane was returned on process termination; capacity remains below the required floor. The user's compiler-child inventory remains read-only with no cleanup authorization.
+
+## First whole review recorded
+
+Independent first whole review4dc84d7740cbb73bfd6fbfa36378ce235ecdb9ccb254fa283c197e057f7a1cab is now review-result:arithmetic-completeness-413a-20261004-r1. Its publication-safe normalizationf08be95432362c1cf1218688669097d8c34c103d39911a6ef00e68be3297037f removes only the private scratch prefix and clarifies that the owning external coordinator ran the author checks. Both acceptance blockers remain confirmed with origin undecided in the immutable review; no arithmetic implementation defect was found. Disposition escalates the package failures to task:retained-replay-fixture-consistency. Review1 is closed incomplete. Exactly one final whole review remains after the correction and full package verification; no new review budget or repeated author controls are created. The independent MAX/MIN probe remains unexecuted.
