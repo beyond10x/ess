@@ -4,25 +4,32 @@
 //! contract is mostly transport, though — publish to this subject, a stream captures it for this
 //! long, one message carries an array, producers never create the stream — and that has to be
 //! stated somewhere a projection and a generated client can read. [`TransportSpec`] is that place:
-//! adopter-authored `ess-transport/1`, pinned to one specification's source digest the way
+//! adopter-authored `ess-transport/1` or `/2`, pinned to one specification's source digest the way
 //! `ess-realization/1` is, and compiled by [`compile`] against that specification's [`EssIr`] into a
-//! deterministic [`TransportIr`] (`ess-transport-ir/1`). The design is
-//! `docs/design/event-transport-binding.md`.
+//! deterministic [`TransportIr`]. The designs are `docs/design/event-transport-binding.md` and
+//! `docs/design/parameterized-event-channel-addresses.md`.
 //!
 //! Nothing here connects to a broker or creates a stream. A stream with `owner: external` is a
 //! promise a publisher keeps by not touching it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use ess_compiler::ir::{ResolvedBody, ResolvedEvent, ResolvedField, ResolvedTypeRef};
 use ess_compiler::EssIr;
-use ess_domain::binding::Delivery;
+use ess_domain::{binding::Delivery, Primitive};
 
 /// The adopter-authored transport format.
 pub const TRANSPORT_FORMAT: &str = "ess-transport/1";
 
+/// The authored format that admits payload-bound address expressions.
+pub const PARAMETERIZED_TRANSPORT_FORMAT: &str = "ess-transport/2";
+
 /// The compiled transport format.
 pub const TRANSPORT_IR_FORMAT: &str = "ess-transport-ir/1";
+
+/// The compiled format for an authored [`PARAMETERIZED_TRANSPORT_FORMAT`] document.
+pub const PARAMETERIZED_TRANSPORT_IR_FORMAT: &str = "ess-transport-ir/2";
 
 /// The exact ESS a transport document binds.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -131,6 +138,9 @@ pub struct ChannelSpec {
     pub broker: String,
     /// The subject one message of it is published to.
     pub subject: String,
+    /// Address-expression name to required event payload path.
+    #[serde(default, deserialize_with = "channel_parameters")]
+    pub parameters: Option<BTreeMap<String, String>>,
     /// How one message carries it.
     pub envelope: Envelope,
     /// What the publisher promises about each message.
@@ -138,6 +148,15 @@ pub struct ChannelSpec {
     /// How a publisher fills an `array` envelope.
     #[serde(default)]
     pub batch: Option<Batch>,
+}
+
+fn channel_parameters<'de, D>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<String, String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    <BTreeMap<String, String> as serde::Deserialize>::deserialize(deserializer).map(Some)
 }
 
 /// One stream, before resolution.
@@ -161,17 +180,53 @@ pub struct StreamSpec {
     pub owner: Owner,
 }
 
-/// The adopter-authored `ess-transport/1` document.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+/// An adopter-authored `ess-transport/1` or `/2` document.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportSpec {
-    #[serde(rename = "type")]
     format: String,
     specification: SpecificationIdentity,
     brokers: Vec<BrokerSpec>,
     channels: Vec<ChannelSpec>,
     #[serde(default)]
     streams: Vec<StreamSpec>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthoredTransportSpec {
+    #[serde(rename = "type")]
+    format: String,
+    specification: SpecificationRef,
+    brokers: Vec<BrokerSpec>,
+    channels: Vec<ChannelSpec>,
+    streams: Vec<StreamSpec>,
+}
+
+impl<'de> serde::Deserialize<'de> for TransportSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let authored =
+            <AuthoredTransportSpec as serde::Deserialize>::deserialize(deserializer)?;
+        if authored.format == TRANSPORT_FORMAT
+            && authored
+                .channels
+                .iter()
+                .any(|channel| channel.parameters.is_some())
+        {
+            return Err(serde::de::Error::custom(
+                "`parameters` is not a field of an ess-transport/1 channel",
+            ));
+        }
+        Ok(Self {
+            format: authored.format,
+            specification: authored.specification,
+            brokers: authored.brokers,
+            channels: authored.channels,
+            streams: authored.streams,
+        })
+    }
 }
 
 impl TransportSpec {
@@ -183,6 +238,26 @@ impl TransportSpec {
     /// Reads strict JSON. Semantic validation happens in [`compile`].
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
+    }
+}
+
+/// One normalized source for a channel address expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ParameterSource {
+    /// A required payload path on this channel's event.
+    EventPath {
+        /// Semantic field names, excluding the leading authored `event` segment.
+        path: Vec<String>,
+    },
+}
+
+impl ParameterSource {
+    /// The normalized semantic event path.
+    pub fn event_path(&self) -> &[String] {
+        match self {
+            Self::EventPath { path } => path,
+        }
     }
 }
 
@@ -205,6 +280,9 @@ pub struct Channel {
     pub broker: String,
     /// The subject one message is published to.
     pub subject: String,
+    /// Address expressions, ordered by their authored name. Absent from literal channel JSON.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub parameters: BTreeMap<String, ParameterSource>,
     /// How one message carries the event.
     pub envelope: Envelope,
     /// What the publisher promises about each message.
@@ -235,7 +313,7 @@ pub struct Stream {
     pub owner: Owner,
 }
 
-/// The compiled `ess-transport-ir/1`: every collection ordered, every reference resolved.
+/// A compiled transport IR: every collection ordered, every reference resolved.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TransportIr {
     format: &'static str,
@@ -337,20 +415,39 @@ impl Refusals {
 /// once rather than the first.
 pub fn compile(spec: &TransportSpec, ir: &EssIr) -> Result<TransportIr, TransportDiagnostics> {
     let mut refusals = Refusals(Vec::new());
-    if spec.format != TRANSPORT_FORMAT {
-        refusals.refuse(
-            "ESS-TRANSPORT-001",
-            "type",
-            format!("expected `{TRANSPORT_FORMAT}`, found `{}`", spec.format),
-        );
-    }
+    let parameterized = match spec.format.as_str() {
+        TRANSPORT_FORMAT => false,
+        PARAMETERIZED_TRANSPORT_FORMAT => true,
+        _ => {
+            refusals.refuse(
+                "ESS-TRANSPORT-001",
+                "type",
+                format!(
+                    "expected `{TRANSPORT_FORMAT}` or `{PARAMETERIZED_TRANSPORT_FORMAT}`, found `{}`",
+                    spec.format
+                ),
+            );
+            false
+        }
+    };
     specification(&spec.specification, ir, &mut refusals);
     let brokers = brokers(&spec.brokers, &mut refusals);
     let streams = streams(&spec.streams, &brokers, &mut refusals);
-    let channels = channels(&spec.channels, ir, &brokers, &streams, &mut refusals);
+    let channels = channels(
+        &spec.channels,
+        ir,
+        &brokers,
+        &streams,
+        parameterized,
+        &mut refusals,
+    );
     if refusals.0.is_empty() {
         Ok(TransportIr {
-            format: TRANSPORT_IR_FORMAT,
+            format: if parameterized {
+                PARAMETERIZED_TRANSPORT_IR_FORMAT
+            } else {
+                TRANSPORT_IR_FORMAT
+            },
             specification: spec.specification.clone(),
             brokers,
             channels,
@@ -486,46 +583,61 @@ fn channels(
     ir: &EssIr,
     brokers: &BTreeMap<String, Broker>,
     streams: &BTreeMap<String, Stream>,
+    parameterized_format: bool,
     refusals: &mut Refusals,
 ) -> BTreeMap<String, Channel> {
     let mut channels = BTreeMap::new();
     for (index, channel) in specs.iter().enumerate() {
         let path = format!("channels[{index}]");
-        match ir
+        let event = ir
             .events()
             .values()
-            .find(|event| event.name.to_string() == channel.event)
-        {
-            None => refusals.refuse(
+            .find(|event| event.name.to_string() == channel.event);
+        if event.is_none() {
+            refusals.refuse(
                 "ESS-TRANSPORT-010",
                 format!("{path}.event"),
                 format!("the specification declares no event `{}`", channel.event),
-            ),
-            Some(event) => {
-                if let Some(wire) = event.naming.wire.as_deref() {
-                    if wire != channel.subject {
-                        refusals.refuse(
-                            "ESS-TRANSPORT-011",
-                            format!("{path}.subject"),
-                            format!(
-                                "the event's wire name is `{wire}`; the subject `{}` must equal it",
-                                channel.subject
-                            ),
-                        );
-                    }
-                }
-            }
-        }
-        if let Err(reason) = publish_subject(&channel.subject) {
-            refusals.refuse(
-                "ESS-TRANSPORT-012",
-                format!("{path}.subject"),
-                format!(
-                    "`{}` is not a publishable subject: {reason}",
-                    channel.subject
-                ),
             );
         }
+
+        let address = if parameterized_format {
+            parameterized_address(channel, event, ir, &path, refusals)
+        } else {
+            if let Err(reason) = publish_subject(&channel.subject) {
+                refusals.refuse(
+                    "ESS-TRANSPORT-012",
+                    format!("{path}.subject"),
+                    format!(
+                        "`{}` is not a publishable subject: {reason}",
+                        channel.subject
+                    ),
+                );
+            }
+            Some((BTreeMap::new(), SubjectLanguage::Concrete))
+        };
+
+        if let Some(event) = event {
+            match (&address, event.naming.wire.as_deref()) {
+                (Some((_, SubjectLanguage::Template(_))), Some(wire)) => refusals.refuse(
+                    "ESS-TRANSPORT-011",
+                    format!("{path}.subject"),
+                    format!(
+                        "the event's wire name is `{wire}`; a parameterized subject requires it absent"
+                    ),
+                ),
+                (_, Some(wire)) if wire != channel.subject => refusals.refuse(
+                    "ESS-TRANSPORT-011",
+                    format!("{path}.subject"),
+                    format!(
+                        "the event's wire name is `{wire}`; the subject `{}` must equal it",
+                        channel.subject
+                    ),
+                ),
+                _ => {}
+            }
+        }
+
         match (channel.envelope, channel.batch) {
             (Envelope::Single, Some(_)) => refusals.refuse(
                 "ESS-TRANSPORT-013",
@@ -550,12 +662,22 @@ fn channels(
                 );
                 None
             }
-            Some(broker) if broker.jetstream => capturing_stream(channel, streams, &path, refusals),
+            Some(broker) if broker.jetstream => {
+                if let Some((_, language)) = address.as_ref() {
+                    capturing_stream(channel, streams, language, &path, refusals)
+                } else {
+                    None
+                }
+            }
             Some(_) => None,
         };
+        let parameters = address
+            .map(|(parameters, _)| parameters)
+            .unwrap_or_default();
         let resolved = Channel {
             broker: channel.broker.clone(),
             subject: channel.subject.clone(),
+            parameters,
             envelope: channel.envelope,
             delivery: channel.delivery,
             batch: channel.batch,
@@ -572,26 +694,367 @@ fn channels(
     channels
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SubjectToken {
+    Static(String),
+    Variable(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SubjectLanguage {
+    Concrete,
+    Template(Vec<SubjectToken>),
+}
+
+fn parameterized_address(
+    channel: &ChannelSpec,
+    event: Option<&ResolvedEvent>,
+    ir: &EssIr,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<(BTreeMap<String, ParameterSource>, SubjectLanguage)> {
+    let start = refusals.0.len();
+    let authored_tokens = match tokens(&channel.subject) {
+        Ok(tokens) => tokens,
+        Err(reason) => {
+            refusals.refuse(
+                "ESS-TRANSPORT-012",
+                format!("{path}.subject"),
+                format!(
+                    "`{}` is not a publishable subject: {reason}",
+                    channel.subject
+                ),
+            );
+            return None;
+        }
+    };
+
+    let mut parsed = Vec::with_capacity(authored_tokens.len());
+    let mut expressions = BTreeSet::new();
+    for token in authored_tokens {
+        if token.contains(['*', '>']) {
+            refusals.refuse(
+                "ESS-TRANSPORT-012",
+                format!("{path}.subject"),
+                format!(
+                    "`{}` is not a publishable subject: a publish subject has no wildcard",
+                    channel.subject
+                ),
+            );
+            continue;
+        }
+        if token.contains(['{', '}']) {
+            let name = token
+                .strip_prefix('{')
+                .and_then(|rest| rest.strip_suffix('}'));
+            match name {
+                Some(name)
+                    if !name.is_empty()
+                        && !name.contains(['{', '}'])
+                        && name
+                            .chars()
+                            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-')) =>
+                {
+                    expressions.insert(name.to_owned());
+                    parsed.push((None, Some(name.to_owned())));
+                }
+                _ => refusals.refuse(
+                    "ESS-TRANSPORT-017",
+                    format!("{path}.subject"),
+                    format!(
+                        "`{token}` is not one whole address expression `{{name}}` with an ASCII letter, digit, `_` or `-` name"
+                    ),
+                ),
+            }
+        } else {
+            parsed.push((Some(token.to_owned()), None));
+        }
+    }
+
+    if refusals.0.len() != start {
+        return None;
+    }
+
+    if expressions.is_empty() {
+        if let Some(parameters) = channel.parameters.as_ref() {
+            if parameters.is_empty() {
+                refusals.refuse(
+                    "ESS-TRANSPORT-018",
+                    format!("{path}.parameters"),
+                    "a literal subject has no parameter mappings",
+                );
+            } else {
+                for name in parameters.keys() {
+                    refusals.refuse(
+                        "ESS-TRANSPORT-018",
+                        format!("{path}.parameters.{name}"),
+                        format!("parameter `{name}` is not used by the subject"),
+                    );
+                }
+            }
+        }
+        return (refusals.0.len() == start)
+            .then_some((BTreeMap::new(), SubjectLanguage::Concrete));
+    }
+
+    let Some(authored_parameters) = channel.parameters.as_ref() else {
+        for name in &expressions {
+            refusals.refuse(
+                "ESS-TRANSPORT-018",
+                format!("{path}.parameters.{name}"),
+                format!("address expression `{{{name}}}` has no parameter mapping"),
+            );
+        }
+        return None;
+    };
+    if authored_parameters.is_empty() {
+        refusals.refuse(
+            "ESS-TRANSPORT-018",
+            format!("{path}.parameters"),
+            "a parameterized subject has a nonempty parameter mapping",
+        );
+        return None;
+    }
+    for name in &expressions {
+        if !authored_parameters.contains_key(name) {
+            refusals.refuse(
+                "ESS-TRANSPORT-018",
+                format!("{path}.parameters.{name}"),
+                format!("address expression `{{{name}}}` has no parameter mapping"),
+            );
+        }
+    }
+    for name in authored_parameters.keys() {
+        if !expressions.contains(name) {
+            refusals.refuse(
+                "ESS-TRANSPORT-018",
+                format!("{path}.parameters.{name}"),
+                format!("parameter `{name}` is not used by the subject"),
+            );
+        }
+    }
+
+    let Some(event) = event else {
+        return None;
+    };
+    let mut parameters = BTreeMap::new();
+    for name in &expressions {
+        let Some(source) = authored_parameters.get(name) else {
+            continue;
+        };
+        match resolve_event_path(event, ir, source) {
+            Ok(resolved) => {
+                parameters.insert(name.clone(), ParameterSource::EventPath { path: resolved });
+            }
+            Err((code, message)) => refusals.refuse(
+                code,
+                format!("{path}.parameters.{name}"),
+                message,
+            ),
+        }
+    }
+
+    if refusals.0.len() != start {
+        return None;
+    }
+    let language = parsed
+        .into_iter()
+        .map(|(fixed, expression)| match (fixed, expression) {
+            (Some(fixed), None) => SubjectToken::Static(fixed),
+            (None, Some(expression)) => SubjectToken::Variable(
+                parameters[&expression].event_path().to_vec(),
+            ),
+            _ => unreachable!("one parsed subject token kind"),
+        })
+        .collect();
+    Some((parameters, SubjectLanguage::Template(language)))
+}
+
+fn resolve_event_path(
+    event: &ResolvedEvent,
+    ir: &EssIr,
+    source: &str,
+) -> Result<Vec<String>, (&'static str, String)> {
+    let parts: Vec<&str> = source.split('.').collect();
+    if parts.first() != Some(&"event")
+        || !(2..=4).contains(&parts.len())
+        || parts.iter().any(|part| part.is_empty())
+    {
+        return Err((
+            "ESS-TRANSPORT-019",
+            format!(
+                "`{source}` is not `event.<field>` with one to three payload field members"
+            ),
+        ));
+    }
+    let semantic: Vec<String> = parts[1..].iter().map(|part| (*part).to_owned()).collect();
+    let mut field = event.field(&semantic[0]).ok_or_else(|| {
+        (
+            "ESS-TRANSPORT-019",
+            format!(
+                "event `{}` has no payload field `{}`",
+                event.name, semantic[0]
+            ),
+        )
+    })?;
+    for member in &semantic[1..] {
+        field = required_struct_field(field, ir, member)?;
+    }
+    if !matches!(
+        &field.type_ref,
+        ResolvedTypeRef::Primitive {
+            name: Primitive::String
+        }
+    ) {
+        return Err((
+            "ESS-TRANSPORT-020",
+            format!(
+                "`{source}` ends in `{}`; an address parameter ends in required primitive `String`",
+                field.type_ref
+            ),
+        ));
+    }
+    Ok(semantic)
+}
+
+fn required_struct_field<'a>(
+    field: &'a ResolvedField,
+    ir: &'a EssIr,
+    member: &str,
+) -> Result<&'a ResolvedField, (&'static str, String)> {
+    let ResolvedTypeRef::Declared { name } = &field.type_ref else {
+        return Err((
+            "ESS-TRANSPORT-020",
+            format!(
+                "payload member `{}` has type `{}`; an intermediate address path member is a required struct",
+                field.name, field.type_ref
+            ),
+        ));
+    };
+    let declared = ir.named_type(name);
+    let ResolvedBody::Struct { fields, .. } = &declared.body else {
+        return Err((
+            "ESS-TRANSPORT-020",
+            format!(
+                "payload member `{}` has type `{}`; an intermediate address path member is a required struct",
+                field.name, field.type_ref
+            ),
+        ));
+    };
+    fields.iter().find(|field| field.name == member).ok_or_else(|| {
+        (
+            "ESS-TRANSPORT-019",
+            format!("struct `{}` has no field `{member}`", declared.name),
+        )
+    })
+}
+
+fn covers(pattern: &str, language: &[SubjectToken]) -> bool {
+    let pattern: Vec<&str> = pattern.split('.').collect();
+    let has_tail = pattern.last() == Some(&">");
+    let prefix = if has_tail {
+        &pattern[..pattern.len() - 1]
+    } else {
+        pattern.as_slice()
+    };
+    if (has_tail && language.len() <= prefix.len())
+        || (!has_tail && language.len() != prefix.len())
+    {
+        return false;
+    }
+    prefix
+        .iter()
+        .zip(language)
+        .all(|(pattern, token)| match (*pattern, token) {
+            ("*", _) => true,
+            (exact, SubjectToken::Static(fixed)) => exact == fixed,
+            (_, SubjectToken::Variable(_)) => false,
+        })
+}
+
+fn intersects(pattern: &str, language: &[SubjectToken]) -> bool {
+    let pattern: Vec<&str> = pattern.split('.').collect();
+    let has_tail = pattern.last() == Some(&">");
+    let prefix = if has_tail {
+        &pattern[..pattern.len() - 1]
+    } else {
+        pattern.as_slice()
+    };
+    if (has_tail && language.len() <= prefix.len())
+        || (!has_tail && language.len() != prefix.len())
+    {
+        return false;
+    }
+    let mut bindings: BTreeMap<Vec<String>, &str> = BTreeMap::new();
+    for (pattern, token) in prefix.iter().zip(language) {
+        if *pattern == "*" {
+            continue;
+        }
+        match token {
+            SubjectToken::Static(fixed) if *pattern != fixed => return false,
+            SubjectToken::Static(_) => {}
+            SubjectToken::Variable(source) => match bindings.get(source) {
+                Some(bound) if bound != pattern => return false,
+                Some(_) => {}
+                None => {
+                    bindings.insert(source.clone(), pattern);
+                }
+            },
+        }
+    }
+    true
+}
+
 /// The one stream on the channel's broker that captures its subject.
 fn capturing_stream(
     channel: &ChannelSpec,
     streams: &BTreeMap<String, Stream>,
+    language: &SubjectLanguage,
     path: &str,
     refusals: &mut Refusals,
 ) -> Option<String> {
-    let capturing: Vec<&String> = streams
+    let on_broker: Vec<(&String, &Stream)> = streams
         .iter()
         .filter(|(_, stream)| stream.broker == channel.broker)
+        .collect();
+    let capturing: Vec<&String> = on_broker
+        .iter()
         .filter(|(_, stream)| {
-            stream
-                .subjects
-                .iter()
-                .any(|pattern| matches(pattern, &channel.subject))
+            stream.subjects.iter().any(|pattern| match language {
+                SubjectLanguage::Concrete => matches(pattern, &channel.subject),
+                SubjectLanguage::Template(tokens) => covers(pattern, tokens),
+            })
         })
-        .map(|(name, _)| name)
+        .map(|(name, _)| *name)
         .collect();
     match capturing.as_slice() {
-        [one] => Some((*one).clone()),
+        [one] => {
+            if matches!(language, SubjectLanguage::Template(_)) {
+                let overlaps: Vec<&str> = on_broker
+                    .iter()
+                    .filter(|(name, _)| *name != *one)
+                    .filter(|(_, stream)| {
+                        stream.subjects.iter().any(|pattern| match language {
+                            SubjectLanguage::Template(tokens) => intersects(pattern, tokens),
+                            SubjectLanguage::Concrete => false,
+                        })
+                    })
+                    .map(|(name, _)| name.as_str())
+                    .collect();
+                if !overlaps.is_empty() {
+                    refusals.refuse(
+                        "ESS-TRANSPORT-016",
+                        format!("{path}.subject"),
+                        format!(
+                            "stream `{}` covers every expansion of `{}` but streams {overlaps:?} also intersect it; NATS refuses overlapping streams",
+                            one, channel.subject
+                        ),
+                    );
+                    return None;
+                }
+            }
+            Some((*one).clone())
+        }
         [] => {
             refusals.refuse(
                 "ESS-TRANSPORT-015",
@@ -692,7 +1155,7 @@ pub fn matches(pattern: &str, subject: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{matches, publish_subject, subject_pattern};
+    use super::{covers, intersects, matches, publish_subject, subject_pattern, SubjectToken};
 
     #[test]
     fn nats_wildcards_match_whole_tokens() {
@@ -714,5 +1177,32 @@ mod tests {
         assert!(subject_pattern("usage.>").is_ok());
         assert!(subject_pattern("usage.>.ivr").is_err());
         assert!(subject_pattern("usage.a*").is_err());
+    }
+
+    #[test]
+    fn stream_language_predicates_preserve_variable_correlations() {
+        let same = vec![
+            SubjectToken::Static("usage".to_owned()),
+            SubjectToken::Variable(vec!["source".to_owned(), "service".to_owned()]),
+            SubjectToken::Variable(vec!["source".to_owned(), "service".to_owned()]),
+        ];
+        assert!(covers("usage.*.*", &same));
+        assert!(covers("usage.>", &same));
+        assert!(!covers("usage.a.a", &same));
+        assert!(!covers("usage.*", &same));
+        assert!(!covers("usage.*.*.*", &same));
+        assert!(intersects("usage.a.a", &same));
+        assert!(intersects("usage.*.a", &same));
+        assert!(!intersects("usage.a.b", &same));
+
+        let independent = vec![
+            SubjectToken::Static("usage".to_owned()),
+            SubjectToken::Variable(vec!["source".to_owned(), "service".to_owned()]),
+            SubjectToken::Variable(vec!["source".to_owned(), "environment".to_owned()]),
+        ];
+        assert!(intersects("usage.a.b", &independent));
+        assert!(!intersects("other.>", &independent));
+        assert!(!intersects("usage.*", &independent));
+        assert!(!intersects("usage.*.*.*", &independent));
     }
 }

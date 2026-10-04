@@ -103,6 +103,12 @@ tasks:
     cmds:
       - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
 
+  test-transport-network:
+    desc: Validate AsyncAPI and execute both generated publishers against real JetStream; requires explicit external test tooling.
+    cmds:
+      - cargo test --offline --locked -p ess-gen --test asyncapi_transport the_official_asyncapi_cli_accepts_the_parameterized_document -- --ignored --exact --nocapture
+      - cargo test --offline --locked -p ess-publisher --test generated both_generated_adapters_publish_parameterized_batches_to_actual_nats -- --ignored --exact --nocapture
+
   test-doc:
     desc: Run the workspace doc-tests, which nextest does not.
     cmds:

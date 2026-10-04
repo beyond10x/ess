@@ -146,8 +146,8 @@
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
-    ResolvedBinding, ResolvedComponent, ResolvedEffect, ResolvedEvent, ResolvedFailure,
-    ResolvedMapping, ResolvedMappingValue, TypeHandle,
+    ResolvedBinding, ResolvedBody, ResolvedComponent, ResolvedEffect, ResolvedEvent,
+    ResolvedFailure, ResolvedMapping, ResolvedMappingValue, ResolvedTypeRef, TypeHandle,
 };
 use ess_compiler::EssIr;
 use ess_domain::binding::{Delivery, Failure};
@@ -182,8 +182,8 @@ const TYPE_KEY: &str = "type.";
 /// One `AsyncAPI` 3.0 document per component: what it publishes, and what it reacts to.
 pub struct AsyncApi;
 
-/// The same documents, with the brokers, subjects, streams and envelopes an `ess-transport/1`
-/// document binds the events to.
+/// The same documents, with the brokers, subjects, streams, parameters and envelopes an
+/// `ess-transport/1` or `/2` document binds the events to.
 pub struct TransportedAsyncApi(pub ess_transport::TransportIr);
 
 impl Generator for AsyncApi {
@@ -257,6 +257,10 @@ impl<T> Table<T> {
     /// Appends an entry.
     fn push(&mut self, key: impl Into<String>, value: T) {
         self.0.push((key.into(), value));
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -388,6 +392,8 @@ impl Reference {
 #[derive(serde::Serialize)]
 struct Channel {
     address: String,
+    #[serde(skip_serializing_if = "Table::is_empty")]
+    parameters: Table<ChannelParameter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -401,6 +407,23 @@ struct Channel {
     address_source: &'static str,
     #[serde(rename = "x-ess-stream", skip_serializing_if = "Option::is_none")]
     stream: Option<StreamExtension>,
+}
+
+/// One AsyncAPI channel address parameter and ESS's stronger payload-source contract.
+#[derive(serde::Serialize)]
+struct ChannelParameter {
+    description: String,
+    location: String,
+    #[serde(rename = "x-ess-source")]
+    source: ChannelParameterSource,
+}
+
+#[derive(serde::Serialize)]
+struct ChannelParameterSource {
+    kind: &'static str,
+    path: Vec<String>,
+    scope: &'static str,
+    constraint: &'static str,
 }
 
 /// Something this component does with a channel: `send` it, or `receive` from it.
@@ -669,7 +692,7 @@ fn document(
         let mut projected = channel(event);
         let mut published = message(event);
         if let Some((transport, bound)) = bound {
-            bind_channel(&mut projected, transport, bound);
+            bind_channel(&mut projected, transport, bound, ir, event);
             bind_message(&mut published, bound);
             if !brokers.contains(&bound.broker) {
                 brokers.push(bound.broker.clone());
@@ -856,9 +879,45 @@ fn servers(transport: &TransportIr, used: &[String]) -> Table<Server> {
 }
 
 /// A channel the transport document binds: its subject, broker and capturing stream.
-fn bind_channel(channel: &mut Channel, transport: &TransportIr, bound: &TransportChannel) {
+fn bind_channel(
+    channel: &mut Channel,
+    transport: &TransportIr,
+    bound: &TransportChannel,
+    ir: &EssIr,
+    event: &ResolvedEvent,
+) {
     channel.address.clone_from(&bound.subject);
     channel.address_source = "transport";
+    for (name, source) in &bound.parameters {
+        let semantic = source.event_path().to_vec();
+        let wire = event_wire_path(ir, event, &semantic);
+        let pointer = wire
+            .iter()
+            .map(|segment| segment.replace('~', "~0").replace('/', "~1"))
+            .collect::<Vec<_>>()
+            .join("/");
+        let (item, scope) = if bound.envelope == Envelope::Array {
+            ("/0", "every_item")
+        } else {
+            ("", "one_item")
+        };
+        channel.parameters.push(
+            name,
+            ChannelParameter {
+                description: format!(
+                    "Equals event.{} and is one concrete NATS subject token.",
+                    semantic.join(".")
+                ),
+                location: format!("$message.payload#{item}/{pointer}"),
+                source: ChannelParameterSource {
+                    kind: "event_path",
+                    path: semantic,
+                    scope,
+                    constraint: "nats_subject_token",
+                },
+            },
+        );
+    }
     channel.servers = vec![Reference::to(format!("#/servers/{}", bound.broker))];
     channel.stream = bound.stream.as_ref().map(|name| {
         let stream = &transport.streams()[name];
@@ -871,6 +930,28 @@ fn bind_channel(channel: &mut Channel, transport: &TransportIr, bound: &Transpor
             owner: stream.owner,
         }
     });
+}
+
+fn event_wire_path(ir: &EssIr, event: &ResolvedEvent, semantic: &[String]) -> Vec<String> {
+    let mut out = Vec::with_capacity(semantic.len());
+    let mut field = event
+        .field(&semantic[0])
+        .unwrap_or_else(|| unreachable!("transport compilation resolved the event path"));
+    out.push(types::wire_name(field).to_owned());
+    for member in &semantic[1..] {
+        let ResolvedTypeRef::Declared { name } = &field.type_ref else {
+            unreachable!("transport compilation admitted only required struct intermediates")
+        };
+        let ResolvedBody::Struct { fields, .. } = &ir.named_type(name).body else {
+            unreachable!("transport compilation admitted only required struct intermediates")
+        };
+        field = fields
+            .iter()
+            .find(|field| field.name == *member)
+            .unwrap_or_else(|| unreachable!("transport compilation resolved the event path"));
+        out.push(types::wire_name(field).to_owned());
+    }
+    out
 }
 
 /// A message the transport document carries in an `array` envelope.
@@ -901,6 +982,7 @@ fn channel(event: &ResolvedEvent) -> Channel {
     );
     Channel {
         address,
+        parameters: Table::new(),
         title: Some(display_of(event).to_owned()),
         summary: event.naming.summary.clone(),
         servers: Vec::new(),

@@ -45,6 +45,38 @@ streams:
   - {name: USAGE, broker: events, subjects: [usage], storage: file, retention: limits, owner: external}
 ";
 
+const PARAMETER_MODEL: &str = "format: ess/20
+system: routing
+version: v1
+domain: routing.events
+types:
+  - name: routing.events.Source
+    kind: struct
+    fields:
+      - {name: service, type: String}
+events:
+  - name: routing.events.UsageRecorded
+    fields:
+      - {name: source, type: routing.events.Source}
+components:
+  - component: producer
+    owns: {domains: [routing.events]}
+    publishes: {events: [routing.events.UsageRecorded]}
+";
+
+const PARAMETER_BODY: &str = "brokers:
+  - {id: events, protocol: nats, jetstream: true}
+channels:
+  - event: routing.events.UsageRecorded
+    broker: events
+    subject: 'usage.{service}'
+    parameters: {service: event.source.service}
+    envelope: array
+    delivery: at_most_once
+streams:
+  - {name: USAGE, broker: events, subjects: ['usage.>'], storage: file, retention: limits, owner: external}
+";
+
 struct Fixture(PathBuf);
 
 impl Fixture {
@@ -106,6 +138,35 @@ fn text(output: &Output) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     )
+}
+
+fn parameter_fixture() -> Fixture {
+    let fixture = Fixture::new();
+    fs::write(fixture.0.join("model/system.yaml"), PARAMETER_MODEL).unwrap();
+    let generated = fixture.ess(&[
+        "generate", "--path", "model", "--kind", "schema", "--out", "digest",
+    ]);
+    assert!(generated.status.success(), "{}", text(&generated));
+    let schema: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            fixture
+                .0
+                .join("digest/schema/events/routing.events.UsageRecorded.schema.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let digest = schema["x-ess-provenance"]["source_digest"]
+        .as_str()
+        .unwrap();
+    fs::write(
+        fixture.0.join("transport.yaml"),
+        format!(
+            "type: ess-transport/2\nspecification:\n  system: routing\n  version: v1\n  source_digest: sha256:{digest}\n{PARAMETER_BODY}"
+        ),
+    )
+    .unwrap();
+    fixture
 }
 
 #[test]
@@ -212,4 +273,39 @@ fn a_transport_beside_another_kind_is_refused() {
         text(&generate)
     );
     assert!(!fixture.0.join("out").exists());
+}
+
+#[test]
+fn parameterized_transport_compiles_and_reaches_asyncapi() {
+    let fixture = parameter_fixture();
+    let compile = fixture.ess(&[
+        "specify",
+        "transport",
+        "compile",
+        "--path",
+        "transport.yaml",
+        "--spec",
+        "model",
+        "--out",
+        "transport.json",
+    ]);
+    assert!(compile.status.success(), "{}", text(&compile));
+    let ir = fs::read_to_string(fixture.0.join("transport.json")).unwrap();
+    assert!(ir.contains("\"format\": \"ess-transport-ir/2\""), "{ir}");
+
+    let generate = fixture.ess(&[
+        "generate",
+        "--path",
+        "model",
+        "--kind",
+        "asyncapi",
+        "--transport",
+        "transport.yaml",
+        "--out",
+        "out",
+    ]);
+    assert!(generate.status.success(), "{}", text(&generate));
+    let document = fs::read_to_string(fixture.0.join("out/asyncapi/producer.yaml")).unwrap();
+    assert!(document.contains("parameters:"), "{document}");
+    assert!(document.contains("location: $message.payload#/0/source/service"), "{document}");
 }

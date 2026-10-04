@@ -1,0 +1,159 @@
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
+)
+
+// Transport is where a publisher sends one message. Implement it over any client, or use the
+// natsjs module for a JetStream connection. It returns once the broker has accepted or refused.
+type Transport interface { Publish(ctx context.Context, subject string, payload []byte) error }
+
+// PublishError is a publish that did not land: which subject, how many payloads, and why.
+type PublishError struct { Subject string; Items int; Err error }
+func (e *PublishError) Error() string { return fmt.Sprintf("publishing %d payload(s) on %q failed: %v", e.Items, e.Subject, e.Err) }
+func (e *PublishError) Unwrap() error { return e.Err }
+
+// ErrClosed is returned for a payload offered after Close.
+var ErrClosed = errors.New("the publisher is closed")
+
+type PublisherOptions struct { OnError func(error) }
+var _ = json.Marshal
+var _ = strings.Builder{}
+
+type bucket struct { payloads [][]byte; oldest time.Time }
+type batchReply chan error
+
+type enqueueCommand struct { subject string; payload []byte; reply batchReply }
+type sendCommand struct { ctx context.Context; subject string; payloads [][]byte; reply batchReply }
+type flushCommand struct { ctx context.Context; close bool; reply batchReply }
+type bucketCountCommand struct { reply chan int }
+
+type batcher struct {
+	template string
+	maxItems int
+	maxDelay time.Duration
+	transport Transport
+	onError func(error)
+	commands chan any
+	mu sync.Mutex
+	closed bool
+	done chan struct{}
+}
+
+func newBatcher(template string, maxItems int, maxDelay time.Duration, transport Transport, onError func(error)) *batcher {
+	b := &batcher{template: template, maxItems: maxItems, maxDelay: maxDelay, transport: transport, onError: onError, commands: make(chan any), done: make(chan struct{})}
+	go b.work()
+	return b
+}
+
+func parameterToken(template, name, value string) error {
+	if value == "" || strings.ContainsAny(value, ".*>") || strings.IndexFunc(value, unicode.IsSpace) >= 0 {
+		return &PublishError{Subject: template, Items: 1, Err: fmt.Errorf("address parameter %q must be one nonempty NATS subject token with no `.`, whitespace, `*` or `>`", name)}
+	}
+	return nil
+}
+
+func (b *batcher) work() {
+	defer close(b.done)
+	buckets := map[string]*bucket{}
+	timer := time.NewTimer(time.Hour)
+	if !timer.Stop() { <-timer.C }
+	for {
+		var wake <-chan time.Time
+		if len(buckets) > 0 {
+			var deadline time.Time
+			for _, bucket := range buckets { if deadline.IsZero() || bucket.oldest.Add(b.maxDelay).Before(deadline) { deadline = bucket.oldest.Add(b.maxDelay) } }
+			wait := time.Until(deadline)
+			if wait < 0 { wait = 0 }
+			timer.Reset(wait)
+			wake = timer.C
+		}
+		select {
+		case raw := <-b.commands:
+			if wake != nil && !timer.Stop() { select { case <-timer.C: default: } }
+			switch command := raw.(type) {
+			case enqueueCommand:
+				entry := buckets[command.subject]
+				if entry == nil { entry = &bucket{oldest: time.Now()}; buckets[command.subject] = entry }
+				entry.payloads = append(entry.payloads, command.payload)
+				full := len(entry.payloads) >= max(1, b.maxItems)
+				command.reply <- nil
+				if full { delete(buckets, command.subject); b.report(b.send(context.Background(), command.subject, entry.payloads)) }
+			case sendCommand:
+				command.reply <- b.send(command.ctx, command.subject, command.payloads)
+			case flushCommand:
+				command.reply <- b.drain(command.ctx, buckets)
+				if command.close { return }
+			case bucketCountCommand:
+				command.reply <- len(buckets)
+			}
+		case now := <-wake:
+			due := make([]string, 0)
+			for subject, bucket := range buckets { if !bucket.oldest.Add(b.maxDelay).After(now) { due = append(due, subject) } }
+			sort.Strings(due)
+			for _, subject := range due { entry := buckets[subject]; delete(buckets, subject); b.report(b.send(context.Background(), subject, entry.payloads)) }
+		}
+	}
+}
+
+func (b *batcher) request(command func(batchReply) any, items int) error {
+	b.mu.Lock()
+	if b.closed { b.mu.Unlock(); return &PublishError{Subject: b.template, Items: items, Err: ErrClosed} }
+	reply := make(batchReply)
+	b.commands <- command(reply)
+	b.mu.Unlock()
+	return <-reply
+}
+
+func (b *batcher) enqueue(subject string, payload []byte) error {
+	return b.request(func(reply batchReply) any { return enqueueCommand{subject: subject, payload: payload, reply: reply} }, 1)
+}
+func (b *batcher) sendNow(ctx context.Context, subject string, payloads [][]byte) error {
+	if len(payloads) == 0 { return nil }
+	return b.request(func(reply batchReply) any { return sendCommand{ctx: ctx, subject: subject, payloads: payloads, reply: reply} }, len(payloads))
+}
+func (b *batcher) flush(ctx context.Context) error {
+	return b.request(func(reply batchReply) any { return flushCommand{ctx: ctx, reply: reply} }, 0)
+}
+func (b *batcher) close(ctx context.Context) error {
+	b.mu.Lock()
+	if b.closed { b.mu.Unlock(); <-b.done; return nil }
+	b.closed = true
+	reply := make(batchReply)
+	b.commands <- flushCommand{ctx: ctx, close: true, reply: reply}
+	b.mu.Unlock()
+	err := <-reply
+	<-b.done
+	return err
+}
+func (b *batcher) bucketCount() int {
+	b.mu.Lock()
+	if b.closed { b.mu.Unlock(); return -1 }
+	reply := make(chan int)
+	b.commands <- bucketCountCommand{reply: reply}
+	b.mu.Unlock()
+	return <-reply
+}
+
+func (b *batcher) send(ctx context.Context, subject string, batch [][]byte) error {
+	if len(batch) == 0 { return nil }
+	payload := append(append([]byte{'['}, bytes.Join(batch, []byte{','})...), ']')
+	if err := b.transport.Publish(ctx, subject, payload); err != nil { return &PublishError{Subject: subject, Items: len(batch), Err: err} }
+	return nil
+}
+func (b *batcher) drain(ctx context.Context, buckets map[string]*bucket) error {
+	subjects := make([]string, 0, len(buckets))
+	for subject := range buckets { subjects = append(subjects, subject) }
+	sort.Strings(subjects)
+	var first error
+	for _, subject := range subjects { entry := buckets[subject]; delete(buckets, subject); if err := b.send(ctx, subject, entry.payloads); err != nil && first == nil { first = err } }
+	return first
+}
+func (b *batcher) report(err error) { if err != nil && b.onError != nil { b.onError(err) } }
