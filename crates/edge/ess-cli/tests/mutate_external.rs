@@ -2,7 +2,7 @@
 //!
 //! `docs/design/mutation-audit-and-model-runner.md`, "Auditing an external target". `--emit` writes
 //! the baseline suite and every mutant's suite and runs nothing; the project runs its own runner
-//! over each and writes an `ess-conformance-report/1` beside it; `--collect` scores those reports
+//! over each and writes an `ess-conformance-report/2` beside it; `--collect` scores those reports
 //! into `ess-mutation-report/3`. Here the project's runner is fabricated: each report is written by
 //! hand from the emitted suite, some red, some green, one missing.
 
@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::{json, Value};
+
+#[path = "support/project_report.rs"]
+mod project_report;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -71,33 +74,11 @@ fn emit(name: &str) -> PathBuf {
     emitted
 }
 
-/// The `ess-conformance-report/1` a project runner writes for the suite in `dir`, failing exactly
+/// The `ess-conformance-report/2` a project runner writes for the suite in `dir`, failing exactly
 /// the scenarios in `failed`.
 fn fabricate(dir: &Path, failed: &[String]) {
-    let suite = read_json(&dir.join("suite.json"));
-    let provenance = &suite["provenance"];
-    let total = suite["scenarios"].as_object().expect("scenarios").len();
-    let report = json!({
-        "format": "ess-conformance-report/1",
-        "specification": format!(
-            "{}/{}",
-            provenance["system"].as_str().unwrap(),
-            provenance["specification_version"].as_str().unwrap()
-        ),
-        "spec_digest": provenance["spec_digest"],
-        "implementation": "project-runner 1.0.0",
-        "status": if failed.is_empty() { "passed" } else { "failed" },
-        "scenarios_total": total,
-        "scenarios_failed": failed.len(),
-        "suite_version": provenance["suite_version"],
-        "failed_scenarios": failed.iter().map(|id| format!("failed {id}")).collect::<Vec<_>>(),
-        "completed_at": 1_700_000_000_000_u64,
-    });
-    std::fs::write(
-        dir.join("report.json"),
-        serde_json::to_string_pretty(&report).unwrap() + "\n",
-    )
-    .expect("the report is written");
+    let failed: Vec<String> = failed.iter().map(|id| format!("failed {id}")).collect();
+    project_report::fabricate(dir, &failed);
 }
 
 fn first_scenario(dir: &Path) -> String {

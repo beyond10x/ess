@@ -168,11 +168,8 @@ fn reverse_enum_literals_and_fact_operands_follow_the_same_representation_rules(
         op: CompareOp::Eq,
         right: Operand::Fact(FactPath::new("phase").unwrap()),
     };
-    assert!(
-        expression::check_predicate(&ir, fields, &predicate, "public row adapter")
-            .errors
-            .is_empty()
-    );
+    let errors = expression::check_predicate(&ir, fields, &predicate, "public row adapter").errors;
+    assert_eq!(errors.len(), 0, "{errors:?}");
 }
 
 #[test]

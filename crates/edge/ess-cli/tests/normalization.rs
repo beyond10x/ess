@@ -432,7 +432,7 @@ fn checked_recipe_and_run_are_deterministic_with_json_only_stdout() {
         serde_json::from_slice::<Value>(&first.stdout).unwrap(),
         fixture.recipe()
     );
-    assert!(first.stderr.is_empty());
+    assert_eq!(first.stderr.len(), 0);
     let run = fixture.run("normalize-run", &[]);
     assert!(run.status.success(), "{run:?}");
     assert_eq!(run.stdout, b"3000\n");
@@ -581,7 +581,7 @@ fn generation_checks_refuse_before_creating_or_changing_destinations() {
         args.extend(["--out", "missing"]);
         let result = fixture.run("normalize-generate", &args);
         assert!(!result.status.success(), "{result:?}");
-        assert!(result.stdout.is_empty());
+        assert_eq!(result.stdout.len(), 0);
         assert!(!fixture.0.join("missing").exists());
     }
     let mut recipe = fixture.recipe();
@@ -611,7 +611,7 @@ fn incompatible_later_destination_preserves_the_entire_existing_output() {
         ],
     );
     assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout.len(), 0);
     assert_eq!(fs::read(root.join("Cargo.toml")).unwrap(), b"untouched");
     assert!(!root.join("source.recipe.json").exists());
     assert!(!root.join("normalization-report.json").exists());
@@ -736,7 +736,7 @@ fn unsupported_go_pattern_has_no_successful_partial_artifact() {
         ],
     );
     assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout.len(), 0);
     assert!(String::from_utf8_lossy(&result.stderr).contains("go_schema_pattern"));
     assert!(!fixture.0.join("generated").exists());
 }
@@ -792,7 +792,7 @@ fn failed_check_or_execution_preserves_output_and_does_not_emit_a_result() {
         fs::write(fixture.0.join("instance.json"), input).unwrap();
         let result = fixture.run("normalize-run", &["--out", "result.json"]);
         assert!(!result.status.success());
-        assert!(result.stdout.is_empty());
+        assert_eq!(result.stdout.len(), 0);
         assert_eq!(
             fs::read(fixture.0.join("result.json")).unwrap(),
             b"untouched"

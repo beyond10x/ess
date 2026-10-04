@@ -74,7 +74,7 @@ fn issue_141_an_underscore_field_synthesizes_scenarios_and_no_refusal() {
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert!(!inputs.is_empty());
+    assert_ne!(inputs.len(), 0);
     for input in inputs {
         let rendered = serde_json::to_string(input).expect("serialises");
         assert!(

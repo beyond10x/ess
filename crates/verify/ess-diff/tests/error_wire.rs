@@ -77,10 +77,11 @@ fn presentation_metadata_is_not_lost_or_confused_with_legacy_summary() {
 
 #[test]
 fn an_explicit_legacy_code_has_no_wire_delta() {
-    assert!(
+    assert_eq!(
         diff(&model(""), &model("    naming: {wire: desk.api.Invalid}\n"))
             .unwrap()
             .changes()
-            .is_empty()
+            .len(),
+        0
     );
 }

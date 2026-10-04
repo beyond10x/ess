@@ -184,7 +184,11 @@ fn acknowledgements_for_another_pair_are_refused_with_status_1() {
         file.to_str().unwrap(),
     ]);
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    assert!(output.stdout.is_empty());
+    assert_eq!(
+        output.stdout.len(),
+        0,
+        "a refused acknowledgement writes nothing to stdout"
+    );
     assert!(
         stderr(&output).contains("conflicting_declaration"),
         "{}",

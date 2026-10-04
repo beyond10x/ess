@@ -49,9 +49,9 @@ fn generated(dir: &Path, coverage: bool) -> (std::path::PathBuf, AdmittedSuite) 
     assert_eq!(
         value["provenance"]["suite_version"],
         if coverage {
-            "ess-conformance/7"
+            "ess-conformance/35"
         } else {
-            "ess-conformance/6"
+            "ess-conformance/34"
         }
     );
     assert!(
@@ -158,7 +158,10 @@ fn accessor_coverage_selection_keeps_version_seven_and_exact_parent_bytes() {
         input.parents()[0].original_json(),
         fs::read_to_string(&suite).unwrap()
     );
-    assert_eq!(input.selected().suite().provenance.suite_version.major(), 7);
+    assert_eq!(
+        input.selected().suite().provenance.suite_version.major(),
+        35
+    );
     assert!(input.selected().suite().scenarios.is_empty());
     assert!(input.selected().coverage().unwrap().counts.outside > 0);
     let orphan = dir.path().join("orphan.json");

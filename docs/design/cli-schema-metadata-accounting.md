@@ -356,3 +356,20 @@ Review updates only the three existing RootDefinitionsContainer shape pins. The 
 literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
 unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
 This review grants no new exemption or runtime conformance claim.
+
+## Source format ess/21 schema review — 2026-10-04
+
+`ess/21` adds an outcome's `one_time_response:` list of response field names
+([one-time response values](one-time-response-values.md), beyond10x/ess#389), so the generated
+source schema gains one definitions descendant, `Outcome/properties/one_time_response` with its
+string `items`. `ess/22` (beyond10x/ess#304) adds no source key: it widens what
+`when_related.via` admits to an `Optional<…>` input. None of the changes makes the three CLI
+pipelines consumers of the generated schema document.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `8606841f7ace746b6f50e467a37672278ba1ca0d4158f47b0f84afbc4391d072` (the pin the
+delivery-context change left, which recorded no section here)
+to `25d6631e4f9a5a40feeb2d9c057b8cdb3d6581ea7a82e6af2fe0d15baeb33518`.
+Review updates only the three existing RootDefinitionsContainer shape pins. The root dialect, six
+literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
+unchanged. This review grants no new exemption or runtime conformance claim.

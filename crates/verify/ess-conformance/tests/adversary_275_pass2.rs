@@ -522,7 +522,7 @@ fn failed(suite: &ConformanceSuite, model: Model) -> Vec<(String, Status)> {
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &Ledger::of(model))
         .into_report();
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     report
         .scenarios
         .into_iter()
@@ -665,7 +665,7 @@ fn caller_swaps_execute_in_empty_namespaces_and_reject_an_in_scenario_collision(
             &ess_conformance::interpret::Interpreted::for_model(model.clone()),
         )
         .into_report();
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     for result in report.scenarios {
         assert_eq!(result.status, Status::Passed, "{result:#?}");
     }

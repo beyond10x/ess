@@ -1919,7 +1919,7 @@ fn the_fixture_suite_passes_against_the_generated_go_and_rust_servers() {
         let report = ess_conformance::Runner::for_suite(&suite)
             .run_admitted(&admitted, &adapter)
             .into_report();
-        assert!(!report.scenarios.is_empty());
+        assert_ne!(report.scenarios.len(), 0);
         eprintln!(
             "{target:?}: {} HTTP conformance scenarios",
             report.scenarios.len()

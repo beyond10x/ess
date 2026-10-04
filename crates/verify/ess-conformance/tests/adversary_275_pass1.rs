@@ -363,7 +363,7 @@ fn adversary_275_every_scenario_passes_when_the_identity_is_echoed_under_other_n
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &Ledger::default())
         .into_report();
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     let failed: Vec<(String, Status)> = report
         .scenarios
         .into_iter()

@@ -4247,7 +4247,7 @@ fn a_whole_system_suite_does_not_mention_a_component() {
     let ir = example("billing");
     let whole = synthesize(&ir);
     assert_eq!(whole.suite.provenance.component, None);
-    assert!(whole.outside.is_empty());
+    assert_eq!(whole.outside.len(), 0, "{:?}", whole.outside);
     let document: serde_json::Value =
         serde_json::from_str(&whole.suite.to_canonical_json().unwrap()).expect("the suite is JSON");
     assert!(

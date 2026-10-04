@@ -14,7 +14,8 @@
 //!   before it was invoked. An operation that never answered returns after every other one
 //!   ([`ReturnBound::AfterEveryOther`], decision 4), so it never holds another back.
 //! * The model is **nondeterministic**: one step can leave more than one next state — an
-//!   `external:` branch ([`Externals::Open`]), and every input the history does not record (below).
+//!   `external:` branch ([`Externals::Open`](crate::interpret::execute::Externals::Open)), and
+//!   every input the history does not record (below).
 //!   Each next state is a branch of the search.
 //! * A state already reached with the same set of operations ordered is not searched again.
 //! * Row-local histories are partitioned by subject, joining retry components as described below.
@@ -1536,10 +1537,10 @@ fn convergence<'h>(split: &Split<'h>, settle: u64) -> BTreeMap<&'h str, Result<(
 fn subjects<'s>(split: &Split<'s>) -> BTreeMap<&'s str, Partition<'s>> {
     let mut subjects = BTreeMap::new();
     for (partition, operations) in &split.partitions {
+        // A subject partition is named by its subject, the empty string included: a `String`
+        // identity may be empty, and a read showing that row is explained by its partition.
         if let Partition::Subject(subject) = partition {
-            if !subject.is_empty() {
-                subjects.insert(*subject, *partition);
-            }
+            subjects.insert(*subject, *partition);
         }
         for prepared in operations {
             let subject = prepared.operation.subject_key.as_str();

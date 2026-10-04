@@ -80,7 +80,7 @@ fn service_commands_and_parameterized_views_dispatch_to_the_declared_owner() {
             None,
         );
         assert_eq!(result.exit_code, 0);
-        assert!(result.stderr.is_empty());
+        assert_eq!(result.stderr.len(), 0);
     }
     assert_eq!(
         recorder.0,
@@ -239,7 +239,7 @@ fn generated_package_compiles_offline_and_executes_process_fixtures() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout.len(), 0);
     assert!(String::from_utf8(output.stderr)
         .unwrap()
         .contains("cli_handler_unavailable"));

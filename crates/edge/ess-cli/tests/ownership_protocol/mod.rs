@@ -901,7 +901,7 @@ fn missing_anchor_creation_cuts_preserve_authored_parents_and_never_publish_part
         .enumerate()
         .filter(|(_, event)| event.contains("anchor-"))
         .collect::<Vec<_>>();
-    assert!(!cuts.is_empty());
+    assert_ne!(cuts.len(), 0);
     for (cut, event) in &cuts {
         for process in [false, true] {
             let _replay = ownership::probe::replay();

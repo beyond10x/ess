@@ -64,7 +64,7 @@ fn binary64_is_refused_even_when_no_component_consumes_the_type() {
         let json: serde_json::Value = serde_json::from_str(&failure.to_canonical_json()).unwrap();
         assert_eq!(json["format"], format);
         assert_eq!(failure.causes().len(), 1);
-        assert!(!failure.causes()[0].sources().is_empty());
+        assert_ne!(failure.causes()[0].sources().len(), 0);
         assert!(failure.causes()[0].detail().contains("Binary64"));
         let direct = match target {
             Target::Rust => {
@@ -1041,7 +1041,7 @@ fn neutral_refused_deliveries_keep_the_partial_web_report_and_compile() {
     let rust = synthesize(&ir).expect("neutral refusal still has a valid Rust tree");
     let web = synthesize_for(&ir, Target::Web).expect("partial Web report remains successful");
     assert!(rust.target.is_none());
-    assert!(!web.target.as_ref().unwrap().refusals.is_empty());
+    assert_ne!(web.target.as_ref().unwrap().refusals.len(), 0);
     assert_eq!(rust.plan, web.plan);
     assert!(!rust
         .plan

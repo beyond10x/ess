@@ -401,7 +401,7 @@ fn the_built_in_audit_scores_past_unsupported_baseline_scenarios() {
         WithoutViews(Interpreted::for_model(ir.clone()))
     })
     .unwrap_or_else(|refusal| panic!("scored, not {refusal}"));
-    assert!(!report.baseline.not_scored.is_empty());
+    assert_ne!(report.baseline.not_scored.len(), 0);
     assert!(report.baseline.not_scored.len() < report.baseline.scenarios);
     assert!(report
         .baseline

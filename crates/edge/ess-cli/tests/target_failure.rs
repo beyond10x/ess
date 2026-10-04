@@ -193,7 +193,7 @@ fn offered_choices(args: &[&str]) -> std::collections::BTreeSet<String> {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout.len(), 0);
     let text = String::from_utf8(output.stderr).unwrap();
     let marker = "[possible values: ";
     assert_eq!(
@@ -322,7 +322,7 @@ fn fatal_synthesis_preserves_destinations_and_has_a_typed_envelope() {
                         assert_eq!(value["format"], "ess-target-failure/1");
                         assert_eq!(value["target"], target);
                         assert_eq!(value["plan"]["capabilities"], serde_json::json!([]));
-                        assert!(!value["causes"].as_array().unwrap().is_empty());
+                        assert_ne!(value["causes"].as_array().unwrap().len(), 0);
                     }
                     streams.push((output.stdout, output.stderr));
                 }

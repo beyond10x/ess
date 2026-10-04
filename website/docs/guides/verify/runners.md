@@ -15,6 +15,7 @@ For response fields that must never be disclosed again after issuance, see
 $ ess verify conform run \
     --suite target/billing-suite.json \
     --target billing \
+    --report-format 2 \
     --report-out target/billing-conformance.json
 ```
 
@@ -26,9 +27,10 @@ implementations of their examples. `interpreted` selects the specification itsel
 model — outcomes, transitions, `sets:` writes, emitted events and declared refusals — and does not
 yet interpret views or bindings, so a scenario that reads one comes back as an unsatisfied
 obligation, and a run over a suite holding at least one such scenario fails.
-The default standalone report is `ess-conformance-report/1`. Its historical `scenarios_failed`
-count includes every non-pass, including Go skips and Rust errors or unsupported results. Those
-legacy bytes and meanings remain unchanged.
+A freshly synthesized suite is `ess-conformance/34`, which runs only with `--report-format 2`.
+The default standalone report, `ess-conformance-report/1`, is for suites up to
+`ess-conformance/4`. Its historical `scenarios_failed` count includes every non-pass, including Go
+skips and Rust errors or unsupported results. Those legacy bytes and meanings remain unchanged.
 
 To run directly from a specification instead of a pre-generated suite:
 
@@ -36,6 +38,7 @@ To run directly from a specification instead of a pre-generated suite:
 $ ess verify conform run \
     --path examples/billing \
     --target billing \
+    --report-format 2 \
     --format json
 ```
 

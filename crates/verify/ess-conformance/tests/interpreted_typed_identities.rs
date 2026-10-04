@@ -146,7 +146,7 @@ fn setup_and_update_preserve_admitted_scalar_and_structured_identity_values() {
             );
         }
         target.begin_scenario(&context()).unwrap();
-        assert!(rows(&target).is_empty());
+        assert_eq!(rows(&target).len(), 0);
     }
 }
 

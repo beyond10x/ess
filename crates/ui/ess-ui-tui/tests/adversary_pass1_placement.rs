@@ -102,7 +102,7 @@ fn adv1_session_storage_is_empty_at_the_start_of_a_run() {
     assert_eq!(holding(&dir, "left-over").len(), 1);
     drop(app);
     let mut app = open(&dir);
-    assert!(holding(&dir, "left-over").is_empty());
+    assert_eq!(holding(&dir, "left-over").len(), 0);
     app.open_page("tickets.detail", &[("id", "tk-01")]);
     assert!(!app.render_text(120, 60).contains("left-over"));
 }

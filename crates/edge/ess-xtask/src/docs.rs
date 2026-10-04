@@ -155,6 +155,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess", 18, Some("0.41.0")),
     ("ess", 19, Some("0.46.0")),
     ("ess", 20, Some("0.49.0")),
+    ("ess", 21, None),
+    ("ess", 22, None),
     ("ess-diff", 1, Some("0.1.0")),
     ("ess-diff", 2, Some("0.19.0")),
     ("ess-diff", 3, Some("0.23.0")),
@@ -167,6 +169,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-diff", 10, Some("0.41.0")),
     ("ess-diff", 11, Some("0.42.0")),
     ("ess-diff", 12, Some("0.46.1")),
+    ("ess-diff", 13, None),
     ("ess-diff", 14, None),
     ("ess-diff-acknowledgements", 1, None),
     ("ess-conformance", 1, Some("0.1.0")),
@@ -202,6 +205,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 31, Some("0.41.0")),
     ("ess-conformance", 32, Some("0.43.0")),
     ("ess-conformance", 33, Some("0.43.0")),
+    ("ess-conformance", 34, None),
+    ("ess-conformance", 35, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
@@ -998,8 +1003,9 @@ mod tests {
             vec!["page.md:1: ess/13 shipped in 0.35.0".to_owned()]
         );
         // A path or a link is not a bare version.
-        assert!(
-            stale_claims("page.md", "unreleased tag/0.35.0 and docs/2", &released()).is_empty()
+        assert_eq!(
+            stale_claims("page.md", "unreleased tag/0.35.0 and docs/2", &released()).len(),
+            0
         );
     }
 
@@ -1088,7 +1094,10 @@ mod tests {
         // A fixed release inventory keeps this pre-release example valid when the real
         // format registry gains another published version.
         let released = BTreeMap::from([(("ess", 1), "0.1.0")]);
-        assert!(stale_claims("page.md", "The unreleased `ess/2` format.\n", &released).is_empty());
+        assert_eq!(
+            stale_claims("page.md", "The unreleased `ess/2` format.\n", &released).len(),
+            0
+        );
     }
 
     #[test]
@@ -1142,7 +1151,7 @@ mod tests {
         let text = "Entity relations shipped in `0.5.0`.\n\
                     ```console\nversion=0.43.0\n\
                     ess generate project helm --chart example --version 1.0.0\n```\n";
-        assert!(readme_defects(README, text, "0.43.0").is_empty());
+        assert_eq!(readme_defects(README, text, "0.43.0").len(), 0);
     }
 
     #[test]
@@ -1160,9 +1169,9 @@ mod tests {
     #[test]
     fn a_version_run_is_read_whole() {
         assert_eq!(versions_in("ess 0.27.0"), vec!["0.27.0".to_owned()]);
-        assert!(versions_in("ess-0.27.0-aarch64").is_empty());
-        assert!(versions_in("0.13.2.1").is_empty());
-        assert!(versions_in("draft 2020-12").is_empty());
+        assert_eq!(versions_in("ess-0.27.0-aarch64").len(), 0);
+        assert_eq!(versions_in("0.13.2.1").len(), 0);
+        assert_eq!(versions_in("draft 2020-12").len(), 0);
     }
 
     #[test]

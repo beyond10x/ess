@@ -131,7 +131,7 @@ fn cli_rejects_duplicate_keys_and_tampered_accounting_before_output() {
             Some(&out),
         );
         assert_eq!(result.status.code(), Some(1));
-        assert!(result.stdout.is_empty());
+        assert_eq!(result.stdout.len(), 0);
         assert_eq!(std::fs::read(&out).unwrap(), b"retain existing output\n");
     }
 }

@@ -15,6 +15,9 @@ use std::process::{Command, Output};
 
 use serde_json::{json, Value};
 
+#[path = "support/project_report.rs"]
+mod project_report;
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
@@ -82,43 +85,10 @@ fn shop(name: &str) -> PathBuf {
     spec
 }
 
-/// The `ess-conformance-report/1` a project runner writes for the suite in `dir`, with one
+/// The `ess-conformance-report/2` a project runner writes for the suite in `dir`, with one
 /// `"<status> <id>"` entry per scenario that did not pass.
 fn fabricate(dir: &Path, not_passed: &[String]) {
-    let suite = read_json(&dir.join("suite.json"));
-    let provenance = &suite["provenance"];
-    let total = suite["scenarios"].as_object().expect("scenarios").len();
-    let red = not_passed
-        .iter()
-        .any(|entry| entry.starts_with("failed ") || entry.starts_with("unsupported "));
-    let status = if red {
-        "failed"
-    } else if not_passed.is_empty() {
-        "passed"
-    } else {
-        "inconclusive"
-    };
-    let report = json!({
-        "format": "ess-conformance-report/1",
-        "specification": format!(
-            "{}/{}",
-            provenance["system"].as_str().unwrap(),
-            provenance["specification_version"].as_str().unwrap()
-        ),
-        "spec_digest": provenance["spec_digest"],
-        "implementation": "project-runner 1.0.0",
-        "status": status,
-        "scenarios_total": total,
-        "scenarios_failed": not_passed.len(),
-        "suite_version": provenance["suite_version"],
-        "failed_scenarios": not_passed,
-        "completed_at": 1_700_000_000_000_u64,
-    });
-    std::fs::write(
-        dir.join("report.json"),
-        serde_json::to_string_pretty(&report).unwrap() + "\n",
-    )
-    .expect("the report is written");
+    project_report::fabricate(dir, not_passed);
 }
 
 fn scenario_ids(dir: &Path) -> Vec<String> {

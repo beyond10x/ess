@@ -131,7 +131,7 @@ fn pipeline(input: &Value, stages: &mut Vec<&'static str>) -> Result<Observed, S
         None,
     );
     assert_eq!(output.exit_code, 0, "{output:?}");
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&output.stdout).unwrap(),
         json!({"ok":true,"result":"Ada"})
@@ -675,7 +675,7 @@ fn service_pipeline(input: &Value, stages: &mut Vec<&'static str>) -> Result<(),
             None,
         );
         assert_eq!(output.exit_code, 0, "{output:?}");
-        assert!(output.stderr.is_empty());
+        assert_eq!(output.stderr.len(), 0);
         assert_eq!(
             serde_json::from_str::<Value>(&output.stdout).unwrap(),
             json!({"ok":true,"result":expected_result})

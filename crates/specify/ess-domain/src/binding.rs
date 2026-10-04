@@ -2299,7 +2299,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
 ";
         let raw: RawBindingSpec = serde_yaml::from_str(document).expect("parses");
         let binding = BindingSpec::try_from(raw).expect("a valid binding");
-        assert!(binding.refs.is_empty());
+        assert_eq!(binding.refs.len(), 0, "{:?}", binding.refs);
 
         let written = serde_yaml::to_string(&binding).expect("writes");
         assert!(

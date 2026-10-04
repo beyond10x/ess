@@ -88,12 +88,12 @@ fn run_suite(suite: &Path, target: &str) -> (serde_json::Value, Option<i32>) {
         .args(["--path", "examples/billing"])
         .arg("--suite")
         .arg(suite)
-        .args(["--format", "json"])
+        .args(["--report-format", "2", "--format", "json"])
         .output()
         .expect("the `ess` binary runs");
     let stdout = String::from_utf8(output.stdout).expect("the report is UTF-8");
     let report = serde_json::from_str(&stdout)
-        .unwrap_or_else(|error| panic!("report/1 is rendered as JSON: {error}\n{stdout}"));
+        .unwrap_or_else(|error| panic!("report/2 is rendered as JSON: {error}\n{stdout}"));
     (report, output.status.code())
 }
 
@@ -113,7 +113,10 @@ fn real_interpreted_execution_and_empty_suite_verdicts_are_distinct() {
     );
 
     let (report, code) = run_suite(&committed, "interpreted");
-    assert_eq!(report["status"], "passed", "{report:#}");
+    assert_eq!(
+        report["summary"]["execution_status"], "passed",
+        "{report:#}"
+    );
     assert_eq!(code, Some(0));
     let scenarios = report["scenarios"].as_array().expect("executed scenarios");
     assert_eq!(scenarios.len(), 33);
@@ -133,14 +136,14 @@ fn real_interpreted_execution_and_empty_suite_verdicts_are_distinct() {
     let (interpreted, interpreted_code) = run_suite(&path, "interpreted");
     let (billing, billing_code) = run_suite(&path, "billing");
     assert_eq!(
-        (&interpreted["status"], interpreted_code),
-        (&billing["status"], billing_code),
+        (&interpreted["summary"]["execution_status"], interpreted_code),
+        (&billing["summary"]["execution_status"], billing_code),
         "a suite holding no scenarios must come out the same for every target, because the verdict \
          of no scenarios is the runner's and not the implementation's: interpreted \
          {interpreted:#}\nbilling {billing:#}"
     );
     assert_eq!(
-        (&interpreted["status"], interpreted_code),
+        (&interpreted["summary"]["execution_status"], interpreted_code),
         (&serde_json::json!("passed"), Some(0)),
         "and today that shared answer is `passed`, exit 0 — the documented `[]` selection reports a \
          target that executed nothing as conformant. Pinned so a change to it is deliberate: \

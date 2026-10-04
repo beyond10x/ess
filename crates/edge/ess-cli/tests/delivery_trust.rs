@@ -103,7 +103,7 @@ fn suite_seven_release_qualification_retains_exact_parent_lineage() {
     f.set_input(&selected, true);
     f.write("report.json", report(&selected));
     success(&f.qualify("check-conformance", true).output().unwrap());
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
     for missing in [true, false] {
         let mut carrier = selected.document();
         if missing {
@@ -123,7 +123,7 @@ fn suite_seven_release_qualification_retains_exact_parent_lineage() {
     f.write("report.json", report(&original));
     let stale = f.qualify("check-conformance", true).output().unwrap();
     assert!(!stale.status.success(), "{stale:?}");
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
 }
 
 fn report_value(input: &AdmittedInput, category: &str, profile: &str) -> Value {
@@ -294,7 +294,7 @@ impl Fixture {
                 "{route} did not reach {reason}: {err}"
             );
             assert!(!err.contains("conformance: passed"));
-            assert!(out.stdout.is_empty());
+            assert_eq!(out.stdout.len(), 0);
             assert_eq!(self.calls().len(), before, "effect before {reason}");
         }
     }
@@ -384,7 +384,7 @@ fn t01_t02_placeholders_and_rehashed_evidence_remain_only_consistency_checked() 
             .output()
             .unwrap(),
     );
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
 }
 #[test]
 fn t03_arbitrary_logs_and_wrong_envelopes_refuse_all_positive_routes() {
@@ -437,7 +437,7 @@ fn t06_complete_rust_go_and_filtered_reports_qualify_only_their_exact_selection(
             f.write("report.json", &raw);
             let out = f.qualify("check-conformance", carrier).output().unwrap();
             let err = success(&out);
-            assert!(out.stdout.is_empty());
+            assert_eq!(out.stdout.len(), 0);
             for required in [
                 "conformance: passed for the supplied exact declared selection",
                 input.selected().digest(),
@@ -455,7 +455,7 @@ fn t06_complete_rust_go_and_filtered_reports_qualify_only_their_exact_selection(
             }
         }
     }
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
 }
 #[test]
 fn t06_supplied_results_qualify_and_say_ess_executed_nothing() {
@@ -490,7 +490,7 @@ fn t06_supplied_results_qualify_and_say_ess_executed_nothing() {
     f.write("report.json", &raw);
     let err = success(&f.qualify("check-conformance", false).output().unwrap());
     assert!(!err.contains("results supplied by"), "{err}");
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
 }
 #[test]
 fn t07_original_suite_pairing_and_full_model_identity_refuse_substitution() {
@@ -793,7 +793,7 @@ fn t11_usage_groups_and_raw_pin_syntax_refuse_before_effects() {
         assert_eq!(out.status.code(), Some(1));
         assert!(String::from_utf8_lossy(&out.stderr).contains("expected input byte pin mismatch"));
     }
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
 }
 #[test]
 fn t12_compiled_deployment_and_every_artifact_context_are_checked_and_named() {
@@ -967,7 +967,7 @@ fn t13_oras_bad_digest_non_utf8_and_nonzero_status_fail_both_publishers() {
                 .output()
                 .unwrap();
             assert_eq!(out.status.code(), Some(1));
-            assert!(out.stdout.is_empty());
+            assert_eq!(out.stdout.len(), 0);
             assert!(String::from_utf8_lossy(&out.stderr).contains("ORAS"));
             assert_eq!(f.calls().len(), 1);
         }
@@ -1284,7 +1284,7 @@ fn t16_action_input_environment_and_generic_check_failure_contract() {
     c.env("CHECK_COMMAND", "printf 'generic failure\\n'; exit 19");
     let out = f.action_output(&mut c);
     assert_eq!(out.status.code(), Some(19));
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
     assert_eq!(
         fs::read_to_string(f.root.join("target/release/check.log")).unwrap(),
         "generic failure\n"
@@ -1479,7 +1479,7 @@ fn t10_in_scope_refusal_beside_nonempty_all_passes_blocks_positive_qualification
     )
     .unwrap();
     let r = rejected.selected().coverage().unwrap();
-    assert!(!r.refused.is_empty());
+    assert_ne!(r.refused.len(), 0);
     let mut value = suite_document();
     value["coverage"]["refused"] = serde_json::to_value(&r.refused).unwrap();
     value["coverage"]["counts"]["refused"] = json!(r.refused.len());
@@ -1515,7 +1515,7 @@ fn t02_invalid_nested_release_claims_and_duplicate_maps_refuse_before_qualified_
         let out = f.qualify("publish", false).output().unwrap();
         assert_eq!(out.status.code(), Some(1));
         assert!(String::from_utf8_lossy(&out.stderr).contains("bundle"));
-        assert!(f.calls().is_empty());
+        assert_eq!(f.calls().len(), 0);
     }
     let original = f.bundle.to_canonical_json();
     let value = serde_json::to_string(
@@ -1533,7 +1533,7 @@ fn t02_invalid_nested_release_claims_and_duplicate_maps_refuse_before_qualified_
     let out = f.qualify("publish", false).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("duplicate"));
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
 }
 #[test]
 fn t12_consistently_changed_artifact_platform_and_source_context_remains_execution_unverified() {
@@ -1589,7 +1589,7 @@ fn t11_neither_expected_variant_and_noncanonical_context_are_refused_without_too
         assert!(String::from_utf8_lossy(&out.stderr).contains("canonical"));
         f.write(file, raw);
     }
-    assert!(f.calls().is_empty());
+    assert_eq!(f.calls().len(), 0);
 }
 
 #[test]
@@ -1916,7 +1916,7 @@ fn adversary2_coherent_wrong_model_bundle_refuses_qualification_after_plain_cons
             "{variant}: {err}"
         );
         assert!(!err.contains("conformance: passed"));
-        assert!(out.stdout.is_empty());
+        assert_eq!(out.stdout.len(), 0);
         assert!(
             f.calls().is_empty(),
             "{variant} crossed ORAS before qualification"
@@ -2179,7 +2179,7 @@ fn discovery_manifest_qualifies_all_release_model_callers_and_stops_before_oras(
         );
         assert_eq!(out.status.code(), Some(1));
         assert!(String::from_utf8_lossy(&out.stderr).contains("ess-inputs.yaml"));
-        assert!(out.stdout.is_empty());
+        assert_eq!(out.stdout.len(), 0);
         assert_eq!(f.calls().len(), calls);
     }
 }

@@ -243,7 +243,7 @@ fn an_ordering_the_domain_does_not_decide_keeps_its_scoring() {
     // between the candidates tried, so the domain does not decide it: the verdict is what it was.
     let spec = ordered();
     let collected = collect(&emitted(&spec, &[MutantClass::GuardBoundary], true).1);
-    assert!(!collected.mutants.is_empty());
+    assert_ne!(collected.mutants.len(), 0);
     for entry in &collected.mutants {
         assert_eq!(entry.unsatisfiable_guard, None, "{entry:?}");
         assert_ne!(entry.verdict, Verdict::Equivalent, "{entry:?}");
@@ -660,7 +660,7 @@ fn assert_transitions(report: &MutationReport) {
                 .all(|key| key.scenario.as_deref() == Some("desk.case.Review/outcome/escalated")),
             "{entry:?}"
         );
-        assert!(!named.is_empty());
+        assert_ne!(named.len(), 0);
     }
     // A transition a witnessed outcome performs keeps its scoring.
     for entry in report

@@ -155,7 +155,7 @@ fn success(
     let expected_output = json!({"ok":true,"result":result});
     let observed = execute(binding, value, HandlerReply::Success(result));
     assert_eq!(observed.exit, 0, "{observed:?}");
-    assert!(observed.stderr.is_empty());
+    assert_eq!(observed.stderr.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&observed.stdout).unwrap(),
         expected_output
@@ -411,8 +411,8 @@ fn selected_newtype_and_struct_shapes_change_native_payloads() {
     success(&b, "sample", "true", json!({"value":true}), json!(17));
     let wrong = execute(&b, "17", HandlerReply::Success(json!(17)));
     assert_eq!(wrong.exit, 2);
-    assert!(wrong.calls.is_empty());
-    assert!(wrong.stdout.is_empty());
+    assert_eq!(wrong.calls.len(), 0);
+    assert_eq!(wrong.stdout.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&wrong.stderr).unwrap()["error"]["code"],
         "cli_input"
@@ -473,8 +473,8 @@ fn selected_enum_wire_variants_change_admission_and_runtime_values() {
     for (binding, wrong) in [(&a, "Fast"), (&b, "Safe")] {
         let rejected = execute(binding, wrong, HandlerReply::Success(json!(17)));
         assert_eq!(rejected.exit, 2);
-        assert!(rejected.stdout.is_empty());
-        assert!(rejected.calls.is_empty());
+        assert_eq!(rejected.stdout.len(), 0);
+        assert_eq!(rejected.calls.len(), 0);
         assert_eq!(
             serde_json::from_str::<Value>(&rejected.stderr).unwrap()["error"]["code"],
             "cli_input"
@@ -638,7 +638,7 @@ fn declared_result_and_error_fields_check_actual_handler_values() {
     let wrong = execute(&b, "17", HandlerReply::Success(json!({"answer":"17"})));
     assert_eq!(wrong.exit, 1);
     assert_eq!(wrong.calls.len(), 1);
-    assert!(wrong.stdout.is_empty());
+    assert_eq!(wrong.stdout.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&wrong.stderr).unwrap()["error"]["code"],
         "cli_result"
@@ -667,7 +667,7 @@ fn declared_result_and_error_fields_check_actual_handler_values() {
         );
         assert_eq!(observed.exit, 1);
         assert_eq!(observed.calls.len(), 1);
-        assert!(observed.stdout.is_empty());
+        assert_eq!(observed.stdout.len(), 0);
         assert_eq!(
             serde_json::from_str::<Value>(&observed.stderr).unwrap(),
             json!({"ok":false,"error":{"code":"failed","data":data}})
@@ -683,7 +683,7 @@ fn declared_result_and_error_fields_check_actual_handler_values() {
     );
     assert_eq!(wrong.exit, 1);
     assert_eq!(wrong.calls.len(), 1);
-    assert!(wrong.stdout.is_empty());
+    assert_eq!(wrong.stdout.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&wrong.stderr).unwrap()["error"]["code"],
         "cli_error"

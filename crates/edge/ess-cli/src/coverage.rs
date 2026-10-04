@@ -157,7 +157,11 @@ pub(super) fn execute<R>(
     target_run: impl FnOnce() -> R,
 ) -> Result<R> {
     if suite.suite().provenance.suite_version.major() >= 8 && report_format != "2" {
-        bail!("suite/8 and /9 require explicit --report-format 2 before execution");
+        let newest = ess_conformance::scenario::SUPPORTED_SUITE_FORMATS
+            .iter()
+            .max()
+            .expect("at least one supported suite format");
+        bail!("suite/8 through /{newest} require explicit --report-format 2 before execution");
     }
     if suite.suite().provenance.suite_version.major() >= 5 && report_format != "2" {
         bail!("suite/5, /6 and /7 require explicit --report-format 2 before execution");
@@ -213,5 +217,30 @@ mod tests {
         assert_eq!(constructed.get(), 0);
         execute(&suite, "2", || constructed.set(constructed.get() + 1)).unwrap();
         assert_eq!(constructed.get(), 1);
+    }
+
+    /// The refusal names the versions it applies to, not the two it was first written for — the
+    /// rule the generated Go and TypeScript runners already state (beyond10x/ess#186).
+    #[test]
+    fn a_fresh_suite_refusal_names_every_version_it_refuses() {
+        let original = serde_json::json!({
+            "provenance":{"suite_version":"ess-conformance/34","system":"example","specification_version":"v1",
+                "spec_digest":"a".repeat(64),"contract_digest":"b".repeat(64),
+                "scenario_initial_state":"empty"},
+            "scenarios":{}
+        })
+        .to_string();
+        let suite = AdmittedSuite::from_json(&original).unwrap();
+        let newest = ess_conformance::scenario::SUPPORTED_SUITE_FORMATS
+            .iter()
+            .max()
+            .unwrap();
+        let refused = execute(&suite, "1", || ()).unwrap_err().to_string();
+        assert_eq!(
+            refused,
+            format!(
+                "suite/8 through /{newest} require explicit --report-format 2 before execution"
+            )
+        );
     }
 }

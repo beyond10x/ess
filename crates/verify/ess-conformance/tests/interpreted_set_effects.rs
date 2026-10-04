@@ -212,7 +212,7 @@ fn primary_failure_and_unknown_filters_never_apply_secondary_or_partial_writes()
         )
         .unwrap();
         assert_eq!(answer.outcome, None);
-        assert!(answer.events.is_empty());
+        assert_eq!(answer.events.len(), 0);
         assert_eq!(store, before);
     }
     let source = MODEL.replace("          team: input.team\n", "");

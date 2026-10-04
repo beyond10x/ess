@@ -563,7 +563,7 @@ fn corrupt_warm_entries_are_not_repaired_and_never_launch_a_client() {
             std::fs::write(&entry, &bytes).unwrap();
             g.assert_refusal(&f, &requested, reason, true);
             assert_eq!(std::fs::read(entry).unwrap(), bytes);
-            assert!(calls(&f).is_empty());
+            assert_eq!(calls(&f).len(), 0);
         }
     }
 }
@@ -610,7 +610,7 @@ fn symlink_and_directory_entries_refuse_without_following_or_replacing() {
                 std::fs::create_dir(&entry).unwrap();
             }
             g.assert_refusal(&f, &requested, "must be a regular file", true);
-            assert!(calls(&f).is_empty());
+            assert_eq!(calls(&f).len(), 0);
             assert_eq!(std::fs::read(outside).unwrap(), g.proof());
         }
     }
@@ -1174,7 +1174,7 @@ fn warm_substitution_rechecks_every_blob_and_requested_manifest_identity() {
                     },
                     true,
                 );
-                assert!(calls(&f).is_empty());
+                assert_eq!(calls(&f).len(), 0);
                 assert_eq!(std::fs::read(entry).unwrap(), proof);
             }
         }

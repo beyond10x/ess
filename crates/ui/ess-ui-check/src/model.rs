@@ -1450,7 +1450,7 @@ fn identity_of(ir: &EssIr, view: &ResolvedView) -> Option<String> {
 }
 
 /// A name a choice's `options` write resolves in the model as a page parameter's type does
-/// ([`Model::has_type`]): its qualified name, the name below the system, and last the trailing
+/// (`Model::has_type`): its qualified name, the name below the system, and last the trailing
 /// segments of qualified names, which must end exactly one (beyond10x/ess#330).
 impl ModelEnums for Model {
     fn system(&self) -> &str {

@@ -630,7 +630,7 @@ fn the_example_declares_the_one_type_crossing_it_needs_and_says_why() {
         .iter()
         .next()
         .expect("the example declares one crossing");
-    assert!(!conversion.because.trim().is_empty());
+    assert_ne!(conversion.because.trim().len(), 0);
 
     let from = &conversion.from;
     let to = &conversion.to;

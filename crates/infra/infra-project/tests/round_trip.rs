@@ -541,7 +541,7 @@ fn same_named_workloads_in_two_namespaces_reach_distinct_budget_fixed_points() {
     let rebuilt = support::compile(&patched.to_string());
     let settled = infra_project::project(&spec, &rebuilt).unwrap();
     assert_eq!(settled.summary.generated, 0);
-    assert!(settled.patches.is_empty());
-    assert!(settled.objects.is_empty());
+    assert_eq!(settled.patches.len(), 0);
+    assert_eq!(settled.objects.len(), 0);
     assert_eq!(serde_json::to_vec(&source.document()).unwrap(), before);
 }

@@ -287,14 +287,14 @@ fn expression_search_limits_do_not_define_type_correctness() {
     ]);
     assert_eq!(facts(&ir, 0.15).decide(&interval), Decision::Satisfied);
     let options = candidates(&ir, command, &[&interval], Distinction::PLAIN).unwrap();
-    assert!(!options.is_empty());
+    assert_ne!(options.len(), 0);
     assert!(options.iter().all(|input| !flatten(&ir, command, input)
         .unwrap()
         .decide(&interval)
         .is_satisfied()));
     let half = guard("quantity == 0.5");
     let options = candidates(&ir, command, &[&half], Distinction::PLAIN).unwrap();
-    assert!(!options.is_empty());
+    assert_ne!(options.len(), 0);
     assert!(options.iter().all(|input| !flatten(&ir, command, input)
         .unwrap()
         .decide(&half)

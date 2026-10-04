@@ -568,7 +568,7 @@ fn the_interpreted_target_matches_the_complete_billing_mutation_audit() {
     })
     .unwrap();
     let reference = mutate::audit(&files, &texts, MutantClass::ALL, Billing::new).unwrap();
-    assert!(report.baseline.not_scored.is_empty());
+    assert_eq!(report.baseline.not_scored.len(), 0);
     assert_eq!(report.baseline.scenarios, 32);
     assert_eq!(report.baseline, reference.baseline);
     assert_eq!(report.counts, reference.counts);

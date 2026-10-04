@@ -98,19 +98,25 @@ fn module(name: &str) -> PathBuf {
     directory
 }
 
-/// Where a run in `directory` writes its `ess-conformance-report/1`.
+/// Where a run in `directory` writes its `ess-conformance-report/2`.
 fn report_path(directory: &Path) -> PathBuf {
     directory.join("report.json")
 }
 
 /// The report a run in `directory` wrote, read back through the closed shape the Rust side
-/// publishes — so a Go runner that drifted from it fails to parse here rather than being adapted
-/// by a workflow system into a claim it never made.
-fn report(directory: &Path) -> StandaloneConformanceReport {
+/// publishes and bound to the exact emitted suite bytes — so a Go runner that drifted from it
+/// fails to parse here rather than being adapted by a workflow system into a claim it never made.
+///
+/// A fresh suite is `ess-conformance/34` (#312), which runs only under `ESS_REPORT_FORMAT=2`.
+fn report(directory: &Path) -> serde_json::Value {
     let text = std::fs::read_to_string(report_path(directory)).expect("the runner wrote a report");
-    StandaloneConformanceReport::from_json(&text).unwrap_or_else(|error| {
-        panic!("the report is not ess-conformance-report/1: {error}\n{text}")
-    })
+    let suite = std::fs::read_to_string(directory.join("essconform/suite.json"))
+        .expect("the emitted suite exists");
+    let suite = ess_conformance::AdmittedSuite::from_json(&suite).expect("the suite is admitted");
+    ess_conformance::CountReport::from_json(&text, &suite).unwrap_or_else(|error| {
+        panic!("the report is not ess-conformance-report/2 for this suite: {error}\n{text}")
+    });
+    serde_json::from_str(&text).expect("the report is JSON")
 }
 
 /// The digest the emitted `suite.json` carries, which is what the report has to repeat.
@@ -132,6 +138,7 @@ fn go_test(go: &Path, directory: &Path, broken: Option<&str>) -> (bool, String) 
     command
         .args(["test", "-v", "./..."])
         .current_dir(directory)
+        .env("ESS_REPORT_FORMAT", "2")
         .env("ESS_REPORT_OUT", report_path(directory));
     if let Some(defect) = broken {
         command.env("ESS_BREAK", defect);
@@ -180,13 +187,13 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     // digest is the field a passing run is worth anything for, so it is checked against the suite
     // rather than against a constant.
     let written = report(&directory);
-    assert_eq!(written.status, VerificationStatus::Passed);
-    assert_eq!(written.scenarios_total, 33);
-    assert_eq!(written.scenarios_failed, 0);
-    assert!(written.failed_scenarios.is_empty());
-    assert_eq!(written.spec_digest.as_str(), suite_digest(&directory));
-    assert_eq!(written.specification, "billing/v3");
-    assert_eq!(written.suite_version, "ess-conformance/4");
+    assert_eq!(written["execution_status"], "passed");
+    assert_eq!(written["counts"]["total"], 33);
+    assert_eq!(written["counts"]["failed"], 0);
+    assert_eq!(written["outcomes"]["failed"], serde_json::json!([]));
+    assert_eq!(written["spec_digest"], suite_digest(&directory));
+    assert_eq!(written["specification"], "billing/v3");
+    assert_eq!(written["suite"]["version"], "ess-conformance/34");
     let _ = std::fs::remove_dir_all(&directory);
 }
 
@@ -226,14 +233,13 @@ fn one_deliberate_defect_fails_the_scenarios_responsible_for_it_and_no_others() 
 
     // The report names the same thirteen, as failures, and calls the run failed.
     let written = report(&directory);
-    assert_eq!(written.status, VerificationStatus::Failed);
-    assert_eq!(written.scenarios_total, 33);
-    assert_eq!(written.scenarios_failed, 13);
-    let named: Vec<String> = scenarios(&printed, "FAIL")
-        .into_iter()
-        .map(|id| format!("failed {id}"))
-        .collect();
-    assert_eq!(written.failed_scenarios, named);
+    assert_eq!(written["execution_status"], "failed");
+    assert_eq!(written["counts"]["total"], 33);
+    assert_eq!(written["counts"]["failed"], 13);
+    assert_eq!(
+        written["outcomes"]["failed"],
+        serde_json::json!(scenarios(&printed, "FAIL"))
+    );
     let _ = std::fs::remove_dir_all(&directory);
 }
 

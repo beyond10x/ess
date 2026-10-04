@@ -75,7 +75,7 @@ fn outcome(answer: SemanticCommandResult, expected: &str) {
     assert_eq!(answer.outcome.unwrap().outcome.as_str(), expected);
     if expected != "initiated" && expected != "published" {
         assert!(answer.error.is_some());
-        assert!(answer.direct_events.is_empty());
+        assert_eq!(answer.direct_events.len(), 0);
     }
 }
 fn rows(target: &Interpreted, view: &str) -> Vec<ViewRow> {
@@ -124,7 +124,7 @@ fn addressed_related_row_wins_over_decoys_and_refusals_preserve_state() {
         signin(&target, "00000000-0000-4000-8000-999999999999", "console").unwrap(),
         "no-configuration",
     );
-    assert!(rows(&target, "demo.signin.SignIns").is_empty());
+    assert_eq!(rows(&target, "demo.signin.SignIns").len(), 0);
     assert_eq!(rows(&target, "demo.signin.Configurations"), before);
     outcome(signin(&target, &second, "other").unwrap(), "initiated");
     outcome(signin(&target, &first, "console").unwrap(), "initiated");
@@ -248,7 +248,7 @@ fn missing_required_related_fact_is_unknown_but_false_input_dominates() {
         signin(&target, &tenant, "console"),
         Err(TargetError::Unsupported { .. })
     ));
-    assert!(rows(&target, "demo.signin.SignIns").is_empty());
+    assert_eq!(rows(&target, "demo.signin.SignIns").len(), 0);
     outcome(signin(&target, &tenant, "bypass").unwrap(), "initiated");
 }
 
@@ -266,5 +266,5 @@ fn missing_related_row_precedes_input_refusal_which_precedes_present_predicate()
         signin(&target, &tenant, "other").unwrap(),
         "no-redirect-entry",
     );
-    assert!(rows(&target, "demo.signin.SignIns").is_empty());
+    assert_eq!(rows(&target, "demo.signin.SignIns").len(), 0);
 }

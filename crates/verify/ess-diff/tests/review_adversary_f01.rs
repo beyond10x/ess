@@ -15,8 +15,24 @@ fn complete_generated_and_authored_suite_four_bytes_remain_frozen() {
     // SHA256 35355f258eda03947fc25f5aec10bf739579af22e000cc38ef036201201f0abe, 158491 bytes; re-frozen
     // for ess#113 (each lifecycle command is sent for an invoice no record carries): SHA256
     // e7edbca4b365a52c736ab9712067f18203e6314279361fd3d3dbe3917a55b172, 166349 bytes.
-    let frozen = include_str!("fixtures/review-billing-suite-v4.json");
-    assert_eq!(frozen.len(), 166_349);
+    //
+    // Synthesis writes every fresh suite as ess-conformance/34 with `scenario_initial_state:
+    // empty` (#312, docs/design/scenario-initial-state-and-cross-caller-witnesses.md), and billing's
+    // `IssueInvoice` takes the issuing timestamp it stores. The suite/4 bytes stay frozen as the
+    // legacy document a current reader still round-trips; the synthesis freeze moves to the /34
+    // bytes: SHA256 ca964ba3135943bc0c0bb61312fc08223a1f57f87d4322e0bd9f74c7513bfca7, 170277 bytes,
+    // the committed `suites/generated/billing/suite.json`.
+    let legacy = include_str!("fixtures/review-billing-suite-v4.json");
+    assert_eq!(legacy.len(), 166_349);
+    assert_eq!(
+        ess_conformance::scenario::ConformanceSuite::from_json(legacy)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap(),
+        legacy
+    );
+    let frozen = include_str!("fixtures/review-billing-suite-v34.json");
+    assert_eq!(frozen.len(), 170_277);
     let ir = support::compiled("examples/billing");
     let mut synthesis = ess_conformance::synthesize(&ir);
     let authoring = ess_conformance::authored::compile(&ir, &[
@@ -30,10 +46,10 @@ fn complete_generated_and_authored_suite_four_bytes_remain_frozen() {
     for (id, scenario) in authoring.scenarios {
         synthesis.suite.insert(id, scenario).unwrap();
     }
-    assert!(synthesis.refusals.is_empty());
+    assert_eq!(synthesis.refusals.len(), 0);
     let candidate = synthesis.suite.to_canonical_json().unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&candidate).unwrap();
-    assert_eq!(parsed["provenance"]["suite_version"], "ess-conformance/4");
+    assert_eq!(parsed["provenance"]["suite_version"], "ess-conformance/34");
     assert_eq!(parsed["scenarios"].as_object().unwrap().len(), 33);
     assert_eq!(candidate, frozen);
     assert_eq!(

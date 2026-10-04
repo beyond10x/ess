@@ -139,7 +139,7 @@ fn a_view_and_a_command_bind_to_the_paths_the_served_surface_answers() {
         view.path,
         derived(&sources, "pass-service", "gatepass.visit.ExpectedVisits")
     );
-    assert!(view.params.is_empty());
+    assert_eq!(view.params.len(), 0);
 
     let command = &served.commands["gatepass.visit.RegisterVisit"];
     assert_eq!(command.path, "/visits/commands/register-visit");

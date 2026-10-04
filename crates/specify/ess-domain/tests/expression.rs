@@ -332,7 +332,7 @@ fn quantifiers_resolve_targets_before_pushing_lexical_binders() {
         quantified("lines", "line", Predicate::Always),
         predicate("line.amount > 0"),
     ]);
-    assert!(!check_predicate(&env, &p, "owner").errors.is_empty());
+    assert_ne!(check_predicate(&env, &p, "owner").errors.len(), 0);
 }
 #[test]
 fn parameters_are_typed_at_depth_and_shadowed_lexically() {
@@ -356,7 +356,7 @@ fn parameters_are_typed_at_depth_and_shadowed_lexically() {
         &quantified("lines", "param", predicate("param.amount > 0")),
         "owner",
     );
-    assert!(checked.errors.is_empty());
+    assert_eq!(checked.errors.len(), 0);
     assert!(checked.parameters.is_empty());
     for text in [
         "param.absent.amount > 0",

@@ -257,7 +257,7 @@ fn the_built_in_audit_records_the_refusals_a_killed_mutant_added() {
             .added_refusals
             .as_ref()
             .unwrap_or_else(|| panic!("{} names what it added", entry.id));
-        assert!(!added.is_empty());
+        assert_ne!(added.len(), 0);
         assert!(
             added.iter().all(|key| key.code.starts_with("ESS-SYNTH-")),
             "{added:?}"

@@ -144,7 +144,7 @@ fn nested_stored_event_and_error_values_use_the_current_typed_caller() {
             "demo.notes.Create/denied"
         );
         assert_eq!(denied.error.unwrap().fields["bag"], expected);
-        assert!(denied.direct_events.is_empty());
+        assert_eq!(denied.direct_events.len(), 0);
     }
     let rows = rows(&target);
     assert_eq!(rows.len(), 2);
@@ -191,7 +191,7 @@ fn invalid_callers_do_not_consume_controls_or_create_rows_and_no_context_is_reus
             matches!(answer, Err(TargetError::Unavailable { .. })),
             "{answer:?}"
         );
-        assert!(rows(&target).is_empty());
+        assert_eq!(rows(&target).len(), 0);
     }
     let mut no_actor = request("Choose", "valid", Some(caller("valid", false)));
     no_actor.actor = None;
@@ -238,7 +238,7 @@ fn invalid_callers_do_not_consume_controls_or_create_rows_and_no_context_is_reus
         })
         .unwrap();
     assert!(undeclared.outcome.is_none());
-    assert!(undeclared.direct_events.is_empty());
+    assert_eq!(undeclared.direct_events.len(), 0);
     assert_eq!(rows(&target), before);
     let missing = target.execute_command(request("Create", "valid", None));
     assert!(

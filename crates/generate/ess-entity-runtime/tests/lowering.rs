@@ -1334,7 +1334,7 @@ fn subject_field_selection_and_a_responding_preserve_lower_and_decide_faithfully
     assert!(kept.set.is_empty());
     assert!(kept.set_if_present.is_empty());
     assert!(kept.fulfills.is_empty());
-    assert!(kept.emits.is_empty());
+    assert_eq!(kept.emits.len(), 0);
     assert!(kept.responds.contains_key("seen"));
     assert!(!lowered.bindings().requirements().iter().any(|requirement| matches!(
         requirement,
@@ -1375,7 +1375,7 @@ fn subject_field_selection_and_a_responding_preserve_lower_and_decide_faithfully
     let decision = evaluation.into_decision().expect("preserve accepts");
     assert_eq!(decision.instance.lifecycle_state, "Draft");
     assert_eq!(decision.instance.fields, posted.fields);
-    assert!(decision.events.is_empty());
+    assert_eq!(decision.events.len(), 0);
 
     let emailed = invoice_instance("Draft", "Email");
     let PreloadDecision::Load(prepared) = runtime

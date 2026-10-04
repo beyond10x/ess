@@ -369,7 +369,7 @@ fn actual_interpreted_target_generates_fresh_constrained_strings() {
     let target = ess_conformance::interpret::Interpreted::for_model(ir);
     let report =
         ess_conformance::Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     assert!(report
         .scenarios
         .iter()
@@ -384,7 +384,7 @@ fn interpreted_all_pass(source: &str) {
     let target = ess_conformance::interpret::Interpreted::for_model(ir);
     let report =
         ess_conformance::Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     for scenario in &report.scenarios {
         assert_eq!(
             scenario.status,

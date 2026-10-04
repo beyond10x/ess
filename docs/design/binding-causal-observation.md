@@ -85,9 +85,9 @@ the original caller's token as well as all completed descendant writes. An event
 must catch up to those writes before Complete. A target without a snapshot/transaction authority
 for the required cut returns a named missing capability.
 
-Session/root/event/attempt identifiers are opaque allocation identities, never hashes, excerpts
-or encodings of payloads, command inputs, one-time fields or credentials. Requests contain actual
-inputs only where the existing operation already needs them; no oracle expectation is sent.
+Session, root, event and attempt identifiers are opaque allocation identities, never hashes,
+excerpts or encodings of payloads, command inputs, one-time fields or credentials. Requests contain
+actual inputs only where the existing operation already needs them; no oracle expectation is sent.
 
 ## Inventory and actual execution authority
 

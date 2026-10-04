@@ -178,7 +178,7 @@ fn nav_unique() {
             "{home: p, sections: [{name: all, pages: [p]}, {name: more, pages: [q]}]}",
         ),
     ]);
-    assert!(tripped(&report(&once), "nav_unique").is_empty());
+    assert_eq!(tripped(&report(&once), "nav_unique").len(), 0);
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn shell_refs() {
     );
     let finding = trips(&text, "shell_refs", "pages/p/shell");
     assert!(finding.message.contains("nowhere"), "{finding:?}");
-    assert!(tripped(&report(&doc(&[])), "shell_refs").is_empty());
+    assert_eq!(tripped(&report(&doc(&[])), "shell_refs").len(), 0);
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn page_outlet() {
         "shells",
         "{app: {regions: {main: {kind: page_outlet}}}, bare: {regions: {menu: {kind: navigation}}}}",
     )]);
-    assert!(tripped(&report(&unused), "page_outlet").is_empty());
+    assert_eq!(tripped(&report(&unused), "page_outlet").len(), 0);
 }
 
 #[test]
@@ -494,9 +494,9 @@ fn fixture_per_view() {
         "pages/p/sections/summary/reads",
     );
     let answered = doc(&[("fixtures", "{views: {t.ById: rows.yaml}}")]);
-    assert!(tripped(&report(&answered), "fixture_per_view").is_empty());
+    assert_eq!(tripped(&report(&answered), "fixture_per_view").len(), 0);
     let derived = doc(&[("fixtures", "{derived: {t.ById: {same_as: t.All}}}")]);
-    assert!(tripped(&report(&derived), "fixture_per_view").is_empty());
+    assert_eq!(tripped(&report(&derived), "fixture_per_view").len(), 0);
 }
 
 #[test]
@@ -508,7 +508,7 @@ fn script_per_channel() {
     );
     trips(&doc(&[channel]), "script_per_channel", "channels/feed");
     let scripted = doc(&[channel, ("fixtures", "{scripts: {feed: feed.yaml}}")]);
-    assert!(tripped(&report(&scripted), "script_per_channel").is_empty());
+    assert_eq!(tripped(&report(&scripted), "script_per_channel").len(), 0);
 }
 
 #[test]
@@ -554,7 +554,7 @@ fn types_structural() {
         "types",
         "{Stage: {enum: [a, b]}, Label: string, Ref: ItemId}",
     )]);
-    assert!(tripped(&report(&fine), "types_structural").is_empty());
+    assert_eq!(tripped(&report(&fine), "types_structural").len(), 0);
 }
 
 #[test]
@@ -749,7 +749,7 @@ fn theme_choice() {
         themes,
         ("theme", "{default: light, chosen_by: shell.theme}"),
     ]);
-    assert!(tripped(&report(&named), "theme_choice").is_empty());
+    assert_eq!(tripped(&report(&named), "theme_choice").len(), 0);
 
     trips(
         &doc(&[("theme", "{default: light}")]),
@@ -938,7 +938,7 @@ fn degrades_cover() {
         "degrades_cover",
         "pages/p/sections/summary/actions/up",
     );
-    assert!(tripped(&report(&text), "degrades_cover").is_empty());
+    assert_eq!(tripped(&report(&text), "degrades_cover").len(), 0);
     let covered = page(
         "{kind: detail_page, title: P, sections: [{name: summary, component: graph_editor, \
          reads: t.Graph}]}",
@@ -946,7 +946,10 @@ fn degrades_cover() {
     let graph = Options {
         lacks: vec!["no_graph_editor".to_owned()],
     };
-    assert!(tripped(&report_with(&covered, None, &graph), "degrades_cover").is_empty());
+    assert_eq!(
+        tripped(&report_with(&covered, None, &graph), "degrades_cover").len(),
+        0
+    );
     let refused = page(
         "{kind: detail_page, title: P, sections: [{name: summary, component: graph_editor, \
          reads: t.Graph, degrades: {no_graph_editor: refuse}}]}",
@@ -1265,7 +1268,7 @@ fn a_confirm_referencing_a_view_with_a_required_param_is_not_an_error() {
 fn a_model_that_does_not_compile_is_refused() {
     let error = load_model(&crate_dir().join("tests/fixtures/no-such-model"))
         .expect_err("a missing model is refused");
-    assert!(!error.to_string().is_empty());
+    assert_ne!(error.to_string().len(), 0);
 }
 
 // ── paths, output and the check list itself ──────────────────────────────────────────────────
@@ -1298,7 +1301,7 @@ fn json_output_is_ess_ui_check_1() {
     assert_eq!(json["format"], "ess-ui-check/1");
     assert_eq!(json["document"], "test.yaml");
     let findings = json["findings"].as_array().expect("findings is a list");
-    assert!(!findings.is_empty());
+    assert_ne!(findings.len(), 0);
     for finding in findings {
         let mut keys: Vec<&str> = finding
             .as_object()
@@ -1803,14 +1806,17 @@ fn filter_paging() {
         );
     }
     for mode in ["client", "none"] {
-        assert!(tripped(
-            &report(&filtered_page(
-                "'row.id == params.id'",
-                &format!("paging: {mode}")
-            )),
-            "filter_paging"
-        )
-        .is_empty());
+        assert_eq!(
+            tripped(
+                &report(&filtered_page(
+                    "'row.id == params.id'",
+                    &format!("paging: {mode}")
+                )),
+                "filter_paging"
+            )
+            .len(),
+            0
+        );
     }
 }
 

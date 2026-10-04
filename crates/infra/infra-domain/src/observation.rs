@@ -1009,7 +1009,7 @@ mod tests {
     fn an_empty_but_complete_bundle_is_a_valid_observation_of_nothing() {
         let observation = validate(minimal_bundle()).expect("an empty cluster is observable");
         assert_eq!(observation.context, "test");
-        assert!(observation.pods.is_empty());
+        assert_eq!(observation.pods.len(), 0);
     }
 
     #[test]

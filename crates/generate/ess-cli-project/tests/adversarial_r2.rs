@@ -151,9 +151,9 @@ fn optional_protected_omission_and_utf8_byte_limit_hold_at_the_handler_seam() {
         serde_json::from_str::<Value>(&refused.stderr).unwrap(),
         json!({"ok":false,"error":{"code":"cli_source","data":{}}})
     );
-    assert!(accepted.stderr.is_empty());
+    assert_eq!(accepted.stderr.len(), 0);
     assert!(!accepted.stdout.contains('é'));
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout.len(), 0);
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn aliases_preserve_custom_globals_and_double_dash_stops_output_selection() {
     );
     assert_eq!(output.exit_code, 2);
     assert_eq!(output.stderr, "cli_parse\n");
-    assert!(handler.calls.is_empty());
+    assert_eq!(handler.calls.len(), 0);
 }
 
 #[cfg(unix)]
@@ -290,8 +290,8 @@ fn non_utf8_argv_is_refused_in_selected_json_mode_without_dispatch() {
         serde_json::from_str::<Value>(&output.stderr).unwrap(),
         json!({"ok":false,"error":{"code":"cli_parse","data":{}}})
     );
-    assert!(output.stdout.is_empty());
-    assert!(handler.calls.is_empty());
+    assert_eq!(output.stdout.len(), 0);
+    assert_eq!(handler.calls.len(), 0);
 }
 
 struct RejectReply {
@@ -396,7 +396,7 @@ fn dynamic_result_and_both_error_replies_preserve_finite_failure_policy() {
                     }
                 ]
             );
-            assert!(output.stdout.is_empty());
+            assert_eq!(output.stdout.len(), 0);
             assert_eq!(
                 serde_json::from_str::<Value>(&output.stderr).unwrap(),
                 json!({"ok":false,"error":{"code":expected_code,"data":{}}})

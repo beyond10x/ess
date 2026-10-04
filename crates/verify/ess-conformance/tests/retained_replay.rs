@@ -1279,7 +1279,7 @@ fn replay_conditions_must_hold_for_the_original_input_not_a_new_candidate() {
                 .any(|id| id.to_string() == "retained.core.Seed/outcome/replayed"),
             "{retry}: retry changed the original input's selection"
         );
-        assert!(!result.refusals.is_empty());
+        assert_ne!(result.refusals.len(), 0);
     }
 }
 
@@ -1578,7 +1578,7 @@ fn legacy_preservation_and_subjectless_errors_coexist_with_complete_snapshots() 
     .unwrap();
     let legacy =
         ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
-    assert!(legacy.refusals.is_empty());
+    assert_eq!(legacy.refusals.len(), 0);
     let legacy_bytes = legacy.suite.to_canonical_json().unwrap();
     assert!(legacy_bytes.contains("snapshot_subject"));
     assert!(!legacy_bytes.contains("snapshot_complete_subject"));
@@ -1667,7 +1667,7 @@ fn unsupported_complete_subject_observers_refuse_by_name() {
         .unwrap();
         let result =
             ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
-        assert!(!result.refusals.is_empty());
+        assert_ne!(result.refusals.len(), 0);
         assert!(
             !result
                 .suite

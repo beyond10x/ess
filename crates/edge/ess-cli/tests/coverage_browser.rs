@@ -197,7 +197,7 @@ fn retained_legacy_player_bytes_still_replay_in_actual_firefox() {
         serde_json::from_slice(&fs::read(modern.join("replay.json")).unwrap()).unwrap();
     let mut suite: serde_json::Value =
         serde_json::from_str(replay["input"]["suite_json"].as_str().unwrap()).unwrap();
-    assert_eq!(suite["provenance"]["suite_version"], "ess-conformance/5");
+    assert_eq!(suite["provenance"]["suite_version"], "ess-conformance/35");
     suite["coverage"]["knowledge"] = serde_json::json!("invented inventory claim");
     suite["provenance"]["spec_digest"] = serde_json::json!("0".repeat(64));
     fs::write(generated.join("suite.json"), suite.to_string()).unwrap();

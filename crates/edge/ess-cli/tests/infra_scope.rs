@@ -33,7 +33,7 @@ fn both_import_spellings_preserve_scope_through_graph_diff_and_projection_refusa
             .unwrap();
         assert!(output.status.success(), "{output:?}");
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert!(!report["coverage_gaps"].as_array().unwrap().is_empty());
+        assert_ne!(report["coverage_gaps"].as_array().unwrap().len(), 0);
         let document: Value = serde_json::from_slice(&std::fs::read(&ir).unwrap()).unwrap();
         assert_eq!(document["format"], "infra-ir/2");
         assert_eq!(document["model"]["coverage"]["namespace"], "app");

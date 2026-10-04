@@ -303,7 +303,7 @@ fn issue_178_a_service_that_reads_open_before_the_identity_fails_the_refusal() {
 fn an_accepting_witness_refutes_every_sibling_refusal_beside_a_default() {
     let suite = suite_of(&counted());
     let sent = invocations(&suite, CLOSED);
-    assert!(!sent.is_empty());
+    assert_ne!(sent.len(), 0);
     for (input, branch) in &sent {
         if branch != "closed" {
             continue;

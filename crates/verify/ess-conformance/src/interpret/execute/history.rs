@@ -597,7 +597,7 @@ commands:
         let initial = next(&ir, &first, "CreateRoot", &[("root_id", "b")], "create-b");
         let before = initial.clone();
         let result = answer(&ir, &initial, "AllRoots", &[], "all-roots").unwrap();
-        assert!(result.proven.is_empty());
+        assert_eq!(result.proven.len(), 0, "{:?}", result.proven);
         assert!(matches!(
             result.unresolved,
             Some(Undetermined::Undecidable { .. })

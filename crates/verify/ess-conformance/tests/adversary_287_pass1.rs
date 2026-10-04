@@ -726,7 +726,7 @@ fn failed(suite: &ConformanceSuite, plant: &Plant) -> Vec<(String, Status)> {
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, plant)
         .into_report();
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     report
         .scenarios
         .into_iter()
@@ -1653,7 +1653,7 @@ fn caller_set_effect_executes_against_actual_shared_rows() {
         diagnostics.is_empty(),
         "healthy shared set target must pass: {diagnostics:#?}"
     );
-    assert!(!failed(&suite, &plant(Fault::KeysByCaller)).is_empty());
+    assert_ne!(failed(&suite, &plant(Fault::KeysByCaller)).len(), 0);
 }
 
 #[test]

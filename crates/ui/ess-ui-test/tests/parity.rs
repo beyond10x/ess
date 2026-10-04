@@ -130,7 +130,7 @@ fn a_path_naming_no_node_is_not_fixme() {
         "expect: {at: pages/partners.list/sections/nowhere, text: x}",
     ];
     assert_eq!(run(&steps).status, Status::Failed);
-    assert!(fixme_reasons(&spec(&steps)).is_empty());
+    assert_eq!(fixme_reasons(&spec(&steps)).len(), 0);
 }
 
 /// Controls: what both renderers show is read, not refused.

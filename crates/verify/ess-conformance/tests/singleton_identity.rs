@@ -468,7 +468,7 @@ fn failed(suite: &ConformanceSuite, fault: Fault) -> Vec<(String, Status)> {
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &Plant::with(fault))
         .into_report();
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     report
         .scenarios
         .into_iter()

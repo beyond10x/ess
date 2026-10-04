@@ -235,7 +235,7 @@ fn a_cluster_without_majority_uniformity_yields_no_candidate() {
 fn directions_rank_errors_first_and_lead_with_the_autoscaler_aimed_at_nothing() {
     let ir = example_ir();
     let ranked = directions(&diagnose(&ir), &candidates(&ir));
-    assert!(!ranked.is_empty());
+    assert_ne!(ranked.len(), 0);
     assert_eq!(ranked[0].severity, Severity::Error, "errors lead");
     let error_codes: Vec<&str> = ranked
         .iter()

@@ -572,7 +572,7 @@ fn ui_test_runs_the_example_tests() {
         serde_json::from_slice(&output.stdout).expect("the report is JSON");
     assert_eq!(report["format"], "ess-ui-test-report/1");
     let tests = report["tests"].as_array().expect("a tests list");
-    assert!(!tests.is_empty());
+    assert_ne!(tests.len(), 0);
     assert!(
         tests.iter().all(|test| test["status"] == "passed"),
         "{tests:#?}"

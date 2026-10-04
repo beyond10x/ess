@@ -485,7 +485,7 @@ fn interpreted_executes_the_original_mixed_guard_shape() {
             &ess_conformance::interpret::Interpreted::for_model(model),
         )
         .into_report();
-    assert!(!report.scenarios.is_empty());
+    assert_ne!(report.scenarios.len(), 0);
     for run in report.scenarios {
         assert_eq!(
             run.status,

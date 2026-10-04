@@ -572,7 +572,7 @@ fn issue_168_an_implementation_that_answers_one_caller_by_name_fails() {
 #[test]
 fn a_target_that_cannot_send_as_a_caller_is_unsupported_not_passed() {
     let failed = failing(&suite(NOTES), Mode::CannotAuthenticate);
-    assert!(!failed.is_empty());
+    assert_ne!(failed.len(), 0);
     assert!(
         failed
             .iter()

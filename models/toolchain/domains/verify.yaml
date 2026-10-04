@@ -45,14 +45,15 @@ types:
     kind: enum
     variants: [passed, failed, error, unsupported]
 
-  # The seventeen rules the runner checks, `CheckCode::ALL`
+  # The rules the runner checks, `CheckCode::ALL`
   # (`crates/verify/ess-conformance/src/report.rs:146`). The serial is dropped deliberately: what
   # survives is the name, which is stable under every change that does not touch the rule.
   # `Reading` is the `ess/3` clock check — reading coordinates agree with a declared comparison
-  # under observed clock authority — and it is first in the declaration.
+  # under observed clock authority.
   - name: toolchain.verify.CheckCode
     kind: enum
     variants:
+      - Disclosure
       - Reading
       - Outcome
       - Error

@@ -155,7 +155,7 @@ fn input_refusal_precedes_duplicate_lookup_without_related_guards() {
             refused.outcome.unwrap().to_string(),
             "demo.items.BookSlot/blank"
         );
-        assert!(refused.events.is_empty());
+        assert_eq!(refused.events.len(), 0);
         assert_eq!(refused.next, first.next);
     }
     let refused = run(
@@ -168,7 +168,7 @@ fn input_refusal_precedes_duplicate_lookup_without_related_guards() {
         refused.outcome.unwrap().to_string(),
         "demo.items.BookSlot/already-booked"
     );
-    assert!(refused.events.is_empty());
+    assert_eq!(refused.events.len(), 0);
     assert_eq!(refused.next, first.next);
 }
 
@@ -206,7 +206,7 @@ fn duplicate_lookup_precedes_missing_related_row_and_input_refusal() {
         refused.outcome.unwrap().to_string(),
         "demo.items.BookSlot/already-booked"
     );
-    assert!(refused.events.is_empty());
+    assert_eq!(refused.events.len(), 0);
     assert_eq!(refused.next, booked.next);
 }
 
@@ -256,7 +256,7 @@ fn a_collision_in_an_unselected_creation_entity_does_not_refuse_the_selected_one
                 "demo.items.BookSlot/already-booked"
             );
             assert_eq!(duplicate[0].next, store);
-            assert!(duplicate[0].events.is_empty());
+            assert_eq!(duplicate[0].events.len(), 0);
         }
         assert_eq!(store.instances().count(), 2);
     }

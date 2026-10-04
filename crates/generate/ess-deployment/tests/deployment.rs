@@ -1035,7 +1035,7 @@ fn persisted_duplicate_keys_are_rejected_at_every_populated_nested_map() {
         let document = serde_json::to_value(document).unwrap();
         let mut paths = Vec::new();
         walk(&document, "", &mut paths);
-        assert!(!paths.is_empty());
+        assert_ne!(paths.len(), 0);
         for pointer in paths {
             let parent = document.pointer(&pointer).unwrap();
             let (key, value) = parent.as_object().unwrap().iter().next().unwrap();

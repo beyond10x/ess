@@ -137,7 +137,7 @@ fn model_aliases() -> (Plan, Value) {
 #[test]
 fn go_target_retains_source_identity_and_accounts_for_every_file() {
     for (plan, cases) in plans() {
-        assert!(!cases.as_array().unwrap().is_empty());
+        assert_ne!(cases.as_array().unwrap().len(), 0);
         let result = plan
             .go(
                 "normalization_adapter",

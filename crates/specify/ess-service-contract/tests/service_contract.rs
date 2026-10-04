@@ -314,7 +314,7 @@ fn assert_focused_operation(selected: &ess_service_contract::ServiceIr<'_>) {
             "contract.local.Second",
         ]
     );
-    assert!(run.outcomes[1].emits.is_empty());
+    assert_eq!(run.outcomes[1].emits.len(), 0);
     assert!(matches!(
         &run.outcomes[1].condition,
         ResolvedCondition::External { cause }

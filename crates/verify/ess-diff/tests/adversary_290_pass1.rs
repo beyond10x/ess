@@ -265,7 +265,11 @@ fn a_narrowing_written_as_a_type_swap_on_a_command_input_is_not_compatible() {
             )
         })
         .collect();
-    assert!(!verdicts.is_empty());
+    assert_ne!(
+        verdicts.len(),
+        0,
+        "the delta classifies at least one change"
+    );
     assert!(
         verdicts
             .iter()

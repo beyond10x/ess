@@ -307,7 +307,7 @@ fn a_missing_related_row_is_not_an_absent_optional_field_and_failure_is_atomic()
     .unwrap_err();
     assert!(error.to_string().contains("related"), "{error}");
     assert_eq!(links(&target), before);
-    assert!(published(&target, "Changed").is_empty());
+    assert_eq!(published(&target, "Changed").len(), 0);
     let refused = invoke(
         &target,
         "Update",
@@ -347,8 +347,8 @@ fn a_nested_error_reads_the_exact_related_row_without_writing() {
             ("data", Node::Bool(true))
         ]))
     );
-    assert!(result.direct_events.is_empty());
-    assert!(links(&target).is_empty());
+    assert_eq!(result.direct_events.len(), 0);
+    assert_eq!(links(&target).len(), 0);
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn actual_guard_and_copied_value_fixture_suites_execute_without_dropping_asserti
         let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
         let run = Runner::for_suite(admitted.suite())
             .run_admitted(&admitted, &Interpreted::for_model(ir));
-        assert!(!run.scenarios.is_empty());
+        assert_ne!(run.scenarios.len(), 0);
         assert!(
             run.scenarios
                 .iter()
@@ -443,7 +443,7 @@ fn optional_only_reads_distinguish_a_missing_row_from_an_absent_member() {
         }
         let target = target(&source);
         assert!(invoke(&target, "ReadOptional", fields(&[("root_id", number(11))])).is_err());
-        assert!(published(&target, "OptionalRead").is_empty());
+        assert_eq!(published(&target, "OptionalRead").len(), 0);
         setup(&target, "Root", number(11), fields(&[("data", Node::Null)]));
         let result = invoke(&target, "ReadOptional", fields(&[("root_id", number(11))])).unwrap();
         assert!(result.direct_events[0].payload.is_empty());
@@ -477,7 +477,7 @@ fn related_reads_do_not_publish_writes_or_events_when_a_later_constraint_fails()
     .unwrap_err();
     assert!(error.to_string().contains("invariant"), "{error}");
     assert_eq!(links(&target), before);
-    assert!(published(&target, "Changed").is_empty());
+    assert_eq!(published(&target, "Changed").len(), 0);
 }
 
 #[test]
@@ -517,7 +517,7 @@ fn wrong_state_errors_read_the_related_row_the_subject_currently_references() {
         ]))
     );
     assert_eq!(links(&target), before);
-    assert!(result.direct_events.is_empty());
+    assert_eq!(result.direct_events.len(), 0);
     assert_eq!(published(&target, "Changed").len(), 1);
 }
 
@@ -559,7 +559,7 @@ fn a_stored_guard_refusal_reads_related_values_through_its_selected_subject() {
         ]))
     );
     assert_eq!(links(&target), before);
-    assert!(result.direct_events.is_empty());
+    assert_eq!(result.direct_events.len(), 0);
 }
 
 #[test]
@@ -572,8 +572,8 @@ fn a_related_required_value_unknown_to_the_store_is_never_guessed() {
     let id = created.direct_events[0].payload["id"].clone();
     let error = invoke(&target, "Create", fields(&[("root_id", id)])).unwrap_err();
     assert!(error.to_string().contains("data"), "{error}");
-    assert!(links(&target).is_empty());
-    assert!(published(&target, "Created").is_empty());
+    assert_eq!(links(&target).len(), 0);
+    assert_eq!(published(&target, "Created").len(), 0);
 }
 
 #[test]
@@ -602,5 +602,5 @@ fn an_unknown_original_reference_is_not_replaced_by_the_new_assignment() {
     .unwrap_err();
     assert!(error.to_string().contains("subject.root_id"), "{error}");
     assert_eq!(links(&target), before);
-    assert!(published(&target, "Changed").is_empty());
+    assert_eq!(published(&target, "Changed").len(), 0);
 }

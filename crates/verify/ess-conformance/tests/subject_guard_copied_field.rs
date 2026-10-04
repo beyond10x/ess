@@ -423,7 +423,7 @@ fn copied_field_guard_and_view_share_arrangement() {
     assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
     for id in POLICY_CASES {
         let scenario = scenario(&synthesis, id);
-        assert!(!policy_reports(scenario).is_empty());
+        assert_ne!(policy_reports(scenario).len(), 0);
         assert!(scenario.steps.iter().any(|step| matches!(step,
             ScenarioStep::QueryView { view, params } if view.to_string() == "mini.m.RunsForTarget"
                 && matches!(params.get("target"), Some(ScenarioValue::Instance { .. }))

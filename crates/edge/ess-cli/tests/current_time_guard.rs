@@ -77,7 +77,7 @@ fn scenarios(report: &serde_json::Value) -> &Vec<serde_json::Value> {
 fn issue_171_a_now_offset_suite_runs_through_the_cli_with_every_value_resolved() {
     let (code, report, stderr) = run("billing");
     assert_eq!(
-        report["summary"]["suite"]["version"], "ess-conformance/26",
+        report["summary"]["suite"]["version"], "ess-conformance/34",
         "{report:#}"
     );
     for scenario in scenarios(&report) {

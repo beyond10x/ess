@@ -747,13 +747,12 @@ fn adversary_a_broken_invariant_field_keeps_its_wire_name_and_every_read_builds(
         let model = flagged_model(invariant);
         let ir = fixture(&[("model.yaml", &model)]);
         let go = synthesize_for(&ir, Target::Go).expect("the model synthesizes to Go");
-        for source in ["flag.work.LogTask"] {
-            if !go
-                .plan
-                .is_generated(CapabilityKind::CommandBehavior, source)
-            {
-                problems.push(format!("{label}: `{source}` is not generated"));
-            }
+        let source = "flag.work.LogTask";
+        if !go
+            .plan
+            .is_generated(CapabilityKind::CommandBehavior, source)
+        {
+            problems.push(format!("{label}: `{source}` is not generated"));
         }
         for source in ["flag.work.Tasks", "flag.work.Flags"] {
             if !go.plan.is_generated(CapabilityKind::ViewQuery, source) {
