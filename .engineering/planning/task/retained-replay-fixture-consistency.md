@@ -7,7 +7,7 @@ title: Make retained Go replay fixtures honor read-your-writes tokens
 relations:
 - derived_from: story:feature-request-312
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T00:50:01Z", actor: "human:timo", revision: 3}
@@ -43,3 +43,11 @@ Local bot candidate8e7c21a0c5055635e771c2c5b2b4fa9181bc909e, tree5de15cb4deb3c32
 The token-only counterfactual passed both actual Go commands: exact adversary projection3pass/0fail/0skip (loge9cd0764b777363aaea9b4cc5d32128e67bb06618ce721babf60824604119314) and whole generated package186pass/0fail/0skip (log2c2f26a8e3b1e683e7ad90cd418b95fea3c94566ddce448a74d2f26fd7f2f726). Adding the exact request-token assertion also passed3/0/0 (log4edd5e74341b709570489e3a047c88d570ab507f57f30dd09a3b1f9c3563f651) and186/0/0 (log80f4c2009c50f4ab0672b831792a117d7d72f82d3e8335ef706bbcbc75cc4e59). Root independently counted the raw JSON events. Original generated failures remain immutable, and the repository fixture byte-matches the final probe. These results prove the token mismatch caused the retained Go failures; the generated runtime itself was unchanged. Owning format and task fmt-check passed.
 
 Whole retained_replay Rust wrapper execution and strict affected-target lint have NOT started: freshfree again fell below12884901888bytes. No native target exists for this unit. Review1 preparation and source audit are pending final author checks; no verdict or review-budget reset is claimed. The existing exclusive exact-request-token Go cache is retained for the later Rust wrapper's generated execution. Source-clean managed tree and live author lease remain handed to the same implementor; no publication or integration.
+
+## Frozen source review and cache custody update
+
+Independent review1 source audit7d3c0f9a14fb4c83059186d04a98a60ac99d3e64b6fbf64c22ba1b78910641ae confirms the frozen candidate, one-file diff, original/replay token routing, inherited held/external overrides, negative-control reachability and all four raw Go probe counts. No source defect is identified. This is an in-progress review with no verdict; whole Rust retained_replay and strict affected-target Clippy remain unexecuted. Both closed RYW reviews remain closed.
+
+The prior warm-cache retention sentence is superseded by completed owner retirement of the two exclusive, terminal probe caches through go clean -cache. Pre-retirement allocations were84541440 and84574208bytes; each directory now retains only README and trim metadata. Before/after audit digests29666b5263febff7d6686c21a0112a0911aae7d43b785532b4b81f75a80b5f5d and2698f4cbdd46af43d1e8ad144e09a466d46ca2f4e4e0e8588918dad57faffd55 bind the evidence. Source, generated probe fixtures and raw execution logs remain intact. The later Rust wrapper may use the same now-cold exclusive exact-request-token cache.
+
+No compiler grant is active. Resource recovery has priority: preserve and validate the full terminal413A target before any separately authorized owning-tool cleanup, then recheck the12884901888byte start floor before releasing the bounded Rust target and lint. Foreign concurrent storage changes have again lowered free space; a prior above-floor observation is not ongoing admission. User-inventoried release/backlog paths remain untouched.

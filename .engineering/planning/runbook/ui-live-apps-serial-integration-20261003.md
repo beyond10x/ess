@@ -6,7 +6,7 @@ status: draft
 title: Complete the remaining ESS bundle through one integration PR and release
 relations:
 - informed_by: epic:ui-live-apps
-revision: 67
+revision: 69
 ---
 ## Current execution plan after ESS 0.52.0
 
@@ -422,3 +422,15 @@ Task retained-replay-fixture-consistency now holds source-clean bot candidate8e7
 Complete413A target recovery plan2b4c0f1f5b192036151fd065daf75003acd47bbf4050740df737869c96d7512d2 inventories every file and accounts for internal hardlinks, with8961126400unique allocated bytes. It explicitly preserves the12GiB start floor for archiving as well. The preceding plan1 grant used the physical gzip bound plus2GiB headroom and had started the owner's archive writer. On the subsequent no-exception hold, that exact own writer was interrupted and exited130. The incomplete archive is29591536logical/29593600allocated bytes, retained as incomplete evidence; no completed archive, Cargo cleanup, link-input extraction, source change or target deletion occurred. This scheduling deviation is retained, not retrospectively called compliant. The original full target and external failed fixtures/logs remain intact. Plan2 and its hold now govern; no floor exception is authorized.
 
 The read-only compiler-intermediate breakdowna86324a4f7ea24b419485e7eef3ae5ba8c214a1f3f7c6ae8f7d907bee32dd15d puts the entire remainder after all executable files and review link inputs at385908736bytes, already including protected fixture/source material. It cannot alone restore the current capacity shortfall, and no such deletion was granted. The user's three release/backlog candidates remain untouched. New compiler/probe/archive starts stay held until fresh available space meets the standing floor; this is not a waiver of the remaining verification or a release claim.
+
+## Owned cache retirement and incomplete archive custody
+
+The closed RYW unit's exclusive terminal Go probe cache was retired through go clean -cache after source/ownership/process evidence review. Allocated bytes fell375349248to12288, a375336960byte reduction; the retained manifest digest isf64d381a3b5d6344e0a2814156567fb5c1c1ad796bc8e6b1393d232290b6209a. Native final binaries, fixtures, source and logs remain. Process visibility limitations are recorded and do not establish foreign idleness.
+
+The retained fixture owner likewise retired only its two terminal exclusive Go probe caches, preserving the source and generated test material. Audit digests29666b5263febff7d6686c21a0112a0911aae7d43b785532b4b81f75a80b5f5d and2698f4cbdd46af43d1e8ad144e09a466d46ca2f4e4e0e8588918dad57faffd55 bind before/after observations. Independent frozen-source review7d3c0f9a14fb4c83059186d04a98a60ac99d3e64b6fbf64c22ba1b78910641ae identifies no source defect but remains in progress without a verdict pending Rust target/lint.
+
+The interrupted413A archive is invalid gzip with4074readable prefix members out of7626expected. Preflight8316da2c867b8622cd99cce459be70a0633d53192f45e639af17fc319c7b9ca2 reverifies all6574original file hashes and1052directory records plus unchanged source. Root authorizes only the exact incomplete output digest3186721e99ff646def81a98d081273391bd72694cb65a9a6622959effc2b9f1e for retirement after fresh path/hash/reference audit; this paragraph grants no original-target or evidence cleanup. Its29591536logical bytes cannot alone restore the current shortfall. Preserve interruption/error receipts. Full archive retry, target cleanup and new compiler starts remain held, with no floor exception. Record terminal retirement separately when received.
+
+The latest root free-space snapshot11847938048bytes is below12884901888. This is a changing host observation, not an attribution of other sessions' writes. The user's release/backlog read-only candidates and all uncleared foreign or missing-marker outputs remain untouched. Existing owner custody requests seek terminal disposable output, not interruption of active work. No bundle acceptance, publication or release follows from resource recovery.
+
+The exact incomplete archive retirement is now terminal: receipt67ca5f45625e76b25d0b51e8490c4223bf92864092950f588fb05c41a3c69de7 records verified absence and29597696allocated bytes removed after fresh path/hash/reference checks. Original target/source and all error/interruption/manifests remain. Available space11877212160bytes remains below the start floor. No original-target cleanup, archive retry or new compiler/probe start occurred.
