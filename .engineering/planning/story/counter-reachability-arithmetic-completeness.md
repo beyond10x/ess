@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -65,3 +65,9 @@ The sole ESS compiler lane is assigned for strict all-target Clippy, owning pack
 ## Final review probe conditions
 
 The independent review's prepared command plan bbcc6204c71465c548f9d4d2349033f909e95121082fe5496b615c4d26153601 retains one new public API MAX/MIN arithmetic case and omits repeated author controls covered by the full package run. The coordinator inspected the plan and unchanged probe96346e1e50da2c3297a19f17ca154efb40eb2fdabae1d3cc5f994921ab767436. Execution is conditionally authorized only after the full package command terminates successfully, required runtime execution is accounted for, the two source hashes still match the refreshed freeze, and newly resolved owner-built rlibs are hashed in a retained command inventory. Bounds: rustc compile120seconds, exactly independent_extreme_counter_refusals_do_not_claim_a_complete_nearest_value180seconds, total300seconds. Fresh available disk must be at least12884901888bytes before each start; retain the existing isolated environment and external scratch. A failed condition holds execution; there is no cleanup grant, repeated author control, extra case, source change or substitute acceptance. The package is still running when this decision is recorded; no success or probe execution is claimed.
+
+## Full package result and compatibility prerequisite
+
+The refreshed full package command terminated101 after1128.553625seconds:337result summaries,2609passed,2failed,8ignored,0filtered. Terminal rawlogSHAb4ff23325419aaf72d5b84c5247c5b1bc28a007106612e1c80c469ad171c1b0b. Both failures are in retained_replay; actual generated Go reported153pass events,33fail events,0skips. Seven existing ignored integration cases plus one ignored doc example are explicitly retained; no required-runtime skip notice was observed. Strict all-target lint, owning format and task fmt-check passed. The two arithmetic source files and patch remain unchanged and both finite canonical hashes match baseline, but the package remains red. The independent probe's success condition is unmet and execution is held; no final approval or integration is claimed.
+
+Root now owns task:retained-replay-fixture-consistency under story:feature-request-312 to resolve the fixture/token contract mismatch supported by source diagnosis. This is separate from the two arithmetic edits; causal treatment proof remains due. Refresh this unit after the separately reviewed fixture correction and satisfy the whole-package and final independent-review requirements. The execution lane was returned on process termination; capacity remains below the required floor. The user's compiler-child inventory remains read-only with no cleanup authorization.

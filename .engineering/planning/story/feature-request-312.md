@@ -20,6 +20,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/retained-replay-runtime.go
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/transcript-target-go.go
 - confidence: cited
   path: crates/verify/ess-conformance/tests/support_go/mod.rs
@@ -27,7 +29,7 @@ scope:
   path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 30
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
@@ -201,3 +203,7 @@ Final whole-unit review2 approved candidatebcd8685fff937fcde4465ef387c5eef452677
 Correction baseline2ccf258d47e7b4aba215b2b2b8627785fdeea41833fc87531997c4ab99354f1f reproduced native Error versus generated stale Failed on successful entity setup. Final seven-scenario current34/historical32 matrices pass in the five-test binary, logd843a7ffdec3da75461c8ff4aa0e43d32d36b68c113b132fd98452ebd2b2af81. Complete affected neighbors84/84 pass, log17bf4b52cb8559652d9007c230f15b4b57b3696e4ac6ab5f43c8f40f55b0d4ca. After extracting the shared fixture setup arm for lint, directly affected new5 plusTypeScript28 pass again, logfe349983bbbce6f4532f02cae9eaa9a8a0587e128f7d63f1e2184cdae62968c4; final strictlint9d0a74817b33cf9f0d1c3453a036785736910b244751b4761e50f76659d1e8e1 and both formatting checks pass. HandoffSHAcc5866331ad47aa41bcba027b3a50e04f5df257917fdc71c0025265519131faf retains all failures and exact metadata.
 
 Bot merge2255315a48a947f363d46cb3c691a57b4879f3b1 integrates the reviewed candidate. Direct comparison of all seven candidate/integration files and whitespace checks passed; both merge identities are the bot. Full owning-package verification is now assigned to the supplemental413A arithmetic unit after refreshing its exact two-path patch onto this commit, with all-target strictlint and owning formats followed by the unfiltered package. No combined package result yet. Browser/final combined/release obligations and parent312 remain open; no GitHub closure/publication occurred.
+
+## Retained replay fixture follow-up from the full package run
+
+The full package run after reviewed RYW integration exposed two actual Go retained-replay wrapper failures, recorded in task:retained-replay-fixture-consistency. The native adapter returns actual-write but the Go base adapter omits both command result tokens, making the now-correct runtime suppress weaker reads. Source diagnosis and full failure inventory are retained; a token-only counterfactual will decide the diagnosis before the exact-token query assertion is added. The correction is scoped to the one existing Go fixture and preserves all runtime/RWY acceptance. Both reviews of the already integrated RYW unit remain closed; this newly exposed adapter surface receives its own bounded independent review after actual execution. No source correction, test success, issue closure or release is claimed yet.

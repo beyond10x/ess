@@ -16,6 +16,8 @@ relations:
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
+- confidence: cited
+  path: crates/generate/ess-gen/tests/related_guard.rs
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
 - confidence: cited
@@ -33,14 +35,20 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/execute/related.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_optional.rs
 - confidence: inferred
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 17
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -120,3 +128,11 @@ Reviewed generated RYW candidatebcd8685fff937fcde4465ef387c5eef4526772f2 is inte
 ## Refreshed Optional-input preparation retained
 
 Bot mergee8e3e8d9349488505acf940dc1372c2a2d7662f8 composes prepared363f95d0a with reviewed integration2255315a4. There were no conflicts or manual source changes. Delta remains exactly six paths,715additions,0removals. Normalized original4cf695b0, prior363f95d0 and final added lines all hashcc7e65b8008b33b78212fd4ff2569e0ee3e4a9df04e21a8f4e6a60eecb5757d3; final patchSHA54cd386efd7a9a3c64763b8dcb76d7adc81af864dfd01fb675dbcede361e8370. Root consumed handoffSHAe52508de42c5da1498658e47330468d2991f56b2648975d23b4e0bca5969d3eb and verified bot identities. All eleven named new controls and existing required-input controls remain intact. No compiler, target, runtime, lint or formatter ran; source preparation is not baseline or acceptance evidence. Worktree is clean and lease ended. Production and actual baseline remain next after413A integration and lane handoff.
+
+## Implementation boundary resolved from refreshed source
+
+Read-only map v2ff754040cb8890b204404781c8c741960caa456ab1c82fe70fd661c0eb400043 binds six minimal production seams: domain command/related_guard.rs; compiler ir.rs; interpreter execute.rs and execute/related.rs; synthesis synthesize/related_guard.rs and synthesize.rs. The existing resolved Input via already retains the declared Optional type; shared related_sentence supplies documentation/OpenAPI wording. Keep the domain String representation for this input-only slice and defer the String-to-RelatedVia migration to the stored-reference sibling. Bare subject-via forms remain refused here. Historical command/mod.rs is not an existing path; the later structural migration would concern command.rs.
+
+Structured scope now includes the synthesis scheduler and all prepared acceptance files. The eleven-test acceptance inventory explicitly includes issue_304_an_optional_input_via_keeps_its_declared_type_in_the_ir and issue_304_present_and_absent_references_preserve_issue_282_precedence, in addition to the nine earlier listed names. Required-input and legacy-byte controls remain unchanged. Correct both already scoped design/reference documents before completion.
+
+Map v1 remains retained; v2 uses installed Go1.27, full owning-package and all-target strictlint bounds7200seconds, and focused baseline/treatment bounds900seconds. The legacy suite10 reference means preserving unchanged old bytes, not choosing that writer: current34/35 and coordinated36–41 allocations remain unchanged. Actual baseline/production remain pending reviewed413A integration; its full-package run has now exposed a separately owned retained-replay fixture failure which must be corrected first. No new acceptance or compiler execution is claimed by this mapping.
