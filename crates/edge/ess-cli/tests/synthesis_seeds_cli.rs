@@ -8,8 +8,9 @@ use std::process::{Command, Output};
 use ess_conformance::{coverage::AdmittedInput, AdmittedSuite};
 use sha2::{Digest as _, Sha256};
 
-/// SHA-256 of the seed-free suite the base build writes for this model.
-const BASE_SUITE_SHA256: &str = "0883b50446bac4cf05862fbd0923c1d060f92d5f76d643fd33a5b659935e6c18";
+/// SHA-256 of the seed-free suite the base build writes for this model. Re-pinned for
+/// beyond10x/ess#454: `Authorize/outcome/invalid` is also sent for an identity no row carries.
+const BASE_SUITE_SHA256: &str = "a1c2842ce87a08841bbfea6ed29225246f9d3476948fd0d7a7f97c61e1ac444e";
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/synthesis-seeds")

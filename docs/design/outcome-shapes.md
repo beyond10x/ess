@@ -319,6 +319,9 @@ identity an input such a refusal claims and no plain input refusal does, and the
 scenario also sends its row one, each requiring the same answer; where the plain wrong-state send compares
 the row unchanged, the further send gets a comparison of its own (`claimed_by_held_refusals`,
 `subject_fact::held_state_overlaps`). A target that checks the input before the lookup fails both.
+On a command reading stored fields, a plain input refusal is also sent for an unknown identity,
+with its own witness and at its overlap with each input refusal declared after it, requiring the
+refusal (`subject_fact::unknown_identity_refusal`): step 2 answers before existence there too.
 Commands with a related-row or row-set guard are left as they were.
 
 | Code | Refused |

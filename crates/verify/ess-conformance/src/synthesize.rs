@@ -12430,6 +12430,25 @@ fn overlap_inputs(
     rows
 }
 
+/// One input per [`refusal_pair_overlaps`] of `outcome`, the first candidate in each, each once:
+/// what a scenario sending `outcome` on a path other than the stateless boundary rows sends to
+/// witness the declared order of two input refusals (beyond10x/ess#455).
+pub(super) fn refusal_pair_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<BTreeMap<String, Node>> {
+    let mut rows = Vec::new();
+    for overlap in refusal_pair_overlaps(command, outcome) {
+        if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
+            .filter(|input| !rows.contains(input))
+        {
+            rows.push(input);
+        }
+    }
+    rows
+}
+
 /// Every overlap of `outcome`, an input-guarded refusal, with an input-guarded refusal declared
 /// after it, in declaration order (beyond10x/ess#455): the first declared answers there, so the
 /// overlap is sent once more and requires `outcome`, apart from its primary witness, which

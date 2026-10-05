@@ -297,8 +297,15 @@ fn inseparable_refusals_keep_overlap_witness() {
     );
 }
 
+/// The SHA-256 of the disjoint model's scenarios, as `to_canonical_json` writes them, synthesized
+/// by the integration base `6192d9be25` (before #454 and #455). The provenance is left out, so a
+/// version bump does not move it.
+const DISJOINT_SCENARIOS_AT_BASE: &str =
+    "39ae4e9a774e9623cc61b6e56d91f6f685e45d6f3f0e095bc1d4d5e0f05f37bb";
+
 #[test]
 fn no_overlap_models_bytes_unchanged() {
+    use sha2::{Digest, Sha256};
     // Disjoint guards: the first refusal's witness already lies outside the second's.
     let disjoint = MODEL.replace(
         "when: pause == true",
@@ -312,14 +319,23 @@ fn no_overlap_models_bytes_unchanged() {
         "nothing is refused: {:#?}",
         result.refusals
     );
-    let sent = sends(scenario(&result.suite, INVALID_CODE));
+    let canonical: serde_json::Value = serde_json::from_str(
+        &result
+            .suite
+            .to_canonical_json()
+            .expect("the suite is canonical"),
+    )
+    .expect("canonical JSON");
+    let scenarios = serde_json::to_string(&canonical["scenarios"]).expect("serializes");
+    let mut digest = String::new();
+    for byte in Sha256::digest(scenarios.as_bytes()) {
+        use std::fmt::Write as _;
+        write!(digest, "{byte:02x}").expect("writes to a string");
+    }
     assert_eq!(
-        sent.len(),
-        1,
-        "no overlap, so one send, as before: {sent:#?}"
+        digest, DISJOINT_SCENARIOS_AT_BASE,
+        "a model without overlapping input refusals synthesizes the bytes it did before:\n{scenarios}"
     );
-    assert_eq!(sent[0].0, "\"\"", "{sent:#?}");
-    assert_eq!(sent[0].2.as_deref(), Some("invalid-code"), "{sent:#?}");
 }
 
 /// The `### Two input refusals whose guards overlap` subsection of `## Which branch answers`.

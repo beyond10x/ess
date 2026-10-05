@@ -4974,6 +4974,91 @@ pub(super) fn absent(
     Ok((steps, source))
 }
 
+/// The sends that witness step 2 of the precedence order on a command reading stored fields
+/// (beyond10x/ess#454, #455). A plain input refusal — `when:` with an `error:`, naming no subject —
+/// answers before the row is looked up, so it is sent for an identity no row carries: with its own
+/// witness, and with an input at its overlap with each input refusal declared after it, which it
+/// answers first. Each send requires the refusal, its error and no event.
+///
+/// Nothing for any other branch, nor where the refusal has no plain witness or the identity type
+/// has no value no other scenario sends; an input whose guards the fresh identity changes is not
+/// sent.
+fn unknown_identity_refusal(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let mut steps = Vec::new();
+    let mut source = BTreeSet::new();
+    let plain = super::is_input_guarded_refusal(outcome) && outcome.subject.is_none();
+    let (Some(error), Some(own), ResolvedInstance::Supplied { field }) = (
+        outcome.error.as_ref().filter(|_| plain),
+        when(outcome),
+        &subject.instance,
+    ) else {
+        return (steps, source);
+    };
+    let Ok(primary) = super::reach(ir, command, outcome, Distinction::PLAIN) else {
+        return (steps, source);
+    };
+    let Ok(identity) = super::fresh_identity(ir, command, &field.name, Some(&primary)) else {
+        return (steps, source);
+    };
+    let mut inputs = vec![primary];
+    for input in super::refusal_pair_inputs(ir, command, outcome) {
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+    }
+    let earlier: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    let command_ref = CommandRef::new(command.name.clone());
+    let branch = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let forbidden = not_emitted(ir, &[]);
+    for mut input in inputs {
+        input.insert(field.name.clone(), identity.clone());
+        let answers = flatten(ir, command, &input).is_ok_and(|facts| {
+            decides(&facts, &[own], true).unwrap_or(false)
+                && decides(&facts, &earlier, false).unwrap_or(false)
+        });
+        if !answers {
+            continue;
+        }
+        let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
+        steps.push(ScenarioStep::ExecuteCommand {
+            caller: BTreeMap::new(),
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supplied.clone(),
+        });
+        steps.push(ScenarioStep::ExpectOutcome {
+            outcome: branch.clone(),
+        });
+        steps.push(super::expect_error(
+            ir,
+            outcome,
+            error,
+            &supplied,
+            &BTreeMap::new(),
+        ));
+        for event in &forbidden {
+            steps.push(ScenarioStep::ExpectNoEvent {
+                event: event.clone(),
+            });
+        }
+    }
+    if !steps.is_empty() {
+        source.insert(command_ref.into());
+        source.insert(branch.into());
+        source.insert(super::ErrorRef::from(error).into());
+        source.extend(forbidden.into_iter().map(EssSemanticRef::from));
+    }
+    (steps, source)
+}
+
 /// What a routed branch's scenario observes around the command, beyond the arrangement.
 ///
 /// A branch naming no subject of its own is opened by the [`absent`] witness, and after it the
@@ -5064,7 +5149,11 @@ fn around_row(
     // generated before this construct, and its moving branch is observed as it always was.
     let changes = uses_predicate(command) && moves_row(outcome);
     if outcome.subject.is_none() {
-        let (mut steps, source) = absent(ir, command, subject, actors)?;
+        let (mut steps, mut source) = absent(ir, command, subject, actors)?;
+        let (refused, refused_source) =
+            unknown_identity_refusal(ir, command, outcome, subject, actors);
+        steps.extend(refused);
+        source.extend(refused_source);
         models.mark(super::caller::InvocationPhase::Act, &mut steps);
         setup.steps.splice(0..0, steps);
         setup.source.extend(source);
