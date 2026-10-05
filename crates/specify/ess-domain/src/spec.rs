@@ -315,6 +315,7 @@ impl Specification {
             &mut errors,
             &mut collected.refused.moves,
         );
+        crate::command::set_effects::refuse_deletions(&mut files, &mut errors);
 
         // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
         let headers: Vec<Option<FormatVersion>> = files
@@ -326,10 +327,18 @@ impl Specification {
             headers.as_slice(),
             [Some(format)] if format.major() >= FormatVersion::V22.major()
         );
+        // A refusal names `deletes:` among the verbs a set effect sits beside only in an `ess/23`
+        // source (beyond10x/ess#452).
+        let admits_deletions = matches!(
+            headers.as_slice(),
+            [Some(format)] if format.major() >= FormatVersion::V23.major()
+        );
         crate::command::converting_input_namespace(reads_input_namespace, || {
-            for (source, file) in files {
-                parts.push(collected.absorb(&source, file, &mut errors));
-            }
+            crate::command::set_effects::converting_deletions(admits_deletions, || {
+                for (source, file) in files {
+                    parts.push(collected.absorb(&source, file, &mut errors));
+                }
+            });
         });
 
         let lifecycle_types: Vec<NamedType> = collected

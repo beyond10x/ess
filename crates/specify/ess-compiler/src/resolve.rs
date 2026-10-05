@@ -2339,6 +2339,10 @@ impl<'a> Resolver<'a> {
                     return None;
                 };
                 let effect = match set.effect.transition() {
+                    // From ess/23 a set subject may remove its rows (beyond10x/ess#452).
+                    None if set.effect == ess_domain::command::Effect::Deletes => {
+                        ResolvedEffect::Deletes
+                    }
                     None => ResolvedEffect::Updates,
                     Some(named) => ResolvedEffect::Moves {
                         transition: entities
@@ -2389,6 +2393,7 @@ impl<'a> Resolver<'a> {
                 filter: affect.filter.clone(),
                 sets,
                 moves,
+                deletes: affect.deletes,
             });
         }
         complete.then_some((instances, affects))

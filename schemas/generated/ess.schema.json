@@ -1640,6 +1640,17 @@
         "where"
       ],
       "properties": {
+        "deletes": {
+          "description": "Every selected row is removed, written `deletes: <Entity>` naming `entity` (ess/23, beyond10x/ess#452).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "entity": {
           "description": "The entity whose rows change.",
           "allOf": [

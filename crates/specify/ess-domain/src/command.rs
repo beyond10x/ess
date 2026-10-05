@@ -5912,14 +5912,13 @@ impl TryFrom<RawOutcome> for Outcome {
     #[allow(clippy::too_many_lines)]
     fn try_from(mut raw: RawOutcome) -> Result<Self, Self::Error> {
         // ess/16 (#167, #175): a set subject takes the verb it is written beside, before the one
-        // subject is read.
+        // subject is read; `deletes:` among them from ess/23 (#452).
         let instances = set_effects::set_subject(
             &raw.name,
             raw.instances.take(),
             &mut set_effects::Verbs {
                 other: [
                     raw.creates.as_ref().map(|_| "creates"),
-                    raw.deletes.as_ref().map(|_| "deletes"),
                     raw.preserves.as_ref().map(|_| "preserves"),
                 ]
                 .into_iter()
@@ -5928,6 +5927,7 @@ impl TryFrom<RawOutcome> for Outcome {
                 instance: raw.instance.is_some(),
                 moves: &mut raw.moves,
                 updates: &mut raw.updates,
+                deletes: &mut raw.deletes,
             },
         )?;
         let affects = set_effects::affects(&raw.name, std::mem::take(&mut raw.affects))?;
@@ -6499,8 +6499,8 @@ impl From<Outcome> for RawOutcome {
                 ..
             }) => (None, None, None, Some(instance)),
         };
-        let (moves, updates, instances, affects) =
-            set_effects::written(outcome.set_effects, moves, updates);
+        let ((moves, updates, deletes), instances, affects) =
+            set_effects::written(outcome.set_effects, (moves, updates, deletes));
         let payload = PayloadDeclaration(
             outcome
                 .payload

@@ -65,14 +65,7 @@ pub(super) fn apply(
         let facts = row_facts(ir, &fields, entity, key, row)?;
         for affect in &outcome.affects {
             let affected = ir.entity(&affect.entity);
-            // From ess/22 an entry may move its rows (beyond10x/ess#229): a selected row resting
-            // outside the move's `from` states is skipped, as under `instances:`.
-            let effect = affect
-                .moves
-                .clone()
-                .map_or(ResolvedEffect::Updates, |transition| {
-                    ResolvedEffect::Moves { transition }
-                });
+            let effect = affect_effect(affect);
             let keys = select(
                 ir,
                 before,
@@ -94,14 +87,50 @@ pub(super) fn apply(
             });
         }
     }
+    let applied = carry_out(ir, plans, supplied, work)?;
+    Ok(outcome.instances.as_ref().map(|_| applied))
+}
+
+/// What one `affects:` entry does to each row it selects: from ess/22 it may move them
+/// (beyond10x/ess#229), a selected row resting outside the move's `from` states being skipped as
+/// under `instances:`; from ess/23 it may remove them (beyond10x/ess#452); otherwise it updates.
+fn affect_effect(affect: &ess_compiler::ir::ResolvedAffect) -> ResolvedEffect {
+    if affect.deletes {
+        return ResolvedEffect::Deletes;
+    }
+    affect
+        .moves
+        .clone()
+        .map_or(ResolvedEffect::Updates, |transition| {
+            ResolvedEffect::Moves { transition }
+        })
+}
+
+/// Every plan applied to `work`, in declaration order, over the rows each selected from the store
+/// before the outcome; each row left in place is then checked at rest. Returns how many rows the
+/// plans changed or removed.
+fn carry_out(
+    ir: &EssIr,
+    plans: Vec<Plan<'_>>,
+    supplied: &super::Context<'_>,
+    work: &mut Work<'_>,
+) -> Result<usize, Undetermined> {
     let mut applied = 0;
     let mut touched = BTreeSet::new();
     for (occurrence, plan) in plans.into_iter().enumerate() {
         for key in plan.keys {
+            // A validated model removes no row another plan also selects: a deleting entry stands
+            // alone over its entity and excludes the subject (ess/23, beyond10x/ess#452). One that
+            // did is a request this model does not decide, not a panic.
             let row = work
                 .next
                 .instance_typed(&plan.entity.name, &key)
-                .expect("a selected row remains held through moves and updates")
+                .ok_or_else(|| {
+                    Undetermined::Request(
+                        "a set effect selects a row another set effect of the branch removed"
+                            .into(),
+                    )
+                })?
                 .clone();
             work.location = vec![
                 "set-effect".into(),
@@ -111,11 +140,20 @@ pub(super) fn apply(
                 format!("{key:?}"),
                 "sets".into(),
             ];
-            let Acted::Rests(after) = act(ir, plan.sets, &plan.effect, &row, supplied, work)?
-            else {
-                return Err(Undetermined::Request(
-                    "a selected set row cannot undergo its declared effect".into(),
-                ));
+            let after = match act(ir, plan.sets, &plan.effect, &row, supplied, work)? {
+                Acted::Rests(after) => after,
+                Acted::Removed => {
+                    if let Some(held) = work.next.instances.get_mut(&plan.entity.name) {
+                        held.remove(&key);
+                    }
+                    applied += 1;
+                    continue;
+                }
+                Acted::NotFromHere => {
+                    return Err(Undetermined::Request(
+                        "a selected set row cannot undergo its declared effect".into(),
+                    ))
+                }
             };
             validate_writes(ir, plan.sets, &after)?;
             work.next
@@ -130,7 +168,7 @@ pub(super) fn apply(
     for (entity, key) in touched {
         at_rest(ir, &work.next, &entity, &key)?;
     }
-    Ok(outcome.instances.as_ref().map(|_| applied))
+    Ok(applied)
 }
 
 fn validate_writes(

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-461
 kind: story
-status: draft
+status: active
 title: A refusal selected by a stored field loses its unchanged-subject check, and cannot sit beside a state-guarded update
 tags:
 - ess-0.54.0
@@ -36,7 +36,10 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: cited
   path: website/docs/guides/specify/guards-and-predicates.md
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T23:49:34Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-05T23:49:34Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 Resolve beyond10x/ess#461: A refusal selected by a stored field loses its unchanged-subject check, and cannot sit beside a state-guarded update.
