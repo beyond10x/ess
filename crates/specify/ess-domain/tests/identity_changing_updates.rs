@@ -71,9 +71,12 @@ fn ess_23_is_admitted_and_recorded() {
         repository("models/toolchain/domains/specify.yaml").contains("\"ess/23\""),
         "SpecificationFormat lists ess/23"
     );
+    // The docs lane reads the `ess` releases from `FORMAT_HISTORY` since beyond10x/ess#460.
     assert!(
-        repository("crates/edge/ess-xtask/src/docs.rs").contains("(\"ess\", 23, "),
-        "FORMAT_RELEASES has an ess/23 row"
+        ess_domain::system::FORMAT_HISTORY
+            .iter()
+            .any(|entry| entry.major == 23),
+        "FORMAT_HISTORY has an ess/23 row"
     );
     assert!(
         repository("website/docs/reference/spec-versions.md")

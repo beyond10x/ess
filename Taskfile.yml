@@ -285,6 +285,7 @@ tasks:
       # The diagnostics reference page is rendered from the catalogue each crate exports, so a
       # code added without a catalogue entry, or without regenerating the page, fails here.
       - cargo xtask diagnostics --check
+      - cargo xtask format-history --check
       - cargo xtask site-data --check
       - cargo xtask admonitions
 
