@@ -1986,7 +1986,6 @@ pub(super) fn refusal_witness(
 /// Where no candidate serves that way, a moving branch with a stored guard is tried as selected
 /// first on the row, which an accepting sibling declared after it then need not be refuted against
 /// (beyond10x/ess#278).
-#[allow(clippy::too_many_lines)]
 fn refusal_input(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -1995,7 +1994,102 @@ fn refusal_input(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
-    let own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    refusal_input_also(ir, entity, arrangement, command, outcome, &[], distinction)
+}
+
+/// The held-state input refusals of `command` (beyond10x/ess#454): a refusal naming no subject of
+/// its own, selected by the addressed row — `when_subject:` or `when_subject_state:` — together
+/// with an input guard, which is returned beside it. Step 4 of the precedence order
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order"): it answers
+/// after existence, and on a row its stored guard rules out, not at all.
+pub(super) fn held_input_refusals(
+    command: &ResolvedCommand,
+) -> impl Iterator<Item = (&ResolvedOutcome, &Predicate)> {
+    command.outcomes.iter().filter_map(|outcome| {
+        if outcome.error.is_none() || outcome.subject.is_some() || outcome.replays.is_some() {
+            return None;
+        }
+        let guard = match &outcome.condition {
+            ResolvedCondition::SubjectPredicate { .. } | ResolvedCondition::SubjectField { .. } => {
+                input_guard(&outcome.condition)
+            }
+            ResolvedCondition::SubjectState { predicate, .. } => predicate.as_ref(),
+            _ => None,
+        }?;
+        Some((outcome, guard))
+    })
+}
+
+/// The overlap sends of a wrong-state row (beyond10x/ess#454): for each held-state input refusal
+/// ([`held_input_refusals`]) with a stored guard, an input its input guard admits, sent to the
+/// row `arrangement` holds in a state its stored guard rules out. The wrong-state answer is
+/// required there, so a target that checks the input before it reads the held state fails.
+///
+/// Each input is chosen as [`refusal_input`] chooses the plain one — `outcome`'s own input guard
+/// held and every sibling missed, through its input or through the row — with the refusal's input
+/// guard held as well, so the row is what refutes the refusal. Returned with the stored guards the
+/// send relies on the row for; a refusal no candidate serves that way, or whose input is the plain
+/// one, adds nothing.
+pub(super) fn held_state_overlaps(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    plain: &BTreeMap<String, Node>,
+) -> Vec<(BTreeMap<String, Node>, Vec<Predicate>)> {
+    let mut found: Vec<(BTreeMap<String, Node>, Vec<Predicate>)> = Vec::new();
+    for (refusal, guard) in held_input_refusals(command) {
+        if stored(&refusal.condition).is_none() {
+            continue;
+        }
+        let Ok((input, relied)) = refusal_input_also(
+            ir,
+            entity,
+            arrangement,
+            command,
+            outcome,
+            &[guard],
+            Distinction::PLAIN,
+        ) else {
+            continue;
+        };
+        if &input != plain && found.iter().all(|(other, _)| other != &input) {
+            found.push((input, relied));
+        }
+    }
+    found
+}
+
+/// The stored fields a held-state overlap send relies on the row for, observed before it where
+/// some field is read: the row is a fact the send is about, as [`refusal_witness`] observes it.
+pub(super) fn observe_relied(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    relied: &[Predicate],
+    arrangement: &Arrangement,
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let fields = read_fields(ir, entity, relied);
+    if fields.is_empty() {
+        return Ok((Vec::new(), BTreeSet::new()));
+    }
+    let (steps, view) = observe_fields(ir, entity, &fields, arrangement)?;
+    Ok((steps, BTreeSet::from([view.into()])))
+}
+
+/// [`refusal_input`], with every guard in `also` required to hold beside `outcome`'s own.
+#[allow(clippy::too_many_lines)]
+fn refusal_input_also(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    also: &[&Predicate],
+    distinction: Distinction,
+) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
+    let mut own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    own.extend(also.iter().copied());
     let branches: Vec<&ResolvedOutcome> = command
         .outcomes
         .iter()

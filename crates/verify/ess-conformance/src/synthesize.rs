@@ -5809,6 +5809,13 @@ fn reach(
     let mut tried = 0;
     let mut shadow = Shadow::default();
     let searches = searched_guards(command, outcome, &guards, satisfy);
+    if satisfy {
+        if let Some(input) =
+            outside_later_refusals(ir, command, outcome, &guards, &searches, distinction)
+        {
+            return Ok(input);
+        }
+    }
     for inputs in searched_candidates(ir, command, searches, distinction) {
         let inputs = inputs?;
         for input in &inputs {
@@ -5831,6 +5838,52 @@ fn reach(
         return Err(RefusalCause::NoWitness(gap));
     }
     Err(unsatisfied(&guards, predicate, tried))
+}
+
+/// The witness of an input-guarded refusal outside every refusal declared after it, where some
+/// candidate is (beyond10x/ess#455): of two refusals an input selects the first declared answers,
+/// so a primary send inside a later one's guard would be the overlap, and the only witness of the
+/// first refusal would also be the only test of the order.
+///
+/// The candidates are the ones [`reach`] tries, in its order, then once more with the later
+/// refusals' guards on the ladders. `None` where `outcome` is no such refusal, where no candidate
+/// steps out of the later guards, or where a search fails: [`reach`] then takes the witness it
+/// always took, so a refusal no input separates from a later one keeps it.
+fn outside_later_refusals(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    guards: &[&Predicate],
+    searches: &[Vec<&Predicate>],
+    distinction: Distinction,
+) -> Option<BTreeMap<String, Node>> {
+    let later: Vec<&Predicate> = later_refusals(command, outcome).filter_map(when).collect();
+    if later.is_empty() {
+        return None;
+    }
+    let mut widened = searches.last().cloned().unwrap_or_else(|| guards.to_vec());
+    widened.extend(
+        later
+            .iter()
+            .copied()
+            .filter(|guard| !guards.contains(guard)),
+    );
+    // Exactly [`reach`]'s sequence first, so a witness it takes that already lies outside every
+    // later guard is the one taken here.
+    let tried = searched_candidates(ir, command, searches.to_vec(), distinction)
+        .chain(searched_candidates(ir, command, vec![widened], distinction));
+    for inputs in tried {
+        let inputs = inputs.ok()?;
+        for input in inputs {
+            let facts = flatten(ir, command, &input).ok()?;
+            if admits_plain(command, outcome, &facts, guards, true).ok()?
+                && decides(&facts, &later, false).ok()?
+            {
+                return Some(input);
+            }
+        }
+    }
+    None
 }
 
 /// Which sibling input-guarded refusals claimed the candidates that satisfied an accepting
@@ -6030,6 +6083,26 @@ pub(crate) fn sibling_refusals<'c>(
     command.outcomes[..before]
         .iter()
         .filter(move |other| other.name != outcome.name && is_input_guarded_refusal(other))
+}
+
+/// Every input-guarded refusal of `command` declared after `outcome`, where `outcome` is one: the
+/// refusals it answers before wherever both guards hold (beyond10x/ess#455).
+fn later_refusals<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+) -> impl Iterator<Item = &'c ResolvedOutcome> {
+    let after = if is_input_guarded_refusal(outcome) {
+        command
+            .outcomes
+            .iter()
+            .position(|other| other.name == outcome.name)
+            .map_or(command.outcomes.len(), |at| at + 1)
+    } else {
+        command.outcomes.len()
+    };
+    command.outcomes[after..]
+        .iter()
+        .filter(|other| is_input_guarded_refusal(other))
 }
 
 /// Whether `outcome` is an accepting branch selected by a plain `when:` over the input: what the
@@ -10303,6 +10376,30 @@ fn refused_here(
     let (arrangement, input, bound) = refusal_arrangement(ir, handle, state, actors, attempt)
         .map_err(|cause| refusals.push(Refusal::about(id, cause)))
         .ok()?;
+    // A held-state input refusal answers after `wrong_state` on a row its stored guard rules out
+    // (beyond10x/ess#454): the same row is also sent an input that refusal claims.
+    let overlaps = if subject_fact::uses(attempt.command)
+        && !has_subject_guards(attempt.command)
+        && !related_guard::orders_present_related_refusal(ir, attempt.command)
+    {
+        subject_fact::held_state_overlaps(
+            ir,
+            handle,
+            &arrangement,
+            attempt.command,
+            attempt.outcome,
+            &input,
+        )
+        .into_iter()
+        .filter_map(|(overlap, relied)| {
+            subject_fact::observe_relied(ir, handle, &relied, &arrangement)
+                .ok()
+                .map(|(observed, viewed)| (overlap, observed, viewed))
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
 
     let command_ref = CommandRef::new(command.clone());
     let preservation = complete_wrong_state(ir, attempt, &arrangement)
@@ -10377,7 +10474,7 @@ fn refused_here(
             RefusalCause::RefusalUndeclared {
                 entity: entity.clone(),
                 state: state.clone(),
-                command: command_ref,
+                command: command_ref.clone(),
             },
         ));
         None
@@ -10389,15 +10486,64 @@ fn refused_here(
             event: event.clone(),
         });
     }
-    source.extend(forbidden.into_iter().map(EssSemanticRef::from));
 
     let mut unobserved = Vec::new();
+    let mut compared = None;
     if let Some(preservation) = preservation {
         steps.push(ScenarioStep::ExpectNoEvents);
-        steps.extend(preservation.after);
+        steps.extend(preservation.after.iter().cloned());
         source.extend(preservation.source);
         unobserved = preservation.unobserved;
+        compared = Some((preservation.before, preservation.after));
     }
+    // Each overlap send answers as the plain one did: the row has not moved, so the declared
+    // wrong-state branch, its error and no event, and — where the plain send's row was compared —
+    // the row unchanged again, over a comparison of its own that spans this one command.
+    if let Some(refusal) = declared {
+        for (overlap, observed, viewed) in overlaps {
+            steps.extend(observed);
+            source.extend(viewed);
+            if let Some((before, _)) = &compared {
+                steps.extend(before.iter().cloned());
+            }
+            let supplied = supply(
+                ir,
+                attempt.command,
+                &overlap,
+                attempt.outcome.subject.as_ref(),
+                Some(&arrangement.instance),
+                &bound,
+            );
+            steps.push(ScenarioStep::ExecuteCommand {
+                caller: std::collections::BTreeMap::new(),
+                command: command_ref.clone(),
+                actor: actors.get(command).cloned(),
+                input: supplied.clone(),
+            });
+            steps.push(ScenarioStep::ExpectOutcome {
+                outcome: OutcomeRef::new(command_ref.clone(), refusal.name.clone()),
+            });
+            if let Some(error) = &refusal.error {
+                steps.push(expect_error(
+                    ir,
+                    refusal,
+                    error,
+                    &supplied,
+                    &arrangement.settled,
+                ));
+            }
+            for event in &forbidden {
+                steps.push(ScenarioStep::ExpectNoEvent {
+                    event: event.clone(),
+                });
+            }
+            if let Some((_, after)) = &compared {
+                steps.push(ScenarioStep::ExpectNoEvents);
+                steps.extend(after.iter().cloned());
+            }
+        }
+    }
+    source.extend(forbidden.into_iter().map(EssSemanticRef::from));
 
     let text = match (&reported, accepted) {
         (Some(error), _) => format!(
@@ -10686,6 +10832,11 @@ fn unknown_instance(
             event: event.clone(),
         });
     }
+    // A held-state input refusal answers after existence (beyond10x/ess#454): the same identity is
+    // also sent an input each such refusal claims, and still takes `declared`.
+    steps.extend(held_refusal_sends(
+        ir, command, declared, field, &input, actors, &forbidden,
+    ));
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
 
     let text = match &reported {
@@ -10699,6 +10850,94 @@ fn unknown_instance(
         ),
     };
     Ok(ConformanceScenario::new(clipped(&text), steps, source))
+}
+
+/// The further sends of [`unknown_instance`] (beyond10x/ess#454): the identity `plain` carries, sent
+/// each input of [`claimed_by_held_refusals`], each requiring `declared`, its error where it refuses
+/// with one, and none of `forbidden`. Commands with a related-row guard keep their scenario as it
+/// was, since a related row the input names is read before existence (step 1), and so do commands
+/// with a row-set guard, whose input [`unknown_instance`] takes from the row-set search.
+fn held_refusal_sends(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    declared: &ResolvedOutcome,
+    field: &str,
+    plain: &BTreeMap<String, Node>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    forbidden: &[EventRef],
+) -> Vec<ScenarioStep> {
+    let mut steps = Vec::new();
+    if related_guard::uses(command) || row_set::uses(command) {
+        return steps;
+    }
+    let command_ref = CommandRef::new(command.name.clone());
+    for overlap in claimed_by_held_refusals(ir, command, field, plain) {
+        let supplied = supply(ir, command, &overlap, None, None, &BTreeMap::new());
+        steps.push(ScenarioStep::ExecuteCommand {
+            caller: BTreeMap::new(),
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supplied.clone(),
+        });
+        steps.push(ScenarioStep::ExpectOutcome {
+            outcome: OutcomeRef::new(command_ref.clone(), declared.name.clone()),
+        });
+        if let Some(error) = declared.error.as_ref().filter(|_| declared.refuses) {
+            steps.push(expect_error(
+                ir,
+                declared,
+                error,
+                &supplied,
+                &BTreeMap::new(),
+            ));
+        }
+        for event in forbidden {
+            steps.push(ScenarioStep::ExpectNoEvent {
+                event: event.clone(),
+            });
+        }
+    }
+    steps
+}
+
+/// The inputs [`unknown_instance`] also sends its identity (beyond10x/ess#454): for each held-state
+/// input refusal ([`subject_fact::held_input_refusals`]), one its input guard admits and no plain
+/// input-guarded refusal claims — those answer before existence — with the identity `plain`
+/// carries. A refusal no candidate serves, or whose input is the plain one, adds nothing.
+fn claimed_by_held_refusals(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+    plain: &BTreeMap<String, Node>,
+) -> Vec<BTreeMap<String, Node>> {
+    let identity = plain.get(field);
+    let first: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| is_input_guarded_refusal(outcome))
+        .filter_map(when)
+        .collect();
+    let mut found: Vec<BTreeMap<String, Node>> = Vec::new();
+    for (_, guard) in subject_fact::held_input_refusals(command) {
+        let mut searched = vec![guard];
+        searched.extend(first.iter().copied());
+        let Ok(inputs) = candidates(ir, command, &searched, Distinction::PLAIN) else {
+            continue;
+        };
+        let claimed = inputs.into_iter().find_map(|mut input| {
+            if let Some(identity) = identity {
+                input.insert(field.to_owned(), identity.clone());
+            }
+            let facts = flatten(ir, command, &input).ok()?;
+            let holds = decides(&facts, &[guard], true).unwrap_or(false)
+                && decides(&facts, &first, false).unwrap_or(false);
+            holds.then_some(input)
+        });
+        if let Some(input) = claimed.filter(|input| input != plain && !found.contains(input)) {
+            found.push(input);
+        }
+    }
+    found
 }
 
 /// The branch a command answers for an identity no record carries, in the order the design fixes:
@@ -12178,7 +12417,10 @@ fn overlap_inputs(
     outcome: &ResolvedOutcome,
 ) -> Vec<BTreeMap<String, Node>> {
     let mut rows = Vec::new();
-    for overlap in overlaps(command, outcome) {
+    for overlap in overlaps(command, outcome)
+        .into_iter()
+        .chain(refusal_pair_overlaps(command, outcome))
+    {
         if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
             .filter(|input| !rows.contains(input))
         {
@@ -12186,6 +12428,36 @@ fn overlap_inputs(
         }
     }
     rows
+}
+
+/// Every overlap of `outcome`, an input-guarded refusal, with an input-guarded refusal declared
+/// after it, in declaration order (beyond10x/ess#455): the first declared answers there, so the
+/// overlap is sent once more and requires `outcome`, apart from its primary witness, which
+/// [`outside_later_refusals`] keeps outside the later guard where some input is. Where none is,
+/// the overlap is the primary witness and is not sent twice.
+///
+/// Kept apart from [`overlaps`], which [`unwitnessed_overlaps`] and the held-state rows read: this
+/// pair is sent only from the stateless boundary rows.
+fn refusal_pair_overlaps<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+) -> Vec<Overlap<'c>> {
+    let Some(own) = when(outcome).filter(|_| is_input_guarded_refusal(outcome)) else {
+        return Vec::new();
+    };
+    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    later_refusals(command, outcome)
+        .filter_map(|other| {
+            when(other).map(|guard| Overlap {
+                first: outcome,
+                other,
+                both: [own, guard],
+                refuted: refusals.clone(),
+            })
+        })
+        .collect()
 }
 
 /// [`overlap_inputs`] for a command whose branches also read the held state, sent while the subject

@@ -1,0 +1,70 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.session
+summary: A session paused with a reason code; the code is checked only on a live session.
+types:
+  - {name: demo.session.SessionId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.session.Session
+    identity: {name: session_id, type: demo.session.SessionId}
+    fields:
+      - {name: code, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Paused]
+      terminal: [Paused]
+      transitions:
+        - {name: pause, from: [Active], to: Paused}
+actors:
+  - name: demo.session.Agent
+    may: [demo.session.Start, demo.session.Pause]
+errors:
+  - {name: demo.session.InvalidCode, fields: []}
+  - {name: demo.session.NoSession, fields: []}
+  - {name: demo.session.NotActive, fields: []}
+events:
+  - name: demo.session.Started
+    fields: [{name: session_id, type: demo.session.SessionId}]
+  - name: demo.session.Paused
+    fields: [{name: session_id, type: demo.session.SessionId}]
+commands:
+  - name: demo.session.Start
+    input: []
+    outcomes:
+      - name: started
+        creates: demo.session.Session
+        instance: session_id
+        sets: {code: ""}
+        emits: [demo.session.Started]
+        payload: {demo.session.Started: {session_id: {generated: true}}}
+  - name: demo.session.Pause
+    input:
+      - {name: session_id, type: demo.session.SessionId}
+      - {name: code, type: String}
+    outcomes:
+      - {name: no-session, unknown_instance: true, error: demo.session.NoSession}
+      - name: invalid-code              # checked only on a live session
+        when_subject: {predicate: state == Active}
+        when: code == ""
+        error: demo.session.InvalidCode
+      - name: paused
+        moves: demo.session.Session.pause
+        instance: session_id
+        sets: {code: input.code}
+        emits: [demo.session.Paused]
+        payload: {demo.session.Paused: {session_id: input.session_id}}
+      - {name: not-active, wrong_state: true, error: demo.session.NotActive}
+views:
+  - name: demo.session.Sessions
+    source: demo.session.Session
+    consistency: read_your_writes
+    fields:
+      - {name: session_id, type: demo.session.SessionId}
+      - {name: state, type: demo.session.Session.State}
+      - {name: code, type: String}
+components:
+  - component: sessions
+    owns: {domains: [demo.session]}
+    accepts: {commands: [demo.session.Start, demo.session.Pause]}
+    reached_by: network

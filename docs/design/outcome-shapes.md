@@ -309,6 +309,18 @@ anything else, so it decides a request the refusal claims even on a command whos
 branches it does not yet interpret; Entity Runtime already orders every input-guarded refusal
 first and decides it before the row is loaded.
 
+**A refusal that holds only for a live record (beyond10x/ess#454).** An input refusal that should
+answer after existence is written with `when_subject: {predicate: state == <accepting state>}`
+beside its `when:`. That makes it a held-state branch, step 4 of the precedence order, so an
+unknown identity takes the unknown-instance answer and a state the predicate rules out takes
+`wrong_state`. A per-branch precedence key was declined as a second way to say what
+`when_subject` says. Conformance witnesses the order: the unknown-instance scenario also sends the
+identity an input such a refusal claims and no plain input refusal does, and the wrong-state
+scenario also sends its row one, each requiring the same answer; where the plain wrong-state send compares
+the row unchanged, the further send gets a comparison of its own (`claimed_by_held_refusals`,
+`subject_fact::held_state_overlaps`). A target that checks the input before the lookup fails both.
+Commands with a related-row or row-set guard are left as they were.
+
 | Code | Refused |
 |---|---|
 | `unsupported_format_version` | either form below `ess/16`, at `unknown_instance` (on a creation) or `existing_instance` |

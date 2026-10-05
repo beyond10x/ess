@@ -44,6 +44,10 @@ Two accepting branches may overlap as well. The first declared whose guard holds
 narrower branch first when it should win. An `external:` branch takes its place in the same order: written after
 `small`, it is asked only for an input `small` does not claim.
 
+Two refusals with a `when:` over the input follow declaration order too: the first declared whose
+guard holds answers, and the suite sends their overlap apart from the first refusal's own witness
+([two input refusals whose guards overlap](guards-and-predicates.md#two-input-refusals-whose-guards-overlap)).
+
 ### An invariant reads only what every creation sets
 
 An entity invariant that reads a required field needs every `creates:` branch of that entity to set

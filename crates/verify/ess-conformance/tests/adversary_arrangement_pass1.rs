@@ -95,9 +95,10 @@ enum Mode {
     /// Input refusals first, in declaration order, then existence, then the move (the documented
     /// precedence).
     Correct,
-    /// [`Mode::Correct`] with the two overlapping refusals checked the other way round. The model
-    /// orders neither before the other beside a default (`input-guard-overlap-precedence.md`,
-    /// "two input-guarded refusals: unchanged"), so this is as faithful as `Correct`.
+    /// [`Mode::Correct`] with the two overlapping refusals checked the other way round. Of two input
+    /// refusals one input selects the first declared answers (`input-guard-overlap-precedence.md`,
+    /// beyond10x/ess#227 correction 1, superseding the open order of #209), so this is wrong where
+    /// both hold, and the suite sends that overlap (beyond10x/ess#455).
     CorrectOtherOrder,
     /// Looks the account up before it checks the input: an unknown id is "not found".
     ExistenceFirst,
@@ -311,9 +312,17 @@ fn issue_209_the_refusal_scenarios_pass_a_target_answering_input_before_existenc
 }
 
 #[test]
-fn issue_209_the_refusal_scenarios_pass_the_same_target_with_the_open_order_taken_the_other_way() {
+fn issue_455_the_refusal_scenarios_fail_a_target_taking_the_overlapping_refusals_the_other_way() {
     let failed = configure_failures(Mode::CorrectOtherOrder);
-    assert!(failed.is_empty(), "{failed:#?}");
+    assert_eq!(
+        failed.keys().map(String::as_str).collect::<Vec<_>>(),
+        [SECRET],
+        "only the first declared refusal's overlap send fails: {failed:#?}"
+    );
+    assert!(
+        failed[SECRET].contains("observed: [\"outcome = missing-configuration\"]"),
+        "{failed:#?}"
+    );
 }
 
 /// The model's own interpreter, asked about every literal `Configure` input a refusal scenario
