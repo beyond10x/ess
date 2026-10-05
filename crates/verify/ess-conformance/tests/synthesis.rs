@@ -4512,7 +4512,15 @@ fn an_unquoted_null_guard_is_refused_at_validate_and_a_quoted_one_is_the_text() 
         ("note != null", "`defined(note)`"),
     ] {
         let source = GUARDS.replace("when: defined(note)", &format!("when: {guard}"));
-        let error = RawSpecFile::parse(&source).expect_err(guard);
+        // At the guard that wrote it, rather than by the reader (beyond10x/ess#448).
+        let raw = RawSpecFile::parse(&source).expect("the reader keeps the guard to refuse it");
+        let errors =
+            Specification::assemble([(Source::new("fixture.yaml"), raw)]).expect_err(guard);
+        let error = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ess_primitives::error::ValidationCode::NullComparison)
+            .unwrap_or_else(|| panic!("`{guard}` is refused as a null comparison: {errors}"));
         let rendered = error.to_string();
         assert!(
             rendered.contains("null") && rendered.contains(hint),

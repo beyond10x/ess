@@ -1,0 +1,94 @@
+format: ess/22
+system: probe
+version: v1
+domain: probe.item
+types:
+  - {name: probe.item.OwnerId, kind: newtype, of: Uuid}
+  - {name: probe.item.ItemId, kind: newtype, of: Uuid}
+  - name: probe.item.Kind
+    kind: enum
+    variants: [plain, fancy]
+entities:
+  - name: probe.item.Owner
+    identity: {name: owner_id, type: probe.item.OwnerId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: probe.item.Item
+    identity: {name: item_id, type: probe.item.ItemId}
+    fields:
+      - {name: label, type: String}
+      - {name: owner, type: probe.item.OwnerId}
+    invariants: [label != ""]
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: probe.item.Refused, summary: Refused., fields: []}
+events:
+  - name: probe.item.Created
+    fields:
+      - {name: item_id, type: probe.item.ItemId}
+      - {name: kind, type: probe.item.Kind}
+  - name: probe.item.Closed
+    fields:
+      - {name: item_id, type: probe.item.ItemId}
+actors:
+  - name: probe.item.Operator
+    may: [probe.item.Create, probe.item.Close]
+commands:
+  - name: probe.item.Create
+    input:
+      - {name: label, type: String}
+      - {name: owner, type: probe.item.OwnerId}
+      - {name: kind, type: probe.item.Kind}
+    outcomes:
+      - name: empty-label
+        when: input.label == ""
+        error: probe.item.Refused
+      - name: no-owner
+        when_related: {via: input.owner, exists: false}
+        error: probe.item.Refused
+      - name: unlabelled-owner
+        when_related: {via: input.owner, predicate: label == ""}
+        error: probe.item.Refused
+      - name: created
+        creates: probe.item.Item
+        instance: item_id
+        emits: [probe.item.Created]
+        payload:
+          probe.item.Created: {item_id: {generated: true}, kind: input.kind}
+        sets: {label: input.label, owner: input.owner}
+  - name: probe.item.Close
+    input:
+      - {name: item_id, type: probe.item.ItemId}
+    outcomes:
+      - name: unlabelled
+        when_subject: {predicate: label == ""}
+        error: probe.item.Refused
+      - name: closed
+        moves: probe.item.Item.close
+        instance: item_id
+        emits: [probe.item.Closed]
+        payload:
+          probe.item.Closed: {item_id: input.item_id}
+views:
+  - name: probe.item.Labelled
+    source: probe.item.Item
+    fields:
+      - {name: item_id, type: probe.item.ItemId}
+      - {name: label, type: String}
+    filter: label != ""
+bindings:
+  - id: close-fancy
+    when:
+      event: probe.item.Created
+      where: event.kind == fancy
+    invoke: {command: probe.item.Close}
+    mapping:
+      item_id: event.item_id
+    delivery: at_least_once
+    on_failure: retry

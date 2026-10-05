@@ -7,7 +7,7 @@ use crate::{
     EventSpec, Field, Primitive, TypeBody, TypeRef, TypeRegistry,
 };
 use ess_primitives::error::{ValidationCode, ValidationError};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate, PredicateAt, WrittenPredicate};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum local typed inputs.
@@ -79,6 +79,78 @@ pub struct First {
     /// Existing finite predicate syntax, checked against the item declaration.
     #[serde(rename = "where")]
     pub predicate: Predicate,
+}
+
+// `Selection` and `First` as a document writes them (beyond10x/ess#448): the same keys and the
+// same published schema, with `first.where` read where it is written, so one that does not parse is
+// refused at its binding rather than ending the document. The doc comments are the published
+// descriptions, and match the model's word for word.
+
+/// One ordered selection declaration.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "Selection")]
+pub struct RawSelection {
+    /// Unique local selector identity.
+    // `Field::PATTERN`, published so an editor refuses what `SelectionPlan::resolve` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
+    pub name: String,
+    /// Lowest eligible occurrence in the declared input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first: Option<RawFirst>,
+    /// First present result among earlier selectors of the same input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_present: Option<Vec<String>>,
+}
+
+/// A bounded predicate and earlier occurrence exclusions.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "First")]
+pub struct RawFirst {
+    /// Local input identity.
+    #[serde(rename = "in")]
+    pub input: String,
+    /// Earlier selected occurrences excluded by original index.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluding: Vec<String>,
+    /// Existing finite predicate syntax, checked against the item declaration.
+    #[serde(rename = "where")]
+    pub predicate: WrittenPredicate,
+}
+
+impl RawSelection {
+    /// The selection, or the refusal of a `first.where` that does not parse, `at` its site.
+    pub fn read(self, at: impl Into<PredicateAt>) -> Result<Selection, ValidationError> {
+        let first = match self.first {
+            Some(first) => Some(First {
+                input: first.input,
+                excluding: first.excluding,
+                predicate: first.predicate.read(at)?,
+            }),
+            None => None,
+        };
+        Ok(Selection {
+            name: self.name,
+            first,
+            first_present: self.first_present,
+        })
+    }
+}
+
+impl From<Selection> for RawSelection {
+    fn from(selection: Selection) -> Self {
+        Self {
+            name: selection.name,
+            first: selection.first.map(|first| RawFirst {
+                input: first.input,
+                excluding: first.excluding,
+                predicate: first.predicate.into(),
+            }),
+            first_present: selection.first_present,
+        }
+    }
 }
 
 /// Exact event source retained independently of a selection result.

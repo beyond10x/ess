@@ -263,7 +263,7 @@ pub struct RawBindingSpec {
     pub selection_inputs: Vec<crate::selection::SelectionInput>,
     /// Finite selectors in authored evaluation order.
     #[serde(default)]
-    pub selections: Vec<crate::selection::Selection>,
+    pub selections: Vec<crate::selection::RawSelection>,
     /// How many times the command may run. Required.
     pub delivery: Delivery,
     /// What happens when it does not run. Required.
@@ -300,7 +300,7 @@ pub struct RawTrigger {
     /// A finite typed predicate over the event payload; the binding invokes only when it holds
     /// (ess/22, beyond10x/ess#268). Only for an event cause; see the `condition` module.
     #[serde(default, rename = "where")]
-    pub condition: Option<ess_primitives::predicate::Predicate>,
+    pub condition: Option<ess_primitives::predicate::WrittenPredicate>,
 }
 
 /// What a binding does.
@@ -1404,7 +1404,48 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             }
         }
 
-        let condition = raw.when.condition.clone();
+        // A condition that does not parse is refused here, and withholds the binding
+        // (beyond10x/ess#448).
+        let condition = match raw.when.condition.clone().map(|condition| {
+            condition.read(
+                ess_primitives::error::ConstructRef::new(
+                    ess_primitives::error::ConstructKind::Binding,
+                    name.to_string(),
+                )
+                .key("when")
+                .key("where"),
+            )
+        }) {
+            Some(Ok(condition)) => Some(condition),
+            Some(Err(error)) => {
+                errors.push(error);
+                None
+            }
+            None => None,
+        };
+        // A selector whose `first.where` does not parse is refused here too (beyond10x/ess#448).
+        let selections = raw
+            .selections
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, selection)| {
+                let site = ess_primitives::error::ConstructRef::new(
+                    ess_primitives::error::ConstructKind::Binding,
+                    name.to_string(),
+                )
+                .key("selections")
+                .index(index)
+                .key("first")
+                .key("where");
+                match selection.read(site) {
+                    Ok(selection) => Some(selection),
+                    Err(error) => {
+                        errors.push(error);
+                        None
+                    }
+                }
+            })
+            .collect();
         let cause = match cause_of(&name, raw.when) {
             Ok(cause) => cause,
             Err(error) => return Err(errors.with(error)),
@@ -1416,7 +1457,7 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             command: raw.invoke.command,
             mapping,
             selection_inputs: raw.selection_inputs,
-            selections: raw.selections,
+            selections,
             delivery: raw.delivery,
             failure: raw.on_failure.failure,
             escalation: raw.on_failure.emits,

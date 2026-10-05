@@ -141,11 +141,14 @@ fn t200_every_site_and_operator_validates_from_ess_22() {
 fn t200_below_ess_22_the_mapping_is_refused_as_it_always_was() {
     for format in ["ess/20", "ess/21"] {
         let relabelled = DIRECTORY.replace("format: ess/22", &format!("format: {format}"));
-        let refused = RawSpecFile::parse(&relabelled).expect_err(format);
+        // In the words it always was, at the declaration that wrote it (beyond10x/ess#448).
+        let refused = assemble(&relabelled).expect_err(format);
         assert!(
-            refused
-                .to_string()
-                .contains("a comparison operand must be a scalar"),
+            refused.as_slice().iter().any(|error| error.code
+                == ValidationCode::UnparsablePredicate
+                && error
+                    .message
+                    .contains("a comparison operand must be a scalar")),
             "{format}: {refused}"
         );
     }

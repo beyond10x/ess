@@ -14,7 +14,7 @@ use ess_domain::{
 };
 use ess_primitives::{
     facts::{FactPath, FactValue},
-    predicate::{CompareOp, Operand, Predicate},
+    predicate::{CompareOp, Operand, Predicate, WrittenPredicate},
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -459,10 +459,10 @@ fn selected_enum_wire_variants_change_admission_and_runtime_values() {
     let before = model(&enum_text);
     let after = model(&revised);
     assert!(
-        matches!(&before.raw.types[1].body, RawTypeBody::Enum { variants } if variants.iter().map(ess_domain::types::EnumVariant::name).eq(["Safe"]))
+        matches!(&before.raw.types[1].body, RawTypeBody::Enum { variants } if variants.iter().map(|variant| variant.declared().map(ess_domain::types::EnumVariant::name)).eq([Some("Safe")]))
     );
     assert!(
-        matches!(&after.raw.types[1].body, RawTypeBody::Enum { variants } if variants.iter().map(ess_domain::types::EnumVariant::name).eq(["Fast"]))
+        matches!(&after.raw.types[1].body, RawTypeBody::Enum { variants } if variants.iter().map(|variant| variant.declared().map(ess_domain::types::EnumVariant::name)).eq([Some("Fast")]))
     );
     let a = bound(&before, &binding_text("sample"));
     let b = bound(&after, &binding_text("sample"));
@@ -1034,6 +1034,7 @@ fn raw_guard(model: &Model) -> &Predicate {
         .outcomes[0]
         .when
         .as_ref()
+        .and_then(WrittenPredicate::predicate)
         .unwrap()
 }
 
@@ -1273,7 +1274,9 @@ fn invariant_wire_forms_change_real_unused_newtype_and_struct_predicates() {
             let after = model(&text);
             let raw = match &after.raw.types[4].body {
                 RawTypeBody::Newtype { invariants, .. }
-                | RawTypeBody::Struct { invariants, .. } => Invariant::from(invariants[0].clone()),
+                | RawTypeBody::Struct { invariants, .. } => {
+                    Invariant::try_from(invariants[0].clone()).expect("the invariant parses")
+                }
                 _ => panic!("invariant owner"),
             };
             let assembled = match &after
@@ -1427,7 +1430,13 @@ fn raw_boolean_predicate_alternatives_reach_compiled_views_and_preserve_local_cl
             &format!("filter: {source}"),
         );
         let after = model(&changed);
-        assert_eq!(after.raw.views[0].filter.as_ref(), Some(&expected));
+        assert_eq!(
+            after.raw.views[0]
+                .filter
+                .as_ref()
+                .and_then(WrittenPredicate::predicate),
+            Some(&expected)
+        );
         assert_eq!(
             after.specification.views()[&"review.data.Items".parse().unwrap()]
                 .filter

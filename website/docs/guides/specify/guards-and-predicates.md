@@ -268,6 +268,11 @@ from every state it may be selected in. The refusal names no
 subject of its own and reads the parcel its sibling moves. An `Optional` field may be read; an
 absent value is unknown and selects no branch, so write `not defined(field)` to select on absence.
 
+A domain generated from another format, such as the case record of a protocol's claims, guards its
+outcomes this way too. Its generator quotes every scalar, writes compound guards with structured
+`all`/`any`/`not`, and makes the refusal the default branch, which past 64 joint assignments is
+required: [generated case-record domains](https://github.com/beyond10x/ess/blob/main/docs/design/generated-case-record-domains.md).
+
 Validation partitions closed enum fields jointly with the input, so two branches that split an enum
 need no default. An open comparison such as `weight_kg > 20` needs a genuine default, here
 `dispatched`. Declare an unfiltered view that projects the identity, `state` and every guarded

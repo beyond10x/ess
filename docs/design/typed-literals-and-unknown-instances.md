@@ -21,13 +21,17 @@ same function the quoted literal is, and one rule decides both:
 
 | written | target is `Boolean` | target is `Integer` | target is `Decimal` | target is text or an enum |
 |---|---|---|---|---|
-| `false` | admitted, as `'false'` | refused: `` `true` or `false` `` hint | refused, as `'false'` is | refused: **quote it** |
-| `0` | refused, as `'0'` is | admitted, as `'0'` | refused, as `'0'` is | refused: **quote it** |
-| `1.5` | refused, as `'1.5'` is | refused, as `'1.5'` is | refused, as `'1.5'` is | refused: **quote it** |
+| `false` | admitted, as `'false'` | refused: `` `true` or `false` `` hint | refused, as `'false'` is | refused: **quote it** where `'false'` is admitted, or where an enum declares the variant in another case (`False`), named in the hint; otherwise as `'false'` is |
+| `0` | refused, as `'0'` is | admitted, as `'0'` | refused, as `'0'` is | refused: **quote it** where `'0'` is admitted; otherwise as `'0'` is |
+| `1.5` | refused, as `'1.5'` is | refused, as `'1.5'` is | refused, as `'1.5'` is | refused: **quote it** where `'1.5'` is admitted; otherwise as `'1.5'` is |
 
 "Refused, as the quoted form is" means the quoted form's own refusal and hint. "Quote it" is a
-`type_mismatch` whose hint spells the repair: `quote it: items: '0'`. An integer beyond `i64` is
-refused as its quoted spelling is.
+`type_mismatch` whose hint spells the repair: `quote it: items: '0'`. Over an enum the quoted form
+is often refused too, because YAML reads `True` as the boolean `true` and `'true'` is not a variant
+of `[True, False, Unknown]`; where a declared variant equals the boolean ignoring case, the hint
+names that variant quoted, `quote it: tests_pass: 'True'`, and the literal is still refused rather
+than read as the variant (beyond10x/ess#426). Otherwise the quoted form's own refusal lists the
+variants. An integer beyond `i64` is refused as its quoted spelling is.
 
 An admitted typed scalar compiles to `ResolvedPayloadValue::Literal { value }` with the canonical
 text, which is exactly what the quoted form compiles to. The IR of every model that writes the

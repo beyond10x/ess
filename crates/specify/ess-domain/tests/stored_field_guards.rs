@@ -113,10 +113,19 @@ fn both_shapes_in_one_when_subject_are_refused_by_the_reader() {
 
 #[test]
 fn a_null_comparison_is_refused_where_the_predicate_is_read() {
-    let error = parse_error(&with_guard(
+    // At the branch's `when_subject.predicate`, rather than by the reader (beyond10x/ess#448).
+    let errors = refused(&with_guard(
         "        when_subject:\n          predicate: weight_kg == null\n",
     ));
-    assert!(error.contains("ESS-SPEC-017"), "{error}");
+    assert!(
+        has(
+            &errors,
+            ValidationCode::NullComparison,
+            "outcomes.refused-overweight.when_subject.predicate"
+        ),
+        "{errors}"
+    );
+    assert!(errors.to_string().contains("ESS-SPEC-017"), "{errors}");
 }
 
 #[test]

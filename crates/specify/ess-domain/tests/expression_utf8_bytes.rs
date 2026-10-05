@@ -309,8 +309,14 @@ fn utf8_below_source22_it_is_refused_by_format() {
         "{compare: {left: {utf8_bytes: label}, op: lte, right: 8}}",
         "{limit: {gte: {utf8_bytes: label}}}",
     ] {
+        // Not a predicate below ess/22: refused as one that does not parse, at the guard that
+        // wrote it (beyond10x/ess#448).
         let refused = assemble(&guarded(21, written)).expect_err(written);
-        assert!(refused.starts_with("parse:"), "{written}: {refused}");
+        assert!(
+            refused.contains("[unparsable_predicate] ")
+                && refused.contains(".when: cannot parse predicate"),
+            "{written}: {refused}"
+        );
     }
     let refused = assemble(&model(
         21,

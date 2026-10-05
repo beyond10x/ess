@@ -327,7 +327,8 @@ fn render_sections(sections: &[Section]) -> String {
     out.push_str(
         "\n### Validation names\n\n\
          Each bracketed validation name is reported under the class below. Its family is the \
-         construct the defect is in.\n\n\
+         construct the defect is in, except `unparsable_predicate` and `null_comparison`, which \
+         are `SPEC` wherever the predicate is written.\n\n\
          | Validation name | Class |\n\
          |---|---|\n",
     );
