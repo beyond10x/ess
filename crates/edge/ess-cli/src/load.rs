@@ -103,7 +103,21 @@ pub(crate) fn browser_specification(
     ))
 }
 
+/// [`specification`], with the advisory warnings of a specification that compiled
+/// (beyond10x/ess#437): a relation the model only implies. Empty for a refused one, whose errors
+/// are the repair.
+pub(crate) fn advised_specification(path: &Path) -> Result<(LoadedSpec, Diagnostics)> {
+    Ok(compile_advised(raw_specification(path)?, true))
+}
+
 fn compile_specification(raw: RawLoaded) -> LoadedSpec {
+    compile_advised(raw, false).0
+}
+
+/// Compiles `raw`, and with `advise` collects the warnings of a specification that compiled. The
+/// warnings are read from the assembled specification beside the compilation, never from or into
+/// the IR, so a specification compiles to the same bytes either way.
+fn compile_advised(raw: RawLoaded, advise: bool) -> (LoadedSpec, Diagnostics) {
     let RawLoaded {
         parsed,
         texts,
@@ -112,11 +126,12 @@ fn compile_specification(raw: RawLoaded) -> LoadedSpec {
     } = raw;
 
     if !problems.is_empty() {
-        return LoadedSpec::Refused {
+        let refused = LoadedSpec::Refused {
             files_read,
             problems,
             diagnostics: Diagnostics::new(),
         };
+        return (refused, Diagnostics::new());
     }
 
     let labels = parsed
@@ -127,24 +142,36 @@ fn compile_specification(raw: RawLoaded) -> LoadedSpec {
         Ok(specification) => specification,
         Err(errors) => {
             let diagnostics = ess_compiler::resolve::diagnose_locating(&errors, &texts, &labels);
-            return LoadedSpec::Refused {
+            let refused = LoadedSpec::Refused {
                 files_read,
                 problems: errors.as_slice().iter().map(ToString::to_string).collect(),
                 diagnostics,
             };
+            return (refused, Diagnostics::new());
         }
     };
 
     match ess_compiler::compile(&assembled, &texts) {
-        Ok(ir) => LoadedSpec::Compiled {
-            ir: Box::new(ir),
-            files_read,
-        },
-        Err(diagnostics) => LoadedSpec::Refused {
-            files_read,
-            problems: Vec::new(),
-            diagnostics,
-        },
+        Ok(ir) => {
+            let warnings = if advise {
+                ess_compiler::resolve::advise_locating(&assembled, &texts, &labels)
+            } else {
+                Diagnostics::new()
+            };
+            let compiled = LoadedSpec::Compiled {
+                ir: Box::new(ir),
+                files_read,
+            };
+            (compiled, warnings)
+        }
+        Err(diagnostics) => {
+            let refused = LoadedSpec::Refused {
+                files_read,
+                problems: Vec::new(),
+                diagnostics,
+            };
+            (refused, Diagnostics::new())
+        }
     }
 }
 

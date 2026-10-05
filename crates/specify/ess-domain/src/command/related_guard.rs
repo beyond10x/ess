@@ -918,6 +918,103 @@ fn orders_present_refusals(
     Ok(orders)
 }
 
+/// Every related row the identity type alone settles where a relation could say which entity it
+/// is (beyond10x/ess#437): advisories, never refusals.
+///
+/// A `via` whose value a field carries — the subject field a stored `via` reads, or the field a
+/// branch fills from an input `via` ([`related_value::input_carrier`]) — names its entity through
+/// a relation on that field when one is declared, and otherwise through the one entity its type
+/// identifies. The second is legal, and it is a relation the specification relies on and never
+/// declares, so it is reported once per row, at the first branch reading it. An input `via` no
+/// field carries has nowhere a relation could be declared, and is not reported; nor is a `via`
+/// typed as a bare primitive, which [`crate::entity::implied_relations`] does not lint either. A
+/// row-set selector (`entity`, `where`) is a query, not a relation, and is not read here.
+/// Nor is a row of an entity whose identity an `updates:` rewrites (ess/23, beyond10x/ess#429):
+/// a relation carrying that identity is refused, so the warning could not be silenced.
+pub fn implied_relations(spec: &Specification) -> ValidationErrors {
+    let mut advisories = ValidationErrors::new();
+    if spec.system().format.major() < crate::system::FormatVersion::V18.major() {
+        return advisories;
+    }
+    let rekeyed = crate::entity::rekeyed(spec);
+    for command in spec.commands().values().filter(|command| uses(command)) {
+        for via in read_vias(command) {
+            let Some((carrier, field, via_type)) = carried(spec, command, via) else {
+                continue;
+            };
+            // Named identity types only, as for a stored field: a bare primitive such as `Uuid`
+            // is shared by many entities, and the rule does not ask about it.
+            if !matches!(via_type, TypeRef::Named(_)) {
+                continue;
+            }
+            let Some(target) =
+                related_value::implied_entity(spec, via_type, (carrier, field.as_str()))
+            else {
+                continue;
+            };
+            // A re-keyed entity's identity carries no relation (beyond10x/ess#429).
+            if rekeyed.contains(&target.name) {
+                continue;
+            }
+            let Some(outcome) = command.outcomes.iter().find(|outcome| {
+                matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. } if read == via)
+            }) else {
+                continue;
+            };
+            advisories.push(
+                ValidationError::at(
+                    site(command, outcome),
+                    ValidationCode::ImpliedRelation,
+                    format!(
+                        "`{}` reads the row `{via}` names by its type alone: `{via_type}` \
+                         identifies `{}`, and no relation on `{}`'s `{field}` declares that it \
+                         names a `{}`",
+                        command.name, target.name, carrier.name, target.name
+                    ),
+                )
+                .with_hint(crate::entity::implied_relation_hint(
+                    &carrier.name,
+                    &field,
+                    &target.name,
+                    crate::entity::Cardinality::One,
+                    carrier.fields.iter().any(|held| {
+                        held.name == field && held.type_ref == target.identity.type_ref
+                    }),
+                )),
+            );
+        }
+    }
+    advisories
+}
+
+/// The entity and field carrying a related guard's `via`, and the identity type it holds: the
+/// addressed subject's stored field, or the field a branch fills from the input. `None` where no
+/// field carries it.
+fn carried<'a>(
+    spec: &'a Specification,
+    command: &'a CommandSpec,
+    via: &RelatedVia,
+) -> Option<(&'a EntitySpec, String, &'a TypeRef)> {
+    match via {
+        RelatedVia::Input(field) => {
+            let read = command.input_field(field)?;
+            let (holder, holder_field) = command.outcomes.iter().find_map(|outcome| {
+                let subject = outcome
+                    .subject
+                    .as_ref()
+                    .and_then(|subject| spec.entities().get(&subject.entity));
+                related_value::input_carrier(outcome, subject, field)
+            })?;
+            Some((holder, holder_field, identity_type(&read.type_ref)))
+        }
+        RelatedVia::Subject(field) => {
+            let subject = addressed_subject(spec, command)?;
+            let stored = subject.fields.iter().find(|held| held.name == *field)?;
+            Some((subject, field.clone(), identity_type(&stored.type_ref)))
+        }
+    }
+}
+
 /// The format gate, the entity `via` names, the predicates against that entity's fields, and the
 /// joint related-field × input partition.
 pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors {

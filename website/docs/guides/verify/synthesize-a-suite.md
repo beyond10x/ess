@@ -83,9 +83,10 @@ there, with its error, events and resulting state. A successful ordinary witness
 and a seed that answers no unmet obligation adds nothing. A row that needs an owner or a related row,
 or whose identity the scenario already uses, is not applied, and the refusal says so.
 
-A request with seeds writes suite `ess-conformance/42` (`/43` with `--suite-format 5`) and records
-in its provenance which files were read, the exact rows admitted, and where each row was used. A
-target needs the entity setup capability to run those scenarios. Without `--synthesis-seed` the
+A request with seeds writes suite `ess-conformance/42` (`/43` with `--suite-format 5`), or `/44`
+(`/45`) where an act also claims one event more than once, and records in its provenance which
+files were read, the exact rows admitted, and where each row was used. A target needs the entity
+setup capability to run those scenarios. Without `--synthesis-seed` the
 suite is what it was, except that a guard over an integer beyond 2^53 that synthesis used to refuse
 is now witnessed exactly. The binding contract is
 [`docs/design/synthesis-seeds.md`](https://github.com/beyond10x/ess/blob/main/docs/design/synthesis-seeds.md).

@@ -445,6 +445,14 @@ validation_codes! {
     /// ([`ParseError::NullComparison`]), at that declaration. Its code stays
     /// [`ParseError::NULL_COMPARISON_CODE`].
     NullComparison => "null_comparison",
+
+    /// A specification relies on a relation it does not declare: a stored field typed as the
+    /// named identity of exactly one entity, or a `when_related:` row settled by that type alone
+    /// (beyond10x/ess#437).
+    ///
+    /// The one code reported as a warning rather than a refusal: the specification is legal and
+    /// compiles as it did, and the repair is to declare the `references` relation it implies.
+    ImpliedRelation => "implied_relation",
 }
 
 impl fmt::Display for ValidationCode {
