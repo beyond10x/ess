@@ -76,6 +76,84 @@ exact value would change if its condition were dropped or inverted, and refuses 
 (`ESS-SYNTH-017`) where no arrangement does. Such a suite is written as `ess-conformance/38` or
 `/39`. A view a binding or precondition changes the rows of is refused by name.
 
+## A list parameter, an empty list and a default
+
+A read that selects the rows whose key is in a list the caller sends declares the parameter as a
+`List` and asks for membership with a quantifier: `exists: {in: param.queues, as: q, that: queue_id
+== q}` holds for a row whose `queue_id` is one of the values sent, and a value no row holds selects
+nothing. Where an empty list means every queue, a second disjunct says so: `param.queues.count ==
+0`. A switch the caller may leave out is an `Optional<Boolean>` parameter, and what it means when
+absent is written as a disjunct over `not defined(param.abandoned)`.
+
+```yaml
+format: ess/22
+system: metrics
+version: v1
+domain: metrics.calls
+events:
+  - name: metrics.calls.CallRecorded
+    fields: [{name: call_id, type: Uuid}]
+entities:
+  - name: metrics.calls.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: abandoned, type: Boolean}
+    lifecycle: {initial: Recorded, states: [Recorded], terminal: [Recorded], transitions: []}
+commands:
+  - name: metrics.calls.RecordCall
+    input:
+      - {name: queue_id, type: Integer}
+      - {name: abandoned, type: Boolean}
+    outcomes:
+      - name: recorded
+        creates: metrics.calls.Call
+        instance: call_id
+        sets: {queue_id: input.queue_id, abandoned: input.abandoned}
+        emits: [metrics.calls.CallRecorded]
+        payload: {metrics.calls.CallRecorded: {call_id: {generated: true}}}
+views:
+  - name: metrics.calls.InQueues
+    source: metrics.calls.Call
+    consistency: read_your_writes
+    params: [{name: queues, type: List<Integer>}]
+    filter:
+      any:
+        - param.queues.count == 0
+        - {exists: {in: param.queues, as: q, that: queue_id == q}}
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: calls, type: Integer, aggregate: {count: {}}}
+  - name: metrics.calls.ByAbandonment
+    source: metrics.calls.Call
+    consistency: read_your_writes
+    params: [{name: abandoned, type: Optional<Boolean>}]
+    filter:
+      any:
+        - all: ["not defined(param.abandoned)", abandoned == false]
+        - abandoned == param.abandoned
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: calls, type: Integer, aggregate: {count: {}}}
+```
+
+`default:` on a parameter and `{in: param.queues}` are not admitted. `default:` is an unknown
+field. `in`, `any_of`, `one_of`, `not_in` and `none_of` hold literal values only, so `queue_id: {in:
+param.queues}` would compare with the text `param.queues`; it is refused as `type_mismatch`, naming
+the `exists` form for a list and `queue_id == param.queue` for a single value, and so is a command
+input written the same way (`{in: input.allowed}`) and `in_ignore_case`.
+
+Conformance sends a list parameter over a group key one arranged key at a time, as a list of one,
+and asserts that group exactly and every other arranged group absent. It then sends every arranged
+key in one list, the first of them not the first group's, so a target that reads only the first
+element answers fewer groups; and, where the `param.queues.count == 0` disjunct is written, `[]`,
+asserting every group. Like any group selection this needs the suite's empty initial state. The
+switch is not witnessed: its parameter is read twice, and the view keeps the refusal
+`ESS-SYNTH-017`. The `OpenAPI` document states a list parameter as its query key repeated,
+`queues=1&queues=2` (`style: form`, `explode: true`).
+
 ## What an aggregate view does not compute
 
 A view returns the numbers a suite can check exactly, and the consumer computes what follows from

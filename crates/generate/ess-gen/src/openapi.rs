@@ -758,6 +758,8 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
             }
         ),
         required: true,
+        style: None,
+        explode: None,
         schema: written(json!({"type": "string", "minLength": 1})),
     })
 }
@@ -1719,6 +1721,12 @@ struct Parameter {
     location: &'static str,
     description: String,
     required: bool,
+    /// How a list travels in the query: stated for a `List<T>` view parameter only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    style: Option<&'static str>,
+    /// Whether each element of a list is its own `name=value` pair.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    explode: Option<bool>,
     schema: Fragment,
 }
 
@@ -1766,6 +1774,9 @@ struct BindingAccessor {
 /// A filter parameter is required unless it is declared `Optional`, and its schema is its declared
 /// type. A paging parameter (`paging:`, ess/16, beyond10x/ess#174) is an optional integer whatever
 /// type it is declared at, because `paging:` declares that a read sending neither answers every row.
+/// A `List<T>` parameter repeats its key once per element, `queues=1&queues=2` (beyond10x/ess#438):
+/// `style: form` and `explode: true` are `OpenAPI`'s default for a query parameter, stated so that no
+/// reader settles on `queues=1,2`, which is ambiguous for an element holding a comma.
 fn view_parameters(view: &ResolvedView) -> Vec<Parameter> {
     view.params
         .iter()
@@ -1780,6 +1791,8 @@ fn view_parameters(view: &ResolvedView) -> Vec<Parameter> {
                         paging.first_page
                     ),
                     required: false,
+                    style: None,
+                    explode: None,
                     schema: written(json!({"type": "integer", "minimum": paging.first_page})),
                 },
                 Some(paging) if paging.size == param.name => Parameter {
@@ -1787,6 +1800,8 @@ fn view_parameters(view: &ResolvedView) -> Vec<Parameter> {
                     location: "query",
                     description: "How many rows a page holds at most.".to_owned(),
                     required: false,
+                    style: None,
+                    explode: None,
                     schema: written(json!({"type": "integer", "minimum": 1})),
                 },
                 _ => Parameter {
@@ -1800,11 +1815,22 @@ fn view_parameters(view: &ResolvedView) -> Vec<Parameter> {
                         )
                     }),
                     required: !matches!(param.type_ref, ResolvedTypeRef::Optional { .. }),
+                    style: is_list(&param.type_ref).then_some("form"),
+                    explode: is_list(&param.type_ref).then_some(true),
                     schema: embedded(&types::field(param)),
                 },
             }
         })
         .collect()
+}
+
+/// Whether a parameter is a list, present or `Optional`.
+fn is_list(type_ref: &ResolvedTypeRef) -> bool {
+    match type_ref {
+        ResolvedTypeRef::List { .. } => true,
+        ResolvedTypeRef::Optional { of } => is_list(of),
+        _ => false,
+    }
 }
 
 /// What a paged view's page and size select, and whether the answer carries a total.

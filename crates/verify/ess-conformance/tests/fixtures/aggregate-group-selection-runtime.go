@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The Go port of the store in tests/aggregate_group_selection.rs: it computes every view of the
@@ -58,6 +59,32 @@ var gsModels = map[string][]gsView{
 		{"demo.goals.EvidenceEvaluations", []string{"objective_id", "goal"}, []string{"objective_id"}, false, [][2]string{{"count", "count"}}},
 		{"demo.goals.EvaluationsByGoal", []string{"goal"}, nil, false, [][2]string{{"count", "count"}, {"total", "sum:cents"}}},
 	},
+	"lists": {
+		{"demo.calls.InQueues", []string{"queue_id"}, nil, false, [][2]string{{"calls", "count"}, {"talk_ms", "sum:duration_ms"}}},
+		{"demo.calls.InQueuesOrAll", []string{"queue_id"}, nil, false, [][2]string{{"calls", "count"}}},
+	},
+	"window": {
+		{"demo.window.CallsInRange", nil, nil, false, [][2]string{{"calls", "count"}, {"talk_ms", "sum:duration_ms"}}},
+		{"demo.window.QueueCallsInRange", []string{"queue_id"}, nil, false, [][2]string{{"calls", "count"}}},
+	},
+}
+
+// gsRanges names the field each window view holds to `[param.from, param.to)`.
+var gsRanges = map[string]string{
+	"demo.window.CallsInRange":      "started_at",
+	"demo.window.QueueCallsInRange": "started_at",
+}
+
+// gsList is `exists: {in: param.<param>, as: q, that: <field> == q}`; with emptyAll, beside
+// `param.<param>.count == 0`.
+type gsList struct {
+	param, field string
+	emptyAll     bool
+}
+
+var gsLists = map[string]gsList{
+	"demo.calls.InQueues":      {"queues", "queue_id", false},
+	"demo.calls.InQueuesOrAll": {"queues", "queue_id", true},
 }
 
 type gsStore struct {
@@ -99,7 +126,7 @@ func (s *gsStore) family() string {
 	switch s.model {
 	case "depots", "copied":
 		return "depots"
-	case "ledger", "goals":
+	case "ledger", "goals", "lists", "window":
 		return s.model
 	}
 	return "work"
@@ -214,6 +241,22 @@ func (s *gsStore) ExecuteCommand(r CommandRequest) (CommandResult, error) {
 		})
 		result.Outcome = "integrated"
 		result.DirectEvents = []ObservedEvent{{Event: "demo.goals.Evaluated", Payload: map[string]Node{"evaluation_id": id}}}
+	case "window demo.window.RecordCall":
+		row := map[string]Node{"call_id": id, "state": "Recorded"}
+		for _, field := range []string{"queue_id", "started_at", "duration_ms"} {
+			row[field] = input(field)
+		}
+		s.rows = append(s.rows, row)
+		result.Outcome = "recorded"
+		result.DirectEvents = []ObservedEvent{{Event: "demo.window.CallRecorded", Payload: map[string]Node{"call_id": id}}}
+	case "lists demo.calls.RecordCall":
+		row := map[string]Node{"call_id": id, "state": "Recorded"}
+		for _, field := range []string{"queue_id", "abandoned", "duration_ms"} {
+			row[field] = input(field)
+		}
+		s.rows = append(s.rows, row)
+		result.Outcome = "recorded"
+		result.DirectEvents = []ObservedEvent{{Event: "demo.calls.CallRecorded", Payload: map[string]Node{"call_id": id}}}
 	default:
 		return result, ErrUnsupported
 	}
@@ -258,7 +301,59 @@ func (s *gsStore) admits(view gsView, row map[string]Node, params map[string]Nod
 			return false
 		}
 	}
-	return !view.openOnly || row["state"] == "Open"
+	if view.openOnly && row["state"] != "Open" {
+		return false
+	}
+	if list, ok := gsLists[view.name]; ok && s.model == "lists" {
+		return s.listed(list, row, params)
+	}
+	if field, ok := gsRanges[view.name]; ok && s.model == "window" {
+		return s.within(field, row, params)
+	}
+	return true
+}
+
+// within is whether the row's instant is in `[param.from, param.to)`.
+func (s *gsStore) within(field string, row map[string]Node, params map[string]Node) bool {
+	held, _ := row[field].(string)
+	from, _ := params["from"].(string)
+	to, _ := params["to"].(string)
+	if s.fault == "compares-text" {
+		return from <= held && held < to
+	}
+	at := func(text string) time.Time {
+		parsed, err := time.Parse(time.RFC3339, text)
+		if err != nil {
+			panic(fmt.Sprintf("not an instant: %q", text))
+		}
+		return parsed
+	}
+	h, f, t := at(held), at(from), at(to)
+	lower := s.fault == "ignores-bound" || !h.Before(f)
+	upper := h.Before(t) || (s.fault == "inclusive-to" && h.Equal(t))
+	return lower && upper
+}
+
+// listed is whether the row's field is one the list parameter names.
+func (s *gsStore) listed(list gsList, row map[string]Node, params map[string]Node) bool {
+	sent, ok := params[list.param].([]any)
+	if !ok {
+		return false
+	}
+	switch {
+	case s.fault == "ignores-list":
+		return true
+	case len(sent) == 0:
+		return list.emptyAll && s.fault != "empty-matches-nothing"
+	case s.fault == "first-element-only":
+		return equal(row[list.field], sent[0])
+	}
+	for _, value := range sent {
+		if equal(row[list.field], value) {
+			return true
+		}
+	}
+	return false
 }
 
 func gsInteger(value Node) *big.Rat {

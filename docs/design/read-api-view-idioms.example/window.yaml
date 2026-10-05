@@ -1,0 +1,47 @@
+domain: idioms.window
+
+summary: >-
+  A clock-relative window is resolved by the caller. A named range in a zone, or the last N minutes,
+  reaches the view as two instants, and the view compares each row's instant with them.
+
+events:
+  - name: idioms.window.CallStarted
+    fields:
+      - {name: call_id, type: Uuid}
+
+entities:
+  - name: idioms.window.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: started_at, type: Timestamp}
+    lifecycle:
+      initial: Started
+      states: [Started]
+      terminal: [Started]
+      transitions: []
+
+commands:
+  - name: idioms.window.StartCall
+    input:
+      - {name: started_at, type: Timestamp}
+    outcomes:
+      - name: started
+        creates: idioms.window.Call
+        instance: call_id
+        sets: {started_at: input.started_at}
+        emits: [idioms.window.CallStarted]
+        payload:
+          idioms.window.CallStarted: {call_id: {generated: true}}
+
+views:
+  # `from` is inclusive and `to` exclusive. The caller resolves `TODAY` in its zone, or the last 15
+  # minutes against its own clock, into the two instants before the read.
+  - name: idioms.window.CallsInRange
+    source: idioms.window.Call
+    consistency: read_your_writes
+    params:
+      - {name: from, type: Timestamp}
+      - {name: to, type: Timestamp}
+    filter: [started_at >= param.from, started_at < param.to]
+    fields:
+      - {name: calls, type: Integer, aggregate: {count: {}}}

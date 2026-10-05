@@ -41,6 +41,27 @@ const MODELS = {
     view('demo.goals.EvidenceEvaluations', ['objective_id', 'goal'], ['objective_id'], [['count', 'count']]),
     view('demo.goals.EvaluationsByGoal', ['goal'], [], [['count', 'count'], ['total', 'sum:cents']]),
   ],
+  lists: [
+    view('demo.calls.InQueues', ['queue_id'], [], [['calls', 'count'], ['talk_ms', 'sum:duration_ms']]),
+    view('demo.calls.InQueuesOrAll', ['queue_id'], [], [['calls', 'count']]),
+  ],
+  window: [
+    view('demo.window.CallsInRange', [], [], [['calls', 'count'], ['talk_ms', 'sum:duration_ms']]),
+    view('demo.window.QueueCallsInRange', ['queue_id'], [], [['calls', 'count']]),
+  ],
+};
+
+// The field each window view holds to `[param.from, param.to)`.
+const RANGES = {
+  'demo.window.CallsInRange': 'started_at',
+  'demo.window.QueueCallsInRange': 'started_at',
+};
+
+// `exists: {in: param.<param>, as: q, that: <field> == q}`; with emptyAll, beside
+// `param.<param>.count == 0`.
+const LISTS = {
+  'demo.calls.InQueues': { param: 'queues', field: 'queue_id', emptyAll: false },
+  'demo.calls.InQueuesOrAll': { param: 'queues', field: 'queue_id', emptyAll: true },
 };
 if (MODELS[model] === undefined) {
   throw new Error(`ESS_GROUPS_MODEL ${model} names no model`);
@@ -63,7 +84,8 @@ const kept = (value) => {
 };
 
 // The set of commands the model declares.
-const family = { depots: 'depots', copied: 'depots', ledger: 'ledger', goals: 'goals' }[model] ?? 'work';
+const FAMILIES = { depots: 'depots', copied: 'depots', ledger: 'ledger', goals: 'goals', lists: 'lists', window: 'window' };
+const family = FAMILIES[model] ?? 'work';
 
 class Store {
   rows = [];
@@ -177,7 +199,67 @@ class Store {
         directEvents: [{ event: 'demo.goals.Evaluated', payload: { evaluation_id: id } }],
       };
     }
+    if (command === 'demo.window.RecordCall' && family === 'window') {
+      const row = { call_id: id, state: 'Recorded' };
+      for (const field of ['queue_id', 'started_at', 'duration_ms']) {
+        row[field] = read(field);
+      }
+      this.rows.push(row);
+      return {
+        outcome: 'recorded',
+        consistency,
+        directEvents: [{ event: 'demo.window.CallRecorded', payload: { call_id: id } }],
+      };
+    }
+    if (command === 'demo.calls.RecordCall' && family === 'lists') {
+      const row = { call_id: id, state: 'Recorded' };
+      for (const field of ['queue_id', 'abandoned', 'duration_ms']) {
+        row[field] = read(field);
+      }
+      this.rows.push(row);
+      return {
+        outcome: 'recorded',
+        consistency,
+        directEvents: [{ event: 'demo.calls.CallRecorded', payload: { call_id: id } }],
+      };
+    }
     throw new Error(`unexpected command ${command}`);
+  }
+
+  /** Whether the row's field is one the list parameter names. */
+  listed(list, row, params) {
+    const sent = params[list.param];
+    if (!Array.isArray(sent)) {
+      return false;
+    }
+    if (fault === 'ignores-list') {
+      return true;
+    }
+    if (sent.length === 0) {
+      return list.emptyAll && fault !== 'empty-matches-nothing';
+    }
+    if (fault === 'first-element-only') {
+      return equal(row[list.field], sent[0]);
+    }
+    return sent.some((value) => equal(row[list.field], value));
+  }
+
+  /** Whether the row's instant is in `[param.from, param.to)`. */
+  within(field, row, params) {
+    const [held, from, to] = [row[field], params.from, params.to];
+    if (fault === 'compares-text') {
+      return from <= held && held < to;
+    }
+    const at = (text) => {
+      const parsed = Date.parse(text);
+      if (Number.isNaN(parsed)) {
+        throw new Error(`not an instant: ${text}`);
+      }
+      return parsed;
+    };
+    const lower = fault === 'ignores-bound' || at(held) >= at(from);
+    const upper = at(held) < at(to) || (fault === 'inclusive-to' && at(held) === at(to));
+    return lower && upper;
   }
 
   /** The related row named — or, under a copying fault, the first or last one created. */
@@ -221,7 +303,15 @@ class Store {
         return false;
       }
     }
-    return !declared.openOnly || row.state === 'Open';
+    if (declared.openOnly && row.state !== 'Open') {
+      return false;
+    }
+    const list = model === 'lists' ? LISTS[declared.name] : undefined;
+    if (list !== undefined && !this.listed(list, row, params)) {
+      return false;
+    }
+    const range = model === 'window' ? RANGES[declared.name] : undefined;
+    return range === undefined || this.within(range, row, params);
   }
 
   aggregate(fn, all, members) {

@@ -18,6 +18,7 @@ use ess_domain::command::OutcomeName;
 use ess_primitives::{
     facts::{FactValue, Number},
     node::Node,
+    time::Rfc3339Instant,
 };
 
 /// Which fixture a store answers.
@@ -38,10 +39,16 @@ enum Model {
     /// `fixtures/aggregate-group-selection-guarded.yaml`: the #361 comment's shape, a selector
     /// and a copied key on a creating command a related guard refuses for a missing row.
     Goals,
+    /// `fixtures/aggregate-list-parameter.yaml`: a list parameter over a group key
+    /// (beyond10x/ess#438).
+    Lists,
+    /// `fixtures/aggregate-timestamp-range.yaml`: a window the caller resolved into two
+    /// `Timestamp` parameters (beyond10x/ess#439).
+    Window,
 }
 
 impl Model {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 9] = [
         Self::Work,
         Self::Depots,
         Self::Direct,
@@ -49,6 +56,8 @@ impl Model {
         Self::States,
         Self::Ledger,
         Self::Goals,
+        Self::Lists,
+        Self::Window,
     ];
 
     fn name(self) -> &'static str {
@@ -60,6 +69,8 @@ impl Model {
             Self::States => "states",
             Self::Ledger => "ledger",
             Self::Goals => "goals",
+            Self::Lists => "lists",
+            Self::Window => "window",
         }
     }
 
@@ -113,6 +124,18 @@ enum Fault {
     TruncatesAvg,
     /// `count_distinct` counts rows.
     DistinctCountsRows,
+    /// A list parameter is not applied: every group comes back.
+    IgnoresList,
+    /// An empty list selects nothing, where the view reads it as every group.
+    EmptyMatchesNothing,
+    /// Only the first element of a list parameter selects.
+    FirstElementOnly,
+    /// A window's `from` is not applied.
+    IgnoresBound,
+    /// A window's `to` is inclusive.
+    InclusiveTo,
+    /// Instants are compared by their spellings.
+    ComparesText,
 }
 
 impl Fault {
@@ -137,6 +160,16 @@ impl Fault {
         Self::DistinctCountsRows,
     ];
 
+    /// The defects of a list parameter, run over [`Model::Lists`] only.
+    const LISTS: [Self; 3] = [
+        Self::IgnoresList,
+        Self::EmptyMatchesNothing,
+        Self::FirstElementOnly,
+    ];
+
+    /// The defects of a window, run over [`Model::Window`] only.
+    const WINDOWS: [Self; 3] = [Self::IgnoresBound, Self::InclusiveTo, Self::ComparesText];
+
     fn name(self) -> &'static str {
         match self {
             Self::None => "none",
@@ -157,12 +190,20 @@ impl Fault {
             Self::LossyNumbers => "lossy-numbers",
             Self::TruncatesAvg => "truncates-avg",
             Self::DistinctCountsRows => "distinct-counts-rows",
+            Self::IgnoresList => "ignores-list",
+            Self::EmptyMatchesNothing => "empty-matches-nothing",
+            Self::FirstElementOnly => "first-element-only",
+            Self::IgnoresBound => "ignores-bound",
+            Self::InclusiveTo => "inclusive-to",
+            Self::ComparesText => "compares-text",
         }
     }
 
     fn of(name: &str) -> Self {
         Self::ALL
             .into_iter()
+            .chain(Self::LISTS)
+            .chain(Self::WINDOWS)
             .find(|fault| fault.name() == name)
             .unwrap_or_else(|| panic!("no fault {name}"))
     }
@@ -178,14 +219,27 @@ enum Agg {
     Distinct(&'static str),
 }
 
-/// One view as the fixture declares it: a conjunction of `field == param.field` and, where
-/// `open_only`, `state == Open`.
+/// One view as the fixture declares it: a conjunction of `field == param.field`, where
+/// `open_only` `state == Open`, and where `list` names one the membership of a field in a list
+/// parameter.
 struct ViewDef {
     name: &'static str,
     group_by: &'static [&'static str],
     params: &'static [&'static str],
     open_only: bool,
     fields: &'static [(&'static str, Agg)],
+    list: Option<ListDef>,
+    /// `<field> >= param.from` and `<field> < param.to`, compared as instants.
+    range: Option<&'static str>,
+}
+
+/// `exists: {in: param.<param>, as: q, that: <field> == q}`; with `empty_all`, beside
+/// `param.<param>.count == 0`.
+#[derive(Clone, Copy)]
+struct ListDef {
+    param: &'static str,
+    field: &'static str,
+    empty_all: bool,
 }
 
 const fn view(
@@ -200,6 +254,8 @@ const fn view(
         params,
         open_only: false,
         fields,
+        list: None,
+        range: None,
     }
 }
 
@@ -354,6 +410,56 @@ const STATES: &[ViewDef] = &[view(
     &[("count", Agg::Count)],
 )];
 
+const LISTS: &[ViewDef] = &[
+    ViewDef {
+        list: Some(ListDef {
+            param: "queues",
+            field: "queue_id",
+            empty_all: false,
+        }),
+        ..view(
+            "demo.calls.InQueues",
+            &["queue_id"],
+            &[],
+            &[("calls", Agg::Count), ("talk_ms", Agg::Sum("duration_ms"))],
+        )
+    },
+    ViewDef {
+        list: Some(ListDef {
+            param: "queues",
+            field: "queue_id",
+            empty_all: true,
+        }),
+        ..view(
+            "demo.calls.InQueuesOrAll",
+            &["queue_id"],
+            &[],
+            &[("calls", Agg::Count)],
+        )
+    },
+];
+
+const WINDOWS: &[ViewDef] = &[
+    ViewDef {
+        range: Some("started_at"),
+        ..view(
+            "demo.window.CallsInRange",
+            &[],
+            &[],
+            &[("calls", Agg::Count), ("talk_ms", Agg::Sum("duration_ms"))],
+        )
+    },
+    ViewDef {
+        range: Some("started_at"),
+        ..view(
+            "demo.window.QueueCallsInRange",
+            &["queue_id"],
+            &[],
+            &[("calls", Agg::Count)],
+        )
+    },
+];
+
 /// The literal `demo.work.Open` writes into `bucket`: 2^53 + 1, which binary64 cannot hold.
 const BUCKET: &str = "9007199254740993";
 
@@ -425,6 +531,8 @@ impl Store {
             Model::States => STATES,
             Model::Ledger => LEDGER,
             Model::Goals => GOALS,
+            Model::Lists => LISTS,
+            Model::Window => WINDOWS,
         }
     }
 
@@ -461,6 +569,44 @@ impl Store {
                 *held == self.kept(wanted)
             }
         }) && (!view.open_only || row["state"] == Node::Text("Open".into()))
+            && view.list.is_none_or(|list| self.listed(list, row, params))
+            && view
+                .range
+                .is_none_or(|field| self.within(field, row, params))
+    }
+
+    /// Whether `row`'s instant is in `[param.from, param.to)`.
+    fn within(&self, field: &str, row: &Row, params: &BTreeMap<String, Node>) -> bool {
+        let text = |node: Option<&Node>| match node {
+            Some(Node::Text(text)) => text.clone(),
+            other => panic!("not an instant: {other:?}"),
+        };
+        let (held, from, to) = (
+            text(row.get(field)),
+            text(params.get("from")),
+            text(params.get("to")),
+        );
+        if self.fault == Fault::ComparesText {
+            return from <= held && held < to;
+        }
+        let at = |text: &str| Rfc3339Instant::parse_rfc3339(text).expect("an instant");
+        let (held, from, to) = (at(&held), at(&from), at(&to));
+        (self.fault == Fault::IgnoresBound || from <= held)
+            && (held < to || (self.fault == Fault::InclusiveTo && held == to))
+    }
+
+    /// Whether `row`'s field is one the list parameter names.
+    fn listed(&self, list: ListDef, row: &Row, params: &BTreeMap<String, Node>) -> bool {
+        let held = row.get(list.field).unwrap_or(&Node::Null);
+        let Some(Node::Seq(sent)) = params.get(list.param) else {
+            return false;
+        };
+        match self.fault {
+            Fault::IgnoresList => true,
+            _ if sent.is_empty() => list.empty_all && self.fault != Fault::EmptyMatchesNothing,
+            Fault::FirstElementOnly => *held == sent[0],
+            _ => sent.contains(held),
+        }
     }
 
     fn query(&self, view: &ViewDef, params: &BTreeMap<String, Node>) -> Vec<Row> {
@@ -630,6 +776,8 @@ impl ConformanceTarget for Store {
         let commands = match self.model {
             Model::Ledger => 2,
             Model::Goals => 3,
+            Model::Lists => 4,
+            Model::Window => 5,
             other => u8::from(other.copies()),
         };
         let result = match (command.to_string().as_str(), commands) {
@@ -755,6 +903,32 @@ impl ConformanceTarget for Store {
                         .with("evaluation_id", id),
                 )
             }
+            ("demo.window.RecordCall", 5) => {
+                let mut row = Row::new();
+                for field in ["queue_id", "started_at", "duration_ms"] {
+                    row.insert(field.to_owned(), input(field).unwrap_or(Node::Null));
+                }
+                row.insert("call_id".into(), id.clone());
+                row.insert("state".into(), Node::Text("Recorded".into()));
+                self.rows.borrow_mut().push(row);
+                SemanticCommandResult::took(outcome(&command, "recorded")).emitting(
+                    ObservedEvent::new("demo.window.CallRecorded".parse().unwrap())
+                        .with("call_id", id),
+                )
+            }
+            ("demo.calls.RecordCall", 4) => {
+                let mut row = Row::new();
+                for field in ["queue_id", "abandoned", "duration_ms"] {
+                    row.insert(field.to_owned(), input(field).unwrap_or(Node::Null));
+                }
+                row.insert("call_id".into(), id.clone());
+                row.insert("state".into(), Node::Text("Recorded".into()));
+                self.rows.borrow_mut().push(row);
+                SemanticCommandResult::took(outcome(&command, "recorded")).emitting(
+                    ObservedEvent::new("demo.calls.CallRecorded".parse().unwrap())
+                        .with("call_id", id),
+                )
+            }
             (other, _) => return Err(TargetError::unsupported("command", other)),
         };
         Ok(result.with_consistency(token))
@@ -827,6 +1001,8 @@ const COPIED_YAML: &str = include_str!("fixtures/aggregate-copied-group-paramete
 const STATES_YAML: &str = include_str!("fixtures/aggregate-state-groups.yaml");
 const LEDGER_YAML: &str = include_str!("fixtures/aggregate-group-selection-owner.yaml");
 const GOALS_YAML: &str = include_str!("fixtures/aggregate-group-selection-guarded.yaml");
+const LIST_YAML: &str = include_str!("fixtures/aggregate-list-parameter.yaml");
+const WINDOW_YAML: &str = include_str!("fixtures/aggregate-timestamp-range.yaml");
 
 fn yaml(model: Model) -> &'static str {
     match model {
@@ -837,6 +1013,8 @@ fn yaml(model: Model) -> &'static str {
         Model::States => STATES_YAML,
         Model::Ledger => LEDGER_YAML,
         Model::Goals => GOALS_YAML,
+        Model::Lists => LIST_YAML,
+        Model::Window => WINDOW_YAML,
     }
 }
 
@@ -1443,6 +1621,571 @@ fn a_view_a_precondition_feeds_keeps_a_named_refusal() {
     assert!(refused[0].contains("demo.work.Open"), "{refused:#?}");
 }
 
+// ---- beyond10x/ess#438: list-typed view parameters ---------------------------------------------
+
+/// The source, compiled; or every refusal, with the stable code each compiles to, as one text.
+fn validated(text: &str) -> Result<EssIr, String> {
+    let raw = RawSpecFile::parse(text).map_err(|error| error.to_string())?;
+    let spec = Specification::assemble([(Source::new("work.yaml"), raw)]).map_err(|errors| {
+        let codes: Vec<String> = ess_compiler::resolve::diagnose(&errors, &SourceMap::new())
+            .as_slice()
+            .iter()
+            .map(|diagnostic| format!("{} {diagnostic}", diagnostic.code))
+            .collect();
+        format!("{errors}\n{}", codes.join("\n"))
+    })?;
+    compile(&spec, &SourceMap::new()).map_err(|diagnostics| diagnostics.to_string())
+}
+
+fn refused(text: &str) -> String {
+    match validated(text) {
+        Ok(_) => panic!("must be refused:\n{text}"),
+        Err(error) => error,
+    }
+}
+
+/// `text` with `from` replaced by `to` once; fails where `from` is not there.
+fn replaced(text: &str, from: &str, to: &str) -> String {
+    assert!(text.contains(from), "the source holds `{from}`");
+    text.replacen(from, to, 1)
+}
+
+const LIST_FILTER: &str = "filter: {exists: {in: param.queues, as: q, that: queue_id == q}}";
+
+/// The JSON of `view`'s compiled filter.
+fn filter_json(ir: &EssIr, view: &str) -> String {
+    let (_, found) = ir
+        .views()
+        .iter()
+        .find(|(name, _)| name.to_string() == view)
+        .unwrap_or_else(|| panic!("no view {view}"));
+    serde_json::to_string(&found.filter).unwrap()
+}
+
+/// A membership operand that names a parameter or an input is the text it spells, so `{in:
+/// param.queues}` never asks whether the field is in the list the caller sent. Refused in every
+/// operator spelling, naming the quantifier that does ask it.
+#[test]
+fn membership_operand_naming_a_parameter_is_refused_with_quantifier_hint() {
+    for operator in ["in", "any_of", "one_of", "not_in", "none_of"] {
+        let error = refused(&replaced(
+            LIST_YAML,
+            LIST_FILTER,
+            &format!("filter: {{queue_id: {{{operator}: param.queues}}}}"),
+        ));
+        assert!(error.contains("[type_mismatch]"), "{operator}: {error}");
+        assert!(
+            error.contains("exists: {in: param.queues, as: x, that: queue_id == x}"),
+            "{operator}: {error}"
+        );
+    }
+    // A string field admits the text, so the type alone never refused it.
+    let text_field = replaced(
+        &replaced(
+            LIST_YAML,
+            "      - {name: duration_ms, type: Integer}\n    lifecycle",
+            "      - {name: duration_ms, type: Integer}\n      - {name: label, type: String}\n    lifecycle",
+        ),
+        LIST_FILTER,
+        "filter: {label: [param.queues]}",
+    );
+    let error = refused(&text_field);
+    assert!(
+        error.contains("exists: {in: param.queues, as: x, that: label == x}"),
+        "{error}"
+    );
+    // A command guard over a list input.
+    let guarded = replaced(
+        &replaced(
+            &replaced(
+                LIST_YAML,
+                "commands:\n",
+                "errors:\n  - {name: demo.calls.Listed, summary: The queue is listed., fields: []}\ncommands:\n",
+            ),
+            "      - {name: duration_ms, type: Integer}\n    outcomes:",
+            "      - {name: duration_ms, type: Integer}\n      - {name: allowed, type: List<Integer>}\n    outcomes:",
+        ),
+        "      - name: recorded\n",
+        "      - name: listed\n        when: {queue_id: {in: input.allowed}}\n        error: demo.calls.Listed\n      - name: recorded\n",
+    );
+    let error = refused(&guarded);
+    assert!(error.contains("[type_mismatch]"), "{error}");
+    assert!(
+        error.contains("exists: {in: input.allowed, as: x, that: queue_id == x}"),
+        "{error}"
+    );
+}
+
+/// The class behind the membership refusal's hint (correction round 1): whatever the operand names
+/// — a list or a single value, a view parameter or a command input, under `in` or `in_ignore_case`
+/// — the form the hint names is one the author can apply, and applied it validates.
+#[test]
+fn membership_hint_names_a_form_that_validates() {
+    let labelled = replaced(
+        LIST_YAML,
+        "      - {name: duration_ms, type: Integer}\n    lifecycle",
+        "      - {name: duration_ms, type: Integer}\n      - {name: label, type: String}\n    lifecycle",
+    );
+    let listed_params = "params: [{name: queues, type: List<Integer>}]";
+    let view = |params: &str, filter: &str| {
+        replaced(
+            &labelled,
+            &format!("{listed_params}\n    {LIST_FILTER}"),
+            &format!("{params}\n    filter: {filter}"),
+        )
+    };
+    let guarded = |when: &str| {
+        replaced(
+            &replaced(
+                &replaced(
+                    LIST_YAML,
+                    "commands:\n",
+                    "errors:\n  - {name: demo.calls.Listed, summary: The queue is listed., fields: []}\ncommands:\n",
+                ),
+                "      - {name: duration_ms, type: Integer}\n    outcomes:",
+                "      - {name: duration_ms, type: Integer}\n      - {name: allowed, type: List<Integer>}\n      - {name: limit, type: Integer}\n    outcomes:",
+            ),
+            "      - name: recorded\n",
+            &format!(
+                "      - name: listed\n        when: {when}\n        error: demo.calls.Listed\n      - name: recorded\n"
+            ),
+        )
+    };
+    let cases = [
+        (
+            view(listed_params, "{queue_id: {in: param.queues}}"),
+            "{queue_id: {in: param.queues}}",
+            "exists: {in: param.queues, as: x, that: queue_id == x}",
+        ),
+        (
+            view(
+                "params: [{name: queue, type: Integer}]",
+                "{queue_id: {in: param.queue}}",
+            ),
+            "{queue_id: {in: param.queue}}",
+            "queue_id == param.queue",
+        ),
+        (
+            view(
+                "params: [{name: labels, type: List<String>}]",
+                "{label: {in_ignore_case: [param.labels]}}",
+            ),
+            "{label: {in_ignore_case: [param.labels]}}",
+            "exists: {in: param.labels, as: x, that: label == x}",
+        ),
+        (
+            view(
+                "params: [{name: wanted, type: String}]",
+                "{label: {in_ignore_case: [param.wanted]}}",
+            ),
+            "{label: {in_ignore_case: [param.wanted]}}",
+            "label == param.wanted",
+        ),
+        (
+            guarded("{queue_id: {in: input.allowed}}"),
+            "{queue_id: {in: input.allowed}}",
+            "exists: {in: input.allowed, as: x, that: queue_id == x}",
+        ),
+        (
+            guarded("{queue_id: {not_in: input.limit}}"),
+            "{queue_id: {not_in: input.limit}}",
+            "queue_id != input.limit",
+        ),
+        (
+            view(listed_params, "{queue_id: {none_of: param.queues}}"),
+            "{queue_id: {none_of: param.queues}}",
+            "not: {exists: {in: param.queues, as: x, that: queue_id == x}}",
+        ),
+    ];
+    for (text, written, hint) in cases {
+        let error = refused(&text);
+        assert!(error.contains("[type_mismatch]"), "{written}: {error}");
+        assert!(error.contains(hint), "{written} hints `{hint}`: {error}");
+        // A mapping form is written as a flow mapping, a comparison as it stands.
+        let form = if hint.contains(": ") {
+            format!("{{{hint}}}")
+        } else {
+            hint.to_owned()
+        };
+        let applied = replaced(&text, written, &form);
+        if let Err(error) = validated(&applied) {
+            panic!("{written}: the hinted `{hint}` is refused:\n{error}");
+        }
+    }
+}
+
+const LONG_VIEW: &str = "  - name: demo.calls.Long
+    source: demo.calls.Call
+    consistency: read_your_writes
+    params: [{name: limit_ms, type: Integer}]
+    filter: duration_ms > param.limit_ms + 1000
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: calls, type: Integer, aggregate: {count: {}}}
+";
+
+/// A parameter scaled by a constant is not an expression ESS has: the operand is the text it
+/// spells, refused as `type_mismatch`, and the refusal says what to write instead.
+#[test]
+fn comparison_operand_with_trailing_text_after_a_parameter_is_refused() {
+    let scaled = format!(
+        "{LIST_YAML}{}",
+        LONG_VIEW
+            .replace("limit_ms, type", "limit_s, type")
+            .replace("param.limit_ms + 1000", "param.limit_s * 1000")
+    );
+    let error = refused(&scaled);
+    assert!(error.contains("[type_mismatch]"), "{error}");
+    assert!(
+        error.contains("Text literal `param.limit_s * 1000`"),
+        "{error}"
+    );
+    assert!(
+        error.contains("one constant offset") && error.contains("`param.limit_s + 1000`"),
+        "the hint names the offset form: {error}"
+    );
+    assert!(
+        error.contains("declare the parameter in the unit the field is stored in"),
+        "the hint names the stored unit: {error}"
+    );
+}
+
+/// One constant offset of a parameter keeps validating, and compiles to the bytes it did.
+#[test]
+fn parameter_offset_stays_admitted() {
+    let ir =
+        validated(&format!("{LIST_YAML}{LONG_VIEW}")).unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        filter_json(&ir, "demo.calls.Long"),
+        r#"{"duration_ms":{"gt":{"offset":{"add":1000.0,"fact":"param.limit_ms"}}}}"#
+    );
+}
+
+/// Literal membership lists, in the operator form and the list shorthand, keep their meaning and
+/// their bytes.
+#[test]
+fn membership_literal_lists_keep_meaning_and_bytes() {
+    let ir = validated(&replaced(
+        LIST_YAML,
+        &format!("params: [{{name: queues, type: List<Integer>}}]\n    {LIST_FILTER}"),
+        "filter: {queue_id: {in: [1, 2]}}",
+    ))
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        filter_json(&ir, "demo.calls.InQueues"),
+        r#"{"queue_id":{"any_of":[1.0,2.0]}}"#
+    );
+    let ir = validated(&replaced(
+        WORK_YAML,
+        "filter: team == param.team\n",
+        "filter: {all: [team == param.team, {channel: [Web, Store]}]}\n",
+    ))
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        filter_json(&ir, "demo.work.ByTeam"),
+        r#"{"all":["team == param.team",{"channel":{"any_of":["Web","Store"]}}]}"#
+    );
+}
+
+/// The fixture states the three shapes the request needed with the constructs ESS has: membership
+/// through `exists`, an empty list read as unfiltered, and a switch that is `false` when left out.
+#[test]
+fn list_parameter_quantifier_validates() {
+    let ir = validated(LIST_YAML).unwrap_or_else(|error| panic!("{error}"));
+    for (view, filter) in [
+        ("demo.calls.InQueues", "exists"),
+        ("demo.calls.InQueuesOrAll", "param.queues.count == 0"),
+        ("demo.calls.ByAbandonment", "defined(param.abandoned)"),
+    ] {
+        let (_, found) = ir
+            .views()
+            .iter()
+            .find(|(name, _)| name.to_string() == view)
+            .unwrap_or_else(|| panic!("no view {view}"));
+        let written = found.filter.as_ref().expect("a filter").to_string();
+        assert!(written.contains(filter), "{view}: {written}");
+    }
+}
+
+const GUIDE: &str = include_str!("../../../../website/docs/guides/specify/aggregate-views.md");
+const GUIDE_HEADING: &str = "## A list parameter, an empty list and a default";
+
+/// The guide section states the list, empty-list and default idioms, says what is not admitted,
+/// and every model it fences validates.
+#[test]
+fn list_parameter_guide_section_states_the_idioms() {
+    let marker = format!("\n{GUIDE_HEADING}\n");
+    let body = GUIDE
+        .split(marker.as_str())
+        .nth(1)
+        .unwrap_or_else(|| panic!("the guide has no heading `{GUIDE_HEADING}`"))
+        .split("\n## ")
+        .next()
+        .unwrap();
+    let normalized = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let missing: Vec<&str> = [
+        "exists: {in: param.queues, as: q, that: queue_id == q}",
+        "param.queues.count == 0",
+        "not defined(param.abandoned)",
+        "`default:`",
+        "`{in: param.queues}`",
+        "not admitted",
+    ]
+    .into_iter()
+    .filter(|phrase| !normalized.contains(phrase))
+    .collect();
+    assert_eq!(
+        missing,
+        Vec::<&str>::new(),
+        "the section does not state these"
+    );
+    let fences: Vec<&str> = body
+        .split("```yaml\n")
+        .skip(1)
+        .map(|fence| fence.split("```").next().unwrap())
+        .collect();
+    assert_ne!(fences.len(), 0, "the section fences a model");
+    for fence in fences {
+        validated(fence).unwrap_or_else(|error| panic!("{error}\n{fence}"));
+    }
+}
+
+/// The reads of `view`'s aggregate scenario in the list fixture.
+fn list_reads(view: &str) -> Vec<Read> {
+    let result = synthesis(LIST_YAML);
+    let refused = aggregate_refusals(&result);
+    // The default switch reads its parameter twice, which no selection binds: it validates and
+    // keeps its named refusal.
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    assert!(
+        refused[0].contains("ESS-SYNTH-017") && refused[0].contains("demo.calls.ByAbandonment"),
+        "{refused:#?}"
+    );
+    reads(scenario(&result.suite, &format!("{view}/aggregate")))
+}
+
+fn list_of(values: &[ScenarioValue]) -> ScenarioValue {
+    ScenarioValue::literal(Node::Seq(
+        values
+            .iter()
+            .map(|value| match value {
+                ScenarioValue::Literal { value } => value.clone(),
+                other => panic!("not a literal: {other:?}"),
+            })
+            .collect(),
+    ))
+}
+
+/// The key a `Contains` asserts, where it asserts one.
+fn contained_key(expectation: &ViewExpectation) -> Option<ScenarioValue> {
+    match expectation {
+        ViewExpectation::Contains { fields } => fields.get("queue_id").cloned(),
+        _ => None,
+    }
+}
+
+/// `[key_A]` selects group A exactly and leaves the decoy B out; `[]` is no such read without the
+/// empty-list disjunct.
+#[test]
+fn aggregate_list_parameter_selects_listed_groups() {
+    for view in ["demo.calls.InQueues", "demo.calls.InQueuesOrAll"] {
+        let found = list_reads(view);
+        let (params, expectations) = found.first().expect("a read");
+        let contained: Vec<ScenarioValue> = expectations.iter().filter_map(contained_key).collect();
+        assert_eq!(contained.len(), 1, "{view}: {found:#?}");
+        let a = contained[0].clone();
+        assert_eq!(
+            params,
+            &fields(&[("queues", list_of(std::slice::from_ref(&a)))]),
+            "{view}"
+        );
+        assert!(expectations.contains(&rows(1)), "{view}: {expectations:#?}");
+        let decoys: Vec<&ViewExpectation> = expectations
+            .iter()
+            .filter(|expectation| {
+                matches!(expectation, ViewExpectation::Excludes { fields }
+                    if fields.get("queue_id").is_some_and(|key| *key != a))
+            })
+            .collect();
+        assert_ne!(decoys.len(), 0, "{view}: a decoy group is excluded");
+        // Two listed keys, the first of them not A's: a target matching the first element only
+        // answers another number of groups.
+        assert!(
+            found.iter().any(|(params, expectations)| matches!(
+                &params["queues"],
+                ScenarioValue::Literal { value: Node::Seq(listed) } if listed.len() > 1
+            ) && expectations
+                .iter()
+                .filter_map(contained_key)
+                .count()
+                > 1),
+            "{view}: a read lists several keys: {found:#?}"
+        );
+    }
+}
+
+/// With `param.queues.count == 0` beside the membership, `[]` reads every group; without it, no
+/// `[]` read is synthesized.
+#[test]
+fn aggregate_list_parameter_empty_reads_unfiltered() {
+    let empty = fields(&[("queues", ScenarioValue::literal(Node::Seq(Vec::new())))]);
+    let all = list_reads("demo.calls.InQueuesOrAll");
+    let groups: BTreeSet<String> = all
+        .iter()
+        .flat_map(|(_, expectations)| expectations.iter().filter_map(contained_key))
+        .map(|key| format!("{key:?}"))
+        .collect();
+    assert!(groups.len() >= 2, "{all:#?}");
+    let (_, expectations) = all
+        .iter()
+        .find(|(params, _)| *params == empty)
+        .unwrap_or_else(|| panic!("no `[]` read: {all:#?}"));
+    let answered: BTreeSet<String> = expectations
+        .iter()
+        .filter_map(contained_key)
+        .map(|key| format!("{key:?}"))
+        .collect();
+    assert_eq!(answered, groups, "`[]` asserts every group");
+    assert!(
+        expectations.contains(&rows(groups.len())),
+        "{expectations:#?}"
+    );
+    let listed = list_reads("demo.calls.InQueues");
+    assert!(
+        !listed.iter().any(|(params, _)| *params == empty),
+        "no `[]` read without the disjunct: {listed:#?}"
+    );
+}
+
+// ---- beyond10x/ess#439: a window the caller resolved into two instants -------------------------
+
+/// The `started_at` of every row a window scenario creates, as written, and its reads.
+fn window_scenario(view: &str) -> (Vec<String>, Vec<Read>) {
+    let result = synthesis(WINDOW_YAML);
+    assert_eq!(aggregate_refusals(&result), Vec::<String>::new());
+    let scenario = scenario(&result.suite, &format!("{view}/aggregate"));
+    let spelled = executed(scenario, "demo.window.RecordCall")
+        .into_iter()
+        .map(|input| match &input["started_at"] {
+            ScenarioValue::Literal {
+                value: Node::Text(text),
+            } => text.clone(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    (spelled, reads(scenario))
+}
+
+fn instant(text: &str) -> Rfc3339Instant {
+    Rfc3339Instant::parse_rfc3339(text).unwrap_or_else(|| panic!("an instant: {text}"))
+}
+
+/// A read's `from` and `to`, as written.
+fn bounds(read: &Read) -> (String, String) {
+    let text = |name: &str| match &read.0[name] {
+        ScenarioValue::Literal {
+            value: Node::Text(text),
+        } => text.clone(),
+        other => panic!("{name}: {other:?}"),
+    };
+    (text("from"), text("to"))
+}
+
+/// The `calls` every `Contains` of a read asserts, summed.
+fn counted(read: &Read) -> i128 {
+    read.1
+        .iter()
+        .filter_map(|expectation| match expectation {
+            ViewExpectation::Contains { fields } => match fields.get("calls") {
+                Some(ScenarioValue::Literal { value }) => Some(integer(value)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .sum()
+}
+
+/// `started_at >= param.from` and `started_at < param.to` at the top of the filter select rows by
+/// their instants: rows a second before `from`, at `from`, a second before `to` and at `to` are
+/// created, and each read counts exactly the rows in `[from, to)`.
+#[test]
+fn aggregate_timestamp_range_parameters_select_rows() {
+    for view in ["demo.window.CallsInRange", "demo.window.QueueCallsInRange"] {
+        let (spelled, found) = window_scenario(view);
+        assert_ne!(found.len(), 0, "{view}: a read");
+        for read in &found {
+            let (from, to) = bounds(read);
+            let (from, to) = (instant(&from), instant(&to));
+            let instants: Vec<Rfc3339Instant> = spelled.iter().map(|text| instant(text)).collect();
+            for (edge, name) in [
+                (from.plus_seconds(-1).unwrap(), "from - 1s"),
+                (from, "from"),
+                (to.plus_seconds(-1).unwrap(), "to - 1s"),
+                (to, "to"),
+            ] {
+                assert!(
+                    instants.contains(&edge),
+                    "{view}: a row at {name}: {spelled:?}"
+                );
+            }
+            let inside = instants
+                .iter()
+                .filter(|at| from <= **at && **at < to)
+                .count();
+            assert!(inside < instants.len(), "{view}: a row is outside");
+            assert_eq!(
+                counted(read),
+                i128::try_from(inside).unwrap(),
+                "{view}: {read:#?}"
+            );
+        }
+    }
+}
+
+/// One row is spelled at an offset under which its text sorts on the other side of a bound than its
+/// instant does, so a target comparing text counts another number.
+#[test]
+fn aggregate_timestamp_range_compares_instants_not_text() {
+    for view in ["demo.window.CallsInRange", "demo.window.QueueCallsInRange"] {
+        let (spelled, found) = window_scenario(view);
+        let (from, to) = bounds(&found[0]);
+        let by_text = |text: &String| from.as_str() <= text.as_str() && text.as_str() < to.as_str();
+        let by_instant =
+            |text: &String| instant(&from) <= instant(text) && instant(text) < instant(&to);
+        assert!(
+            spelled.iter().any(|text| by_text(text) != by_instant(text)),
+            "{view}: no row tells text from instant: {spelled:?} in [{from}, {to})"
+        );
+    }
+}
+
+/// A target that ignores `from`, makes `to` inclusive or compares the spellings fails both window
+/// observations natively; the Go, TypeScript and WASM lanes below run the same cases.
+#[test]
+fn aggregate_timestamp_range_faults_fail() {
+    let suite = aggregate_suite(Model::Window);
+    assert_eq!(
+        failed(&run_store(&suite, Model::Window, Fault::None)),
+        BTreeSet::new(),
+        "the healthy store passes"
+    );
+    let both: BTreeSet<String> = [
+        "demo.window.CallsInRange/aggregate",
+        "demo.window.QueueCallsInRange/aggregate",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    for fault in Fault::WINDOWS {
+        assert_eq!(
+            failed(&run_store(&suite, Model::Window, fault)),
+            both,
+            "{fault:?}"
+        );
+    }
+}
+
 #[test]
 fn synthesis_is_deterministic() {
     for model in Model::ALL {
@@ -1567,6 +2310,19 @@ fn expected_failures(model: Model, fault: Fault) -> BTreeSet<&'static str> {
             "demo.work.TopOpen/aggregate",
         ]),
         (Model::Depots, Fault::RetainsRows) => work(&["demo.work.ItemsByState/aggregate"]),
+        // Every list read selects through the list; only the view reading `[]` as every group
+        // tells an empty list that selects nothing from one read correctly.
+        (Model::Lists, Fault::IgnoresList | Fault::FirstElementOnly) => work(&[
+            "demo.calls.InQueues/aggregate",
+            "demo.calls.InQueuesOrAll/aggregate",
+        ]),
+        // Each window read holds a row a second before `from`, one at `to` and one whose spelling
+        // sorts on the other side of a bound than its instant.
+        (Model::Window, Fault::IgnoresBound | Fault::InclusiveTo | Fault::ComparesText) => work(&[
+            "demo.window.CallsInRange/aggregate",
+            "demo.window.QueueCallsInRange/aggregate",
+        ]),
+        (Model::Lists, Fault::EmptyMatchesNothing) => work(&["demo.calls.InQueuesOrAll/aggregate"]),
         // Equivalent by construction: no related row in `Work`; in `Depots` one-key selections
         // admit one group, the single-state lifecycle has one honest group and no transition,
         // no team spelling is another's prefix, no key is absent, no filter refutes a row, no
@@ -1594,6 +2350,12 @@ fn matrix() -> Vec<(Model, Fault)> {
         for fault in &Fault::ALL[1..] {
             out.push((model, *fault));
         }
+    }
+    for fault in Fault::LISTS {
+        out.push((Model::Lists, fault));
+    }
+    for fault in Fault::WINDOWS {
+        out.push((Model::Window, fault));
     }
     out
 }
@@ -1639,6 +2401,46 @@ fn healthy_stores_pass_and_every_fault_fails_what_it_must() {
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// A target that ignores the list, reads `[]` as matching nothing or matches only the first element
+/// fails the named list observation natively; the Go, TypeScript and WASM lanes below run the same
+/// cases and must agree verdict for verdict.
+#[test]
+fn aggregate_list_parameter_faults_fail() {
+    let suite = aggregate_suite(Model::Lists);
+    assert_eq!(
+        failed(&run_store(&suite, Model::Lists, Fault::None)),
+        BTreeSet::new(),
+        "the healthy store passes"
+    );
+    for (fault, named) in [
+        (
+            Fault::IgnoresList,
+            &[
+                "demo.calls.InQueues/aggregate",
+                "demo.calls.InQueuesOrAll/aggregate",
+            ][..],
+        ),
+        (
+            Fault::EmptyMatchesNothing,
+            &["demo.calls.InQueuesOrAll/aggregate"][..],
+        ),
+        (
+            Fault::FirstElementOnly,
+            &[
+                "demo.calls.InQueues/aggregate",
+                "demo.calls.InQueuesOrAll/aggregate",
+            ][..],
+        ),
+    ] {
+        let wanted: BTreeSet<String> = named.iter().map(|id| (*id).to_owned()).collect();
+        assert_eq!(
+            failed(&run_store(&suite, Model::Lists, fault)),
+            wanted,
+            "{fault:?}"
+        );
+    }
 }
 
 // ---- the generated Go and TypeScript runtimes, and the WASM runner -------------------------------
