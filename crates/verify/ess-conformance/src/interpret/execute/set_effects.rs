@@ -176,13 +176,13 @@ fn subject<'a>(
     Ok((entity, key, row))
 }
 
-fn fields(entity: &ResolvedEntity) -> Vec<ResolvedField> {
+pub(super) fn fields(entity: &ResolvedEntity) -> Vec<ResolvedField> {
     let mut fields = entity.fields.clone();
     fields.push(entity.identity.clone());
     fields
 }
 
-fn row_facts<'a>(
+pub(super) fn row_facts<'a>(
     ir: &'a EssIr,
     fields: &'a [ResolvedField],
     entity: &ResolvedEntity,
@@ -278,10 +278,10 @@ fn only_absent(
     })
 }
 
-struct Facts<'a> {
-    row: &'a dyn FactSource,
-    input: &'a dyn FactSource,
-    subject: Option<&'a dyn FactSource>,
+pub(super) struct Facts<'a> {
+    pub(super) row: &'a dyn FactSource,
+    pub(super) input: &'a dyn FactSource,
+    pub(super) subject: Option<&'a dyn FactSource>,
 }
 impl Facts<'_> {
     fn source(&self, path: &FactPath) -> Option<(&dyn FactSource, FactPath)> {

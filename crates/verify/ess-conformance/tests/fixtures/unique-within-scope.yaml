@@ -1,0 +1,76 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.binding
+summary: Identities bound to claims that no two users of one tenant share, checked through a row set.
+types:
+  - {name: demo.binding.UserId, kind: newtype, of: Uuid}
+  - {name: demo.binding.TenantId, kind: newtype, of: String}
+entities:
+  - name: demo.binding.Identity
+    identity: {name: user_id, type: demo.binding.UserId}
+    fields:
+      - {name: tenant_id, type: demo.binding.TenantId}
+      - {name: sub, type: String}
+      - {name: org_id, type: Optional<String>}
+    lifecycle:
+      initial: Bound
+      states: [Bound]
+      terminal: [Bound]
+errors:
+  - {name: demo.binding.IdentityAlreadyExists, summary: The user is bound already., fields: []}
+  - {name: demo.binding.ClaimsAlreadyExists, summary: Another user of the tenant carries the claims., fields: []}
+events:
+  - name: demo.binding.IdentityBound
+    fields:
+      - {name: user_id, type: demo.binding.UserId}
+  - name: demo.binding.IdentityImported
+    fields:
+      - {name: user_id, type: demo.binding.UserId}
+commands:
+  - name: demo.binding.BindIdentity
+    input:
+      - {name: user_id, type: demo.binding.UserId}
+      - {name: tenant_id, type: demo.binding.TenantId}
+      - {name: sub, type: String}
+      - {name: org_id, type: String}
+    outcomes:
+      - name: already-bound
+        existing_instance: true
+        error: demo.binding.IdentityAlreadyExists
+      - name: claims-taken
+        when_related:
+          entity: demo.binding.Identity
+          where: {all: [tenant_id == input.tenant_id, sub == input.sub, defined(org_id), org_id == input.org_id]}
+          exists: true
+        error: demo.binding.ClaimsAlreadyExists
+      - name: bound
+        creates: demo.binding.Identity
+        instance: user_id
+        sets: {tenant_id: input.tenant_id, sub: input.sub, org_id: input.org_id}
+        emits: [demo.binding.IdentityBound]
+        payload:
+          demo.binding.IdentityBound: {user_id: input.user_id}
+  - name: demo.binding.ImportIdentity
+    input:
+      - {name: user_id, type: demo.binding.UserId}
+      - {name: tenant_id, type: demo.binding.TenantId}
+      - {name: sub, type: String}
+    outcomes:
+      - name: imported
+        creates: demo.binding.Identity
+        instance: user_id
+        sets: {tenant_id: input.tenant_id, sub: input.sub}
+        emits: [demo.binding.IdentityImported]
+        payload:
+          demo.binding.IdentityImported: {user_id: input.user_id}
+      - {name: already-imported, existing_instance: true, error: demo.binding.IdentityAlreadyExists}
+views:
+  - name: demo.binding.Identities
+    source: demo.binding.Identity
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: demo.binding.UserId}
+      - {name: tenant_id, type: demo.binding.TenantId}
+      - {name: sub, type: String}
+      - {name: org_id, type: Optional<String>}

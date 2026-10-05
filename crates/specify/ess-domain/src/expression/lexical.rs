@@ -325,6 +325,24 @@ pub(crate) enum Site {
         command: QualifiedName,
         outcome: OutcomeName,
     },
+    /// An outcome's row-set `when_related: {where}` (ess/22), over a candidate row and `input.`.
+    RowSetWhere {
+        command: QualifiedName,
+        outcome: OutcomeName,
+    },
+    /// An outcome's row-set `when_related: {forall}` (ess/22), over a selected row and `input.`.
+    RowSetForall {
+        command: QualifiedName,
+        outcome: OutcomeName,
+    },
+    /// The `where` of a filtered read, `{related: {entity, where, field}}` (ess/22), at its place in
+    /// an outcome: `sets`, then the target and any nested struct members; or `payload`, then the
+    /// event or error, the target and any nested members.
+    Selection {
+        command: QualifiedName,
+        outcome: OutcomeName,
+        place: Vec<String>,
+    },
     /// An outcome's `instances: {where}`, over the entity's stored fields and `input.`.
     Instances {
         command: QualifiedName,
@@ -365,6 +383,8 @@ impl Written {
     /// Reads every predicate site of one source document, as the typed reader will find them.
     /// Whatever does not read here is left out: the typed reader refuses it with its own
     /// diagnostic, and a predicate left out keeps the meaning it had before `ess/22`.
+    // One `put` per predicate site an outcome, a declaration or a view writes.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn from_document(document: &serde_yaml::Value) -> Self {
         use serde_yaml::Value;
         let mut written = Self::default();
@@ -418,9 +438,27 @@ impl Written {
                         .and_then(|it| it.get("predicate")),
                 );
                 put(
+                    at(|command, outcome| Site::RowSetWhere { command, outcome }),
+                    outcome.get("when_related").and_then(|it| it.get("where")),
+                );
+                put(
+                    at(|command, outcome| Site::RowSetForall { command, outcome }),
+                    outcome.get("when_related").and_then(|it| it.get("forall")),
+                );
+                put(
                     at(|command, outcome| Site::Instances { command, outcome }),
                     outcome.get("instances").and_then(|it| it.get("where")),
                 );
+                for (place, filter) in selections(&outcome) {
+                    put(
+                        Site::Selection {
+                            command: name.clone(),
+                            outcome: outcome_name.clone(),
+                            place,
+                        },
+                        Some(&filter),
+                    );
+                }
                 for (index, affect) in items(&outcome, "affects").iter().enumerate() {
                     put(
                         Site::Affect {
@@ -500,7 +538,8 @@ pub fn input_guard(condition: &OutcomeCondition) -> Option<&Predicate> {
         | OutcomeCondition::SubjectState { predicate, .. }
         | OutcomeCondition::StateChange { predicate, .. } => predicate.as_ref(),
         OutcomeCondition::SubjectPredicate { input, .. }
-        | OutcomeCondition::Related { input, .. } => input.as_ref(),
+        | OutcomeCondition::Related { input, .. }
+        | OutcomeCondition::RelatedSet { input, .. } => input.as_ref(),
         _ => None,
     }
 }
@@ -515,7 +554,8 @@ fn input_guard_mut(condition: &mut OutcomeCondition) -> Option<&mut Predicate> {
         | OutcomeCondition::SubjectState { predicate, .. }
         | OutcomeCondition::StateChange { predicate, .. } => predicate.as_mut(),
         OutcomeCondition::SubjectPredicate { input, .. }
-        | OutcomeCondition::Related { input, .. } => input.as_mut(),
+        | OutcomeCondition::Related { input, .. }
+        | OutcomeCondition::RelatedSet { input, .. } => input.as_mut(),
         _ => None,
     }
 }
@@ -558,6 +598,33 @@ pub(crate) fn slot<'a>(
                 test: crate::command::related_guard::RelatedTest::Holds(predicate),
                 ..
             } => Some(predicate),
+            _ => None,
+        },
+        Site::RowSetWhere {
+            command,
+            outcome: name,
+        } => match &mut outcome(commands, command, name)?.condition {
+            OutcomeCondition::RelatedSet { selection, .. } => Some(&mut selection.filter),
+            _ => None,
+        },
+        Site::RowSetForall {
+            command,
+            outcome: name,
+        } => match &mut outcome(commands, command, name)?.condition {
+            OutcomeCondition::RelatedSet {
+                test: crate::command::row_set::RowSetTest::Forall(predicate),
+                ..
+            } => Some(predicate),
+            _ => None,
+        },
+        Site::Selection {
+            command,
+            outcome: name,
+            place,
+        } => match selection_at(outcome(commands, command, name)?, place)? {
+            crate::command::PayloadSource::RelatedSelection { selection, .. } => {
+                Some(&mut selection.filter)
+            }
             _ => None,
         },
         Site::Instances {
@@ -705,6 +772,42 @@ pub(crate) fn resolutions(
                     over_row(&fields, entity, command, lexical),
                 ))
             }),
+            Site::RowSetWhere {
+                command,
+                outcome: name,
+            }
+            | Site::RowSetForall {
+                command,
+                outcome: name,
+            } => outcome(command, name).and_then(|(command, outcome)| {
+                let OutcomeCondition::RelatedSet {
+                    selection, test, ..
+                } = &outcome.condition
+                else {
+                    return None;
+                };
+                let entity = spec.entities().get(&selection.entity)?;
+                let fields = crate::command::row_set::candidate_fields(entity);
+                let current = match (site, test) {
+                    (Site::RowSetWhere { .. }, _) => &selection.filter,
+                    (_, crate::command::row_set::RowSetTest::Forall(predicate)) => predicate,
+                    _ => return None,
+                };
+                Some((current.clone(), over_row(&fields, entity, command, lexical)))
+            }),
+            Site::Selection {
+                command,
+                outcome: name,
+                place,
+            } => outcome(command, name).and_then(|(command, outcome)| {
+                let selection = selection_in(outcome, place)?;
+                let entity = spec.entities().get(&selection.entity)?;
+                let fields = crate::command::row_set::candidate_fields(entity);
+                Some((
+                    selection.filter.clone(),
+                    over_row(&fields, entity, command, lexical),
+                ))
+            }),
             Site::Instances {
                 command,
                 outcome: name,
@@ -796,6 +899,8 @@ pub(crate) fn resolutions(
 /// predicate over the related row, each with `input.` — and so is every quantifier body inside
 /// one, with its binders. Below `ess/22` nothing is refused here: no source could compare two
 /// inputs there.
+// One arm per kind of guard a command decides by, each over the row it reads.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn identity_orderings(
     spec: &crate::spec::Specification,
     registry: &crate::types::TypeRegistry,
@@ -870,6 +975,23 @@ pub(crate) fn identity_orderings(
                                 .into_iter()
                                 .map(|ordering| ("when_related", ordering)),
                         );
+                    }
+                }
+                OutcomeCondition::RelatedSet {
+                    selection, test, ..
+                } => {
+                    if let Some(entity) = spec.entities().get(&selection.entity) {
+                        let mut read = vec![&selection.filter];
+                        if let crate::command::row_set::RowSetTest::Forall(predicate) = test {
+                            read.push(predicate);
+                        }
+                        for predicate in read {
+                            found.extend(
+                                over_row(entity, command, predicate)
+                                    .into_iter()
+                                    .map(|ordering| ("when_related", ordering)),
+                            );
+                        }
                     }
                 }
                 _ => {}
@@ -953,4 +1075,132 @@ fn identity_orderings_in<E: crate::expression::TypeEnvironment>(
         &mut found,
     );
     found
+}
+
+/// Every filtered read an outcome of a source document writes, `{related: {entity, where,
+/// field}}` (ess/22), with its place — `sets`, or `payload` and the event or error, then the target
+/// and any nested struct members — and its `where` as written.
+fn selections(outcome: &serde_yaml::Value) -> Vec<(Vec<String>, serde_yaml::Value)> {
+    use serde_yaml::Value;
+    fn walk(value: &Value, place: &mut Vec<String>, found: &mut Vec<(Vec<String>, Value)>) {
+        let Some(mapping) = value.as_mapping() else {
+            return;
+        };
+        if let (1, Some(Value::Mapping(related))) = (mapping.len(), mapping.get("related")) {
+            let keys: Vec<&str> = related.keys().filter_map(Value::as_str).collect();
+            if keys.len() == 3
+                && ["entity", "where", "field"]
+                    .iter()
+                    .all(|key| keys.contains(key))
+            {
+                if let Some(filter) = related.get("where") {
+                    found.push((place.clone(), filter.clone()));
+                }
+                return;
+            }
+        }
+        for (key, member) in mapping {
+            if let Some(key) = key.as_str() {
+                place.push(key.to_owned());
+                walk(member, place, found);
+                place.pop();
+            }
+        }
+    }
+    let mut found = Vec::new();
+    if let Some(sets) = outcome.get("sets").and_then(Value::as_mapping) {
+        for (target, value) in sets {
+            if let Some(target) = target.as_str() {
+                walk(
+                    value,
+                    &mut vec!["sets".to_owned(), target.to_owned()],
+                    &mut found,
+                );
+            }
+        }
+    }
+    if let Some(payload) = outcome.get("payload").and_then(Value::as_mapping) {
+        for (record, table) in payload {
+            let (Some(record), Some(table)) = (record.as_str(), table.as_mapping()) else {
+                continue;
+            };
+            for (target, value) in table {
+                if let Some(target) = target.as_str() {
+                    walk(
+                        value,
+                        &mut vec!["payload".to_owned(), record.to_owned(), target.to_owned()],
+                        &mut found,
+                    );
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The filtered read at `place` in `outcome`, as [`selections`] names it.
+fn selection_at<'a>(
+    outcome: &'a mut crate::command::Outcome,
+    place: &[String],
+) -> Option<&'a mut crate::command::PayloadSource> {
+    use crate::command::PayloadSource;
+    let (mut source, rest) = match place {
+        [sets, target, rest @ ..] if sets == "sets" => (outcome.sets.get_mut(target)?, rest),
+        [payload, record, target, rest @ ..] if payload == "payload" => {
+            let event = record.parse::<QualifiedName>().ok();
+            let in_event = event
+                .as_ref()
+                .is_some_and(|event| outcome.payload.contains_key(event));
+            let found = if in_event {
+                outcome.payload.get_mut(event.as_ref()?)?.get_mut(target)?
+            } else {
+                outcome.error_payload.get_mut(target)?
+            };
+            (found, rest)
+        }
+        _ => return None,
+    };
+    for member in rest {
+        let PayloadSource::Struct { fields } = source else {
+            return None;
+        };
+        source = &mut fields
+            .iter_mut()
+            .find(|field| field.target == *member)?
+            .source;
+    }
+    matches!(source, PayloadSource::RelatedSelection { .. }).then_some(source)
+}
+
+/// [`selection_at`], to read: the selector of the filtered read at `place` in `outcome`.
+fn selection_in<'a>(
+    outcome: &'a crate::command::Outcome,
+    place: &[String],
+) -> Option<&'a crate::command::row_set::RowSelection> {
+    use crate::command::PayloadSource;
+    let (mut source, rest) = match place {
+        [sets, target, rest @ ..] if sets == "sets" => (outcome.sets.get(target)?, rest),
+        [payload, record, target, rest @ ..] if payload == "payload" => {
+            let found = record
+                .parse::<QualifiedName>()
+                .ok()
+                .and_then(|event| outcome.payload.get(&event))
+                .map_or_else(
+                    || outcome.error_payload.get(target),
+                    |table| table.get(target),
+                )?;
+            (found, rest)
+        }
+        _ => return None,
+    };
+    for member in rest {
+        let PayloadSource::Struct { fields } = source else {
+            return None;
+        };
+        source = &fields.iter().find(|field| field.target == *member)?.source;
+    }
+    match source {
+        PayloadSource::RelatedSelection { selection, .. } => Some(selection),
+        _ => None,
+    }
 }

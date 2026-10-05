@@ -37,6 +37,7 @@ the input or a literal:
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
 | `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
 | `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity; from `ess/22` also `Optional<…>` of it, or a list of two references |
+| `{related: {entity: <Entity>, where: <predicate>, field: <field>}}` | `payload:`, `sets:` | source `ess/22`; `field` of the one row of `<Entity>` that `where` selects, read before the outcome, at the field's declared type the target admits; none or several selected rows supply no value. `where` reads as a [row-set guard](../../reference/predicates.md#a-guard-over-the-rows-a-selector-selects)'s; below `ess/22` the same mapping is the nested mapping it always was |
 | `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |

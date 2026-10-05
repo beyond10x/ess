@@ -386,7 +386,8 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
     use ess_compiler::ir::{ResolvedCondition, ResolvedPayloadValue};
     fn cross(value: &ResolvedPayloadValue) -> bool {
         match value {
-            ResolvedPayloadValue::RelatedField { .. } => true,
+            ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. } => true,
             ResolvedPayloadValue::Struct { fields } => {
                 fields.iter().any(|field| cross(&field.value))
             }
@@ -403,8 +404,10 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
         }
     }
     command.outcomes.iter().any(|outcome| {
-        matches!(outcome.condition, ResolvedCondition::Related { .. })
-            || outcome.instances.is_some()
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+        ) || outcome.instances.is_some()
             || !outcome.affects.is_empty()
             || outcome.sets.iter().any(|field| cross(&field.value))
             || outcome

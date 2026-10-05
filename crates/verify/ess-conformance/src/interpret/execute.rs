@@ -49,6 +49,7 @@ pub(super) mod caller;
 mod existence;
 pub(crate) mod history;
 mod related;
+mod row_set;
 mod set_effects;
 mod subject;
 mod values;
@@ -497,11 +498,13 @@ fn responding_core(
         .commands()
         .get(command)
         .ok_or_else(|| Undetermined::UnknownCommand(command.to_string()))?;
-    if spec
-        .outcomes
-        .iter()
-        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
-    {
+    // The command's own identity is checked before a related row, or a row set (ess/22), is read.
+    if spec.outcomes.iter().any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+        )
+    }) {
         if let Some(step) = existence::existing(ir, spec, store, input, externals)? {
             return Ok(vec![step]);
         }
@@ -592,6 +595,21 @@ fn responding_core(
             subject::Held::new(ir, ir.entity(&subject.entity), held)?,
         );
     }
+    // A command guarded by a row set (ess/22, beyond10x/ess#228, #299): the addressed row's
+    // existence and held state answer before any row set is read, so a selector reading
+    // `subject.` never meets a missing subject; then each test is decided against the store as it
+    // was before the branch, and read only where the precedence order reaches it.
+    if row_set::uses(spec) {
+        if let Some(step) = addressed_row(ir, spec, store, input, generated, responses)? {
+            return Ok(vec![step]);
+        }
+    }
+    let reader = if row_set::uses(spec) {
+        Some(row_set::Reader::new(ir, spec, store, input)?)
+    } else {
+        None
+    };
+    let row_sets = row_set::decisions(reader.as_ref(), spec);
     let orders_present_related_refusal = orders_present_related_refusal(ir, spec);
     // A stored reference was read after the addressed row's existence and held state answered
     // ([`stored_reference`]); its present-related refusal answers before every accepting branch.
@@ -606,6 +624,7 @@ fn responding_core(
             command,
             externals,
             &held_subjects,
+            &row_sets,
             generated,
             responses,
         )? {
@@ -618,6 +637,7 @@ fn responding_core(
         command,
         externals,
         &held_subjects,
+        &row_sets,
         input.caller,
         input,
         true,
@@ -655,6 +675,11 @@ fn responding_core(
 /// and on a command reading several related rows, where the first declared refusal whose
 /// predicate holds answers across them (beyond10x/ess#283).
 fn orders_present_related_refusal(ir: &EssIr, spec: &ResolvedCommand) -> bool {
+    // A row-set refusal answers after the addressed row's existence and held state, and before
+    // every accepting branch (ess/22, `docs/design/filtered-related-reads.md`, "Precedence").
+    if row_set::uses(spec) {
+        return spec.outcomes.iter().any(is_present_related_refusal);
+    }
     ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
         && spec.outcomes.iter().any(is_present_related_refusal)
         && (related::several(spec)
@@ -677,6 +702,7 @@ fn subject_refusals_before_present_related(
     command: &QualifiedName,
     externals: &Externals,
     held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
+    row_sets: &BTreeMap<OutcomeName, Result<Truth, String>>,
     generated: &Generated,
     responses: &mut super::response::Authority,
 ) -> Result<Option<Vec<Transition>>, Undetermined> {
@@ -686,6 +712,7 @@ fn subject_refusals_before_present_related(
         command,
         externals,
         held_subjects,
+        row_sets,
         input.caller,
         input,
         false,
@@ -720,12 +747,41 @@ fn select<'s>(
     command: &QualifiedName,
     externals: &Externals,
     held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
+    row_sets: &BTreeMap<OutcomeName, Result<Truth, String>>,
     caller: Option<&caller::Caller<'_>>,
     context: &Context<'_>,
     include_present_related_refusals: bool,
     prioritize_present_related_refusals: bool,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
     let invocation = caller::Facts::new(facts, caller, &spec.input, context.now);
+    // Whether a row-set branch is taken: its test, decided before selection began, and its input
+    // guard, read here; `None` for any other branch (ess/22, beyond10x/ess#228, #299).
+    let row_set_takes = |outcome: &ResolvedOutcome| -> Option<Result<bool, Undetermined>> {
+        let ResolvedCondition::RelatedSet { input: guard, .. } = &outcome.condition else {
+            return None;
+        };
+        let undecidable = |guard: String| Undetermined::Undecidable {
+            outcome: branch(spec, outcome),
+            guard,
+        };
+        let tested = match row_sets.get(&outcome.name) {
+            Some(Ok(truth)) => *truth,
+            Some(Err(why)) => return Some(Err(undecidable(why.clone()))),
+            None => {
+                return Some(Err(Undetermined::NotInterpreted {
+                    construct: format!("the row set of `{}`", branch(spec, outcome)),
+                }))
+            }
+        };
+        let guarded = guard
+            .as_ref()
+            .map_or(Truth::True, |guard| guard.evaluate(&invocation));
+        Some(match tested.and(guarded) {
+            Truth::True => Ok(true),
+            Truth::False => Ok(false),
+            Truth::Unknown => Err(undecidable(format!("{:?}", outcome.condition))),
+        })
+    };
     let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&invocation) {
         Truth::True => Ok(true),
         Truth::False => Ok(false),
@@ -778,18 +834,21 @@ fn select<'s>(
             .iter()
             .filter(|outcome| is_present_related_refusal(outcome))
         {
-            let held = held_subjects
-                .get(&outcome.name)
-                .map(|held| {
-                    held.selects(
-                        &outcome.condition,
-                        facts,
-                        caller,
-                        branch(spec, outcome),
-                        context.now,
-                    )
-                })
-                .transpose();
+            let held = match row_set_takes(outcome) {
+                Some(takes) => takes.map(|takes| Some(Some(takes))),
+                None => held_subjects
+                    .get(&outcome.name)
+                    .map(|held| {
+                        held.selects(
+                            &outcome.condition,
+                            facts,
+                            caller,
+                            branch(spec, outcome),
+                            context.now,
+                        )
+                    })
+                    .transpose(),
+            };
             match held {
                 Ok(Some(Some(true))) => {
                     selected.push(outcome);
@@ -806,19 +865,27 @@ fn select<'s>(
     if selected.is_empty() {
         let mut answered = false;
         for outcome in &spec.outcomes {
-            let held = (!is_present_related_refusal(outcome) || include_present_related_refusals)
-                .then(|| held_subjects.get(&outcome.name))
-                .flatten()
-                .map(|held| {
-                    held.selects(
-                        &outcome.condition,
-                        facts,
-                        caller,
-                        branch(spec, outcome),
-                        context.now,
-                    )
-                })
-                .transpose();
+            let reads = !is_present_related_refusal(outcome) || include_present_related_refusals;
+            let held = if matches!(outcome.condition, ResolvedCondition::RelatedSet { .. }) {
+                match reads.then(|| row_set_takes(outcome)).flatten() {
+                    Some(takes) => takes.map(|takes| Some(Some(takes))),
+                    None => Ok(None),
+                }
+            } else {
+                reads
+                    .then(|| held_subjects.get(&outcome.name))
+                    .flatten()
+                    .map(|held| {
+                        held.selects(
+                            &outcome.condition,
+                            facts,
+                            caller,
+                            branch(spec, outcome),
+                            context.now,
+                        )
+                    })
+                    .transpose()
+            };
             let takes = match held {
                 Ok(takes) => takes.flatten(),
                 Err(why) => {
@@ -885,7 +952,7 @@ fn is_present_related_refusal(outcome: &ResolvedOutcome) -> bool {
             ResolvedCondition::Related {
                 test: ResolvedRelatedTest::Holds { .. },
                 ..
-            }
+            } | ResolvedCondition::RelatedSet { .. }
         )
 }
 
@@ -938,6 +1005,57 @@ fn selected_subject_refusals(
         )));
     }
     Ok(Some(steps))
+}
+
+/// What the addressed row answers a row-set command before any row set is read
+/// (`docs/design/filtered-related-reads.md`, "Subject borrowing and precedence"): the existence
+/// refusal where no row carries the identity, and the held-state refusal where the row rests in a
+/// state no accepting branch acting on it moves from. `None` where the command addresses no row
+/// through its input, or some branch may act on the row it holds; which one does is then the row
+/// sets' to decide.
+fn addressed_row(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Option<Transition>, Undetermined> {
+    let acting: Vec<(&ResolvedEffect, &ess_compiler::ir::EntityHandle, &str)> = spec
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_none())
+        .filter_map(|outcome| {
+            let subject = outcome.subject.as_ref()?;
+            match (&subject.effect, &subject.instance) {
+                (ResolvedEffect::Creates, _) | (_, ResolvedInstance::Observed { .. }) => None,
+                (effect, ResolvedInstance::Supplied { field }) => {
+                    Some((effect, &subject.entity, field.name.as_str()))
+                }
+            }
+        })
+        .collect();
+    let Some((_, entity, field)) = acting.first().copied() else {
+        return Ok(None);
+    };
+    let identity = input.get(field).ok_or_else(|| {
+        Undetermined::Request(format!(
+            "`{}` names its subject in `{field}`, and the input has none",
+            spec.name
+        ))
+    })?;
+    let entity = &ir.entity(entity).name;
+    let Some(held) = store.instance_typed(entity, identity) else {
+        return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
+    };
+    let may_act = acting.iter().any(|(effect, ..)| match effect {
+        ResolvedEffect::Moves { transition } => transition.from.contains(&held.state),
+        _ => true,
+    });
+    if may_act {
+        return Ok(None);
+    }
+    wrong_state(ir, spec, store, input, Some(held)).map(Some)
 }
 
 fn selected_subject_refusal(
@@ -1130,6 +1248,7 @@ fn stored_reference<'s>(
         facts,
         command,
         externals,
+        &BTreeMap::new(),
         &BTreeMap::new(),
         input.caller,
         input,
@@ -1426,6 +1545,8 @@ fn error_value(
 struct Work<'g> {
     domains: &'g history::Domains,
     original: &'g State,
+    /// The command whose branch this is: a filtered read selects over its input (ess/22).
+    command: &'g ResolvedCommand,
     outcome: &'g ResolvedOutcome,
     next: State,
     supply: Supply<'g>,
@@ -1565,6 +1686,7 @@ fn take(
     let mut work = Work {
         domains: &input.domains,
         original: store,
+        command: spec,
         outcome,
         next: store.clone(),
         supply: Supply::of(generated),
@@ -1859,6 +1981,13 @@ fn value_at(
             values::response(ir, field, work.response.as_ref()).map(|value| value.map(Value::Known))
         }
         ResolvedPayloadValue::RelatedField { .. } => work.reads().related(ir, field, input),
+        // The one row the selector selects in the store as it was before the outcome (ess/22,
+        // beyond10x/ess#299); none or several supply no value.
+        ResolvedPayloadValue::RelatedSelection { selection, .. } => {
+            let reader = row_set::Reader::new(ir, work.command, work.original, input)?;
+            let (key, row) = reader.one(selection)?;
+            values::selected(ir, field, ir.entity(&selection.entity), key, row)
+        }
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,

@@ -2313,6 +2313,7 @@ impl Writer<'_> {
                 }
             }
             ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::ChangedCount
             | ResolvedPayloadValue::ResponseField { .. } => {
                 unreachable!("the plan keeps this source's command an obligation")

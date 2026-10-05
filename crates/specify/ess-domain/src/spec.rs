@@ -185,10 +185,7 @@ impl RawSpecFile {
                 .scope(|| serde_yaml::from_value(document))
         };
         let mut file: Self = match format {
-            Some(format) => ess_primitives::predicate::reading_source22_operands(
-                format.major() >= FormatVersion::V22.major(),
-                read,
-            ),
+            Some(format) => reading_format(format, read),
             None => read(),
         }?;
         file.spelled = spelled;
@@ -212,13 +209,19 @@ impl RawSpecFile {
                 .scope(|| texts.iter().map(|text| Self::parse(text)).collect())
         };
         match headers.as_slice() {
-            [header] => ess_primitives::predicate::reading_source22_operands(
-                header.unwrap_or(FormatVersion::V1).major() >= FormatVersion::V22.major(),
-                read,
-            ),
+            [header] => reading_format(header.unwrap_or(FormatVersion::V1), read),
             _ => read(),
         }
     }
+}
+
+/// Runs `read` with the grammar `format` admits where the reader cannot otherwise know it: the
+/// `ess/22` operands, and filtered reads (`ess/22`, beyond10x/ess#299).
+fn reading_format<T>(format: FormatVersion, read: impl FnOnce() -> T) -> T {
+    let source22 = format.major() >= FormatVersion::V22.major();
+    ess_primitives::predicate::reading_source22_operands(source22, || {
+        crate::command::row_set::reading_filtered_reads(source22, read)
+    })
 }
 
 /// The format a document names in its `format:` key, when it names one this build can read.
@@ -345,6 +348,12 @@ impl Specification {
             return Err(errors);
         };
 
+        // A filtered read is an `ess/22` source; below it the same mapping is the nested one it was.
+        crate::command::row_set::read_below_ess_22(
+            system.format,
+            &mut collected.commands,
+            &mut errors,
+        );
         // `{related: …}` is an `ess/16` source; below it the same mapping is the nested one it was.
         crate::command::related_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::caller_value::read_below_ess_16(system.format, &mut collected.commands);
@@ -448,6 +457,7 @@ impl Specification {
         errors.extend(crate::command::subject_state::validate(self, &registry));
         errors.extend(crate::command::subject_fact::validate(self, &registry));
         errors.extend(crate::command::related_guard::validate(self, &registry));
+        errors.extend(crate::command::row_set::validate(self, &registry));
         errors.extend(crate::expression::lexical::identity_orderings(
             self, &registry,
         ));

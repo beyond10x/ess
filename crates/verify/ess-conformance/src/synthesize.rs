@@ -192,6 +192,7 @@ mod paging;
 mod refusal_policy;
 mod related;
 mod related_guard;
+mod row_set;
 mod seeds;
 mod set_effects;
 mod singleton;
@@ -2285,6 +2286,8 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
         suite.select_fresh_format();
         aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
     }
+    // Every scenario sending a row-set command keeps only the branch its rows decide (ess/22).
+    row_set::contradictions(ir, &mut suite, &mut refusals);
     grant::denied(ir, &mut suite, &mut refusals, &mut notes);
     preconditions(models, &mut suite);
     for (id, reason) in crate::fixtures::install(ir, &mut suite) {
@@ -2592,6 +2595,14 @@ fn outcome_scenario_in(
         refusals,
         Witness::Full,
     )?;
+    // A row-set branch is witnessed on the rows its own arrangement selects (ess/22,
+    // beyond10x/ess#228, #299): no further witness sends it without them.
+    if row_set::routes(command, outcome) {
+        return Some((
+            id,
+            ConformanceScenario::new(purpose(command, outcome), steps, source),
+        ));
+    }
     let (further, depends) = boundaries(models, command, outcome, actors, &run, &steps);
     steps.extend(further);
     source.extend(depends);
@@ -3205,9 +3216,17 @@ fn run_as(
     // A command guarded by a related row (ess/18, #211) is arranged with that row, or its absence,
     // for every branch it decides; further witnesses are the boundaries of its predicates alone.
     let related = related_guard::routes(command, outcome);
+    // A command guarded by a row set, or reading a selected row (ess/22, beyond10x/ess#228, #299),
+    // is arranged with the rows its selector selects, for every branch they decide.
+    let rows = row_set::routes(command, outcome);
     let mut related_at = Distinction::PLAIN;
     let (mut setup, input) =
-        if related {
+        if rows {
+            if witness != Witness::Full {
+                return Err(row_set::unarranged());
+            }
+            row_set::prepare(models, command, outcome, actors)?
+        } else if related {
             match witness {
                 Witness::Full => related_guard::prepare_at_in(
                     models,
@@ -3303,6 +3322,8 @@ fn run_as(
     // its siblings name, and is sent for the row the arrangement made for it.
     let reads = if routed {
         subject_fact::reading(command, outcome)
+    } else if rows {
+        row_set::reading(command, outcome)
     } else {
         outcome.subject.as_ref()
     };
@@ -3341,7 +3362,7 @@ fn run_as(
         }
         _ => false,
     };
-    if related || captured {
+    if related || captured || rows {
         if let Some(ResolvedSubject {
             entity,
             effect: ResolvedEffect::Creates,
@@ -3360,7 +3381,7 @@ fn run_as(
         }
     }
 
-    if (subject_fact::uses(command) || related) && outcome.error.is_none() {
+    if (subject_fact::uses(command) || related || rows) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
     let (mut after_steps, refused) = if routed {
@@ -3979,7 +4000,9 @@ fn replay_condition(
                 input.as_ref()
             }
             // No related row was arranged for the replay: the original's own scenario witnessed it.
-            ResolvedCondition::Related { .. } => return Err(related_guard::unarranged()),
+            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. } => {
+                return Err(related_guard::unarranged())
+            }
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
@@ -5326,6 +5349,7 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
         | ResolvedCondition::Related { .. }
+        | ResolvedCondition::RelatedSet { .. }
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent
         | ResolvedCondition::ExistingInstance => None,
@@ -6400,6 +6424,7 @@ fn determined_fields(
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::CallerAttribute { .. } => {
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
@@ -7248,6 +7273,15 @@ fn expression_value_at(
         } => before
             .get(&related::key(via, through, read))
             .map(|held| held.value.clone()),
+        // ess/22 (#299): the one selected row's value, which `row_set` settled where it arranged
+        // exactly one row the selector selects.
+        ResolvedPayloadValue::RelatedSelection {
+            selection,
+            field: read,
+            ..
+        } => before
+            .get(&row_set::key(selection, read))
+            .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
             let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
@@ -7852,6 +7886,10 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
                 reads(leaf, out);
             }
         }
+        // A selector reads its inputs to select the row, not as the value.
+        ResolvedPayloadValue::RelatedSelection { selection, .. } => {
+            out.extend(row_set::input_reads(&selection.filter).map(|field| (field, Read::Needed)));
+        }
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::ResponseField { .. }
         | ResolvedPayloadValue::Generated
@@ -8299,6 +8337,7 @@ fn settled(
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::CallerAttribute { .. } => {
                 match expression_value(ir, field, supplied, before) {
                     Some(value) => value,
@@ -10309,6 +10348,11 @@ fn unknown_instance(
             || related_guard::stored::field(command).is_some()
         {
             related_guard::absent_input(ir, command, outcome, Distinction::PLAIN)
+        } else if row_set::uses(command) {
+            // A row-set command answers the addressed row's existence before any row set is read
+            // (`docs/design/filtered-related-reads.md`, "Subject borrowing and precedence"), so
+            // the branch is reached by its input alone and no row is arranged.
+            row_set::input_for(ir, command, outcome, Distinction::PLAIN)
         } else {
             reach(ir, command, outcome, Distinction::PLAIN)
         };
@@ -11869,7 +11913,7 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
         else {
             continue;
         };
-        if related_guard::uses(command)
+        if (related_guard::uses(command) || row_set::uses(command))
             && matches!(
                 outcome.condition,
                 ResolvedCondition::ExistingInstance

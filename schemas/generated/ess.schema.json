@@ -2893,6 +2893,14 @@
         },
         {
           "$ref": "#/definitions/RawNestedSources"
+        },
+        {
+          "description": "`{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedSelection"
+            }
+          ]
         }
       ]
     },
@@ -2920,17 +2928,47 @@
       "additionalProperties": false
     },
     "RawRelatedGuard": {
-      "description": "`when_related:` as a document writes it.",
+      "description": "`when_related:` as a document writes it: one row named by an input identity (`via`), or, from `ess/22`, the rows a selector selects (`entity`, `where`) with one test of them.",
       "type": "object",
-      "required": [
-        "via"
-      ],
       "properties": {
+        "count": {
+          "description": "Over a selector (ess/22): one comparison of the number of rows selected with a nonnegative whole number, `{eq: 1}`; the operator is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "entity": {
+          "description": "The entity whose rows a selector selects (ess/22). Written with `where`, never beside `via`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "exists": {
-          "description": "`false`: the branch is taken when no row carries that identity. Written instead of `predicate`, never beside it.",
+          "description": "`false`: the branch is taken when no row carries that identity. Written instead of `predicate`, never beside it. Over a selector (ess/22): whether any row is selected.",
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "forall": {
+          "description": "Over a selector (ess/22): what every selected row satisfies; true of no rows.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "predicate": {
@@ -2945,8 +2983,35 @@
           ]
         },
         "via": {
-          "description": "The input field that carries the other entity's identity, written `input.<field>`.",
-          "type": "string"
+          "description": "The input field that carries the other entity's identity, written `input.<field>`. Never beside `entity`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "where": {
+          "description": "What a row of `entity` must satisfy to be selected (ess/22): its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedSelection": {
+      "description": "`{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): one field of the one row a selector selects. Recognised by its exact shape — one key, `related`, holding exactly `entity` (a qualified name), `where` and `field` — and nothing else; below `ess/22` the same shape is read back as the nested mapping it was.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawSelected"
         }
       },
       "additionalProperties": false
@@ -3002,6 +3067,38 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawSelected": {
+      "description": "What `related:` holds in a filtered read: the entity, the selector, and the field read.",
+      "type": "object",
+      "required": [
+        "entity",
+        "field",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows are candidates.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "field": {
+          "description": "The field of the one selected row.",
+          "type": "string"
+        },
+        "where": {
+          "description": "What a candidate must satisfy: its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
         }
       },
       "additionalProperties": false

@@ -629,6 +629,20 @@ pub enum ResolvedCondition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input: Option<Predicate>,
     },
+    /// The rows of an entity a selector selects pass a test — `exists`, `count` or `forall` — and
+    /// the optional input guard holds (`when_related: {entity, where, …}`, ess/22,
+    /// beyond10x/ess#228, #299). Read from the store as it was before the branch is selected; a row
+    /// of unknown membership stays a possible member, and a test it leaves undecided selects
+    /// nothing.
+    RelatedSet {
+        /// The entity and the predicate selecting its rows.
+        selection: ResolvedRowSelection,
+        /// What the branch requires of the selected rows.
+        test: ResolvedRowSetTest,
+        /// The ordinary input guard, when declared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<Predicate>,
+    },
     /// Taken when this predicate over the command's input holds.
     When {
         /// The predicate.
@@ -1096,6 +1110,17 @@ pub enum ResolvedPayloadValue {
     },
     /// How many rows the set outcome changed (ess/16, beyond10x/ess#167): `{count: changed}`.
     ChangedCount,
+    /// A field of the one row a selector selects, as the store held it before this outcome
+    /// (ess/22, beyond10x/ess#299): `{related: {entity, where, field}}`. Zero or several selected
+    /// rows supply no value, and no first or latest is chosen.
+    RelatedSelection {
+        /// The entity and the predicate selecting its rows.
+        selection: ResolvedRowSelection,
+        /// The field of the selected row read.
+        field: String,
+        /// The field's resolved type as declared.
+        type_ref: ResolvedTypeRef,
+    },
 }
 
 /// What stands in for an absent input in [`ResolvedPayloadValue::InputOrGenerated`].
@@ -1223,6 +1248,198 @@ pub fn related_sentence(
     }
 }
 
+/// The rows of an entity a selector selects (ess/22, beyond10x/ess#228, #299,
+/// `docs/design/filtered-related-reads.md`): what a [`ResolvedCondition::RelatedSet`] guard tests
+/// and a [`ResolvedPayloadValue::RelatedSelection`] reads one row of.
+///
+/// The predicate reads a candidate row's declared fields, identity and held lifecycle state as
+/// `state` bare, the command's input under `input.` and the addressed subject, as it was before the
+/// outcome, under `subject.`; `now` is the decision's one instant. The rows are the store as it was
+/// immediately before the branch is selected.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRowSelection {
+    /// The entity whose rows are candidates.
+    pub entity: EntityHandle,
+    /// What a candidate must satisfy to be selected.
+    #[serde(rename = "where")]
+    pub filter: Predicate,
+}
+
+/// What a [`ResolvedCondition::RelatedSet`] branch requires of the rows its selector selects,
+/// written as the document writes it: `{exists: true}`, `{count: {gt: 1}}`, `{forall: <predicate>}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedRowSetTest {
+    /// Some row is selected (`true`), or none is (`false`).
+    Exists(bool),
+    /// The number of rows selected compares with `bound` by `op`, exactly.
+    Count {
+        /// The comparison.
+        op: ess_domain::command::row_set::CountOp,
+        /// The nonnegative bound.
+        bound: u64,
+    },
+    /// Every selected row satisfies the predicate; true of no rows.
+    Forall(Predicate),
+}
+
+impl serde::Serialize for ResolvedRowSetTest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(1))?;
+        match self {
+            Self::Exists(exists) => map.serialize_entry("exists", exists)?,
+            Self::Count { op, bound } => {
+                let count: BTreeMap<&str, u64> = [(op.keyword(), *bound)].into();
+                map.serialize_entry("count", &count)?;
+            }
+            Self::Forall(predicate) => map.serialize_entry("forall", predicate)?,
+        }
+        map.end()
+    }
+}
+
+/// One candidate row of a row set, as far as it is known: whether the selector selects it, and —
+/// for a `forall` test — whether it satisfies the tested predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowMember {
+    /// Whether the row is selected: `Unknown` keeps it as a possible member, never dropped.
+    pub selected: ess_primitives::predicate::Truth,
+    /// Whether it satisfies the `forall` predicate; `True` for every other test.
+    pub satisfies: ess_primitives::predicate::Truth,
+}
+
+/// How many rows a selector selected, as far as membership is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowCount {
+    /// Rows certainly selected.
+    pub certain: u64,
+    /// Rows possibly selected: the certain ones and every one of unknown membership.
+    pub possible: u64,
+}
+
+impl RowCount {
+    /// The counts of `members`.
+    pub fn of(members: &[RowMember]) -> Self {
+        use ess_primitives::predicate::Truth;
+        let count = |keep: &dyn Fn(&RowMember) -> bool| {
+            u64::try_from(members.iter().filter(|member| keep(member)).count()).unwrap_or(u64::MAX)
+        };
+        Self {
+            certain: count(&|member| member.selected == Truth::True),
+            possible: count(&|member| member.selected != Truth::False),
+        }
+    }
+}
+
+impl ResolvedRowSetTest {
+    /// Whether the test holds of `members`, by the three-valued table of
+    /// `docs/design/filtered-related-reads.md` ("Shared row-set guard contract"): a decision is
+    /// made only where it is the same for every completion of the unknown memberships and facts.
+    pub fn decide(&self, members: &[RowMember]) -> ess_primitives::predicate::Truth {
+        use ess_primitives::predicate::Truth;
+        let count = RowCount::of(members);
+        let by_count = |holds: &dyn Fn(u64) -> bool| {
+            let first = holds(count.certain);
+            if (count.certain..=count.possible).all(|n| holds(n) == first) {
+                Truth::from_bool(first)
+            } else {
+                Truth::Unknown
+            }
+        };
+        match self {
+            Self::Exists(exists) => by_count(&|n| (n > 0) == *exists),
+            Self::Count { op, bound } => by_count(&|n| op.holds(n, *bound)),
+            Self::Forall(_) => {
+                let possible: Vec<&RowMember> = members
+                    .iter()
+                    .filter(|member| member.selected != Truth::False)
+                    .collect();
+                if possible.iter().any(|member| {
+                    member.selected == Truth::True && member.satisfies == Truth::False
+                }) {
+                    Truth::False
+                } else if possible
+                    .iter()
+                    .all(|member| member.satisfies == Truth::True)
+                {
+                    Truth::True
+                } else {
+                    Truth::Unknown
+                }
+            }
+        }
+    }
+
+    /// The `forall` predicate, where the test is one.
+    pub fn predicate(&self) -> Option<&Predicate> {
+        match self {
+            Self::Forall(predicate) => Some(predicate),
+            Self::Exists(_) | Self::Count { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for ResolvedRowSetTest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Exists(true) => f.write_str("at least one row is selected"),
+            Self::Exists(false) => f.write_str("no row is selected"),
+            Self::Count { op, bound } => {
+                let compared = match op {
+                    ess_domain::command::row_set::CountOp::Eq => "exactly",
+                    ess_domain::command::row_set::CountOp::Ne => "other than",
+                    ess_domain::command::row_set::CountOp::Lt => "fewer than",
+                    ess_domain::command::row_set::CountOp::Lte => "at most",
+                    ess_domain::command::row_set::CountOp::Gt => "more than",
+                    ess_domain::command::row_set::CountOp::Gte => "at least",
+                };
+                write!(f, "{compared} {bound} rows are selected")
+            }
+            Self::Forall(predicate) => write!(f, "every selected row satisfies `{predicate}`"),
+        }
+    }
+}
+
+/// The sentence a published contract opens a [`ResolvedCondition::RelatedSet`] branch with,
+/// without its input guard or final stop: one phrasing, shared by every projection that prints it.
+pub fn row_set_sentence(selection: &ResolvedRowSelection, test: &ResolvedRowSetTest) -> String {
+    format!(
+        "Taken when, of the `{}` rows whose stored fields satisfy `{}` before the outcome, {test}",
+        selection.entity.name(),
+        selection.filter
+    )
+}
+
+/// What a [`ResolvedPayloadValue::RelatedSelection`] reads, as far as membership is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Selected {
+    /// Exactly this candidate, by its position among the members.
+    One(usize),
+    /// No row: the read supplies no value.
+    None,
+    /// Several rows: the read supplies no value, and no first or latest is chosen.
+    Several,
+    /// Which, or how many, is not known.
+    Unknown,
+}
+
+impl Selected {
+    /// The one row `members` selects, or why there is not one.
+    pub fn of(members: &[RowMember]) -> Self {
+        use ess_primitives::predicate::Truth;
+        let count = RowCount::of(members);
+        match (count.certain, count.possible) {
+            (0, 0) => Self::None,
+            (1, 1) => members
+                .iter()
+                .position(|member| member.selected == Truth::True)
+                .map_or(Self::Unknown, Self::One),
+            (certain, _) if certain >= 2 => Self::Several,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 /// Whether a [`ResolvedPayloadValue::RelatedField`] reading through `via` and then `through` may
 /// find a reference absent (ess/22, beyond10x/ess#285): any of them is `Optional<…>`. Its value is
 /// then absent too.
@@ -1328,6 +1545,13 @@ impl ResolvedPayloadValue {
                 }
             }
             Self::CallerAttribute { attribute, .. } => format!("the caller's {attribute}"),
+            Self::RelatedSelection {
+                selection, field, ..
+            } => format!(
+                "{}.{field} of the one row whose stored fields satisfy `{}` before the outcome",
+                selection.entity.name(),
+                selection.filter
+            ),
             Self::ChangedCount => "how many rows the outcome changed".to_owned(),
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {

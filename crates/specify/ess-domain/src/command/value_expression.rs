@@ -403,7 +403,9 @@ fn check(
             "`{cleared: true}` clears a whole entity field, not a field inside a nested mapping",
         )),
         PayloadSource::SubjectField { field } => check_subject(context, at, target, field, errors),
-        PayloadSource::RelatedField { .. } => check_related(context, at, target, source, errors),
+        PayloadSource::RelatedField { .. } | PayloadSource::RelatedSelection { .. } => {
+            check_related(context, at, target, source, errors);
+        }
         PayloadSource::CallerAttribute { attribute } => {
             super::caller_value::check_source(
                 context.spec,
@@ -450,6 +452,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::InputOrGenerated { .. } => "`{input: …, else: …}`",
         PayloadSource::Struct { .. } => "nested mapping",
         PayloadSource::RelatedField { .. } => "`{related: …}`",
+        PayloadSource::RelatedSelection { .. } => "`{related: {entity, where, field}}`",
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         PayloadSource::ChangedCount => "`{count: changed}`",
         _ => "payload",
@@ -740,6 +743,10 @@ fn check_related(
     source: &PayloadSource,
     errors: &mut ValidationErrors,
 ) {
+    if matches!(source, PayloadSource::RelatedSelection { .. }) {
+        check_selection(context, at, target, source, errors);
+        return;
+    }
     let PayloadSource::RelatedField {
         via,
         through,
@@ -1624,4 +1631,96 @@ fn mismatch(at: &ConstructRef, source: &str, from: &TypeRef, target: &Field) -> 
          the two types agree",
         target.type_ref
     ))
+}
+
+/// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): a declared entity, a selector
+/// typed over its candidate row, the input and the addressed subject — as a row-set guard's is
+/// ([`super::row_set`]) — and a field of that entity whose type the target takes.
+fn check_selection(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    source: &PayloadSource,
+    errors: &mut ValidationErrors,
+) {
+    let PayloadSource::RelatedSelection {
+        selection,
+        field,
+        legacy,
+    } = source
+    else {
+        return;
+    };
+    let spec = context.spec;
+    if spec.system().format.major() < FormatVersion::V22.major() {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "a filtered read — `{related: {entity, where, field}}` — requires specification \
+                 format ess/22",
+            )
+            .with_hint("declare `format: ess/22`"),
+        );
+        return;
+    }
+    if let Some(why) = &legacy.predicate {
+        errors.push(ValidationError::at(
+            at.clone(),
+            ValidationCode::TypeMismatch,
+            format!(
+                "the `where:` of `{{related: {{entity, where, field}}}}` is no predicate: {why}"
+            ),
+        ));
+        return;
+    }
+    let Some(entity) = spec.entities().get(&selection.entity) else {
+        errors.push(super::row_set::undeclared(spec, at, &selection.entity));
+        return;
+    };
+    if selection.filter == ess_primitives::predicate::Predicate::Always {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::EmptyDeclaration,
+                format!(
+                    "the filtered read selects every row of `{}`: its `where` selects every row",
+                    entity.name
+                ),
+            )
+            .with_hint(
+                "select by a field the input scopes, as `where: tenant_id == input.tenant_id`",
+            ),
+        );
+        return;
+    }
+    let registry = spec.types_with_lifecycles(&mut ValidationErrors::new());
+    let checked = super::row_set::check(
+        spec,
+        context.command,
+        entity,
+        &registry,
+        &selection.filter,
+        at,
+    );
+    if !checked.is_empty() {
+        errors.extend(checked);
+        return;
+    }
+    let Some(read) = entity_field(entity, field) else {
+        errors.push(not_a_field(at, entity, field));
+        return;
+    };
+    if !context
+        .resolved
+        .conversions
+        .permits(&read.type_ref, &target.type_ref)
+    {
+        errors.push(mismatch(
+            at,
+            &format!("`{}.{field}`", entity.name),
+            &read.type_ref,
+            target,
+        ));
+    }
 }

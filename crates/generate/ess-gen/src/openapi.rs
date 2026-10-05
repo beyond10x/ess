@@ -1264,6 +1264,17 @@ fn condition_description(condition: &ResolvedCondition) -> String {
                 " and `{guard}` holds of the input"
             )),
         ),
+        ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => format!(
+            "{}{}.",
+            ess_compiler::ir::row_set_sentence(selection, test),
+            input.as_ref().map_or(String::new(), |guard| format!(
+                " and `{guard}` holds of the input"
+            )),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(

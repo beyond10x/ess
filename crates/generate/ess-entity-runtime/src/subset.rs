@@ -92,6 +92,8 @@ pub(crate) const UNIT_VARIANT: &str = "a union variant with no payload (ess/22)"
 pub(crate) const OFFSET: &str = "one constant offset (`upper == lower + 5`, `issued_at - 24h`)";
 pub(crate) const DISTINCT: &str = "distinct list members (`distinct: {in, as, by}`)";
 pub(crate) const UTF8_BYTES: &str = "the UTF-8 byte length of a text (`label.utf8_bytes`)";
+pub(crate) const ROW_SET: &str =
+    "a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -105,6 +107,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         }
         Source::Struct { .. } => STRUCT,
         Source::RelatedField { .. } => RELATED_VALUE,
+        Source::RelatedSelection { .. } => ROW_SET,
         Source::ResponseField { .. }
         | Source::Generated
         | Source::InputField { .. }
@@ -508,6 +511,12 @@ pub const CONSTRUCTS: &[Construct] = &[
             "tests/utf8_bytes_guard.rs::a_guard_comparing_two_byte_lengths_is_refused_by_name",
         ],
     ),
+    refused(
+        ROW_SET,
+        LoweringCode::RowSetUnsupported,
+        Needs::EntityCore("a query over the rows of an entity, read atomically in one decision"),
+        &["tests/row_sets.rs::a_row_set_guard_and_a_filtered_read_are_refused_by_name"],
+    ),
 ];
 
 impl LoweringCode {
@@ -547,6 +556,7 @@ impl LoweringCode {
         Self::OffsetUnsupported,
         Self::DistinctUnsupported,
         Self::Utf8BytesUnsupported,
+        Self::RowSetUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -771,6 +781,11 @@ impl LoweringCode {
                 "Utf8BytesUnsupported",
                 UTF8_BYTES,
                 "A predicate compares the UTF-8 byte length of a text.",
+            ),
+            Self::RowSetUnsupported => (
+                "RowSetUnsupported",
+                ROW_SET,
+                "A branch reads the rows a selector selects, or one value of the one row it selects.",
             ),
         }
     }

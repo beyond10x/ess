@@ -83,6 +83,7 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
         | ResolvedCondition::Related { .. }
+        | ResolvedCondition::RelatedSet { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent

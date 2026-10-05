@@ -344,6 +344,15 @@ pub enum Mutation {
         /// Which equality comparison, counted in pre-order from zero.
         leaf: usize,
     },
+    /// Move the bound of `outcome`'s row-set `count:` test one step (ess/22, beyond10x/ess#228,
+    /// #299): `gt`↔`gte` and `lt`↔`lte` at the same bound, and `eq`/`ne` one row up. A class
+    /// `guard-boundary` site.
+    RowSetCount {
+        /// The command.
+        command: String,
+        /// The outcome.
+        outcome: String,
+    },
     /// Drop the `sets` entry for `target` of a branch that acts on an existing row.
     SetsDrop {
         /// The command.
@@ -381,9 +390,10 @@ impl Mutation {
         match self {
             Self::FromDrop { .. } => MutantClass::FromDrop,
             Self::TransitionTo { .. } => MutantClass::TransitionTo,
-            Self::GuardBoundary { .. } | Self::GuardOutward { .. } | Self::GuardEquality { .. } => {
-                MutantClass::GuardBoundary
-            }
+            Self::GuardBoundary { .. }
+            | Self::GuardOutward { .. }
+            | Self::GuardEquality { .. }
+            | Self::RowSetCount { .. } => MutantClass::GuardBoundary,
             Self::SetsDrop { .. } => MutantClass::SetsDrop,
             Self::PrecedenceSwap { .. } => MutantClass::PrecedenceSwap,
             Self::SetsRetarget { .. } => MutantClass::SetsRetarget,
@@ -422,6 +432,7 @@ impl Mutation {
                 outcome,
                 leaf,
             } => format!("{command}/{outcome}/equality-{leaf}"),
+            Self::RowSetCount { command, outcome } => format!("{command}/{outcome}/row-set-count"),
             Self::SetsRetarget {
                 command,
                 outcome,
@@ -1267,6 +1278,7 @@ fn transition_sites(documents: &[Document], found: &mut Vec<Mutation>) {
 }
 
 /// The sites one command's outcomes offer: guards, `sets`, errors and events.
+#[allow(clippy::too_many_lines)]
 fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut Vec<Mutation>) {
     let command_name = command.name.to_string();
     let domain = namespace(&command_name);
@@ -1297,6 +1309,19 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
                     node,
                 });
             }
+        }
+        // A row set's `count:` bound (ess/22); its selector and `forall` are not mutated here.
+        if outcome
+            .when_related
+            .as_ref()
+            .and_then(|guard| guard.count.as_ref())
+            .and_then(|count| count.iter().next())
+            .is_some_and(|(op, bound)| moved_count(op, *bound).is_some())
+        {
+            found.push(at(|command, outcome| Mutation::RowSetCount {
+                command,
+                outcome,
+            }));
         }
         for set in &outcome.sets.0 {
             let PayloadSource::InputField { field } = &set.source else {
@@ -1365,6 +1390,20 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
     precedence_sites(command, found);
 }
 
+/// The comparison a row-set `count:` moves to (ess/22): an ordering's strictness swapped at the same
+/// bound, an equality or inequality one row up. `None` for an operator no document writes.
+fn moved_count(op: &str, bound: i64) -> Option<(&'static str, i64)> {
+    Some(match op {
+        "gt" => ("gte", bound),
+        "gte" => ("gt", bound),
+        "lt" => ("lte", bound),
+        "lte" => ("lt", bound),
+        "eq" => ("eq", bound.checked_add(1)?),
+        "ne" => ("ne", bound.checked_add(1)?),
+        _ => return None,
+    })
+}
+
 /// The `guard-boundary` sites of one outcome's `when`: each ordering comparison's strictness swap
 /// and, where it has one, its outward literal; then each equality that is not the whole guard.
 fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Vec<Mutation>) {
@@ -1412,6 +1451,8 @@ fn precedence_sites(command: &RawCommandSpec, found: &mut Vec<Mutation>) {
 }
 
 /// What `mutation` changes, in the words the document uses, or `None` when its site is absent.
+// One arm per mutation, each in its site's own words.
+#[allow(clippy::too_many_lines)]
 fn describe(documents: &[Document], mutation: &Mutation) -> Option<String> {
     Some(match mutation {
         Mutation::FromDrop {
@@ -1447,6 +1488,16 @@ fn describe(documents: &[Document], mutation: &Mutation) -> Option<String> {
         | Mutation::GuardEquality { .. }
         | Mutation::GuardNegate { .. }
         | Mutation::GuardConnective { .. } => return describe_guard(documents, mutation),
+        Mutation::RowSetCount { command, outcome } => {
+            let count = self::outcome(documents, command, outcome)?
+                .when_related
+                .as_ref()?
+                .count
+                .as_ref()?;
+            let (op, bound) = count.iter().next()?;
+            let (to, moved) = moved_count(op, *bound)?;
+            format!("`count: {{{op}: {bound}}}` becomes `count: {{{to}: {moved}}}`")
+        }
         Mutation::SetsDrop { .. } | Mutation::PrecedenceSwap { .. } => {
             return describe_drop_or_swap(documents, mutation)
         }
@@ -1611,6 +1662,8 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
 // ---- applying one -------------------------------------------------------------------------------
 
 /// The documents with `mutation` applied: a clone with one edit, or why the site is not there.
+// One arm per mutation, each one edit.
+#[allow(clippy::too_many_lines)]
 pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document>, String> {
     let mut mutated = resolved(documents);
     let absent = || format!("the specification has no site `{}`", mutation.site());
@@ -1642,6 +1695,19 @@ pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document
         | Mutation::GuardEquality { .. }
         | Mutation::GuardNegate { .. }
         | Mutation::GuardConnective { .. } => apply_guard(&mut mutated, mutation)?,
+        Mutation::RowSetCount { command, outcome } => {
+            let count = outcome_mut(&mut mutated, command, outcome)
+                .and_then(|it| it.when_related.as_mut())
+                .and_then(|guard| guard.count.as_mut())
+                .ok_or_else(absent)?;
+            let (op, bound) = count
+                .iter()
+                .next()
+                .map(|(op, bound)| (op.clone(), *bound))
+                .ok_or_else(absent)?;
+            let (to, moved) = moved_count(&op, bound).ok_or_else(absent)?;
+            *count = [(to.to_owned(), moved)].into();
+        }
         Mutation::SetsDrop { .. } | Mutation::PrecedenceSwap { .. } => {
             apply_drop_or_swap(&mut mutated, mutation)?;
         }
@@ -4454,6 +4520,7 @@ fn in_component(
         Mutation::GuardBoundary { command, .. }
         | Mutation::GuardOutward { command, .. }
         | Mutation::GuardEquality { command, .. }
+        | Mutation::RowSetCount { command, .. }
         | Mutation::SetsRetarget { command, .. }
         | Mutation::GuardNegate { command, .. }
         | Mutation::GuardConnective { command, .. }

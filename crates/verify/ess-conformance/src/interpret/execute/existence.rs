@@ -109,6 +109,7 @@ pub(super) fn existing(
             &command.name,
             externals,
             &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
             input.caller,
             input,
             true,

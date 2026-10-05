@@ -1666,7 +1666,9 @@ fn condition_sentence(
             ],
             input.as_ref(),
         ),
-        ResolvedCondition::Related { .. } => related_condition(condition),
+        ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. } => {
+            related_condition(condition)
+        }
         ResolvedCondition::SubjectState { state, predicate } => vec![Inline::text(format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(
@@ -1776,9 +1778,22 @@ fn unknown_instance_sentence(command: &ResolvedCommand) -> &'static str {
     }
 }
 
-/// A guard over a row of another entity (ess/18, `when_related:`), in the sentence every projection
-/// opens it with.
+/// A guard over a row of another entity (ess/18, `when_related:`), or over the rows a selector
+/// selects (ess/22, beyond10x/ess#228, #299), in the sentence every projection opens it with.
 fn related_condition(condition: &ResolvedCondition) -> Vec<Inline> {
+    if let ResolvedCondition::RelatedSet {
+        selection,
+        test,
+        input,
+    } = condition
+    {
+        return input_guarded(
+            vec![Inline::text(ess_compiler::ir::row_set_sentence(
+                selection, test,
+            ))],
+            input.as_ref(),
+        );
+    }
     let ResolvedCondition::Related {
         via,
         entity,

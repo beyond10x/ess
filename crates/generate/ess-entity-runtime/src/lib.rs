@@ -512,6 +512,12 @@ pub enum LoweringCode {
     /// address for a text's byte length, and lowering it as a read of the text, or of a field
     /// spelled `label.utf8_bytes`, would decide a different rule.
     Utf8BytesUnsupported,
+    /// A branch guarded by the rows a selector selects, or a value read from the one row it selects
+    /// (ess/22, `when_related: {entity, where, …}`, `{related: {entity, where, field}}`,
+    /// beyond10x/ess#228, #299): entity-core decides from a command's arguments and the one row its
+    /// request addresses, and has neither a query over other rows nor the atomic authority to read
+    /// them in one decision.
+    RowSetUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1397,11 +1403,26 @@ impl Projector<'_> {
         refused
     }
 
-    /// Refuses every branch of `command` guarded by a related row (ess/18, beyond10x/ess#211), and
+    /// Refuses every branch of `command` guarded by a related row (ess/18, beyond10x/ess#211) or by
+    /// a row set, or reading the one row a selector selects (ess/22, beyond10x/ess#228, #299), and
     /// says whether it refused one: such a command is not lowered further.
     fn refuse_related_guards(&mut self, command: &ResolvedCommand) -> bool {
         let mut refused = false;
         for outcome in &command.outcomes {
+            if matches!(outcome.condition, ResolvedCondition::RelatedSet { .. })
+                || outcome_reads_selection(outcome)
+            {
+                self.diagnostic(
+                    LoweringCode::RowSetUnsupported,
+                    format!("{}.{}.when_related", command.name, outcome.name.as_str()),
+                    "a branch reading the rows a selector selects (ess/22, `when_related: {entity, \
+                     where, …}` or `{related: {entity, where, field}}`) has no Entity Runtime \
+                     definition; an entity-core operation reads its arguments and the one row its \
+                     request names, and has no query over other rows",
+                );
+                refused = true;
+                continue;
+            }
             if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
                 self.diagnostic(
                     LoweringCode::RelatedGuardUnsupported,
@@ -2076,6 +2097,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
+                        | ResolvedPayloadValue::RelatedSelection { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
                         | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
@@ -2237,7 +2259,9 @@ impl Projector<'_> {
             }
             // A related-row guard is refused for the whole command (`refuse_related_guards`); its
             // branches are only walked for their own refusals, and nothing of them is kept.
-            ResolvedCondition::Otherwise | ResolvedCondition::Related { .. } => {}
+            ResolvedCondition::Otherwise
+            | ResolvedCondition::Related { .. }
+            | ResolvedCondition::RelatedSet { .. } => {}
             ResolvedCondition::External { cause } => {
                 when = Some(external_evidence(command, outcome, cause, slots));
             }
@@ -2813,7 +2837,8 @@ impl Projector<'_> {
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
-            | ResolvedPayloadValue::RelatedField { .. }) => {
+            | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }) => {
                 self.diagnostic_naming(
                     LoweringCode::ValueExpressionUnsupported,
                     subset::value_expression(value),
@@ -3663,6 +3688,7 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
     ) || is_input_path(value)
 }
 
@@ -3672,6 +3698,25 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
 fn is_input_path(value: &ResolvedPayloadValue) -> bool {
     matches!(value, ResolvedPayloadValue::InputField { field, .. }
         if ess_domain::command::input_path::is_path(field))
+}
+
+/// Whether any value of `outcome` reads the one row a selector selects (ess/22).
+fn outcome_reads_selection(outcome: &ResolvedOutcome) -> bool {
+    fn reads(value: &ResolvedPayloadValue) -> bool {
+        match value {
+            ResolvedPayloadValue::RelatedSelection { .. } => true,
+            ResolvedPayloadValue::Struct { fields } => {
+                fields.iter().any(|field| reads(&field.value))
+            }
+            _ => false,
+        }
+    }
+    outcome
+        .sets
+        .iter()
+        .chain(&outcome.error_payload)
+        .chain(outcome.payload.iter().flat_map(|payload| &payload.fields))
+        .any(|field| reads(&field.value))
 }
 
 fn decode_literal(scalar: Option<&Scalar>, text: &str) -> Result<Value, LoweringCode> {

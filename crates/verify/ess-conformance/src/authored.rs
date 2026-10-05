@@ -1364,10 +1364,13 @@ fn not_taken(
     use crate::decision::when;
     use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
 
-    let related = command
-        .outcomes
-        .iter()
-        .any(|it| matches!(it.condition, ResolvedCondition::Related { .. }));
+    let related = command.outcomes.iter().any(|it| {
+        // A row set (ess/22) is read after `existing_instance:` as a related row is.
+        matches!(
+            it.condition,
+            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+        )
+    });
     match &outcome.condition {
         ResolvedCondition::InputAbsent => return None,
         ResolvedCondition::ExistingInstance

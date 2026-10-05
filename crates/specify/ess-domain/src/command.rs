@@ -210,6 +210,7 @@ pub mod related_guard;
 pub use related_guard::RelatedTest;
 pub mod related_value;
 pub use related_value::RelatedVia;
+pub mod row_set;
 pub mod set_effects;
 pub use set_effects::SetEffects;
 pub mod subject_fact;
@@ -452,6 +453,17 @@ pub enum OutcomeCondition {
         /// Additional input eligibility, the ordinary `when:`.
         input: Option<Predicate>,
     },
+    /// The rows of an entity a `where:` predicate selects, tested by `exists`, `count` or `forall`,
+    /// conjunctive with an optional input guard (`when_related: {entity, where, …}`, ess/22,
+    /// beyond10x/ess#228, #299). See [`row_set`].
+    RelatedSet {
+        /// The entity and the predicate selecting its rows.
+        selection: row_set::RowSelection,
+        /// What the branch requires of the selected rows.
+        test: row_set::RowSetTest,
+        /// Additional input eligibility, the ordinary `when:`.
+        input: Option<Predicate>,
+    },
     /// Taken when the named existing subject is in one of these states and the optional input
     /// guard holds.
     ///
@@ -544,7 +556,9 @@ impl OutcomeCondition {
             Self::SubjectState { predicate, .. }
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
-            Self::SubjectPredicate { input, .. } | Self::Related { input, .. } => input.as_ref(),
+            Self::SubjectPredicate { input, .. }
+            | Self::Related { input, .. }
+            | Self::RelatedSet { input, .. } => input.as_ref(),
             Self::Otherwise
             | Self::External { .. }
             | Self::WrongState
@@ -563,6 +577,7 @@ impl OutcomeCondition {
             | Self::SubjectField { .. }
             | Self::SubjectPredicate { .. }
             | Self::Related { .. }
+            | Self::RelatedSet { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState
@@ -579,7 +594,7 @@ impl OutcomeCondition {
             Self::SubjectField { .. } | Self::SubjectPredicate { .. } => {
                 TestStrategy::ObserveSubjectFact
             }
-            Self::Related { .. } => TestStrategy::ArrangeRelatedRow,
+            Self::Related { .. } | Self::RelatedSet { .. } => TestStrategy::ArrangeRelatedRow,
             Self::SubjectState { .. } | Self::StateChange { .. } => {
                 TestStrategy::ConstructInputInState
             }
@@ -635,6 +650,7 @@ impl OutcomeCondition {
             | Self::SubjectState { .. }
             | Self::StateChange { .. }
             | Self::Related { .. }
+            | Self::RelatedSet { .. }
             | Self::Otherwise
             | Self::ExternalWhen { .. }
             | Self::External { .. }
@@ -1054,6 +1070,21 @@ pub enum PayloadSource {
         /// The field of the referenced row.
         field: String,
     },
+    /// A field of the one row a selector selects, as the store held it before this outcome:
+    /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299, [`row_set`]).
+    ///
+    /// Exactly one selected row supplies the value; zero or several supply none, and a branch that
+    /// reads one is taken where its guards say exactly one row is selected. Below `ess/22` the shape
+    /// is the nested mapping it always was ([`row_set::read_below_ess_22`]).
+    RelatedSelection {
+        /// The entity and the predicate selecting its rows.
+        selection: row_set::RowSelection,
+        /// The field of the selected row.
+        field: String,
+        /// What the shape read as before `ess/22`.
+        #[serde(skip)]
+        legacy: row_set::Legacy,
+    },
     /// An attribute of the authenticated caller: `{caller: account_id}` (ess/16,
     /// beyond10x/ess#168, [`caller_value`]).
     ///
@@ -1107,6 +1138,13 @@ impl fmt::Display for PayloadSource {
                 Ok(())
             }
             Self::CallerAttribute { attribute } => write!(f, "the caller's `{attribute}`"),
+            Self::RelatedSelection {
+                selection, field, ..
+            } => write!(
+                f,
+                "field `{field}` of the one `{}` that `{}` selects",
+                selection.entity, selection.filter
+            ),
             Self::ChangedCount => f.write_str("{count: changed}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
@@ -1145,6 +1183,7 @@ impl PayloadSource {
             | Self::InputOrGenerated { .. }
             | Self::Struct { .. }
             | Self::RelatedField { .. }
+            | Self::RelatedSelection { .. }
             | Self::CallerAttribute { .. }
             | Self::ChangedCount => true,
             Self::ResponseField { .. }
@@ -1206,6 +1245,12 @@ enum RawPayloadSource {
     /// refused anywhere else; the schema gives it there and nowhere else.
     #[schemars(skip)]
     Texts(Vec<String>),
+    /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).
+    Selection(RawRelatedSelection),
+    /// The `where:` of a `related:` mapping, kept as written until the shape around it says whether
+    /// it is a selector; never left in a source once read.
+    #[schemars(skip)]
+    Captured(Box<serde_yaml::Value>),
 }
 
 /// `{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is
@@ -1289,101 +1334,231 @@ const SOURCE_KEYWORDS: &[&str] = &[
 /// and loses the reader boundary a wrong scalar crosses — the one thing a document author needs.
 impl<'de> serde::Deserialize<'de> for RawPayloadSource {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Source;
+        deserializer.deserialize_any(Source { related: false })
+    }
+}
 
-        impl<'de> serde::de::Visitor<'de> for Source {
-            type Value = RawPayloadSource;
+/// The reader of one payload source. `related` is set for the value under a `related:` key, whose
+/// `where:` entry is kept as written ([`RawPayloadSource::Captured`]) until the shape around it is
+/// known: a filtered read's selector (ess/22, beyond10x/ess#299), or a leaf of the nested mapping
+/// it always was.
+struct Source {
+    related: bool,
+}
 
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
-                     `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
-                     `{input: <field>, else: {generated: true}}`, \
-                     `{input: <field>, else: <literal>}`, \
-                     `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
-                     `{count: changed}`, or a mapping of struct fields",
-                )
+impl<'de> serde::de::DeserializeSeed<'de> for Source {
+    type Value = RawPayloadSource;
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for Source {
+    type Value = RawPayloadSource;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
+             `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
+             `{input: <field>, else: {generated: true}}`, \
+             `{input: <field>, else: <literal>}`, \
+             `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
+             `{count: changed}`, or a mapping of struct fields",
+        )
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Text(value.to_owned()))
+    }
+
+    // The scalars are read rather than refused so the rule that types a literal can say
+    // what to write instead — `quote it: items: '0'` — which a reader error cannot.
+    fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Boolean(value))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Integer(value))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Unsigned(value))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Decimal(value))
+    }
+
+    // Read so that a chained `via:` (ess/22, beyond10x/ess#285) reaches the related
+    // source's shape; a list anywhere else is refused when the source is read.
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        let mut texts = Vec::new();
+        while let Some(text) = seq.next_element::<String>()? {
+            texts.push(text);
+        }
+        Ok(RawPayloadSource::Texts(texts))
+    }
+
+    // Every keyword's value is itself a source-shaped YAML value (`true`, a field name, a
+    // number, `{generated: true}`), so the entries are read one way and classified after:
+    // all keywords is a source, anything else a nested mapping.
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        use serde::de::Error as _;
+        let mut entries: Vec<(String, RawPayloadSource)> = Vec::new();
+        while let Some(key) = map.next_key::<String>()? {
+            let value = if self.related && key == "where" && row_set::filtered_reads() {
+                RawPayloadSource::Captured(Box::new(map.next_value::<serde_yaml::Value>()?))
+            } else {
+                map.next_value_seed(Source {
+                    related: key == "related",
+                })?
+            };
+            if entries.iter().any(|(seen, _)| seen == &key) {
+                return Err(A::Error::custom(format!(
+                    "`{key}` is written twice in one mapping"
+                )));
             }
+            entries.push((key, value));
+        }
+        if self.related && RawRelatedSelection::selects(&entries) {
+            // Kept for the mapping around it to recognise; anything else settles it below.
+            return Ok(RawPayloadSource::Nested(RawNestedSources(entries)));
+        }
+        if let Some(selection) = RawRelatedSelection::recognise(&mut entries) {
+            return Ok(RawPayloadSource::Selection(selection));
+        }
+        for (_, value) in &mut entries {
+            value.settle().map_err(A::Error::custom)?;
+        }
+        if let Some(related) = RawRelatedSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Related(related));
+        }
+        if let Some(caller) = caller_value::RawCallerSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Caller(caller));
+        }
+        if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Count(count));
+        }
+        if !entries.is_empty()
+            && entries
+                .iter()
+                .all(|(key, _)| SOURCE_KEYWORDS.contains(&key.as_str()))
+        {
+            return ExplicitPayloadSource::from_entries(entries)
+                .map(RawPayloadSource::Explicit)
+                .map_err(A::Error::custom);
+        }
+        if entries.is_empty() {
+            return Err(A::Error::custom("an empty mapping is not a payload source"));
+        }
+        Ok(RawPayloadSource::Nested(RawNestedSources(entries)))
+    }
+}
 
-            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Text(value.to_owned()))
+impl RawPayloadSource {
+    /// A `where:` kept as written under `related:` read the way every format before `ess/22` reads
+    /// it — a leaf of a nested mapping — once it is known not to be a selector's; and every
+    /// nested mapping holding one, the same. The reader's own refusal of it, where it refuses it.
+    fn settle(&mut self) -> Result<(), String> {
+        match self {
+            Self::Captured(value) => {
+                *self = legacy_reading(value)?;
+                Ok(())
             }
-
-            // The scalars are read rather than refused so the rule that types a literal can say
-            // what to write instead — `quote it: items: '0'` — which a reader error cannot.
-            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Boolean(value))
-            }
-
-            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Integer(value))
-            }
-
-            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Unsigned(value))
-            }
-
-            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Decimal(value))
-            }
-
-            // Read so that a chained `via:` (ess/22, beyond10x/ess#285) reaches the related
-            // source's shape; a list anywhere else is refused when the source is read.
-            fn visit_seq<A: serde::de::SeqAccess<'de>>(
-                self,
-                mut seq: A,
-            ) -> Result<Self::Value, A::Error> {
-                let mut texts = Vec::new();
-                while let Some(text) = seq.next_element::<String>()? {
-                    texts.push(text);
+            Self::Nested(RawNestedSources(entries)) => {
+                for (_, value) in entries {
+                    value.settle()?;
                 }
-                Ok(RawPayloadSource::Texts(texts))
+                Ok(())
             }
+            _ => Ok(()),
+        }
+    }
+}
 
-            // Every keyword's value is itself a source-shaped YAML value (`true`, a field name, a
-            // number, `{generated: true}`), so the entries are read one way and classified after:
-            // all keywords is a source, anything else a nested mapping.
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<Self::Value, A::Error> {
-                let mut entries: Vec<(String, RawPayloadSource)> = Vec::new();
-                while let Some((key, value)) = map.next_entry::<String, RawPayloadSource>()? {
-                    if entries.iter().any(|(seen, _)| seen == &key) {
-                        return Err(serde::de::Error::custom(format!(
-                            "`{key}` is written twice in one mapping"
-                        )));
+/// `value` read as a payload source, the way a nested mapping's leaf always was.
+fn legacy_reading(value: &serde_yaml::Value) -> Result<RawPayloadSource, String> {
+    serde::de::Deserializer::deserialize_any(value.clone(), Source { related: false })
+        .map_err(|error| error.to_string())
+}
+
+/// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): one field of the one row a
+/// selector selects. Recognised by its exact shape — one key, `related`, holding exactly
+/// `entity` (a qualified name), `where` and `field` — and nothing else; below `ess/22` the same
+/// shape is read back as the nested mapping it was.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawRelatedSelection {
+    related: RawSelected,
+}
+
+/// What `related:` holds in a filtered read: the entity, the selector, and the field read.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawSelected {
+    /// The entity whose rows are candidates.
+    entity: QualifiedName,
+    /// What a candidate must satisfy: its fields bare, the input under `input.`, the addressed
+    /// subject under `subject.`.
+    #[serde(rename = "where")]
+    filter: Predicate,
+    /// The field of the one selected row.
+    field: String,
+    /// How the document wrote `where`, where it was read from one.
+    #[serde(skip)]
+    #[schemars(skip)]
+    written: Option<Box<serde_yaml::Value>>,
+}
+
+impl RawRelatedSelection {
+    /// Whether the entries of a `related:` mapping are a selector's: exactly `entity` (a qualified
+    /// name), `where` and `field` (a text).
+    fn selects(entries: &[(String, RawPayloadSource)]) -> bool {
+        entries.len() == 3
+            && entries
+                .iter()
+                .all(|(key, value)| match (key.as_str(), value) {
+                    ("entity", RawPayloadSource::Text(entity)) => {
+                        entity.parse::<QualifiedName>().is_ok()
                     }
-                    entries.push((key, value));
-                }
-                if let Some(related) = RawRelatedSource::recognise(&entries) {
-                    return Ok(RawPayloadSource::Related(related));
-                }
-                if let Some(caller) = caller_value::RawCallerSource::recognise(&entries) {
-                    return Ok(RawPayloadSource::Caller(caller));
-                }
-                if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
-                    return Ok(RawPayloadSource::Count(count));
-                }
-                if !entries.is_empty()
-                    && entries
-                        .iter()
-                        .all(|(key, _)| SOURCE_KEYWORDS.contains(&key.as_str()))
-                {
-                    return ExplicitPayloadSource::from_entries(entries)
-                        .map(RawPayloadSource::Explicit)
-                        .map_err(serde::de::Error::custom);
-                }
-                if entries.is_empty() {
-                    return Err(serde::de::Error::custom(
-                        "an empty mapping is not a payload source",
-                    ));
-                }
-                Ok(RawPayloadSource::Nested(RawNestedSources(entries)))
+                    ("where", RawPayloadSource::Captured(_))
+                    | ("field", RawPayloadSource::Text(_)) => true,
+                    _ => false,
+                })
+    }
+
+    /// The mapping `{related: {entity, where, field}}`, and nothing else, taken out of `entries`.
+    fn recognise(entries: &mut Vec<(String, RawPayloadSource)>) -> Option<Self> {
+        let [(key, RawPayloadSource::Nested(RawNestedSources(inner)))] = entries.as_slice() else {
+            return None;
+        };
+        if key != "related" || !Self::selects(inner) {
+            return None;
+        }
+        let Some((_, RawPayloadSource::Nested(RawNestedSources(inner)))) = entries.pop() else {
+            return None;
+        };
+        let (mut entity, mut written, mut field) = (None, None, None);
+        for (key, value) in inner {
+            match (key.as_str(), value) {
+                ("entity", RawPayloadSource::Text(text)) => entity = text.parse().ok(),
+                ("where", RawPayloadSource::Captured(value)) => written = Some(value),
+                ("field", RawPayloadSource::Text(text)) => field = Some(text),
+                _ => return None,
             }
         }
-
-        deserializer.deserialize_any(Source)
+        Some(Self {
+            related: RawSelected {
+                entity: entity?,
+                filter: Predicate::Always,
+                field: field?,
+                written: Some(written?),
+            },
+        })
     }
 }
 
@@ -1568,6 +1743,13 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 "a list is read only as the `via:` of `{related: {via: [<field>, <field>], field: \
                  <field>}}`",
             ),
+            RawPayloadSource::Selection(RawRelatedSelection { related }) => {
+                Ok(Self::selection(related))
+            }
+            // Never left in a source once read; read as the leaf it always was where it is.
+            RawPayloadSource::Captured(value) => legacy_reading(&value)
+                .map_err(|_| "a `where:` under `related:` is read only as a selector")
+                .and_then(Self::try_from),
             RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
             RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
@@ -1580,6 +1762,39 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(|fields| Self::Struct { fields }),
+        }
+    }
+}
+
+impl PayloadSource {
+    /// A filtered read as written: the selector parsed as a predicate, and what the same mapping
+    /// read as before `ess/22`, which [`row_set::read_below_ess_22`] restores below it.
+    fn selection(related: RawSelected) -> Self {
+        use serde::Deserialize as _;
+        let RawSelected {
+            entity,
+            filter,
+            field,
+            written,
+        } = related;
+        let (filter, predicate, earlier) = match written {
+            Some(written) => {
+                let earlier = legacy_reading(&written)
+                    .and_then(|raw| Self::try_from(raw).map(Box::new).map_err(str::to_owned));
+                match Predicate::deserialize((*written).clone()) {
+                    Ok(predicate) => (predicate, None, earlier),
+                    Err(error) => (Predicate::Always, Some(error.to_string()), earlier),
+                }
+            }
+            None => (filter, None, row_set::Legacy::none().filter),
+        };
+        Self::RelatedSelection {
+            selection: row_set::RowSelection { entity, filter },
+            field,
+            legacy: row_set::Legacy {
+                filter: earlier,
+                predicate,
+            },
         }
     }
 }
@@ -1745,6 +1960,16 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::CallerAttribute { attribute } => {
                 Self::Caller(caller_value::RawCallerSource::of(attribute))
             }
+            PayloadSource::RelatedSelection {
+                selection, field, ..
+            } => Self::Selection(RawRelatedSelection {
+                related: RawSelected {
+                    entity: selection.entity.clone(),
+                    filter: selection.filter.clone(),
+                    field: field.clone(),
+                    written: None,
+                },
+            }),
             PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
@@ -2128,6 +2353,7 @@ impl Outcome {
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
             | OutcomeCondition::Related { .. }
+            | OutcomeCondition::RelatedSet { .. }
             | OutcomeCondition::UnknownInstance
             | OutcomeCondition::InputAbsent
             | OutcomeCondition::ExistingInstance => false,
@@ -2264,6 +2490,7 @@ impl CommandSpec {
                     | OutcomeCondition::SubjectField { .. }
                     | OutcomeCondition::SubjectPredicate { .. }
                     | OutcomeCondition::Related { .. }
+                    | OutcomeCondition::RelatedSet { .. }
             )
         {
             errors.push(ValidationError::at(site.clone(), ValidationCode::ConflictingDeclaration,
@@ -2922,6 +3149,11 @@ impl CommandSpec {
             return errors;
         }
 
+        // A command guarded by a row set (ess/22, beyond10x/ess#228, #299): its count-decided
+        // branches, and that it reads no other kind of related row.
+        if row_set::uses(self) {
+            return row_set::validate_shape(self);
+        }
         // A command reading a related row (ess/18, beyond10x/ess#211) partitions that row's fields
         // with the input, which needs the other entity's field types, known at assembly; here its
         // own branches are checked, including that it selects on nothing else.
@@ -3284,6 +3516,7 @@ fn check_payload_entry(
         | PayloadSource::InputOrGenerated { .. }
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
+        | PayloadSource::RelatedSelection { .. }
         | PayloadSource::CallerAttribute { .. } => {}
         PayloadSource::ChangedCount => {
             errors.extend(set_effects::check_count(at, outcome, filled));
@@ -5508,7 +5741,9 @@ impl TryFrom<RawOutcome> for Outcome {
             Some(guard) => {
                 related_guard::alone(&raw)?;
                 let read = guard.read(&raw.name)?;
-                related_guard::absent_alone(&raw, &read.1)?;
+                if let related_guard::ReadGuard::Identity(_, test) = &read {
+                    related_guard::absent_alone(&raw, test)?;
+                }
                 Some(read)
             }
             None => None,
@@ -5576,11 +5811,18 @@ impl TryFrom<RawOutcome> for Outcome {
             },
             None => match related {
                 // `related_guard::alone` admitted `when:` and nothing else beside it.
-                Some((via, test)) => OutcomeCondition::Related {
+                Some(related_guard::ReadGuard::Identity(via, test)) => OutcomeCondition::Related {
                     via,
                     test,
                     input: input_predicate,
                 },
+                Some(related_guard::ReadGuard::RowSet(selection, test)) => {
+                    OutcomeCondition::RelatedSet {
+                        selection,
+                        test,
+                        input: input_predicate,
+                    }
+                }
                 None => condition,
             },
         };
@@ -5982,7 +6224,8 @@ impl From<Outcome> for RawOutcome {
                     (predicate, None, None, None, false)
                 }
                 OutcomeCondition::SubjectPredicate { input, .. }
-                | OutcomeCondition::Related { input, .. } => (input, None, None, None, false),
+                | OutcomeCondition::Related { input, .. }
+                | OutcomeCondition::RelatedSet { input, .. } => (input, None, None, None, false),
                 OutcomeCondition::SubjectState { state, predicate } => {
                     (predicate, Some(state), None, None, false)
                 }

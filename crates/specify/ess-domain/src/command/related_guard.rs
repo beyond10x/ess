@@ -86,63 +86,172 @@ impl RelatedTest {
     }
 }
 
-/// `when_related:` as a document writes it.
+/// `when_related:` as a document writes it: one row named by an input identity (`via`), or, from
+/// `ess/22`, the rows a selector selects (`entity`, `where`) with one test of them.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RawRelatedGuard {
-    /// The input field that carries the other entity's identity, written `input.<field>`.
-    pub via: String,
+    /// The input field that carries the other entity's identity, written `input.<field>`. Never
+    /// beside `entity`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
+    /// The entity whose rows a selector selects (ess/22). Written with `where`, never beside
+    /// `via`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<crate::name::QualifiedName>,
+    /// What a row of `entity` must satisfy to be selected (ess/22): its fields bare, the input
+    /// under `input.`, the addressed subject under `subject.`.
+    #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Predicate>,
     /// `false`: the branch is taken when no row carries that identity. Written instead of
-    /// `predicate`, never beside it.
+    /// `predicate`, never beside it. Over a selector (ess/22): whether any row is selected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exists: Option<bool>,
     /// What must hold of that row's stored fields — and of the input, read under `input.` — for the
     /// branch to be taken. Written instead of `exists`, never beside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub predicate: Option<Predicate>,
+    /// Over a selector (ess/22): one comparison of the number of rows selected with a nonnegative
+    /// whole number, `{eq: 1}`; the operator is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<super::row_set::RawCount>,
+    /// Over a selector (ess/22): what every selected row satisfies; true of no rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forall: Option<Predicate>,
+}
+
+/// What a `when_related:` reads, as [`RawRelatedGuard::read`] decides from its keys.
+#[derive(Debug)]
+pub(super) enum ReadGuard {
+    /// One row, named by an identity.
+    Identity(RelatedVia, RelatedTest),
+    /// The rows a selector selects (ess/22).
+    RowSet(super::row_set::RowSelection, super::row_set::RowSetTest),
 }
 
 impl RawRelatedGuard {
     /// The document form of a condition that reads a related row.
     pub(super) fn written(condition: &OutcomeCondition) -> Option<Self> {
-        let OutcomeCondition::Related { via, test, .. } = condition else {
-            return None;
+        let empty = Self {
+            via: None,
+            entity: None,
+            filter: None,
+            exists: None,
+            predicate: None,
+            count: None,
+            forall: None,
         };
-        let via = via.to_string();
-        Some(match test {
-            RelatedTest::Absent => Self {
-                via,
-                exists: Some(false),
-                predicate: None,
-            },
-            RelatedTest::Holds(predicate) => Self {
-                via,
-                exists: None,
-                predicate: Some(predicate.clone()),
-            },
-        })
+        match condition {
+            OutcomeCondition::Related { via, test, .. } => {
+                let via = Some(via.to_string());
+                Some(match test {
+                    RelatedTest::Absent => Self {
+                        via,
+                        exists: Some(false),
+                        ..empty
+                    },
+                    RelatedTest::Holds(predicate) => Self {
+                        via,
+                        predicate: Some(predicate.clone()),
+                        ..empty
+                    },
+                })
+            }
+            OutcomeCondition::RelatedSet {
+                selection, test, ..
+            } => {
+                let selected = Self {
+                    entity: Some(selection.entity.clone()),
+                    filter: Some(selection.filter.clone()),
+                    ..empty
+                };
+                Some(match test {
+                    super::row_set::RowSetTest::Exists(exists) => Self {
+                        exists: Some(*exists),
+                        ..selected
+                    },
+                    super::row_set::RowSetTest::Count { op, bound } => Self {
+                        count: Some(
+                            [(
+                                op.keyword().to_owned(),
+                                i64::try_from(*bound).unwrap_or(i64::MAX),
+                            )]
+                            .into(),
+                        ),
+                        ..selected
+                    },
+                    super::row_set::RowSetTest::Forall(predicate) => Self {
+                        forall: Some(predicate.clone()),
+                        ..selected
+                    },
+                })
+            }
+            _ => None,
+        }
     }
 
-    /// The input field `via` names and the test, or why the key says neither.
-    pub(super) fn read(
-        self,
-        name: &super::OutcomeName,
-    ) -> Result<(RelatedVia, RelatedTest), ValidationErrors> {
+    /// The row the guard reads and its test, or why the keys say neither.
+    pub(super) fn read(self, name: &super::OutcomeName) -> Result<ReadGuard, ValidationErrors> {
         let at = |code: ValidationCode, message: String, hint: &str| {
             ValidationErrors::from(
                 ValidationError::new(code, format!("outcomes.{name}.{KEY}"), message)
                     .with_hint(hint.to_owned()),
             )
         };
+        let selects = self.entity.is_some()
+            || self.filter.is_some()
+            || self.count.is_some()
+            || self.forall.is_some();
+        let Some(via) = self.via else {
+            if !selects {
+                return Err(at(
+                    ValidationCode::MissingDeclaration,
+                    format!(
+                        "outcome `{name}` declares `when_related` with neither `via` nor `entity`; \
+                         it reads the row an input identity names, or (ess/22) the rows a \
+                         selector selects"
+                    ),
+                    INPUT_HINT,
+                ));
+            }
+            if self.predicate.is_some() {
+                return Err(at(
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "outcome `{name}` writes `predicate` over the rows a selector selects; \
+                         over a row set every selected row is tested with `forall`"
+                    ),
+                    "write `forall: <predicate>`",
+                ));
+            }
+            let (selection, test) = super::row_set::read(
+                name,
+                self.entity,
+                self.filter,
+                (self.exists, self.count, self.forall),
+            )?;
+            return Ok(ReadGuard::RowSet(selection, test));
+        };
+        if selects {
+            return Err(at(
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{name}` writes `via` beside a selector's keys; `via` names one row \
+                     by an input identity, and `entity` with `where` selects rows by a predicate"
+                ),
+                "keep `via` with `exists` or `predicate`, or `entity` and `where` with one of \
+                 `exists`, `count` or `forall`",
+            ));
+        }
         // `input.<field>`, or from ess/22 a bare `<field>` of the addressed subject, which
         // [`validate`] gates by format (beyond10x/ess#304). Anything else names no field.
-        let via = match self.via.strip_prefix(super::PayloadSource::INPUT_PREFIX) {
+        let via = match via.strip_prefix(super::PayloadSource::INPUT_PREFIX) {
             Some(field) if !field.is_empty() => RelatedVia::Input(field.to_owned()),
-            None if is_bare_field(&self.via) => RelatedVia::Subject(self.via.clone()),
+            None if is_bare_field(&via) => RelatedVia::Subject(via.clone()),
             _ => {
                 return Err(at(
                     ValidationCode::TypeMismatch,
-                    not_an_input(name, &self.via),
+                    not_an_input(name, &via),
                     INPUT_HINT,
                 ))
             }
@@ -179,7 +288,7 @@ impl RawRelatedGuard {
                 ))
             }
         };
-        Ok((via, test))
+        Ok(ReadGuard::Identity(via, test))
     }
 }
 
@@ -413,6 +522,7 @@ fn other_authority(condition: &OutcomeCondition) -> Option<&'static str> {
         | OutcomeCondition::ExistingInstance
         | OutcomeCondition::WrongState
         | OutcomeCondition::Related { .. }
+        | OutcomeCondition::RelatedSet { .. }
         | OutcomeCondition::Otherwise
         | OutcomeCondition::External { .. }
         | OutcomeCondition::ExternalWhen { .. } => None,

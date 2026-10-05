@@ -492,6 +492,9 @@ fn unchosen(
         ResolvedPayloadValue::ResponseField { .. } => "an external response",
         ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",
         ResolvedPayloadValue::ChangedCount => "`{count: changed}`",
+        ResolvedPayloadValue::RelatedSelection { .. } => {
+            "a value read from the row a selector selects"
+        }
     };
     format!(
         "the creating command sets {role} from {source}, whose value no arrangement here chooses"
@@ -769,6 +772,19 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                 }
                 ResolvedCondition::Related { test, input, .. } => {
                     if let ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } = test {
+                        texts(predicate, &mut out);
+                    }
+                    if let Some(input) = input {
+                        texts(input, &mut out);
+                    }
+                }
+                ResolvedCondition::RelatedSet {
+                    selection,
+                    test,
+                    input,
+                } => {
+                    texts(&selection.filter, &mut out);
+                    if let Some(predicate) = test.predicate() {
                         texts(predicate, &mut out);
                     }
                     if let Some(input) = input {

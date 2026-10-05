@@ -1025,6 +1025,20 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
 fn written_condition(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when {predicate}"),
+        // The selector, the test and the input guard: a change to any is a change to which rows the
+        // branch answers (ess/22, beyond10x/ess#228, #299).
+        ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => format!(
+            "when, of the {} rows satisfying {}, {test}{}",
+            selection.entity.name(),
+            selection.filter,
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and {guard}")),
+        ),
         ResolvedCondition::SubjectPredicate { predicate, input } => format!(
             "when subject fields satisfy {predicate}{}",
             input
@@ -1159,6 +1173,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
@@ -2164,6 +2179,7 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };

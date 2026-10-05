@@ -802,6 +802,18 @@ fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
 pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when `{predicate}`"),
+        ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => format!(
+            "when, of the `{}` rows satisfying `{}`, {test}{}",
+            selection.entity.name(),
+            selection.filter,
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and `{guard}`")),
+        ),
         ResolvedCondition::SubjectPredicate { predicate, input } => format!(
             "when the existing subject's stored fields satisfy `{predicate}`{}",
             input

@@ -724,8 +724,39 @@ fn check_filter(
     filter: &Predicate,
     at: &ConstructRef,
 ) -> ValidationErrors {
+    check_row_predicate(
+        command,
+        entity,
+        &entity.fields,
+        subject,
+        types,
+        filter,
+        at,
+        false,
+    )
+}
+
+/// `predicate` checked over `fields` of a row of `entity`, the command's input under `input.`
+/// (unless the entity declares a field named `input`), and — where `subject` is given — the
+/// subject's fields under `subject.` (unless the entity declares a field named `subject`). With
+/// `current_time`, `now` reads the decision's one instant, as over a stored row (ess/22, A3): the
+/// environment a row set's selector and `forall` are checked in (`super::row_set`).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn check_row_predicate(
+    command: &CommandSpec,
+    entity: &EntitySpec,
+    fields: &[Field],
+    subject: Option<&EntitySpec>,
+    types: &TypeRegistry,
+    filter: &Predicate,
+    at: &ConstructRef,
+    current_time: bool,
+) -> ValidationErrors {
     let owner = at.render();
-    let mut inner = DomainEnvironment::new(types, &entity.fields);
+    let mut inner = DomainEnvironment::new(types, fields);
+    if current_time {
+        inner = inner.with_stored_current_time();
+    }
     if !entity
         .fields
         .iter()
@@ -745,6 +776,7 @@ fn check_filter(
             )
         }),
         identity: subject.map(|subject| &subject.identity),
+        current_time,
     };
     let checked = crate::expression::check_predicate(&environment, filter, &owner);
     let mut errors = ValidationErrors::new();
@@ -781,6 +813,8 @@ struct WithSubject<'a> {
     /// (which then keeps being read as itself).
     subject: Option<(&'a Vec<Field>, bool)>,
     identity: Option<&'a Field>,
+    /// Whether `now` is admitted, as over a stored row: a row set's selector (ess/22).
+    current_time: bool,
 }
 
 impl WithSubject<'_> {
@@ -847,9 +881,10 @@ impl TypeEnvironment for WithSubject<'_> {
         self.inner.admits_aggregate_presence()
     }
     fn current_time(&self) -> CurrentTimeAdmission {
+        let inner = self.inner.current_time();
         CurrentTimeAdmission {
-            site: false,
-            format: self.inner.current_time().format,
+            site: self.current_time && inner.site,
+            format: inner.format,
         }
     }
     fn member(&self, reference: &Read, name: &str) -> Option<Read> {

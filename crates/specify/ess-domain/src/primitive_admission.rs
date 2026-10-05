@@ -398,6 +398,21 @@ pub fn predicates(
                     predicate,
                 ));
             }
+            // And the selector and `forall` of a row set (ess/22, beyond10x/ess#228, #299).
+            if let crate::command::OutcomeCondition::RelatedSet {
+                selection, test, ..
+            } = &outcome.condition
+            {
+                let at = command
+                    .site()
+                    .key("outcomes")
+                    .named(outcome.name.to_string())
+                    .key(crate::command::related_guard::KEY);
+                found.push((at.clone(), &selection.filter));
+                if let crate::command::row_set::RowSetTest::Forall(predicate) = test {
+                    found.push((at, predicate));
+                }
+            }
         }
     }
     for view in spec.views().values() {

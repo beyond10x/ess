@@ -77,6 +77,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | one constant offset (`upper == lower + 5`, `issued_at - 24h`) | `OffsetUnsupported` | entity-core: an operand that moves a value by a constant |
 | distinct list members (`distinct: {in, as, by}`) | `DistinctUnsupported` | entity-core: a condition that compares keys across a list's elements |
 | the UTF-8 byte length of a text (`label.utf8_bytes`) | `Utf8BytesUnsupported` | entity-core: an address for the UTF-8 byte length of a text |
+| a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | `RowSetUnsupported` | entity-core: a query over the rows of an entity, read atomically in one decision |
 
 ## Every code
 
@@ -118,5 +119,6 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `OffsetUnsupported` | one constant offset (`upper == lower + 5`, `issued_at - 24h`) | A predicate compares a fact with one constant offset of another. |
 | `DistinctUnsupported` | distinct list members (`distinct: {in, as, by}`) | A predicate requires that no two elements of a list share a key. |
 | `Utf8BytesUnsupported` | the UTF-8 byte length of a text (`label.utf8_bytes`) | A predicate compares the UTF-8 byte length of a text. |
+| `RowSetUnsupported` | a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | A branch reads the rows a selector selects, or one value of the one row it selects. |
 
 [ess-lowering-end]: #

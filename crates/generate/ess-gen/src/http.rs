@@ -188,6 +188,8 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             | ResolvedCondition::StateChange { .. }
             // And so is one decided by a stored row of another entity (ess/18, `when_related:`).
             | ResolvedCondition::Related { .. }
+            // And by the rows a selector selects (ess/22, `when_related: {entity, where, …}`).
+            | ResolvedCondition::RelatedSet { .. }
             // A duplicate of a record that exists conflicts with that record (ess/16).
             | ResolvedCondition::ExistingInstance,
             true,

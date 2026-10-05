@@ -191,7 +191,7 @@ fn gap(path: String, type_ref: String, reason: &'static str) -> RefusalCause {
 }
 
 /// The value a path under `input.` names in the input a scenario sends.
-fn input_value(path: &FactPath, input: &BTreeMap<String, Node>) -> Option<FactValue> {
+pub(super) fn input_value(path: &FactPath, input: &BTreeMap<String, Node>) -> Option<FactValue> {
     let (root, rest) = path.segments().split_first()?;
     if root != ess_domain::command::subject_fact::INPUT_NAMESPACE {
         return None;
@@ -208,7 +208,10 @@ fn input_value(path: &FactPath, input: &BTreeMap<String, Node>) -> Option<FactVa
 }
 
 /// The value a path under `subject.` names in what the subject held before the outcome.
-fn subject_value(path: &FactPath, before: &BTreeMap<String, Determined>) -> Option<FactValue> {
+pub(super) fn subject_value(
+    path: &FactPath,
+    before: &BTreeMap<String, Determined>,
+) -> Option<FactValue> {
     let (root, rest) = path.segments().split_first()?;
     if root != ess_domain::command::set_effects::SUBJECT_NAMESPACE {
         return None;
@@ -226,7 +229,10 @@ fn subject_value(path: &FactPath, before: &BTreeMap<String, Determined>) -> Opti
 
 /// `filter` with every comparison operand `read` answers written in as a literal; the other
 /// operands are kept.
-fn written_in(filter: &Predicate, read: &dyn Fn(&FactPath) -> Option<FactValue>) -> Predicate {
+pub(super) fn written_in(
+    filter: &Predicate,
+    read: &dyn Fn(&FactPath) -> Option<FactValue>,
+) -> Predicate {
     let operand = |it: &Operand| match it {
         Operand::Fact(path) => read(path).map_or_else(|| it.clone(), Operand::Literal),
         Operand::Offset(offset) => read(&offset.base)
@@ -1271,7 +1277,7 @@ fn with_sets(outcome: &ResolvedOutcome, affect: &ResolvedAffect) -> ResolvedOutc
 /// The predicates a row the filter leaves out is arranged to meet: for a conjunction, one per
 /// conjunct — that conjunct false and every other true — so a target dropping any one conjunct
 /// changes a row it must leave; for anything else, the whole filter false.
-fn misses(filter: &Predicate) -> Vec<Predicate> {
+pub(super) fn misses(filter: &Predicate) -> Vec<Predicate> {
     let not = |predicate: &Predicate| Predicate::Not(Box::new(predicate.clone()));
     match filter {
         Predicate::All(conjuncts) if conjuncts.len() > 1 => (0..conjuncts.len())

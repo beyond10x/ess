@@ -147,6 +147,15 @@ fn outcome(
     }
     let selection_entity = selection.map(|subject| ir.entity(&subject.entity));
     match &outcome.condition {
+        // Generated storage enumerates no rows by a selector in this cut (ess/22, beyond10x/ess#228,
+        // #299): the command stays an obligation, named.
+        ResolvedCondition::RelatedSet { .. } => {
+            return Err(
+                "a guard over the rows a selector selects (`when_related: {entity, where, \
+                 exists | count | forall}`)"
+                    .to_owned(),
+            )
+        }
         ResolvedCondition::Related {
             entity,
             test,
@@ -320,6 +329,8 @@ fn payloads(
 }
 
 /// One value source, checked against the field it fills.
+// One arm per value source a branch can write.
+#[allow(clippy::too_many_lines)]
 fn value(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -420,6 +431,14 @@ fn value(
         }
         ResolvedPayloadValue::ChangedCount => {
             return Err(format!("`{{count: changed}}` for `{}`", field.target));
+        }
+        // Generated storage enumerates no rows by a selector in this cut (ess/22, beyond10x/ess#299).
+        ResolvedPayloadValue::RelatedSelection { .. } => {
+            return Err(format!(
+                "a read of the one row a selector selects (`{{related: {{entity, where, field}}}}`) \
+                 for `{}`",
+                field.target
+            ));
         }
         ResolvedPayloadValue::ResponseField { .. } => {
             return Err(format!("a response field for `{}`", field.target));

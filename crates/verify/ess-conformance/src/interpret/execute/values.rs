@@ -569,6 +569,36 @@ fn stored_reference(
     Ok(value.map(|value| value.require(what)).transpose()?.into())
 }
 
+/// The field a filtered read takes from the one row its selector selected (ess/22,
+/// beyond10x/ess#299): the identity, or the stored field as the row held it before the outcome.
+pub(super) fn selected(
+    ir: &EssIr,
+    target: &ResolvedPayloadField,
+    entity: &ess_compiler::ir::ResolvedEntity,
+    key: &Node,
+    row: &Row,
+) -> Result<Option<Value>, Undetermined> {
+    let ResolvedPayloadValue::RelatedSelection {
+        field, type_ref, ..
+    } = &target.value
+    else {
+        unreachable!("only filtered reads use this evaluator")
+    };
+    let value = if *field == entity.identity.name {
+        Some(Value::Known(key.clone()))
+    } else {
+        row.fields.get(field).cloned()
+    };
+    checked_read(
+        ir,
+        field,
+        type_ref,
+        &target.target_type,
+        target.conversion.as_deref(),
+        value.as_ref(),
+    )
+}
+
 #[cfg(test)]
 mod response_tests {
     use super::*;

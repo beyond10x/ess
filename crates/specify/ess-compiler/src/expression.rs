@@ -364,7 +364,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
-        | ResolvedCondition::Related { input, .. } => input.as_ref(),
+        | ResolvedCondition::Related { input, .. }
+        | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState

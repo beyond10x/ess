@@ -129,21 +129,33 @@ impl Orderings {
     fn stored(&mut self, ir: &EssIr, command: &ResolvedCommand) {
         // A stored row's predicate may order the command's own input, read under `input.`,
         // against the current time: that input is sent relative to the moment of sending too.
-        for outcome in &command.outcomes {
-            let (entity, predicate) = match &outcome.condition {
+        for (entity, predicate) in command.outcomes.iter().flat_map(|outcome| {
+            let mut read: Vec<(&EntityHandle, &Predicate)> = Vec::new();
+            match &outcome.condition {
                 ResolvedCondition::SubjectPredicate { predicate, .. } => {
-                    match command.selection_subject(outcome) {
-                        Some(subject) => (&subject.entity, predicate),
-                        None => continue,
+                    if let Some(subject) = command.selection_subject(outcome) {
+                        read.push((&subject.entity, predicate));
                     }
                 }
                 ResolvedCondition::Related {
                     entity,
                     test: ResolvedRelatedTest::Holds { predicate },
                     ..
-                } => (entity, predicate),
-                _ => continue,
-            };
+                } => read.push((entity, predicate)),
+                // A row set's selector and `forall` (ess/22, beyond10x/ess#228, #299).
+                ResolvedCondition::RelatedSet {
+                    selection, test, ..
+                } => {
+                    read.push((&selection.entity, &selection.filter));
+                    read.extend(
+                        test.predicate()
+                            .map(|predicate| (&selection.entity, predicate)),
+                    );
+                }
+                _ => {}
+            }
+            read
+        }) {
             let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
             if ir
                 .entity(entity)
@@ -349,27 +361,46 @@ pub(crate) fn stored_predicates<'ir>(
     entity: &EntityHandle,
 ) -> impl Iterator<Item = &'ir Predicate> + 'ir {
     let entity = entity.clone();
-    ir.commands().values().flat_map(move |command| {
-        let entity = entity.clone();
+    let selected = entity.clone();
+    // A row set's selector and `forall` read every candidate row of their entity (ess/22).
+    let row_sets = ir.commands().values().flat_map(move |command| {
+        let entity = selected.clone();
         command
             .outcomes
             .iter()
-            .filter_map(move |outcome| match &outcome.condition {
-                ResolvedCondition::SubjectPredicate { predicate, .. }
-                    if command
-                        .selection_subject(outcome)
-                        .is_some_and(|subject| subject.entity == entity) =>
-                {
-                    Some(predicate)
-                }
-                ResolvedCondition::Related {
-                    entity: related,
-                    test: ResolvedRelatedTest::Holds { predicate },
-                    ..
-                } if *related == entity => Some(predicate),
-                _ => None,
+            .flat_map(move |outcome| match &outcome.condition {
+                ResolvedCondition::RelatedSet {
+                    selection, test, ..
+                } if selection.entity == entity => std::iter::once(&selection.filter)
+                    .chain(test.predicate())
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
             })
-    })
+    });
+    ir.commands()
+        .values()
+        .flat_map(move |command| {
+            let entity = entity.clone();
+            command
+                .outcomes
+                .iter()
+                .filter_map(move |outcome| match &outcome.condition {
+                    ResolvedCondition::SubjectPredicate { predicate, .. }
+                        if command
+                            .selection_subject(outcome)
+                            .is_some_and(|subject| subject.entity == entity) =>
+                    {
+                        Some(predicate)
+                    }
+                    ResolvedCondition::Related {
+                        entity: related,
+                        test: ResolvedRelatedTest::Holds { predicate },
+                        ..
+                    } if *related == entity => Some(predicate),
+                    _ => None,
+                })
+        })
+        .chain(row_sets)
 }
 
 /// Every path `predicate` orders against the current time, and whether a `now_offset` can carry
@@ -432,7 +463,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
-        | ResolvedCondition::Related { input, .. } => input.as_ref(),
+        | ResolvedCondition::Related { input, .. }
+        | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState

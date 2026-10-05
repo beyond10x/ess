@@ -42,6 +42,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ess_domain::actor::ActorSpec;
 use ess_domain::binding::{BindingName, BindingSpec, MappingSource};
 use ess_domain::command::related_value::{input_carrier, referenced_entity, Referenced};
+use ess_domain::command::row_set::RowSetTest;
 use ess_domain::command::{
     CommandSpec, Effect, ErrorSpec, EventSpec, InstanceSurface, Outcome, OutcomeCondition, Subject,
 };
@@ -68,8 +69,8 @@ use crate::ir::{
     ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
     ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
     ResolvedPayloadValue, ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia,
-    ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
-    ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedRelation, ResolvedRowSelection, ResolvedRowSetTest, ResolvedSubject, ResolvedType,
+    ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -2771,7 +2772,7 @@ impl<'a> Resolver<'a> {
     /// An `ess/14` source that reads something: the subject, an optional input, or a struct's
     /// fields. `ess-domain::command::value_expression` has refused an assembled specification that
     /// breaks these rules; the refusals here are backstops for one built field by field.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn expression_field(
         &mut self,
         command: &CommandSpec,
@@ -2872,6 +2873,9 @@ impl<'a> Resolver<'a> {
             PayloadSource::CallerAttribute { attribute } => {
                 self.caller_field(command, outcome, block, (target, source), attribute)?
             }
+            PayloadSource::RelatedSelection { .. } => {
+                self.selection_field(command, outcome, block, (target, source))?
+            }
             _ => unreachable!("every other source is resolved by `payload_field`"),
         };
         let conversion = self.crossing(command, outcome, block, target, source, &from)?;
@@ -2881,6 +2885,58 @@ impl<'a> Resolver<'a> {
             value,
             conversion,
         })
+    }
+
+    /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): the selector, resolved to
+    /// its entity, and the field read from the one row it selects, at its declared type.
+    /// `ess-domain` refused a selector over no entity and a field the entity does not hold; the
+    /// refusal here is the backstop for a specification built field by field.
+    fn selection_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        (target, source): (&ResolvedField, &PayloadSource),
+    ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
+        let PayloadSource::RelatedSelection {
+            selection, field, ..
+        } = source
+        else {
+            return None;
+        };
+        let read = self
+            .spec
+            .entities()
+            .get(&selection.entity)
+            .and_then(|entity| entity_field(entity, field).map(|held| (entity, held)));
+        let Some((entity, held)) = read else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` reads `{field}` of the one `{}` its selector selects, \
+                     and that is no field of a declared entity",
+                    outcome.name, command.name, selection.entity
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let read = self.entity_field_resolved(entity, held)?;
+        Some((
+            ResolvedPayloadValue::RelatedSelection {
+                selection: ResolvedRowSelection {
+                    entity: EntityHandle::new(entity.name.clone()),
+                    filter: selection.filter.clone(),
+                },
+                field: read.name.clone(),
+                type_ref: read.type_ref.clone(),
+            },
+            read.type_ref,
+        ))
     }
 
     /// What stands in for an absent input after `else:`: `Some(None)` for `{generated: true}`, a
@@ -5104,6 +5160,25 @@ fn condition_of(
             },
             None => ResolvedCondition::Otherwise,
         },
+        OutcomeCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => ResolvedCondition::RelatedSet {
+            selection: ResolvedRowSelection {
+                entity: EntityHandle::new(selection.entity.clone()),
+                filter: selection.filter.clone(),
+            },
+            test: match test {
+                RowSetTest::Exists(exists) => ResolvedRowSetTest::Exists(*exists),
+                RowSetTest::Count { op, bound } => ResolvedRowSetTest::Count {
+                    op: *op,
+                    bound: *bound,
+                },
+                RowSetTest::Forall(predicate) => ResolvedRowSetTest::Forall(predicate.clone()),
+            },
+            input: input.clone(),
+        },
         OutcomeCondition::When(predicate) => ResolvedCondition::When {
             predicate: predicate.clone(),
         },
@@ -5186,6 +5261,7 @@ fn payload_constant_source(
         | PayloadSource::InputOrGenerated { .. }
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
+        | PayloadSource::RelatedSelection { .. }
         | PayloadSource::CallerAttribute { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
