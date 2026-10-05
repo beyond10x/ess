@@ -8,6 +8,7 @@ mod cli_binding;
 mod cli_reference;
 mod client;
 mod coverage;
+mod formats;
 mod git_checkout;
 mod input_discovery;
 mod known_failures;
@@ -117,6 +118,19 @@ enum SpecifyAreaCommand {
     },
     /// Validate a typed CLI presentation binding against its selected ESS model.
     Cli(cli_binding::Input),
+    /// List the specification formats (`format: ess/N`) this build implements, and what each added.
+    ///
+    /// One line per format, oldest first: the release that first shipped it, or `unreleased`, and
+    /// `newest` beside the highest. Under it, indented, what the format added and any rule that
+    /// reads a document differently from that format on. Declare the lowest format that admits
+    /// every construct the specification uses. `--format json` and `--format yaml` print a list of
+    /// `{format, release, newest, added, stricter}`.
+    ///
+    /// The other versioned documents an author writes (`ess-inputs/N`, `ess-ui/N`,
+    /// `ess-composition/N`, `ess-scenario/N`) and the documents `ess` writes itself are listed
+    /// with their releases on the format version history page,
+    /// `https://beyond10x.github.io/ess/docs/reference/spec-versions`.
+    Formats(formats::Args),
     /// Existing specification verbs retain their flat spellings.
     #[command(flatten)]
     Other(SpecifyCommand),
@@ -1530,6 +1544,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Specify { command } => match command {
             SpecifyAreaCommand::Protocol { command } => protocol::specify(&command),
             SpecifyAreaCommand::Cli(input) => cli_binding::validate(&input),
+            SpecifyAreaCommand::Formats(args) => formats::run(&args),
             SpecifyAreaCommand::Other(command) => specify_area(command),
         },
         Command::FlatSpecify(command) => specify_area(command),
@@ -5892,11 +5907,12 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 80;
-    const AREA_ONLY_LEAVES: [&[&str]; 10] = [
+    const AREA_LEAVES: usize = 81;
+    const AREA_ONLY_LEAVES: [&[&str]; 11] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],
         &["specify", "cli"],
+        &["specify", "formats"],
         &["generate", "cli"],
         &["generate", "ui"],
         &["ui", "load"],

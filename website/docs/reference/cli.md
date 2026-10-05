@@ -448,6 +448,23 @@ ess specify cli [OPTIONS] --binding <BINDING>
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
 | `--binding` | `<BINDING>` | yes |  | An independently authored ess-cli/1 presentation document |
 
+#### `ess specify formats`
+
+List the specification formats (`format: ess/N`) this build implements, and what each added.
+
+One line per format, oldest first: the release that first shipped it, or `unreleased`, and `newest` beside the highest. Under it, indented, what the format added and any rule that reads a document differently from that format on. Declare the lowest format that admits every construct the specification uses. `--format json` and `--format yaml` print a list of `{format, release, newest, added, stricter}`.
+
+The other versioned documents an author writes (`ess-inputs/N`, `ess-ui/N`, `ess-composition/N`, `ess-scenario/N`) and the documents `ess` writes itself are listed with their releases on the format version history page, `https://beyond10x.github.io/ess/docs/reference/spec-versions`.
+
+```text
+ess specify formats [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--since` | `<ess/N>` | no |  | List only the formats after this one |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+
 #### `ess specify validate`
 
 Validate and resolve an ESS specification.

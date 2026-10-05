@@ -1,0 +1,106 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.inst
+summary: An instance whose seed is fixed at creation; its description changes only while it is active.
+types:
+  - {name: demo.inst.InstanceName, kind: newtype, of: String}
+entities:
+  - name: demo.inst.Instance
+    identity: {name: name, type: demo.inst.InstanceName}
+    fields:
+      - {name: description, type: String}
+      - {name: seed_digest, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Suspended, Removed]
+      terminal: [Removed]
+      transitions:
+        - {name: suspend, from: [Active], to: Suspended}
+        - {name: remove, from: [Active, Suspended], to: Removed}
+actors:
+  - name: demo.inst.Operator
+    may: [demo.inst.CreateInstance, demo.inst.SuspendInstance, demo.inst.RemoveInstance, demo.inst.UpdateInstance]
+errors:
+  - {name: demo.inst.SeedChangeRefused, fields: []}
+  - {name: demo.inst.InstanceNotActive, fields: []}
+  - {name: demo.inst.InstanceNotFound, fields: []}
+events:
+  - name: demo.inst.InstanceCreated
+    fields: [{name: name, type: demo.inst.InstanceName}]
+  - name: demo.inst.InstanceSuspended
+    fields: [{name: name, type: demo.inst.InstanceName}]
+  - name: demo.inst.InstanceRemoved
+    fields: [{name: name, type: demo.inst.InstanceName}]
+  - name: demo.inst.InstanceUpdated
+    fields: [{name: name, type: demo.inst.InstanceName}]
+commands:
+  - name: demo.inst.CreateInstance
+    input:
+      - {name: name, type: demo.inst.InstanceName}
+      - {name: description, type: String}
+      - {name: seed_digest, type: String}
+    outcomes:
+      - name: created
+        creates: demo.inst.Instance
+        instance: name
+        sets: {description: input.description, seed_digest: input.seed_digest}
+        emits: [demo.inst.InstanceCreated]
+        payload: {demo.inst.InstanceCreated: {name: input.name}}
+  - name: demo.inst.SuspendInstance
+    input:
+      - {name: name, type: demo.inst.InstanceName}
+    outcomes:
+      - name: suspended
+        moves: demo.inst.Instance.suspend
+        instance: name
+        emits: [demo.inst.InstanceSuspended]
+        payload: {demo.inst.InstanceSuspended: {name: input.name}}
+      - {name: not-suspendable, wrong_state: true, error: demo.inst.InstanceNotActive}
+  - name: demo.inst.RemoveInstance
+    input:
+      - {name: name, type: demo.inst.InstanceName}
+    outcomes:
+      - name: removed
+        moves: demo.inst.Instance.remove
+        instance: name
+        emits: [demo.inst.InstanceRemoved]
+        payload: {demo.inst.InstanceRemoved: {name: input.name}}
+      - {name: already-removed, wrong_state: true, error: demo.inst.InstanceNotActive}
+  - name: demo.inst.UpdateInstance
+    input:
+      - {name: name, type: demo.inst.InstanceName}
+      - {name: description, type: String}
+      - {name: seed_digest, type: String}
+    outcomes:
+      - name: no-such-instance
+        unknown_instance: true
+        error: demo.inst.InstanceNotFound
+      - name: seed-change-refused
+        when_subject:
+          predicate: seed_digest != input.seed_digest
+        error: demo.inst.SeedChangeRefused
+      - name: not-active
+        when_subject:
+          predicate: state != Active
+        error: demo.inst.InstanceNotActive
+      - name: updated
+        updates: demo.inst.Instance
+        instance: name
+        sets: {description: input.description}
+        emits: [demo.inst.InstanceUpdated]
+        payload: {demo.inst.InstanceUpdated: {name: input.name}}
+views:
+  - name: demo.inst.Instances
+    source: demo.inst.Instance
+    consistency: read_your_writes
+    fields:
+      - {name: name, type: demo.inst.InstanceName}
+      - {name: state, type: demo.inst.Instance.State}
+      - {name: description, type: String}
+      - {name: seed_digest, type: String}
+components:
+  - component: instances
+    owns: {domains: [demo.inst]}
+    accepts: {commands: [demo.inst.CreateInstance, demo.inst.SuspendInstance, demo.inst.RemoveInstance, demo.inst.UpdateInstance]}
+    reached_by: network

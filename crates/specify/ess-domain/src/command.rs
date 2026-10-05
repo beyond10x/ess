@@ -3291,11 +3291,14 @@ impl CommandSpec {
                 .iter()
                 .any(|outcome| outcome.condition.reads_held_state())
         {
-            errors.push(ValidationError::at(
-                self.site().key("outcomes"),
-                ValidationCode::ConflictingDeclaration,
-                "subject fact and lifecycle guards cannot be combined in one command",
-            ));
+            errors.push(
+                ValidationError::at(
+                    self.site().key("outcomes"),
+                    ValidationCode::ConflictingDeclaration,
+                    "subject fact and lifecycle guards cannot be combined in one command",
+                )
+                .with_hint(subject_fact::LIFECYCLE_MIX_HINT),
+            );
             return errors;
         }
         // A subject-state command needs the complete entity declarations. Its joint coverage

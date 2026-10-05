@@ -524,6 +524,7 @@ pub(super) fn synthesize(
                     subject: subject.into(),
                     scenario: None,
                     cause: RefusalCause::NoWitness(gap),
+                    stands: false,
                 });
                 return;
             }

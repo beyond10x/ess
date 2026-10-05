@@ -15,6 +15,14 @@ use crate::{
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use std::fmt::Write as _;
 
+/// The repair named beside the refusal of a stored-field guard and a lifecycle-state guard in one
+/// command (beyond10x/ess#461): the held state read as `state` in the fact strategy's predicate
+/// (ess/18) states the same command, and declaration order gives the refusal its precedence.
+pub(crate) const LIFECYCLE_MIX_HINT: &str =
+    "read the held state in the predicate instead: replace `when_subject_state:` with \
+     `when_subject: {predicate: state == Active}`, or refuse every other state with \
+     `when_subject: {predicate: state != Active}` declared before the default";
+
 /// Whether any branch of this command reads the existing subject's stored fields.
 pub fn uses(command: &CommandSpec) -> bool {
     command
@@ -197,11 +205,14 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             .iter()
             .any(|outcome| outcome.condition.reads_held_state())
         {
-            errors.push(ValidationError::at(
-                command.site().key("outcomes"),
-                ValidationCode::ConflictingDeclaration,
-                "subject fact and lifecycle guards cannot be combined in one command",
-            ));
+            errors.push(
+                ValidationError::at(
+                    command.site().key("outcomes"),
+                    ValidationCode::ConflictingDeclaration,
+                    "subject fact and lifecycle guards cannot be combined in one command",
+                )
+                .with_hint(LIFECYCLE_MIX_HINT),
+            );
             continue;
         }
         let mut shared = true;

@@ -5,6 +5,7 @@ mod cli_reference;
 mod consumer_coverage;
 mod diagnostics;
 mod docs;
+mod format_history;
 #[path = "../../ess-cli/src/git_checkout.rs"]
 mod git_checkout;
 mod infra_acceptance;
@@ -15,6 +16,7 @@ mod whats_changed;
 
 use anyhow::{bail, Context, Result as AnyResult};
 use clap::{Parser, Subcommand};
+use ess_domain::system::FormatHistoryEntry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -116,6 +118,12 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Regenerate or check the `ess/` table of the format version history from `FORMAT_HISTORY`.
+    FormatHistory {
+        /// Compare the generated table without writing.
+        #[arg(long)]
+        check: bool,
+    },
     /// Refuse a published page whose admonition has a space-separated title, `:::note Title`.
     Admonitions,
     /// Record or check the site's `ess` sessions, domain graphs and billing presentation under
@@ -153,7 +161,8 @@ enum Command {
 enum ReleaseCommand {
     /// Verify that Cargo and the changelog name the same release.
     Verify {
-        /// Version to verify; defaults to the workspace version.
+        /// Version to verify; defaults to the workspace version. Named, it is a release being cut,
+        /// and every `FORMAT_HISTORY` row must also record its release.
         version: Option<String>,
     },
     /// Print one release's changelog section as GitHub release notes.
@@ -204,6 +213,9 @@ fn run(cli: Cli) -> Result<String, String> {
         Command::Diagnostics { check } => {
             diagnostics::run(&root, check).map_err(|error| format!("{error:#}"))
         }
+        Command::FormatHistory { check } => {
+            format_history::run(&root, check).map_err(|error| format!("{error:#}"))
+        }
         Command::InfraAcceptance(args) => {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
         }
@@ -222,16 +234,12 @@ fn run(cli: Cli) -> Result<String, String> {
             command: ReleaseCommand::Verify { version },
         } => {
             let (workspace_version, changelog) = release_inputs(&root)?;
-            let version = version.as_deref().unwrap_or(&workspace_version);
-            if version != workspace_version {
-                return Err(format!(
-                    "release {version} does not match workspace version {workspace_version}"
-                ));
-            }
-            release_notes(&changelog, version)?;
-            Ok(format!(
-                "release {version}: workspace version and changelog agree\n"
-            ))
+            release_verify(
+                version.as_deref(),
+                &workspace_version,
+                &changelog,
+                ess_domain::system::FORMAT_HISTORY,
+            )
         }
         Command::Release {
             command: ReleaseCommand::Notes { version },
@@ -254,6 +262,48 @@ fn run(cli: Cli) -> Result<String, String> {
             release_status(&root, &version, &changelog, &tags, &releases, &stranded)
         }
     }
+}
+
+/// `cargo xtask release verify [VERSION]`.
+///
+/// Cargo and the changelog must name the same dated release. A version named explicitly is a
+/// release being cut — `release.yml` and `package.yml` name the tag, and `package.yml` only once no
+/// tag exists — so it is also refused while a `FORMAT_HISTORY` row records no release: the
+/// release would ship a format that `ess specify formats` and the version history call
+/// unreleased. The argument-less form is `task release-check` on every tree, and between releases
+/// the workspace keeps the last release's version and dated section, so that form cannot tell a
+/// release commit from the work after it and does not apply the format check.
+fn release_verify(
+    requested: Option<&str>,
+    workspace_version: &str,
+    changelog: &str,
+    history: &[FormatHistoryEntry],
+) -> Result<String, String> {
+    let version = requested.unwrap_or(workspace_version);
+    if version != workspace_version {
+        return Err(format!(
+            "release {version} does not match workspace version {workspace_version}"
+        ));
+    }
+    release_notes(changelog, version)?;
+    if requested.is_some() {
+        let unreleased: Vec<String> = history
+            .iter()
+            .filter(|entry| entry.release.is_none())
+            .map(|entry| format!("`ess/{}`", entry.major))
+            .collect();
+        if !unreleased.is_empty() {
+            return Err(format!(
+                "release {version}: FORMAT_HISTORY in crates/specify/ess-domain/src/system.rs \
+                 records no release for {}; set each row's `release` to `Some(\"{version}\")` \
+                 and run `cargo xtask format-history`",
+                unreleased.join(", ")
+            ));
+        }
+    }
+    Ok(format!(
+        "release {version}: workspace version and changelog agree\n"
+    ))
 }
 
 fn release_inputs(root: &Path) -> Result<(String, String), String> {
@@ -1165,6 +1215,64 @@ fn files_of<'a>(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn format_entry(major: u32, release: Option<&'static str>) -> FormatHistoryEntry {
+        FormatHistoryEntry {
+            major,
+            release,
+            added: &["Something."],
+            stricter: &[],
+        }
+    }
+
+    #[test]
+    fn a_release_named_explicitly_refuses_a_format_with_no_release_by_name() {
+        let changelog = "# Changelog\n\n## [Unreleased]\n\n## [0.54.0] — 2026-10-06\n\n- Notes.\n";
+        let history = [
+            format_entry(22, Some("0.53.0")),
+            format_entry(23, None),
+            format_entry(24, None),
+        ];
+        assert_eq!(
+            release_verify(Some("0.54.0"), "0.54.0", changelog, &history),
+            Err(
+                "release 0.54.0: FORMAT_HISTORY in crates/specify/ess-domain/src/system.rs \
+                 records no release for `ess/23`, `ess/24`; set each row's `release` to \
+                 `Some(\"0.54.0\")` and run `cargo xtask format-history`"
+                    .to_owned()
+            )
+        );
+        let released = [
+            format_entry(22, Some("0.53.0")),
+            format_entry(23, Some("0.54.0")),
+        ];
+        assert_eq!(
+            release_verify(Some("0.54.0"), "0.54.0", changelog, &released),
+            Ok("release 0.54.0: workspace version and changelog agree\n".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_gate_form_admits_a_tree_whose_newest_format_is_not_released_yet() {
+        // Between releases the workspace keeps the last release's version and its dated section,
+        // so `task release-check` cannot tell this tree from a release commit; it keeps its check.
+        let changelog = "# Changelog\n\n## [Unreleased]\n\n## [0.53.0] — 2026-10-05\n\n- Notes.\n";
+        let history = [format_entry(22, Some("0.53.0")), format_entry(23, None)];
+        assert_eq!(
+            release_verify(None, "0.53.0", changelog, &history),
+            Ok("release 0.53.0: workspace version and changelog agree\n".to_owned())
+        );
+        assert!(release_verify(Some("0.53.0"), "0.53.0", changelog, &history).is_err());
+        assert_eq!(
+            release_verify(
+                None,
+                "0.53.0",
+                "## [0.53.0] 2026-10-05\n\n- Notes.\n",
+                &history
+            ),
+            Err("release heading for 0.53.0 has no date".to_owned())
+        );
+    }
 
     static TEMP_DIRECTORY_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 

@@ -282,7 +282,8 @@ pub enum Note {
         /// The candidate outcomes, in declaration order.
         outcomes: Vec<OutcomeName>,
     },
-    /// A wrong-state refusal whose subject the declared views publish only in part, so its scenario
+    /// A wrong-state refusal — or, from ess/23, a refusal selected by `when_subject:`
+    /// (beyond10x/ess#461) — whose subject the declared views publish only in part, so its scenario
     /// observes what they publish and nothing more (beyond10x/ess#132). No view says how the rest
     /// of the row reads, so a refusal that changed it is not checked.
     PartialObservation {
@@ -624,6 +625,9 @@ pub struct Refusal {
     pub scenario: Option<ScenarioId>,
     /// Why, as fields rather than as a sentence.
     pub cause: RefusalCause,
+    /// The scenario `scenario` names was written and stands; this refusal names a row of it that
+    /// could not be arranged — a held state a complete refusal claims (ess/23, beyond10x/ess#461).
+    pub stands: bool,
 }
 
 impl Refusal {
@@ -633,6 +637,15 @@ impl Refusal {
             subject: subject_of(id),
             scenario: Some(id.clone()),
             cause,
+            stands: false,
+        }
+    }
+
+    /// A refusal recorded beside the scenario `id`, which stands without the row `cause` names.
+    fn beside(id: &ScenarioId, cause: RefusalCause) -> Self {
+        Self {
+            stands: true,
+            ..Self::about(id, cause)
         }
     }
 
@@ -660,6 +673,15 @@ impl fmt::Display for Refusal {
             Some(id) if matches!(self.cause, RefusalCause::AbsenceUnwitnessed { .. }) => writeln!(
                 f,
                 "refusal[{}]: {} has a scenario `{id}` that leaves an absent reference unwitnessed",
+                self.code(),
+                self.subject
+            ),
+            // The scenario exists; a held state its refusal claims has no row in it (ess/23,
+            // beyond10x/ess#461).
+            Some(id) if self.stands => writeln!(
+                f,
+                "refusal[{}]: {} has a scenario `{id}` that leaves a held state it claims \
+                 unwitnessed",
                 self.code(),
                 self.subject
             ),
@@ -2218,7 +2240,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     for (path, subject) in ess_compiler::binary64::uses(ir) {
-        refusals.push(Refusal { subject, scenario: None, cause: RefusalCause::NoWitness(WitnessGap {
+        refusals.push(Refusal { subject, scenario: None, stands: false, cause: RefusalCause::NoWitness(WitnessGap {
             path, type_ref: "Binary64".to_owned(), reason: "requires a qualified finite Binary64 suite and codec that this conformance format does not admit",
         }) });
     }
@@ -2260,9 +2282,14 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
             {
                 continue;
             }
-            let Some((id, scenario)) =
-                outcome_scenario_in(models, command, outcome, &actors, &mut refusals)
-            else {
+            let Some((id, scenario)) = outcome_scenario_noting(
+                models,
+                command,
+                outcome,
+                &actors,
+                &mut refusals,
+                &mut unseparated_notes,
+            ) else {
                 continue;
             };
             unseparated_notes.extend(unseparated(command, outcome, &id, &scenario));
@@ -2613,13 +2640,26 @@ pub(crate) fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &Qualif
 }
 
 /// One scenario per declared outcome (§10), or the refusal that says why there is none.
-#[allow(clippy::too_many_lines)]
 fn outcome_scenario_in(
     models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     refusals: &mut Vec<Refusal>,
+) -> Option<(ScenarioId, ConformanceScenario)> {
+    outcome_scenario_noting(models, command, outcome, actors, refusals, &mut Vec::new())
+}
+
+/// [`outcome_scenario_in`], with a complete refusal's partial observation noted (ess/23,
+/// beyond10x/ess#461): the subject fields no view lets its scenario observe.
+#[allow(clippy::too_many_lines)]
+fn outcome_scenario_noting(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
 ) -> Option<(ScenarioId, ConformanceScenario)> {
     let id = ScenarioId::Outcome {
         outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
@@ -2633,6 +2673,12 @@ fn outcome_scenario_in(
         refusals,
         Witness::Full,
     )?;
+    if !run.unobserved.is_empty() {
+        notes.push(Note::PartialObservation {
+            scenario: id.clone(),
+            unobserved: run.unobserved.iter().cloned().collect(),
+        });
+    }
     // A row-set branch is witnessed on the rows its own arrangement selects (ess/22,
     // beyond10x/ess#228, #299): no further witness sends it without them.
     if row_set::routes(command, outcome) {
@@ -3212,8 +3258,15 @@ fn differs_from_arranged(run: &Run, field: &str, asserted: &ScenarioValue) -> bo
 /// Records each further row `run` refused on its own ([`Run::refused`]) under the scenario's id,
 /// once however many invocations of the branch arranged it.
 fn record_refused(id: &ScenarioId, run: &Run, refusals: &mut Vec<Refusal>) {
-    for cause in &run.refused {
-        let refusal = Refusal::about(id, cause.clone());
+    let further = run
+        .refused
+        .iter()
+        .map(|cause| Refusal::about(id, cause.clone()));
+    let unclaimed = run
+        .unclaimed
+        .iter()
+        .map(|cause| Refusal::beside(id, cause.clone()));
+    for refusal in further.chain(unclaimed) {
         if !refusals.contains(&refusal) {
             refusals.push(refusal);
         }
@@ -3272,6 +3325,12 @@ struct Run {
     /// counter limit no bounded row reaches (beyond10x/ess#226). Each is recorded under the
     /// scenario's id.
     refused: Vec<RefusalCause>,
+    /// Why a state a complete refusal claims has no row in the scenario (ess/23, beyond10x/ess#461),
+    /// one cause per such state, recorded under the scenario's id as a refusal beside it.
+    unclaimed: Vec<RefusalCause>,
+    /// The subject fields a complete stored-field refusal's observation could not cover, which the
+    /// scenario's [`Note::PartialObservation`] names (ess/23, beyond10x/ess#461, #132).
+    unobserved: BTreeSet<String>,
 }
 
 impl Run {
@@ -3512,10 +3571,16 @@ fn run_as(
     if (subject_fact::uses(command) || related || rows) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let (mut after_steps, refused) = if routed {
-        subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?
+    let (mut after_steps, refused, unclaimed, unobserved) = if routed {
+        let around = subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?;
+        (
+            around.steps,
+            around.refused,
+            around.unclaimed,
+            around.unobserved,
+        )
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), Vec::new(), BTreeSet::new())
     };
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     collision_witness(
@@ -3576,6 +3641,8 @@ fn run_as(
         source,
         before_settled,
         refused,
+        unclaimed,
+        unobserved,
         settled,
     };
     models.mark_run(&mut run);
@@ -3791,6 +3858,8 @@ fn run_state_refusal(
         source,
         before_settled: arranged.settled.clone(),
         refused: Vec::new(),
+        unclaimed: Vec::new(),
+        unobserved: BTreeSet::new(),
         settled: arranged.settled,
     })
 }
@@ -3986,6 +4055,8 @@ fn run_replay_in(
         source,
         before_settled: origin.settled.clone(),
         refused: Vec::new(),
+        unclaimed: Vec::new(),
+        unobserved: BTreeSet::new(),
         settled: origin.settled,
     })
 }
@@ -11906,17 +11977,18 @@ fn refusal_arrangement(
 }
 
 /// Full refusal observation is an explicit compiler obligation of the new source profile.
+///
+/// Keyed on the command's named wrong-state refusal. A refusal selected by `when_subject:` carries
+/// the obligation from ess/23 too (beyond10x/ess#461), and its own scenario discharges it; it does
+/// not change how this family observes a command that declares no wrong-state refusal.
 fn complete_wrong_state(
     ir: &EssIr,
     attempt: &Driver<'_>,
     arrangement: &Arrangement,
 ) -> Result<Option<subject_fact::Preservation>, RefusalCause> {
-    if !attempt
-        .command
-        .outcomes
-        .iter()
-        .any(|outcome| outcome.complete_refusal)
-    {
+    if !attempt.command.outcomes.iter().any(|outcome| {
+        outcome.complete_refusal && outcome.condition == ResolvedCondition::WrongState
+    }) {
         return Ok(None);
     }
     let setup = Setup {
@@ -13529,6 +13601,7 @@ fn value_object_invariants(
             refusals.push(Refusal {
                 subject: DeclaredTypeRef::new(declared.name.clone()).into(),
                 scenario: None,
+                stands: false,
                 cause: RefusalCause::ValueInvariantUnwitnessed {
                     value: DeclaredTypeRef::new(declared.name.clone()),
                     invariants: invariants
@@ -14017,6 +14090,7 @@ fn bindings(
             refusals.push(Refusal {
                 subject: subject.clone().into(),
                 scenario: None,
+                stands: false,
                 cause: RefusalCause::BindingUnobservable {
                     binding: subject,
                     gap: BindingGap::NothingPublishes {
@@ -14038,6 +14112,7 @@ fn bindings(
             Err(cause) => refusals.push(Refusal {
                 subject: subject.into(),
                 scenario: None,
+                stands: false,
                 cause,
             }),
         }
@@ -14143,6 +14218,7 @@ fn conditioned(
             refusals.push(Refusal {
                 subject: subject.into(),
                 scenario: None,
+                stands: false,
                 cause,
             });
             return;
@@ -14989,6 +15065,7 @@ mod tests {
                 name: EntityRef::new(QualifiedName::new("billing.invoice.Invoice").expect("valid")),
             },
             scenario: None,
+            stands: false,
             cause: RefusalCause::InstanceRequired {
                 entity: EntityRef::new(
                     QualifiedName::new("billing.invoice.Invoice").expect("valid"),
@@ -15094,6 +15171,43 @@ mod instant_refusal_tests {
                 .to_string()
                 .contains("`valid_until` with `valid_from`"),
             "{cause}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod unclaimed_refusal_tests {
+    use super::*;
+
+    /// A held state a complete refusal claims and no arrangement reaches is refused beside the
+    /// refusal's scenario, which stands (beyond10x/ess#461): the refusal says so, and does not say
+    /// the scenario is missing. A refusal about a scenario that was not written keeps its text.
+    #[test]
+    fn a_refusal_beside_a_standing_scenario_does_not_call_it_missing() {
+        let id: ScenarioId = "demo.inst.UpdateInstance/outcome/not-active"
+            .parse()
+            .expect("a scenario id");
+        let cause = RefusalCause::GuardUnsatisfiable {
+            predicate: "`demo.inst.Instance` stored state selecting this branch, on a \
+                        `demo.inst.Instance` row held in `Removed`"
+                .to_owned(),
+            tried: 3,
+        };
+        let beside = Refusal::beside(&id, cause.clone()).to_string();
+        assert!(!beside.contains("has no scenario"), "{beside}");
+        assert!(
+            beside.contains(
+                "has a scenario `demo.inst.UpdateInstance/outcome/not-active` that leaves a held \
+                 state it claims unwitnessed"
+            ),
+            "{beside}"
+        );
+        assert!(beside.contains("held in `Removed`"), "{beside}");
+        assert!(beside.starts_with("refusal[ESS-SYNTH-003]"), "{beside}");
+        let missing = Refusal::about(&id, cause).to_string();
+        assert!(
+            missing.contains("has no scenario `demo.inst.UpdateInstance/outcome/not-active`"),
+            "{missing}"
         );
     }
 }

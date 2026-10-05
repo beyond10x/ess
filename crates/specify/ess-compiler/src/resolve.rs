@@ -2268,9 +2268,7 @@ impl<'a> Resolver<'a> {
                 condition: condition_of(outcome, subject.as_ref(), related),
                 subject,
                 replays: None,
-                complete_refusal: self.spec.system().format.major() >= 7
-                    && outcome.condition == OutcomeCondition::WrongState
-                    && outcome.error.is_some(),
+                complete_refusal: complete_refusal(self.spec.system().format.major(), outcome),
                 retains_result: outcome.replays.is_some()
                     || command
                         .outcomes
@@ -5232,6 +5230,25 @@ fn names(values: impl IntoIterator<Item = String>) -> String {
         return "nothing".to_owned();
     }
     listed.join(", ")
+}
+
+/// Whether a refusal's scenario observes the complete held subject and no direct event
+/// ([`ResolvedOutcome::complete_refusal`](crate::ir::ResolvedOutcome::complete_refusal)).
+///
+/// From `ess/7` a named wrong-state refusal does. From `ess/23` so does a refusal selected by
+/// `when_subject: {predicate: …}` that names no subject of its own (beyond10x/ess#461): it
+/// changes nothing on the record it reads, so a field it does not guard is checked as well. Below
+/// `ess/23` such a refusal keeps its stored-field observation and its suite's bytes. The test
+/// reads either `when_subject:` shape, but only the predicate form reaches it: validation refuses
+/// a `{field, equals}` branch that names no subject (`a subject-state guard requires an existing
+/// moves or updates subject`), so that shape never selects a refusal.
+fn complete_refusal(major: u32, outcome: &Outcome) -> bool {
+    let named = outcome.error.is_some();
+    let wrong_state = major >= 7 && outcome.condition == OutcomeCondition::WrongState;
+    let stored = major >= ess_domain::system::FormatVersion::V23.major()
+        && outcome.condition.reads_subject_fact()
+        && outcome.subject.is_none();
+    named && (wrong_state || stored)
 }
 
 /// The IR's spelling of an outcome's condition.
