@@ -39,6 +39,7 @@
 
 mod accessor;
 mod behaviour;
+mod condition;
 mod context;
 mod entity;
 mod entry;

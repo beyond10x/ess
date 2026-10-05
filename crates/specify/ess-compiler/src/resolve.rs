@@ -4755,11 +4755,9 @@ impl<'a> Resolver<'a> {
             );
             return None;
         };
+        // A delivery-context field is never read by the condition, so nothing proves it present.
         let from = spec_type_ref(&source.type_ref);
         let to = spec_type_ref(&input.type_ref);
-        let from = self
-            .proved_present(binding, &[field.to_owned()], &from, &to)
-            .unwrap_or(from);
         let conversion = if is_assignable(&from, &to) {
             None
         } else if let Some(crossing) = self
@@ -4861,6 +4859,11 @@ impl<'a> Resolver<'a> {
         };
         let from = spec_type_ref(&source.type_ref);
         let to = spec_type_ref(&input.type_ref);
+        // Assignment reads the present type the condition proves (beyond10x/ess#194), as the domain
+        // does for a copied field; the IR keeps the source type.
+        let from = self
+            .proved_present(binding, &[field.to_owned()], &from, &to)
+            .unwrap_or(from);
         let conversion = if is_assignable(&from, &to) {
             None
         } else if let Some(crossing) = self
@@ -5959,5 +5962,70 @@ mod tests {
         assert_eq!(diagnostic.code, codes::COMMAND_UNDECLARED_REFERENCE);
         let span = diagnostic.span.as_ref().expect("a span");
         assert_eq!(span.located.expect("located").line, 5);
+    }
+
+    /// A binding condition reads the event payload and never a delivery context, so it proves no
+    /// context field present (ess/22, beyond10x/ess#194): `mapped_context` refuses an Optional
+    /// context field into a required input even where the event carries a same-named member the
+    /// condition does prove. The domain refuses that mapping first, so this asks the resolver
+    /// itself, over a model the domain admits with the input made required here.
+    #[test]
+    fn a_condition_proves_no_delivery_context_field_present_in_the_resolver() {
+        let text = include_str!("../../../verify/ess-conformance/tests/fixtures/delivery-context.yaml")
+            .replacen("format: ess/18\n", "format: ess/22\n", 1)
+            .replacen(
+                "      - {name: from, type: String}\n",
+                "      - {name: from, type: String}\n      - {name: tag, type: Optional<String>}\n",
+                1,
+            )
+            .replacen(
+                "        - {name: account_id, type: demo.inbox.AccountId}\n",
+                "        - {name: account_id, type: demo.inbox.AccountId}\n        - {name: tag, type: Optional<String>}\n",
+                1,
+            )
+            .replacen(
+                "      - {name: peer, type: String}\n",
+                "      - {name: peer, type: String}\n      - {name: tag, type: Optional<String>}\n",
+                1,
+            )
+            .replacen(
+                "      context_authority: account-messages\n",
+                "      context_authority: account-messages\n      where: defined(event.tag)\n",
+                1,
+            )
+            .replacen("      peer: event.from\n", "      peer: event.from\n      tag: context.tag\n", 1);
+        let raw = ess_domain::spec::RawSpecFile::parse(&text).expect("the model parses");
+        let spec = Specification::assemble([(ess_domain::system::Source::new("inbox.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("an Optional input is admitted: {errors}"));
+        let sources = SourceMap::new();
+        let ir = compile(&spec, &sources).expect("the model compiles");
+        let compiled = ir
+            .bindings()
+            .values()
+            .find(|binding| binding.name.as_str() == "received")
+            .expect("the binding");
+        let command = ir.command(&compiled.command);
+        let mut input = command
+            .input
+            .iter()
+            .find(|field| field.name == "tag")
+            .expect("the input")
+            .clone();
+        input.type_ref = crate::ir::ResolvedTypeRef::Primitive {
+            name: ess_domain::types::Primitive::String,
+        };
+        let binding = spec
+            .bindings()
+            .values()
+            .find(|binding| binding.name.as_str() == "received")
+            .expect("the binding spec")
+            .clone();
+        let mut resolver = Resolver::new(&spec, Locator::new(&sources, &[] as &[&str]));
+        let mapped =
+            resolver.mapped_context(&binding, command, &input, "tag", compiled.context.as_ref());
+        assert!(
+            mapped.is_none(),
+            "an Optional context field fills a required input: {mapped:?}"
+        );
     }
 }

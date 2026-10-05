@@ -154,6 +154,10 @@ mod key {
     /// A binding's generated transformation function.
     pub const TRANSFORM: &str = "transform";
     pub const PREPARED: &str = "prepared-selection";
+    /// A conditioned binding's generated condition function (ess/22).
+    pub const CONDITION: &str = "condition";
+    /// An external binding's owed delivery interface (ess/18).
+    pub const DELIVERY: &str = "delivery";
     /// A binding's owed transformation interface.
     pub const TRANSFORMATION: &str = "transformation";
     /// A binding's owed escalation interface.
@@ -554,6 +558,16 @@ impl Layout {
     /// A binding's generated transformation function.
     pub fn transform(&self, binding: &str) -> &str {
         self.name(&[key::TRANSFORM, binding])
+    }
+
+    /// A conditioned binding's generated condition function (ess/22).
+    pub fn condition(&self, binding: &str) -> &str {
+        self.name(&[key::CONDITION, binding])
+    }
+
+    /// An external binding's owed delivery interface (ess/18).
+    pub fn delivery(&self, binding: &str) -> &str {
+        self.name(&[key::DELIVERY, binding])
     }
 
     /// The generated selector helper for explicitly prepared host input.
@@ -987,6 +1001,28 @@ impl Layout {
             let subject = binding.name.to_string();
             let candidate = format!("{}FromPrepared", self.transform(&subject));
             self.put(taken, &system, &[key::PREPARED, &subject], candidate);
+        }
+        // Allocated last, and only for a conditioned binding, so that no name an unconditioned
+        // specification has today can move (ess/22, beyond10x/ess#268).
+        for binding in ir
+            .bindings()
+            .values()
+            .filter(|binding| binding.condition.is_some())
+        {
+            let subject = binding.name.to_string();
+            let candidate = format!("{}Condition", self.transform(&subject));
+            self.put(taken, &system, &[key::CONDITION, &subject], candidate);
+        }
+        // Allocated last, and only for a binding an external channel delivers to (ess/18), whose
+        // delivery is owed: no other name can move.
+        for binding in ir
+            .bindings()
+            .values()
+            .filter(|binding| binding.context.is_some())
+        {
+            let subject = binding.name.to_string();
+            let candidate = format!("{}Delivery", self.transform(&subject));
+            self.put(taken, &system, &[key::DELIVERY, &subject], candidate);
         }
     }
 

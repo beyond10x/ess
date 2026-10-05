@@ -197,7 +197,17 @@ pub(super) fn prelude(
     out.push_str(&validators(emit, selection)?);
     let input_types = crate::selection::input_types(emit.ir, selection)?;
     let input_ids = crate::selection::type_ids(&input_types);
-    let zero = format!("{}{{}}", emit.reference(binding.command.name()));
+    // A transformation that also checks a member the condition proves present answers whether it
+    // was (beyond10x/ess#194) beside its selection failure.
+    let zero = format!(
+        "{}{{}}{}",
+        emit.reference(binding.command.name()),
+        if crate::condition::checks_presence(emit.ir, binding) {
+            ", false"
+        } else {
+            ""
+        }
+    );
     input_prelude(&mut out, emit, binding, selection, &zero)?;
     let _ = writeln!(out, "selected := [{}]int{{}}\nfor index := range selected {{ selected[index] = -1 }}\nselectionBytes := 0\n_ = selectionBytes", selection.plan.selectors.len());
     for (selector, plan) in selection.plan.selectors.iter().enumerate() {

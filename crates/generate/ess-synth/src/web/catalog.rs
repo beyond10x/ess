@@ -404,6 +404,11 @@ fn bindings(bridge: &Bridge<'_>) -> Value {
         if let Some(periodic) = binding.cause.periodic() {
             value["periodic"] = json!(periodic);
         }
+        // The event-payload condition (ess/22), only where one is declared, so every other
+        // catalogue keeps its bytes.
+        if let Some(condition) = &binding.condition {
+            value["where"] = json!(condition.plan.predicate.to_string());
+        }
         out.push(value);
     }
     Value::Array(out)

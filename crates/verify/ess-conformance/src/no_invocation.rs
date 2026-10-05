@@ -30,6 +30,10 @@ pub const REQUIRES: &str = "zero-invocation observation requires suite/36 or /37
 /// The step tag this vocabulary adds.
 const STEP: &str = "expect_no_invocation";
 
+/// The unmet obligation a binding owes for an occurrence its condition is Unknown on (ess/22,
+/// beyond10x/ess#268): what `ExpectNoInvocation`'s `obligation` names where the witness is Unknown.
+pub const UNKNOWN_CONDITION: &str = "binding condition";
+
 fn conditional(id: &ScenarioId) -> bool {
     matches!(
         id,
@@ -67,7 +71,7 @@ pub(crate) fn needs_newer(tag: &str, major: u32) -> bool {
 
 /// The required and optional keys of this vocabulary's step, or `None` for another tag.
 pub(crate) fn step_keys(tag: &str) -> Option<(&'static [&'static str], &'static [&'static str])> {
-    (tag == STEP).then_some((&["step", "binding", "command"], &[]))
+    (tag == STEP).then_some((&["step", "binding", "command"], &["obligation"]))
 }
 
 /// The same version rule for a suite built in memory rather than read from bytes.

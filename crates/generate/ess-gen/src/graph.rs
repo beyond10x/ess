@@ -543,6 +543,12 @@ fn edges(ir: &EssIr) -> Vec<GraphEdge<'_>> {
                 } else {
                     format!("{}: {}", binding.name, mappings.join(", "))
                 };
+                // Only a binding with an event-payload condition (ess/22) says so, so every other
+                // edge keeps its bytes.
+                let label = match &binding.condition {
+                    Some(condition) => format!("{label} when {}", condition.plan.predicate),
+                    None => label,
+                };
                 // A policy selected per refusal (ess/22) has no one word for the edge: saying the
                 // fallback's would claim it for every refusal.
                 if binding.refusal_policy.is_some() {

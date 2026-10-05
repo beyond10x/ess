@@ -136,6 +136,46 @@ fn condition(covered: bool) -> FixtureSuite {
     suite.scenarios.retain(|id, _| ids.contains(id));
     FixtureSuite::Ordinary(AdmittedSuite::from_suite(&suite).unwrap())
 }
+/// The selecting conditioned binding's scenarios (beyond10x/ess#194 on a selection binding: a required
+/// input copied from an Optional member the condition proves present).
+/// A condition Unknown on its absent witness: the honest target reports the obligation, and one
+/// reading Unknown as False fails.
+fn unknown_condition(covered: bool) -> FixtureSuite {
+    let ir = model(&support_typescript_prerequisite::condition_model("unknown"));
+    let ids: Vec<_> = ["condition-absent", "condition-false"]
+        .map(|name| format!("received/binding/{name}").parse().unwrap())
+        .into();
+    if covered {
+        return FixtureSuite::Covered(
+            build(&ir, &[], Scope::System, Origins::Generated)
+                .unwrap()
+                .select(&ids)
+                .unwrap(),
+        );
+    }
+    let mut suite = ess_conformance::synthesize(&ir).suite;
+    suite.scenarios.retain(|id, _| ids.contains(id));
+    FixtureSuite::Ordinary(AdmittedSuite::from_suite(&suite).unwrap())
+}
+fn selected_condition(covered: bool) -> FixtureSuite {
+    let ir = model(&support_typescript_prerequisite::selected_condition_model(
+        "selected",
+    ));
+    let ids: Vec<_> = ["condition-absent", "condition-false", "flow", "mapping"]
+        .map(|name| format!("received/binding/{name}").parse().unwrap())
+        .into();
+    if covered {
+        return FixtureSuite::Covered(
+            build(&ir, &[], Scope::System, Origins::Generated)
+                .unwrap()
+                .select(&ids)
+                .unwrap(),
+        );
+    }
+    let mut suite = ess_conformance::synthesize(&ir).suite;
+    suite.scenarios.retain(|id, _| ids.contains(id));
+    FixtureSuite::Ordinary(AdmittedSuite::from_suite(&suite).unwrap())
+}
 fn structured(covered: bool) -> FixtureSuite {
     let source = include_str!("authored_structured_instances.rs");
     let ir = model(include_str!("fixtures/structured-instances.yaml"));
@@ -482,6 +522,7 @@ fn live_run(
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn typescript_native_live_callbacks_match_for_all_prerequisite_versions() {
     for covered in [false, true] {
         for (kind, input, modes) in [
@@ -523,6 +564,16 @@ fn typescript_native_live_callbacks_match_for_all_prerequisite_versions() {
                     "fire-on-absence",
                     "invert-condition",
                 ],
+            ),
+            (
+                "condition",
+                selected_condition(covered),
+                vec!["selected", "selected-ignore", "selected-fire-on-absence"],
+            ),
+            (
+                "condition",
+                unknown_condition(covered),
+                vec!["unknown", "unknown-as-false"],
             ),
         ] {
             for mode in modes {

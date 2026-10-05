@@ -72,12 +72,32 @@ Source syntax is coordinated ess/22; ess/21 remains the one-time-response alloca
   left. Both are observed by `expect_no_invocation` (suite/36, /37), with a fifty-ask window in the
   native, Go and TypeScript runtimes. A same-row chain reaching a conditioned binding is unsettled
   with its reason.
-- **Not done:** generated Rust, Go and web dispatch refuse a conditioned binding by name
-  (`MissingRepresentation`, `bindings.<name>.when.where`) instead of evaluating it. A conditioned
-  binding on an external (delivery-context) event gets no scenarios: each aspect, both condition
-  witnesses included, is refused by name; choosing the delivered payload for the condition is #268
-  slice 2. Browser composition, the diff/14 `binding/predicate-changed` kind, and ess-gen
-  docs/graph/AsyncAPI rendering of the condition are not implemented.
+- **Slice 2 (unit ess-w3-268-slice2, 2026-10-05).** Generated Rust and Go dispatch evaluate the
+  condition before the transformation, the invocation record and the port: a `conditions` module
+  (Rust) or a layout-named `<Binding>Condition` function (Go) answers in Kleene logic, False
+  returns from that binding's delivery alone, Unknown is that binding's unmet obligation
+  (`binding condition`) and is not held back for another attempt. A required input read from an
+  Optional member the condition proves present is checked: the transformation answers absent and
+  the delivery reports `binding input`, never an unwrap. Web hosts the Rust system and its
+  catalogue names the condition. A selection binding reading a proved member is generated too:
+  its transformation answers `Ok(None)` (Rust) or `false` beside its selection failure (Go). The
+  compiler now admits a proved Optional field copied into a required input (it read the proof only
+  for accessors and, wrongly, for delivery-context fields, which the condition never reads). Both negative witnesses now also require every binding beside the conditioned
+  one on the event to invoke (`other_binding_still_invokes`), before the zero-invocation window:
+  each unconditioned sibling, and a selecting sibling where its selection succeeds on the witness
+  payload. A witness on which the condition is Unknown carries `obligation: binding condition` on
+  its `expect_no_invocation`, so a target that reads Unknown as a silent skip fails. An external
+  (delivery-context) conditioned binding's delivered payloads are chosen for the condition,
+  varying only the members it reads; its two witnesses deliver a failing payload and one payload
+  per proved level left out, with the same sibling expectation for siblings of the same channel.
+  Generated Rust and Go owe every external binding's delivery by name (a `<Binding>Delivery`
+  trait or interface, capability `binding delivery`) instead of aborting. The diff reports
+  `binding/predicate-changed` (`ess-diff/14`, always classified); docs, graph and AsyncAPI render
+  the condition; the browser product and the scenario player compose a conditioned model.
+- **Still not done:** executing the browser product's `runner.wasm` against a conditioned
+  target (it needs a consumer WASM build); generated targets do not deliver external events at all
+  (the delivery is an obligation), so external conditioned bindings are held to the interpreter
+  and the Go runner.
 
 ## Payload condition (#268 and #194)
 

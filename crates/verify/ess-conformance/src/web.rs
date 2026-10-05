@@ -222,13 +222,19 @@ fn binding(binding: &ess_compiler::ir::ResolvedBinding) -> serde_json::Value {
     if let Some(periodic) = binding.cause.periodic() {
         return serde_json::json!({ "name": binding.name.as_str(), "periodic": periodic, "command": binding.command.to_string(), "delivery": delivery(binding.delivery), "failure": binding.failure.to_string() });
     }
-    serde_json::json!({
+    let mut value = serde_json::json!({
         "name": binding.name.as_str(),
         "event": binding.cause.event().expect("event branch").to_string(),
         "command": binding.command.to_string(),
         "delivery": delivery(binding.delivery),
         "failure": binding.failure.to_string(),
-    })
+    });
+    // The event-payload condition (ess/22), only where one is declared, so every other model keeps
+    // its bytes. The page carries it beside the binding and evaluates nothing.
+    if let Some(condition) = &binding.condition {
+        value["where"] = serde_json::json!(condition.plan.predicate.to_string());
+    }
+    value
 }
 
 fn names<T: ToString>(items: impl Iterator<Item = T>) -> Vec<String> {

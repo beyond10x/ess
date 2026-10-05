@@ -13118,15 +13118,115 @@ fn never_invoked(
             &trigger.run,
         ));
     }
+    let event_handle = binding.cause.event().expect("event cause");
+    let published: Vec<_> = triggers
+        .iter()
+        .map(|trigger| binding_condition::published(trigger, event_handle))
+        .collect();
+    let complete: Vec<_> = published
+        .iter()
+        .filter(|(_, complete)| *complete)
+        .map(|(payload, _)| payload.clone())
+        .collect();
+    // `other_binding_still_invokes`: a condition that does not hold skips this binding alone, and
+    // an Unknown one is this binding's obligation alone — every unconditioned binding beside it on
+    // the event still invokes. Asked before the zero-invocation window, so a target that reports
+    // this binding's Unknown condition as its unmet obligation there still answers it.
+    for sibling in siblings(ir, binding, &complete, None) {
+        steps.push(ScenarioStep::ExpectInvocation {
+            binding: BindingRef::new(sibling.name.clone()),
+            command: CommandRef::new(ir.command(&sibling.command).name.clone()),
+            input: BTreeMap::new(),
+            count: None,
+        });
+        source.insert(BindingRef::new(sibling.name.clone()).into());
+    }
+    // Where the condition is Unknown on an occurrence — a comparison reading an absent member —
+    // the binding owes its unmet obligation for it, and a target that skips silently fails.
+    let unknown = binding.condition.as_ref().is_some_and(|condition| {
+        published
+            .iter()
+            .any(|(payload, _)| condition.plan.evaluate(payload) == Ok(Truth::Unknown))
+    });
     steps.push(ScenarioStep::ExpectNoInvocation {
         binding: BindingRef::new(binding.name.clone()),
         command,
+        obligation: unknown.then(|| crate::no_invocation::UNKNOWN_CONDITION.to_owned()),
     });
     let text = format!(
         "`{}` invokes `{}` no times for a `{event}` its condition does not hold for",
         binding.name, invoked.name
     );
     Ok((steps, clipped(&text), source))
+}
+
+/// The bindings beside `binding` on its event that every occurrence invokes, for the witness
+/// `payloads`: no condition; no delivery context, or — where `delivered` names the channel and the
+/// context an external occurrence arrives with — the same channel; every input filled from the
+/// payload, a literal or that context without a host-computed crossing; and a selection only where
+/// it selects on one of `payloads`, an absent occurrence filling only an Optional input. Any
+/// target, the interpreter included, invokes them for that occurrence.
+pub(super) fn siblings<'ir>(
+    ir: &'ir EssIr,
+    binding: &ResolvedBinding,
+    payloads: &[BTreeMap<String, Node>],
+    delivered: Option<(&str, &BTreeMap<String, Node>)>,
+) -> Vec<&'ir ResolvedBinding> {
+    use ess_compiler::ir::ResolvedMappingValue as Value;
+    let event = binding.cause.event();
+    let selects = |other: &ResolvedBinding, payload: &BTreeMap<String, Node>| {
+        other.mapping.iter().all(|mapped| match &mapped.value {
+            Value::Selection {
+                selector,
+                projection,
+                ..
+            } => crate::selection::Observation::of(
+                ir,
+                other,
+                *selector,
+                projection,
+                &mapped.target_type,
+            )
+            .and_then(|observation| observation.evaluate(payload))
+            .is_ok_and(|expected| match expected {
+                crate::accessor::Expected::Present(_) => true,
+                crate::accessor::Expected::Absent => mapped.target_type.is_optional(),
+            }),
+            _ => true,
+        })
+    };
+    ir.bindings()
+        .values()
+        .filter(|other| {
+            other.name != binding.name
+                && other.cause.event().is_some()
+                && other.cause.event() == event
+                && other.condition.is_none()
+                && match (&other.context, delivered) {
+                    (None, _) => true,
+                    (Some(context), Some((authority, _))) => {
+                        context.authority.as_str() == authority
+                    }
+                    (Some(_), None) => false,
+                }
+                && other.mapping.iter().all(|mapped| {
+                    mapped.conversion.is_none()
+                        && match &mapped.value {
+                            Value::EventField { .. } | Value::Literal { .. } => true,
+                            Value::DeliveryContext { field, .. } => {
+                                delivered.is_some_and(|(_, context)| context.contains_key(field))
+                            }
+                            Value::EventAccessor { plan, .. } => {
+                                !plan.may_miss() || mapped.target_type.is_optional()
+                            }
+                            Value::Selection { .. } => other.selection.is_some(),
+                            _ => false,
+                        }
+                })
+                && (other.selection.is_none()
+                    || payloads.iter().any(|payload| selects(other, payload)))
+        })
+        .collect()
 }
 
 /// What one binding aspect produces: its steps, its one-line purpose, and what else it depends on.

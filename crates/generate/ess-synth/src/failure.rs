@@ -240,16 +240,16 @@ pub(crate) fn one_time_response(
 }
 
 /// Every binding construct the generated dispatch cannot represent, refused by name: a policy
-/// selected per refusal ([`refusal_policy`]) first, then a bounded retry ([`retry_bound`]), then
-/// an event-payload condition ([`binding_condition`]).
+/// selected per refusal ([`refusal_policy`]) first, then a bounded retry ([`retry_bound`]). An
+/// event-payload condition (ess/22) is represented in every shape, selections and proved members
+/// included (`rust::condition`, `go::condition`).
 pub(crate) fn binding_policies(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
     refusal_policy(ir, plan, target)?;
-    retry_bound(ir, plan, target)?;
-    binding_condition(ir, plan, target)
+    retry_bound(ir, plan, target)
 }
 
 /// A binding whose failure policy is selected per refusal (ess/22, beyond10x/ess#269) is refused
@@ -281,46 +281,6 @@ pub(crate) fn refusal_policy(
                  attempts, so it cannot select the policy per refusal of the invoked command"
                     .to_owned(),
             )
-        })
-        .collect::<Vec<_>>();
-    if causes.is_empty() {
-        Ok(())
-    } else {
-        Err(TargetFailure::new(ir, target, plan, causes))
-    }
-}
-
-/// A binding with an event-payload condition (ess/22, beyond10x/ess#268) is refused by every target
-/// that delivers bindings. The command-line target delivers none, so it has nothing to refuse.
-///
-/// The generated dispatch transforms and invokes for every occurrence of the event, and has no
-/// evaluator for the condition: emitting it would invoke where the specification says the binding
-/// skips, and would unwrap an Optional member the condition proves present without checking it.
-/// Each binding is named, so the representation is owed rather than silently wrong.
-pub(crate) fn binding_condition(
-    ir: &ess_compiler::EssIr,
-    plan: &SynthesisPlan,
-    target: Target,
-) -> Result<(), TargetFailure> {
-    if target == Target::Clap {
-        return Ok(());
-    }
-    let causes = ir
-        .bindings()
-        .values()
-        .filter_map(|binding| {
-            binding.condition.as_ref().map(|condition| {
-                TargetFailureCause::new(
-                    TargetFailureCode::MissingRepresentation,
-                    vec![format!("bindings.{}.when.where", binding.name)],
-                    format!(
-                        "this target's dispatch invokes for every occurrence and cannot evaluate \
-                         the event-payload condition `{}`, so it would invoke where the binding \
-                         skips",
-                        condition.plan.predicate
-                    ),
-                )
-            })
         })
         .collect::<Vec<_>>();
     if causes.is_empty() {

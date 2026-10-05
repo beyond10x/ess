@@ -471,3 +471,27 @@ fn a_witness_whose_chain_publishes_the_event_again_is_refused_by_name() {
         assert_ne!(*status, Status::Failed, "{id}: {checks}");
     }
 }
+
+/// An Unknown condition owes the binding's unmet obligation, in the generated Go runner as in the
+/// native one: the honest target reports it (`unsupported`), and one that reads Unknown as False
+/// and skips silently fails the witness.
+#[test]
+fn go_requires_the_unmet_obligation_of_an_unknown_condition() {
+    let unknown = MODEL.replace(
+        WHERE,
+        "      where: [event.kind == ship, event.order.id == o-1]\n",
+    );
+    let as_false = MODEL.replace(
+        WHERE,
+        "      where: [defined(event.order), event.kind == ship, event.order.id == o-1]\n",
+    );
+    let suite = suite_of(&unknown);
+    for (label, text, wanted) in [
+        ("unknown-honest", &unknown, "unsupported"),
+        ("unknown-as-false", &as_false, "failed"),
+    ] {
+        let verdicts =
+            support_go::assert_parity(label, &suite, Interpreted::for_model(ir_of(text)));
+        assert_eq!(verdicts[ABSENT], wanted, "{label}: {verdicts:#?}");
+    }
+}

@@ -373,10 +373,18 @@ require zero invocations for the whole window:
   one with an order but no note.
 
 A witness whose own bindings would publish the event again is refused by name, because zero
-invocations could not be required of it. Each scenario needs suite/36 or /37. A binding on an event
-from an external channel gets no condition scenarios yet; each is refused by name. The generated
-Rust, Go and web targets cannot yet evaluate the condition, so they refuse a conditioned binding by
-name (`bindings.<name>.when.where`).
+invocations could not be required of it. Each negative witness also requires every unconditioned
+binding beside it on the event to invoke, since a condition skips its own binding alone. Each
+scenario needs suite/36 or /37. For an event from an external channel the suite chooses the
+delivered payload: one the condition holds for, one it fails for, and one per proved level left
+out.
+
+The generated Rust, Go and web targets evaluate the condition in their dispatch, before the
+transformation and the invocation. An Unknown condition is that binding's unmet obligation and is
+not retried. A required input copied or read from a member the condition proves present is checked
+rather than unwrapped, in a selection binding too. A delivery-context field is never proved
+present: the condition reads the payload only. `ess verify diff` reports an added,
+changed or removed condition as `predicate-changed`, an `ess-diff/14` change.
 
 ## Preserve clock-reading provenance
 

@@ -132,9 +132,10 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
         EssRevisionRef::of(after),
         changes,
     );
-    // A change only `ess-diff/14` can carry (a refusal-selected policy, ess/22) makes the delta
-    // `/14`, and `/14` is classified by definition, so such a delta carries its classification
-    // even when nobody asked; every other delta keeps its format and bytes.
+    // A change only `ess-diff/14` can carry (a refusal-selected policy or a binding's payload
+    // condition, ess/22) makes the delta `/14`, and `/14` is classified by definition, so such a
+    // delta carries its classification even when nobody asked; every other delta keeps its format
+    // and bytes.
     if delta.format.major() >= crate::compatibility::CLASSIFIED_DELTA_FORMAT {
         return Ok(delta.classify(&crate::compatibility::UseIndex::new(before, after)));
     }
@@ -1946,12 +1947,30 @@ fn compare_causes(
 /// is still there. The mapping's *order* is the invoked command's declaration order by
 /// construction, so it is not compared either: a mapping reordered without an entry changing is a
 /// command input reordered, reported on the command.
+#[allow(clippy::too_many_lines)]
 fn compare_bindings(
     was: &ResolvedBinding,
     is: &ResolvedBinding,
     push: &mut impl FnMut(BindingChange),
 ) {
     compare_causes(was, is, push);
+    // The event-payload condition (ess/22, beyond10x/ess#268), compared as written: the paths it
+    // reads and what it proves present are derived from it and the event's declared types, which
+    // are compared where they are declared.
+    let (was_condition, is_condition) = (
+        was.condition
+            .as_ref()
+            .map(|condition| &condition.plan.predicate),
+        is.condition
+            .as_ref()
+            .map(|condition| &condition.plan.predicate),
+    );
+    if was_condition != is_condition {
+        push(BindingChange::PredicateChanged {
+            before: was_condition.cloned(),
+            after: is_condition.cloned(),
+        });
+    }
     let (was_invoked, is_invoked) = (
         CommandRef::from(&was.command),
         CommandRef::from(&is.command),
@@ -2508,6 +2527,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "retry",
                     // `refusal-policy-changed` (ess/22, beyond10x/ess#269).
                     "on_refusal",
+                    "where",
                 ],
             );
             // The delivery context's channel and fields are compared by the cause and by the

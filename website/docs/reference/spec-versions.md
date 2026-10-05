@@ -397,7 +397,9 @@ without it keeps its earlier bytes.
 `ess-conformance/36` and `ess-conformance/37` are unreleased. They carry the `ess/22` binding
 condition (beyond10x/ess#268): `expect_no_invocation` requires zero invocations of a binding's
 command for the whole eventual window, and the `condition-false` and `condition-absent` binding
-aspects file the scenarios that use it. Version 36 is ordinary; 37 carries declared coverage.
+aspects file the scenarios that use it. Where the condition is Unknown on the occurrence the step
+carries `obligation: binding condition`: the binding must report that unmet obligation
+(`unsupported`), and an invocation or a silent window fails. Version 36 is ordinary; 37 carries declared coverage.
 Each implies every major below it. Rust, Go and TypeScript execute the step with report/2. Older
 readers refuse these envelopes before target callbacks. They also file one scenario per refusal a
 refusal-selected `on_failure:` answers (beyond10x/ess#269), `<binding>/binding/refusal/<outcome>`,

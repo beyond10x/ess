@@ -859,7 +859,20 @@ fn bindings(inventory: &mut Inventory, ir: &EssIr, plan: &SynthesisPlan) {
         }
         for mapping in &binding.mapping {
             if let ResolvedMappingValue::EventField { field, type_ref } = &mapping.value {
-                if mapping.conversion.is_none() && type_ref != &mapping.target_type {
+                // A copy of an Optional member the binding's condition proves present
+                // (beyond10x/ess#194) is checked, not cloned plainly: `system::proved_expression`.
+                let mut present = type_ref;
+                while let ResolvedTypeRef::Optional { of } = present {
+                    present = of.as_ref();
+                }
+                let proved = present == &mapping.target_type
+                    && crate::condition::proved_levels(
+                        ir,
+                        binding,
+                        &crate::plan::DeterminedInput::Copy { field },
+                        &mapping.target_type,
+                    ) > 0;
+                if mapping.conversion.is_none() && type_ref != &mapping.target_type && !proved {
                     inventory.cause(Code::BindingAssignment, vec![binding.name.to_string(), format!("{}.{}", binding.cause.event().expect("generated event capability"), field), format!("{}.{}", binding.command, mapping.target)], format!("binding `{}` emits a plain clone of `{type_ref}` for `{}` of type `{}`; this assignment needs an explicit target representation", binding.name, mapping.target, mapping.target_type));
                 }
             }

@@ -45,7 +45,33 @@ pub(super) fn expression_from(
         target,
         conversion,
         layout,
-        (types, root, false),
+        (types, root, false, None),
+    )
+}
+
+/// A required input read through Optional levels the binding's condition proves present
+/// (beyond10x/ess#194): every level checked, and the enclosing transformation running `absent`
+/// (`return None`, or `return Ok(None)` where it also selects) where one is absent anyway.
+pub(super) fn proved(
+    plan: &AccessorPlan,
+    handles: &BTreeMap<QualifiedName, TypeHandle>,
+    target: &ResolvedTypeRef,
+    conversion: Option<&TypeHandle>,
+    layout: &Layout,
+    (types, absent): (&str, &str),
+) -> Result<String, String> {
+    emit_projection(
+        plan,
+        handles,
+        target,
+        conversion,
+        layout,
+        (
+            types,
+            &format!("event.{}", name::value_ident(&plan.root.name)),
+            false,
+            Some(absent),
+        ),
     )
 }
 
@@ -58,7 +84,14 @@ pub(super) fn borrowed(
     root: &str,
 ) -> Result<String, String> {
     let target = accessor_type(plan.leaf(), handles);
-    emit_projection(plan, handles, &target, None, layout, (types, root, true))
+    emit_projection(
+        plan,
+        handles,
+        &target,
+        None,
+        layout,
+        (types, root, true, None),
+    )
 }
 
 fn emit_projection(
@@ -67,9 +100,9 @@ fn emit_projection(
     target: &ResolvedTypeRef,
     conversion: Option<&TypeHandle>,
     layout: &Layout,
-    context: (&str, &str, bool),
+    context: (&str, &str, bool, Option<&str>),
 ) -> Result<String, String> {
-    let (types, root, borrow) = context;
+    let (types, root, borrow, proved) = context;
     let render = |ty: &ResolvedTypeRef| {
         layout
             .absolute_type(ty)
@@ -138,6 +171,15 @@ fn emit_projection(
     );
     let assigned_type = if conversion.is_some() { target } else { &leaf };
     let mut current = target;
+    if let Some(absent) = proved {
+        // The proof covers the terminal's own Optional levels too: each is checked, none unwrapped.
+        let mut present = assigned_type;
+        while let (ResolvedTypeRef::Optional { of }, false) = (present, present == target) {
+            assigned = format!("match {assigned} {{ Some(value) => value, None => {absent} }}");
+            present = of.as_ref();
+        }
+        current = assigned_type;
+    }
     while current != assigned_type {
         let ResolvedTypeRef::Optional { of } = current else {
             unreachable!("admitted accessor assignment")
@@ -150,7 +192,11 @@ fn emit_projection(
         "match project_{}(&{root}) {{ Some(value) => {assigned}, None => ",
         plan.start
     );
-    if plan.may_miss() {
+    if let Some(absent) = proved {
+        // The binding's condition proved this member present (beyond10x/ess#194); absent anyway, the
+        // transformation answers absent rather than inventing the input.
+        out.push_str(absent);
+    } else if plan.may_miss() {
         out.push_str("None");
     } else {
         out.push_str("unreachable!(\"total typed accessor\")");
@@ -215,16 +261,35 @@ pub(super) fn preflight(
             }) = crate::plan::determined_prepared_input(ir, binding, field)
             {
                 let source = binding.name.to_string();
-                let output = expression(accessor, handles, target, conversion, layout, &types)
-                    .map_err(|reason| {
-                        crate::accessor_output::failure(
-                            ir,
-                            crate::Target::Rust,
-                            plan,
-                            &source,
-                            reason,
+                let determined = crate::plan::DeterminedInput::Accessor {
+                    plan: accessor,
+                    types: handles,
+                    target,
+                    conversion,
+                };
+                let emitted =
+                    if crate::condition::proved_levels(ir, binding, &determined, target) > 0 {
+                        proved(
+                            accessor,
+                            handles,
+                            target,
+                            conversion,
+                            layout,
+                            (
+                                &types,
+                                if binding.selection.is_some() {
+                                    "return Ok(None)"
+                                } else {
+                                    "return None"
+                                },
+                            ),
                         )
-                    })?;
+                    } else {
+                        expression(accessor, handles, target, conversion, layout, &types)
+                    };
+                let output = emitted.map_err(|reason| {
+                    crate::accessor_output::failure(ir, crate::Target::Rust, plan, &source, reason)
+                })?;
                 bytes = bytes.saturating_add(output.len());
                 if bytes > 32 * 1024 * 1024 {
                     return Err(crate::accessor_output::failure(

@@ -57,7 +57,7 @@ use crate::scenario::{CommandRef, ScenarioStep, ScenarioValue};
 const MAX_TRIALS: usize = 512;
 
 /// The payload members the condition reads.
-type Payload = BTreeMap<String, Node>;
+pub(super) type Payload = BTreeMap<String, Node>;
 
 /// A branch that publishes the binding's event, and the run that takes it.
 pub(super) struct Trigger<'ir> {
@@ -570,6 +570,281 @@ impl Search<'_> {
     }
 }
 
+/// The payloads an external channel is asked to deliver to a conditioned binding (ess/22,
+/// beyond10x/ess#268 slice 2). Nothing in the model publishes such an event — `ess-domain` admits
+/// a delivery context only there — so the suite chooses each payload itself, and each witness is a
+/// payload rather than a branch: no republication can follow, and nothing is fixed by a literal.
+pub(super) struct Delivered {
+    /// Each base payload made to hold, in order, or why none could be.
+    pub(super) holds: Result<Vec<Payload>, BindingGap>,
+    /// The first holding payload with one compared leaf changed so the condition fails, every
+    /// member it reads present; else the first value set it fails for that way.
+    pub(super) fails: Result<Payload, BindingGap>,
+    /// One payload per Optional level the condition proves present, outermost first, the first
+    /// holding payload with that level left out; `None` where it proves no Optional member.
+    pub(super) absent: Option<Result<Vec<Payload>, BindingGap>>,
+}
+
+/// The delivered payloads for `condition`, each varied from one of `bases` — the occurrences the
+/// delivery-context synthesis chose for its context — in the members the condition reads only.
+pub(super) fn delivered(
+    ir: &EssIr,
+    event: &EventHandle,
+    condition: &ResolvedBindingCondition,
+    bases: &[Payload],
+) -> Delivered {
+    let reads: Vec<&ConditionRead> = condition.plan.reads.values().collect();
+    let varied = Varied {
+        condition,
+        choices: reads
+            .iter()
+            .map(|read| choices(read, &condition.plan.predicate))
+            .collect(),
+        reads,
+    };
+    let trials = varied.trials();
+    let proves_optional = !proved_levels(condition, &varied.reads).is_empty();
+    if trials > MAX_TRIALS {
+        let too_many = gap(format!(
+            "its delivered payload needs {trials} value sets tried, more than the {MAX_TRIALS} \
+             this synthesis tries"
+        ));
+        return Delivered {
+            holds: Err(too_many.clone()),
+            fails: Err(too_many.clone()),
+            absent: proves_optional.then_some(Err(too_many)),
+        };
+    }
+    let holds: Result<Vec<Payload>, BindingGap> = bases
+        .iter()
+        .map(|base| {
+            let base = present_along(ir, event, &varied.reads, base)?;
+            varied
+                .search(&base, &|truth, complete| truth == Truth::True && complete)
+                .or_else(|| varied.search(&base, &|truth, _| truth == Truth::True))
+                .ok_or_else(|| varied.unarranged("hold"))
+        })
+        .collect();
+    let first = match &holds {
+        Ok(holding) => holding.first().cloned().unwrap_or_default(),
+        Err(why) => {
+            return Delivered {
+                fails: Err(why.clone()),
+                absent: proves_optional.then(|| Err(why.clone())),
+                holds,
+            }
+        }
+    };
+    let fails = varied
+        .one_leaf(&first)
+        .or_else(|| varied.search(&first, &|truth, complete| truth == Truth::False && complete))
+        .ok_or_else(|| varied.unarranged("fail with every member it reads present"));
+    let absent = proves_optional.then(|| {
+        proved_levels(condition, &varied.reads)
+            .into_iter()
+            .map(|level| {
+                let mut payload = first.clone();
+                clear(&mut payload, &level);
+                if condition.plan.evaluate(&payload) == Ok(Truth::True) {
+                    return Err(gap(format!(
+                        "leaving `event.{}` out still makes its condition hold",
+                        level.join(".")
+                    )));
+                }
+                Ok(payload)
+            })
+            .collect()
+    });
+    Delivered {
+        holds,
+        fails,
+        absent,
+    }
+}
+
+/// A delivered payload's members the condition reads, and the values each may be set to.
+struct Varied<'a> {
+    condition: &'a ResolvedBindingCondition,
+    reads: Vec<&'a ConditionRead>,
+    choices: Vec<Vec<Choice>>,
+}
+
+impl Varied<'_> {
+    /// How many value sets varying every read path takes.
+    fn trials(&self) -> usize {
+        self.choices.iter().map(Vec::len).product()
+    }
+
+    /// Whether every member the condition reads is present in `payload`.
+    fn complete(&self, payload: &Payload) -> bool {
+        self.reads
+            .iter()
+            .all(|read| first_absent(payload, read).is_none())
+    }
+
+    fn unarranged(&self, side: &str) -> BindingGap {
+        gap(format!(
+            "no delivered value set this synthesis tries makes it {side} (`{}`)",
+            self.condition.plan.predicate
+        ))
+    }
+
+    /// The first value set varied from `base`, in trial order, `wanted` accepts given the
+    /// condition's truth and whether every member it reads is present.
+    fn search(&self, base: &Payload, wanted: &dyn Fn(Truth, bool) -> bool) -> Option<Payload> {
+        (0..self.trials().min(MAX_TRIALS)).find_map(|trial| {
+            let mut payload = base.clone();
+            let mut index = trial;
+            let mut absences = Vec::new();
+            for (read, options) in self.reads.iter().zip(&self.choices) {
+                let choice = &options[index % options.len()];
+                index /= options.len();
+                match choice {
+                    Choice::Base => {}
+                    Choice::Text(text) => {
+                        set_leaf(&mut payload, &read.members, Node::Text(text.clone()));
+                    }
+                    Choice::Absent(depth) => absences.push(read.members[..=*depth].to_vec()),
+                }
+            }
+            for path in &absences {
+                clear(&mut payload, path);
+            }
+            let truth = self.condition.plan.evaluate(&payload).ok()?;
+            wanted(truth, self.complete(&payload)).then_some(payload)
+        })
+    }
+
+    /// `holds` with one compared leaf changed so the condition fails, every member still present.
+    fn one_leaf(&self, holds: &Payload) -> Option<Payload> {
+        self.reads
+            .iter()
+            .zip(&self.choices)
+            .find_map(|(read, options)| {
+                options.iter().find_map(|choice| {
+                    let Choice::Text(text) = choice else {
+                        return None;
+                    };
+                    let mut payload = holds.clone();
+                    (set_leaf(&mut payload, &read.members, Node::Text(text.clone()))
+                        && self.condition.plan.evaluate(&payload) == Ok(Truth::False)
+                        && self.complete(&payload))
+                    .then_some(payload)
+                })
+            })
+    }
+}
+
+/// Every Optional level `condition` proves present, outermost first.
+fn proved_levels(
+    condition: &ResolvedBindingCondition,
+    reads: &[&ConditionRead],
+) -> Vec<Vec<String>> {
+    let mut levels = BTreeSet::new();
+    for read in reads {
+        for (depth, optional) in read.optional.iter().enumerate() {
+            let prefix = &read.members[..=depth];
+            if *optional && condition.proves(prefix) {
+                levels.insert((depth, prefix.to_vec()));
+            }
+        }
+    }
+    levels.into_iter().map(|(_, prefix)| prefix).collect()
+}
+
+/// `base` with every member along every read path present: a member the base leaves out — an
+/// Optional field is absent from a delivery unless chosen — is given the first present witness
+/// of its declared type, outermost first, so a condition that reads it can be made to hold.
+fn present_along(
+    ir: &EssIr,
+    event: &EventHandle,
+    reads: &[&ConditionRead],
+    base: &Payload,
+) -> Result<Payload, BindingGap> {
+    let mut payload = base.clone();
+    for read in reads {
+        let mut fields: &[ResolvedField] = &ir.event(event).fields;
+        for (depth, member) in read.members.iter().enumerate() {
+            let declared = fields
+                .iter()
+                .find(|field| &field.name == member)
+                .ok_or_else(|| gap(format!("`event.{}` is not declared", read.path())))?;
+            let mut type_ref = declared.type_ref.clone();
+            while let ResolvedTypeRef::Optional { of } = type_ref {
+                type_ref = *of;
+            }
+            if first_absent_at(&payload, &read.members[..=depth]) {
+                let field = ResolvedField {
+                    type_ref: type_ref.clone(),
+                    ..declared.clone()
+                };
+                let value = crate::witness::fields(
+                    ir,
+                    std::slice::from_ref(&field),
+                    crate::witness::Distinction::PLAIN,
+                )
+                .ok()
+                .and_then(|mut values| values.remove(member))
+                .ok_or_else(|| {
+                    gap(format!(
+                        "no present value of `event.{}` can be built",
+                        read.members[..=depth].join(".")
+                    ))
+                })?;
+                if !set_leaf(&mut payload, &read.members[..=depth], value) {
+                    return Err(gap(format!(
+                        "`event.{}` cannot be made present",
+                        read.members[..=depth].join(".")
+                    )));
+                }
+            }
+            if depth + 1 == read.members.len() {
+                break;
+            }
+            let mut inner = &type_ref;
+            loop {
+                match inner {
+                    ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                        ess_compiler::ir::ResolvedBody::Newtype { of, .. } => inner = of,
+                        ess_compiler::ir::ResolvedBody::Struct {
+                            fields: members, ..
+                        } => {
+                            fields = members.as_slice();
+                            break;
+                        }
+                        _ => {
+                            return Err(gap(format!(
+                                "`event.{}` crosses a value that is not a struct",
+                                read.path()
+                            )))
+                        }
+                    },
+                    ResolvedTypeRef::Optional { of } => inner = of.as_ref(),
+                    _ => {
+                        return Err(gap(format!(
+                            "`event.{}` crosses a value that is not a struct",
+                            read.path()
+                        )))
+                    }
+                }
+            }
+        }
+    }
+    Ok(payload)
+}
+
+/// Whether the member at `members` is absent (or `null`) in `payload`.
+fn first_absent_at(payload: &Payload, members: &[String]) -> bool {
+    let mut value = payload.get(&members[0]);
+    for member in &members[1..] {
+        value = match value {
+            Some(Node::Map(fields)) => fields.get(member),
+            _ => None,
+        };
+    }
+    matches!(value, None | Some(Node::Null))
+}
+
 /// Every text value a JSON tree holds, split into identifier tokens.
 fn tokens(value: &serde_json::Value, into: &mut BTreeSet<String>) {
     match value {
@@ -874,4 +1149,41 @@ fn varied<'ir>(
         published_by: trigger.published_by,
         run,
     })
+}
+
+/// The payload `trigger` publishes for `event`, as far as its branch fills it from what the
+/// trigger sends or writes as a literal, and whether that is every member it fills: a member
+/// filled any other way leaves it incomplete. An Optional input the trigger leaves out leaves its
+/// member absent, which is known.
+pub(super) fn published(trigger: &Trigger<'_>, event: &EventHandle) -> (Payload, bool) {
+    let mut payload = Payload::new();
+    let mut complete = true;
+    for field in trigger
+        .published_by
+        .payload
+        .iter()
+        .filter(|payload| &payload.event == event)
+        .flat_map(|payload| &payload.fields)
+    {
+        if field.conversion.is_some() {
+            complete = false;
+            continue;
+        }
+        match &field.value {
+            ResolvedPayloadValue::InputField { field: input, .. } => match sent(trigger, input) {
+                Some(ScenarioValue::Literal { value }) => {
+                    if !matches!(value, Node::Null) {
+                        payload.insert(field.target.clone(), value.clone());
+                    }
+                }
+                None => {}
+                Some(_) => complete = false,
+            },
+            ResolvedPayloadValue::Literal { value } => {
+                payload.insert(field.target.clone(), Node::Text(value.clone()));
+            }
+            _ => complete = false,
+        }
+    }
+    (payload, complete)
 }

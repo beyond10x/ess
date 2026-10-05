@@ -2400,6 +2400,12 @@ pub enum ScenarioStep {
         binding: BindingRef,
         /// The command it invokes.
         command: CommandRef,
+        /// The unmet obligation the binding owes for the occurrence instead, where its condition is
+        /// Unknown there (`binding condition`, [`crate::no_invocation::UNKNOWN_CONDITION`]): a target
+        /// that reports it leaves the check unsupported, as every unmet obligation does, and one
+        /// that skips silently through the window fails. Absent, no obligation is owed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        obligation: Option<String>,
     },
     /// Require that this event was **not** published under this scenario's correlation, for the
     /// step's whole eventual window (suite/[`ORDINARY`](crate::refusal_policy::ORDINARY), ess/22,

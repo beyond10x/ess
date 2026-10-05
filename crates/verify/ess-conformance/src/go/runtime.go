@@ -1648,6 +1648,7 @@ type Step struct {
 	Params      map[string]Value `json:"params,omitempty"`
 	Expectation *Expectation     `json:"expectation,omitempty"`
 	Binding     string           `json:"binding,omitempty"`
+	Obligation  string           `json:"obligation,omitempty"`
 	Instance    string           `json:"instance,omitempty"`
 	Entity      string           `json:"entity,omitempty"`
 	Field       string           `json:"field,omitempty"`
@@ -4969,6 +4970,7 @@ func admitStep(value any, major int) error {
 			return fmt.Errorf("zero-invocation observation requires suite/36 or /37")
 		}
 		required += " binding command"
+		optional = "obligation"
 	case "expect_no_publication":
 		if major < 36 {
 			return fmt.Errorf("a scenario per selected refusal requires suite/36 or /37")

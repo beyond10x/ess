@@ -29,6 +29,7 @@
 mod accessor;
 mod actor;
 pub(crate) mod behaviour;
+mod condition;
 mod context;
 mod entity;
 mod entry;

@@ -385,9 +385,14 @@ impl SemanticChange {
     ///
     /// Not `const`: a cause change is `ess-diff/10` vocabulary when either side is an `external`
     /// cause (ess/18, beyond10x/ess#195), and that is read through the boxed cause.
+    #[allow(clippy::too_many_lines)]
     pub fn minimum_format(&self) -> u32 {
         match self {
             Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
+            Self::Binding {
+                changed: BindingChange::PredicateChanged { .. },
+                ..
+            } => crate::compatibility::CLASSIFIED_DELTA_FORMAT,
             Self::Binding {
                 changed: BindingChange::CauseChanged { before, after },
                 ..
@@ -627,6 +632,14 @@ impl SemanticChange {
 /// gap in the sentence.
 fn optional(value: Option<&String>) -> String {
     value.map_or_else(|| "(none)".to_owned(), |text| format!("`{text}`"))
+}
+
+/// Which occurrences a binding with this event-payload condition invokes for (ess/22).
+fn occurrences(condition: Option<&ess_primitives::predicate::Predicate>) -> String {
+    condition.map_or_else(
+        || "for every occurrence".to_owned(),
+        |predicate| format!("where `{predicate}` holds"),
+    )
 }
 
 /// What moved about the specification itself.
@@ -3202,6 +3215,20 @@ pub enum BindingChange {
         /// What it says.
         after: Option<String>,
     },
+    /// The event-payload condition (ess/22, beyond10x/ess#268) was added, removed or changed: the
+    /// occurrences the binding invokes for moved. `ess-diff/14` vocabulary, and so always written
+    /// classified.
+    ///
+    /// [`SemanticRelation::Changed`] like every binding change: whether a predicate admits more or
+    /// fewer occurrences is not decided here, and no equivalence of two spellings is guessed.
+    PredicateChanged {
+        /// The condition it had, as written; `None` where it had none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        before: Option<ess_primitives::predicate::Predicate>,
+        /// The condition it has; `None` where it has none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<ess_primitives::predicate::Predicate>,
+    },
 }
 
 impl BindingChange {
@@ -3225,6 +3252,7 @@ impl BindingChange {
             Self::SummaryChanged { .. } => "summary-changed",
             Self::ContextFieldDisplayChanged { .. } => "context-field-display-changed",
             Self::ContextFieldSummaryChanged { .. } => "context-field-summary-changed",
+            Self::PredicateChanged { .. } => "predicate-changed",
         }
     }
 
@@ -3312,6 +3340,11 @@ impl BindingChange {
                 "context field `{field}` summary {} → {}",
                 optional(before.as_ref()),
                 optional(after.as_ref())
+            ),
+            Self::PredicateChanged { before, after } => format!(
+                "invokes {}, invoked {}",
+                occurrences(after.as_ref()),
+                occurrences(before.as_ref())
             ),
         }
     }

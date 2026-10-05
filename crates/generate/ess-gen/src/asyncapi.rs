@@ -484,6 +484,10 @@ struct Reaction {
     /// the handler is supplied beside the payload. Absent for a binding that declares none.
     #[serde(skip_serializing_if = "Option::is_none")]
     delivery_context: Option<DeliveryContext>,
+    /// The event-payload condition (ess/22): the handler is invoked only for an occurrence whose
+    /// payload makes it hold. Absent for a binding that declares none.
+    #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
+    condition: Option<String>,
 }
 
 /// A failure policy selected per refusal (ess/22, beyond10x/ess#269), as a handler is owed it.
@@ -638,6 +642,10 @@ struct Consumer {
     /// The event an `escalate` publishes.
     #[serde(skip_serializing_if = "Option::is_none")]
     escalates_with: Option<String>,
+    /// The event-payload condition (ess/22): the binding reacts only to an occurrence whose
+    /// payload makes it hold. Absent for a binding that declares none.
+    #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
+    condition: Option<String>,
 }
 
 /// One filled command input.
@@ -1337,6 +1345,7 @@ fn reaction(ir: &EssIr, binding: &ResolvedBinding) -> Reaction {
                 })
                 .collect(),
         }),
+        condition: condition(binding),
     }
 }
 
@@ -1359,7 +1368,16 @@ fn consumer(ir: &EssIr, binding: &ResolvedBinding) -> Consumer {
         on_failure: failure_word_of(binding),
         on_refusal: on_refusal(ir, binding),
         escalates_with: escalates_with(ir, binding),
+        condition: condition(binding),
     }
+}
+
+/// The binding's event-payload condition as written (ess/22), where it declares one.
+fn condition(binding: &ResolvedBinding) -> Option<String> {
+    binding
+        .condition
+        .as_ref()
+        .map(|condition| condition.plan.predicate.to_string())
 }
 
 /// The event a binding's escalation publishes, when it escalates.

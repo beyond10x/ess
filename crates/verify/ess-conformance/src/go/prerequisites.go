@@ -488,6 +488,11 @@ func (r *run) expectNoInvocation(index int, step Step) bool {
 			}
 		}
 		if attempt+1 == attempts {
+			if step.Obligation != "" {
+				// The condition is Unknown on this occurrence: the binding owes its unmet
+				// obligation, and a silent answer through the window is a successful skip.
+				return r.assertionFailure(index, "ESS-CF-INVOCATION: no "+step.Obligation+" obligation reported for an Unknown condition")
+			}
 			return true
 		}
 	}

@@ -636,9 +636,11 @@ impl<C: Clock> Runner<C> {
                 selecting,
                 input,
             } => self.expect_every_invocation(binding, command, selecting, input, run, target),
-            ScenarioStep::ExpectNoInvocation { binding, command } => {
-                self.expect_no_invocation(binding, command, run, target)
-            }
+            ScenarioStep::ExpectNoInvocation {
+                binding,
+                command,
+                obligation,
+            } => self.expect_no_invocation(binding, command, obligation.as_deref(), run, target),
             ScenarioStep::ExpectNoPublication { event } => {
                 self.expect_publications(event, None, run, target)
             }

@@ -635,6 +635,37 @@ pub fn condition_model(mode: &str) -> String {
         "invert-condition" => {
             faulty("      where: {not: [defined(event.order), event.kind == ship]}\n")
         }
+        "selected" | "selected-ignore" | "selected-fire-on-absence" => {
+            selected_condition_model(mode)
+        }
+        // A condition Unknown for a shipping message with no order, honest and read as False.
+        "unknown" => model.replace(
+            honest,
+            "      where: [event.kind == ship, event.order.id == o-1]\n",
+        ),
+        "unknown-as-false" => model.replace(
+            honest,
+            "      where: [defined(event.order), event.kind == ship, event.order.id == o-1]\n",
+        ),
+        _ => model.to_owned(),
+    }
+}
+
+/// The selecting conditioned-binding model (beyond10x/ess#194 on a selection binding), honest for
+/// `selected` and faulty in the named way otherwise, its required input then filled from a field
+/// every occurrence carries so that the faulty conditions compile.
+pub fn selected_condition_model(mode: &str) -> String {
+    let model = include_str!("../fixtures/binding-condition-selected.yaml");
+    let honest = "      where: [defined(event.tag), event.kind == ship]\n";
+    let faulty = |condition: &str| {
+        model.replace(honest, condition).replace(
+            "      order_id: event.tag\n",
+            "      order_id: event.message_id\n",
+        )
+    };
+    match mode {
+        "selected-ignore" => faulty("      where: true\n"),
+        "selected-fire-on-absence" => faulty("      where: event.kind == ship\n"),
         _ => model.to_owned(),
     }
 }

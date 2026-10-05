@@ -2558,6 +2558,8 @@ export interface Step {
   params?: { [parameter: string]: Value };
   expectation?: Expectation;
   binding: string;
+  /** The obligation an Unknown condition owes instead of an answer (`expect_no_invocation`). */
+  obligation?: string;
   instance: string;
   entity: string;
   field: string;
@@ -5037,6 +5039,11 @@ export class ScenarioRun {
         return true;
       }
     }
+    if (step.obligation !== undefined) {
+      // The condition is Unknown on this occurrence: the binding owes its unmet obligation, and a
+      // silent answer through the window is a successful skip.
+      this.fail(index, `no ${step.obligation} obligation reported for an Unknown condition`);
+    }
     return true;
   }
 
@@ -6689,6 +6696,8 @@ function decodeStep(value: Node): Step {
     step.authority = written.authority;
     step.context = written.context;
   }
+  if (step.step === 'expect_no_invocation' && typeof written.obligation === 'string')
+    step.obligation = written.obligation;
   if (step.step === 'expect_every_invocation')
     step.selecting = decodeValues(written.selecting) ?? {};
   if (step.step === 'expect_event_values') step.payload = decodeValues(written.payload) ?? {};
@@ -7345,6 +7354,7 @@ export function admitStep(value: Node, major: number): void {
     case 'expect_no_invocation':
       if (major < 36) throw new Error('zero-invocation observation requires suite/36 or /37');
       required += ' binding command';
+      optional = 'obligation';
       break;
     case 'expect_no_publication':
       if (major < 36) throw new Error('a scenario per selected refusal requires suite/36 or /37');

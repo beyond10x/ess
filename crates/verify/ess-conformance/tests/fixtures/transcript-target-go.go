@@ -282,6 +282,12 @@ func (b *transcriptTarget) RedeliverEvent(r RedeliveryRequest) error {
 	_, err := b.next("redeliver_event", r.Event, map[string]any{})
 	return err
 }
+
+// DeliverEvent replays an event an external channel delivered (ess/18).
+func (b *transcriptTarget) DeliverEvent(r EventDeliveryRequest) error {
+	_, err := b.next("deliver_event", r.Event+"|"+r.Authority, map[string]any{})
+	return err
+}
 func (b *transcriptTarget) ObserveInvocations(r InvocationObservationRequest) ([]Invocation, error) {
 	entry, err := b.next("observe_invocations", r.Binding+"|"+r.Command, map[string]any{})
 	if err != nil {

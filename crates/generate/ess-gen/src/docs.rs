@@ -1283,6 +1283,18 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
         ),
         Inline::text("."),
     ]);
+    if let Some(condition) = &binding.condition {
+        under.prose(vec![
+            Inline::text("It invokes only for an occurrence whose payload makes "),
+            Inline::code(condition.plan.predicate.to_string()),
+            Inline::text(
+                " hold. Where it does not hold, this binding skips the occurrence and the \
+                 bindings beside it still run; where it cannot be decided — a comparison reading \
+                 an absent member — nothing is invoked and the binding reports an unmet \
+                 obligation instead.",
+            ),
+        ]);
+    }
     if let Some(context) = &binding.context {
         let mut sentence = vec![
             Inline::text("Each occurrence arrives on the external channel "),
@@ -2916,11 +2928,13 @@ fn binding_flow(ir: &EssIr, binding: &ResolvedBinding) -> String {
         label(&binding.cause.to_string())
     );
     let _ = writeln!(out, "    command[\"{}\"]", label(&command.name.to_string()));
-    let _ = writeln!(
-        out,
-        "    {cause_id} -->|\"{}\"| command",
-        label(binding.name.as_str())
-    );
+    // Only a binding with an event-payload condition (ess/22) says so on its edge, so every other
+    // diagram keeps its bytes.
+    let edge = match &binding.condition {
+        Some(condition) => format!("{} when {}", binding.name, condition.plan.predicate),
+        None => binding.name.to_string(),
+    };
+    let _ = writeln!(out, "    {cause_id} -->|\"{}\"| command", label(&edge));
     let mut reached_failure = false;
     for (index, outcome) in command.outcomes.iter().enumerate() {
         let _ = writeln!(

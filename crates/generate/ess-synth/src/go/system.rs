@@ -117,6 +117,11 @@ pub(super) fn system_package(
     lifts(&mut body, &emit, &components);
     binding_invocations(&mut body, &emit, &deliveries);
     transformations(&mut body, &emit, plan, refusals, covered);
+    super::condition::functions(
+        &mut body,
+        &emit,
+        deliveries.iter().map(|delivery| delivery.binding),
+    );
     let owed = obligations(&mut body, &emit, plan, refusals, stubbed);
     assembled(&mut body, &emit, &components, &deliveries, &owed);
 
@@ -276,6 +281,9 @@ fn transformations(
         if !generated && !crate::selection::prepared_helper(emit.ir, binding) {
             continue;
         }
+        // Reading a proved member (beyond10x/ess#194) also answers whether it was present.
+        let checks = crate::condition::checks_presence(emit.ir, binding);
+        let present = if checks { ", bool" } else { "" };
         let function = if generated {
             emit.layout.transform(&source)
         } else {
@@ -299,11 +307,13 @@ fn transformations(
                     ))
                 );
             }
-            let _ = writeln!(out, "\n// {function} selects declared occurrences after complete bounded preflight.\nfunc {function}(event {}{parameters}) ({}, *SelectionFailure) {{", emit.reference(binding.cause.event().expect("selection is event-only").name()), emit.reference(binding.command.name()));
+            let _ = writeln!(out, "\n// {function} selects declared occurrences after complete bounded preflight.\nfunc {function}(event {}{parameters}) ({}{present}, *SelectionFailure) {{", emit.reference(binding.cause.event().expect("selection is event-only").name()), emit.reference(binding.command.name()));
             out.push_str(
                 &super::selection::prelude(emit, binding, selection)
                     .expect("selection emission preflight"),
             );
+        } else if checks {
+            checked_header(out, emit, binding, function);
         } else {
             let _ = writeln!(
             out,
@@ -332,20 +342,151 @@ fn transformations(
             );
             continue;
         }
-        let _ = writeln!(out, "\treturn {}{{", emit.reference(binding.command.name()));
         let mut taken = std::collections::BTreeMap::new();
-        for field in &emit.ir.command(&binding.command).input {
+        let mut members = String::new();
+        let mut checked = String::new();
+        for (index, field) in emit.ir.command(&binding.command).input.iter().enumerate() {
             let determined = crate::plan::determined_prepared_input(emit.ir, binding, field)
                 .expect("generated transformation requires every mapped input to be determined");
             let ident = super::items::field_ident(&mut taken, &field.name);
-            let (note, expression) = mapping_expression(determined, emit, binding);
-            let _ = writeln!(out, "\t\t// {ident} is {note}.\n\t\t{ident}: {expression},");
+            let (note, expression) = if checks {
+                input_expression(&mut checked, determined, (index, field), emit, binding)
+            } else {
+                mapping_expression(determined, emit, binding)
+            };
+            let _ = writeln!(
+                members,
+                "\t\t// {ident} is {note}.\n\t\t{ident}: {expression},"
+            );
         }
-        out.push_str(if binding.selection.is_some() {
-            "\t}, nil\n}\n"
+        out.push_str(&checked);
+        let _ = writeln!(out, "\treturn {}{{", emit.reference(binding.command.name()));
+        out.push_str(&members);
+        out.push_str(closing(binding.selection.is_some(), checks));
+    }
+}
+
+/// How a transformation returns its input: beside its selection failure where it selects, and
+/// beside whether a member its condition proves present was (beyond10x/ess#194) where it checks one.
+fn closing(selects: bool, checks: bool) -> &'static str {
+    match (selects, checks) {
+        (true, true) => "\t}, true, nil\n}\n",
+        (true, false) => "\t}, nil\n}\n",
+        (false, true) => "\t}, true\n}\n",
+        (false, false) => "\t}\n}\n",
+    }
+}
+
+/// The head of a conditioned binding's transformation that checks a member its condition proves
+/// present (beyond10x/ess#194): it answers `false` for that member absent.
+fn checked_header(out: &mut String, emit: &Emit<'_>, binding: &ResolvedBinding, function: &str) {
+    let event = binding.cause.event().expect("generated event capability");
+    let _ = writeln!(
+        out,
+        "\n// {function} reads a `{event}` as `{}` input — the binding `{}` — where its condition \
+         holds.\n//\n// Fully determined by the specification, as every generated transformation \
+         is. A required\n// input read from an Optional member the condition proves present is \
+         checked rather than\n// dereferenced: `false` is that member absent, which a sound \
+         proof never lets through to here.\nfunc {function}(event {}) ({}, bool) {{",
+        binding.command,
+        binding.name,
+        emit.reference(event.name()),
+        emit.reference(binding.command.name()),
+    );
+}
+
+/// One input of a transformation that checks proved members: checked where the condition proves
+/// its Optional source present for a required input, as the mapping determines otherwise.
+fn input_expression(
+    checked: &mut String,
+    determined: DeterminedInput<'_>,
+    (index, field): (usize, &ess_compiler::ir::ResolvedField),
+    emit: &Emit<'_>,
+    binding: &ResolvedBinding,
+) -> (String, String) {
+    let target = binding
+        .mapping
+        .iter()
+        .find(|mapping| mapping.target == field.name)
+        .map_or(&field.type_ref, |mapping| &mapping.target_type);
+    let levels = crate::condition::proved_levels(emit.ir, binding, &determined, target);
+    if levels > 0 {
+        proved_statements(checked, determined, levels, index, emit, binding)
+    } else {
+        mapping_expression(determined, emit, binding)
+    }
+}
+
+/// A required input read from an Optional member the binding's condition proves present
+/// (beyond10x/ess#194): checked into a local before the input is built, the transformation
+/// answering `false` where it is absent anyway — never a dereference of `nil`.
+fn proved_statements(
+    checked: &mut String,
+    determined: DeterminedInput<'_>,
+    levels: usize,
+    index: usize,
+    emit: &Emit<'_>,
+    binding: &ResolvedBinding,
+) -> (String, String) {
+    // Where the transformation also selects, its third answer is no selection failure.
+    let absent = format!(
+        "return {}{{}}, false{}",
+        emit.reference(binding.command.name()),
+        if binding.selection.is_some() {
+            ", nil"
         } else {
-            "\t}\n}\n"
-        });
+            ""
+        }
+    );
+    match determined {
+        DeterminedInput::Accessor {
+            plan,
+            types,
+            target,
+            conversion,
+        } => {
+            let expression = super::accessor::proved(
+                plan,
+                types,
+                target,
+                conversion,
+                emit,
+                &super::accessor::root_identifier(emit, binding, &plan.root.name),
+            )
+            .expect("accessor emission preflight");
+            let _ = writeln!(
+                checked,
+                "\tproved{index}, present{index} := {expression}\n\tif !present{index} {{\n\t\t\
+                 {absent}\n\t}}"
+            );
+            (
+                format!(
+                    "projected from `{}`, which the condition proves present",
+                    plan.path()
+                ),
+                format!("proved{index}"),
+            )
+        }
+        DeterminedInput::Copy { field } => {
+            let _ = writeln!(
+                checked,
+                "\tproved{index}_0 := event.{}",
+                super::accessor::root_identifier(emit, binding, field)
+            );
+            for level in 0..levels {
+                let _ = writeln!(
+                    checked,
+                    "\tif proved{index}_{level} == nil {{\n\t\t{absent}\n\t}}\n\tproved{index}_{} \
+                     := *proved{index}_{level}",
+                    level + 1
+                );
+            }
+            (
+                format!("copied from the event's `{field}`, which the condition proves present"),
+                format!("proved{index}_{levels}"),
+            )
+        }
+        other => mapping_expression(other, emit, binding),
     }
 }
 
@@ -568,6 +709,33 @@ fn owed_by_system(emit: &Emit<'_>, plan: &SynthesisPlan, refusals: &TargetRefusa
                 heading: format!("the escalation of `{source}` — an implementation obligation."),
             });
         }
+        // An event an external channel delivers (ess/18): nothing in the system publishes it, so
+        // the delivery itself is owed, with its context bound from that channel.
+        if let Some(obligation) = plan.obligation_of(CapabilityKind::BindingDelivery, &source) {
+            if refusals.refuses_kind(CapabilityKind::BindingDelivery, &source) {
+                continue;
+            }
+            let event = binding
+                .cause
+                .event()
+                .expect("an external delivery has an event");
+            owed.push(Owed {
+                kind: CapabilityKind::BindingDelivery,
+                source: source.clone(),
+                interface: emit.layout.delivery(&source).to_owned(),
+                method: format!("{pascal}Delivery"),
+                method_doc: format!(
+                    "delivers one `{event}` its external channel received to `{source}`, the \
+                     delivery context bound from that channel."
+                ),
+                parameter: ("event".to_owned(), emit.reference(event.name())),
+                answer: "struct{}".to_owned(),
+                zero: "struct{}{}".to_owned(),
+                reason: obligation.reason.describes(),
+                contract: obligation.contract.clone(),
+                heading: format!("the delivery of `{source}` — an implementation obligation."),
+            });
+        }
     }
     owed
 }
@@ -713,6 +881,15 @@ fn attempt_method(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) {
         "unmet != nil && unmet.Selection == nil"
     } else {
         "unmet != nil"
+    };
+    // An Unknown condition decides the same way on every attempt, so it is reported and not held.
+    let stopped = if delivery.binding.condition.is_some() {
+        format!(
+            "{stopped} && {}(event) != -1",
+            emit.layout.condition(&source)
+        )
+    } else {
+        stopped.to_owned()
     };
     let _ = writeln!(
         out,
@@ -1142,6 +1319,50 @@ fn refusal_variants(emit: &Emit<'_>, command: &ess_compiler::ir::ResolvedCommand
     refusals
 }
 
+/// A conditioned binding's condition check (ess/22, beyond10x/ess#268), first in its delivery, and
+/// where its transformation checks a member the condition proves present (beyond10x/ess#194), the
+/// input read through that check. `true` where the input was read here.
+fn condition_arm(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) -> bool {
+    let binding = delivery.binding;
+    let source = binding.name.to_string();
+    if binding.condition.is_some() {
+        let _ = writeln!(
+            out,
+            "\t// The condition first (ess/22): false skips this binding alone, and Unknown \
+             invokes\n\t// nothing and is this binding's unmet obligation — the bindings beside \
+             it still run.\n\tswitch {}(event) {{\n\tcase 0:\n\t\treturn nil\n\tcase \
+             -1:\n\t\treturn {}\n\t}}",
+            emit.layout.condition(&source),
+            binding_unmet(emit, &source, crate::condition::UNKNOWN)
+        );
+    }
+    let checks = delivery.transformation_generated
+        && binding.selection.is_none()
+        && crate::condition::checks_presence(emit.ir, binding);
+    if checks {
+        let _ = writeln!(
+            out,
+            "\tinput, present := {}(event)\n\tif !present {{\n\t\treturn {}\n\t}}",
+            emit.layout.transform(&source),
+            binding_unmet(emit, &source, crate::condition::ABSENT)
+        );
+    }
+    checks
+}
+
+/// The unmet obligation `source` reports for `capability`, as this package's delivery answers it.
+fn binding_unmet(emit: &Emit<'_>, source: &str, capability: &str) -> String {
+    let refusal = format!(
+        "&{}{{Capability: {capability:?}, Source: {source:?}}}",
+        emit.qualify(emit.layout.obligation(), "UnmetObligation")
+    );
+    if transport_failure(emit) == "*TransportFailure" {
+        format!("&TransportFailure{{Obligation: {refusal}}}")
+    } else {
+        refusal
+    }
+}
+
 fn delivery_method(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) {
     let binding = delivery.binding;
     let source = binding.name.to_string();
@@ -1184,8 +1405,14 @@ fn delivery_method(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) {
                 .name()
         ),
     );
-    if delivery.transformation_generated && binding.selection.is_some() {
-        selection_failure_policy(out, emit, binding, &source);
+    if condition_arm(out, emit, delivery) {
+        // The input was read through the proved members' check.
+    } else if delivery.transformation_generated && binding.selection.is_some() {
+        // A selection that also checks a member the condition proves present (beyond10x/ess#194)
+        // answers whether it was, and the delivery reports it absent as its unmet input.
+        let absent = crate::condition::checks_presence(emit.ir, binding)
+            .then(|| binding_unmet(emit, &source, crate::condition::ABSENT));
+        selection_failure_policy(out, emit, binding, &source, absent.as_deref());
     } else if delivery.transformation_generated {
         let _ = writeln!(out, "\tinput := {}(event)", emit.layout.transform(&source));
     } else {
@@ -1359,10 +1586,12 @@ fn selection_failure_policy(
     emit: &Emit<'_>,
     binding: &ResolvedBinding,
     source: &str,
+    absent: Option<&str>,
 ) {
+    let present = if absent.is_some() { ", present" } else { "" };
     let _ = writeln!(
         out,
-        "\tinput, selectionFailure := {}(event)\nif selectionFailure != nil {{",
+        "\tinput{present}, selectionFailure := {}(event)\nif selectionFailure != nil {{",
         emit.layout.transform(source)
     );
     match binding.on_failure() {
@@ -1380,6 +1609,9 @@ fn selection_failure_policy(
         }
     }
     out.push_str("return &TransportFailure{Selection: selectionFailure}\n}\n");
+    if let Some(absent) = absent {
+        let _ = writeln!(out, "\tif !present {{\n\t\treturn {absent}\n\t}}");
+    }
 }
 
 /// A bounded retry or a policy selected per refusal reached emission: both are refused before it,

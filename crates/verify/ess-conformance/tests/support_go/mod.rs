@@ -13,10 +13,10 @@ use ess_conformance::report::Status;
 use ess_conformance::target::ConformanceTarget;
 use ess_conformance::target::{
     AbsentInputRequest, ElapsedObservation, ElapsedObservationRequest, EntitySetupRequest,
-    EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
-    InvocationObservationRequest, ObservedEvent, ObservedInvocation, RedeliveryRequest,
-    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
-    SemanticViewResult, TargetError,
+    EventDeliveryRequest, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
+    InstantMark, InvocationObservationRequest, ObservedEvent, ObservedInvocation,
+    RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
+    SemanticViewRequest, SemanticViewResult, TargetError,
 };
 use ess_conformance::{AdmittedSuite, AdvancingClock, ConformanceSuite, Ids, Runner, RunnerConfig};
 use serde_json::{json, Value};
@@ -388,6 +388,12 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
         let key = request.event.to_string();
         let answer = self.inner.redeliver_event(request);
         self.record("redeliver_event", key, json!({}), answer, |()| Value::Null)
+    }
+    // An event an external channel delivers (ess/18), for the suites that deliver one.
+    fn deliver_event(&self, request: EventDeliveryRequest) -> Result<(), TargetError> {
+        let key = format!("{}|{}", request.event, request.authority);
+        let answer = self.inner.deliver_event(request);
+        self.record("deliver_event", key, json!({}), answer, |()| Value::Null)
     }
     fn observe_invocations(
         &self,

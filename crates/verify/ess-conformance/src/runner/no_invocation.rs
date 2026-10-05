@@ -19,9 +19,13 @@ impl<C: Clock> Runner<C> {
         &mut self,
         binding: &BindingRef,
         command: &CommandRef,
+        obligation: Option<&str>,
         run: &mut Run,
         target: &T,
     ) -> Flow {
+        if let Some(obligation) = obligation {
+            return self.expect_unmet(binding, command, obligation, run, target);
+        }
         let about = format!(
             "`{binding}` invokes `{command}` no times for the whole window, because its condition \
              does not hold"
@@ -83,6 +87,91 @@ impl<C: Clock> Runner<C> {
                         "`{binding}` invokes `{command}` no times through the deadline"
                     ))
                     .observed(format!("at observation {asks}: [{seen}]")),
+            ));
+            return Flow::Continue;
+        }
+    }
+}
+
+impl<C: Clock> Runner<C> {
+    /// Requires that `binding`, whose condition is Unknown on this scenario's occurrence, reports
+    /// its unmet `obligation` rather than an answer, through the deadline (ess/22,
+    /// beyond10x/ess#268): "Unknown cannot become a successful skip". A target that reports it —
+    /// as the refusal of the observation — leaves the check unsupported, as every unmet obligation
+    /// does; any invocation, and a silent answer through the whole window, fails.
+    fn expect_unmet<T: ConformanceTarget>(
+        &mut self,
+        binding: &BindingRef,
+        command: &CommandRef,
+        obligation: &str,
+        run: &mut Run,
+        target: &T,
+    ) -> Flow {
+        let about = format!(
+            "`{binding}` invokes `{command}` no times and owes its `{obligation}` obligation, because \
+             its condition is Unknown for this occurrence"
+        );
+        let deadline = self.deadline();
+        let mut asks = 0_u32;
+        loop {
+            asks += 1;
+            let request = InvocationObservationRequest {
+                binding: binding.clone(),
+                command: command.clone(),
+                correlation: run.context.correlation.clone(),
+                deadline,
+            };
+            let invocations = match target.observe_invocations(request) {
+                Ok(invocations) => invocations,
+                Err(error) if error.is_unsupported() => {
+                    run.record(CheckResult::unsupported(
+                        about,
+                        Diagnostic::new(CheckCode::Invocation, run.id.clone())
+                            .declared_by(binding.clone())
+                            .declared_by(command.clone())
+                            .expected(format!("`{binding}` reports its `{obligation}` obligation"))
+                            .observed(error.to_string()),
+                    ));
+                    return Flow::Continue;
+                }
+                Err(error) => {
+                    run.record(target_failure(
+                        &run.id,
+                        &format!("observing what `{binding}` invoked"),
+                        &error,
+                    ));
+                    return Flow::Stop;
+                }
+            };
+            let made: Vec<_> = invocations
+                .iter()
+                .filter(|invocation| &invocation.command == command)
+                .collect();
+            if made.is_empty() && !deadline.has_passed(self.clock.now()) {
+                continue;
+            }
+            let observed = if made.is_empty() {
+                format!("no invocation and no obligation through observation {asks}")
+            } else {
+                let seen = made
+                    .iter()
+                    .map(|invocation| {
+                        quote_input(&invocation.command.to_string(), &invocation.input)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                format!("at observation {asks}: [{seen}]")
+            };
+            run.record(CheckResult::failed(
+                about,
+                Diagnostic::new(CheckCode::Invocation, run.id.clone())
+                    .declared_by(binding.clone())
+                    .declared_by(command.clone())
+                    .expected(format!(
+                        "`{binding}` reports its `{obligation}` obligation and invokes nothing: \
+                         Unknown is never a successful skip"
+                    ))
+                    .observed(observed),
             ));
             return Flow::Continue;
         }
