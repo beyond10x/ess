@@ -1,0 +1,72 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.goals
+types:
+  - {name: demo.goals.ObjectiveId, kind: newtype, of: Uuid}
+  - {name: demo.goals.EvaluationId, kind: newtype, of: Uuid}
+errors:
+  - {name: demo.goals.NoObjective, summary: No objective carries the identity., fields: []}
+entities:
+  - name: demo.goals.Objective
+    identity: {name: objective_id, type: demo.goals.ObjectiveId}
+    fields: [{name: goal, type: String}]
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.goals.Evaluation
+    identity: {name: evaluation_id, type: demo.goals.EvaluationId}
+    fields:
+      - {name: objective_id, type: demo.goals.ObjectiveId}
+      - {name: goal, type: String}
+      - {name: cents, type: Integer}
+    lifecycle: {initial: Recorded, states: [Recorded], terminal: [Recorded]}
+events:
+  - name: demo.goals.ObjectiveOpened
+    fields: [{name: objective_id, type: demo.goals.ObjectiveId}]
+  - name: demo.goals.Evaluated
+    fields: [{name: evaluation_id, type: demo.goals.EvaluationId}]
+commands:
+  - name: demo.goals.OpenObjective
+    input: [{name: goal, type: String}]
+    outcomes:
+      - name: opened
+        creates: demo.goals.Objective
+        instance: objective_id
+        sets: {goal: input.goal}
+        emits: [demo.goals.ObjectiveOpened]
+        payload: {demo.goals.ObjectiveOpened: {objective_id: {generated: true}}}
+  - name: demo.goals.IntegrateCandidate
+    input:
+      - {name: objective_id, type: demo.goals.ObjectiveId}
+      - {name: cents, type: Integer}
+    outcomes:
+      - name: no-objective
+        when_related: {via: input.objective_id, exists: false}
+        error: demo.goals.NoObjective
+      - name: integrated
+        creates: demo.goals.Evaluation
+        instance: evaluation_id
+        sets:
+          objective_id: input.objective_id
+          goal: {related: {via: input.objective_id, field: goal}}
+          cents: input.cents
+        emits: [demo.goals.Evaluated]
+        payload: {demo.goals.Evaluated: {evaluation_id: {generated: true}}}
+views:
+  - name: demo.goals.EvidenceEvaluations
+    source: demo.goals.Evaluation
+    consistency: read_your_writes
+    params: [{name: objective_id, type: demo.goals.ObjectiveId}]
+    filter: objective_id == param.objective_id
+    group_by: [objective_id, goal]
+    fields:
+      - {name: objective_id, type: demo.goals.ObjectiveId}
+      - {name: goal, type: String}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+  - name: demo.goals.EvaluationsByGoal
+    source: demo.goals.Evaluation
+    consistency: read_your_writes
+    group_by: [goal]
+    fields:
+      - {name: goal, type: String}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}

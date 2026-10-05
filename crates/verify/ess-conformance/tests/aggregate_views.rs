@@ -318,24 +318,51 @@ fn with_views(views: &str) -> String {
     format!("{head}views:\n{views}")
 }
 
+/// Under a fresh suite's `scenario_initial_state: empty`, a view keyed by an enum alone is no
+/// longer `ESS-SYNTH-016`: its rows are all the view holds, so every group and the number of rows
+/// are asserted exactly (`docs/design/aggregate-group-selection.md`). Without that authority the
+/// refusal stands (`synthesize::aggregate`'s legacy unit test).
 #[test]
-fn an_enum_only_keyed_view_is_refused_as_unscoped() {
+fn an_enum_only_keyed_view_is_observed_exactly_under_empty_authority() {
     let model = with_views(
         "  - name: metrics.session.ByChannel\n    source: metrics.session.Session\n    group_by: [channel]\n    fields:\n      - {name: channel, type: metrics.session.Channel}\n      - {name: sessions, type: Integer, aggregate: {count: {}}}\n",
     );
     let result = synthesis(&model);
+    assert_eq!(
+        result.suite.provenance.scenario_initial_state,
+        Some(ess_conformance::scenario::ScenarioInitialState::Empty)
+    );
     let refused: Vec<String> = result
         .refusals
         .iter()
-        .filter(|refusal| refusal.code().to_string() == "ESS-SYNTH-016")
-        .map(|refusal| refusal.scenario.as_ref().unwrap().to_string())
+        .filter(|refusal| {
+            matches!(
+                refusal.code().to_string().as_str(),
+                "ESS-SYNTH-016" | "ESS-SYNTH-017"
+            )
+        })
+        .map(ToString::to_string)
         .collect();
-    assert_eq!(refused, ["metrics.session.ByChannel/aggregate"]);
-    assert!(!result
-        .suite
-        .scenarios
-        .keys()
-        .any(|id| id.to_string().starts_with("metrics.session.ByChannel")));
+    assert_eq!(refused, Vec::<String>::new());
+    let by_channel = scenario(&result.suite, "metrics.session.ByChannel/aggregate");
+    assert_eq!(
+        reads(by_channel, "metrics.session.ByChannel")
+            .into_iter()
+            .map(|(_, expectation)| expectation)
+            .collect::<Vec<_>>(),
+        vec![
+            ViewExpectation::Contains {
+                fields: row(&[("channel", text("Voice")), ("sessions", number("3"))])
+            },
+            ViewExpectation::Contains {
+                fields: row(&[("channel", text("Chat")), ("sessions", number("1"))])
+            },
+            ViewExpectation::Counts {
+                at_least: Some(2),
+                at_most: Some(2)
+            },
+        ]
+    );
 }
 
 #[test]
@@ -651,11 +678,13 @@ fn an_explicitly_pinned_older_suite_with_an_aggregate_scenario_is_refused() {
     assert!(aggregate::admit_suite(&suite).is_ok());
 }
 
+/// A view whose parameter is read other than by one top-level equality: still an aggregate
+/// refusal (`ESS-SYNTH-017`) under a fresh suite's `Empty` authority, which lifts `ESS-SYNTH-016`.
+const FLOORED: &str = "  - name: metrics.session.LongTalks\n    source: metrics.session.Session\n    params: [{name: floor, type: Integer}]\n    filter: talk_seconds > param.floor\n    group_by: [channel]\n    fields:\n      - {name: channel, type: metrics.session.Channel}\n      - {name: sessions, type: Integer, aggregate: {count: {}}}\n";
+
 #[test]
 fn a_refusal_only_suite_carrying_an_aggregate_refusal_is_written_at_coverage_17() {
-    let model = with_views(
-        "  - name: metrics.session.ByChannel\n    source: metrics.session.Session\n    group_by: [channel]\n    fields:\n      - {name: channel, type: metrics.session.Channel}\n      - {name: sessions, type: Integer, aggregate: {count: {}}}\n",
-    );
+    let model = with_views(FLOORED);
     let input = coverage_build::build(&ir(&model), &[], Scope::System, Origins::Generated)
         .unwrap_or_else(|error| panic!("{error:?}"));
     assert_eq!(
@@ -663,7 +692,7 @@ fn a_refusal_only_suite_carrying_an_aggregate_refusal_is_written_at_coverage_17(
         35
     );
     let original = input.selected().original_json();
-    assert!(original.contains("ESS-SYNTH-016"), "{original}");
+    assert!(original.contains("ESS-SYNTH-017"), "{original}");
     // The same document labelled with the coverage major before the construct is refused, as a
     // pre-#273 synthesizer wrote it (no step comparing a captured identity).
     let older =

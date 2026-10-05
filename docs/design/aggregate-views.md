@@ -527,6 +527,13 @@ values that no other scenario of the suite produces:
   and this crate does not make those (`synthesize.rs:146-160`). A grouped view is not witnessed by
   its change: which groups another user's rows land in is not the scenario's to know, so no group
   of it has a row the scenario alone moves.
+- **Under a fresh suite's `scenario_initial_state: empty`** (suite/34 and /35), a parameter compared
+  with a group key selects that group, and no view is unscoped: a view grouped by the lifecycle
+  state, an enum or a `Boolean` alone, and an ungrouped view with no `count` or `sum`, are observed
+  exactly, every group and the number of rows
+  ([`aggregate-group-selection.md`](aggregate-group-selection.md), beyond10x/ess#361 and #362).
+  A planner run without that authority, and every view this paragraph does not name, keeps the
+  rules above.
 - Runs of one suite repeat these values, and the runner's correlation ids repeat too
   (`crates/verify/ess-conformance/src/runner.rs:170-216`). A target that keeps rows from an earlier
   run must isolate runs as §8 already requires. The aggregate scenario is where a target that does

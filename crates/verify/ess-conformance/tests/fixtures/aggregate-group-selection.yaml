@@ -1,0 +1,172 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.work
+types:
+  - {name: demo.work.Kind, kind: enum, variants: [Rush, Plain, Hold]}
+events:
+  - name: demo.work.Opened
+    fields: [{name: id, type: Uuid}]
+  - name: demo.work.Finished
+    fields: [{name: id, type: Uuid}]
+entities:
+  - name: demo.work.Item
+    identity: {name: id, type: Uuid}
+    fields:
+      - {name: team, type: String}
+      - {name: lane, type: String}
+      - {name: cents, type: Integer}
+      - {name: urgent, type: Boolean}
+      - {name: channel, type: Optional<String>}
+      - {name: bucket, type: Integer}
+      - {name: kind, type: demo.work.Kind}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions: [{name: finish, from: [Open], to: Done}]
+commands:
+  - name: demo.work.Open
+    input:
+      - {name: team, type: String}
+      - {name: lane, type: String}
+      - {name: cents, type: Integer}
+      - {name: urgent, type: Boolean}
+      - {name: channel, type: Optional<String>}
+      - {name: kind, type: demo.work.Kind}
+    outcomes:
+      - name: opened
+        creates: demo.work.Item
+        instance: id
+        sets:
+          team: input.team
+          lane: input.lane
+          cents: input.cents
+          urgent: input.urgent
+          channel: input.channel
+          kind: input.kind
+          bucket: 9007199254740993
+        emits: [demo.work.Opened]
+        payload: {demo.work.Opened: {id: {generated: true}}}
+  - name: demo.work.Finish
+    input: [{name: id, type: Uuid}]
+    outcomes:
+      - name: finished
+        moves: demo.work.Item.finish
+        instance: id
+        emits: [demo.work.Finished]
+        payload: {demo.work.Finished: {id: input.id}}
+      - {name: unavailable, wrong_state: true, refuses: false}
+views:
+  - name: demo.work.ByTeam
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: team, type: String}]
+    filter: team == param.team
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}
+      - {name: top, type: Optional<Integer>, aggregate: {max: cents}}
+  - name: demo.work.OpenByTeam
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: team, type: String}]
+    filter: [state == Open, team == param.team]
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}
+  - name: demo.work.ByTeamState
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: team, type: String}]
+    filter: team == param.team
+    group_by: [team, state]
+    fields:
+      - {name: team, type: String}
+      - {name: state, type: demo.work.Item.State}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+  - name: demo.work.ByTeamChannel
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: team, type: String}]
+    filter: team == param.team
+    group_by: [team, channel]
+    fields:
+      - {name: team, type: String}
+      - {name: channel, type: Optional<String>}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}
+  - name: demo.work.ByUrgency
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: urgent, type: Boolean}]
+    filter: urgent == param.urgent
+    group_by: [urgent]
+    fields:
+      - {name: urgent, type: Boolean}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}
+  - name: demo.work.ByBucket
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: bucket, type: Integer}]
+    filter: bucket == param.bucket
+    group_by: [bucket]
+    fields:
+      - {name: bucket, type: Integer}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+  - name: demo.work.ByState
+    source: demo.work.Item
+    consistency: read_your_writes
+    group_by: [state]
+    fields:
+      - {name: state, type: demo.work.Item.State}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}
+      - {name: low, type: Optional<Integer>, aggregate: {min: cents}}
+  - name: demo.work.TeamsInLane
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: lane, type: String}, {name: team, type: String}]
+    filter: [lane == param.lane, team == param.team]
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+  - name: demo.work.ByTeamUrgency
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: team, type: String}, {name: urgent, type: Boolean}]
+    filter: [team == param.team, urgent == param.urgent]
+    group_by: [team, urgent]
+    fields:
+      - {name: team, type: String}
+      - {name: urgent, type: Boolean}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+  - name: demo.work.ByKind
+    source: demo.work.Item
+    consistency: read_your_writes
+    group_by: [kind]
+    fields:
+      - {name: kind, type: demo.work.Kind}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: mean, type: Optional<Decimal>, aggregate: {avg: cents}}
+      - {name: lanes, type: Integer, aggregate: {count_distinct: lane}}
+  - name: demo.work.ByUrgent
+    source: demo.work.Item
+    consistency: read_your_writes
+    group_by: [urgent]
+    fields:
+      - {name: urgent, type: Boolean}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+  - name: demo.work.TopOpen
+    source: demo.work.Item
+    consistency: read_your_writes
+    filter: state == Open
+    fields:
+      - {name: top, type: Optional<Integer>, aggregate: {max: cents}}
+      - {name: low, type: Optional<Integer>, aggregate: {min: cents}}

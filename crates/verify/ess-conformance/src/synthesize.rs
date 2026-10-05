@@ -2246,6 +2246,9 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     invariants(models, &actors, focus, &mut suite, &mut refusals);
     if focus.is_whole() {
         bindings(ir, &actors, &mut suite, &mut refusals);
+        // The fresh suite's `Empty` authority, established before the aggregate planner reads it
+        // (`docs/design/aggregate-group-selection.md`); the final selection below still runs.
+        suite.select_fresh_format();
         aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
     }
     grant::denied(ir, &mut suite, &mut refusals, &mut notes);
@@ -9248,13 +9251,32 @@ fn shows_row(
     // what lets the two sides meet: the arrangement set the row's `lane_id`, so the scenario asks
     // for the lane it just put the instance in. Unbound leaves the filter `Unknown` and the view
     // is refused by name, which is the honest answer.
+    //
+    // Each is bound at its declared type where the declaration reads it, as the interpreter binds a
+    // request's parameters (`interpret/views.rs`): a `Boolean` is a boolean, not its spelling, and
+    // an integer past 2^53 the integer it is (beyond10x/ess#361, a parameter on a group key).
     for (name, value) in params {
         if let ScenarioValue::Literal { value } = value {
-            if let (Ok(path), Some(fact)) = (
-                FactPath::new(format!("{}.{name}", ess_domain::view::ViewSpec::PARAM)),
-                fact_value(value),
-            ) {
-                facts.set(path, fact);
+            let Ok(path) = FactPath::new(format!("{}.{name}", ess_domain::view::ViewSpec::PARAM))
+            else {
+                continue;
+            };
+            let one = BTreeMap::from([(name.clone(), value.clone())]);
+            match crate::input::bind(ir, &view.params, &one, crate::input::Completeness::Partial) {
+                Ok(bound) if !bound.is_empty() => {
+                    for (read, fact) in bound.iter() {
+                        if let Ok(read) =
+                            FactPath::new(format!("{}.{read}", ess_domain::view::ViewSpec::PARAM))
+                        {
+                            facts.set(read, fact.clone());
+                        }
+                    }
+                }
+                _ => {
+                    if let Some(fact) = fact_value(value) {
+                        facts.set(path, fact);
+                    }
+                }
             }
         }
     }

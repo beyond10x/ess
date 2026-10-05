@@ -546,12 +546,15 @@ fn run_typescript(suite: &ConformanceSuite, root: &std::path::Path, docs: &std::
     );
 }
 
-/// A refusal-only coverage suite carrying `ESS-SYNTH-016`: the fixture with one enum-keyed view.
+/// A refusal-only coverage suite carrying an aggregate refusal: the fixture with one view whose
+/// parameter is read other than by one top-level equality (`ESS-SYNTH-017`). An enum-keyed view is
+/// no longer one: under the fresh suite's `Empty` authority it is observed exactly
+/// (`docs/design/aggregate-group-selection.md`).
 fn unscoped_coverage() -> String {
     use ess_conformance::coverage::{Origins, Scope};
     let head = METRICS.split_once("views:\n").unwrap().0;
     let text = format!(
-        "{head}views:\n  - name: metrics.session.ByChannel\n    source: metrics.session.Session\n    group_by: [channel]\n    fields:\n      - {{name: channel, type: metrics.session.Channel}}\n      - {{name: sessions, type: Integer, aggregate: {{count: {{}}}}}}\n"
+        "{head}views:\n  - name: metrics.session.LongTalks\n    source: metrics.session.Session\n    params: [{{name: floor, type: Integer}}]\n    filter: talk_seconds > param.floor\n    group_by: [channel]\n    fields:\n      - {{name: channel, type: metrics.session.Channel}}\n      - {{name: sessions, type: Integer, aggregate: {{count: {{}}}}}}\n"
     );
     let raw = RawSpecFile::parse(&text).unwrap();
     let spec = Specification::assemble([(Source::new("metrics.yaml"), raw)]).unwrap();
@@ -572,6 +575,6 @@ fn unscoped_coverage() -> String {
         Some(ScenarioInitialState::Empty)
     );
     let original = input.selected().original_json().to_owned();
-    assert!(original.contains("ESS-SYNTH-016"), "{original}");
+    assert!(original.contains("ESS-SYNTH-017"), "{original}");
     original
 }

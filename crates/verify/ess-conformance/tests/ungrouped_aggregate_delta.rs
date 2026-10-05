@@ -5,7 +5,8 @@
 //! including rows another user of a shared target made, so its absolute value is not the
 //! scenario's to assert. It is read and snapshotted before the rows are created, and only the
 //! change in each `count` and `sum` is asserted after them. A view with neither, and a grouped view
-//! nothing scopes, keep `ESS-SYNTH-016`.
+//! nothing scopes, are observed exactly under a fresh suite's `Empty` authority
+//! (`docs/design/aggregate-group-selection.md`) and refused as `ESS-SYNTH-016` without it.
 use std::collections::{BTreeMap, BTreeSet};
 mod support_versions;
 
@@ -115,24 +116,100 @@ fn a_count_beside_a_maximum_asserts_the_count_change_and_says_the_maximum_is_not
     assert_eq!(refused(&result, "ESS-SYNTH-016").len(), 0);
 }
 
-#[test]
-fn an_ungrouped_view_with_no_count_or_sum_keeps_its_unscoped_refusal() {
-    let result = synthesis(&with_views(LONGEST));
-    assert_eq!(
-        refused(&result, "ESS-SYNTH-016"),
-        ["demo.orders.Longest/aggregate"]
-    );
-    assert!(!aggregate_delta::used_by(&result.suite));
+/// Every expectation the scenario holds of `view`, in step order, and how many reads there are.
+/// An `eventually` view's block repeats the parameters on each expectation, so a read is one set
+/// of parameters.
+fn expected(scenario: &ConformanceScenario) -> (usize, Vec<ViewExpectation>) {
+    let mut reads = Vec::new();
+    let mut out = Vec::new();
+    for step in &scenario.steps {
+        match step {
+            ScenarioStep::QueryView { params, .. } => reads.push(params.clone()),
+            ScenarioStep::ExpectView { expectation, .. } => out.push(expectation.clone()),
+            ScenarioStep::EventuallyView {
+                params,
+                expectation,
+                ..
+            } => {
+                if !reads.contains(params) {
+                    reads.push(params.clone());
+                }
+                out.push(expectation.clone());
+            }
+            _ => {}
+        }
+    }
+    (reads.len(), out)
 }
 
+fn fields(pairs: &[(&str, Node)]) -> BTreeMap<String, ess_conformance::ScenarioValue> {
+    pairs
+        .iter()
+        .map(|(name, value)| {
+            (
+                (*name).to_owned(),
+                ess_conformance::ScenarioValue::literal(value.clone()),
+            )
+        })
+        .collect()
+}
+
+/// Under a fresh suite's `scenario_initial_state: empty` the one row is over this scenario's rows
+/// alone, so a view with no `count` or `sum` is asserted absolutely rather than refused
+/// (`docs/design/aggregate-group-selection.md`). A view with one keeps its change.
 #[test]
-fn a_view_grouped_by_an_enum_alone_keeps_its_unscoped_refusal() {
-    let result = synthesis(&with_views(PER_CHANNEL));
-    assert_eq!(
-        refused(&result, "ESS-SYNTH-016"),
-        ["demo.orders.PerChannel/aggregate"]
-    );
+fn an_ungrouped_view_with_no_count_or_sum_is_observed_exactly_under_empty_authority() {
+    let result = synthesis(&with_views(LONGEST));
+    assert_eq!(refused(&result, "ESS-SYNTH-016"), Vec::<String>::new());
     assert!(!aggregate_delta::used_by(&result.suite));
+    let longest = scenario(&result.suite, "demo.orders.Longest");
+    // A's rows hold 1, 1 and 3; the row lacking `duration` is skipped.
+    assert_eq!(
+        expected(longest),
+        (
+            1,
+            vec![
+                ViewExpectation::Contains {
+                    fields: fields(&[("longest", n("3"))])
+                },
+                ViewExpectation::Counts {
+                    at_least: Some(1),
+                    at_most: Some(1)
+                },
+            ]
+        )
+    );
+}
+
+/// The same authority makes a view grouped by an enum alone exact: every group, its absent one
+/// included, and the number of rows.
+#[test]
+fn a_view_grouped_by_an_enum_alone_is_observed_exactly_under_empty_authority() {
+    let result = synthesis(&with_views(PER_CHANNEL));
+    assert_eq!(refused(&result, "ESS-SYNTH-016"), Vec::<String>::new());
+    assert!(!aggregate_delta::used_by(&result.suite));
+    let per_channel = scenario(&result.suite, "demo.orders.PerChannel");
+    assert_eq!(
+        expected(per_channel),
+        (
+            1,
+            vec![
+                ViewExpectation::Contains {
+                    fields: fields(&[("channel", Node::Text("Web".into())), ("orders", n("3"))])
+                },
+                ViewExpectation::Contains {
+                    fields: fields(&[("channel", Node::Text("Phone".into())), ("orders", n("1"))])
+                },
+                ViewExpectation::Contains {
+                    fields: fields(&[("channel", Node::Null), ("orders", n("1"))])
+                },
+                ViewExpectation::Counts {
+                    at_least: Some(3),
+                    at_most: Some(3)
+                },
+            ]
+        )
+    );
 }
 
 #[test]

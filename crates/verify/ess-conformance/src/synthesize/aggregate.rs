@@ -41,7 +41,7 @@ use super::{
 use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
 use crate::scenario::{
     ActorRef, ConformanceScenario, ConformanceSuite, EntityRef, EssSemanticRef, ScenarioId,
-    ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
+    ScenarioInitialState, ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::witness::{uuid_of, Distinction};
 
@@ -60,6 +60,11 @@ pub(super) fn aggregates(
     refusals: &mut Vec<Refusal>,
 ) {
     let literals = model_literals(ir);
+    // The suite's own authority, established before this family runs: only a scenario that starts
+    // from an empty logical namespace makes an exact count over every row it reads a claim about
+    // this scenario alone (`docs/design/aggregate-group-selection.md`). Never inferred from an
+    // absent parameter or a version number.
+    let isolated = suite.provenance.scenario_initial_state == Some(ScenarioInitialState::Empty);
     for view in ir.views().values() {
         let Some(aggregation) = &view.aggregation else {
             continue;
@@ -67,7 +72,7 @@ pub(super) fn aggregates(
         let id = ScenarioId::Aggregate {
             view: ViewRef::new(view.name.clone()),
         };
-        match scenario(ir, view, aggregation, actors, &literals) {
+        match scenario(ir, view, aggregation, actors, &literals, isolated) {
             Ok(scenario) => insert(suite, id, scenario, refusals),
             Err(cause) => refusals.push(Refusal::about(&id, cause)),
         }
@@ -119,11 +124,18 @@ fn leaf(ir: &EssIr, type_ref: &ResolvedTypeRef) -> (bool, Leaf) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Ladder {
     Number,
-    Text { prefix: String },
+    Text {
+        prefix: String,
+    },
     Timestamp,
     Enum(Vec<String>),
     Boolean,
-    Uuid { prefix: String },
+    Uuid {
+        prefix: String,
+    },
+    /// The values of another ladder its type admits, in ladder order (`admitted`): a key whose
+    /// newtype bounds, sizes or patterns its values walks only those.
+    Listed(Vec<Node>),
 }
 
 impl Ladder {
@@ -159,6 +171,7 @@ impl Ladder {
             Self::Enum(variants) => Node::Text(variants[ordinal % variants.len()].clone()),
             Self::Boolean => Node::Bool(ordinal % 2 == 1),
             Self::Uuid { prefix } => Node::Text(uuid_of(&format!("{prefix}#{ordinal}"))),
+            Self::Listed(values) => values[ordinal % values.len()].clone(),
         }
     }
 
@@ -166,10 +179,62 @@ impl Ladder {
     fn len(&self) -> Option<usize> {
         match self {
             Self::Enum(variants) => Some(variants.len()),
+            Self::Listed(values) => Some(values.len()),
             Self::Boolean => Some(2),
             _ => None,
         }
     }
+}
+
+/// How many of a ladder's values are checked against a key's type before the ladder is kept as it
+/// is, and how many admitted values a listed ladder keeps.
+const ADMITTED: usize = 64;
+
+/// How far a ladder is walked for values its type admits.
+const ADMITTED_SCAN: usize = 4_096;
+
+/// `ladder`, kept to the values `declared` admits (beyond10x/ess#361): a newtype's invariants —
+/// a range, a length, a pattern — bound a walked key as much as its primitive does, and a row
+/// holding a value outside them is one a correct target refuses to create. A ladder whose first
+/// [`ADMITTED`] values all pass is kept as it is, so every key no invariant bounds walks exactly as
+/// before; otherwise it is the admitted values met walking it, in order, and `None` where it meets
+/// none.
+fn admitted(ir: &EssIr, declared: &ResolvedTypeRef, ladder: Ladder) -> Option<Ladder> {
+    let valid = |value: &Node| crate::input::validate_typed_value(ir, declared, value).is_ok();
+    let bound = ladder.len().unwrap_or(ADMITTED_SCAN);
+    if (0..bound.min(ADMITTED)).all(|ordinal| valid(&ladder.at(ordinal))) {
+        return Some(ladder);
+    }
+    let values: Vec<Node> = (0..bound)
+        .map(|ordinal| ladder.at(ordinal))
+        .filter(|value| valid(value))
+        .take(ADMITTED)
+        .collect();
+    (!values.is_empty()).then_some(Ladder::Listed(values))
+}
+
+/// Why a group tuple holds a value its key's type does not admit, where one does: a scoped or
+/// walked value outside a newtype's invariants is a row a correct target refuses, so the view is
+/// refused by name rather than arranged (beyond10x/ess#361).
+fn inadmissible(plan: &Plan<'_>) -> Option<String> {
+    for (label, tuple) in &plan.tuples {
+        for ((name, _), value) in plan.keys.iter().zip(tuple) {
+            if *value == Node::Null {
+                continue;
+            }
+            let Some(field) = plan.entity.observable_field(name) else {
+                continue;
+            };
+            if let Err(why) = crate::input::validate_typed_value(plan.ir, &field.type_ref, value) {
+                return Some(format!(
+                    "group `{label}` would hold `{name}` = {}, which its type does not admit \
+                     ({why}), and no arrangement here chooses another",
+                    serde_json::to_string(value).unwrap_or_default()
+                ));
+            }
+        }
+    }
+    None
 }
 
 /// Where a scoped value is text and where it is a `Uuid`.
@@ -436,6 +501,21 @@ struct Scope {
     kind: Scoped,
 }
 
+/// One declared parameter the filter compares with a group key, `key == param.name`
+/// (beyond10x/ess#361): each read binds it to an actual arranged group's key, and it never
+/// overwrites a row's tuple (`docs/design/aggregate-group-selection.md`).
+#[derive(Debug, Clone)]
+struct Selector {
+    param: String,
+    field: String,
+    /// The key's position in [`Plan::keys`].
+    key: usize,
+}
+
+/// The most reads one selecting scenario makes: every arranged selection first, then the valid
+/// unmatched ones, cut here in that order.
+const MAX_READS: usize = 16;
+
 /// One row the scenario creates.
 #[derive(Debug, Clone)]
 struct Row {
@@ -487,6 +567,12 @@ struct Plan<'ir> {
     /// Whether the view is ungrouped and nothing scopes it, so it is asserted as the change its
     /// rows make ([`observe_change`]).
     delta: bool,
+    /// The parameters that select a group key.
+    selectors: Vec<Selector>,
+    /// Whether the scenario asserts every group and the number of rows exactly, under the suite's
+    /// `Empty` authority ([`observe_exact`]): a view with a group selector, or one nothing scopes.
+    /// Every other view keeps the observation it had.
+    exact: bool,
 }
 
 /// An input of the creating command that a `when_related:` predicate compares with the related
@@ -548,9 +634,11 @@ impl Plan<'_> {
     /// Whether only this scenario's rows can land in the group with these key values: the view is
     /// scoped by a parameter, or a scoped key holds one of its values. A tuple whose scoped key is
     /// absent (`N<k>` of a view scoped only by that key) is shared with every row another scenario
-    /// creates without the key, so it is asserted to exist and nothing more.
+    /// creates without the key, so it is asserted to exist and nothing more — except where the
+    /// scenario is [`exact`](Self::exact): its rows are all the view holds.
     fn scoped_tuple(&self, tuple: &[Node]) -> bool {
-        !self.scopes.is_empty()
+        self.exact
+            || !self.scopes.is_empty()
             || self
                 .keys
                 .iter()
@@ -592,6 +680,54 @@ impl Plan<'_> {
                 )
             })
             .collect()
+    }
+
+    /// `params`, with every group selector bound to the key `reached` actually holds: the
+    /// selector conjunct then holds of the row, and the rest of the filter decides it. A key the
+    /// row holds as absent is left unbound — no equality selects it.
+    fn selecting(
+        &self,
+        params: &BTreeMap<String, ScenarioValue>,
+        reached: &Arrangement,
+    ) -> BTreeMap<String, ScenarioValue> {
+        let mut bound = params.clone();
+        for selector in &self.selectors {
+            let value = if selector.field == EntitySpec::STATE {
+                Some(ScenarioValue::literal(Node::Text(
+                    reached.state.to_string(),
+                )))
+            } else {
+                reached
+                    .settled
+                    .get(&selector.field)
+                    .map(|held| held.value.clone())
+            };
+            match value {
+                Some(value) if value != ScenarioValue::literal(Node::Null) => {
+                    bound.insert(selector.param.clone(), value);
+                }
+                _ => {}
+            }
+        }
+        bound
+    }
+
+    /// Whether the filter reads nothing but group selectors and their parameters: bound to a row's
+    /// own key it holds of every row, so a refuted row is witnessed by a distinct group and is
+    /// never forced through a state.
+    fn selectors_only(&self) -> bool {
+        !self.selectors.is_empty()
+            && self.view.filter.as_ref().is_some_and(|filter| {
+                filter.fact_paths().into_iter().all(|path| {
+                    self.selectors.iter().any(|selector| match path.segments() {
+                        [field] => *field == selector.field,
+                        [namespace, name] => {
+                            namespace == ViewSpec::PARAM && *name == selector.param
+                        }
+                        _ => false,
+                    })
+                })
+            })
     }
 }
 
@@ -779,6 +915,7 @@ fn scenario(
     aggregation: &ResolvedAggregation,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     literals: &BTreeSet<String>,
+    isolated: bool,
 ) -> Result<ConformanceScenario, RefusalCause> {
     let handle = &view.source;
     let entity = ir.entity(handle);
@@ -930,8 +1067,10 @@ fn scenario(
     };
 
     // Scoping by parameter: every declared parameter is read by exactly one top-level
-    // `field == param.name` conjunct over a scopable field that is not a group key.
+    // `field == param.name` conjunct over a scopable field that is not a group key — or, under the
+    // suite's `Empty` authority, over a group key it then selects (beyond10x/ess#361).
     let mut scopes = Vec::new();
+    let mut selectors: Vec<Selector> = Vec::new();
     for param in &view.params {
         let read = FactPath::from_segments([ViewSpec::PARAM, param.name.as_str()]);
         let reads = view.filter.as_ref().map_or(0, |filter| {
@@ -961,6 +1100,27 @@ fn scenario(
                     param: param.name.clone(),
                     field,
                     kind,
+                });
+            }
+            Some((field, _)) if reads == 1 && isolated => {
+                if let Some(other) = selectors.iter().find(|selector| selector.field == field) {
+                    return Err(unwitnessed(
+                        view,
+                        format!(
+                            "the parameters `{}` and `{}` both select the group key `{field}`",
+                            other.param, param.name
+                        ),
+                    ));
+                }
+                let key = aggregation
+                    .group_by
+                    .iter()
+                    .position(|key| *key == field)
+                    .unwrap_or_else(|| unreachable!("`{field}` is a group key"));
+                selectors.push(Selector {
+                    param: param.name.clone(),
+                    field,
+                    key,
                 });
             }
             _ => {
@@ -993,8 +1153,21 @@ fn scenario(
             Key::Fixed(Node::Null)
         } else if chosen_by_scenario(key) {
             let (_, found) = field_type(key).unwrap_or((false, Leaf::Other));
-            match Ladder::of(&view.name, key, &found) {
-                Some(ladder) => Key::Walked(ladder),
+            let declared = entity.observable_field(key).map(|field| field.type_ref);
+            match Ladder::of(&view.name, key, &found)
+                .zip(declared)
+                .map(|(ladder, declared)| admitted(ir, &declared, ladder))
+            {
+                Some(Some(ladder)) => Key::Walked(ladder),
+                Some(None) => {
+                    return Err(unwitnessed(
+                        view,
+                        format!(
+                            "no value the ladder walks for the group key `{key}` is one its type \
+                             admits"
+                        ),
+                    ))
+                }
                 None => {
                     return Err(unwitnessed(
                         view,
@@ -1030,10 +1203,34 @@ fn scenario(
             .functions
             .values()
             .any(|aggregate| additive(aggregate.function));
-    if !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() && !delta {
+    // Under the suite's `Empty` authority a scenario's rows are all the view holds, so a view a
+    // parameter selects a group of, and every view nothing scopes — grouped by the lifecycle
+    // state, an enum or a `Boolean` alone, or ungrouped with no `count` or `sum` — is asserted
+    // exactly (beyond10x/ess#361, beyond10x/ess#362). Every other view keeps the observation it
+    // had, the change of an ungrouped `count` or `sum` included.
+    let unscoped =
+        !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() && !delta;
+    let exact = isolated && (!selectors.is_empty() || unscoped);
+    if unscoped && !exact {
         return Err(RefusalCause::AggregateUnscoped {
             view: ViewRef::new(view.name.clone()),
         });
+    }
+    if exact {
+        if let Some(reason) = unsettled(ir, handle) {
+            return Err(unwitnessed(view, reason));
+        }
+        // Every row the creating command names must exist (`arrange_related`).
+        if let Some((field, reason)) = unrelated.iter().next() {
+            return Err(unwitnessed(
+                view,
+                format!(
+                    "the creating command copies `{field}` from a related row no arrangement here \
+                     supplies ({reason}), so the rows it creates would name a row that does not \
+                     exist"
+                ),
+            ));
+        }
     }
     // The identity is scopable by nothing and differs in every row, so no group of `m` rows
     // shares one; it is scoped out above only when nothing else scopes the view.
@@ -1227,8 +1424,13 @@ fn scenario(
         follows_owner,
         tuples: Vec::new(),
         delta,
+        selectors,
+        exact,
     };
     assign_tuples(&mut plan, &mapped);
+    if let Some(reason) = inadmissible(&plan) {
+        return Err(unwitnessed(view, reason));
+    }
     let rows = rows(&plan, &inputs, m);
     plan.related_owners = related_owners(&plan, &rows, actors)?;
     plan.guard_owners = guard_owners(&plan, &rows, actors)?;
@@ -1333,6 +1535,15 @@ fn assign_tuples(plan: &mut Plan<'_>, mapped: &BTreeMap<&str, &str>) {
     // A key read from the owner the link key names is absent under an owner of its own.
     for index in plan.absent_keys.clone() {
         if representatives[index] != index {
+            continue;
+        }
+        // No equality selects an absent key, so a group a selector's key leaves absent is one no
+        // read could ask for (`docs/design/aggregate-group-selection.md`).
+        if plan
+            .selectors
+            .iter()
+            .any(|selector| representatives[selector.key] == index)
+        {
             continue;
         }
         let label = format!("N{}", index + 1);
@@ -1802,6 +2013,9 @@ fn arrange_and_observe(
                 }
                 arrange(&attempt)?
             }
+            // A filter that reads nothing but group selectors holds of every row under its own
+            // key: the selection is refuted by the distinct groups, and no state is forced.
+            Err(_) if !attempt.admitted && plan.selectors_only() => continue,
             Err(error) => return Err(error),
         };
         if let (Some(key), Some(owner)) = (
@@ -2093,7 +2307,8 @@ fn drive_row(
         ) else {
             continue;
         };
-        if shows(ir, plan.view, &reached.state, &reached.settled, params) != Ok(row.admitted) {
+        let selecting = plan.selecting(params, &reached);
+        if shows(ir, plan.view, &reached.state, &reached.settled, &selecting) != Ok(row.admitted) {
             continue;
         }
         if best
@@ -2370,6 +2585,14 @@ fn arrange_related<'p>(
             )));
         }
         values.insert(key.field, value.clone());
+    }
+    // Under an exact observation every row the creating command reads through is arranged, also
+    // where the view reads nothing copied from it: an input naming no row is a command a correct
+    // target refuses, never a row it counts.
+    if plan.exact {
+        for key in plan.related.values() {
+            wanted.entry(key.via).or_insert((*key, BTreeMap::new()));
+        }
     }
     let mut out = Referenced::default();
     for (nth, (via, (key, values))) in wanted.into_iter().enumerate() {
@@ -3065,6 +3288,9 @@ fn observe(
     }
 
     let groups = groups(plan, arranged)?;
+    if plan.exact {
+        return observe_exact(plan, arranged, &groups, params, (&name, steps, source));
+    }
 
     let mut expectations = Vec::new();
     for (tuple, members) in &groups {
@@ -3144,6 +3370,284 @@ fn observe(
         steps,
         source,
     ))
+}
+
+/// The observation of an [`exact`](Plan::exact) scenario (`docs/design/aggregate-group-selection.md`):
+/// one read per selection, each evaluating the whole filter afresh over every row the scenario
+/// reached with that read's own parameters. A read holds a `Contains` with every aggregate for each
+/// group it admits a row of, an `Excludes` for each arranged group it admits none of, and the exact
+/// number of rows — so a group nobody arranged, or one merged or dropped, is caught.
+fn observe_exact(
+    plan: &Plan<'_>,
+    arranged: &[Arranged],
+    groups: &[Group],
+    params: &BTreeMap<String, ScenarioValue>,
+    (name, mut steps, source): (&ViewRef, Vec<ScenarioStep>, BTreeSet<EssSemanticRef>),
+) -> Result<ConformanceScenario, RefusalCause> {
+    if let Some((_, members)) = groups.iter().find(|(_, members)| members.contains(&0)) {
+        let admitted: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|index| arranged[*index].admitted)
+            .collect();
+        if !admitted.is_empty() {
+            rounding_is_observable(plan, arranged, &admitted)?;
+        }
+    }
+    for read_with in selections(plan, arranged, groups, params) {
+        let mut expectations = Vec::new();
+        let mut answered = 0;
+        for (tuple, members) in groups {
+            let keys: BTreeMap<String, ScenarioValue> = plan
+                .aggregation
+                .group_by
+                .iter()
+                .zip(tuple)
+                .map(|(key, value)| (key.clone(), key_value(arranged, members, key, value)))
+                .collect();
+            let mut admitted = Vec::new();
+            for index in members {
+                let row = &arranged[*index].arrangement;
+                match shows(plan.ir, plan.view, &row.state, &row.settled, &read_with) {
+                    Ok(true) => admitted.push(*index),
+                    Ok(false) => {}
+                    Err(unknown) => {
+                        let unknown: Vec<String> =
+                            unknown.iter().map(|path| format!("`{path}`")).collect();
+                        return Err(plan.unwitnessed(format!(
+                            "the filter's truth for row `{}` under one of its reads is unknown: \
+                             nothing answers {}",
+                            arranged[*index].row.label,
+                            unknown.join(", ")
+                        )));
+                    }
+                }
+            }
+            // An ungrouped view is one row whatever it admits, its aggregates over no row included.
+            if admitted.is_empty() && !plan.aggregation.is_ungrouped() {
+                expectations.push(ViewExpectation::Excludes { fields: keys });
+                continue;
+            }
+            let mut fields = keys;
+            for (field, value) in aggregates_over(plan, arranged, &admitted)? {
+                fields.insert(field, ScenarioValue::literal(value));
+            }
+            expectations.push(ViewExpectation::Contains { fields });
+            answered += 1;
+        }
+        expectations.push(ViewExpectation::Counts {
+            at_least: Some(answered),
+            at_most: Some(answered),
+        });
+        read(plan.view, name, &read_with, expectations, &mut steps);
+    }
+    let purpose = if plan.aggregation.is_ungrouped() {
+        format!(
+            "`{}` reports its one row's exact aggregates over the rows this scenario made",
+            plan.view.name
+        )
+    } else if plan.selectors.is_empty() {
+        format!(
+            "`{}` reports every group the rows this scenario made reach, each with its exact \
+             aggregates, and no other group",
+            plan.view.name
+        )
+    } else {
+        format!(
+            "`{}` answers each selection with exactly the groups it admits over the rows this \
+             scenario made, each with its exact aggregates",
+            plan.view.name
+        )
+    };
+    Ok(ConformanceScenario::new(clipped(&purpose), steps, source))
+}
+
+/// The parameters of each read of an [`exact`](Plan::exact) scenario, in order: the scoped
+/// parameters alone where nothing selects a group; otherwise every distinct selection the arranged
+/// groups hold, in group order, then each selector moved to a valid value no arranged group holds,
+/// then, with several selectors, the first combination of arranged values no group holds — at most
+/// [`MAX_READS`]. A selection that needs an absent key is no selection: no equality asks for it.
+fn selections(
+    plan: &Plan<'_>,
+    arranged: &[Arranged],
+    groups: &[Group],
+    params: &BTreeMap<String, ScenarioValue>,
+) -> Vec<BTreeMap<String, ScenarioValue>> {
+    if plan.selectors.is_empty() {
+        return vec![params.clone()];
+    }
+    let absent = ScenarioValue::literal(Node::Null);
+    let held = |selector: &Selector, (tuple, members): &Group| {
+        key_value(arranged, members, &selector.field, &tuple[selector.key])
+    };
+    let mut vectors: Vec<Vec<ScenarioValue>> = Vec::new();
+    for group in groups {
+        let vector: Vec<ScenarioValue> = plan
+            .selectors
+            .iter()
+            .map(|selector| held(selector, group))
+            .collect();
+        if !vector.contains(&absent) && !vectors.contains(&vector) {
+            vectors.push(vector);
+        }
+    }
+    let arranged_vectors = vectors.clone();
+    if let Some(first) = arranged_vectors.first() {
+        for (position, selector) in plan.selectors.iter().enumerate() {
+            let values: Vec<ScenarioValue> =
+                groups.iter().map(|group| held(selector, group)).collect();
+            if let Some(value) = unheld(plan, selector, &values) {
+                let mut vector = first.clone();
+                vector[position] = ScenarioValue::literal(value);
+                if !vectors.contains(&vector) {
+                    vectors.push(vector);
+                }
+            }
+        }
+    }
+    if plan.selectors.len() > 1 {
+        let mut columns: Vec<Vec<ScenarioValue>> = vec![Vec::new(); plan.selectors.len()];
+        for vector in &arranged_vectors {
+            for (column, value) in columns.iter_mut().zip(vector) {
+                if !column.contains(value) {
+                    column.push(value.clone());
+                }
+            }
+        }
+        let mut combination = vec![0_usize; columns.len()];
+        'combinations: loop {
+            let vector: Vec<ScenarioValue> = combination
+                .iter()
+                .zip(&columns)
+                .map(|(at, column)| column[*at].clone())
+                .collect();
+            if !arranged_vectors.contains(&vector) {
+                if !vectors.contains(&vector) {
+                    vectors.push(vector);
+                }
+                break;
+            }
+            for (at, column) in combination.iter_mut().zip(&columns).rev() {
+                *at += 1;
+                if *at < column.len() {
+                    continue 'combinations;
+                }
+                *at = 0;
+            }
+            break;
+        }
+    }
+    vectors.truncate(MAX_READS);
+    vectors
+        .into_iter()
+        .map(|vector| {
+            let mut bound = params.clone();
+            for (selector, value) in plan.selectors.iter().zip(vector) {
+                bound.insert(selector.param.clone(), value);
+            }
+            bound
+        })
+        .collect()
+}
+
+/// A value of `selector`'s key that is valid for its type and unequal to every value in `held`,
+/// where one exists: a scoped value no scenario writes, the next step of an unbounded ladder, or a
+/// variant, `Boolean` or state no arranged group holds. None for a key whose values are instances
+/// the target generates, and none where the domain is used up — no invalid value is invented.
+fn unheld(plan: &Plan<'_>, selector: &Selector, held: &[ScenarioValue]) -> Option<Node> {
+    if held
+        .iter()
+        .any(|value| matches!(value, ScenarioValue::Instance { .. }))
+    {
+        return None;
+    }
+    let ladder = |ladder: &Ladder| -> Vec<Node> {
+        let bound = ladder.len().unwrap_or(held.len() + 1);
+        (0..bound).map(|ordinal| ladder.at(ordinal)).collect()
+    };
+    let candidates = match &plan.keys[selector.key].1 {
+        Key::Scoped(kind) => vec![plan.scoped(*kind, "unselected")],
+        Key::State(states) => states
+            .iter()
+            .map(|state| Node::Text(state.to_string()))
+            .collect(),
+        Key::Walked(walked) => ladder(walked),
+        Key::Fixed(_) => plan
+            .entity
+            .observable_field(&selector.field)
+            .and_then(|field| {
+                Ladder::of(
+                    &plan.view.name,
+                    &selector.field,
+                    &leaf(plan.ir, &field.type_ref).1,
+                )
+            })
+            .map(|walked| ladder(&walked))
+            .unwrap_or_default(),
+    };
+    // Only a value the parameter's own declared type admits is ever sent: a read the target must
+    // refuse as a request asks nothing of the view. With none, the read is not made.
+    let declared = plan
+        .view
+        .params
+        .iter()
+        .find(|param| param.name == selector.param)?;
+    candidates.into_iter().find(|candidate| {
+        !held.contains(&ScenarioValue::literal(candidate.clone()))
+            && crate::input::validate_typed_value(plan.ir, &declared.type_ref, candidate).is_ok()
+    })
+}
+
+/// Why an exact observation of `handle`'s rows is not this scenario's to make, where something
+/// outside the arrangement changes them: a binding whose command changes them after the command
+/// that triggers it returns — an exact count needs a causal cut after that binding's effects, which
+/// no conformance step provides yet — or a declared precondition that makes them before every
+/// scenario (`docs/design/aggregate-group-selection.md`, "Bindings and preconditions").
+fn unsettled(ir: &EssIr, handle: &EntityHandle) -> Option<String> {
+    let entity = &ir.entity(handle).name;
+    let touches = |outcome: &ess_compiler::ir::ResolvedOutcome| {
+        outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.entity == *handle)
+            || outcome
+                .instances
+                .as_ref()
+                .is_some_and(|set| set.entity == *handle)
+            || outcome
+                .affects
+                .iter()
+                .any(|affect| affect.entity == *handle)
+    };
+    for binding in ir.bindings().values() {
+        let command = ir.command(&binding.command);
+        if command.outcomes.iter().any(touches) {
+            return Some(format!(
+                "the binding `{}` runs `{}`, which changes `{entity}` rows after the command that \
+                 triggers it returns; an exact aggregate over every row the scenario holds needs \
+                 a causal cut after that binding's effects, and no conformance step provides that \
+                 binding cut yet",
+                binding.name, command.name
+            ));
+        }
+    }
+    for precondition in ir.preconditions() {
+        let command = ir.command(&precondition.command);
+        if let Some(outcome) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name == precondition.outcome)
+            .filter(|outcome| touches(outcome))
+        {
+            return Some(format!(
+                "the declared precondition `{}/{}` runs before every scenario and makes `{entity}` \
+                 rows this arrangement does not determine, so no exact total is this scenario's \
+                 to assert",
+                command.name, outcome.name
+            ));
+        }
+    }
+    None
 }
 
 /// Every aggregate field's expected value over the admitted rows `members`.
@@ -3369,6 +3873,110 @@ mod tests {
         // Beside the absent row, `m + 1` must repeat too: not 3 (4), 7 (8) or 9 (10); 6 and 11 do.
         let beside: Vec<usize> = (0..=7).map(|inputs| group_size(inputs, &[1])).collect();
         assert_eq!(beside, [6, 6, 6, 6, 6, 11, 11, 11]);
+    }
+
+    /// A planner run without `scenario_initial_state: empty` keeps the shared-target contract: a
+    /// parameter on a group key and a grouping nothing scopes are refused exactly as before
+    /// (`docs/design/aggregate-group-selection.md`, "Problem and authority").
+    #[test]
+    fn without_empty_authority_the_old_refusals_stand() {
+        use ess_compiler::{resolve::compile, source::SourceMap};
+        use ess_domain::{spec::RawSpecFile, system::Source, Specification};
+        let cases = [
+            (
+                include_str!("../../tests/fixtures/aggregate-group-parameter.yaml"),
+                "ESS-SYNTH-017",
+                "the parameter `team` is read other than by one top-level `field == param.team` \
+                 conjunct over a field that is not a group key",
+            ),
+            (
+                include_str!("../../tests/fixtures/aggregate-copied-group-parameter.yaml"),
+                "ESS-SYNTH-017",
+                "the parameter `team` is read other than by one top-level `field == param.team` \
+                 conjunct over a field that is not a group key",
+            ),
+            (
+                include_str!("../../tests/fixtures/aggregate-state-groups.yaml"),
+                "ESS-SYNTH-016",
+                "",
+            ),
+        ];
+        for (text, code, reason) in cases {
+            let raw = RawSpecFile::parse(text).unwrap();
+            let spec = Specification::assemble([(Source::new("work.yaml"), raw)]).unwrap();
+            let ir = compile(&spec, &SourceMap::new()).unwrap();
+            let mut suite = ConformanceSuite::new(crate::scenario::SuiteProvenance::of(&ir));
+            assert_eq!(suite.provenance.scenario_initial_state, None);
+            let mut refusals = Vec::new();
+            aggregates(
+                &ir,
+                &super::super::granted_actors(&ir),
+                &mut suite,
+                &mut refusals,
+            );
+            assert_eq!(suite.len(), 0, "{text}");
+            assert_eq!(refusals.len(), 1, "{refusals:?}");
+            assert_eq!(refusals[0].code().to_string(), code);
+            match &refusals[0].cause {
+                RefusalCause::AggregateUnwitnessed { reason: held, .. } => {
+                    assert_eq!(held, reason);
+                }
+                RefusalCause::AggregateUnscoped { .. } => assert_eq!(reason, ""),
+                other => panic!("{other:?}"),
+            }
+        }
+        // The wider fixture: every view a fresh suite observes exactly — selected, grouped by the
+        // state, an enum or a `Boolean` alone, or ungrouped with no `count` or `sum` — keeps its
+        // old refusal here.
+        let text = include_str!("../../tests/fixtures/aggregate-group-selection.yaml");
+        let raw = RawSpecFile::parse(text).unwrap();
+        let spec = Specification::assemble([(Source::new("work.yaml"), raw)]).unwrap();
+        let ir = compile(&spec, &SourceMap::new()).unwrap();
+        let mut suite = ConformanceSuite::new(crate::scenario::SuiteProvenance::of(&ir));
+        let mut refusals = Vec::new();
+        aggregates(
+            &ir,
+            &super::super::granted_actors(&ir),
+            &mut suite,
+            &mut refusals,
+        );
+        assert_eq!(suite.len(), 0);
+        let codes: Vec<(String, String)> = refusals
+            .iter()
+            .map(|refusal| {
+                (
+                    refusal
+                        .scenario
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                    refusal.code().to_string(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, String)> = [
+            ("ByBucket", "017"),
+            ("ByKind", "016"),
+            ("ByState", "016"),
+            ("ByTeam", "017"),
+            ("ByTeamChannel", "017"),
+            ("ByTeamState", "017"),
+            ("ByTeamUrgency", "017"),
+            ("ByUrgency", "017"),
+            ("ByUrgent", "016"),
+            ("OpenByTeam", "017"),
+            ("TeamsInLane", "017"),
+            ("TopOpen", "016"),
+        ]
+        .into_iter()
+        .map(|(view, code)| {
+            (
+                format!("demo.work.{view}/aggregate"),
+                format!("ESS-SYNTH-{code}"),
+            )
+        })
+        .collect();
+        assert_eq!(codes, expected);
     }
 
     #[test]
