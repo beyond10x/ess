@@ -1008,13 +1008,33 @@ fn codec_fragments_are_checked_as_one_final_function_set() {
     let directory = scratch("codec-fragments-rust");
     write_emission(&directory, &rust);
     check_generated(&directory);
-    let error = synthesize_for(&ir, Target::Web)
-        .err()
-        .expect("global codecs cannot share flattened names");
-    assert!(error
-        .causes()
+    // Global codecs cannot share flattened names, so the later of the two in byte order takes the
+    // `_2` stem (beyond10x/ess#415, `docs/design/served-codec-names.md`).
+    let web = synthesize_for(&ir, Target::Web).expect("allocated codec names are distinct");
+    let wire = web
+        .artifacts
         .iter()
-        .any(|cause| cause.code() == ess_synth::TargetFailureCode::WireCollision));
+        .find(|(path, _)| path.ends_with("wire.rs"))
+        .expect("a Web wire module")
+        .1;
+    for (declared, stem) in [
+        ("demo.foo.BarValue", "demo_foo_bar_value"),
+        ("demo.foo_bar.Value", "demo_foo_bar_value_2"),
+    ] {
+        for function in [format!("encode_{stem}("), format!("decode_{stem}(")] {
+            assert_eq!(
+                wire.contents.matches(&format!("pub fn {function}")).count(),
+                1,
+                "{function}"
+            );
+        }
+        assert!(
+            wire.contents.contains(&format!(
+                "/// Writes `{declared}` as JSON.\npub fn encode_{stem}("
+            )),
+            "{declared}"
+        );
+    }
 }
 
 #[test]

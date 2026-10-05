@@ -980,7 +980,7 @@ fn wire(
         for prefix in ["encode", "decode"] {
             inventory.symbol(
                 "wire functions",
-                &format!("{prefix}_{}", super::wire::ident(&declared.name)),
+                &format!("{prefix}_{}", super::wire::ident(layout, &declared.name)),
                 &declared.name.to_string(),
                 "type codec",
             );
@@ -1009,7 +1009,7 @@ fn wire(
     {
         inventory.symbol(
             "wire functions",
-            &format!("{prefix}_{}", super::wire::ident(owner)),
+            &format!("{prefix}_{}", super::wire::ident(layout, owner)),
             &owner.to_string(),
             "record codec",
         );
@@ -1023,7 +1023,7 @@ fn wire(
         for prefix in ["encode_command", "decode_command", "encode_outcome"] {
             inventory.symbol(
                 "wire functions",
-                &format!("{prefix}_{}", super::wire::ident(&command.name)),
+                &format!("{prefix}_{}", super::wire::ident(layout, &command.name)),
                 &command.name.to_string(),
                 "command codec",
             );
@@ -1058,7 +1058,7 @@ fn outcome_codec_locals(
             );
             inventory.helper(
                 &scope,
-                &format!("encode_event_{}", super::wire::ident(event)),
+                &format!("encode_event_{}", super::wire::ident(layout, event)),
                 &event.to_string(),
             );
         }
@@ -1066,7 +1066,7 @@ fn outcome_codec_locals(
             inventory.symbol(&scope, "error", &error.to_string(), "error pattern binding");
             inventory.helper(
                 &scope,
-                &format!("encode_error_{}", super::wire::ident(error.name())),
+                &format!("encode_error_{}", super::wire::ident(layout, error.name())),
                 &error.to_string(),
             );
         }

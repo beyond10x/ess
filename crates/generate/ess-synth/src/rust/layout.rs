@@ -46,6 +46,8 @@ pub struct Layout {
     component_packages: BTreeMap<ComponentName, String>,
     /// Named structs whose exact optional-self edge needs indirection at every reference site.
     boxed_structs: BTreeSet<QualifiedName>,
+    /// The stem every codec and served handler of a declaration is named by.
+    codecs: crate::codec_names::CodecNames,
 }
 
 impl Layout {
@@ -98,6 +100,9 @@ impl Layout {
             })
             .map(|declared| declared.name.clone())
             .collect();
+        let codecs = crate::codec_names::CodecNames::of(ir, |declared| {
+            name::value_ident(&name::type_fragment(&declared.to_string()))
+        });
         Self {
             package,
             system_package,
@@ -108,6 +113,7 @@ impl Layout {
             code_aliases,
             component_packages,
             boxed_structs,
+            codecs,
         }
     }
 
@@ -218,6 +224,13 @@ impl Layout {
         } else {
             format!("crate::{}::{type_name}", self.module(owner))
         }
+    }
+
+    /// The stem a declaration's wire codecs and served handlers are named by: its flattened
+    /// qualified name, suffixed only where another declaration of its family flattens to the same
+    /// identifier (`crate::codec_names`).
+    pub(crate) fn codec(&self, declared: &QualifiedName) -> &str {
+        self.codecs.stem(declared)
     }
 
     /// Whether a named type's use sites carry indirection. Declaration paths stay unboxed.

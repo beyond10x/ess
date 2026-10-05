@@ -50,8 +50,11 @@ fn place(expr: &str) -> String {
 ///
 /// The whole name and never the local one: `billing.invoice.Email` and `billing.email.Email` are
 /// two declarations, and a wire function that named only the last segment would silently be one.
-pub(crate) fn ident(name: &QualifiedName) -> String {
-    name::value_ident(&name::type_fragment(&name.to_string()))
+/// Snake-casing still drops separators (`renewal.input.AB` and `renewal.input.A_B` both flatten to
+/// `renewal_input_a_b`), so the fragment is the layout's allocated stem, which suffixes the later
+/// of two such declarations rather than declaring one function twice.
+pub(crate) fn ident<'a>(layout: &'a RustLayout, name: &QualifiedName) -> &'a str {
+    layout.codec(name)
 }
 
 /// The emitted `wire` module.
@@ -117,7 +120,8 @@ fn type_encoder(
     declared: &ess_compiler::ir::ResolvedType,
 ) {
     let path = surface.path(&declared.name);
-    let ident = ident(&declared.name);
+    let layout = surface.layout();
+    let ident = ident(layout, &declared.name);
     let name = &declared.name;
 
     let _ = write!(
@@ -126,12 +130,13 @@ fn type_encoder(
          {{\n"
     );
     match &declared.body {
-        ResolvedBody::Newtype { of, .. } => encode_value(out, "    ", "value.0", of, 0),
+        ResolvedBody::Newtype { of, .. } => encode_value(out, layout, "    ", "value.0", of, 0),
         ResolvedBody::Struct { fields, .. } => {
             out.push_str("    out.push('{');\n");
             for field in fields {
                 encode_member(
                     out,
+                    layout,
                     "    ",
                     ess_gen::schema::wire_field_name(field),
                     &format!("value.{}", name::value_ident(&field.name)),
@@ -163,7 +168,7 @@ fn type_encoder(
                      json::member(out, {tag:?});\n            json::push_text(out, {label:?});",
                     name::pascal(label)
                 );
-                encode_member(out, "            ", content, "*held", payload, 0);
+                encode_member(out, layout, "            ", content, "*held", payload, 0);
                 out.push_str("            out.push('}');\n        }\n");
             }
             out.push_str("    }\n");
@@ -179,7 +184,7 @@ fn type_decoder(
     declared: &ess_compiler::ir::ResolvedType,
 ) {
     let path = surface.path(&declared.name);
-    let ident = ident(&declared.name);
+    let ident = ident(surface.layout(), &declared.name);
     let name = &declared.name;
 
     let _ = write!(
@@ -284,7 +289,8 @@ fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
 fn event_encoder(out: &mut String, surface: &dyn Surface, event: &ResolvedEvent) {
     record_encoder(
         out,
-        &format!("encode_event_{}", ident(&event.name)),
+        surface.layout(),
+        &format!("encode_event_{}", ident(surface.layout(), &event.name)),
         &surface.path(&event.name),
         &format!("the event `{}`", event.name),
         &event.fields,
@@ -295,7 +301,8 @@ fn event_encoder(out: &mut String, surface: &dyn Surface, event: &ResolvedEvent)
 fn error_encoder(out: &mut String, surface: &dyn Surface, error: &ResolvedError) {
     record_encoder(
         out,
-        &format!("encode_error_{}", ident(&error.name)),
+        surface.layout(),
+        &format!("encode_error_{}", ident(surface.layout(), &error.name)),
         &surface.path(&error.name),
         &format!("the declared error `{}`", error.name),
         &error.fields,
@@ -306,7 +313,8 @@ fn error_encoder(out: &mut String, surface: &dyn Surface, error: &ResolvedError)
 fn view_encoder(out: &mut String, surface: &dyn Surface, view: &ResolvedView) {
     record_encoder(
         out,
-        &format!("encode_view_{}", ident(&view.name)),
+        surface.layout(),
+        &format!("encode_view_{}", ident(surface.layout(), &view.name)),
         &surface.path(&view.name),
         &format!("one row of the view `{}`", view.name),
         &view.fields,
@@ -316,6 +324,7 @@ fn view_encoder(out: &mut String, surface: &dyn Surface, view: &ResolvedView) {
 /// An encoder over a fixed list of fields.
 fn record_encoder(
     out: &mut String,
+    layout: &RustLayout,
     function: &str,
     path: &str,
     describes: &str,
@@ -329,6 +338,7 @@ fn record_encoder(
     for field in fields {
         encode_member(
             out,
+            layout,
             "    ",
             ess_gen::schema::wire_field_name(field),
             &format!("value.{}", name::value_ident(&field.name)),
@@ -355,7 +365,8 @@ fn record_encoder(
 fn command_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCommand) {
     record_encoder(
         out,
-        &format!("encode_command_{}", ident(&command.name)),
+        surface.layout(),
+        &format!("encode_command_{}", ident(surface.layout(), &command.name)),
         &surface.path(&command.name),
         &format!("the input of `{}`", command.name),
         &command.input,
@@ -374,8 +385,8 @@ fn outcome_pattern(variant: &str, bindings: &[String], carries_response: bool) -
 }
 
 /// The name of the encoder for a command's declared response.
-pub(crate) fn response_encoder_name(command: &QualifiedName) -> String {
-    format!("encode_response_{}", ident(command))
+pub(crate) fn response_encoder_name(layout: &RustLayout, command: &QualifiedName) -> String {
+    format!("encode_response_{}", ident(layout, command))
 }
 
 /// A command's declared response, for the `response` member of a branch that answers with it
@@ -391,7 +402,8 @@ fn response_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedC
     }
     record_encoder(
         out,
-        &response_encoder_name(&command.name),
+        surface.layout(),
+        &response_encoder_name(surface.layout(), &command.name),
         &format!("{}Response", surface.path(&command.name)),
         &format!("the response of `{}`", command.name),
         &command.response,
@@ -408,7 +420,7 @@ fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
          there.\npub fn decode_command_{}(value: &json::Value, at: &str) -> Result<{path}, \
          json::DecodeError> {{\n    Ok({path} {{\n",
         command.name,
-        ident(&command.name)
+        ident(surface.layout(), &command.name)
     );
     for (position, field) in command.input.iter().enumerate() {
         let _ = writeln!(
@@ -422,13 +434,13 @@ fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
     if command.input.is_empty() {
         let unit = format!(
             "pub fn decode_command_{}(value: &json::Value, at: &str)",
-            ident(&command.name)
+            ident(surface.layout(), &command.name)
         );
         *out = out.replace(
             &unit,
             &format!(
                 "pub fn decode_command_{}(_value: &json::Value, _at: &str)",
-                ident(&command.name)
+                ident(surface.layout(), &command.name)
             ),
         );
     }
@@ -450,7 +462,7 @@ fn params_decoder(out: &mut String, surface: &dyn Surface, view: &ResolvedView) 
          says belongs there.\npub fn decode_params_{}(value: &json::Value, at: &str) -> \
          Result<({}), json::DecodeError> {{\n    Ok((\n",
         view.name,
-        ident(&view.name),
+        ident(surface.layout(), &view.name),
         tuple.trim_end(),
     );
     for (position, param) in view.params.iter().enumerate() {
@@ -479,7 +491,7 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
          encode_outcome_{}(value: &{path}Outcome, out: &mut String) {{\n    out.push('{{');\n    \
          match value {{\n",
         command.name,
-        ident(&command.name)
+        ident(surface.layout(), &command.name)
     );
     for outcome in &command.outcomes {
         let variant = name::pascal(outcome.name.as_str());
@@ -500,7 +512,7 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
              {:?});",
             outcome.name.as_str()
         );
-        published_list(out, &Buffer::OWN, &carried);
+        published_list(out, surface.layout(), &Buffer::OWN, &carried);
         if let Some(error) = &outcome.error {
             let _ = writeln!(
                 out,
@@ -509,7 +521,7 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
                  {:?});\n            json::member(out, \"payload\");\n            \
                  encode_error_{}(error, out);\n            out.push('}}');",
                 error.name().to_string(),
-                ident(error.name())
+                ident(surface.layout(), error.name())
             );
         }
         out.push_str("        }\n");
@@ -566,6 +578,7 @@ impl Buffer {
 /// [`outcome_event_fields`], which is the order the component's port pushes them onto its outbox.
 pub(crate) fn published_list(
     out: &mut String,
+    layout: &RustLayout,
     buffer: &Buffer,
     carried: &[super::items::OutcomeEventField<'_>],
 ) {
@@ -589,7 +602,7 @@ pub(crate) fn published_list(
              json::member({argument}, \"payload\");\n            \
              {encoders}encode_event_{}({}, {argument});\n            {receiver}.push('}}');",
             field.event.name().to_string(),
-            ident(field.event.name()),
+            ident(layout, field.event.name()),
             field.field
         );
     }
@@ -602,6 +615,7 @@ pub(crate) fn published_list(
 /// all when an optional value is absent.
 fn encode_member(
     out: &mut String,
+    layout: &RustLayout,
     indent: &str,
     wire: &str,
     expr: &str,
@@ -616,6 +630,7 @@ fn encode_member(
         );
         encode_value(
             out,
+            layout,
             &format!("{indent}    "),
             &format!("*{held}"),
             of,
@@ -625,12 +640,13 @@ fn encode_member(
         return;
     }
     let _ = writeln!(out, "{indent}json::member(out, {wire:?});");
-    encode_value(out, indent, expr, type_ref, depth);
+    encode_value(out, layout, indent, expr, type_ref, depth);
 }
 
 /// The statements that write one value of a declared type as JSON.
 fn encode_value(
     out: &mut String,
+    layout: &RustLayout,
     indent: &str,
     expr: &str,
     type_ref: &ResolvedTypeRef,
@@ -641,7 +657,11 @@ fn encode_value(
             let _ = writeln!(out, "{indent}{}", encode_primitive(*name, expr));
         }
         ResolvedTypeRef::Declared { name } => {
-            let _ = writeln!(out, "{indent}encode_{}(&{expr}, out);", ident(name.name()));
+            let _ = writeln!(
+                out,
+                "{indent}encode_{}(&{expr}, out);",
+                ident(layout, name.name())
+            );
         }
         ResolvedTypeRef::Optional { of } => {
             let held = format!("held{depth}");
@@ -651,6 +671,7 @@ fn encode_value(
             );
             encode_value(
                 out,
+                layout,
                 &format!("{indent}        "),
                 &format!("*{held}"),
                 of,
@@ -673,6 +694,7 @@ fn encode_value(
             );
             encode_value(
                 out,
+                layout,
                 &format!("{indent}    "),
                 &format!("*{item}"),
                 of,
@@ -694,6 +716,7 @@ fn encode_value(
             );
             encode_value(
                 out,
+                layout,
                 &format!("{indent}    "),
                 &format!("*{item}"),
                 value,
@@ -776,7 +799,10 @@ fn decode_value(
     match type_ref {
         ResolvedTypeRef::Primitive { name } => decode_primitive(surface, *name, value, at),
         ResolvedTypeRef::Declared { name } => {
-            let decoded = format!("decode_{}({value}, {at})?", ident(name.name()));
+            let decoded = format!(
+                "decode_{}({value}, {at})?",
+                ident(surface.layout(), name.name())
+            );
             surface.layout().reference_value(name.name(), decoded)
         }
         ResolvedTypeRef::Optional { of } => format!(

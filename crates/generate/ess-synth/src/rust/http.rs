@@ -245,7 +245,7 @@ fn system_event_encoder(server: &Server<'_>) -> String {
             out,
             "        {system_crate}::SystemEvent::{variant}(event) => \
              encode_event_{}(event, &mut out),",
-            wire::ident(event.name())
+            wire::ident(server.layout, event.name())
         );
     }
     out.push_str("    }\n    out.push('}');\n    out\n}\n");
@@ -844,20 +844,20 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
                          return not_granted(actor);\n            }}\n            {}(system, \
                          &request.body)\n        }}\n",
                         ir.command(handle).name.to_string(),
-                        handler_ident(&ir.command(handle).name)
+                        handler_ident(server.layout, &ir.command(handle).name)
                     ),
                     Served::Command(handle) => format!(
                         "            {}(system, &request.body)\n        }}\n",
-                        handler_ident(&ir.command(handle).name)
+                        handler_ident(server.layout, &ir.command(handle).name)
                     ),
                     // A read-granted view checks the reader first (beyond10x/ess#286).
                     Served::View(handle) if http::read_checked(ir, handle.name()) => format!(
                         "            if let Err(actor) = admit_read(caller, {:?}) {{\n                \
                          return not_granted(actor);\n            }}\n{}",
                         ir.view(handle).name.to_string(),
-                        view_call(ir, handle)
+                        view_call(ir, server.layout, handle)
                     ),
-                    Served::View(handle) => view_call(ir, handle),
+                    Served::View(handle) => view_call(ir, server.layout, handle),
                 };
                 out.push_str(&call);
             }
@@ -871,30 +871,30 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
 }
 
 /// One view route's read and answer, the arm's closing brace included.
-fn view_call(ir: &EssIr, handle: &ess_compiler::ir::ViewHandle) -> String {
+fn view_call(ir: &EssIr, layout: &Layout, handle: &ess_compiler::ir::ViewHandle) -> String {
     let view = ir.view(handle);
     if view.params.is_empty() {
         format!(
             "            http::answer({}(system))\n        }}\n",
-            runner_ident(&view.name)
+            runner_ident(layout, &view.name)
         )
     } else {
         format!(
             "            {}(system, &request.query)\n        }}\n",
-            handler_ident(&view.name)
+            handler_ident(layout, &view.name)
         )
     }
 }
 
 /// The handler function name for one construct: its whole qualified name, snake-cased.
-fn handler_ident(declared: &QualifiedName) -> String {
-    format!("serve_{}", wire::ident(declared))
+fn handler_ident(layout: &Layout, declared: &QualifiedName) -> String {
+    format!("serve_{}", wire::ident(layout, declared))
 }
 
 /// The transport-free half of one construct's handler — decode, port, declared outcome — which
 /// both the route and [`entry_point`]'s `handle` call, so the two cannot answer differently.
-fn runner_ident(declared: &QualifiedName) -> String {
-    format!("run_{}", wire::ident(declared))
+fn runner_ident(layout: &Layout, declared: &QualifiedName) -> String {
+    format!("run_{}", wire::ident(layout, declared))
 }
 
 /// `handle`: every command and view of this surface by qualified name, with no transport.
@@ -986,7 +986,7 @@ fn entry_point(
                          &input),\n            Err(actor) => \
                          Err(entry::Refused::NotGranted(actor.map(str::to_owned))),\n        }}",
                         declared.to_string(),
-                        runner_ident(declared)
+                        runner_ident(server.layout, declared)
                     ),
                 )
             }
@@ -994,10 +994,10 @@ fn entry_point(
                 let declared = &ir.command(handle).name;
                 (
                     declared.to_string(),
-                    format!("{}(system, &input)", runner_ident(declared)),
+                    format!("{}(system, &input)", runner_ident(server.layout, declared)),
                 )
             }
-            Served::View(handle) => handle_view_arm(ir, handle),
+            Served::View(handle) => handle_view_arm(ir, server.layout, handle),
         })
         .collect();
     arms.sort();
@@ -1012,13 +1012,17 @@ fn entry_point(
 
 /// One view's `handle` arm: its qualified name, and the call answering it — behind the read grant
 /// check where some actor's `may:` names the view (beyond10x/ess#286).
-fn handle_view_arm(ir: &EssIr, handle: &ess_compiler::ir::ViewHandle) -> (String, String) {
+fn handle_view_arm(
+    ir: &EssIr,
+    layout: &Layout,
+    handle: &ess_compiler::ir::ViewHandle,
+) -> (String, String) {
     let view = ir.view(handle);
     let declared = &view.name;
     let call = if view.params.is_empty() {
-        format!("{}(system)", runner_ident(declared))
+        format!("{}(system)", runner_ident(layout, declared))
     } else {
-        format!("{}(system, &input)", runner_ident(declared))
+        format!("{}(system, &input)", runner_ident(layout, declared))
     };
     let call = if http::read_checked(ir, declared) {
         format!(
@@ -1059,8 +1063,8 @@ fn command_handler(
     let system_crate = Layout::crate_ident(layout.system_package());
     let angled = generic_list(server);
     let bounds = where_clause(server);
-    let ident = wire::ident(&command.name);
-    let run = runner_ident(&command.name);
+    let ident = wire::ident(layout, &command.name);
+    let run = runner_ident(layout, &command.name);
     let field = name::value_ident(&component.name.to_string());
     let method = name::value_ident(&layout.type_name(&command.name));
     let outcome_type = format!(
@@ -1118,7 +1122,7 @@ fn command_handler(
 }}
 "
     );
-    outcome_renderer(out, server, command, &ident, &outcome_type);
+    outcome_renderer(out, server, command, ident, &outcome_type);
 }
 
 /// What a served command does between its port answering and the answer being rendered: pump, so
@@ -1215,8 +1219,8 @@ fn outcome_renderer(
              json::push_text(&mut body, {:?});",
             outcome.name.as_str()
         );
-        wire::published_list(out, &SERVED, &carried);
-        direct_response(out, ir, command, outcome);
+        wire::published_list(out, server.layout, &SERVED, &carried);
+        direct_response(out, server.layout, ir, command, outcome);
         if let Some(handle) = &outcome.error {
             let declared = ir.error(handle);
             let _ = writeln!(
@@ -1230,7 +1234,7 @@ fn outcome_renderer(
                     out,
                     "            json::member(&mut body, \"payload\");\n            \
                      wire::encode_error_{}(error, &mut body);",
-                    wire::ident(&declared.name)
+                    wire::ident(server.layout, &declared.name)
                 );
             }
         }
@@ -1249,6 +1253,7 @@ fn outcome_renderer(
 /// `wire` module's encoder. Nothing for any other branch.
 fn direct_response(
     out: &mut String,
+    layout: &Layout,
     ir: &ess_compiler::EssIr,
     command: &ess_compiler::ir::ResolvedCommand,
     outcome: &ess_compiler::ir::ResolvedOutcome,
@@ -1258,7 +1263,7 @@ fn direct_response(
             out,
             "            json::member(&mut body, \"response\");\n            \
              wire::{}(response, &mut body);",
-            wire::response_encoder_name(&command.name)
+            wire::response_encoder_name(layout, &command.name)
         );
     }
 }
@@ -1319,8 +1324,8 @@ fn view_handler(
     let layout = server.layout;
     let system_crate = Layout::crate_ident(layout.system_package());
     let angled = generic_list(server);
-    let ident = wire::ident(&view.name);
-    let run = runner_ident(&view.name);
+    let ident = wire::ident(layout, &view.name);
+    let run = runner_ident(layout, &view.name);
     let field = name::value_ident(&component.name.to_string());
     let method = name::value_ident(&layout.type_name(&view.name));
 
@@ -1371,8 +1376,8 @@ fn params_route(out: &mut String, server: &Server<'_>, view: &ResolvedView) -> (
     let system_crate = Layout::crate_ident(server.layout.system_package());
     let angled = generic_list(server);
     let bounds = where_clause(server);
-    let ident = wire::ident(&view.name);
-    let run = runner_ident(&view.name);
+    let ident = wire::ident(server.layout, &view.name);
+    let run = runner_ident(server.layout, &view.name);
     let _ = write!(
         out,
         "\n/// `GET` `{}`: reads the declared parameters from the query string by their wire \

@@ -96,6 +96,8 @@ pub(crate) struct Layout {
     names: BTreeMap<String, String>,
     /// Every event the system's log can carry, in name order.
     system_events: BTreeSet<EventHandle>,
+    /// The stem every codec and served handler of a declaration is named by.
+    codecs: crate::codec_names::CodecNames,
 }
 
 /// The kinds of identifier the emitter derives, as the first half of a name-table key.
@@ -272,6 +274,9 @@ impl Layout {
             owners,
             names: BTreeMap::new(),
             system_events,
+            codecs: crate::codec_names::CodecNames::of(ir, |declared| {
+                name::type_fragment(&declared.to_string())
+            }),
         };
         layout.allocate_names(ir);
         layout
@@ -280,6 +285,13 @@ impl Layout {
     /// The module path.
     pub fn module(&self) -> &str {
         &self.module
+    }
+
+    /// The stem a declaration's wire codecs and served handlers are named by: its pascal-cased
+    /// qualified name, suffixed only where another declaration of its family flattens to the same
+    /// identifier (`crate::codec_names`).
+    pub fn codec(&self, declared: &QualifiedName) -> &str {
+        self.codecs.stem(declared)
     }
 
     /// The package of a bounded context.

@@ -374,17 +374,20 @@ fn wire_file(
 ///
 /// The whole name and never the local one, for the reason the Rust wire gives: two declarations in
 /// two contexts can share a last segment, and a codec that named only that would silently be one
-/// function. Not run through the layout's name table, deliberately — every identifier this package
-/// declares is either `encode`/`decode` plus a unique qualified name, or one of the fixed
-/// lower-case helpers below, and the two families cannot collide.
-fn ident(declared: &QualifiedName) -> String {
-    name::type_fragment(&declared.to_string())
+/// function. Pascal-casing still drops separators (`renewal.input.AB` and `renewal.input.A_B` are
+/// both `RenewalInputAB`), so the fragment is the layout's allocated codec stem, which suffixes
+/// the later of two such declarations rather than declaring one function twice
+/// (`crate::codec_names`). The lower-case helpers below never start with `encode`/`decode` plus
+/// an upper-case letter, so the two families cannot collide.
+fn ident<'a>(layout: &'a Layout, declared: &QualifiedName) -> &'a str {
+    layout.codec(declared)
 }
 
 /// One declared type, written.
 fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
+    let layout = emit.layout;
     let go = emit.reference(&declared.name);
-    let function = format!("encode{}", ident(&declared.name));
+    let function = format!("encode{}", ident(layout, &declared.name));
     let _ = write!(
         out,
         "\n// {function} writes `{}` as JSON.\nfunc {function}(value {go}) any {{\n",
@@ -393,7 +396,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     match &declared.body {
         ResolvedBody::Newtype { of, .. } => {
             let mut slot = 0;
-            let expression = encode_into(out, "\t", "value.Value()", of, &mut slot);
+            let expression = encode_into(out, layout, "\t", "value.Value()", of, &mut slot);
             let _ = writeln!(out, "\treturn {expression}");
         }
         ResolvedBody::Struct { fields, .. } => {
@@ -402,6 +405,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             for field in fields {
                 encode_member(
                     out,
+                    layout,
                     "\t",
                     ess_gen::schema::wire_field_name(field),
                     &format!("value.{}", super::items::member_ident(fields, &field.name)),
@@ -435,7 +439,15 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                 let _ = writeln!(out, "\t\tout := map[string]any{{}}");
                 let _ = writeln!(out, "\t\tout[{tag:?}] = {label:?}");
                 let mut slot = 0;
-                encode_member(out, "\t\t", content, "shape.Value", payload, &mut slot);
+                encode_member(
+                    out,
+                    layout,
+                    "\t\t",
+                    content,
+                    "shape.Value",
+                    payload,
+                    &mut slot,
+                );
                 out.push_str("\t\treturn out\n");
             }
             out.push_str(UNREACHABLE_SHAPE);
@@ -447,7 +459,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
 /// One declared type, read.
 fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     let go = emit.reference(&declared.name);
-    let function = format!("decode{}", ident(&declared.name));
+    let function = format!("decode{}", ident(emit.layout, &declared.name));
     let _ = write!(
         out,
         "\n// {function} reads `{}` from JSON, or refuses at the path it was reached \
@@ -560,7 +572,8 @@ fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
 fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
     record_encoder(
         out,
-        &format!("encodeEvent{}", ident(&event.name)),
+        emit.layout,
+        &format!("encodeEvent{}", ident(emit.layout, &event.name)),
         &emit.reference(&event.name),
         &format!("the event `{}`", event.name),
         &event.fields,
@@ -571,7 +584,8 @@ fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
 fn error_encoder(out: &mut String, emit: &Emit<'_>, error: &ResolvedError) {
     record_encoder(
         out,
-        &format!("encodeError{}", ident(&error.name)),
+        emit.layout,
+        &format!("encodeError{}", ident(emit.layout, &error.name)),
         &emit.reference(&error.name),
         &format!("the declared error `{}`", error.name),
         &error.fields,
@@ -582,7 +596,8 @@ fn error_encoder(out: &mut String, emit: &Emit<'_>, error: &ResolvedError) {
 fn view_encoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
     record_encoder(
         out,
-        &format!("encodeView{}", ident(&view.name)),
+        emit.layout,
+        &format!("encodeView{}", ident(emit.layout, &view.name)),
         &emit.reference(&view.name),
         &format!("one row of the view `{}`", view.name),
         &view.fields,
@@ -592,6 +607,7 @@ fn view_encoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
 /// An encoder over a fixed list of fields.
 fn record_encoder(
     out: &mut String,
+    layout: &Layout,
     function: &str,
     go: &str,
     describes: &str,
@@ -606,6 +622,7 @@ fn record_encoder(
     for field in fields {
         encode_member(
             out,
+            layout,
             "\t",
             ess_gen::schema::wire_field_name(field),
             &format!("value.{}", super::items::member_ident(fields, &field.name)),
@@ -628,7 +645,7 @@ fn record_encoder(
 /// One command input's decoder.
 fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
     let go = emit.reference(&command.name);
-    let function = format!("decodeCommand{}", ident(&command.name));
+    let function = format!("decodeCommand{}", ident(emit.layout, &command.name));
     let _ = write!(
         out,
         "\n// {function} reads the input of `{}` from JSON.\nfunc {function}(value any, at string) \
@@ -658,6 +675,7 @@ fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
 /// One member of an object being written — or nothing at all where an optional value is absent.
 fn encode_member(
     out: &mut String,
+    layout: &Layout,
     indent: &str,
     wire: &str,
     source: &str,
@@ -669,18 +687,19 @@ fn encode_member(
         let _ = writeln!(out, "{indent}if {source} != nil {{");
         let _ = writeln!(out, "{indent}\t{held} := *{source}");
         let inner = format!("{indent}\t");
-        let expression = encode_into(out, &inner, &held, of, slot);
+        let expression = encode_into(out, layout, &inner, &held, of, slot);
         let _ = writeln!(out, "{indent}\tout[{wire:?}] = {expression}");
         let _ = writeln!(out, "{indent}}}");
         return;
     }
-    let expression = encode_into(out, indent, source, type_ref, slot);
+    let expression = encode_into(out, layout, indent, source, type_ref, slot);
     let _ = writeln!(out, "{indent}out[{wire:?}] = {expression}");
 }
 
 /// Emits whatever statements one value needs and returns the expression that is its JSON.
 fn encode_into(
     out: &mut String,
+    layout: &Layout,
     indent: &str,
     source: &str,
     type_ref: &ResolvedTypeRef,
@@ -689,7 +708,7 @@ fn encode_into(
     match type_ref {
         ResolvedTypeRef::Primitive { name } => encode_primitive(*name, source),
         ResolvedTypeRef::Declared { name } => {
-            format!("encode{}({source})", ident(name.name()))
+            format!("encode{}({source})", ident(layout, name.name()))
         }
         // An absent optional inside a list or a map is `null`, which is the one place this
         // rendering differs from an absent *member*: a member is omitted, because that is what the
@@ -701,7 +720,7 @@ fn encode_into(
             let inner = format!("{indent}\t");
             let held = format!("{target}Some");
             let _ = writeln!(out, "{indent}\t{held} := *{source}");
-            let expression = encode_into(out, &inner, &held, of, slot);
+            let expression = encode_into(out, layout, &inner, &held, of, slot);
             let _ = writeln!(out, "{indent}\t{target} = {expression}");
             let _ = writeln!(out, "{indent}}}");
             target
@@ -714,7 +733,7 @@ fn encode_into(
                  range {source} {{"
             );
             let inner = format!("{indent}\t");
-            let expression = encode_into(out, &inner, "element", of, slot);
+            let expression = encode_into(out, layout, &inner, "element", of, slot);
             let _ = writeln!(out, "{indent}\t{target} = append({target}, {expression})");
             let _ = writeln!(out, "{indent}}}");
             target
@@ -727,7 +746,7 @@ fn encode_into(
                  {source} {{"
             );
             let inner = format!("{indent}\t");
-            let expression = encode_into(out, &inner, "element", value, slot);
+            let expression = encode_into(out, layout, &inner, "element", value, slot);
             let _ = writeln!(
                 out,
                 "{indent}\t{target}[{}] = {expression}",
@@ -861,7 +880,7 @@ fn decode_into(
                 out,
                 "{indent}{held}, err := decode{}({source}, {at})\n{indent}if err != nil \
                  {{\n{indent}\treturn out, err\n{indent}}}",
-                ident(name.name())
+                ident(emit.layout, name.name())
             );
             held
         }
@@ -1055,7 +1074,7 @@ fn surface_file(
 
     serve_static(&mut body, &system, &exported, grants);
 
-    dispatch(&mut body, ir, &routes, &rows, &system, &exported);
+    dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
 
     for route in &routes {
         match route.serves {
@@ -1150,6 +1169,7 @@ func Serve{exported}WithStatic(system *{system}, address string{authenticate}, s
 fn dispatch(
     body: &mut String,
     ir: &EssIr,
+    layout: &Layout,
     routes: &[http::Route<'_>],
     rows: &[Row],
     system: &str,
@@ -1214,7 +1234,7 @@ fn dispatch(
                     let _ = writeln!(
                         body,
                         "\t\treturn serve{}(system, body)",
-                        ident(&ir.command(handle).name)
+                        ident(layout, &ir.command(handle).name)
                     );
                 }
                 Served::View(handle) => {
@@ -1231,7 +1251,7 @@ fn dispatch(
                     let _ = writeln!(
                         body,
                         "\t\treturn serve{}(system{})",
-                        ident(&view.name),
+                        ident(layout, &view.name),
                         if view.params.is_empty() {
                             ""
                         } else {
@@ -1392,7 +1412,7 @@ fn published_list(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) 
             out,
             "\n\t\t\tmap[string]any{{\"event\": {:?}, \"payload\": encodeEvent{}(taken.{})}},",
             field.event.name().to_string(),
-            ident(field.event.name()),
+            ident(emit.layout, field.event.name()),
             field.field
         );
     }
@@ -1416,7 +1436,7 @@ fn direct_response(
         let _ = writeln!(
             out,
             "\t\tbody[\"response\"] = {}(taken.Response)",
-            response_encoder_name(&command.name)
+            response_encoder_name(emit.layout, &command.name)
         );
     }
 }
@@ -1438,8 +1458,8 @@ fn answered(
 }
 
 /// The name of the wire file's encoder for a command's declared response.
-fn response_encoder_name(command: &QualifiedName) -> String {
-    format!("encodeResponse{}", ident(command))
+fn response_encoder_name(layout: &Layout, command: &QualifiedName) -> String {
+    format!("encodeResponse{}", ident(layout, command))
 }
 
 /// A command's declared response, for the `response` member of a branch that answers with it.
@@ -1454,7 +1474,8 @@ fn response_encoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand
     }
     record_encoder(
         out,
-        &response_encoder_name(&command.name),
+        emit.layout,
+        &response_encoder_name(emit.layout, &command.name),
         &emit.qualify(
             emit.layout.package_of(&command.name),
             emit.layout.response(&command.name),
@@ -1474,7 +1495,7 @@ fn command_handler(
     system: &str,
     records_invocations: bool,
 ) {
-    let function = ident(&command.name);
+    let function = ident(emit.layout, &command.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&command.name);
     let read = if ess_gen::http::body_required(command) {
@@ -1542,7 +1563,7 @@ fn command_handler(
                 let _ = writeln!(
                     out,
                     "\t\tbody[\"payload\"] = encodeError{}(taken.Error)",
-                    ident(&declared.name)
+                    ident(emit.layout, &declared.name)
                 );
             }
         } else {
@@ -1589,7 +1610,7 @@ fn view_handler(
     system: &str,
 ) {
     let _ = emit;
-    let function = ident(&view.name);
+    let function = ident(emit.layout, &view.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&view.name);
     let (doc, parameter, decoded, arguments) = if view.params.is_empty() {
@@ -1660,7 +1681,7 @@ fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
 /// One view's declared parameters, decoded: the struct the route reads them into and its decoder,
 /// which reads an object keyed by their wire names exactly as a command input's decoder does.
 fn params_decoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
-    let function = ident(&view.name);
+    let function = ident(emit.layout, &view.name);
     let _ = writeln!(
         out,
         "\n// params{function} is the declared parameters of `{}`, decoded.\ntype \

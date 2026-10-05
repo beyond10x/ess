@@ -819,22 +819,43 @@ fn legacy_names_only_contexts_require_explicit_migration() {
 }
 
 #[test]
-fn served_colliding_codecs_remain_an_explicit_typed_refusal() {
+fn served_flattening_codecs_are_allocated_distinct_names() {
+    // beyond10x/ess#415 (`docs/design/served-codec-names.md`): the served network model is
+    // admitted, and the later of the two flattenings in byte order takes the `_2` stem.
     let ir = compile_model(COLLISIONS); // Exact original network fixture, names and aliases.
     for layout in [OutputLayout::Crate, OutputLayout::Workspace] {
-        let Err(SynthesisFailure::Target(failure)) = synthesize_laid_out(&ir, Target::Rust, layout)
-        else {
-            panic!("served codec collisions must not be silently admitted");
+        let generated = match synthesize_laid_out(&ir, Target::Rust, layout) {
+            Ok(generated) => generated,
+            Err(SynthesisFailure::Target(failure)) => {
+                assert!(
+                    failure
+                        .causes()
+                        .iter()
+                        .all(|cause| cause.code() != TargetFailureCode::WireCollision),
+                    "{failure:?}"
+                );
+                panic!("served collision model generates: {failure:?}");
+            }
+            Err(other) => panic!("served collision model generates: {other:?}"),
         };
-        assert_eq!(failure.causes().len(), 3);
-        for (cause, codec) in failure.causes().iter().zip([
-            "decode_command_renewal_input_a_b",
-            "encode_command_renewal_input_a_b",
-            "encode_outcome_renewal_input_a_b",
-        ]) {
-            assert_eq!(cause.code(), TargetFailureCode::WireCollision);
-            assert_eq!(cause.sources(), ["renewal.input.AB", "renewal.input.A_B"]);
-            assert!(cause.detail().contains(codec), "{}", cause.detail());
+        let wire = generated
+            .artifacts
+            .iter()
+            .find(|(path, _)| path.ends_with("wire.rs"))
+            .expect("a served wire module")
+            .1;
+        for (canonical, stem) in [
+            ("renewal.input.AB", "renewal_input_a_b"),
+            ("renewal.input.AB2", "renewal_input_a_b2"),
+            ("renewal.input.A_B", "renewal_input_a_b_2"),
+        ] {
+            let decoder = format!("pub fn decode_command_{stem}(");
+            assert_eq!(wire.contents.matches(&decoder).count(), 1, "{decoder}");
+            assert!(
+                wire.contents
+                    .contains(&format!("/// Reads the input of `{canonical}` from JSON.")),
+                "{canonical}"
+            );
         }
     }
 }

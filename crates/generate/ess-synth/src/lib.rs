@@ -46,6 +46,7 @@
 mod accessor_output;
 mod alias;
 pub mod clap;
+mod codec_names;
 pub(crate) mod determined;
 mod failure;
 pub mod go;

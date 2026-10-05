@@ -330,7 +330,7 @@ fn run_method(out: &mut String, bridge: &Bridge<'_>) {
         }
         let field = name::value_ident(&component.to_string());
         let method = name::value_ident(&bridge.layout.rust().type_name(&command.name));
-        let ident = ident(&command.name);
+        let ident = ident(bridge.layout.rust(), &command.name);
         let _ = write!(
             out,
             "            {:?} => {{\n                let input = \
@@ -425,7 +425,7 @@ fn log_method(out: &mut String, bridge: &Bridge<'_>) {
             let _ = writeln!(
                 out,
                 "                    wire::encode_event_{}(payload, &mut out);",
-                ident(event.name())
+                ident(bridge.layout.rust(), event.name())
             );
         } else {
             // The plan does not mark this event generated, so no rendering of it exists to write.
@@ -485,7 +485,7 @@ fn invoked_method(out: &mut String, bridge: &Bridge<'_>, deliveries: &[Delivery<
                 .expect("generated event capability")
                 .name()
                 .to_string(),
-            ident(delivery.binding.command.name()),
+            ident(bridge.layout.rust(), delivery.binding.command.name()),
         );
         let _ = delivery.acceptor;
     }
@@ -529,7 +529,7 @@ fn projected_method(out: &mut String, bridge: &Bridge<'_>) {
              unmet.source);\n                out.push('}}');\n                \
              out.push('}}');\n            }}\n        }}\n",
             view.name.to_string(),
-            ident(&view.name),
+            ident(bridge.layout.rust(), &view.name),
         );
     }
     out.push_str("        out.push('}');\n        out\n    }\n");
