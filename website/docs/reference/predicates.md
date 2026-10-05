@@ -1002,6 +1002,41 @@ A generated suite carries one of these operators only in a view expectation. Suc
 `ess-conformance/20`, or `/21` with coverage; a guard over command input is decided when the suite
 is generated and does not change its format.
 
+## Text shapes without patterns
+
+ESS has no pattern predicate: there is no regular-expression operator, and `matches:` is refused
+with the list of operators there are. A shape a value must have is stated with the constructs
+above, and where it is a property of the value rather than of one guard, on its type:
+
+- a fixed beginning, end or part: `starts_with`, `ends_with`, `contains`;
+- a length: `.count`, in Unicode scalar values;
+- the characters a value may hold: `alphabet:` on a `String` newtype;
+- a fixed beginning every value of a type carries: `prefix:` on a newtype;
+- a closed set of values: `any_of`, or `in_ignore_case` ignoring case.
+
+"Starts with `GB-` and is nine characters long" is one guard, and synthesis writes a text that
+holds and one that does not:
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when:
+  all:
+    - sku: {starts_with: "GB-"}
+    - sku.count == 9
+```
+
+```yaml ess-check="when" ess-expect="refused" ess-says="starts_with, ends_with, contains, equals_ignore_case, in_ignore_case"
+when:
+  sku: {matches: "^GB-[0-9]{6}$"}
+```
+
+What these do not state is a position-dependent character class, such as "six digits after the
+prefix". A pattern predicate would need a portable dialect with a parser of ESS's own, a
+translation for every runner, and a matching text and a near miss for every pattern. A regular
+expression the system stores and evaluates as data, as an operator of its stored rules, is the
+system's evaluator, not a guard of the specification:
+[the stored-rules boundary](https://github.com/beyond10x/ess/blob/main/docs/design/stored-rules-boundary.md)
+says how such a verdict is specified.
+
 ## Comparing a stored field with the input
 
 From `ess/15`, a `when_subject` predicate may compare a stored field of the addressed entity with a

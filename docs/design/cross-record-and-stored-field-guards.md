@@ -737,3 +737,8 @@ against step 3; that is filed as an Entity Runtime defect, and ESS is not modell
 Validation (`ess_domain::command::subject_state`), synthesis (`synthesize::sibling_refusals`,
 `synthesize/related_guard.rs`) and the model interpreter (`interpret::execute`,
 `related_absent` then `refused_by_input`) follow it.
+
+An input refusal guarded by the held state as well (`when_subject:` beside `when:`) answers at
+step 4, not step 2. Synthesis witnesses the step 3/4 boundary for it: the unknown-instance and
+wrong-state scenarios also send an input it claims and require their own answer
+(beyond10x/ess#454, `outcome-shapes.md`).

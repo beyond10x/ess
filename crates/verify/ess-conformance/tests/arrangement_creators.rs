@@ -213,9 +213,22 @@ fn an_input_refusal_on_an_existing_record_is_also_sent_for_a_record_a_creation_m
     }
 }
 
+/// Never sent for a bound record. Besides its own witness, `id-required` is sent at its overlap with
+/// each input refusal declared after it, which it answers first (beyond10x/ess#455). In the fixture
+/// two follow it and both overlap it: `secret-too-short: secret.count < 12` and
+/// `missing-configuration: issuer == ""` each hold beside `id == ""`. So it sends exactly
+/// 1 + 2 = 3 plain `Configure` invocations, each requiring it.
 #[test]
 fn a_refusal_reading_the_identity_stays_a_plain_send() {
     let result = synthesis(INPUT_REFUSAL);
     let refused = scenario(&result.suite, ID_REQUIRED);
-    assert_eq!(sent(refused), ["Configure"], "{:#?}", refused.steps);
+    let commands = sent(refused);
+    assert_eq!(commands, ["Configure"; 3], "{:#?}", refused.steps);
+    assert!(!sent_for_a_bound_record(refused), "{:#?}", refused.steps);
+    let errors = refused
+        .steps
+        .iter()
+        .filter(|step| matches!(step, ScenarioStep::ExpectError { .. }))
+        .count();
+    assert_eq!(errors, commands.len(), "every send requires the refusal");
 }

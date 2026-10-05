@@ -95,10 +95,12 @@ views:
       - {name: state, type: counter.model.Counter.State}
 ";
 
-/// SHA-256 of the canonical suite the base build (`1e141906d`, part A merged) writes for the issue
-/// fixture with no seed: `ess verify conform synthesize --path . --out suite.json`.
+/// SHA-256 of the canonical suite the base build writes for the issue fixture with no seed:
+/// `ess verify conform synthesize --path . --out suite.json`. Re-pinned for beyond10x/ess#454: the
+/// plain input refusal `invalid` is now also sent for an identity no row carries (step 2 of the
+/// precedence order), so `Authorize/outcome/invalid` gains that send; nothing else moved.
 pub const BASE_SUITE_SHA256: &str =
-    "0883b50446bac4cf05862fbd0923c1d060f92d5f76d643fd33a5b659935e6c18";
+    "a1c2842ce87a08841bbfea6ed29225246f9d3476948fd0d7a7f97c61e1ac444e";
 
 pub const MAX: i64 = i64::MAX;
 
