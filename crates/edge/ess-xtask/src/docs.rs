@@ -217,6 +217,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 41, Some("0.53.0")),
     ("ess-conformance", 42, Some("0.53.0")),
     ("ess-conformance", 43, Some("0.53.0")),
+    // Counted event claims (beyond10x/ess#427).
+    ("ess-conformance", 44, None),
+    ("ess-conformance", 45, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

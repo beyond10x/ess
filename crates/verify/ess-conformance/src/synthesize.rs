@@ -740,6 +740,9 @@ pub enum RefusalCause {
         state: StateName,
         /// The paths the filter reads that nothing binds.
         unbound: Vec<FactPath>,
+        /// The members of a struct the scenario holds only as a captured instance or an observed
+        /// value, which no member projection reads (beyond10x/ess#428).
+        unprojected: Vec<FactPath>,
     },
     /// A view declares an order and the scenario cannot put two rows in it.
     ///
@@ -1338,11 +1341,21 @@ impl fmt::Display for RefusalCause {
                 filter,
                 state,
                 unbound,
+                unprojected,
             } => {
                 write!(
                     f,
                     "`{view}` filters on `{filter}`, which is undecided for an entity in `{state}`"
                 )?;
+                for path in unprojected {
+                    write!(
+                        f,
+                        "\n  - `{path}` is a member of `{}`, which this scenario holds only as a \
+                         captured instance or an observed value, and no member projection reads \
+                         one",
+                        path.namespace()
+                    )?;
+                }
                 for path in unbound {
                     write!(f, "\n  - `{path}` is bound by nothing a scenario knows")?;
                 }
@@ -4418,11 +4431,25 @@ impl Arrangement {
         view: &ResolvedView,
         params: &BTreeMap<String, ScenarioValue>,
     ) -> Result<bool, Vec<FactPath>> {
+        // A filter reading a member of a struct identity is decided by the literal this
+        // arrangement created the row with (beyond10x/ess#428); any other keeps its settled fields.
+        let literal = reads_identity_member(ir, view)
+            .then(|| arranged_identity(ir, &self.steps, &self.instance))
+            .flatten();
+        let settled = match literal {
+            Some(literal) => std::borrow::Cow::Owned(with_literal_identity(
+                ir,
+                &view.source,
+                &self.settled,
+                Some(literal),
+            )),
+            None => std::borrow::Cow::Borrowed(&self.settled),
+        };
         shows_row(
             ir,
             view,
             &self.state,
-            &self.settled,
+            &settled,
             Some(&self.identity()),
             params,
         )
@@ -6786,7 +6813,11 @@ fn view_expectations(
     let (Some(subject), Some(state)) = (&outcome.subject, run.after.as_ref()) else {
         return out;
     };
-    let (instance, settled) = (run.instance.as_ref(), &run.settled);
+    // The identity the scenario sent as a literal struct, settled under its name for the reads that
+    // bind or decide a member of it (beyond10x/ess#428).
+    let literal = sent_identity(ir, outcome, subject, run);
+    let with_identity = with_literal_identity(ir, &subject.entity, &run.settled, literal);
+    let (instance, settled) = (run.instance.as_ref(), &with_identity);
     // The row a further run of a creating branch made for its absent-reference witness is named
     // by the capture that run made, not by the first event that published an identity (ess/22,
     // beyond10x/ess#285).
@@ -6828,18 +6859,23 @@ fn view_expectations(
             // Neither asserted nor counted: an eventual read of a row left as it was proves nothing.
             Ok(_) if awaits_nothing(command, view, run, state) => {}
             Ok(admits) => decided.push((view, admits)),
-            Err(unbound) => refusals.push(Refusal::about(
-                id,
-                RefusalCause::ViewUndecidable {
-                    view: ViewRef::new(view.name.clone()),
-                    filter: view
-                        .filter
-                        .as_ref()
-                        .map_or_else(String::new, ToString::to_string),
-                    state: state.clone(),
-                    unbound,
-                },
-            )),
+            Err(mut unbound) => {
+                let unprojected = identity::unprojected(ir, view, settled, &unbound);
+                unbound.retain(|path| !unprojected.contains(path));
+                refusals.push(Refusal::about(
+                    id,
+                    RefusalCause::ViewUndecidable {
+                        view: ViewRef::new(view.name.clone()),
+                        filter: view
+                            .filter
+                            .as_ref()
+                            .map_or_else(String::new, ToString::to_string),
+                        state: state.clone(),
+                        unbound,
+                        unprojected,
+                    },
+                ));
+            }
         }
     }
 
@@ -7256,6 +7292,18 @@ fn arrange_matching(
                 Box::new(move |row: &Arrangement| held(row) == Ok(false)),
                 None,
             )),
+            // The filter binds a parameter to a stored field of another name (beyond10x/ess#428):
+            // a target ignoring the parameter returns every row, and with the subject the only one
+            // passes. A further row the filter refuses is arranged and asserted `Excludes`.
+            None if *admits_subject
+                && identified
+                && binds_renamed(ir, view, beside.settled, beside.identity) =>
+            {
+                wanted.push((
+                    Box::new(move |row: &Arrangement| held(row) == Ok(false)),
+                    None,
+                ));
+            }
             None if !identified
                 || *admits_subject
                 || plain_row_shown(ir, beside.entity, view, beside.actors, params) =>
@@ -7320,6 +7368,40 @@ fn reads_root(view: &ResolvedView, field: &str) -> bool {
             .fact_paths()
             .into_iter()
             .any(|path| path.namespace() == field)
+    })
+}
+
+/// Whether the filter binds one of `view`'s parameters, as a literal, to a stored field or struct
+/// member of another name (beyond10x/ess#428): only a row the filter refuses tells a read honouring
+/// that parameter from one ignoring it. A parameter named after the field it is compared with was
+/// bound by its name before, and keeps the assertions it had.
+fn binds_renamed(
+    ir: &EssIr,
+    view: &ResolvedView,
+    settled: &BTreeMap<String, Determined>,
+    identity: Option<&ScenarioValue>,
+) -> bool {
+    view.params.iter().any(|param| {
+        !paging::reads(view, &param.name)
+            && text_param(view, &param.name, settled).is_none()
+            && identity::compared_with(ir, view, &param.name)
+                .is_some_and(|field| field != param.name)
+            && matches!(
+                identity::param(ir, view, &param.name, settled, identity),
+                Some(ScenarioValue::Literal { .. })
+            )
+    })
+}
+
+/// Whether a view's filter reads a member of its source's identity, `ref.tenant` of a struct `ref`
+/// (beyond10x/ess#428).
+fn reads_identity_member(ir: &EssIr, view: &ResolvedView) -> bool {
+    let identity = &ir.entity(&view.source).identity.name;
+    view.filter.as_ref().is_some_and(|filter| {
+        filter
+            .fact_paths()
+            .into_iter()
+            .any(|path| path.segments().len() > 1 && path.namespace() == identity)
     })
 }
 
@@ -9633,6 +9715,85 @@ fn identifying(
     [(named, value)].into_iter().collect()
 }
 
+/// The struct identity the run sent its subject as a literal, where it did: the input naming the
+/// subject, or the input a `creates:` branch publishes as the new row's identity
+/// (beyond10x/ess#428). `None` for a scalar identity, and for one the run holds only as a captured
+/// instance or an observed value, which no member projection reads.
+fn sent_identity(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+    run: &Run,
+) -> Option<Node> {
+    match &subject.instance {
+        ResolvedInstance::Supplied { field } => match run.input.get(&field.name) {
+            Some(ScenarioValue::Literal { value }) => Some(value.clone()),
+            _ => None,
+        },
+        ResolvedInstance::Observed { event, field } => determined_payload(
+            ir,
+            outcome,
+            &EventRef::from(event),
+            &run.input,
+            &run.before_settled,
+        )
+        .remove(&field.name),
+    }
+    .filter(|value| matches!(value, Node::Map(_)))
+}
+
+/// The struct identity an arrangement sent the row it captured as `instance`, where it sent a
+/// literal: the input its creating branch publishes as the new row's identity, read off the
+/// arrangement's own steps (beyond10x/ess#428).
+fn arranged_identity(ir: &EssIr, steps: &[ScenarioStep], instance: &InstanceName) -> Option<Node> {
+    let at = steps.iter().position(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance: captured, .. } if captured == instance)
+    })?;
+    let ScenarioStep::CaptureInstance { event, field, .. } = &steps[at] else {
+        return None;
+    };
+    let (input, sent) = steps[..at].iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, command, .. } => Some((input, command)),
+        _ => None,
+    })?;
+    let taken = steps[..at].iter().rev().find_map(|step| match step {
+        ScenarioStep::ExpectOutcome { outcome } => Some(outcome),
+        _ => None,
+    })?;
+    let command = ir
+        .commands()
+        .values()
+        .find(|command| CommandRef::new(command.name.clone()) == *sent)?;
+    let branch = command
+        .outcomes
+        .iter()
+        .find(|branch| branch.name == taken.outcome)?;
+    determined_payload(ir, branch, event, input, &BTreeMap::new())
+        .remove(field)
+        .filter(|value| matches!(value, Node::Map(_)))
+}
+
+/// `settled`, with the row's identity settled under its name where the scenario sent it as the
+/// literal struct `literal` and nothing settled it already.
+fn with_literal_identity(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, Determined>,
+    literal: Option<Node>,
+) -> BTreeMap<String, Determined> {
+    let mut settled = settled.clone();
+    let identity = &ir.entity(entity).identity;
+    if let Some(value) = literal {
+        settled
+            .entry(identity.name.clone())
+            .or_insert_with(|| Determined {
+                value: ScenarioValue::literal(value),
+                type_ref: identity.type_ref.clone(),
+            });
+    }
+    settled
+}
+
 /// The identity of the instance a scenario is about, as the scenario refers to it, or `None` where
 /// nothing bound one.
 fn identity_of(
@@ -9675,13 +9836,15 @@ fn bound(
         // A paging parameter is sent only by a page read (`paging::page_reads`), never by name.
         .filter(|param| !paging::reads(view, &param.name))
         .filter_map(|param| {
+            // The filter's own comparison first, and the name only where the filter does not
+            // decide (beyond10x/ess#428): `delegate == param.owner` sends the delegate.
             text_param(view, &param.name, settled)
+                .or_else(|| identity::param(ir, view, &param.name, settled, identity))
                 .or_else(|| {
                     settled
                         .get(&param.name)
                         .map(|determined| determined.value.clone())
                 })
-                .or_else(|| identity::param(ir, view, &param.name, settled, identity))
                 .map(|value| (param.name.clone(), value))
         })
         .collect()
@@ -9884,7 +10047,10 @@ fn row_truth(
     // row: a struct's leaves and every present struct, list or map inside it, empty or not, are
     // what `defined()` and `missing()` read (beyond10x/ess#176). One field at a time, so a value
     // that is not of its type is left to the scalar reading it had rather than dropping the rest.
-    let declared = &ir.entity(&view.source).fields;
+    //
+    // The identity too, where the scenario settled it as a literal struct: a filter reading one of
+    // its members (`ref.tenant`) is decided by the member it was sent (beyond10x/ess#428).
+    let declared = &ir.entity(&view.source).observable_fields();
     for (name, determined) in settled {
         if let (Ok(path), ScenarioValue::Literal { value }) =
             (FactPath::new(name), &determined.value)
@@ -14228,6 +14394,7 @@ mod tests {
                 filter: "total.amount > 0".to_owned(),
                 state: StateName::new("Draft").expect("valid"),
                 unbound: Vec::new(),
+                unprojected: Vec::new(),
             },
             RefusalCause::NotSynthesisedYet {
                 construct: "a binding",

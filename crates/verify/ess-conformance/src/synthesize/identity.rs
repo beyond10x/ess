@@ -24,8 +24,8 @@
 //! is a question about the value itself, and the token is left unbound there, so the filter stays
 //! `Unknown` and the view is refused by name, exactly as it was before tokens existed.
 use super::{
-    BTreeMap, BTreeSet, Determined, EntitySpec, EssIr, EventRef, FactPath, FactValue, Predicate,
-    ResolvedInstance, ResolvedTypeRef, ResolvedView, ScenarioValue,
+    BTreeMap, BTreeSet, Determined, EntitySpec, EssIr, EventRef, FactPath, FactValue, Node,
+    Predicate, ResolvedBody, ResolvedInstance, ResolvedTypeRef, ResolvedView, ScenarioValue,
 };
 use ess_domain::view::ViewSpec;
 use ess_primitives::predicate::{CompareOp, Operand};
@@ -66,17 +66,42 @@ fn published(ir: &EssIr, event: &EventRef, field: &str) -> bool {
         })
 }
 
-/// The declared type of a row field of `view`'s source, the identity included.
+/// The declared type of a row field of `view`'s source, the identity included, or of a member of
+/// one where `field` is a dotted path through structs (beyond10x/ess#428).
 fn row_type(ir: &EssIr, view: &ResolvedView, field: &str) -> Option<ResolvedTypeRef> {
     let entity = ir.entity(&view.source);
-    if entity.identity.name == field {
-        return Some(entity.identity.type_ref.required().clone());
+    let mut segments = field.split('.');
+    let root = segments.next()?;
+    let mut type_ref = if entity.identity.name == root {
+        entity.identity.type_ref.required().clone()
+    } else {
+        entity
+            .fields
+            .iter()
+            .find(|declared| declared.name == root)
+            .map(|declared| declared.type_ref.required().clone())?
+    };
+    for segment in segments {
+        let ResolvedTypeRef::Declared { name } = &type_ref else {
+            return None;
+        };
+        let ResolvedBody::Struct { fields, .. } = &ir.named_type(name).body else {
+            return None;
+        };
+        type_ref = fields
+            .iter()
+            .find(|declared| declared.name == segment)
+            .map(|declared| declared.type_ref.required().clone())?;
     }
-    entity
-        .fields
-        .iter()
-        .find(|declared| declared.name == field)
-        .map(|declared| declared.type_ref.required().clone())
+    Some(type_ref)
+}
+
+/// The member at `path` below the root of a literal struct value, where every segment is there.
+fn project<'a>(value: &'a Node, path: &[&str]) -> Option<&'a Node> {
+    path.iter().try_fold(value, |held, segment| match held {
+        Node::Map(members) => members.get(*segment),
+        _ => None,
+    })
 }
 
 /// The declared type of one of `view`'s parameters.
@@ -240,12 +265,18 @@ fn fact<'a>(operand: &'a Operand, binders: &[&str]) -> Option<&'a FactPath> {
     }
 }
 
-/// The value one of `view`'s parameters is sent as where it names an identity: the one the row's
-/// identity field, or a link field the arrangement filled with an instance, holds.
+/// The value one of `view`'s parameters is sent as, read off the filter: what the row holds in the
+/// one field, or the one member of a struct field, an `==` or `!=` compares the parameter with.
 ///
-/// Read off the filter, never off a name: the parameter is the one an `==` or `!=` compares with
-/// that field, and it is declared at that field's type. A parameter compared with anything else, or
-/// with two different fields, is left to whatever else binds it.
+/// Read off the filter, never off a name (beyond10x/ess#428): `owner == param.who` sends `who` the
+/// owner the scenario stored, and a parameter named after one field but compared with another is
+/// sent the other. The parameter is declared at that field's type. The row's identity is sent as
+/// the identity the scenario refers to it by; any other field as the literal or instance the
+/// arrangement settled there; a member as the member of the literal struct settled at its root —
+/// the row's identity included, which the caller settles under its name where the scenario sent it
+/// as a literal. A struct the scenario holds only as an instance or an observed value has no member
+/// projection, so its members are not bound here. A parameter compared with anything else, or with
+/// two different fields, is left to whatever else binds it.
 pub(super) fn param(
     ir: &EssIr,
     view: &ResolvedView,
@@ -253,30 +284,64 @@ pub(super) fn param(
     settled: &BTreeMap<String, Determined>,
     identity: Option<&ScenarioValue>,
 ) -> Option<ScenarioValue> {
+    let field = compared_with(ir, view, name)?;
+    if field == ir.entity(&view.source).identity.name {
+        return identity.cloned();
+    }
+    let segments: Vec<&str> = field.split('.').collect();
+    let (root, members) = segments.split_first()?;
+    match &settled.get(*root)?.value {
+        ScenarioValue::Literal { value } => {
+            project(value, members).map(|member| ScenarioValue::literal(member.clone()))
+        }
+        instance @ ScenarioValue::Instance { .. } if members.is_empty() => Some(instance.clone()),
+        _ => None,
+    }
+}
+
+/// The one row field, or dotted struct member, `view`'s filter compares the parameter `name` with
+/// by `==` or `!=`, where it is declared at that field's type: what [`param`] sends it.
+pub(super) fn compared_with(ir: &EssIr, view: &ResolvedView, name: &str) -> Option<String> {
     let filter = view.filter.as_ref()?;
     let wanted = FactPath::new(format!("{}.{name}", ViewSpec::PARAM)).ok()?;
     let mut fields = BTreeSet::new();
     compared(filter, &wanted, &mut fields);
+    // A dotted path reads a struct member only where the declared types say it is one; any other
+    // (`name.count`, a length) is not a field the parameter could be sent the value of.
+    fields.retain(|field| !field.contains('.') || row_type(ir, view, field).is_some());
     let mut fields = fields.into_iter();
     let field = fields.next()?;
     if fields.next().is_some() || field == EntitySpec::STATE {
         return None;
     }
     let declared = row_type(ir, view, &field)?;
-    if param_type(view, name).as_ref() != Some(&declared) {
-        return None;
-    }
-    if field == ir.entity(&view.source).identity.name {
-        return identity.cloned();
-    }
-    settled
-        .get(&field)
-        .map(|determined| &determined.value)
-        .filter(|value| matches!(value, ScenarioValue::Instance { .. }))
-        .cloned()
+    (param_type(view, name).as_ref() == Some(&declared)).then_some(field)
 }
 
-/// Every one-segment row path an `==` or `!=` compares with `param`.
+/// The row paths below a root the scenario holds only by reference — an instance it captured or a
+/// value it observed — that `filter` reads: a member of such a value has no projection, so nothing
+/// can bind it (beyond10x/ess#428).
+pub(super) fn unprojected(
+    ir: &EssIr,
+    view: &ResolvedView,
+    settled: &BTreeMap<String, Determined>,
+    unbound: &[FactPath],
+) -> Vec<FactPath> {
+    let identity = &ir.entity(&view.source).identity.name;
+    unbound
+        .iter()
+        .filter(|path| path.segments().len() > 1 && path.namespace() != ViewSpec::PARAM)
+        // A struct member, by the declared types: a length or any other read of a scalar is not.
+        .filter(|path| row_type(ir, view, &path.segments().join(".")).is_some())
+        .filter(|path| match settled.get(path.namespace()) {
+            Some(determined) => !matches!(determined.value, ScenarioValue::Literal { .. }),
+            None => path.namespace() == identity,
+        })
+        .cloned()
+        .collect()
+}
+
+/// Every row path an `==` or `!=` compares with `param`: a field, or a dotted member of one.
 fn compared(predicate: &Predicate, param: &FactPath, out: &mut BTreeSet<String>) {
     match predicate {
         Predicate::All(children) | Predicate::Any(children) => {
@@ -292,8 +357,8 @@ fn compared(predicate: &Predicate, param: &FactPath, out: &mut BTreeSet<String>)
             ..
         } => {
             for (one, other) in [(left, right), (right, left)] {
-                if one == param && other.segments().len() == 1 {
-                    out.insert(other.namespace().to_owned());
+                if one == param && other.namespace() != ViewSpec::PARAM {
+                    out.insert(other.segments().join("."));
                 }
             }
         }

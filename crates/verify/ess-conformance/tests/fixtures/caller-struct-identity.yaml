@@ -1,0 +1,52 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.box
+summary: Boxes addressed by a struct identity, opened by an authenticated caller.
+types:
+  - name: demo.box.Slot
+    kind: struct
+    fields:
+      - {name: shelf, type: String}
+      - {name: label, type: String}
+entities:
+  - name: demo.box.Box
+    identity: {name: slot, type: demo.box.Slot}
+    fields:
+      - {name: opened_by, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.box.Clerk
+    attributes:
+      - {name: subject, type: String}
+    may: [demo.box.OpenBox]
+commands:
+  - name: demo.box.OpenBox
+    input:
+      - {name: slot, type: demo.box.Slot}
+    outcomes:
+      - name: exists
+        existing_instance: true
+        error: demo.box.Taken
+      - name: opened
+        creates: demo.box.Box
+        instance: slot
+        sets: {opened_by: {caller: subject}}
+        emits: [demo.box.BoxOpened]
+        payload:
+          demo.box.BoxOpened: {slot: input.slot}
+events:
+  - name: demo.box.BoxOpened
+    fields:
+      - {name: slot, type: demo.box.Slot}
+errors:
+  - name: demo.box.Taken
+views:
+  - name: demo.box.ByShelf
+    source: demo.box.Box
+    consistency: read_your_writes
+    params: [{name: shelf, type: String}]
+    filter: slot.shelf == param.shelf
+    fields:
+      - {name: slot, type: demo.box.Slot}
+      - {name: opened_by, type: String}

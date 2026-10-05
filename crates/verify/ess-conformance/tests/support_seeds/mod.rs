@@ -597,7 +597,7 @@ pub fn forgeries(good: &Value, authored: &Value, authored_id: &str) -> Vec<Forge
             },
         );
     }
-    for major in [44, 45, 99] {
+    for major in [46, 47, 99] {
         add(
             &format!("unimplemented-major-{major}"),
             "execution readers admit suite majors",

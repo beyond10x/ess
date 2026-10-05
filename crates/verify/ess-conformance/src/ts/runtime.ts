@@ -2730,7 +2730,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /43 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /45 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -2810,6 +2810,7 @@ export async function runWith(
         harness,
         harness.correlation(),
         SUITE_MAJORS[suite.provenance.suite_version]! >= 28,
+        SUITE_MAJORS[suite.provenance.suite_version]! >= 44,
       );
       let returned = false;
       let thrown: unknown;
@@ -3190,6 +3191,21 @@ function normalizeResult(result: CommandResult | undefined): ObservedCommandResu
 }
 
 /** ScenarioRun is one scenario in flight, and everything it has bound. */
+/**
+ * How many times the act at the head of `steps` — every step up to the next command — claims each
+ * event, by `expect_event` or `expect_event_values` (beyond10x/ess#427).
+ */
+export function actClaims(steps: readonly Step[]): { [event: string]: number } {
+  const claims: { [event: string]: number } = {};
+  for (const step of steps) {
+    if (step.step === 'execute_command' || step.step === 'execute_command_without_input') break;
+    if (step.step === 'expect_event' || step.step === 'expect_event_values') {
+      claims[step.event] = (claims[step.event] ?? 0) + 1;
+    }
+  }
+  return claims;
+}
+
 export class ScenarioRun {
   readonly t: TestScope;
   readonly target: Target;
@@ -3269,6 +3285,14 @@ export class ScenarioRun {
   private disclosureIncomplete = false;
   private stepTargetError = false;
   private readonly continuedAssertions: boolean;
+  /**
+   * Suite/44 and later (beyond10x/ess#427): each event claim after one command takes an occurrence
+   * of its own. `claimed` are the positions in `observed` an earlier claim of this act took, by
+   * event, and `claims` how many times the act claims each event; both are reset per command.
+   */
+  private readonly countedClaims: boolean;
+  private claimed: { [event: string]: Set<number> } = {};
+  private claims: { [event: string]: number } = {};
 
   constructor(
     t: TestScope,
@@ -3276,12 +3300,14 @@ export class ScenarioRun {
     harness: Harness,
     correlation: string,
     continuedAssertions = false,
+    countedClaims = false,
   ) {
     this.t = t;
     this.target = readAsJSON(target);
     this.harness = harness;
     this.correlation = correlation;
     this.continuedAssertions = continuedAssertions;
+    this.countedClaims = countedClaims;
   }
 
   async execute(id: string, scenario: Scenario): Promise<void> {
@@ -3343,6 +3369,12 @@ export class ScenarioRun {
           !(await this.countBefore(index, next.unpublished ?? []))
         ) {
           return;
+        }
+        // A command opens an act: no occurrence it publishes is claimed yet, and the act's claims
+        // are counted for the failure of one left over (beyond10x/ess#427).
+        if (step.step === 'execute_command' || step.step === 'execute_command_without_input') {
+          this.claimed = {};
+          this.claims = actClaims(scenario.steps.slice(index + 1));
         }
         // A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
         this.readRefusalExpected =
@@ -3912,7 +3944,52 @@ export class ScenarioRun {
     return true;
   }
 
+  /**
+   * An event claim from suite/44 (beyond10x/ess#427), as the Rust runner's `expect_counted_event`
+   * makes it: the claim takes an occurrence the last command published that no earlier claim of
+   * this act took — the first unclaimed one carrying its values and shape, else the first unclaimed
+   * one, whose values are then reported. A claim left with none fails `ESS-CF-EVENT`, naming how
+   * many were published and how many the act claims.
+   */
+  claimEvent(
+    index: number,
+    event: string,
+    payload: { [field: string]: Node },
+    shape: { [path: string]: Held },
+  ): boolean {
+    const seen = this.observed[event] ?? [];
+    const claimed = (this.claimed[event] ??= new Set<number>());
+    let taken = -1;
+    for (let at = 0; at < seen.length; at += 1) {
+      if (claimed.has(at)) continue;
+      const occurrence = itemAt(seen, at);
+      if (matches(occurrence.payload, payload) && holds(occurrence.payload, shape) === '') {
+        taken = at;
+        break;
+      }
+      if (taken < 0) taken = at;
+    }
+    if (taken < 0) {
+      if (seen.length === 0) return this.fail(index, `ESS-CF-EVENT: \`${event}\` was not emitted`);
+      return this.fail(
+        index,
+        `ESS-CF-EVENT: ${seen.length} occurrence(s) of \`${event}\` published, ${this.claims[event] ?? 0} claimed`,
+      );
+    }
+    claimed.add(taken);
+    const carried = itemAt(seen, taken).payload;
+    if (!matches(carried, payload))
+      return this.fail(
+        index,
+        `ESS-CF-PAYLOAD: \`${event}\` was emitted, and it did not carry ${describe(payload)}`,
+      );
+    const reason = holds(carried, shape);
+    return reason === '' || this.fail(index, `\`${event}\` was emitted, and ${reason}`);
+  }
+
   expectEventValues(index: number, step: Step): boolean {
+    if (this.countedClaims)
+      return this.claimEvent(index, step.event, step.payload ?? {}, step.shape ?? {});
     // Match the Rust runner: select the first direct occurrence by name, never by its values.
     const event = this.last.directEvents?.find((observed) => observed.event === step.event);
     if (!event) return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
@@ -3926,6 +4003,8 @@ export class ScenarioRun {
   }
 
   expectEvent(index: number, step: Step): boolean {
+    if (this.countedClaims)
+      return this.claimEvent(index, step.event, step.payload ?? {}, step.shape ?? {});
     const seen = this.observed[step.event] ?? [];
     if (seen.length === 0) {
       return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
@@ -6313,13 +6392,18 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // Explicit synthesis seeds (beyond10x/ess#413): the seed-bearing pair.
   'ess-conformance/42': 42,
   'ess-conformance/43': 43,
+  // Counted event claims (beyond10x/ess#427): every claim after one command takes an occurrence of
+  // its own. Cumulative over every major below, the seed-bearing pair included.
+  'ess-conformance/44': 44,
+  'ess-conformance/45': 45,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
-  // The coverage majors of the conditional measure, expression and seed-bearing pairs.
-  39, 41, 43,
+  // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
+  // pairs.
+  39, 41, 43, 45,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -6432,10 +6516,13 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       admitReference(source);
     }
   }
-  // Seed provenance (beyond10x/ess#413) belongs exactly to suite/42 and /43.
+  // Seed provenance (beyond10x/ess#413) is required exactly in suite/42 and /43, and admitted in the
+  // counted event-claim pair /44 and /45 above them, which is cumulative (beyond10x/ess#427).
   const carriesSeeds = Object.prototype.hasOwnProperty.call(provenance, 'synthesis_seeds');
-  if (carriesSeeds !== (major === 42 || major === 43)) {
-    throw new Error('synthesis_seeds is required exactly in suite/42 and /43');
+  if ((carriesSeeds && major < 42) || (!carriesSeeds && (major === 42 || major === 43))) {
+    throw new Error(
+      'synthesis_seeds is required exactly in suite/42 and /43, and admitted in /44 and /45',
+    );
   }
   if (carriesSeeds) {
     try {

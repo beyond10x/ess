@@ -223,6 +223,10 @@ func (r *run) expectEventValues(index int, step Step) bool {
 	if !ok {
 		return false
 	}
+	// From suite/44 the claim takes an occurrence of its own (beyond10x/ess#427).
+	if r.countedClaims {
+		return r.claimEvent(index, step.Event, payload, step.Shape)
+	}
 	// Match the Rust runner: select the first direct occurrence by name, never by its values, and
 	// once the values are resolved report exactly what `expect_event` reports, continuing where it
 	// continues (beyond10x/ess#273 synthesizes this step wherever an event carries a captured

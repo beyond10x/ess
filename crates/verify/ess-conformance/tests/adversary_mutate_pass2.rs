@@ -570,6 +570,7 @@ fn two_undecidable_views_at_one_scenario_are_two_keys() {
             filter: "status == Issued".to_owned(),
             state: ess_domain::entity::StateName::new("Draft").unwrap(),
             unbound: Vec::new(),
+            unprojected: Vec::new(),
         },
     };
     let (first, second) = (undecidable(&names[0]), undecidable(&names[1]));

@@ -90,7 +90,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 43
+const newestSuiteMajor = 45
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -1781,7 +1781,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /43 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /45 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1846,6 +1846,8 @@ func Run(t *testing.T, newTarget func() Target) {
 				observed:            map[string][]ObservedEvent{},
 				status:              statusPassed,
 				continuedAssertions: suiteMajor(suite.Provenance.SuiteVersion) >= 28,
+				countedClaims:       suiteMajor(suite.Provenance.SuiteVersion) >= 44,
+				claimed:             map[string]map[int]bool{},
 				preciseStatuses:     config.version == "2",
 				disclosure:          newOneTimeCaptures(suite.oneTime[id]),
 			}
@@ -2043,6 +2045,12 @@ type run struct {
 	// observed are the events the last command published, by event name. Cleared per command,
 	// because every `expect_no_event` is a claim about *that* invocation.
 	observed map[string][]ObservedEvent
+	// countedClaims is suite/44 and later (beyond10x/ess#427): each event claim after one command takes
+	// an occurrence of its own. claimed are the positions in observed an earlier claim of this act
+	// took, by event, and claims how many times the act claims each event; both are reset per command.
+	countedClaims bool
+	claimed       map[string]map[int]bool
+	claims        map[string]int
 	// seen are the events observed anywhere in this scenario so far, in the order they arrived.
 	//
 	// A second record rather than the same one, because the two answer different questions. A
@@ -2150,6 +2158,12 @@ func (r *run) execute(id string, scenario Scenario) {
 			if !r.countBefore(index, scenario.Steps[index+1].Unpublished) {
 				return
 			}
+		}
+		// A command opens an act: no occurrence it publishes is claimed yet, and the act's claims are
+		// counted for the failure of one left over (beyond10x/ess#427).
+		if step.Step == "execute_command" || step.Step == "execute_command_without_input" {
+			r.claimed = map[string]map[int]bool{}
+			r.claims = actClaims(scenario.Steps[index+1:])
 		}
 		// A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
 		r.readRefusalExpected = step.Step == "query_view" && index+1 < len(scenario.Steps) && scenario.Steps[index+1].Step == "expect_not_granted"
@@ -2447,7 +2461,65 @@ func (r *run) expectError(index int, step Step) bool {
 	return true
 }
 
+// actClaims is how many times the act at the head of steps — every step up to the next command —
+// claims each event, by `expect_event` or `expect_event_values`.
+func actClaims(steps []Step) map[string]int {
+	claims := map[string]int{}
+	for _, step := range steps {
+		if step.Step == "execute_command" || step.Step == "execute_command_without_input" {
+			break
+		}
+		if step.Step == "expect_event" || step.Step == "expect_event_values" {
+			claims[step.Event]++
+		}
+	}
+	return claims
+}
+
+// claimEvent is an event claim from suite/44 (beyond10x/ess#427), as ess_conformance::runner's
+// `expect_counted_event` makes it: the claim takes an occurrence of the event the last command
+// published that no earlier claim of this act took — the first unclaimed one carrying its values and
+// shape, else the first unclaimed one, whose values are then reported. A claim left with none fails
+// ESS-CF-EVENT, naming how many were published and how many the act claims.
+func (r *run) claimEvent(index int, event string, payload map[string]Node, shape map[string]Held) bool {
+	seen := r.observed[event]
+	if r.claimed[event] == nil {
+		r.claimed[event] = map[int]bool{}
+	}
+	taken := -1
+	for at, occurrence := range seen {
+		if r.claimed[event][at] {
+			continue
+		}
+		if payloadCarries(occurrence.Payload, payload) == "" && holds(occurrence.Payload, shape) == "" {
+			taken = at
+			break
+		}
+		if taken < 0 {
+			taken = at
+		}
+	}
+	if taken < 0 {
+		if len(seen) == 0 {
+			return r.assertionFailure(index, "ESS-CF-EVENT: `%s` was not emitted", event)
+		}
+		return r.assertionFailure(index, "ESS-CF-EVENT: %d occurrence(s) of `%s` published, %d claimed", len(seen), event, r.claims[event])
+	}
+	r.claimed[event][taken] = true
+	carried := seen[taken].Payload
+	if reason := payloadCarries(carried, payload); reason != "" {
+		return r.assertionFailure(index, "ESS-CF-PAYLOAD: `%s` was emitted, and %s", event, reason)
+	}
+	if reason := holds(carried, shape); reason != "" {
+		return r.assertionFailure(index, "`%s` was emitted, and %s", event, reason)
+	}
+	return true
+}
+
 func (r *run) expectEvent(index int, step Step) bool {
+	if r.countedClaims {
+		return r.claimEvent(index, step.Event, step.Payload, step.Shape)
+	}
 	// The first occurrence the last command published, by name alone, as ess_conformance::runner's
 	// `expect_event` selects it: "you published the wrong event" and "you published the right event
 	// carrying the wrong value" are two different repairs.
@@ -4295,9 +4367,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	// Seed provenance (beyond10x/ess#413) belongs exactly to suite/42 and /43.
-	if seeds, carried := p["synthesis_seeds"]; carried != (major == 42 || major == 43) {
-		return suite, fmt.Errorf("synthesis_seeds is required exactly in suite/42 and /43")
+	// Seed provenance (beyond10x/ess#413) is required exactly in suite/42 and /43, and admitted in the
+	// counted event-claim pair /44 and /45 above them, which is cumulative (beyond10x/ess#427).
+	if seeds, carried := p["synthesis_seeds"]; (carried && major < 42) || (!carried && (major == 42 || major == 43)) {
+		return suite, fmt.Errorf("synthesis_seeds is required exactly in suite/42 and /43, and admitted in /44 and /45")
 	} else if carried {
 		coverage, _ := root["coverage"].(map[string]any)
 		if err := admitSynthesisSeeds(seeds, scenarios, coverage); err != nil {

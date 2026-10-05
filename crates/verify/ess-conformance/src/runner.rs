@@ -388,9 +388,12 @@ impl<C: Clock> Runner<C> {
             })
         };
 
+        // From suite/44 every event claim after one command takes an occurrence of its own
+        // (beyond10x/ess#427); a suite labelled below keeps first-match semantics.
+        let counted = crate::event_multiplicity::counts(suite.provenance.suite_version.major());
         let mut scenarios = Vec::with_capacity(suite.len());
         for (id, scenario) in &suite.scenarios {
-            scenarios.push(self.scenario(id, scenario, target));
+            scenarios.push(self.scenario(id, scenario, counted, target));
         }
 
         let completed_at = self.clock.now();
@@ -412,11 +415,13 @@ impl<C: Clock> Runner<C> {
         &mut self,
         id: &ScenarioId,
         scenario: &ConformanceScenario,
+        counted: bool,
         target: &T,
     ) -> ScenarioResult {
         let started = self.clock.now();
         let context = ScenarioContext::new(id.clone(), self.ids.correlation());
         let mut run = Run::new(id.clone(), context);
+        run.counted = counted;
         run.disclosure = scenario
             .one_time_response
             .clone()
@@ -456,6 +461,7 @@ impl<C: Clock> Runner<C> {
                         break;
                     }
                 }
+                run.open_act(step, &scenario.steps[index + 1..]);
                 // A read the next step requires refused keeps its answer for that step
                 // (beyond10x/ess#286).
                 run.read_refusal_expected = matches!(
@@ -1951,6 +1957,9 @@ fn expect_event(
         return Flow::Stop;
     };
     let about = format!("event {event}");
+    if run.counted {
+        return expect_counted_event(event, payload, shape, run);
+    }
     // By name alone, never by the asserted values: "you published the wrong event" and "you
     // published the right event carrying the wrong value" are two different repairs, and folding
     // the values into the match would report the second as the first.
@@ -1976,6 +1985,87 @@ fn expect_event(
     // failed for a system that published exactly the right event with half a payload.
     expect_payload(event, &carried, payload, shape, Some(executing), run);
     Flow::Continue
+}
+
+/// [`expect_event`] from suite/44 (beyond10x/ess#427): the claim takes an occurrence of `event` no
+/// earlier claim of this act took.
+///
+/// Still by name first, so the two repairs stay apart: the first unclaimed occurrence that carries
+/// the claim's values and shape is taken, and where none does, the first unclaimed occurrence is
+/// taken and its values reported as `ESS-CF-PAYLOAD`. Only an act claiming more occurrences than
+/// were published fails `ESS-CF-EVENT`, naming both numbers. Searching the values among unclaimed
+/// occurrences is what lets an author write claims in any order, as the TypeScript runner always
+/// searched them.
+fn expect_counted_event(
+    event: &EventRef,
+    payload: &BTreeMap<String, Node>,
+    shape: &PayloadShape,
+    run: &mut Run,
+) -> Flow {
+    let Some(executed) = run.last_command.as_ref() else {
+        run.record(no_command(&run.id, "an event"));
+        return Flow::Stop;
+    };
+    let about = format!("event {event}");
+    let occurrences: Vec<(usize, &BTreeMap<String, Node>)> = executed
+        .result
+        .direct_events
+        .iter()
+        .enumerate()
+        .filter(|(_, observed)| &observed.event == event)
+        .map(|(at, observed)| (at, &observed.payload))
+        .collect();
+    let unclaimed = || {
+        occurrences
+            .iter()
+            .filter(|(at, _)| !run.claimed.contains(at))
+    };
+    let taken = unclaimed()
+        .find(|(_, carried)| carries(carried, payload, shape))
+        .or_else(|| unclaimed().next())
+        .map(|(at, carried)| (*at, (*carried).clone()));
+    let Some((at, carried)) = taken else {
+        let diagnostic = Diagnostic::new(CheckCode::Event, run.id.clone())
+            .declared_by(event.clone())
+            .executing(executed.quoted())
+            .expected(format!("event {event} published"));
+        let observed = if occurrences.is_empty() {
+            published(&executed.result)
+        } else {
+            format!(
+                "{} occurrence(s) of {event} published, {} claimed",
+                occurrences.len(),
+                run.claims.get(event).copied().unwrap_or_default()
+            )
+        };
+        run.record(CheckResult::failed(about, diagnostic.observed(observed)));
+        return Flow::Continue;
+    };
+    let executing = executed.quoted();
+    run.claimed.insert(at);
+    run.record(CheckResult::passed(CheckCode::Event, about));
+    expect_payload(event, &carried, payload, shape, Some(executing), run);
+    Flow::Continue
+}
+
+/// Whether an occurrence carries every value a claim names and every leaf of its shape: what
+/// [`expect_payload`] would pass, without recording anything.
+fn carries(
+    carried: &BTreeMap<String, Node>,
+    values: &BTreeMap<String, Node>,
+    shape: &PayloadShape,
+) -> bool {
+    values
+        .iter()
+        .all(|(field, expected)| carried_at(carried, field) == Some(expected))
+        && shape
+            .leaves()
+            .iter()
+            .all(|(path, leaf)| match reach_into(carried, path) {
+                Reached::Value(value) => leaf.admits(Some(value)),
+                Reached::Absent => leaf.admits(None),
+                Reached::Blocked { .. } => false,
+            })
 }
 
 /// Requires that an occurrence carried every field it declares, each of the declared type, and —
@@ -2908,6 +2998,12 @@ struct Run {
     read_refusal_expected: bool,
     /// The answer to that read, and the view it was of.
     read_answer: Option<(ViewRef, ReadAnswer)>,
+    /// Whether each event claim takes an occurrence of its own (suite/44, beyond10x/ess#427).
+    counted: bool,
+    /// The occurrences of the last command's direct events an earlier claim took, by position.
+    claimed: BTreeSet<usize>,
+    /// How many times the act of the last command claims each event.
+    claims: BTreeMap<EventRef, usize>,
     checks: Vec<CheckResult>,
 }
 
@@ -2935,7 +3031,23 @@ impl Run {
             reader: None,
             read_refusal_expected: false,
             read_answer: None,
+            counted: false,
+            claimed: BTreeSet::new(),
+            claims: BTreeMap::new(),
             checks: Vec::new(),
+        }
+    }
+
+    /// Where `step` is a command, opens its act: no occurrence it publishes is claimed yet, and the
+    /// claims of the act, the steps up to the next command in `after`, are counted for the
+    /// diagnostic of one left over (beyond10x/ess#427).
+    fn open_act(&mut self, step: &ScenarioStep, after: &[ScenarioStep]) {
+        if matches!(
+            step,
+            ScenarioStep::ExecuteCommand { .. } | ScenarioStep::ExecuteCommandWithoutInput { .. }
+        ) {
+            self.claimed.clear();
+            self.claims = crate::event_multiplicity::act_claims(after);
         }
     }
 
