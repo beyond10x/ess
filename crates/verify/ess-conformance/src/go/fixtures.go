@@ -207,6 +207,31 @@ func admitFixtureSteps(steps []any) error {
 	return nil
 }
 
+// claimValues resolves the values an `expect_event_values` step names without recording anything,
+// for matching an act's claims to occurrences (beyond10x/ess#427); false where one cannot be
+// resolved yet, and the step itself then says why.
+func (r *run) claimValues(step Step) (map[string]Node, bool) {
+	raw, err := json.Marshal(step.Payload)
+	if err != nil {
+		return nil, false
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.UseNumber()
+	var values map[string]Value
+	if err := decoder.Decode(&values); err != nil {
+		return nil, false
+	}
+	resolved := make(map[string]Node, len(values))
+	for field, value := range values {
+		node, err := r.resolve(value)
+		if err != nil {
+			return nil, false
+		}
+		resolved[field] = node
+	}
+	return resolved, true
+}
+
 func (r *run) expectEventValues(index int, step Step) bool {
 	// Payload is decoded as Node for legacy literal steps; this step explicitly admits Value.
 	raw, err := json.Marshal(step.Payload)

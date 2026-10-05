@@ -1848,6 +1848,7 @@ func Run(t *testing.T, newTarget func() Target) {
 				continuedAssertions: suiteMajor(suite.Provenance.SuiteVersion) >= 28,
 				countedClaims:       suiteMajor(suite.Provenance.SuiteVersion) >= 44,
 				claimed:             map[string]map[int]bool{},
+				assigned:            map[string][]int{},
 				preciseStatuses:     config.version == "2",
 				disclosure:          newOneTimeCaptures(suite.oneTime[id]),
 			}
@@ -2045,12 +2046,15 @@ type run struct {
 	// observed are the events the last command published, by event name. Cleared per command,
 	// because every `expect_no_event` is a claim about *that* invocation.
 	observed map[string][]ObservedEvent
-	// countedClaims is suite/44 and later (beyond10x/ess#427): each event claim after one command takes
-	// an occurrence of its own. claimed are the positions in observed an earlier claim of this act
-	// took, by event, and claims how many times the act claims each event; both are reset per command.
+	// countedClaims is suite/44 and later (beyond10x/ess#427): the claims of one event after one
+	// command are matched to its occurrences as a set. claimed are the claims of each event this act
+	// has made, by ordinal; claims how many times the act claims each event; act its claim steps; and
+	// assigned the occurrence each claim takes, by event and ordinal. All are reset per command.
 	countedClaims bool
 	claimed       map[string]map[int]bool
 	claims        map[string]int
+	act           []Step
+	assigned      map[string][]int
 	// seen are the events observed anywhere in this scenario so far, in the order they arrived.
 	//
 	// A second record rather than the same one, because the two answer different questions. A
@@ -2159,11 +2163,13 @@ func (r *run) execute(id string, scenario Scenario) {
 				return
 			}
 		}
-		// A command opens an act: no occurrence it publishes is claimed yet, and the act's claims are
-		// counted for the failure of one left over (beyond10x/ess#427).
+		// A command opens an act: no claim of it is made yet, and its claims are kept for matching
+		// them to the occurrences the command publishes (beyond10x/ess#427).
 		if step.Step == "execute_command" || step.Step == "execute_command_without_input" {
 			r.claimed = map[string]map[int]bool{}
+			r.assigned = map[string][]int{}
 			r.claims = actClaims(scenario.Steps[index+1:])
+			r.act = actClaimSteps(scenario.Steps[index+1:])
 		}
 		// A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
 		r.readRefusalExpected = step.Step == "query_view" && index+1 < len(scenario.Steps) && scenario.Steps[index+1].Step == "expect_not_granted"
@@ -2476,28 +2482,55 @@ func actClaims(steps []Step) map[string]int {
 	return claims
 }
 
+// actClaimSteps is the claim steps of the act at the head of steps, in order: every
+// `expect_event` and `expect_event_values` up to the next command.
+func actClaimSteps(steps []Step) []Step {
+	claims := []Step{}
+	for _, step := range steps {
+		if step.Step == "execute_command" || step.Step == "execute_command_without_input" {
+			break
+		}
+		if step.Step == "expect_event" || step.Step == "expect_event_values" {
+			claims = append(claims, step)
+		}
+	}
+	return claims
+}
+
 // claimEvent is an event claim from suite/44 (beyond10x/ess#427), as ess_conformance::runner's
-// `expect_counted_event` makes it: the claim takes an occurrence of the event the last command
-// published that no earlier claim of this act took — the first unclaimed one carrying its values and
-// shape, else the first unclaimed one, whose values are then reported. A claim left with none fails
-// ESS-CF-EVENT, naming how many were published and how many the act claims.
+// `expect_counted_event` makes it: the act's claims of the event are matched to the occurrences the
+// last command published as a set (assignClaims), so the order they are written in decides
+// nothing. A claim the matching meets passes; one it leaves out takes an occurrence nothing took and
+// reports its values; one with no occurrence left fails ESS-CF-EVENT, naming how many were published
+// and how many the act claims.
 func (r *run) claimEvent(index int, event string, payload map[string]Node, shape map[string]Held) bool {
 	seen := r.observed[event]
 	if r.claimed[event] == nil {
 		r.claimed[event] = map[int]bool{}
 	}
+	ordinal := len(r.claimed[event])
+	r.claimed[event][ordinal] = true
+	if ordinal == 0 {
+		var carries [][]bool
+		for _, claim := range r.act {
+			if claim.Event != event {
+				continue
+			}
+			values, ok := claim.Payload, true
+			if claim.Step == "expect_event_values" {
+				values, ok = r.claimValues(claim)
+			}
+			row := make([]bool, len(seen))
+			for at, occurrence := range seen {
+				row[at] = ok && payloadCarries(occurrence.Payload, values) == "" && holds(occurrence.Payload, claim.Shape) == ""
+			}
+			carries = append(carries, row)
+		}
+		r.assigned[event] = assignClaims(carries, len(seen))
+	}
 	taken := -1
-	for at, occurrence := range seen {
-		if r.claimed[event][at] {
-			continue
-		}
-		if payloadCarries(occurrence.Payload, payload) == "" && holds(occurrence.Payload, shape) == "" {
-			taken = at
-			break
-		}
-		if taken < 0 {
-			taken = at
-		}
+	if ordinal < len(r.assigned[event]) {
+		taken = r.assigned[event][ordinal]
 	}
 	if taken < 0 {
 		if len(seen) == 0 {
@@ -2505,7 +2538,6 @@ func (r *run) claimEvent(index int, event string, payload map[string]Node, shape
 		}
 		return r.assertionFailure(index, "ESS-CF-EVENT: %d occurrence(s) of `%s` published, %d claimed", len(seen), event, r.claims[event])
 	}
-	r.claimed[event][taken] = true
 	carried := seen[taken].Payload
 	if reason := payloadCarries(carried, payload); reason != "" {
 		return r.assertionFailure(index, "ESS-CF-PAYLOAD: `%s` was emitted, and %s", event, reason)
@@ -2514,6 +2546,85 @@ func (r *run) claimEvent(index int, event string, payload map[string]Node, shape
 		return r.assertionFailure(index, "`%s` was emitted, and %s", event, reason)
 	}
 	return true
+}
+
+// assignClaims is ess_conformance::event_multiplicity::assignment: the occurrence each claim of one
+// event in one act takes, by claim, or -1. A maximum matching of claims to distinct occurrences that
+// carry them (carries[claim][occurrence]); among several, each claim in turn takes the lowest
+// occurrence some maximum matching gives it. Every claim left out then takes, in turn, the lowest
+// occurrence nothing took.
+func assignClaims(carries [][]bool, occurrences int) []int {
+	edge := func(claim, occurrence int) bool {
+		return occurrence < len(carries[claim]) && carries[claim][occurrence]
+	}
+	span := func(from int) []int {
+		claims := []int{}
+		for claim := from; claim < len(carries); claim++ {
+			claims = append(claims, claim)
+		}
+		return claims
+	}
+	used := make([]bool, occurrences)
+	best := maximumClaims(edge, span(0), used)
+	taken := make([]int, len(carries))
+	fixed := 0
+	for claim := range carries {
+		taken[claim] = -1
+		for occurrence := 0; occurrence < occurrences; occurrence++ {
+			if used[occurrence] || !edge(claim, occurrence) {
+				continue
+			}
+			used[occurrence] = true
+			if fixed+1+maximumClaims(edge, span(claim+1), used) == best {
+				taken[claim] = occurrence
+				fixed++
+				break
+			}
+			used[occurrence] = false
+		}
+	}
+	for claim := range taken {
+		if taken[claim] >= 0 {
+			continue
+		}
+		for occurrence := range used {
+			if !used[occurrence] {
+				used[occurrence] = true
+				taken[claim] = occurrence
+				break
+			}
+		}
+	}
+	return taken
+}
+
+// maximumClaims is the size of a maximum matching of claims to occurrences not blocked.
+func maximumClaims(edge func(int, int) bool, claims []int, blocked []bool) int {
+	owner := make([]int, len(blocked))
+	for at := range owner {
+		owner[at] = -1
+	}
+	var augment func(claim int, seen []bool) bool
+	augment = func(claim int, seen []bool) bool {
+		for occurrence := range blocked {
+			if blocked[occurrence] || seen[occurrence] || !edge(claim, occurrence) {
+				continue
+			}
+			seen[occurrence] = true
+			if owner[occurrence] < 0 || augment(owner[occurrence], seen) {
+				owner[occurrence] = claim
+				return true
+			}
+		}
+		return false
+	}
+	count := 0
+	for _, claim := range claims {
+		if augment(claim, make([]bool, len(blocked))) {
+			count++
+		}
+	}
+	return count
 }
 
 func (r *run) expectEvent(index int, step Step) bool {

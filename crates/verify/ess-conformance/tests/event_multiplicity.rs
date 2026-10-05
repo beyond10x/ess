@@ -689,3 +689,154 @@ fn typescript_parity<T: ConformanceTarget>(
     );
     rust
 }
+
+// ---- adversary pass 1 (W1-2) --------------------------------------------------------------------
+
+/// One authored act of one `Rewrap`, its claims written in order: `None` is a claim naming no
+/// value, `Some(v)` one naming `batch_id: v`.
+fn adversary_w12_act(name: &str, claims: &[Option<&str>]) -> String {
+    let mut text = format!(
+        "type: ess-scenario/1\ndomain: demo.batch\nscenario: {name}\nsummary: Claims in an order.\ntimeline:\n  - at: 2026-01-05T09:00:00Z\n    command: demo.batch.Rewrap\n    actor: demo.batch.Operator\n    input: {{batch_id: b-1}}\n    outcome: rewrapped\n    events:\n"
+    );
+    for claim in claims {
+        match claim {
+            Some(value) => write!(
+                text,
+                "      - event: demo.batch.Rewrapped\n        payload: {{batch_id: {value}}}\n"
+            )
+            .unwrap(),
+            None => text.push_str("      - event: demo.batch.Rewrapped\n"),
+        }
+    }
+    text
+}
+
+/// The module and `expect_counted_event` promise that searching values among unclaimed occurrences
+/// "lets an author write claims in any order". Two occurrences, `x` and `y`, meet the claims "one
+/// occurrence" and "one carrying `x`" together (`y` and `x`), so a target publishing them passes
+/// whichever claim is written first. The first-fit choice gives `x` to the claim that names no
+/// value and leaves `y` for the claim that needs `x`: the order decides the verdict, in all three
+/// runners alike.
+#[test]
+fn adversary_w12_claim_order_does_not_decide_the_verdict() {
+    let documents = [
+        adversary_w12_act("x-then-any", &[Some("x"), None]),
+        adversary_w12_act("any-then-x", &[None, Some("x")]),
+    ];
+    let refs: Vec<&str> = documents.iter().map(String::as_str).collect();
+    let suite = with_authored(MODEL, &refs);
+    assert_eq!(
+        suite.provenance.suite_version.to_string(),
+        "ess-conformance/44"
+    );
+    let target = || Batches::new(Publishes::Carrying(vec!["x", "y"]));
+    // The three runners agree with each other (each call asserts parity with Rust) ...
+    let go = support_go::assert_parity("adversary-w12-order", &suite, target());
+    let typescript = typescript_parity("adversary-w12-order", &suite, target());
+    let rust = run(&suite, &target());
+    for id in [
+        "demo.batch/authored/x-then-any",
+        "demo.batch/authored/any-then-x",
+    ] {
+        // ... and an honest target meets both claims whichever is written first.
+        assert_eq!(
+            (go[id].as_str(), typescript[id].as_str(), rust[id].status),
+            ("passed", "passed", Status::Passed),
+            "{id}: Go {}, TypeScript {}, Rust {:#?}",
+            go[id],
+            typescript[id],
+            rust[id]
+        );
+    }
+}
+
+/// Every command opens an act of its own: an occurrence the first command published and an earlier
+/// claim took says nothing about the second command's occurrences. Two acts claiming three
+/// occurrences each pass an honest target in every runner, and a Go runtime that never resets what
+/// was claimed — the reset line deleted from a copy of the emitted runtime — fails the second act.
+/// No case of the unit runs a `/44` suite with two commands in one scenario, so dropping the reset
+/// in any runner survives the unit's own cases.
+#[test]
+fn adversary_w12_each_act_claims_its_own_occurrences() {
+    let entry = |at: &str, id: &str| {
+        let mut text = format!(
+            "  - at: {at}\n    command: demo.batch.Rewrap\n    actor: demo.batch.Operator\n    input: {{batch_id: {id}}}\n    outcome: rewrapped\n    events:\n"
+        );
+        for _ in 0..3 {
+            write!(
+                text,
+                "      - event: demo.batch.Rewrapped\n        payload: {{batch_id: {id}}}\n"
+            )
+            .unwrap();
+        }
+        text
+    };
+    let document = format!(
+        "type: ess-scenario/1\ndomain: demo.batch\nscenario: two-acts\nsummary: Two rewraps, three occurrences each.\ntimeline:\n{}{}",
+        entry("2026-01-05T09:00:00Z", "b-1"),
+        entry("2026-01-05T09:01:00Z", "b-2"),
+    );
+    let suite = with_authored(MODEL, &[&document]);
+    let id = "demo.batch/authored/two-acts";
+    assert_eq!(
+        suite.provenance.suite_version.to_string(),
+        "ess-conformance/44"
+    );
+    let honest = run(&suite, &Batches::new(Publishes::Copies(3)));
+    assert_eq!(honest[id].status, Status::Passed, "{:#?}", honest[id]);
+    let go = support_go::assert_parity(
+        "adversary-w12-acts",
+        &suite,
+        Batches::new(Publishes::Copies(3)),
+    );
+    assert_eq!(go[id], "passed", "Go");
+    let typescript = typescript_parity(
+        "adversary-w12-acts",
+        &suite,
+        Batches::new(Publishes::Copies(3)),
+    );
+    assert_eq!(typescript[id], "passed", "TypeScript");
+
+    // The mutant: the emitted Go runtime with the per-command reset of `claimed` deleted.
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let recorder = support_go::Recorder::new(Batches::new(Publishes::Copies(3)));
+    let _ = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &recorder)
+        .into_report();
+    let directory = support_go::package(
+        "adversary-w12-acts-mutant",
+        &suite,
+        &[support_go::TRANSCRIPT_TARGET],
+    );
+    let runtime = directory.join("essconform/runtime.go");
+    let text = std::fs::read_to_string(&runtime).unwrap();
+    let reset = "\t\t\tr.claimed = map[string]map[int]bool{}\n";
+    assert_eq!(text.matches(reset).count(), 1, "the per-command reset");
+    std::fs::write(&runtime, text.replace(reset, "")).unwrap();
+    let replayed = support_go::replay(&directory, &recorder, &[]);
+    std::fs::remove_dir_all(&directory).unwrap();
+    assert_eq!(
+        replayed.go.outcomes.get(id).map(String::as_str),
+        Some("failed"),
+        "the mutant is killed: {}",
+        replayed.go.log
+    );
+}
+
+/// More occurrences than claims is not this rule's business, in Go and TypeScript as in Rust.
+#[test]
+fn adversary_w12_extra_occurrences_pass_in_every_runner() {
+    let suite = synthesized();
+    let go = support_go::assert_parity(
+        "adversary-w12-four",
+        &suite,
+        Batches::new(Publishes::Copies(4)),
+    );
+    assert_eq!(go[REWRAPPED], "passed", "Go");
+    let typescript = typescript_parity(
+        "adversary-w12-four",
+        &suite,
+        Batches::new(Publishes::Copies(4)),
+    );
+    assert_eq!(typescript[REWRAPPED], "passed", "TypeScript");
+}

@@ -1987,15 +1987,13 @@ fn expect_event(
     Flow::Continue
 }
 
-/// [`expect_event`] from suite/44 (beyond10x/ess#427): the claim takes an occurrence of `event` no
-/// earlier claim of this act took.
+/// [`expect_event`] from suite/44 (beyond10x/ess#427): the claim takes the occurrence of `event`
+/// the act's claims of it are matched to as a set ([`crate::event_multiplicity::assignment`]).
 ///
-/// Still by name first, so the two repairs stay apart: the first unclaimed occurrence that carries
-/// the claim's values and shape is taken, and where none does, the first unclaimed occurrence is
-/// taken and its values reported as `ESS-CF-PAYLOAD`. Only an act claiming more occurrences than
-/// were published fails `ESS-CF-EVENT`, naming both numbers. Searching the values among unclaimed
-/// occurrences is what lets an author write claims in any order, as the TypeScript runner always
-/// searched them.
+/// Still by name first, so the two repairs stay apart: a claim the matching meets passes, one it
+/// leaves out takes an occurrence nothing took and reports its values as `ESS-CF-PAYLOAD`, and only
+/// a claim with no occurrence left fails `ESS-CF-EVENT`, naming how many were published and how
+/// many the act claims. The order claims are written in decides none of it.
 fn expect_counted_event(
     event: &EventRef,
     payload: &BTreeMap<String, Node>,
@@ -2015,16 +2013,54 @@ fn expect_counted_event(
         .filter(|(_, observed)| &observed.event == event)
         .map(|(at, observed)| (at, &observed.payload))
         .collect();
-    let unclaimed = || {
-        occurrences
+    let ordinal = run.claimed.get(event).copied().unwrap_or_default();
+    if ordinal == 0 || !run.assigned.contains_key(event) {
+        // Every claim of this event in the act, against every occurrence: which it carries. A
+        // claim whose values cannot be resolved yet carries none; its own step says why.
+        let carried: Vec<Vec<bool>> = run
+            .act
             .iter()
-            .filter(|(at, _)| !run.claimed.contains(at))
-    };
-    let taken = unclaimed()
-        .find(|(_, carried)| carries(carried, payload, shape))
-        .or_else(|| unclaimed().next())
+            .filter_map(|step| match step {
+                ScenarioStep::ExpectEvent {
+                    event: claimed,
+                    payload,
+                    shape,
+                } if claimed == event => Some(Ok((payload.clone(), shape))),
+                ScenarioStep::ExpectEventValues {
+                    event: claimed,
+                    payload,
+                    shape,
+                } if claimed == event => Some(
+                    payload
+                        .iter()
+                        .map(|(field, value)| run.resolve(value).map(|node| (field.clone(), node)))
+                        .collect::<Result<BTreeMap<_, _>, _>>()
+                        .map(|values| (values, shape)),
+                ),
+                _ => None,
+            })
+            .map(|claim| {
+                occurrences
+                    .iter()
+                    .map(|(_, held)| {
+                        claim
+                            .as_ref()
+                            .is_ok_and(|(values, shape)| carries(held, values, shape))
+                    })
+                    .collect()
+            })
+            .collect();
+        let assigned = crate::event_multiplicity::assignment(&carried, occurrences.len());
+        run.assigned.insert(event.clone(), assigned);
+    }
+    run.claimed.insert(event.clone(), ordinal + 1);
+    let taken = run
+        .assigned
+        .get(event)
+        .and_then(|assigned| assigned.get(ordinal).copied().flatten())
+        .and_then(|index| occurrences.get(index))
         .map(|(at, carried)| (*at, (*carried).clone()));
-    let Some((at, carried)) = taken else {
+    let Some((_, carried)) = taken else {
         let diagnostic = Diagnostic::new(CheckCode::Event, run.id.clone())
             .declared_by(event.clone())
             .executing(executed.quoted())
@@ -2042,7 +2078,6 @@ fn expect_counted_event(
         return Flow::Continue;
     };
     let executing = executed.quoted();
-    run.claimed.insert(at);
     run.record(CheckResult::passed(CheckCode::Event, about));
     expect_payload(event, &carried, payload, shape, Some(executing), run);
     Flow::Continue
@@ -3000,10 +3035,15 @@ struct Run {
     read_answer: Option<(ViewRef, ReadAnswer)>,
     /// Whether each event claim takes an occurrence of its own (suite/44, beyond10x/ess#427).
     counted: bool,
-    /// The occurrences of the last command's direct events an earlier claim took, by position.
-    claimed: BTreeSet<usize>,
+    /// How many claims of each event this act has made so far.
+    claimed: BTreeMap<EventRef, usize>,
     /// How many times the act of the last command claims each event.
     claims: BTreeMap<EventRef, usize>,
+    /// The claim steps of that act, in order.
+    act: Vec<ScenarioStep>,
+    /// The position, in the last command's direct events, each claim of an event takes, by claim
+    /// ([`crate::event_multiplicity::assignment`]); made at the act's first claim of the event.
+    assigned: BTreeMap<EventRef, Vec<Option<usize>>>,
     checks: Vec<CheckResult>,
 }
 
@@ -3032,22 +3072,26 @@ impl Run {
             read_refusal_expected: false,
             read_answer: None,
             counted: false,
-            claimed: BTreeSet::new(),
+            claimed: BTreeMap::new(),
             claims: BTreeMap::new(),
+            act: Vec::new(),
+            assigned: BTreeMap::new(),
             checks: Vec::new(),
         }
     }
 
-    /// Where `step` is a command, opens its act: no occurrence it publishes is claimed yet, and the
-    /// claims of the act, the steps up to the next command in `after`, are counted for the
-    /// diagnostic of one left over (beyond10x/ess#427).
+    /// Where `step` is a command, opens its act: no claim of it is made yet, and the claims of the
+    /// act, the steps up to the next command in `after`, are kept for matching them to the
+    /// occurrences the command publishes (beyond10x/ess#427).
     fn open_act(&mut self, step: &ScenarioStep, after: &[ScenarioStep]) {
         if matches!(
             step,
             ScenarioStep::ExecuteCommand { .. } | ScenarioStep::ExecuteCommandWithoutInput { .. }
         ) {
             self.claimed.clear();
+            self.assigned.clear();
             self.claims = crate::event_multiplicity::act_claims(after);
+            self.act = crate::event_multiplicity::act_claim_steps(after);
         }
     }
 

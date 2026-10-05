@@ -3195,6 +3195,73 @@ function normalizeResult(result: CommandResult | undefined): ObservedCommandResu
  * How many times the act at the head of `steps` — every step up to the next command — claims each
  * event, by `expect_event` or `expect_event_values` (beyond10x/ess#427).
  */
+export function actClaimSteps(steps: readonly Step[]): Step[] {
+  const claims: Step[] = [];
+  for (const step of steps) {
+    if (step.step === 'execute_command' || step.step === 'execute_command_without_input') break;
+    if (step.step === 'expect_event' || step.step === 'expect_event_values') claims.push(step);
+  }
+  return claims;
+}
+
+/**
+ * The Rust `event_multiplicity::assignment`: the occurrence each claim of one event in one act
+ * takes, by claim, or -1. A maximum matching of claims to distinct occurrences that carry them
+ * (`carries[claim][occurrence]`); among several, each claim in turn takes the lowest occurrence
+ * some maximum matching gives it. Every claim left out then takes, in turn, the lowest occurrence
+ * nothing took (beyond10x/ess#427).
+ */
+export function assignClaims(
+  carries: readonly (readonly boolean[])[],
+  occurrences: number,
+): number[] {
+  const edge = (claim: number, occurrence: number) => carries[claim]?.[occurrence] === true;
+  const maximum = (claims: number[], blocked: boolean[]): number => {
+    const owner: number[] = new Array<number>(blocked.length).fill(-1);
+    const augment = (claim: number, seen: boolean[]): boolean => {
+      for (let occurrence = 0; occurrence < blocked.length; occurrence += 1) {
+        if (blocked[occurrence] || seen[occurrence] || !edge(claim, occurrence)) continue;
+        seen[occurrence] = true;
+        const held = owner[occurrence] ?? -1;
+        if (held < 0 || augment(held, seen)) {
+          owner[occurrence] = claim;
+          return true;
+        }
+      }
+      return false;
+    };
+    return claims.filter((claim) => augment(claim, new Array<boolean>(blocked.length).fill(false)))
+      .length;
+  };
+  const span = (from: number) =>
+    Array.from({ length: Math.max(carries.length - from, 0) }, (_, at) => from + at);
+  const used: boolean[] = new Array<boolean>(occurrences).fill(false);
+  const best = maximum(span(0), used);
+  const taken: number[] = new Array<number>(carries.length).fill(-1);
+  let fixed = 0;
+  for (let claim = 0; claim < carries.length; claim += 1) {
+    for (let occurrence = 0; occurrence < occurrences; occurrence += 1) {
+      if (used[occurrence] || !edge(claim, occurrence)) continue;
+      used[occurrence] = true;
+      if (fixed + 1 + maximum(span(claim + 1), used) === best) {
+        taken[claim] = occurrence;
+        fixed += 1;
+        break;
+      }
+      used[occurrence] = false;
+    }
+  }
+  for (let claim = 0; claim < taken.length; claim += 1) {
+    if (taken[claim] !== -1) continue;
+    const free = used.indexOf(false);
+    if (free >= 0) {
+      used[free] = true;
+      taken[claim] = free;
+    }
+  }
+  return taken;
+}
+
 export function actClaims(steps: readonly Step[]): { [event: string]: number } {
   const claims: { [event: string]: number } = {};
   for (const step of steps) {
@@ -3286,13 +3353,16 @@ export class ScenarioRun {
   private stepTargetError = false;
   private readonly continuedAssertions: boolean;
   /**
-   * Suite/44 and later (beyond10x/ess#427): each event claim after one command takes an occurrence
-   * of its own. `claimed` are the positions in `observed` an earlier claim of this act took, by
-   * event, and `claims` how many times the act claims each event; both are reset per command.
+   * Suite/44 and later (beyond10x/ess#427): the claims of one event after one command are matched
+   * to its occurrences as a set. `claimed` are the claims of each event this act has made, by
+   * ordinal; `claims` how many times the act claims each event; `act` its claim steps; and
+   * `assigned` the occurrence each claim takes, by event and ordinal. All are reset per command.
    */
   private readonly countedClaims: boolean;
   private claimed: { [event: string]: Set<number> } = {};
   private claims: { [event: string]: number } = {};
+  private act: Step[] = [];
+  private assigned: { [event: string]: number[] } = {};
 
   constructor(
     t: TestScope,
@@ -3370,11 +3440,13 @@ export class ScenarioRun {
         ) {
           return;
         }
-        // A command opens an act: no occurrence it publishes is claimed yet, and the act's claims
-        // are counted for the failure of one left over (beyond10x/ess#427).
+        // A command opens an act: no claim of it is made yet, and its claims are kept for matching
+        // them to the occurrences the command publishes (beyond10x/ess#427).
         if (step.step === 'execute_command' || step.step === 'execute_command_without_input') {
           this.claimed = {};
+          this.assigned = {};
           this.claims = actClaims(scenario.steps.slice(index + 1));
+          this.act = actClaimSteps(scenario.steps.slice(index + 1));
         }
         // A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
         this.readRefusalExpected =
@@ -3946,10 +4018,11 @@ export class ScenarioRun {
 
   /**
    * An event claim from suite/44 (beyond10x/ess#427), as the Rust runner's `expect_counted_event`
-   * makes it: the claim takes an occurrence the last command published that no earlier claim of
-   * this act took — the first unclaimed one carrying its values and shape, else the first unclaimed
-   * one, whose values are then reported. A claim left with none fails `ESS-CF-EVENT`, naming how
-   * many were published and how many the act claims.
+   * makes it: the act's claims of the event are matched to the occurrences the last command
+   * published as a set (`assignClaims`), so the order they are written in decides nothing. A claim
+   * the matching meets passes; one it leaves out takes an occurrence nothing took and reports its
+   * values; one with no occurrence left fails `ESS-CF-EVENT`, naming how many were published and
+   * how many the act claims.
    */
   claimEvent(
     index: number,
@@ -3959,16 +4032,24 @@ export class ScenarioRun {
   ): boolean {
     const seen = this.observed[event] ?? [];
     const claimed = (this.claimed[event] ??= new Set<number>());
-    let taken = -1;
-    for (let at = 0; at < seen.length; at += 1) {
-      if (claimed.has(at)) continue;
-      const occurrence = itemAt(seen, at);
-      if (matches(occurrence.payload, payload) && holds(occurrence.payload, shape) === '') {
-        taken = at;
-        break;
-      }
-      if (taken < 0) taken = at;
+    const ordinal = claimed.size;
+    claimed.add(ordinal);
+    if (ordinal === 0) {
+      const carries = this.act
+        .filter((claim) => claim.event === event)
+        .map((claim) => {
+          const values =
+            claim.step === 'expect_event_values' ? this.claimValues(claim) : (claim.payload ?? {});
+          return seen.map(
+            (occurrence) =>
+              values !== null &&
+              matches(occurrence.payload, values) &&
+              holds(occurrence.payload, claim.shape ?? {}) === '',
+          );
+        });
+      this.assigned[event] = assignClaims(carries, seen.length);
     }
+    const taken = this.assigned[event]?.[ordinal] ?? -1;
     if (taken < 0) {
       if (seen.length === 0) return this.fail(index, `ESS-CF-EVENT: \`${event}\` was not emitted`);
       return this.fail(
@@ -3976,7 +4057,6 @@ export class ScenarioRun {
         `ESS-CF-EVENT: ${seen.length} occurrence(s) of \`${event}\` published, ${this.claims[event] ?? 0} claimed`,
       );
     }
-    claimed.add(taken);
     const carried = itemAt(seen, taken).payload;
     if (!matches(carried, payload))
       return this.fail(
@@ -3985,6 +4065,24 @@ export class ScenarioRun {
       );
     const reason = holds(carried, shape);
     return reason === '' || this.fail(index, `\`${event}\` was emitted, and ${reason}`);
+  }
+
+  /**
+   * The values an `expect_event_values` step names, resolved without recording anything, for
+   * matching an act's claims to occurrences (beyond10x/ess#427); `null` where one cannot be
+   * resolved yet, and the step itself then says why.
+   */
+  claimValues(claim: Step): { [field: string]: Node } | null {
+    try {
+      return Object.fromEntries(
+        Object.entries((claim.payload ?? {}) as Record<string, Value>).map(([field, written]) => [
+          field,
+          this.resolve(written),
+        ]),
+      );
+    } catch {
+      return null;
+    }
   }
 
   expectEventValues(index: number, step: Step): boolean {
