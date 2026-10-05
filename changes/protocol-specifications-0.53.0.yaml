@@ -1,0 +1,16 @@
+schema: b10x-change/v1
+id: ess/protocol-specifications-0.53.0
+repository: ess
+publishedAt: 2026-10-05T00:00:00Z
+title: Experimental protocol specifications and instant-ordered timestamps
+summary: >-
+  Experimental `ess-protospec/1` models communicating peers, bounded channels, timers and safety
+  properties; `ess verify protocol` simulates, replays and explores it. Conformance runners in
+  Rust, Go and TypeScript now order RFC 3339 instants by instant, not by text.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.53.0
+  version: 0.53.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

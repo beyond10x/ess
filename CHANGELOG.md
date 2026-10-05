@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-10-05
+
 ### Added
 
 - Synthesized Rust and Go network components include ephemeral in-memory stores and executable
@@ -25,6 +27,12 @@
   `String` (`label.utf8_bytes`, beyond10x/ess#233), and two `Timestamp` facts compare as instants
   (`as: timestamp`). Suites carrying these forms are `ess-conformance/40` and `/41`; the Rust, Go
   and TypeScript runners share one vector file per form.
+- A command guard may hold an instant to a weekly calendar window at UTC or a fixed offset,
+  `window: {at: now | <Timestamp>, days, from, to, offset}`; a named time zone is refused, so a
+  window does not follow daylight saving (beyond10x/ess#244).
+- An `external:` refusal marked `compensates: true` changes the one record it addresses, by
+  `moves:` or `updates:`, before answering its error; every unmarked refusal still changes nothing
+  (beyond10x/ess#197).
 - `distinct: {in, as, by}` holds when no two elements of a list share a key, compared exactly or
   as instants, with the key kind written back (beyond10x/ess#237).
 - A string operator may compare with a view parameter, `{param: <name>}`, or a command input,

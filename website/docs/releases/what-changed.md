@@ -9,6 +9,20 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.53.0 — 2026-10-05
+
+### Experimental protocol specifications and instant-ordered timestamps
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.53.0)
+
+Experimental `ess-protospec/1` models communicating peers, bounded channels, timers and safety properties; `ess verify protocol` simulates, replays and explores it. Conformance runners in Rust, Go and TypeScript now order RFC 3339 instants by instant, not by text.
+
+### Source format ess/22, row sets and calendar windows
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.53.0)
+
+`ess/22` adds fact operands, constant offsets, instant comparison, UTF-8 byte length, distinct list members, typed text operands, row sets with filtered related reads, calendar windows at a fixed offset, binding payload conditions and conditional aggregate measures, each checked by synthesized conformance scenarios in the Rust, Go and TypeScript runners.
+
 ## 0.52.0 — 2026-10-03
 
 ### Event publishers, recursive Rust contracts and consumer fixes

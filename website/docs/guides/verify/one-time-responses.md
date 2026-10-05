@@ -6,7 +6,7 @@ description: Declare response fields whose values may be disclosed only by the r
 
 # One-time response values
 
-`one_time_response`, introduced by the unreleased `ess/21` format, marks response fields whose
+`one_time_response`, introduced by the `ess/21` format (0.53.0), marks response fields whose
 values may appear only in the response that issues them. A retry, later command, view or event
 must not disclose those values again. This is useful for credentials that a caller sees once.
 

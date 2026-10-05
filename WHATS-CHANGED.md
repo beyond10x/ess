@@ -6,6 +6,8 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.53.0](#experimental-protocol-specifications-and-instant-ordered-timestamps) | Experimental protocol specifications and instant-ordered timestamps | capability | notable |
+| [0.53.0](#source-format-ess22-row-sets-and-calendar-windows) | Source format ess/22, row sets and calendar windows | capability | significant |
 | [0.52.0](#event-publishers-recursive-rust-contracts-and-consumer-fixes) | Event publishers, recursive Rust contracts and consumer fixes | capability | notable |
 | [0.51.0](#committed-generated-output-regenerates-in-another-checkout) | Committed generated output regenerates in another checkout | capability | notable |
 | [0.51.0](#generated-rust-servers-select-a-branch-by-whether-the-record-exists) | Generated Rust servers select a branch by whether the record exists | capability | notable |
@@ -53,6 +55,20 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.53.0 — 2026-10-05
+
+### Experimental protocol specifications and instant-ordered timestamps
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.53.0)
+
+Experimental `ess-protospec/1` models communicating peers, bounded channels, timers and safety properties; `ess verify protocol` simulates, replays and explores it. Conformance runners in Rust, Go and TypeScript now order RFC 3339 instants by instant, not by text.
+
+### Source format ess/22, row sets and calendar windows
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.53.0)
+
+`ess/22` adds fact operands, constant offsets, instant comparison, UTF-8 byte length, distinct list members, typed text operands, row sets with filtered related reads, calendar windows at a fixed offset, binding payload conditions and conditional aggregate measures, each checked by synthesized conformance scenarios in the Rust, Go and TypeScript runners.
 
 ## 0.52.0 — 2026-10-03
 
