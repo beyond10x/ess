@@ -180,14 +180,17 @@ fn the_json_output_is_the_report_bytes() {
         "--report-out",
         report.to_str().unwrap(),
     ]);
-    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    // Every class includes `emit-swap` (beyond10x/ess#295): billing's two swaps are killed and its
+    // three sites without an alternative are unavailable, so the audit is `/4` and exits 3.
+    assert_eq!(output.status.code(), Some(3), "{}", text(&output.stderr));
     let written = std::fs::read(&report).expect("--report-out is written");
     assert_eq!(output.stdout, written);
     let value: serde_json::Value = serde_json::from_slice(&written).unwrap();
-    assert_eq!(value["format"], "ess-mutation-report/3");
-    assert_eq!(value["counts"]["mutants"], 20);
-    assert_eq!(value["counts"]["killed"], 12);
+    assert_eq!(value["format"], "ess-mutation-report/4");
+    assert_eq!(value["counts"]["mutants"], 22);
+    assert_eq!(value["counts"]["killed"], 14);
     assert_eq!(value["counts"]["stillborn"], 8);
+    assert_eq!(value["unavailable_sites"].as_array().map(Vec::len), Some(3));
 
     let yaml = mutate(&[
         "--path",
@@ -197,9 +200,9 @@ fn the_json_output_is_the_report_bytes() {
         "--format",
         "yaml",
     ]);
-    assert_eq!(yaml.status.code(), Some(0));
+    assert_eq!(yaml.status.code(), Some(3));
     assert!(
-        text(&yaml.stdout).contains("format: ess-mutation-report/3"),
+        text(&yaml.stdout).contains("format: ess-mutation-report/4"),
         "{}",
         text(&yaml.stdout)
     );
@@ -219,7 +222,7 @@ fn a_misspelled_class_is_a_usage_error() {
 }
 
 #[test]
-fn the_help_names_the_eleven_classes_and_the_exit_statuses() {
+fn the_help_names_the_twelve_classes_and_the_exit_statuses() {
     let output = mutate(&["--help"]);
     let help = text(&output.stdout)
         .split_whitespace()
@@ -230,7 +233,7 @@ fn the_help_names_the_eleven_classes_and_the_exit_statuses() {
         help.contains(
             "[possible values: from-drop, transition-to, guard-boundary, sets-retarget, \
              guard-negate, guard-connective, error-swap, emit-drop, order-flip, sets-drop, \
-             precedence-swap]"
+             precedence-swap, emit-swap]"
         ),
         "{help}"
     );

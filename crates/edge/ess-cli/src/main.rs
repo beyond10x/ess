@@ -796,12 +796,18 @@ enum ConformCommand {
     /// perform. It survives when every scored scenario passed and each scenario it left unscored
     /// is the baseline's own, unchanged.
     ///
+    /// emit-swap replaces an outcome's only event with another declared event of exactly the same
+    /// fields that every component accepting the command publishes. A site with no such event is
+    /// listed as unavailable (`no_compatible_event_alternative`): single-event substitution was not
+    /// audited there, which is neither a kill nor a stillborn mutant.
+    ///
     /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not
-    /// equivalent, every scored mutant was killed or equivalent, and none is inconclusive or
-    /// unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
-    /// a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing
-    /// (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at
-    /// least one was unwitnessed or inconclusive, or none ran that was not equivalent. Exit 2: the
+    /// equivalent, every scored mutant was killed or equivalent, none is inconclusive or
+    /// unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not
+    /// load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error
+    /// (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site
+    /// (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a
+    /// selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the
     /// `--known-failing` declaration was refused. Known failures are listed first in the text and
     /// never count as a pass: the audit makes no conformance claim.
     ///
@@ -811,8 +817,9 @@ enum ConformCommand {
     /// ESS-MUTATE-003). Run your runner over each suite and write its conformance report to
     /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
     /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3,
-    /// or /4 where it holds a sets-drop or precedence-swap mutant or names a component;
-    /// `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+    /// or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable
+    /// site, or names a component; `--collect` also reads the /2 and /1 manifests earlier releases
+    /// wrote.
     ///
     /// For a repository that implements one component, `--emit --component NAME` writes the
     /// component's suites, as `synthesize --component` writes them, and marks out of scope every
@@ -844,8 +851,8 @@ enum ConformCommand {
         /// the emission to have been scoped to it.
         #[arg(long, conflicts_with = "target")]
         component: Option<String>,
-        /// Where to write the `ess-mutation-report/3` document (`/4` for a component or a
-        /// declaration).
+        /// Where to write the `ess-mutation-report/3` document (`/4` for a component, a
+        /// declaration or unavailable sites).
         #[arg(long)]
         report_out: Option<PathBuf>,
         /// An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail.
@@ -946,6 +953,7 @@ enum MutateClass {
     OrderFlip,
     SetsDrop,
     PrecedenceSwap,
+    EmitSwap,
 }
 
 impl From<MutateClass> for ess_conformance::mutate::MutantClass {
@@ -962,6 +970,7 @@ impl From<MutateClass> for ess_conformance::mutate::MutantClass {
             MutateClass::OrderFlip => Self::OrderFlip,
             MutateClass::SetsDrop => Self::SetsDrop,
             MutateClass::PrecedenceSwap => Self::PrecedenceSwap,
+            MutateClass::EmitSwap => Self::EmitSwap,
         }
     }
 }
@@ -4194,66 +4203,78 @@ fn conform_mutate_emit(
     }
     let manifest = &emission.manifest;
     match format {
-        Format::Text => {
-            let stillborn = manifest
-                .mutants
-                .iter()
-                .filter(|mutant| mutant.stillborn.is_some())
-                .count();
-            let gained = manifest
-                .mutants
-                .iter()
-                .filter(|mutant| {
-                    mutant.refused.as_ref().is_some_and(|refused| {
-                        refused.iter().any(|key| {
-                            !manifest
-                                .baseline
-                                .refused
-                                .as_ref()
-                                .is_some_and(|baseline| baseline.contains(key))
-                        })
-                    })
-                })
-                .count();
-            let dead = manifest
-                .mutants
-                .iter()
-                .filter(|mutant| mutant.unsatisfiable_guard.is_some())
-                .count();
-            let scope = match &manifest.component {
-                Some(component) => format!(
-                    " for component `{component}`, {} out of scope, no suite;",
-                    manifest
-                        .mutants
-                        .iter()
-                        .filter(|mutant| mutant.out_of_scope)
-                        .count()
-                ),
-                None => String::new(),
-            };
-            println!(
-                "emitted {} mutant(s) of {}{scope} ({} stillborn, no suite; {} with synthesis \
-                 refusals the baseline does not have; {} with a guard no input satisfies) and the \
-                 baseline to {}",
-                manifest.mutants.len(),
-                manifest.specification,
-                stillborn,
-                gained,
-                dead,
-                dir.display()
-            );
-            println!(
-                "run each <dir>/{} and write its conformance report to <dir>/{}, then \
-                 `ess verify conform mutate --collect {}`",
-                mutate::SUITE_FILE,
-                mutate::REPORT_FILE,
-                dir.display()
-            );
-        }
+        Format::Text => print_emission(manifest, dir),
         Format::Json => print!("{}", manifest.to_canonical_json()),
         Format::Yaml => render(manifest, format)?,
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The text `mutate --emit` prints: what it wrote, and what to run next.
+fn print_emission(manifest: &ess_conformance::mutate::Manifest, dir: &Path) {
+    use ess_conformance::mutate;
+
+    let stillborn = manifest
+        .mutants
+        .iter()
+        .filter(|mutant| mutant.stillborn.is_some())
+        .count();
+    let gained = manifest
+        .mutants
+        .iter()
+        .filter(|mutant| {
+            mutant.refused.as_ref().is_some_and(|refused| {
+                refused.iter().any(|key| {
+                    !manifest
+                        .baseline
+                        .refused
+                        .as_ref()
+                        .is_some_and(|baseline| baseline.contains(key))
+                })
+            })
+        })
+        .count();
+    let dead = manifest
+        .mutants
+        .iter()
+        .filter(|mutant| mutant.unsatisfiable_guard.is_some())
+        .count();
+    let scope = match &manifest.component {
+        Some(component) => format!(
+            " for component `{component}`, {} out of scope, no suite;",
+            manifest
+                .mutants
+                .iter()
+                .filter(|mutant| mutant.out_of_scope)
+                .count()
+        ),
+        None => String::new(),
+    };
+    println!(
+        "emitted {} mutant(s) of {}{scope} ({} stillborn, no suite; {} with synthesis \
+         refusals the baseline does not have; {} with a guard no input satisfies) and the \
+         baseline to {}",
+        manifest.mutants.len(),
+        manifest.specification,
+        stillborn,
+        gained,
+        dead,
+        dir.display()
+    );
+    if let Some(sites) = &manifest.unavailable_sites {
+        println!(
+            "{} selected site(s) have no mutant and are listed as unavailable_sites: \
+             single-event substitution is not audited there",
+            sites.len()
+        );
+    }
+    println!(
+        "run each <dir>/{} and write its conformance report to <dir>/{}, then \
+         `ess verify conform mutate --collect {}`",
+        mutate::SUITE_FILE,
+        mutate::REPORT_FILE,
+        dir.display()
+    );
 }
 
 /// `mutate --collect`: the reports a runner wrote beside an emission's suites, scored.
@@ -4308,9 +4329,12 @@ fn finish_mutation_audit(
         .iter()
         .filter(|entry| !matches!(entry.verdict, Verdict::Stillborn | Verdict::Equivalent))
         .count();
+    // A selected site with no admissible mutant was not audited (beyond10x/ess#295): never a
+    // success, but no survivor either.
+    let unaudited = report.unaudited_sites();
     Ok(if counts.survived > 0 {
         ExitCode::from(1)
-    } else if counts.unwitnessed > 0 || counts.inconclusive > 0 || ran == 0 {
+    } else if counts.unwitnessed > 0 || counts.inconclusive > 0 || ran == 0 || unaudited > 0 {
         ExitCode::from(3)
     } else {
         ExitCode::SUCCESS

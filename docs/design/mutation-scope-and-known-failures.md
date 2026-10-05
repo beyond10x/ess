@@ -285,3 +285,39 @@ Recorded with the implementation; the review status above is unchanged.
 - No generated runner produces `skipped` under report/2 on current suites (Go assigns no skipped
   status under report/2, and the TypeScript runtime's `UNEXECUTED_STEPS` is empty), so the Skipped
   category is exercised through admitted rewrites of actual reports, not through an actual skip.
+
+## Implementation decisions for #295
+
+Recorded with the implementation; the emit-swap section above is binding as written (coordinator
+decision, 2026-10-04) and these fill in what it leaves to the implementation.
+
+- "Accepts" and "publishes" are the component membership `synthesize --component` already uses: a
+  component accepts a command it lists or whose domain it owns, and publishes an event it lists or
+  whose domain it owns. Field identity compares the resolved field names and resolved types as a
+  set; declaration order is not part of it. Wire labels and display names are not compared.
+- A candidate is applied to a copy of the documents and compiled as the loader compiles them; only
+  whether it compiles is asked. A specification that does not compile has no emit-swap site, and
+  the audit refuses it as before. `emit-swap` is in every class list, after `precedence-swap`, so a
+  default audit (no `--class`) of a model with an unavailable site now exits 3 where it may have
+  exited 0: the five billing outcomes the issue names were never audited.
+- Mutant ids are `emit-swap/<command>/<outcome>/<event>/<new event>`; an unavailable site is
+  `emit-swap/<command>/<outcome>/<event>`, with `{class, command, event, id, outcome, reason,
+  unaudited}`, `unaudited` being the one sentence saying single-event substitution was not audited
+  there. The change reads ``` `emits: [old]` becomes `emits: [new]` ```.
+- `unavailable_sites` is a new persisted field, so it is carried only by `ess-mutation-manifest/4`
+  and `ess-mutation-report/4`, and only where there is at least one site: an emission with an
+  emit-swap mutant or site is `/4`, and a report is `/4` exactly when it has a site (or a component
+  or declaration, as before). A report or manifest without any keeps its bytes. Older manifests
+  carrying the field are refused naming `/4`; an empty list, a site of another class, an id or
+  sentence that is not its own, an order other than byte order of id, a site that is also a
+  mutant's, and `outside_component` without a `component` are refused.
+- In an emission scoped to a component, an unavailable site whose command that component does not
+  handle has reason `outside_component` and does not affect the exit status; every other one exits
+  3 unless a mutant survived. An audit whose selected classes find only unavailable sites runs the
+  baseline and reports them; `ESS-MUTATE-003` stays for classes that find no site at all.
+- Text lists unavailable sites after the inconclusive mutants (survivors stay first) and ends the
+  summary line with `; N unavailable`.
+- Observed while proving the kills, not changed here: where a scenario captures a created identity
+  from an event the target did not publish, the native runner records `error` and the generated Go
+  and TypeScript runners record `failed`. A creating swap is therefore killed by more scenarios in
+  the generated runners; its verdict and the unavailable sites are the same through every runner.

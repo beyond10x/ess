@@ -1,0 +1,57 @@
+format: ess/16
+system: swaps
+version: v1
+domain: swaps.order
+summary: Single-event substitution sites for the emit-swap mutation class (beyond10x/ess#295).
+types:
+  - {name: swaps.order.OrderId, kind: newtype, of: String}
+events:
+  - name: swaps.order.Booked
+    fields:
+      - {name: order_id, type: Optional<swaps.order.OrderId>}
+  - name: swaps.order.Cancelled
+    fields:
+      - {name: order_id, type: swaps.order.OrderId}
+      - {name: reason, type: String}
+  - name: swaps.order.Filed
+    naming: {wire: placed}
+    fields:
+      - {name: order_id, type: swaps.order.OrderId}
+      - {name: note, type: String}
+  - name: swaps.order.Logged
+    fields:
+      - {name: order_id, type: swaps.order.OrderId}
+  - name: swaps.order.Noted
+    fields:
+      - {name: order_id, type: swaps.order.OrderId}
+  - name: swaps.order.Placed
+    naming: {wire: placed}
+    fields:
+      - {name: order_id, type: swaps.order.OrderId}
+commands:
+  - name: swaps.order.Place
+    input:
+      - {name: order_id, type: swaps.order.OrderId}
+    outcomes:
+      - name: placed
+        emits: [swaps.order.Placed]
+        payload:
+          swaps.order.Placed: {order_id: input.order_id}
+  - name: swaps.order.Cancel
+    input:
+      - {name: order_id, type: swaps.order.OrderId}
+      - {name: reason, type: String}
+    outcomes:
+      - name: cancelled
+        emits: [swaps.order.Cancelled]
+        payload:
+          swaps.order.Cancelled: {order_id: input.order_id, reason: input.reason}
+components:
+  - component: alpha
+    accepts: {commands: [swaps.order.Place, swaps.order.Cancel]}
+    publishes:
+      events: [swaps.order.Booked, swaps.order.Cancelled, swaps.order.Filed, swaps.order.Logged, swaps.order.Noted, swaps.order.Placed]
+  - component: beta
+    accepts: {commands: [swaps.order.Place]}
+    publishes:
+      events: [swaps.order.Booked, swaps.order.Filed, swaps.order.Noted, swaps.order.Placed]

@@ -2458,7 +2458,7 @@ pub(crate) fn handles(ir: &EssIr, component: &ResolvedComponent, command: &Quali
 }
 
 /// Whether a component is where an event comes from: it publishes it, or owns the domain it is in.
-fn emits(ir: &EssIr, component: &ResolvedComponent, event: &QualifiedName) -> bool {
+pub(crate) fn emits(ir: &EssIr, component: &ResolvedComponent, event: &QualifiedName) -> bool {
     component
         .publishes
         .iter()

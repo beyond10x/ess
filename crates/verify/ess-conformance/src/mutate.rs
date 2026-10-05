@@ -64,12 +64,14 @@ pub const FAMILY: &str = "MUTATE";
 /// The document family the audit writes.
 pub const REPORT_FORMAT: &str = "ess-mutation-report/3";
 /// The report [`collect`] writes for an emission scoped to one component: `/3` with the component
-/// named and the mutants it leaves out listed (beyond10x/ess#236).
+/// named and the mutants it leaves out listed (beyond10x/ess#236); also the report under a
+/// known-failure declaration (beyond10x/ess#294), and wherever a selected site is unavailable
+/// (beyond10x/ess#295).
 pub const REPORT_FORMAT_4: &str = "ess-mutation-report/4";
 
 // ---- the classes --------------------------------------------------------------------------------
 
-/// The eleven altering classes, a closed set with an [`ALL`](Self::ALL) constant as `Fault` has.
+/// The twelve altering classes, a closed set with an [`ALL`](Self::ALL) constant as `Fault` has.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -102,6 +104,11 @@ pub enum MutantClass {
     /// Swap two adjacent branches guarded by the input alone, both accepting or both refusing, so
     /// the second answers where both guards hold.
     PrecedenceSwap,
+    /// Emit another declared event in place of an outcome's only one, where the outcome names no
+    /// error: an event of exactly the same resolved fields that every component accepting the
+    /// command publishes, the first in byte order of name that compiles (beyond10x/ess#295). A site
+    /// with no such event is an [`UnavailableSite`], never a mutant.
+    EmitSwap,
 }
 
 impl MutantClass {
@@ -118,13 +125,15 @@ impl MutantClass {
         Self::OrderFlip,
         Self::SetsDrop,
         Self::PrecedenceSwap,
+        Self::EmitSwap,
     ];
 
     /// The oldest manifest format whose readers know this class: [`MANIFEST_FORMAT_4`] for the two
-    /// classes beyond10x/ess#212 added, [`MANIFEST_FORMAT_1`] for the rest.
+    /// classes beyond10x/ess#212 added and for `emit-swap` (beyond10x/ess#295),
+    /// [`MANIFEST_FORMAT_1`] for the rest.
     pub fn manifest_format(self) -> &'static str {
         match self {
-            Self::SetsDrop | Self::PrecedenceSwap => MANIFEST_FORMAT_4,
+            Self::SetsDrop | Self::PrecedenceSwap | Self::EmitSwap => MANIFEST_FORMAT_4,
             _ => MANIFEST_FORMAT_1,
         }
     }
@@ -143,6 +152,7 @@ impl MutantClass {
             Self::OrderFlip => "order-flip",
             Self::SetsDrop => "sets-drop",
             Self::PrecedenceSwap => "precedence-swap",
+            Self::EmitSwap => "emit-swap",
         }
     }
 }
@@ -347,6 +357,17 @@ pub enum Mutation {
         /// The outcome declared right after it.
         second: String,
     },
+    /// Emit `to` in place of `event`, the outcome's only event, and rename its `payload:` entry.
+    EmitSwap {
+        /// The command.
+        command: String,
+        /// The outcome.
+        outcome: String,
+        /// The event it emits.
+        event: String,
+        /// The declared event it emits instead.
+        to: String,
+    },
 }
 
 impl Mutation {
@@ -366,6 +387,7 @@ impl Mutation {
             Self::ErrorSwap { .. } => MutantClass::ErrorSwap,
             Self::EmitDrop { .. } => MutantClass::EmitDrop,
             Self::OrderFlip { .. } => MutantClass::OrderFlip,
+            Self::EmitSwap { .. } => MutantClass::EmitSwap,
         }
     }
 
@@ -428,6 +450,12 @@ impl Mutation {
                 event,
             } => format!("{command}/{outcome}/{event}"),
             Self::OrderFlip { view, field } => format!("{view}/{field}"),
+            Self::EmitSwap {
+                command,
+                outcome,
+                event,
+                to,
+            } => format!("{command}/{outcome}/{event}/{to}"),
         }
     }
 }
@@ -786,14 +814,254 @@ fn flipped(direction: Direction) -> Direction {
 
 /// Every mutant of the selected classes, in byte order of id.
 pub fn mutants(documents: &[Document], classes: &[MutantClass]) -> Vec<Mutant> {
+    selection(documents, classes).mutants
+}
+
+/// Why a selected site has no mutant (beyond10x/ess#295). A closed set.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum UnavailableReason {
+    /// No declared event other than the outcome's own has exactly its resolved fields, is
+    /// published by every component that accepts the command, and compiles in its place: no valid
+    /// altering edit exists here, so the single event is not audited at this site.
+    NoCompatibleEventAlternative,
+    /// The site's command belongs to another component than the one the emission is scoped to:
+    /// that component's to answer, and outside every count.
+    OutsideComponent,
+}
+
+impl UnavailableReason {
+    /// How it is written.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoCompatibleEventAlternative => "no_compatible_event_alternative",
+            Self::OutsideComponent => "outside_component",
+        }
+    }
+}
+
+/// A selected `emit-swap` site with no mutant: neither killed nor stillborn, and never counted as
+/// a mutant. An in-scope one keeps the audit from succeeding (beyond10x/ess#295). Fields are
+/// declared in key order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnavailableSite {
+    /// The class whose site it is: `emit-swap`.
+    pub class: MutantClass,
+    /// The command.
+    pub command: String,
+    /// The outcome's only event.
+    pub event: String,
+    /// `<class>/<command>/<outcome>/<event>`.
+    pub id: String,
+    /// The outcome.
+    pub outcome: String,
+    /// Why there is no mutant.
+    pub reason: UnavailableReason,
+    /// What was not audited, and why, in one sentence.
+    pub unaudited: String,
+}
+
+impl UnavailableSite {
+    /// The `emit-swap` site `event` of `command`'s `outcome`, which has no alternative.
+    fn no_alternative(command: &str, outcome: &str, event: &str) -> Self {
+        Self {
+            class: MutantClass::EmitSwap,
+            command: command.to_owned(),
+            event: event.to_owned(),
+            id: format!("{}/{command}/{outcome}/{event}", MutantClass::EmitSwap),
+            outcome: outcome.to_owned(),
+            reason: UnavailableReason::NoCompatibleEventAlternative,
+            unaudited: unaudited(command, event),
+        }
+    }
+
+    /// Refuses an entry no writer of `/4` produces: another class, an id or sentence that is not
+    /// its own, or `outside_component` where the emission names no component.
+    fn check(&self, scoped: bool) -> Result<(), String> {
+        let expected = format!(
+            "{}/{}/{}/{}",
+            MutantClass::EmitSwap,
+            self.command,
+            self.outcome,
+            self.event
+        );
+        if self.class != MutantClass::EmitSwap {
+            return Err(format!(
+                "{MANIFEST_FILE}: unavailable site `{}` is of class `{}`; only `{}` has unavailable \
+                 sites",
+                self.id,
+                self.class,
+                MutantClass::EmitSwap
+            ));
+        }
+        if self.id != expected {
+            return Err(format!(
+                "{MANIFEST_FILE}: unavailable site id `{}` is not `{expected}`",
+                self.id
+            ));
+        }
+        if self.unaudited != unaudited(&self.command, &self.event) {
+            return Err(format!(
+                "{MANIFEST_FILE}: unavailable site `{}` does not say what was not audited",
+                self.id
+            ));
+        }
+        if self.reason == UnavailableReason::OutsideComponent && !scoped {
+            return Err(format!(
+                "{MANIFEST_FILE}: unavailable site `{}` is `{}`, which only an emission naming a \
+                 `component` has",
+                self.id,
+                UnavailableReason::OutsideComponent.as_str()
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// What an `emit-swap` site with no alternative did not audit.
+fn unaudited(command: &str, event: &str) -> String {
+    format!(
+        "single-event substitution was not audited here: no declared event other than `{event}` \
+         has exactly its fields, is published by every component that accepts `{command}`, and \
+         compiles in its place"
+    )
+}
+
+/// The mutants of the selected classes, in byte order of id, and the selected sites that have none,
+/// in byte order of id.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Selection {
+    /// Every mutant.
+    pub mutants: Vec<Mutant>,
+    /// Every `emit-swap` site with no admissible alternative.
+    pub unavailable: Vec<UnavailableSite>,
+}
+
+/// Every mutant of the selected classes and every selected site without one.
+///
+/// An `emit-swap` site is decided by compiling: each candidate is applied to a copy of the
+/// documents and compiled as the loader compiles them, and the first that compiles is the mutant.
+/// A specification that does not compile has no `emit-swap` site here, and is refused by whatever
+/// compiles it.
+pub fn selection(documents: &[Document], classes: &[MutantClass]) -> Selection {
     let selected: BTreeSet<MutantClass> = classes.iter().copied().collect();
+    let (swaps, mut unavailable) = if selected.contains(&MutantClass::EmitSwap) {
+        swap_sites(documents)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let mut found: Vec<Mutant> = sites(documents)
         .into_iter()
+        .chain(swaps)
         .filter(|mutation| selected.contains(&mutation.class()))
         .filter_map(|mutation| Mutant::new(documents, mutation))
         .collect();
     found.sort_by(|left, right| left.id.cmp(&right.id));
     found.dedup_by(|left, right| left.id == right.id);
+    unavailable.sort_by(|left, right| left.id.cmp(&right.id));
+    unavailable.dedup_by(|left, right| left.id == right.id);
+    Selection {
+        mutants: found,
+        unavailable,
+    }
+}
+
+/// Whether `outcome` is an `emit-swap` site: exactly one event, and no error.
+fn single_event(outcome: &RawOutcome) -> bool {
+    outcome.emits.len() == 1 && outcome.error.is_none()
+}
+
+/// Each `emit-swap` site's mutant, and each site that has none.
+fn swap_sites(documents: &[Document]) -> (Vec<Mutation>, Vec<UnavailableSite>) {
+    let sites: Vec<(String, String, String)> = commands(documents)
+        .flat_map(|command| {
+            command
+                .outcomes
+                .iter()
+                .filter(|outcome| single_event(outcome))
+                .map(move |outcome| {
+                    (
+                        command.name.to_string(),
+                        outcome.name.to_string(),
+                        outcome.emits[0].to_string(),
+                    )
+                })
+        })
+        .collect();
+    if sites.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    // Only whether a document set compiles is asked here, never where a refusal points.
+    let texts = SourceMap::new();
+    let Ok(baseline) = compile(documents.to_vec(), &texts) else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut swaps = Vec::new();
+    let mut unavailable = Vec::new();
+    for (command, outcome, event) in sites {
+        let found = swap_candidates(&baseline, &command, &event)
+            .into_iter()
+            .map(|to| Mutation::EmitSwap {
+                command: command.clone(),
+                outcome: outcome.clone(),
+                event: event.clone(),
+                to,
+            })
+            .find(|mutation| {
+                apply(documents, mutation).is_ok_and(|mutated| compile(mutated, &texts).is_ok())
+            });
+        match found {
+            Some(mutation) => swaps.push(mutation),
+            None => unavailable.push(UnavailableSite::no_alternative(&command, &outcome, &event)),
+        }
+    }
+    (swaps, unavailable)
+}
+
+/// The declared events that may stand in for `event` on an outcome of `command`, in byte order of
+/// name: exactly its resolved fields — names, and types down to named-type identity and
+/// `Optional`/container structure — and published by every component that accepts `command`, of
+/// which there is at least one. A model without components has no publisher of anything, so no
+/// candidate: none is inferred.
+fn swap_candidates(ir: &EssIr, command: &str, event: &str) -> Vec<String> {
+    use ess_domain::name::QualifiedName;
+    let (Ok(command), Ok(event)) = (QualifiedName::new(command), QualifiedName::new(event)) else {
+        return Vec::new();
+    };
+    let Some(original) = ir.events().get(&event) else {
+        return Vec::new();
+    };
+    let fields = |declared: &ess_compiler::ir::ResolvedEvent| {
+        declared
+            .fields
+            .iter()
+            .map(|field| (field.name.clone(), field.type_ref.clone()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let wanted = fields(original);
+    let accepting: Vec<&ess_compiler::ir::ResolvedComponent> = ir
+        .components()
+        .values()
+        .filter(|component| crate::synthesize::handles(ir, component, &command))
+        .collect();
+    if accepting.is_empty() {
+        return Vec::new();
+    }
+    let mut found: Vec<String> = ir
+        .events()
+        .iter()
+        .filter(|(name, declared)| **name != event && fields(declared) == wanted)
+        .filter(|(name, _)| {
+            accepting
+                .iter()
+                .all(|component| crate::synthesize::emits(ir, component, name))
+        })
+        .map(|(name, _)| name.to_string())
+        .collect();
+    found.sort();
     found
 }
 
@@ -1052,6 +1320,18 @@ fn describe(documents: &[Document], mutation: &Mutation) -> Option<String> {
             }
             format!("`{event}` is no longer emitted")
         }
+        Mutation::EmitSwap {
+            command,
+            outcome,
+            event,
+            to,
+        } => {
+            let found = self::outcome(documents, command, outcome)?;
+            if !single_event(found) || found.emits[0].to_string() != *event {
+                return None;
+            }
+            format!("`emits: [{event}]` becomes `emits: [{to}]`")
+        }
         Mutation::OrderFlip { view, field } => {
             let key = views(documents)
                 .find(|it| it.name.to_string() == *view)?
@@ -1238,6 +1518,26 @@ pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document
             }
             found.payload.0.retain(|(it, _)| it.to_string() != *event);
         }
+        Mutation::EmitSwap {
+            command,
+            outcome,
+            event,
+            to,
+        } => {
+            let to = ess_domain::name::QualifiedName::new(to).map_err(|e| e.to_string())?;
+            let found = outcome_mut(&mut mutated, command, outcome).ok_or_else(absent)?;
+            if !single_event(found) || found.emits[0].to_string() != *event {
+                return Err(absent());
+            }
+            found.emits[0] = to.clone();
+            // The entry keeps its field expressions: whether they fit the new event is the
+            // compiler's to say.
+            for (key, _) in &mut found.payload.0 {
+                if key.to_string() == *event {
+                    *key = to.clone();
+                }
+            }
+        }
         Mutation::OrderFlip { view, field } => {
             let key = mutated
                 .iter_mut()
@@ -1422,7 +1722,8 @@ fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
         | MutantClass::ErrorSwap
         | MutantClass::EmitDrop
         | MutantClass::SetsDrop
-        | MutantClass::PrecedenceSwap => {}
+        | MutantClass::PrecedenceSwap
+        | MutantClass::EmitSwap => {}
         MutantClass::FromDrop | MutantClass::TransitionTo | MutantClass::OrderFlip => return None,
     }
     let mut segments = id
@@ -1984,8 +2285,9 @@ pub struct OutOfScope {
     pub id: String,
 }
 
-/// The `ess-mutation-report/3` document, or `/4` where it is scored for one component: keys sorted,
-/// no timestamp, so its bytes are a function of the tree and the target.
+/// The `ess-mutation-report/3` document, or `/4` where it is scored for one component, under a
+/// known-failure declaration, or with unavailable sites: keys sorted, no timestamp, so its bytes are
+/// a function of the tree and the target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MutationReport {
     /// The unmutated suite.
@@ -1995,7 +2297,8 @@ pub struct MutationReport {
     pub component: Option<String>,
     /// How many mutants came to each verdict. Out-of-scope mutants are not counted.
     pub counts: Counts,
-    /// [`REPORT_FORMAT`], or [`REPORT_FORMAT_4`] where a component is named.
+    /// [`REPORT_FORMAT`], or [`REPORT_FORMAT_4`] where a component, a declaration or an unavailable
+    /// site is named.
     pub format: String,
     /// The implementation that answered.
     pub implementation: String,
@@ -2012,9 +2315,46 @@ pub struct MutationReport {
     pub spec_digest: String,
     /// `<system> <version>`.
     pub specification: String,
+    /// The selected sites that have no mutant, in byte order of id; only in [`REPORT_FORMAT_4`],
+    /// and absent where there are none (beyond10x/ess#295).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_sites: Option<Vec<UnavailableSite>>,
 }
 
 impl MutationReport {
+    /// The unavailable sites that keep the audit from succeeding: every one but those outside the
+    /// component the emission was scoped to.
+    pub fn unaudited_sites(&self) -> usize {
+        self.unavailable_sites
+            .iter()
+            .flatten()
+            .filter(|site| site.reason == UnavailableReason::NoCompatibleEventAlternative)
+            .count()
+    }
+
+    /// One line per unavailable site, after the inconclusive mutants.
+    fn write_unavailable(&self, out: &mut String) {
+        for site in self.unavailable_sites.iter().flatten() {
+            let _ = match (site.reason, &self.component) {
+                (UnavailableReason::OutsideComponent, Some(component)) => writeln!(
+                    out,
+                    "unavailable {}: {} — its command belongs to another component than \
+                     `{component}`; {}",
+                    site.id,
+                    site.reason.as_str(),
+                    site.unaudited
+                ),
+                _ => writeln!(
+                    out,
+                    "unavailable {}: {} — {}",
+                    site.id,
+                    site.reason.as_str(),
+                    site.unaudited
+                ),
+            };
+        }
+    }
+
     /// Two-space JSON with sorted keys and one trailing LF.
     pub fn to_canonical_json(&self) -> String {
         let mut json = serde_json::to_string_pretty(self).expect("the report serializes");
@@ -2071,7 +2411,8 @@ impl MutationReport {
     }
 
     /// One summary line, then the declared known failures, then the baseline scenarios not scored,
-    /// then survivors, unwitnessed, inconclusive, equivalent, stillborn and killed, one line each.
+    /// then the out-of-scope mutants, then survivors, unwitnessed and inconclusive mutants, then
+    /// the unavailable sites, then equivalent, stillborn and killed mutants, one line each.
     pub fn render_text(&self) -> String {
         let counts = &self.counts;
         let not_scored = &self.baseline.not_scored;
@@ -2079,7 +2420,7 @@ impl MutationReport {
         let mut out = format!(
             "mutation audit of {}{} against {}: {} mutant(s), {} killed, {} survived, {} \
              inconclusive, {} stillborn, {} unwitnessed, {} equivalent (baseline: {} \
-             scenario(s), {} refusal(s){}){}\n",
+             scenario(s), {} refusal(s){}){}{}\n",
             self.specification,
             self.component
                 .as_ref()
@@ -2104,6 +2445,10 @@ impl MutationReport {
                 format!("; {} out of scope", out_of_scope.len())
             } else {
                 String::new()
+            },
+            match &self.unavailable_sites {
+                Some(sites) => format!("; {} unavailable", sites.len()),
+                None => String::new(),
             },
         );
         self.write_known_failures(&mut out);
@@ -2162,6 +2507,10 @@ impl MutationReport {
                     entry.id,
                     entry.change
                 );
+            }
+            // Beside the other reasons the audit cannot succeed, after the survivors.
+            if verdict == Verdict::Inconclusive {
+                self.write_unavailable(&mut out);
             }
         }
         out
@@ -3039,7 +3388,8 @@ pub fn audit<T: ConformanceTarget>(
 /// declared failures are then excluded rather than refused, and each mutant is scored on the
 /// scenarios the baseline passed alone ([`ExclusionReason`]). Every failure the declaration does
 /// not name still refuses with `ESS-MUTATE-001`, and a declared scenario that passed refuses the
-/// declaration as stale. The report is `ess-mutation-report/4` naming the declaration.
+/// declaration as stale. The report is `ess-mutation-report/4` naming the declaration. Without one
+/// it is `/4` exactly where a selected site is unavailable ([`UnavailableSite`]).
 pub fn audit_with<T: ConformanceTarget>(
     documents: &[Document],
     texts: &SourceMap,
@@ -3061,8 +3411,11 @@ pub fn audit_with<T: ConformanceTarget>(
             Some(declaration)
         }
     };
-    let selected = mutants(documents, classes);
-    if selected.is_empty() {
+    let Selection {
+        mutants: selected,
+        unavailable,
+    } = selection(documents, classes);
+    if selected.is_empty() && unavailable.is_empty() {
         let mut classes = classes.to_vec();
         classes.sort();
         classes.dedup();
@@ -3090,11 +3443,12 @@ pub fn audit_with<T: ConformanceTarget>(
         (Some(declared), Some(known)) => Some(declared.summary(known.build)),
         _ => None,
     };
+    let unavailable_sites = (!unavailable.is_empty()).then_some(unavailable);
     Ok(MutationReport {
         baseline: baseline.ruler.size(baseline.scenarios),
         component: None,
         counts,
-        format: if known_failures.is_some() {
+        format: if known_failures.is_some() || unavailable_sites.is_some() {
             REPORT_FORMAT_4
         } else {
             REPORT_FORMAT
@@ -3106,6 +3460,7 @@ pub fn audit_with<T: ConformanceTarget>(
         out_of_scope: None,
         spec_digest: baseline.spec_digest,
         specification: format!("{} {}", baseline_ir.system(), baseline_ir.version()),
+        unavailable_sites,
     })
 }
 
@@ -3116,7 +3471,8 @@ pub fn audit_with<T: ConformanceTarget>(
 pub const MANIFEST_FORMAT: &str = "ess-mutation-manifest/3";
 /// The manifest [`emit_for`] writes where it names a component, or holds a mutant of a class only
 /// this format's readers know ([`MutantClass::manifest_format`]): `/3` with the component, and each
-/// mutant it leaves out marked `out_of_scope` (beyond10x/ess#212, beyond10x/ess#236).
+/// mutant it leaves out marked `out_of_scope` (beyond10x/ess#212, beyond10x/ess#236), and its
+/// `unavailable_sites` where it has any (beyond10x/ess#295).
 pub const MANIFEST_FORMAT_4: &str = "ess-mutation-manifest/4";
 /// The manifest 0.41.0 wrote, which [`collect`] still reads: it names each suite's refusals and no
 /// mutant's `unsatisfiable_guard`, so no mutant it names is scored `equivalent`.
@@ -3354,6 +3710,10 @@ pub struct Manifest {
     pub spec_digest: String,
     /// `<system> <version>`.
     pub specification: String,
+    /// The selected sites that have no mutant, in byte order of id; only in
+    /// [`MANIFEST_FORMAT_4`], and absent where there are none (beyond10x/ess#295).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_sites: Option<Vec<UnavailableSite>>,
 }
 
 impl Manifest {
@@ -3446,11 +3806,52 @@ impl Manifest {
         Ok(())
     }
 
+    /// The unavailable sites (beyond10x/ess#295): refused before `/4` by name, rather than
+    /// ignored; in `/4` each must be one a writer produces, listed once, in byte order of id, and
+    /// an empty list is not written.
+    fn unavailable(&self, version4: bool) -> Result<(), String> {
+        let Some(sites) = &self.unavailable_sites else {
+            return Ok(());
+        };
+        if !version4 {
+            return Err(format!(
+                "{MANIFEST_FILE} names `unavailable_sites`, which `{}` does not have; it is \
+                 `{MANIFEST_FORMAT_4}`",
+                self.format
+            ));
+        }
+        if sites.is_empty() {
+            return Err(format!(
+                "{MANIFEST_FILE}: `unavailable_sites` is empty; a manifest without one leaves it \
+                 out"
+            ));
+        }
+        for site in sites {
+            site.check(self.component.is_some())?;
+        }
+        if sites.windows(2).any(|pair| pair[0].id >= pair[1].id) {
+            return Err(format!(
+                "{MANIFEST_FILE}: `unavailable_sites` is not in byte order of id, once each"
+            ));
+        }
+        if let Some(site) = sites.iter().find(|site| {
+            self.mutants
+                .iter()
+                .any(|mutant| mutant.id.starts_with(&format!("{}/", site.id)))
+        }) {
+            return Err(format!(
+                "{MANIFEST_FILE}: `{}` is both an unavailable site and a mutant's site",
+                site.id
+            ));
+        }
+        Ok(())
+    }
+
     /// Reads a manifest, refusing another format, an incoherent mutant entry, a suite's refusals
     /// that `/2` and later omit, `/1` carries or disagree with its count, an `unsatisfiable_guard`
-    /// before `/3`, a `component`, an `out_of_scope` mutant or a class only `/4` knows before
-    /// `/4`, an `out_of_scope` mutant without a `component`, or a directory that leaves the
-    /// emission.
+    /// before `/3`, a `component`, an `out_of_scope` mutant, a class only `/4` knows or
+    /// `unavailable_sites` before `/4`, an incoherent unavailable site, an `out_of_scope` mutant
+    /// without a `component`, or a directory that leaves the emission.
     pub fn from_json(text: &str) -> Result<Self, String> {
         // The format first, so a manifest of a version this reader does not know is refused by
         // that name rather than by whichever of its fields this reader does not know.
@@ -3513,6 +3914,7 @@ impl Manifest {
                 ));
             }
         }
+        manifest.unavailable(scoped)?;
         manifest.digests(scoped)?;
         let refused = |suite: &EmittedSuite| -> Result<(), String> {
             match (&suite.refused, keyed) {
@@ -3682,7 +4084,7 @@ pub fn emit(
 /// A mutant whose site belongs to another component (`in_component`) is that component's to
 /// answer, so it is marked `out_of_scope` with no suite, and listed rather than scored; a mutant on
 /// the component's own site is scored, a survivor included. The manifest names the component and is `ess-mutation-manifest/4`, as is
-/// one holding a mutant of a class only `/4` knows; any other is `/3`. Refuses a component the
+/// one holding a mutant of a class only `/4` knows or an unavailable site; any other is `/3`. Refuses a component the
 /// specification does not declare, naming those it does.
 pub fn emit_for(
     documents: &[Document],
@@ -3717,8 +4119,11 @@ pub fn emit_with(
         .transpose()
         .map_err(AuditRefusal::KnownFailures)?;
     let baseline_suite = synthesized_for(&baseline_ir, component)?;
-    let selected = mutants(documents, classes);
-    if selected.is_empty() {
+    let Selection {
+        mutants: selected,
+        mut unavailable,
+    } = selection(documents, classes);
+    if selected.is_empty() && unavailable.is_empty() {
         let mut classes = classes.to_vec();
         classes.sort();
         classes.dedup();
@@ -3728,6 +4133,7 @@ pub fn emit_with(
     // digest and no version-3 emission carries one its readers would refuse.
     let version4 = component.is_some()
         || declaration.is_some()
+        || !unavailable.is_empty()
         || selected
             .iter()
             .any(|mutant| mutant.class.manifest_format() == MANIFEST_FORMAT_4);
@@ -3789,6 +4195,9 @@ pub fn emit_with(
     } else {
         MANIFEST_FORMAT
     };
+    if let Some(component) = scope {
+        outside(&baseline_ir, component, &mut unavailable);
+    }
     let manifest = Manifest {
         spec_digest: baseline.spec_digest.clone(),
         baseline,
@@ -3797,9 +4206,26 @@ pub fn emit_with(
         known_failures,
         mutants: entries,
         specification: format!("{} {}", baseline_ir.system(), baseline_ir.version()),
+        unavailable_sites: (!unavailable.is_empty()).then_some(unavailable),
     };
     files.insert(MANIFEST_FILE.to_owned(), manifest.to_canonical_json());
     Ok(Emission { manifest, files })
+}
+
+/// Marks `outside_component` each of `sites` whose command `component` does not handle: another
+/// component's to answer, by the membership `synthesize --component` uses.
+fn outside(
+    ir: &EssIr,
+    component: &ess_compiler::ir::ResolvedComponent,
+    sites: &mut [UnavailableSite],
+) {
+    for site in sites {
+        let handled = ess_domain::name::QualifiedName::new(&site.command)
+            .is_ok_and(|name| crate::synthesize::handles(ir, component, &name));
+        if !handled {
+            site.reason = UnavailableReason::OutsideComponent;
+        }
+    }
 }
 
 /// Checks `declaration` against the baseline suite already in `files`, copies its bytes into the
@@ -3868,6 +4294,7 @@ fn in_component(
         | Mutation::GuardConnective { command, .. }
         | Mutation::ErrorSwap { command, .. }
         | Mutation::EmitDrop { command, .. }
+        | Mutation::EmitSwap { command, .. }
         | Mutation::SetsDrop { command, .. }
         | Mutation::PrecedenceSwap { command, .. } => handles(command),
         Mutation::OrderFlip { view, .. } => ess_domain::name::QualifiedName::new(view)
@@ -4296,7 +4723,7 @@ pub fn collect_with(
         baseline: ruler.size(manifest.baseline.scenarios),
         component: manifest.component,
         counts,
-        format: if scoped || known_failures.is_some() {
+        format: if scoped || known_failures.is_some() || manifest.unavailable_sites.is_some() {
             REPORT_FORMAT_4
         } else {
             REPORT_FORMAT
@@ -4308,6 +4735,7 @@ pub fn collect_with(
         out_of_scope: scoped.then_some(out_of_scope),
         spec_digest: manifest.spec_digest,
         specification: manifest.specification,
+        unavailable_sites: manifest.unavailable_sites,
     })
 }
 
