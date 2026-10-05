@@ -45,10 +45,10 @@ use std::fmt::Write as _;
 use std::str::FromStr;
 
 use ess_primitives::error::{
-    ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
+    ConstructKind, ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
 };
 use ess_primitives::node::Node;
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, PredicateAt, WrittenPredicate};
 
 use crate::command::set_effects;
 use crate::name::{Naming, QualifiedName};
@@ -673,22 +673,78 @@ impl serde::Serialize for Invariant {
     }
 }
 
-/// An invariant, as parsed.
+/// An invariant, as written.
 ///
-/// Well-formedness is settled here — an unparsable predicate is a [`ParseError`] reported by serde
-/// with document context — so that by the time [`EntitySpec::validate`] runs, the only question
-/// left is whether the fields it reads exist. A value object's invariants
+/// Parsed while the document is read, but one that does not parse does not end the document: it
+/// is refused at its declaration's `invariants[<index>]`, beside every other refusal in the file
+/// (beyond10x/ess#448), so that by the time [`EntitySpec::validate`] runs, the only question left
+/// is whether the fields it reads exist. A value object's invariants
 /// ([`crate::types::TypeBody`]) are read through this same type, because one language for
 /// invariants is the point of writing them as predicates at all.
 #[derive(Debug, Clone)]
-pub struct RawInvariant(Invariant);
+pub struct RawInvariant(WrittenPredicate);
+
+impl RawInvariant {
+    /// The invariant, or the refusal its declaration reports `at` its site or path.
+    pub fn read(self, at: impl Into<PredicateAt>) -> Result<Invariant, ValidationError> {
+        let statement = match self.0.node() {
+            Node::Text(text) => Some(text.clone()),
+            _ => None,
+        };
+        let predicate = self.0.read(at)?;
+        Ok(Invariant {
+            statement: statement.unwrap_or_else(|| predicate.to_string()),
+            predicate,
+        })
+    }
+
+    /// The refusal of every invariant in `invariants` that does not parse, the one at an index
+    /// located `at` it, each one's place held by an invariant that reads nothing.
+    ///
+    /// For the assembly, which reports these refusals and then converts the declaration as it
+    /// converts any other: withholding the invariant rather than the declaration keeps every
+    /// reference to the declaration from being refused a second time, and holding its place keeps
+    /// the index every later refusal of a sibling invariant is located by.
+    pub(crate) fn withhold_unparsed(
+        invariants: &mut [RawInvariant],
+        at: impl Fn(usize) -> PredicateAt,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        for (index, invariant) in invariants.iter_mut().enumerate() {
+            if invariant.0.parsed().is_err() {
+                let withheld = Self(WrittenPredicate::from(Predicate::Always));
+                if let Err(error) = std::mem::replace(invariant, withheld).read(at(index)) {
+                    errors.push(error);
+                }
+            }
+        }
+        errors
+    }
+
+    /// Every invariant in `invariants` that parses, and the refusal of every one that does not,
+    /// the one at an index located `at` it.
+    pub(crate) fn read_all(
+        invariants: Vec<RawInvariant>,
+        at: impl Fn(usize) -> PredicateAt,
+        errors: &mut ValidationErrors,
+    ) -> Vec<Invariant> {
+        invariants
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, invariant)| match invariant.read(at(index)) {
+                Ok(invariant) => Some(invariant),
+                Err(error) => {
+                    errors.push(error);
+                    None
+                }
+            })
+            .collect()
+    }
+}
 
 impl<'de> serde::Deserialize<'de> for RawInvariant {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let node = Node::deserialize(deserializer)?;
-        Invariant::from_node(&node)
-            .map(Self)
-            .map_err(serde::de::Error::custom)
+        WrittenPredicate::deserialize(deserializer).map(Self)
     }
 }
 
@@ -714,9 +770,20 @@ impl schemars::JsonSchema for RawInvariant {
     }
 }
 
-impl From<RawInvariant> for Invariant {
-    fn from(raw: RawInvariant) -> Self {
-        raw.0
+impl TryFrom<RawInvariant> for Invariant {
+    /// The parser's sentence. [`RawInvariant::read`] locates it at the declaration that wrote it.
+    type Error = String;
+
+    fn try_from(raw: RawInvariant) -> Result<Self, Self::Error> {
+        let statement = match raw.0.node() {
+            Node::Text(text) => Some(text.clone()),
+            _ => None,
+        };
+        let predicate = raw.0.parsed().cloned().map_err(str::to_owned)?;
+        Ok(Self {
+            statement: statement.unwrap_or_else(|| predicate.to_string()),
+            predicate,
+        })
     }
 }
 
@@ -1714,22 +1781,46 @@ pub struct RawEntitySpec {
     pub states: RawStateMachine,
 }
 
+/// Where the invariant at `index` of entity `name` is: `entity <name>.invariants[<index>]`.
+fn invariant_site(name: &QualifiedName, index: usize) -> PredicateAt {
+    ConstructRef::new(ConstructKind::Entity, name.to_string())
+        .key("invariants")
+        .index(index)
+        .into()
+}
+
+impl RawEntitySpec {
+    /// The refusal of every invariant this entity writes that does not parse, each one's place
+    /// held (beyond10x/ess#448): see [`RawInvariant::withhold_unparsed`].
+    pub(crate) fn withhold_unparsed_invariants(&mut self) -> ValidationErrors {
+        let name = self.name.clone();
+        RawInvariant::withhold_unparsed(&mut self.invariants, |index| invariant_site(&name, index))
+    }
+}
+
 impl TryFrom<RawEntitySpec> for EntitySpec {
     type Error = ValidationErrors;
 
     fn try_from(raw: RawEntitySpec) -> Result<Self, Self::Error> {
+        let mut unparsed = ValidationErrors::new();
+        let invariants = RawInvariant::read_all(
+            raw.invariants,
+            |index| invariant_site(&raw.name, index),
+            &mut unparsed,
+        );
         let spec = Self {
             name: raw.name,
             identity: raw.identity,
             fields: raw.fields,
             relations: raw.relations,
             states: raw.states.into(),
-            invariants: raw.invariants.into_iter().map(Invariant::from).collect(),
+            invariants,
             naming: raw.naming,
         };
         let location = format!("entity {}", spec.name);
 
-        let mut errors = spec.states.validate_at(&location);
+        let mut errors = unparsed;
+        errors.extend(spec.states.validate_at(&location));
 
         // A duplicate field is document-local, and it has to be caught here: the second declaration
         // would be invisible to every later lookup, so an invariant reading it would be checked

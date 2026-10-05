@@ -223,8 +223,12 @@ pub mod codes {
             FamilyDoc {
                 name: SPEC,
                 applies_to: "The specification as a whole: its header, a document that cannot \
-                             be read, a predicate refused while it is read, and anything with no \
-                             better home.",
+                             be read, a predicate that does not parse, and anything with no \
+                             better home. A refusal of a document's structure — a missing \
+                             required key, an unknown key, a value of the wrong shape — stops \
+                             that file at the first one; a predicate that does not parse does \
+                             not, and is reported at its declaration beside the file's other \
+                             refusals.",
             },
             FamilyDoc {
                 name: DOMAIN,
@@ -517,12 +521,18 @@ pub mod codes {
         UNVALIDATED_SPECIFICATION = family::SPEC, class::UNDECLARED;
 
         /// A predicate compares a fact with an unquoted `null` — `note == null`, `note: null` —
-        /// which read as the four-character text before ess#93. Refused while the document is
-        /// read, so it has no construct and is `SPEC`; the message is
-        /// `ess_primitives::error::ParseError::NullComparison`, which names `defined(x)` and
-        /// `not defined(x)` and carries this code as
+        /// which read as the four-character text before ess#93. Reported at the declaration
+        /// that wrote it since beyond10x/ess#448, and still `SPEC`, the family it had while it
+        /// was refused as the document was read, so a list of known codes keeps matching; the
+        /// message is `ess_primitives::error::ParseError::NullComparison`, which names
+        /// `defined(x)` and `not defined(x)` and carries this code as
         /// `ParseError::NULL_COMPARISON_CODE`.
         NULL_COMPARISON = family::SPEC, class::NULL_COMPARISON;
+
+        /// A predicate a declaration writes does not parse: an unknown operator, a malformed
+        /// compact expression. Reported at that declaration, beside the file's other refusals
+        /// (beyond10x/ess#448), and `SPEC` for the reason [`NULL_COMPARISON`] is.
+        UNPARSABLE_PREDICATE = family::SPEC, class::OTHER;
 
         /// A type, or a declared conversion, names a type nothing declares.
         UNDECLARED_TYPE = family::TYPE, class::UNDECLARED;
@@ -969,7 +979,7 @@ pub fn diagnose_locating(
 fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
     let mut diagnostics = Diagnostics::new();
     for error in errors.as_slice() {
-        let (family, span) = match error.site() {
+        let (mut family, span) = match error.site() {
             Some(site) => (
                 family_of_kind(site.construct.kind()),
                 span_of_site(site, locator),
@@ -979,6 +989,11 @@ fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
                 locator.span(error.location.clone(), &needles_for(&error.location)),
             ),
         };
+        // A predicate that does not parse is located at its declaration and keeps the `SPEC`
+        // code it had while it was refused as the document was read (beyond10x/ess#448).
+        if read_family_spec(error.code) {
+            family = codes::family::SPEC;
+        }
         diagnostics.push(Diagnostic {
             code: Code::new(family, class_of(error.code)),
             severity: Severity::Error,
@@ -991,6 +1006,16 @@ fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
         });
     }
     diagnostics
+}
+
+/// Whether a refusal keeps the `SPEC` family wherever it is located: a predicate that does not
+/// parse, which until beyond10x/ess#448 was refused while the document was read, before any
+/// construct existed to file it under.
+fn read_family_spec(code: ValidationCode) -> bool {
+    matches!(
+        code,
+        ValidationCode::UnparsablePredicate | ValidationCode::NullComparison
+    )
 }
 
 /// Where a sited refusal points.
@@ -1165,6 +1190,7 @@ pub fn class_of(code: ValidationCode) -> u16 {
         | Refused::UnreachableState
         | Refused::UnknownPhase => codes::class::LIFECYCLE,
         Refused::InvariantReadsUnsetField => codes::class::UNSET_AT_CREATION,
+        Refused::NullComparison => codes::class::NULL_COMPARISON,
         _ => codes::class::OTHER,
     }
 }

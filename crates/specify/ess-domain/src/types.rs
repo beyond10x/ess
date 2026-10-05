@@ -25,6 +25,7 @@ use ess_primitives::error::{
 
 use crate::entity::{Invariant, RawInvariant};
 use crate::name::{Naming, QualifiedName};
+use ess_primitives::predicate::PredicateAt;
 
 /// A type with no structure of its own.
 #[derive(
@@ -789,6 +790,16 @@ impl<'de> serde::Deserialize<'de> for EnumVariant {
                 Ok(EnumVariant::new(value))
             }
 
+            // YAML reads an unquoted `True` as a boolean before a variant list sees it; the
+            // refusal names the repair (beyond10x/ess#426). A type's `variants:` is read through
+            // `RawEnumVariant`, which refuses it at the type's path instead.
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Err(E::custom(format!(
+                    "`{value}` is a YAML boolean, not a variant name; quote it, as the text the \
+                     variant is named"
+                )))
+            }
+
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 map: A,
@@ -1427,7 +1438,7 @@ pub enum RawTypeBody {
     /// One of a fixed set of names.
     Enum {
         /// The variants, in declaration order.
-        variants: Vec<EnumVariant>,
+        variants: Vec<RawEnumVariant>,
     },
     /// One of several shapes, distinguished by a tag field.
     Union {
@@ -1441,26 +1452,179 @@ pub enum RawTypeBody {
     },
 }
 
-impl From<RawTypeBody> for TypeBody {
-    fn from(raw: RawTypeBody) -> Self {
-        match raw {
-            RawTypeBody::Newtype {
+/// An enum variant as a document writes it (beyond10x/ess#426).
+///
+/// A variant, or a YAML boolean where a name was meant: `variants: [True, False, Unknown]` reads
+/// `True` and `False` as booleans before ESS sees them. The boolean is kept, rather than refused
+/// by the reader with no key path, so the type's own pass refuses it at its `variants` with the
+/// repair — quoting it — and never guesses which spelling, `True`, `true` or `TRUE`, was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RawEnumVariant {
+    /// A variant.
+    Declared(EnumVariant),
+    /// A YAML boolean written where a variant name was meant.
+    Boolean(bool),
+}
+
+impl RawEnumVariant {
+    /// The variant, where a name was written rather than a boolean.
+    pub fn declared(&self) -> Option<&EnumVariant> {
+        match self {
+            Self::Declared(variant) => Some(variant),
+            Self::Boolean(_) => None,
+        }
+    }
+}
+
+impl From<EnumVariant> for RawEnumVariant {
+    fn from(variant: EnumVariant) -> Self {
+        Self::Declared(variant)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawEnumVariant {
+    /// [`EnumVariant`]'s two authored forms, and a boolean kept rather than refused.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Written;
+
+        impl<'de> serde::de::Visitor<'de> for Written {
+            type Value = RawEnumVariant;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a variant name, or a mapping carrying `name` and its naming")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(RawEnumVariant::Boolean(value))
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(RawEnumVariant::Declared(EnumVariant::new(value)))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let NamedEnumVariant { name, naming } =
+                    <NamedEnumVariant as serde::Deserialize>::deserialize(
+                        serde::de::value::MapAccessDeserializer::new(map),
+                    )?;
+                Ok(RawEnumVariant::Declared(EnumVariant { name, naming }))
+            }
+        }
+
+        deserializer.deserialize_any(Written)
+    }
+}
+
+impl schemars::JsonSchema for RawEnumVariant {
+    fn schema_name() -> String {
+        <EnumVariant as schemars::JsonSchema>::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        <EnumVariant as schemars::JsonSchema>::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <EnumVariant as schemars::JsonSchema>::json_schema(generator)
+    }
+}
+
+impl RawTypeBody {
+    /// The body, with the refusal of every invariant that does not parse added to `errors`,
+    /// located under `location` (beyond10x/ess#448).
+    fn read(self, location: &str, errors: &mut ValidationErrors) -> TypeBody {
+        let at = |index: usize| PredicateAt::from(format!("{location}.invariants[{index}]"));
+        match self {
+            Self::Newtype {
                 of,
                 alphabet,
                 prefix,
                 invariants,
-            } => Self::Newtype {
+            } => TypeBody::Newtype {
                 of,
                 alphabet,
                 prefix,
-                invariants: invariants.into_iter().map(Invariant::from).collect(),
+                invariants: RawInvariant::read_all(invariants, at, errors),
             },
-            RawTypeBody::Struct { fields, invariants } => Self::Struct {
+            Self::Struct { fields, invariants } => TypeBody::Struct {
                 fields,
-                invariants: invariants.into_iter().map(Invariant::from).collect(),
+                invariants: RawInvariant::read_all(invariants, at, errors),
             },
-            RawTypeBody::Enum { variants } => Self::Enum { variants },
-            RawTypeBody::Union { tag, variants } => Self::Union { tag, variants },
+            Self::Enum { variants } => {
+                let mut booleans = Vec::new();
+                let variants = variants
+                    .into_iter()
+                    .filter_map(|variant| match variant {
+                        RawEnumVariant::Declared(variant) => Some(variant),
+                        RawEnumVariant::Boolean(value) => {
+                            booleans.push(value);
+                            None
+                        }
+                    })
+                    .collect();
+                if !booleans.is_empty() {
+                    errors.push(boolean_variants(location, &booleans));
+                }
+                TypeBody::Enum { variants }
+            }
+            Self::Union { tag, variants } => TypeBody::Union { tag, variants },
+        }
+    }
+}
+
+/// `types.<name>`, where the refusals a named type's own declaration raises are located.
+fn declared_at(name: &QualifiedName) -> String {
+    format!("types.{name}")
+}
+
+/// The refusal of the YAML booleans written as variants of the enum at `location`, naming the
+/// repair (beyond10x/ess#426).
+fn boolean_variants(location: &str, booleans: &[bool]) -> ValidationError {
+    let written = booleans
+        .iter()
+        .map(|value| format!("`{value}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let quoted = booleans
+        .iter()
+        .map(|value| if *value { "`'True'`" } else { "`'False'`" })
+        .collect::<Vec<_>>()
+        .join(", ");
+    ValidationError::new(
+        ValidationCode::TypeMismatch,
+        format!("{location}.variants"),
+        format!(
+            "{written} {} a YAML boolean, not a variant name: YAML reads an unquoted `True`, \
+             `true` or `TRUE` (and `False`, `false`, `FALSE`) as a boolean before the variant \
+             list sees it, and which of them was written is not kept",
+            if booleans.len() == 1 {
+                "is"
+            } else {
+                "are each"
+            }
+        ),
+    )
+    .with_hint(format!(
+        "quote it: write each variant as the text it is named, such as {quoted}, in the case the \
+         variant is meant to have"
+    ))
+}
+
+impl RawNamedType {
+    /// The refusal of every invariant this type writes that does not parse, each one's place held
+    /// (beyond10x/ess#448): see [`RawInvariant::withhold_unparsed`].
+    pub(crate) fn withhold_unparsed_invariants(&mut self) -> ValidationErrors {
+        let location = declared_at(&self.name);
+        match &mut self.body {
+            RawTypeBody::Newtype { invariants, .. } | RawTypeBody::Struct { invariants, .. } => {
+                RawInvariant::withhold_unparsed(invariants, |index| {
+                    PredicateAt::from(format!("{location}.invariants[{index}]"))
+                })
+            }
+            RawTypeBody::Enum { .. } | RawTypeBody::Union { .. } => ValidationErrors::new(),
         }
     }
 }
@@ -1558,13 +1722,15 @@ impl TryFrom<RawNamedType> for NamedType {
     type Error = ValidationErrors;
 
     fn try_from(raw: RawNamedType) -> Result<Self, Self::Error> {
+        let mut errors = ValidationErrors::new();
+        let body = raw.body.read(&declared_at(&raw.name), &mut errors);
         let declared = Self {
             name: raw.name,
-            body: raw.body.into(),
+            body,
             naming: raw.naming,
             reading: raw.reading,
         };
-        let mut errors = declared.check_shape();
+        errors.extend(declared.check_shape());
         errors.extend(declared.check_invariants());
         errors.into_result(declared)
     }
@@ -2224,14 +2390,20 @@ mod tests {
 
     #[test]
     fn a_type_invariant_that_is_not_a_predicate_is_refused() {
-        let error = serde_yaml::from_str::<RawNamedType>(
+        // Refused by the type's own pass at the invariant's index, not by the reader, so it does
+        // not end the document (beyond10x/ess#448).
+        let errors = declared(
             "name: billing.invoice.Money\nkind: struct\nfields:\n  - name: amount\n    type: Decimal\ninvariants: [\"))) this is not a predicate\"]\n",
         )
         .expect_err("a value object's invariants are predicates, exactly like an entity's");
+        let error = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::UnparsablePredicate)
+            .unwrap_or_else(|| panic!("an unparsable invariant is refused as one: {errors}"));
+        assert_eq!(error.location, "types.billing.invoice.Money.invariants[0]");
         assert!(
-            error
-                .to_string()
-                .contains("a predicate is either a comparison"),
+            error.message.contains("a predicate is either a comparison"),
             "the refusal says what an invariant is: {error}"
         );
     }

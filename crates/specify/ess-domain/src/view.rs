@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, WrittenPredicate};
 
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_DEPTH};
@@ -1786,7 +1786,7 @@ pub struct RawViewSpec {
     pub params: Vec<Field>,
     /// Which instances it contains.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub filter: Option<Predicate>,
+    pub filter: Option<WrittenPredicate>,
     /// The view fields the admitted rows are partitioned by. Absent or `[]`: not grouped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub group_by: Vec<String>,
@@ -1867,13 +1867,23 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             group_by: raw.group_by,
             functions,
         });
+        // A filter that does not parse is refused here, at the view, and withholds the view
+        // (beyond10x/ess#448).
+        let filter = match raw.filter.map(|filter| filter.read(at("filter"))) {
+            Some(Ok(filter)) => Some(filter),
+            Some(Err(error)) => {
+                grouping.push(error);
+                None
+            }
+            None => None,
+        };
         let spec = Self {
             name: raw.name,
             source: raw.source,
             shape: raw.shape,
             fields,
             params: raw.params,
-            filter: raw.filter,
+            filter,
             aggregation,
             order_by: raw.order_by,
             paging: raw.paging,
@@ -1908,7 +1918,7 @@ impl From<ViewSpec> for RawViewSpec {
             shape: view.shape,
             fields,
             params: view.params,
-            filter: view.filter,
+            filter: view.filter.map(WrittenPredicate::from),
             group_by,
             order_by: view.order_by,
             paging: view.paging,

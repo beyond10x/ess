@@ -508,31 +508,36 @@ fn validate_partition(
         .collect();
     let default = command.default_outcome();
     let readable = readable_fields(entity, admits_state(types));
-    let analyze = if default.is_some() {
-        finite::analyze_enum_fields
-    } else {
-        finite::analyze_with_fields
-    };
-    let Some(cases) = analyze(
+    // Booleans are proved only where no default answers the rest: the enum-only proof otherwise.
+    let cases = finite::field_coverage(
         &DomainEnvironment::new(types, &readable),
         &DomainEnvironment::new(types, &command.input),
         &guards,
-    ) else {
-        if default.is_none() {
-            errors.push(
-                ValidationError::at(
-                    command.site().key("outcomes"),
-                    ValidationCode::NonExhaustiveBranches,
-                    "subject-fact/input coverage is open, unsupported, or exceeds 64 joint \
-                     assignments; declare a genuine default",
-                )
-                .with_hint(
-                    "drop the guard from the branch that answers every other stored row — usually \
-                     the success beside the refusal",
-                ),
-            );
+        default.is_none(),
+    );
+    let cases = match cases {
+        Ok(cases) => cases,
+        Err(declined) => {
+            if default.is_none() {
+                // Which of the three it is, so the author knows whether to drop a guard, close
+                // a field, or split the command (beyond10x/ess#426).
+                errors.push(
+                    ValidationError::at(
+                        command.site().key("outcomes"),
+                        ValidationCode::NonExhaustiveBranches,
+                        format!(
+                            "subject-fact/input coverage is not proved: {declined}; declare a \
+                             genuine default"
+                        ),
+                    )
+                    .with_hint(
+                        "drop the guard from the branch that answers every other stored row — \
+                         usually the success beside the refusal",
+                    ),
+                );
+            }
+            return errors;
         }
-        return errors;
     };
     for case in cases {
         let selected: Vec<&Outcome> = if case.selected.is_empty() {

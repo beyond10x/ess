@@ -457,10 +457,12 @@ fn a2_source21_bytes_unchanged() {
         OLD,
     ))
     .expect_err("ess/21 refuses the offset mapping");
+    // The sentence it always had, at the guard that wrote it (beyond10x/ess#448).
     assert_eq!(
         refused,
-        "parse: cannot parse predicate \"upper: {eq: {offset: {add: 5, fact: lower}}}\": a \
-         comparison operand must be a scalar"
+        "[unparsable_predicate] command.pool.lease.Open.outcomes.refused.when: cannot parse \
+         predicate \"upper: {eq: {offset: {add: 5, fact: lower}}}\": a comparison operand must \
+         be a scalar"
     );
 }
 

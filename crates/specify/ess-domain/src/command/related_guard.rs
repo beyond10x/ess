@@ -61,7 +61,7 @@ use crate::{
     types::TypeRegistry,
 };
 use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, WrittenPredicate};
 use std::fmt::Write as _;
 
 /// The key an author writes.
@@ -102,7 +102,7 @@ pub struct RawRelatedGuard {
     /// What a row of `entity` must satisfy to be selected (ess/22): its fields bare, the input
     /// under `input.`, the addressed subject under `subject.`.
     #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
-    pub filter: Option<Predicate>,
+    pub filter: Option<WrittenPredicate>,
     /// `false`: the branch is taken when no row carries that identity. Written instead of
     /// `predicate`, never beside it. Over a selector (ess/22): whether any row is selected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -110,14 +110,14 @@ pub struct RawRelatedGuard {
     /// What must hold of that row's stored fields — and of the input, read under `input.` — for the
     /// branch to be taken. Written instead of `exists`, never beside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub predicate: Option<Predicate>,
+    pub predicate: Option<WrittenPredicate>,
     /// Over a selector (ess/22): one comparison of the number of rows selected with a nonnegative
     /// whole number, `{eq: 1}`; the operator is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<super::row_set::RawCount>,
     /// Over a selector (ess/22): what every selected row satisfies; true of no rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forall: Option<Predicate>,
+    pub forall: Option<WrittenPredicate>,
 }
 
 /// What a `when_related:` reads, as [`RawRelatedGuard::read`] decides from its keys.
@@ -152,7 +152,7 @@ impl RawRelatedGuard {
                     },
                     RelatedTest::Holds(predicate) => Self {
                         via,
-                        predicate: Some(predicate.clone()),
+                        predicate: Some(predicate.clone().into()),
                         ..empty
                     },
                 })
@@ -162,7 +162,7 @@ impl RawRelatedGuard {
             } => {
                 let selected = Self {
                     entity: Some(selection.entity.clone()),
-                    filter: Some(selection.filter.clone()),
+                    filter: Some(selection.filter.clone().into()),
                     ..empty
                 };
                 Some(match test {
@@ -181,7 +181,7 @@ impl RawRelatedGuard {
                         ..selected
                     },
                     super::row_set::RowSetTest::Forall(predicate) => Self {
-                        forall: Some(predicate.clone()),
+                        forall: Some(predicate.clone().into()),
                         ..selected
                     },
                 })
@@ -202,6 +202,11 @@ impl RawRelatedGuard {
             || self.filter.is_some()
             || self.count.is_some()
             || self.forall.is_some();
+        // Which keys were written is decided above, from what the document wrote; what they say
+        // is read here, before any of it is used (beyond10x/ess#448).
+        let written_predicate = self.predicate.is_some();
+        let (filter, predicate, forall) =
+            read_predicates(name, (self.filter, self.predicate, self.forall))?;
         let Some(via) = self.via else {
             if !selects {
                 return Err(at(
@@ -214,7 +219,7 @@ impl RawRelatedGuard {
                     INPUT_HINT,
                 ));
             }
-            if self.predicate.is_some() {
+            if written_predicate {
                 return Err(at(
                     ValidationCode::ConflictingDeclaration,
                     format!(
@@ -224,12 +229,8 @@ impl RawRelatedGuard {
                     "write `forall: <predicate>`",
                 ));
             }
-            let (selection, test) = super::row_set::read(
-                name,
-                self.entity,
-                self.filter,
-                (self.exists, self.count, self.forall),
-            )?;
+            let (selection, test) =
+                super::row_set::read(name, self.entity, filter, (self.exists, self.count, forall))?;
             return Ok(ReadGuard::RowSet(selection, test));
         };
         if selects {
@@ -256,7 +257,7 @@ impl RawRelatedGuard {
                 ))
             }
         };
-        let test = match (self.exists, self.predicate) {
+        let test = match (self.exists, predicate) {
             (Some(false), None) => RelatedTest::Absent,
             (None, Some(predicate)) => RelatedTest::Holds(predicate),
             (Some(true), None) => {
@@ -290,6 +291,37 @@ impl RawRelatedGuard {
         };
         Ok(ReadGuard::Identity(via, test))
     }
+}
+
+/// The three predicates a `when_related:` may write — `where`, `predicate`, `forall` — or the
+/// refusal of each one that does not parse, at its own key, together (beyond10x/ess#448).
+type ReadPredicates = (Option<Predicate>, Option<Predicate>, Option<Predicate>);
+
+fn read_predicates(
+    name: &super::OutcomeName,
+    (filter, predicate, forall): (
+        Option<WrittenPredicate>,
+        Option<WrittenPredicate>,
+        Option<WrittenPredicate>,
+    ),
+) -> Result<ReadPredicates, ValidationErrors> {
+    let mut unparsed = ValidationErrors::new();
+    let mut read = |written: Option<WrittenPredicate>, key: &str| match written
+        .map(|written| written.read(format!("outcomes.{name}.{KEY}.{key}")))
+    {
+        Some(Ok(predicate)) => Some(predicate),
+        Some(Err(error)) => {
+            unparsed.push(error);
+            None
+        }
+        None => None,
+    };
+    let read = (
+        read(filter, "where"),
+        read(predicate, "predicate"),
+        read(forall, "forall"),
+    );
+    unparsed.into_result(read)
 }
 
 /// The hint of the refusal of a `via` that names no input field, through ess/21.

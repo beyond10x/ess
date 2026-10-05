@@ -283,14 +283,16 @@ fn a1_timestamp_sibling_resolves_in_an_invariant() {
 fn the_instant_tag_is_an_ess22_form_between_two_timestamps() {
     let tagged = "{compare: {left: valid_until, op: gt, right: {fact: valid_from}, as: timestamp}}";
     // Below ess/22 the form is no form: `compare` is read as the fact it always was, and refused
-    // while parsing in the words it always was (final review, F6).
+    // in the words it always was (final review, F6), at the invariant that wrote it
+    // (beyond10x/ess#448).
     let refused =
         assemble(&model(21, "note == pending", tagged, "")).expect_err("ess/21 refuses the tag");
     assert_eq!(
         refused,
-        "parse: cannot parse predicate \"compare: {as: …}\": unknown operator \"as\"; expected \
-         one of eq, ne, lt, lte, gt, gte, any_of, none_of, exists, truthy, starts_with, ends_with, \
-         contains, equals_ignore_case, in_ignore_case"
+        "[unparsable_predicate] entity graph.tasks.Edge.invariants[0]: cannot parse predicate \
+         \"compare: {as: …}\": unknown operator \"as\"; expected one of eq, ne, lt, lte, gt, gte, \
+         any_of, none_of, exists, truthy, starts_with, ends_with, contains, equals_ignore_case, \
+         in_ignore_case"
     );
     let spec = admitted(&model(22, PLAIN, tagged, ""));
     assert_eq!(
@@ -325,14 +327,20 @@ fn a1_source21_bytes_unchanged() {
         json(&invariant(&spec)),
         r#""valid_until > 2020-01-01T00:00:00Z""#
     );
-    // The canonical fact operand is an ess/22 form: below it the mapping is refused while
-    // parsing, in the words it always was (final review, F6).
+    // The canonical fact operand is an ess/22 form: below it the mapping is refused in the words
+    // it always was (final review, F6), at the guard that wrote it, and no longer hides the
+    // invariant's own refusal beside it (beyond10x/ess#448).
     let refused = assemble(&model(21, "{task_id: {eq: {fact: depends_on}}}", PLAIN, ""))
         .expect_err("ess/21 refuses the explicit fact operand");
     assert_eq!(
         refused,
-        "parse: cannot parse predicate \"task_id: {eq: {fact: depends_on}}\": a comparison \
-         operand must be a scalar"
+        "2 validation errors:\n  - [unparsable_predicate] command.graph.tasks.Link.outcomes.\
+         refused.when: cannot parse predicate \"task_id: {eq: {fact: depends_on}}\": a comparison \
+         operand must be a scalar\n  - [type_mismatch] entity graph.tasks.Edge.invariants[0]: \
+         `valid_until >= valid_from` reads `valid_from` as the text literal \"valid_from\", not \
+         the field `valid_from`: a right-hand side without a dot is a literal. To compare two \
+         fields, declare them in one struct and compare its members, such as \
+         `window.valid_until >= window.valid_from`\n"
     );
     // ... which ess/22 reads back as the fact it writes.
     let spec = admitted(&model(22, "{task_id: {eq: {fact: depends_on}}}", PLAIN, ""));

@@ -259,6 +259,13 @@ this block, a count that does not match, and a listed file that has none, are ea
 `compensates: true` and its `ess/22` format gate `compensation_format`, all written with
 `ValidationError::at` under the `command` head. No string-located site was added.
 
+`types.rs` rose from 16 to 17 string-located sites, and its `types` head from 8 to 9 literals, with
+beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused at
+`types.<name>.variants`, and a type's invariants that do not parse at
+`types.<name>.invariants[<index>]`, both from one `types.<name>` helper, because no
+`ConstructKind` renders the plural head. The same #448 refusals of an entity's invariant and of a
+binding's `where` are typed sites, and add nothing here.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -275,7 +282,7 @@ selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
-types.rs 16 1
+types.rs 17 1
 view.rs 29 0
 wire.rs 1 0
 ```
@@ -324,7 +331,7 @@ outcome_groups outcome_group.rs 17
 topology topology.rs 6
 types primitive_admission.rs 1
 types system.rs 3
-types types.rs 8
+types types.rs 9
 types wire.rs 1
 view primitive_admission.rs 3
 view view.rs 13

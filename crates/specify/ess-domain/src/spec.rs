@@ -1131,7 +1131,10 @@ impl Collected {
         // The owner every member of this file is claimed for, as `Assembly::claim` will claim it.
         let owner = file.domain.clone();
         let owner = owner.as_ref();
-        for raw in file.types {
+        for mut raw in file.types {
+            // An invariant that does not parse is refused and withheld, not the type: a refused
+            // type would make every field declared with it a second refusal (beyond10x/ess#448).
+            errors.extend(raw.withhold_unparsed_invariants());
             let name = raw.name.clone();
             let converted = match NamedType::try_from(raw) {
                 Ok(declared) => Some(declared),
@@ -1148,7 +1151,9 @@ impl Collected {
 
         let mut members = DomainMembers::default();
 
-        for raw in file.entities {
+        for mut raw in file.entities {
+            // As for a type: the invariant is withheld, not the entity (beyond10x/ess#448).
+            errors.extend(raw.withhold_unparsed_invariants());
             let first = self.declare_member("entity", &raw.name, source, owner, errors);
             let name = raw.name.clone();
             let converted = match EntitySpec::try_from(raw) {

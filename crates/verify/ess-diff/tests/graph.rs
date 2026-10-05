@@ -283,7 +283,8 @@ fn review_cli_parameter_fixture(grouped: bool) -> ess_compiler::EssIr {
                         ess_primitives::predicate::Predicate::parse_expression(
                             "invoice_id == param.wanted",
                         )
-                        .unwrap(),
+                        .unwrap()
+                        .into(),
                     );
                 }
             }

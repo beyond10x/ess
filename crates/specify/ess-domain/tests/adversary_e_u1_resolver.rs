@@ -76,13 +76,14 @@ fn adversary_ess21_input_namespace_refusal_bytes_match_base() {
     assert_eq!(assemble(&model(21, "task_id == input.depends_on")), base);
 }
 
-/// An `ess/21` comparison whose operand is a mapping that is not `{fact: …}`: base refuses it while
-/// parsing with "a comparison operand must be a scalar".
+/// An `ess/21` comparison whose operand is a mapping that is not `{fact: …}`: base refuses it with
+/// "a comparison operand must be a scalar". Since beyond10x/ess#448 the same sentence is reported
+/// at the guard that wrote it rather than ending the document.
 #[test]
 fn adversary_ess21_mapping_operand_refusal_bytes_match_base() {
-    let base =
-        "PARSE: cannot parse predicate \"note: {eq: {x: 1}}\": a comparison operand must be \
-                a scalar";
+    let base = "REFUSED: [unparsable_predicate] command.graph.tasks.Link.outcomes.refused.when: \
+                cannot parse predicate \"note: {eq: {x: 1}}\": a comparison operand must be a \
+                scalar";
     assert_eq!(assemble(&model(21, "{note: {eq: {x: 1}}}")), base);
 }
 

@@ -124,10 +124,12 @@ commands:
 #[test]
 fn window_below_ess22_is_refused_naming_ess22() {
     let older = RELEASES.replacen("format: ess/22", "format: ess/21", 1);
-    let error = RawSpecFile::parse(&older).expect_err("an ess/21 source has no window");
-    let message = error.to_string();
-    assert!(message.contains("ess/22"), "{message}");
-    assert!(message.contains("window"), "{message}");
+    // Refused at the guard that writes it rather than by the reader (beyond10x/ess#448).
+    let found = refused(&older, ValidationCode::UnparsablePredicate, "ess/22");
+    assert!(
+        found.iter().all(|message| message.contains("window")),
+        "{found:?}"
+    );
 
     // A window assembled under an older header without the reader's help is refused at assembly.
     let mut raw = RawSpecFile::parse(RELEASES).expect("parses");
@@ -209,11 +211,14 @@ fn window_a_named_zone_is_refused_at_source() {
         SCHEDULE_WINDOW,
         &SCHEDULE_WINDOW.replace("\"+01:00\"", "Europe/Berlin"),
     );
-    let error = RawSpecFile::parse(&zoned).expect_err("a zone name is refused");
-    let message = error.to_string();
-    assert!(
-        message.contains("`Europe/Berlin` names a time zone"),
-        "{message}"
+    // Refused at the guard that writes it rather than by the reader (beyond10x/ess#448).
+    let found = refused(
+        &zoned,
+        ValidationCode::UnparsablePredicate,
+        "`Europe/Berlin` names a time zone",
     );
-    assert!(message.contains("fixed offset"), "{message}");
+    assert!(
+        found.iter().all(|message| message.contains("fixed offset")),
+        "{found:?}"
+    );
 }
