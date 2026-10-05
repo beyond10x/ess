@@ -141,6 +141,8 @@ fn reads(
             inner.insert(quantified.bind.clone(), target(&quantified.over));
             reads(&quantified.body, &inner, out);
         }
+        // A `distinct` (ess/22) reads its list.
+        Predicate::Distinct(distinct) => note(&distinct.over, &[]),
     }
 }
 

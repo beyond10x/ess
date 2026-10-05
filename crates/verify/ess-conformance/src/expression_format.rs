@@ -10,9 +10,10 @@
 //! mapping or, worse, read the bare word it replaces as text. A binder and a dotted path are not
 //! such operands, so a suite comparing only those keeps its prior format and bytes (decision 5).
 //!
-//! One constant offset of a fact, `{offset: {fact, add|subtract}}` (A2), selects it too. Later Family F
-//! units add their constructs here — `Distinct` and the derived `Utf8Bytes` selector — each one more
-//! arm of [`reads`].
+//! One constant offset of a fact, `{offset: {fact, add|subtract}}` (A2), selects it too, and so do
+//! distinct list members, `{distinct: {in, as, by, kind}}`, whose key kind every reader requires.
+//! Later Family F units add their constructs here — the derived `Utf8Bytes` selector — each one
+//! more arm of [`reads`].
 //!
 //! # Cumulative over 36–39
 //!
@@ -38,11 +39,36 @@ pub const ADMITTED: [u32; 2] = [ORDINARY, COVERAGE];
 /// What a refusal of a relabelled older suite says.
 pub const REQUIRES: &str =
     "the expression vocabulary of a one-segment fact operand `{fact: …}`, a \
-     comparison tagged `as: timestamp` or one constant offset `{offset: …}` requires suite/40 or /41";
+     comparison tagged `as: timestamp`, one constant offset `{offset: …}` or distinct list \
+     members `{distinct: …}` requires suite/40 or /41";
+
+/// What a refusal of a `distinct` without its key kind says: a suite never carries a key whose
+/// equality its reader would have to infer.
+pub const UNKINDED: &str =
+    "`{distinct: …}` in a suite names its key kind (`kind:`), which no reader infers";
 
 /// Whether this predicate carries vocabulary only a `/40` reader reads.
 pub fn reads(predicate: &Predicate) -> bool {
-    predicate.reads_root_fact_operand() || predicate.compares_instants() || predicate.reads_offset()
+    predicate.reads_root_fact_operand()
+        || predicate.compares_instants()
+        || predicate.reads_offset()
+        || predicate.reads_distinct()
+}
+
+/// Whether a suite runner reads this predicate over a view row with every sequence bound element
+/// by element, beside its `.count` (final review decision 1): under `/40` and `/41`, for the
+/// collection reads a `distinct` makes. A predicate without one keeps the row binding it had, so
+/// no older suite's verdict moves.
+pub fn binds_sequences(predicate: &Predicate) -> bool {
+    predicate.reads_distinct()
+}
+
+/// Whether some `distinct` of this predicate names no key kind, which no suite admits.
+pub fn unkinded(predicate: &Predicate) -> bool {
+    predicate
+        .distincts()
+        .iter()
+        .any(|(distinct, _)| distinct.key_kind.is_none())
 }
 
 /// Whether a typed suite needs `/40` (ordinary) or `/41` (coverage).
@@ -50,11 +76,23 @@ pub fn used_by(suite: &ConformanceSuite) -> bool {
     suite
         .scenarios
         .values()
-        .any(|scenario| scenario.steps.iter().any(step_uses))
+        .any(|scenario| scenario.steps.iter().any(|step| step_carries(step, reads)))
 }
 
 /// Reject an explicitly pinned older format before serialization or any target effect.
 pub fn admit_suite(suite: &ConformanceSuite) -> Result<(), crate::admission::AdmissionError> {
+    if suite.scenarios.values().any(|scenario| {
+        scenario
+            .steps
+            .iter()
+            .any(|step| step_carries(step, unkinded))
+    }) {
+        return Err(crate::admission::AdmissionError::new(
+            "InvalidPredicate",
+            "$suite",
+            UNKINDED,
+        ));
+    }
     if suite.provenance.suite_version.major() < ORDINARY && used_by(suite) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedVocabulary",
@@ -73,6 +111,13 @@ pub fn admit_predicate(raw: &str, major: u32) -> Result<(), crate::admission::Ad
     let predicate = Predicate::from_node(&node).map_err(|error| {
         crate::admission::AdmissionError::new("InvalidPredicate", "$predicate", error.to_string())
     })?;
+    if unkinded(&predicate) {
+        return Err(crate::admission::AdmissionError::new(
+            "InvalidPredicate",
+            "$predicate",
+            UNKINDED,
+        ));
+    }
     if major < ORDINARY && reads(&predicate) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedVocabulary",
@@ -106,7 +151,7 @@ pub fn coverage_floor(suite: &ConformanceSuite) -> Option<u32> {
     used_by(suite).then_some(COVERAGE)
 }
 
-fn values_use(values: &BTreeMap<String, ScenarioValue>) -> bool {
+fn values_use(values: &BTreeMap<String, ScenarioValue>, test: fn(&Predicate) -> bool) -> bool {
     values.values().any(|value| match value {
         ScenarioValue::ObservedSelection { selection, .. } => {
             selection
@@ -114,7 +159,7 @@ fn values_use(values: &BTreeMap<String, ScenarioValue>) -> bool {
                 .selectors
                 .iter()
                 .any(|selector| match &selector.operation {
-                    SelectionOperation::First { predicate, .. } => reads(predicate),
+                    SelectionOperation::First { predicate, .. } => test(predicate),
                     SelectionOperation::FirstPresent { .. } => false,
                 })
         }
@@ -122,29 +167,29 @@ fn values_use(values: &BTreeMap<String, ScenarioValue>) -> bool {
     })
 }
 
-fn expectation_uses(expectation: &ViewExpectation) -> bool {
+fn expectation_uses(expectation: &ViewExpectation, test: fn(&Predicate) -> bool) -> bool {
     match expectation {
-        ViewExpectation::Satisfies { predicate } => reads(predicate),
+        ViewExpectation::Satisfies { predicate } => test(predicate),
         ViewExpectation::Contains { fields }
         | ViewExpectation::Excludes { fields }
-        | ViewExpectation::At { fields, .. } => values_use(fields),
+        | ViewExpectation::At { fields, .. } => values_use(fields, test),
         _ => false,
     }
 }
 
-fn step_uses(step: &ScenarioStep) -> bool {
+fn step_carries(step: &ScenarioStep, test: fn(&Predicate) -> bool) -> bool {
     match step {
         ScenarioStep::ExecuteCommand { input, .. }
-        | ScenarioStep::ExpectInvocation { input, .. } => values_use(input),
+        | ScenarioStep::ExpectInvocation { input, .. } => values_use(input, test),
         ScenarioStep::QueryView { params, .. }
         | ScenarioStep::ExpectHalt { params, .. }
-        | ScenarioStep::EventuallyHalt { params, .. } => values_use(params),
-        ScenarioStep::ExpectView { expectation, .. } => expectation_uses(expectation),
+        | ScenarioStep::EventuallyHalt { params, .. } => values_use(params, test),
+        ScenarioStep::ExpectView { expectation, .. } => expectation_uses(expectation, test),
         ScenarioStep::EventuallyView {
             params,
             expectation,
             ..
-        } => values_use(params) || expectation_uses(expectation),
+        } => values_use(params, test) || expectation_uses(expectation, test),
         _ => false,
     }
 }

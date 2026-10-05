@@ -11,8 +11,8 @@ pub mod lexical;
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    CompareKind, CompareOp, FoldOp, OffsetMagnitude, OffsetOperand, Operand, Predicate, Quantified,
-    TextOp,
+    CompareKind, CompareOp, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude, OffsetOperand,
+    Operand, Predicate, Quantified, TextOp,
 };
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
@@ -124,6 +124,14 @@ pub trait TypeEnvironment {
     /// and a collection's `.count` answer `true`; a `Decimal` and a `Binary64` answer `false`.
     fn is_integer(&self, _reference: &Self::Type) -> bool {
         false
+    }
+    /// The primitive this terminal type is, where it is one: what a `distinct` key compares under
+    /// (`docs/design/expression-family-source22.md`, `distinct`).
+    ///
+    /// `None` by default, which admits no key: an environment that cannot name its primitives
+    /// cannot say which equality a key has.
+    fn primitive(&self, _reference: &Self::Type) -> Option<Primitive> {
+        None
     }
     /// Whether this environment admits `.count` on a `String`, the length in Unicode scalar values
     /// that `ess/11` introduced.
@@ -387,6 +395,12 @@ impl<'a> DomainEnvironment<'a> {
 }
 
 impl TypeEnvironment for DomainEnvironment<'_> {
+    fn primitive(&self, reference: &TypeRef) -> Option<Primitive> {
+        match reference {
+            TypeRef::Primitive(primitive) => Some(*primitive),
+            _ => None,
+        }
+    }
     fn is_instant(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Primitive(Primitive::Timestamp))
     }
@@ -850,6 +864,29 @@ fn text_length_refusal<E: TypeEnvironment>(
     Ok(())
 }
 
+/// The equality a `distinct` key resolved to `resolved` compares under
+/// (`docs/design/expression-family-source22.md`, `distinct`): an enum through any newtype, or one of
+/// the primitives `count_distinct` compares. `None` for every other terminal — a struct, list, map,
+/// union or `Json` value, and a `Binary64`, `Duration` or `Bytes` scalar — which has no key equality.
+pub fn distinct_key_kind<E: TypeEnvironment>(
+    environment: &E,
+    resolved: &Resolution<E::Type>,
+) -> Option<DistinctKeyKind> {
+    resolved.scalar?;
+    if resolved.variants.is_some() {
+        return Some(DistinctKeyKind::Enum);
+    }
+    match environment.primitive(&resolved.terminal)? {
+        Primitive::Boolean => Some(DistinctKeyKind::Boolean),
+        Primitive::Integer => Some(DistinctKeyKind::Integer),
+        Primitive::Decimal => Some(DistinctKeyKind::Decimal),
+        Primitive::String => Some(DistinctKeyKind::String),
+        Primitive::Uuid => Some(DistinctKeyKind::Uuid),
+        Primitive::Timestamp => Some(DistinctKeyKind::Timestamp),
+        Primitive::Binary64 | Primitive::Duration | Primitive::Bytes | Primitive::Json => None,
+    }
+}
+
 fn canonical_ordinal(segment: &str) -> bool {
     segment == "0"
         || (!segment.starts_with('0')
@@ -932,7 +969,115 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
         },
         &mut Vec::new(),
     );
-    tag_instants(environment, resolved, &mut Vec::new())
+    let tagged = tag_instants(environment, resolved, &mut Vec::new());
+    key_kinds(environment, tagged, &mut Vec::new(), input_namespace)
+}
+
+/// Writes the key kind of every `distinct` the source left it out of, read off the declarations
+/// its key resolves to (`docs/design/expression-family-source22.md`, `distinct`), so the canonical
+/// form carries it and no reader infers it from a spelling. A kind the source wrote is kept for
+/// the checker to hold to the declarations; a key that resolves to no admitted domain keeps none,
+/// and the checker refuses it by name. With `input_namespace`, a list written `input.<path>`
+/// is typed as the input `<path>` (decision 6), which [`read_input_namespace`] rewrites afterwards.
+fn key_kinds<E: TypeEnvironment>(
+    environment: &E,
+    predicate: Predicate,
+    scope: &mut Vec<(FactPath, String)>,
+    input_namespace: bool,
+) -> Predicate {
+    let nested = |child: Predicate, scope: &mut Vec<(FactPath, String)>| {
+        key_kinds(environment, child, scope, input_namespace)
+    };
+    match predicate {
+        Predicate::All(children) => Predicate::All(
+            children
+                .into_iter()
+                .map(|child| nested(child, scope))
+                .collect(),
+        ),
+        Predicate::Any(children) => Predicate::Any(
+            children
+                .into_iter()
+                .map(|child| nested(child, scope))
+                .collect(),
+        ),
+        Predicate::Not(inner) => Predicate::Not(Box::new(nested(*inner, scope))),
+        Predicate::Forall(quantified) => Predicate::Forall(Box::new(kinds_in(
+            environment,
+            *quantified,
+            scope,
+            input_namespace,
+        ))),
+        Predicate::Exists(quantified) => Predicate::Exists(Box::new(kinds_in(
+            environment,
+            *quantified,
+            scope,
+            input_namespace,
+        ))),
+        Predicate::Distinct(distinct) => Predicate::Distinct(Box::new(with_key_kind(
+            environment,
+            *distinct,
+            scope,
+            input_namespace,
+        ))),
+        other => other,
+    }
+}
+
+/// [`key_kinds`] in a quantifier body, its binder in scope.
+fn kinds_in<E: TypeEnvironment>(
+    environment: &E,
+    quantified: Quantified,
+    scope: &mut Vec<(FactPath, String)>,
+    input_namespace: bool,
+) -> Quantified {
+    let typed = typed_over(&quantified.over, scope, input_namespace);
+    scope.push((typed, quantified.bind.clone()));
+    let body = key_kinds(environment, quantified.body, scope, input_namespace);
+    scope.pop();
+    Quantified {
+        over: quantified.over,
+        bind: quantified.bind,
+        body,
+    }
+}
+
+/// The path a collection is typed at: `over`, or with `input_namespace` the input `<path>` that
+/// `input.<path>` names where no binder is called `input` (decision 6).
+fn typed_over(over: &FactPath, scope: &[(FactPath, String)], input_namespace: bool) -> FactPath {
+    let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
+    if input_namespace
+        && over.namespace() == namespace
+        && over.segments().len() > 1
+        && !scope.iter().any(|(_, bind)| bind == namespace)
+    {
+        FactPath::from_segments(&over.segments()[1..])
+    } else {
+        over.clone()
+    }
+}
+
+/// [`Distinct`] with its key kind read off the declarations under `scope`.
+fn with_key_kind<E: TypeEnvironment>(
+    environment: &E,
+    mut distinct: Distinct,
+    scope: &[(FactPath, String)],
+    input_namespace: bool,
+) -> Distinct {
+    if distinct.key_kind.is_some() {
+        return distinct;
+    }
+    let over = typed_over(&distinct.over, scope, input_namespace);
+    let mut pairs: Vec<(&FactPath, &str)> = scope
+        .iter()
+        .map(|(over, bind)| (over, bind.as_str()))
+        .collect();
+    pairs.push((&over, distinct.bind.as_str()));
+    let bindings = bindings_of(environment, &pairs);
+    distinct.key_kind = resolve(environment, &distinct.key_path(), "", &bindings)
+        .ok()
+        .and_then(|resolved| distinct_key_kind(environment, &resolved));
+    distinct
 }
 
 /// The first way `text` splits into `<base> ± <magnitude>` ([`OffsetOperand::spellings`]) whose base
@@ -1166,6 +1311,11 @@ pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
             Predicate::Exists(quantified) => {
                 Predicate::Exists(Box::new(quantifier(quantified, bound)))
             }
+            // The key is read under the binder; only the list is a free path.
+            Predicate::Distinct(distinct) => Predicate::Distinct(Box::new(Distinct {
+                over: strip(&distinct.over, bound),
+                ..(**distinct).clone()
+            })),
         }
     }
     fn quantifier<'a>(quantified: &'a Quantified, bound: &mut Vec<&'a str>) -> Quantified {
@@ -1635,6 +1785,113 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                  number, such as whole seconds in an Integer, to order it"
             ),
         ));
+    }
+
+    /// `distinct: {in, as, by}` (`docs/design/expression-family-source22.md`, `distinct`): from
+    /// `ess/22`, over a `List` — a `Map` has no order to be distinct in, and a scalar nothing to
+    /// walk — whose key, the element or the member `by` names under the binder, resolves to one
+    /// scalar with key equality. The key kind is the one the declarations give it: the resolver
+    /// writes it into a source that left it out, and a kind written otherwise is refused.
+    fn distinct(&mut self, predicate: &Predicate, distinct: &Distinct) {
+        if !self.environment.admits_root_facts() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(&distinct.over),
+                None,
+                format!(
+                    "`{predicate}`: `distinct: {{in, as, by}}` requires specification format ess/22"
+                ),
+            ));
+            return;
+        }
+        let Some(target) = self.read(&distinct.over, true) else {
+            return;
+        };
+        let element = match self.environment.shape(&target.terminal) {
+            Ok(Shape::List(element)) if target.scalar.is_none() => element,
+            _ => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(&distinct.over),
+                    None,
+                    format!(
+                        "`{predicate}`: `distinct` reads a List, and `{}` is `{}` ({}); a Map has \
+                         no order to be distinct in",
+                        distinct.over,
+                        target.declared,
+                        target
+                            .scalar
+                            .map_or_else(|| "aggregate".to_owned(), |kind| kind.to_string())
+                    ),
+                ));
+                return;
+            }
+        };
+        self.bindings.push(Binding {
+            name: distinct.bind.clone(),
+            reference: Some(element),
+            access: Access {
+                collection: true,
+                text_length: false,
+                depth: target.access.depth + 1,
+            },
+            optional: target.optional,
+        });
+        let key = distinct.key_path();
+        let resolved = self.read(&key, false);
+        self.bindings.pop();
+        let Some(resolved) = resolved else {
+            return;
+        };
+        let Some(kind) = distinct_key_kind(self.environment, &resolved) else {
+            let repair = if distinct.key.is_none() && resolved.scalar.is_none() {
+                format!(
+                    "; a list of structs names the one member that is its key with `by`, such as \
+                     `by: {}.<member>`",
+                    distinct.bind
+                )
+            } else {
+                String::new()
+            };
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(&key),
+                None,
+                format!(
+                    "`{predicate}`: the key `{key}` is `{}`, which has no key equality; a key is a \
+                     Boolean, Integer, Decimal, String, Uuid, Timestamp or enum{repair}",
+                    resolved.declared
+                ),
+            ));
+            return;
+        };
+        match distinct.key_kind {
+            Some(written) if written == kind => {}
+            Some(written) => self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(&key),
+                None,
+                format!(
+                    "`{predicate}` names the key kind `{written}`, and `{key}` is `{}`, whose keys \
+                     compare as `{kind}`",
+                    resolved.declared
+                ),
+            )),
+            None => self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(&key),
+                None,
+                format!(
+                    "`{predicate}` names no key kind: an authored source has it read off the \
+                     declarations, and a canonical document writes it, here `kind: {kind}`"
+                ),
+            )),
+        }
     }
 
     fn quantified(&mut self, predicate: &Predicate, quantified: &Quantified) {
@@ -2179,6 +2436,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
                 self.quantified(predicate, quantified);
             }
+            Predicate::Distinct(distinct) => self.distinct(predicate, distinct),
         }
     }
 }

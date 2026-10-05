@@ -218,7 +218,7 @@ use ess_domain::types::MAX_TYPE_DEPTH;
 use ess_domain::view::AssertionStyle;
 use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Operand, Predicate, Quantified, Truth};
+use ess_primitives::predicate::{Distinct, Operand, Predicate, Quantified, Truth};
 use ess_primitives::time::Rfc3339Instant;
 
 use crate::decision::{when, Decision, Unevaluable};
@@ -5677,6 +5677,11 @@ fn reach(
     let predicate = shadow
         .rendered(&guards)
         .unwrap_or_else(|| rendered(&guards, satisfy));
+    // A `distinct` over a finite key domain too small for the length its guards require has no
+    // witness at all, which is the named no-witness refusal rather than an unsatisfied search.
+    if let Some(gap) = crate::witness::exhausted_key_domain(ir, command, &guards) {
+        return Err(RefusalCause::NoWitness(gap));
+    }
     Err(unsatisfied(&guards, predicate, tried))
 }
 
@@ -12600,6 +12605,11 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
                 Predicate::Exists(mapped)
             }
         }
+        // The list moves; the key is read under the binder and stays.
+        Predicate::Distinct(distinct) => Predicate::Distinct(Box::new(Distinct {
+            over: onto(&distinct.over),
+            ..(**distinct).clone()
+        })),
     }
 }
 

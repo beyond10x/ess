@@ -70,6 +70,7 @@ import {
   fromNode,
   meaningDecimal,
   parseOperand,
+  parseDistinct,
   parseTaggedCompare,
   TruthTrue,
   TruthUnknown,
@@ -7176,6 +7177,16 @@ export function admitPredicateEnvelope(value: Node, depth: number): void {
           admitPredicatePath(key);
           admitPredicateConstraint(child);
           break;
+        case 'distinct':
+          // Distinct list members (suite/40); admitPredicateVersion gates the major. A mapping
+          // without `as` is a constraint on a fact named `distinct`, as it always was.
+          if (isObject(child) && Object.hasOwn(child, 'as')) {
+            parseDistinct(child);
+            break;
+          }
+          admitPredicatePath(key);
+          admitPredicateConstraint(child);
+          break;
         case 'forall':
         case 'exists': {
           const fields = closed(child, 'in as that', '');
@@ -11092,12 +11103,56 @@ export function admitPredicateVersion(value: Node, major: number): void {
   if (major < 40 && predicateUsesOffset(value)) {
     throw new Error('one constant offset {offset: …} requires suite/40 or /41');
   }
+  if (major < 40 && predicateUsesDistinct(value)) {
+    throw new Error('distinct list members {distinct: …} require suite/40 or /41');
+  }
   if (major < 40 && predicateUsesFactOperand(value)) {
     throw new Error('a one-segment fact operand {fact: …} requires suite/40 or /41');
   }
   if (major < 40 && predicateUsesOperator(value, ['left'])) {
     throw new Error('a comparison tagged as: timestamp requires suite/40 or /41');
   }
+}
+
+/**
+ * Whether admitted predicate grammar carries distinct list members `{distinct: {in, as, …}}`
+ * (suite/40), Go's `predicateUsesDistinct`.
+ */
+export function predicateUsesDistinct(value: Node): boolean {
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesDistinct);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key] ?? null;
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesDistinct(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (
+          isObject(child) &&
+          predicateUsesDistinct((child as { [key: string]: Node }).that ?? null)
+        ) {
+          return true;
+        }
+        break;
+      case 'distinct':
+        if (isObject(child) && Object.hasOwn(child, 'as')) return true;
+        break;
+    }
+  }
+  return false;
 }
 
 /** Whether admitted predicate grammar carries one constant offset `{offset: …}` (suite/40, A2). */

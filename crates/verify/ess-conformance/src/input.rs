@@ -628,6 +628,17 @@ impl ProofBudget {
                     self.predicate(&quantified.body, width)?;
                 }
             }
+            // One key read per element, each compared with the keys before it.
+            Predicate::Distinct(distinct) => {
+                path(&distinct.over)?;
+                self.charge(distinct.bind.len())?;
+                if let Some(key) = &distinct.key {
+                    path(key)?;
+                }
+                for _ in 0..width {
+                    self.charge(width)?;
+                }
+            }
             Predicate::Always | Predicate::Never => {}
         }
         self.charge(width)
@@ -1248,6 +1259,15 @@ impl<'ir> InputFacts<'ir> {
                     push(Reason::Unclassified);
                 }
             }
+            // The same two cases: an unobserved list, or a key read under the binder that is absent
+            // or outside its kind, which `explain_path` cannot name for the reason above.
+            Predicate::Distinct(distinct) => {
+                if self.cardinality(&distinct.over).is_none() {
+                    push(self.explain_path(&distinct.over));
+                } else {
+                    push(Reason::Unclassified);
+                }
+            }
             Predicate::Always
             | Predicate::Never
             | Predicate::All(_)
@@ -1417,11 +1437,31 @@ pub(crate) fn predicate_projectable(
         ess_compiler::expression::check_predicate(ir, fields, predicate, "conformance projection");
     let mut presence = BTreeSet::new();
     presence_reads(predicate, &mut presence);
+    let sequences = crate::expression_format::binds_sequences(predicate);
     checked.errors.is_empty()
         && checked.reads.iter().all(|read| {
             projection_target(ir, &read.resolution).is_scalar()
                 || aggregate_presence(ir, read, &presence)
+                || (sequences && sequence_read(ir, read))
         })
+}
+
+/// Whether `read` is one a runner answers from a row whose sequences are bound element by element
+/// (final review decision 1, suite `/40`): a list a `distinct` or a quantifier walks, or a scalar
+/// read through one of its elements. Every other read keeps [`projection_target`]'s answer.
+fn sequence_read(ir: &EssIr, read: &ess_domain::expression::Read<ResolvedTypeRef>) -> bool {
+    let resolution = &read.resolution;
+    if resolution.access.depth > MAX_TYPE_DEPTH || resolution.access.text_length {
+        return false;
+    }
+    if read.collection_target {
+        return matches!(resolution.terminal, ResolvedTypeRef::List { .. });
+    }
+    resolution.scalar.is_some()
+        && !matches!(
+            projection_target(ir, resolution),
+            Target::Aggregate("an unsupported Binary64 scalar") | Target::TooDeep
+        )
 }
 
 /// Whether `read` is a `defined()` (or `missing()`) of an `Optional` struct, union, list, map or

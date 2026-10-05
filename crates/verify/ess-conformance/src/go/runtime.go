@@ -4815,6 +4815,23 @@ func admitPredicateEnvelope(value any, depth int) error {
 				if err := admitPredicateEnvelope(fields["that"], depth+1); err != nil {
 					return err
 				}
+			case "distinct":
+				// Distinct list members (suite/40); admitPredicateVersion gates the major. A mapping
+				// without `as` is a constraint on a fact named `distinct`, as it always was.
+				if fields, ok := child.(map[string]any); ok {
+					if _, keyed := fields["as"]; keyed {
+						if _, err := parseDistinct(fields); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				if err := admitPredicatePath(key); err != nil {
+					return err
+				}
+				if err := admitPredicateConstraint(child); err != nil {
+					return err
+				}
 			default:
 				if err := admitPredicatePath(key); err != nil {
 					return err
@@ -8292,6 +8309,9 @@ func admitPredicateVersion(value any, major int) error {
 	if major < 40 && predicateUsesOffset(value) {
 		return fmt.Errorf("one constant offset {offset: …} requires suite/40 or /41")
 	}
+	if major < 40 && predicateUsesDistinct(value) {
+		return fmt.Errorf("distinct list members {distinct: …} require suite/40 or /41")
+	}
 	if major < 40 && predicateUsesFactOperand(value) {
 		return fmt.Errorf("a one-segment fact operand {fact: …} requires suite/40 or /41")
 	}
@@ -8299,6 +8319,39 @@ func admitPredicateVersion(value any, major int) error {
 		return fmt.Errorf("a comparison tagged as: timestamp requires suite/40 or /41")
 	}
 	return nil
+}
+
+// predicateUsesDistinct walks the admitted grammar for distinct list members `{distinct: {in, as,
+// …}}` (suite/40, docs/design/expression-family-source22.md `distinct`).
+func predicateUsesDistinct(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesDistinct(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesDistinct(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesDistinct(fields["that"]) {
+					return true
+				}
+			case "distinct":
+				if fields, ok := child.(map[string]any); ok {
+					if _, keyed := fields["as"]; keyed {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // predicateUsesOffset walks the admitted grammar for one constant offset `{offset: …}` (suite/40,

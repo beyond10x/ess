@@ -2979,6 +2979,10 @@ struct Profile {
     /// For each [`elementwise`] quantifier, which of the collection's values repeat an earlier one:
     /// rows [`spread`] writes decide every hint alike and differ only here (beyond10x/ess#240).
     shapes: Vec<Vec<usize>>,
+    /// For each `distinct` over a stored list ([`stored_distincts`]), whether the row holds two or
+    /// more elements there: a decisive row and a vacuous one decide every hint alike and differ
+    /// only here (`docs/design/expression-family-source22.md`, `distinct`).
+    decisive: Vec<bool>,
 }
 
 /// One three-valued answer, ordered so a search node can be keyed on it.
@@ -3047,11 +3051,69 @@ fn profile(
                     .collect()
             })
             .collect(),
+        decisive: stored_distincts(ir, entity, hints)
+            .iter()
+            .map(|over| {
+                matches!(
+                    held_node(&arrangement.settled, &[], over),
+                    Some(Node::Seq(items)) if items.len() >= 2
+                )
+            })
+            .collect(),
     }
 }
 
-/// How close a row sits to the guards: satisfied leaves first, then leaves on their own literal.
-fn score(profile: &Profile) -> (usize, usize) {
+/// The stored lists a `distinct` among `hints` reads outside any quantifier, in leaf order.
+fn stored_distincts(ir: &EssIr, entity: &EntityHandle, hints: &[Predicate]) -> Vec<FactPath> {
+    let declared = ir.entity(entity);
+    let mut found = Vec::new();
+    for hint in hints {
+        for (distinct, scope) in hint.distincts() {
+            if scope.is_empty()
+                && input_path(&distinct.over).is_none()
+                && declared
+                    .fields
+                    .iter()
+                    .any(|field| field.name == distinct.over.namespace())
+            {
+                found.push(distinct.over.clone());
+            }
+        }
+    }
+    found
+}
+
+/// Refuses a row that reaches its branch with a stored list a `distinct` among `hints` reads
+/// holding fewer than two elements, where no row of the same depth held more: a `distinct` over
+/// none or one element holds vacuously, and a target that compares nothing passes it
+/// (`docs/design/expression-family-source22.md`, `distinct`). The named no-witness refusal, so the
+/// branch is reported rather than witnessed by a list that decides nothing.
+fn vacuous(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    row: &Arrangement,
+    hints: &[Predicate],
+) -> Result<(), RefusalCause> {
+    for over in stored_distincts(ir, entity, hints) {
+        if !matches!(
+            held_node(&row.settled, &[], &over),
+            Some(Node::Seq(items)) if items.len() >= 2
+        ) {
+            return Err(RefusalCause::NoWitness(WitnessGap {
+                path: over.to_string(),
+                type_ref: entity.to_string(),
+                reason: "holds fewer than two elements in every row the arrangement leaves for \
+                         this branch, so a `distinct` over it would be decided only vacuously",
+            }));
+        }
+    }
+    Ok(())
+}
+
+/// How close a row sits to the guards: satisfied leaves first, then leaves on their own literal,
+/// then stored lists a `distinct` reads that hold two or more elements, so the branch a `distinct`
+/// lets through is arranged decisively rather than over a list of none or one.
+fn score(profile: &Profile) -> (usize, usize, usize) {
     (
         profile
             .leaves
@@ -3059,6 +3121,7 @@ fn score(profile: &Profile) -> (usize, usize) {
             .filter(|truth| **truth == Decided::True)
             .count(),
         profile.on_literal.iter().filter(|on| **on).count(),
+        profile.decisive.iter().filter(|held| **held).count(),
     )
 }
 
@@ -3733,7 +3796,7 @@ fn search_rows<T>(
         if fresh.is_empty() {
             break;
         }
-        let mut best: Option<((usize, usize), usize, T)> = None;
+        let mut best: Option<((usize, usize, usize), usize, T)> = None;
         for (index, node) in fresh.iter().enumerate() {
             match goal(node) {
                 Ok(Some(found)) => {
@@ -3749,6 +3812,7 @@ fn search_rows<T>(
             }
         }
         if let Some((_, index, found)) = best {
+            vacuous(ir, entity, &fresh[index], hints)?;
             return Ok((fresh.swap_remove(index), found));
         }
         let mut next = Vec::new();

@@ -514,6 +514,9 @@ predicate_forms! {
     // The same for the case-insensitive operators (beyond10x/ess#140): refused over an enum as a
     // type mismatch whatever the literal. `tests/subject_guard_input.rs` asserts that refusal.
     FoldMatch => false,
+    // Distinct list members (`ess/22`, beyond10x/ess#237) compare keys with each other and carry no
+    // literal at all.
+    Distinct => false,
 }
 
 /// The form a predicate is, as an exhaustive match.
@@ -536,6 +539,7 @@ fn form_of(predicate: &Predicate) -> Form {
         Predicate::Exists(_) => Form::Exists,
         Predicate::TextMatch { .. } => Form::TextMatch,
         Predicate::FoldMatch { .. } => Form::FoldMatch,
+        Predicate::Distinct(_) => Form::Distinct,
     }
 }
 
@@ -565,9 +569,11 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
             carries_a_literal(&quantified.body)
         }
         // Nothing to compare: these read a fact, or nothing at all.
-        Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {
-            false
-        }
+        Predicate::Always
+        | Predicate::Never
+        | Predicate::Truthy(_)
+        | Predicate::Defined(_)
+        | Predicate::Distinct(_) => false,
     }
 }
 

@@ -1077,6 +1077,10 @@ pub enum Predicate {
     ///
     /// Empty does not hold; unobserved is [`Truth::Unknown`].
     Exists(Box<Quantified>),
+    /// No two elements of a list share a key (`ess/22`).
+    ///
+    /// Empty and one element hold; unobserved is [`Truth::Unknown`]. See [`Distinct`].
+    Distinct(Box<Distinct>),
 }
 
 /// A predicate as read from a document, with the one fact about its spelling that the reading
@@ -1233,6 +1237,180 @@ impl FactSource for Element<'_> {
     }
 }
 
+/// The equality a [`Distinct`] key is compared under: the scalar domain its declared type resolves
+/// to, through newtypes and `Optional` (`docs/design/expression-family-source22.md`, `distinct`).
+///
+/// The domains `count_distinct` already compares (`docs/design/aggregate-views.md`): a whole struct,
+/// list, map, union or `Json` value has no key equality, so a struct list names one member with
+/// `by`. The resolver in `ess-domain` decides the kind from the declarations and the canonical form
+/// carries it, so a reader with no declared types — a suite runner over view rows — never infers an
+/// instant from a spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DistinctKeyKind {
+    /// `Boolean`: `true` and `false`.
+    Boolean,
+    /// `Integer`: exact whole numbers, never through a binary64.
+    Integer,
+    /// `Decimal`: exact numeric equality, so `1` and `1.0` are one key.
+    Decimal,
+    /// `String`: exact text.
+    String,
+    /// `Uuid`: exact text.
+    Uuid,
+    /// `Timestamp`: the instant, so two spellings of one instant are one key.
+    Timestamp,
+    /// An enum, through any newtype: exact variant text.
+    Enum,
+}
+
+impl DistinctKeyKind {
+    /// Every kind, in declaration order.
+    pub const ALL: [Self; 7] = [
+        Self::Boolean,
+        Self::Integer,
+        Self::Decimal,
+        Self::String,
+        Self::Uuid,
+        Self::Timestamp,
+        Self::Enum,
+    ];
+
+    /// The canonical spelling of this kind, the value of `kind:`.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Decimal => "decimal",
+            Self::String => "string",
+            Self::Uuid => "uuid",
+            Self::Timestamp => "timestamp",
+            Self::Enum => "enum",
+        }
+    }
+
+    /// The kind a canonical spelling names.
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.keyword() == keyword)
+    }
+
+    /// The key an observed value is under this kind, or `None` where the value lies outside it —
+    /// a fraction under `Integer`, a text under a number, a text no `date-time` spells under
+    /// `Timestamp` — which the comparison reads as `Unknown` rather than coercing.
+    fn key(self, value: &FactValue) -> Option<DistinctKey> {
+        match (self, value) {
+            (Self::Boolean, FactValue::Bool(flag)) => Some(DistinctKey::Bool(*flag)),
+            (Self::Integer, FactValue::Number(number)) if number.is_integral() => {
+                Some(DistinctKey::Number(*number))
+            }
+            (Self::Decimal, FactValue::Number(number)) => Some(DistinctKey::Number(*number)),
+            (Self::String | Self::Uuid | Self::Enum, FactValue::Text(text)) => {
+                Some(DistinctKey::Text(text.clone()))
+            }
+            (Self::Timestamp, FactValue::Text(text)) => {
+                crate::time::Rfc3339Instant::parse_rfc3339(text).map(DistinctKey::Instant)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for DistinctKeyKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
+/// One observed key, under the equality of its [`DistinctKeyKind`]. [`crate::facts::Number`]'s
+/// order is exact, and an instant's is the UTC line's.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum DistinctKey {
+    Bool(bool),
+    Number(crate::facts::Number),
+    Text(String),
+    Instant(crate::time::Rfc3339Instant),
+}
+
+/// No two elements of a list share a key (`docs/design/expression-family-source22.md`,
+/// `distinct`): `distinct: {in: files, as: file, by: file.path}`.
+///
+/// The key is the element itself, or the one scalar member `key` names under the binder. A present
+/// empty or one-element list holds. For two or more, two known equal keys make it `False` wherever
+/// they stand; every key known and pairwise unequal makes it `True`; anything else is `Unknown`. An
+/// absent list is `Unknown`, not empty, and an absent key is neither skipped nor one shared null.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Distinct {
+    /// The list.
+    pub over: FactPath,
+    /// The name each element is read under. One fact-path segment.
+    pub bind: String,
+    /// The member of the element that is its key, rooted at `bind`; `None` keys the element.
+    pub key: Option<FactPath>,
+    /// The equality the keys compare under. `None` only as an authored source writes it, before the
+    /// domain's resolver reads it off the declarations; nothing compares an unresolved key, and no
+    /// suite reader admits one.
+    pub key_kind: Option<DistinctKeyKind>,
+}
+
+impl Distinct {
+    /// The path each element's key is read at: `key`, or the binder itself.
+    pub fn key_path(&self) -> FactPath {
+        self.key
+            .clone()
+            .unwrap_or_else(|| FactPath::from_segments([self.bind.as_str()]))
+    }
+
+    /// The canonical document form, `{distinct: {in, as, by, kind}}`. There is no compact form;
+    /// `kind` is written once resolved and left out before, so a source reads back as written.
+    pub fn to_node(&self) -> Node {
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert("in".to_owned(), Node::Text(self.over.to_string()));
+        fields.insert("as".to_owned(), Node::Text(self.bind.clone()));
+        if let Some(key) = &self.key {
+            fields.insert("by".to_owned(), Node::Text(key.to_string()));
+        }
+        if let Some(kind) = self.key_kind {
+            fields.insert("kind".to_owned(), Node::Text(kind.keyword().to_owned()));
+        }
+        Node::Map([("distinct".to_owned(), Node::Map(fields))].into())
+    }
+
+    fn evaluate(&self, facts: &dyn FactSource) -> Truth {
+        let Some(kind) = self.key_kind else {
+            return Truth::Unknown;
+        };
+        let Some(count) = facts.cardinality(&self.over) else {
+            return Truth::Unknown;
+        };
+        if count < 2 {
+            return Truth::True;
+        }
+        let key = self.key_path();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut unknown = false;
+        for index in 0..count {
+            let element = Element {
+                inner: facts,
+                bind: &self.bind,
+                prefix: self.over.child(&index.to_string()),
+            };
+            match element.observe(&key).and_then(|value| kind.key(&value)) {
+                // Every pair, not neighbours only: a duplicate anywhere settles it.
+                Some(observed) => {
+                    if !seen.insert(observed) {
+                        return Truth::False;
+                    }
+                }
+                None => unknown = true,
+            }
+        }
+        if unknown {
+            Truth::Unknown
+        } else {
+            Truth::True
+        }
+    }
+}
+
 impl Predicate {
     /// Conjunction, simplified: an empty list is [`Predicate::Always`], a single child is
     /// returned unwrapped.
@@ -1338,6 +1516,7 @@ impl Predicate {
             }
             Self::Forall(quantified) => quantified.evaluate(facts, true),
             Self::Exists(quantified) => quantified.evaluate(facts, false),
+            Self::Distinct(distinct) => distinct.evaluate(facts),
         }
     }
 
@@ -1709,6 +1888,12 @@ impl Predicate {
                 quantified.body.visit_free_paths(bound, visit);
                 bound.pop();
             }
+            // The key is read under the binder, so only the list is a free read.
+            Self::Distinct(distinct) => {
+                if !bound.contains(&distinct.over.namespace()) {
+                    visit(&distinct.over);
+                }
+            }
         }
     }
 
@@ -1742,6 +1927,11 @@ impl Predicate {
                 quantified.body.visit_quantified(bound, found);
                 bound.pop();
             }
+            Self::Distinct(distinct) => {
+                if !bound.contains(&distinct.over.namespace()) {
+                    found.push(&distinct.over);
+                }
+            }
             Self::Always
             | Self::Never
             | Self::Compare { .. }
@@ -1773,7 +1963,8 @@ impl Predicate {
             | Self::Defined(_)
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
-            | Self::FoldMatch { .. } => false,
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_) => false,
         }
     }
 
@@ -1816,7 +2007,8 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
-            | Self::FoldMatch { .. } => false,
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_) => false,
         }
     }
 
@@ -1840,7 +2032,8 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
-            | Self::FoldMatch { .. } => false,
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_) => false,
         }
     }
 
@@ -1862,8 +2055,59 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_) => false,
+        }
+    }
+
+    /// Whether any leaf, at any depth, is a [`Predicate::Distinct`]
+    /// (`docs/design/expression-family-source22.md`, `distinct`): the question the `ess/22` source
+    /// gate and the suite pair `/40` and `/41` ask beside [`Self::reads_offset`].
+    pub fn reads_distinct(&self) -> bool {
+        match self {
+            Self::Distinct(_) => true,
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_distinct),
+            Self::Not(inner) => inner.reads_distinct(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_distinct(),
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
             | Self::FoldMatch { .. } => false,
         }
+    }
+
+    /// Every [`Distinct`] in this predicate, at any depth, outermost first, each with the binders
+    /// in scope where it stands, outermost first: what a checker or a producer asks of each one.
+    pub fn distincts(&self) -> Vec<(&Distinct, Vec<&Quantified>)> {
+        fn walk<'a>(
+            predicate: &'a Predicate,
+            scope: &mut Vec<&'a Quantified>,
+            found: &mut Vec<(&'a Distinct, Vec<&'a Quantified>)>,
+        ) {
+            match predicate {
+                Predicate::Distinct(distinct) => found.push((distinct, scope.clone())),
+                Predicate::All(children) | Predicate::Any(children) => {
+                    for child in children {
+                        walk(child, scope, found);
+                    }
+                }
+                Predicate::Not(inner) => walk(inner, scope, found),
+                Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                    scope.push(quantified);
+                    walk(&quantified.body, scope, found);
+                    scope.pop();
+                }
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        walk(self, &mut Vec::new(), &mut found);
+        found
     }
 
     /// A comparison by value: what every comparison was before decision 2's tag.
@@ -1894,7 +2138,8 @@ impl Predicate {
             | Self::Defined(_)
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
-            | Self::TextMatch { .. } => false,
+            | Self::TextMatch { .. }
+            | Self::Distinct(_) => false,
         }
     }
 
@@ -2013,6 +2258,17 @@ impl Predicate {
             "exists" => Ok(Self::Exists(Box::new(Self::quantifier(
                 value, depth, binders, words,
             )?))),
+            // `as` is no operator, so a mapping holding it under `distinct` was never a constraint
+            // on a fact of that name: `distinct: {in: [a, b]}` keeps its meaning.
+            "distinct" if matches!(value, Node::Map(fields) if fields.contains_key("as")) => {
+                if !source22_operands() {
+                    return Err(ParseError::predicate(
+                        &format!("distinct: {}", shallow(value)),
+                        "`distinct: {in, as, by}` requires specification format ess/22",
+                    ));
+                }
+                Self::distinct(value).map(|distinct| Self::Distinct(Box::new(distinct)))
+            }
             "compare"
                 if source22_operands()
                     && matches!(value, Node::Map(fields) if fields.contains_key("left")) =>
@@ -2147,6 +2403,75 @@ impl Predicate {
             op,
             right,
             kind: CompareKind::Instant,
+        })
+    }
+
+    /// Parses the body of a `distinct:` entry: `{in: <list>, as: <binder>, by: <binder>.<member>,
+    /// kind: <key kind>}`, `by` and `kind` optional. A source leaves `kind` to the domain's resolver;
+    /// the canonical form writes it, and a suite reader requires it.
+    fn distinct(value: &Node) -> Result<Distinct, ParseError> {
+        let Node::Map(entries) = value else {
+            unreachable!("dispatched on a mapping");
+        };
+        let written = || format!("distinct: {}", shallow(value));
+        let refuse = |reason: String| ParseError::predicate(&written(), reason);
+        let mut over = None;
+        let mut bind = None;
+        let mut key = None;
+        let mut key_kind = None;
+        for (field, node) in entries {
+            match field.as_str() {
+                "in" => over = Some(Self::quantifier_collection(node)?),
+                "as" => bind = Some(Self::quantifier_binder(node)?),
+                "by" => {
+                    let text = node.as_text().ok_or_else(|| {
+                        refuse("`by` names one member of the element, a fact path".to_owned())
+                    })?;
+                    key = Some(FactPath::new(text)?);
+                }
+                "kind" => {
+                    key_kind = Some(
+                        node.as_text()
+                            .and_then(DistinctKeyKind::from_keyword)
+                            .ok_or_else(|| {
+                                refuse(format!(
+                                    "`kind` is one of {}",
+                                    DistinctKeyKind::ALL
+                                        .iter()
+                                        .map(|kind| kind.keyword())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                ))
+                            })?,
+                    );
+                }
+                other => {
+                    return Err(refuse(format!(
+                        "`{other}`: `distinct` takes `in`, `as`, `by` and `kind`, and nothing else"
+                    )));
+                }
+            }
+        }
+        let (Some(over), Some(bind)) = (over, bind) else {
+            return Err(ParseError::shape(
+                "distinct",
+                "`in` and `as`, with an optional `by`",
+                "no `in`",
+            ));
+        };
+        if let Some(key) = &key {
+            if key.namespace() != bind || key.segments().len() < 2 {
+                return Err(refuse(format!(
+                    "`by: {key}` names one member under the binder, such as `{bind}.path`; without \
+                     `by` the element itself is the key"
+                )));
+            }
+        }
+        Ok(Distinct {
+            over,
+            bind,
+            key,
+            key_kind,
         })
     }
 
@@ -2569,6 +2894,9 @@ impl Predicate {
             Self::NoneOf { path, values } => values_constraint_node(path, "none_of", values),
             Self::Forall(quantified) => quantifier_node("forall", quantified, binders),
             Self::Exists(quantified) => quantifier_node("exists", quantified, binders),
+            // Explicit: there is no compact form. `kind` is written once resolved and left out
+            // before, so a source document reads back as written.
+            Self::Distinct(distinct) => distinct.to_node(),
             // Explicit, never the compact fallback below: there is no compact form, so a string
             // operator rendered as text would be a document no reader parses back. A text operand
             // is written as the text, with no quotes added, because the reader takes it verbatim.
@@ -2964,6 +3292,17 @@ impl fmt::Display for InScope<'_, '_> {
             }
             Predicate::Forall(quantified) => write_quantified(f, "forall", quantified, binders),
             Predicate::Exists(quantified) => write_quantified(f, "exists", quantified, binders),
+            // For a reader and the semantic diff, never read back.
+            Predicate::Distinct(distinct) => {
+                write!(f, "distinct {} in {}", distinct.bind, distinct.over)?;
+                if let Some(key) = &distinct.key {
+                    write!(f, " by {key}")?;
+                }
+                match distinct.key_kind {
+                    Some(kind) => write!(f, " as {kind}"),
+                    None => Ok(()),
+                }
+            }
         }
     }
 }
@@ -3066,7 +3405,9 @@ impl schemars::JsonSchema for Predicate {
              two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, \
              right, as: timestamp}}`, and a comparison operand may be one fact moved by one \
              constant, `{offset: {fact: <path>, add|subtract: <magnitude>}}` — a whole number for \
-             an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`."
+             an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`. From `ess/22` \
+             `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements \
+             of a list share a key: the element, or the one scalar member `by` names."
                 .to_owned(),
         );
         schema.into()

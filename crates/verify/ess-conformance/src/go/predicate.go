@@ -125,6 +125,9 @@ type predicate struct {
 	over string
 	bind string
 	body *predicate
+	// distinct (suite/40): the key under `bind`, empty for the element itself, and its kind.
+	key     string
+	keyKind string
 }
 
 // operand is one side of a comparison: a fact to look up, a constant, or one fact moved by a
@@ -201,6 +204,12 @@ func (p predicate) String() string {
 		return p.path + " " + p.kind + " [" + strings.Join(parts, ", ") + "]"
 	case "forall", "exists":
 		return fmt.Sprintf("%s %s in %s: (%s)", p.kind, p.bind, p.over, p.body)
+	case "distinct":
+		rendered := fmt.Sprintf("distinct %s in %s", p.bind, p.over)
+		if p.key != "" {
+			rendered += " by " + p.key
+		}
+		return rendered + " as " + p.keyKind
 	default:
 		return p.kind
 	}
@@ -365,6 +374,15 @@ func fromEntry(key string, value any, binders []string) (predicate, error) {
 		return predicate{kind: "not", body: &inner}, nil
 	case "forall", "exists":
 		return parseQuantifier(key, value, binders)
+	case "distinct":
+		// `as` is no operator, so a mapping holding it was never a constraint on a fact named
+		// `distinct`, as Rust's `from_entry` reads it.
+		if fields, ok := value.(map[string]any); ok {
+			if _, keyed := fields["as"]; keyed {
+				return parseDistinct(fields)
+			}
+		}
+		return parseConstraint(key, value, binders)
 	case "compare":
 		if fields, ok := value.(map[string]any); ok {
 			if _, tagged := fields["left"]; tagged {
@@ -433,6 +451,45 @@ func parseQuantifier(kind string, value any, binders []string) (predicate, error
 		return predicate{}, err
 	}
 	return predicate{kind: kind, over: over, bind: bind, body: &body}, nil
+}
+
+// distinctKinds are the key kinds a `distinct` names, Rust's `DistinctKeyKind`.
+var distinctKinds = map[string]bool{
+	"boolean": true, "integer": true, "decimal": true, "string": true, "uuid": true,
+	"timestamp": true, "enum": true,
+}
+
+// parseDistinct reads `{distinct: {in, as, by, kind}}` (suite/40,
+// docs/design/expression-family-source22.md `distinct`), as Rust's `Predicate::distinct` does, and
+// requires `kind`: a suite never carries a key whose equality its reader would have to infer.
+func parseDistinct(fields map[string]any) (predicate, error) {
+	for field := range fields {
+		switch field {
+		case "in", "as", "by", "kind":
+		default:
+			return predicate{}, fmt.Errorf("distinct: `%s`: `distinct` takes `in`, `as`, `by` and `kind`, and nothing else", field)
+		}
+	}
+	over, ok := fields["in"].(string)
+	if !ok || !factPath.MatchString(over) {
+		return predicate{}, fmt.Errorf("distinct: `in` names the list, a fact path")
+	}
+	bind, ok := fields["as"].(string)
+	if !ok || !factPath.MatchString(bind) || strings.Contains(bind, ".") {
+		return predicate{}, fmt.Errorf("distinct: `as` names each element, one fact path segment")
+	}
+	key := ""
+	if by, present := fields["by"]; present {
+		key, ok = by.(string)
+		if !ok || !factPath.MatchString(key) || !strings.HasPrefix(key, bind+".") {
+			return predicate{}, fmt.Errorf("distinct: `by` names one member under the binder `%s`", bind)
+		}
+	}
+	kind, ok := fields["kind"].(string)
+	if !ok || !distinctKinds[kind] {
+		return predicate{}, fmt.Errorf("distinct: `kind` names the key kind: boolean, integer, decimal, string, uuid, timestamp or enum")
+	}
+	return predicate{kind: "distinct", over: over, bind: bind, key: key, keyKind: kind}, nil
 }
 
 func parseConstraint(path string, value any, binders []string) (predicate, error) {
@@ -907,6 +964,8 @@ func (p predicate) evaluate(source factSource) truth {
 		return p.foldMatch(source)
 	case "forall", "exists":
 		return p.quantify(source)
+	case "distinct":
+		return p.distinct(source)
 	default:
 		return truthUnknown
 	}
@@ -1243,11 +1302,96 @@ func (p predicate) quantify(source factSource) truth {
 	return result
 }
 
+// distinct is `distinct: {in, as, by, kind}` (suite/40), as Rust's `Distinct::evaluate`: a present
+// empty or one-element list holds; for more, two known equal keys anywhere make it false, every key
+// known and pairwise unequal makes it true, and anything else is unknown. An absent list is unknown,
+// not empty, and an absent key is neither skipped nor one shared null.
+func (p predicate) distinct(source factSource) truth {
+	size, ok := source[p.over+".count"]
+	if !ok {
+		return truthUnknown
+	}
+	count, ok := asNumber(size)
+	if !ok || count < 0 || count != float64(int(count)) {
+		return truthUnknown
+	}
+	if count < 2 {
+		return truthTrue
+	}
+	key := p.key
+	if key == "" {
+		key = p.bind
+	}
+	seen := map[string]bool{}
+	unknown := false
+	for index := 0; index < int(count); index++ {
+		element := rebind(source, p.bind, fmt.Sprintf("%s.%d", p.over, index))
+		value, ok := readLeaf(element, key)
+		spelled, known := "", false
+		if ok && value != nil {
+			spelled, known = distinctKey(p.keyKind, value)
+		}
+		if !known {
+			unknown = true
+			continue
+		}
+		if seen[spelled] {
+			return truthFalse
+		}
+		seen[spelled] = true
+	}
+	if unknown {
+		return truthUnknown
+	}
+	return truthTrue
+}
+
+// distinctKey spells a value under its key kind so that equal keys spell alike: exact numbers, the
+// instant of a timestamp, exact text. A value outside the kind is no key.
+func distinctKey(kind string, value Node) (string, bool) {
+	switch kind {
+	case "boolean":
+		flag, ok := value.(bool)
+		return strconv.FormatBool(flag), ok
+	case "integer":
+		number, ok := integerOf(value)
+		if !ok {
+			return "", false
+		}
+		return number.String(), true
+	case "decimal":
+		number, ok := numberValue(value)
+		if !ok {
+			return "", false
+		}
+		return number.RatString(), true
+	case "string", "uuid", "enum":
+		text, ok := value.(string)
+		return text, ok
+	case "timestamp":
+		text, ok := value.(string)
+		if !ok {
+			return "", false
+		}
+		at, ok := parseInstant(text)
+		if !ok {
+			return "", false
+		}
+		return fmt.Sprintf("%d.%09d", at.seconds, at.nanos), true
+	}
+	return "", false
+}
+
 // rebind is the source seen from inside one element: reads of `<bind>.rest` become reads of
-// `<prefix>.rest`, and every other path passes through.
+// `<prefix>.rest`, and every other path passes through. A root of the same name as `bind`, and
+// everything under it, is out of sight, as Rust's `Element::rebind` hides it: an element without
+// the member read is Unknown, never the root field's value.
 func rebind(source factSource, bind, prefix string) factSource {
 	bound := factSource{}
 	for path, value := range source {
+		if path == bind || strings.HasPrefix(path, bind+".") {
+			continue
+		}
 		bound[path] = value
 	}
 	for path, value := range source {

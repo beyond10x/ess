@@ -307,6 +307,14 @@ impl<'a> Check<'a> {
             }
             Predicate::Forall(quantified) => self.quantified("forall", quantified)?,
             Predicate::Exists(quantified) => self.quantified("exists", quantified)?,
+            // The shared invariant evaluator compares no keys across a list's elements: refused by
+            // name rather than dropped from the check.
+            Predicate::Distinct(_) => {
+                return Err(format!(
+                    "`{predicate}` requires distinct list members, which the generated invariant \
+                     check does not evaluate"
+                ))
+            }
         })
     }
 

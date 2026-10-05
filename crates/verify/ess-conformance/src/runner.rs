@@ -3503,8 +3503,13 @@ fn satisfies(predicate: &Predicate, result: &SemanticViewResult) -> Verdict {
     if result.rows.is_empty() {
         return Verdict::Unsatisfied("the view holds no rows".to_owned());
     }
+    let sequences = crate::expression_format::binds_sequences(predicate);
     for row in &result.rows {
-        let facts = row_facts(row);
+        let facts = if sequences {
+            row_facts_with_sequences(row)
+        } else {
+            row_facts(row)
+        };
         let outcome = predicate.outcome(&facts);
         match outcome.truth {
             Truth::True => {}
@@ -3699,6 +3704,41 @@ pub(crate) fn row_facts(row: &ViewRow) -> FactStore {
         }
     }
     facts
+}
+
+/// [`row_facts`], with every sequence also bound element by element at `<path>.<index>` beside its
+/// `<path>.count` — the binding the Go and TypeScript runners give every row — for a predicate whose
+/// collection reads suite `/40` admits (final review decision 1, [`binds_sequences`]).
+///
+/// [`binds_sequences`]: crate::expression_format::binds_sequences
+pub(crate) fn row_facts_with_sequences(row: &ViewRow) -> FactStore {
+    let mut facts = FactStore::new();
+    for (field, value) in row {
+        if let Ok(path) = FactPath::new(field) {
+            bind_sequences(&path, value, &mut facts);
+        }
+    }
+    facts
+}
+
+/// [`bind`], walking into a sequence as well.
+fn bind_sequences(path: &FactPath, value: &Node, facts: &mut FactStore) {
+    match value {
+        Node::Seq(items) => {
+            facts.mark_present(path.clone());
+            facts.set(path.child("count"), FactValue::count(items.len()));
+            for (index, item) in items.iter().enumerate() {
+                bind_sequences(&path.child(&index.to_string()), item, facts);
+            }
+        }
+        Node::Map(entries) => {
+            facts.mark_present(path.clone());
+            for (key, entry) in entries {
+                bind_sequences(&path.child(key), entry, facts);
+            }
+        }
+        scalar => bind(path, scalar, facts),
+    }
 }
 
 /// Binds one scalar leaf, or walks into a mapping.

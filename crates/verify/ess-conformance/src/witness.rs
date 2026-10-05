@@ -128,7 +128,7 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, TextOp};
+use ess_primitives::predicate::{CompareOp, DistinctKeyKind, Operand, Predicate, TextOp};
 use ess_primitives::time::{CurrentTime, Rfc3339Instant};
 
 use crate::decision::Decision;
@@ -658,6 +658,8 @@ fn search_uncached(
         inputs = refuting;
         inputs.truncate(MAX_CANDIDATES);
     }
+    // A `distinct` guard is decided by lists that hold two or more elements ([`decisive_first`]).
+    let mut inputs = decisive_first(&mut builder, command, &expanded, inputs)?;
     // Where the bound cut the walk short, the leaves late in path order never left their first
     // values, and a guard over them was refused. What the walk tried stays first, in its order, so
     // a branch it witnessed is sent the input it was always sent; only a caller that found nothing
@@ -1417,6 +1419,28 @@ enum Choice {
     /// like any other value and varied there by the same ladders, and every further element a
     /// copy of it, so a quantifier is decided by element 0 alone, as it was with one element.
     Elements(usize),
+    /// A list a `distinct` reads (ess/22): element 0 as [`Self::Elements`] builds it, and each further
+    /// element built at its own position and a further [`Distinction`], so its key differs; with a
+    /// [`Repeat`], the last element then carries element 0's key again.
+    Keyed(Keyed),
+}
+
+/// The shape of a list a `distinct` reads (`docs/design/expression-family-source22.md`,
+/// `distinct`): how many elements, and whether the last repeats the first one's key.
+#[derive(Debug, Clone, PartialEq)]
+struct Keyed {
+    /// How many elements the list holds.
+    held: usize,
+    /// Where the last element repeats element 0's key; `None` keeps every key apart.
+    repeat: Option<Repeat>,
+}
+
+/// The key a duplicate repeats: the members under the element that hold it (none for the element
+/// itself), and whether it is an instant, which is repeated in another spelling.
+#[derive(Debug, Clone, PartialEq)]
+struct Repeat {
+    member: Vec<String>,
+    instant: bool,
 }
 
 /// Filter only after building all bounded alternatives: an invalid base does not rule out later
@@ -1675,6 +1699,12 @@ fn remapped(
                 Predicate::Exists(Box::new(inner))
             }
         }
+        Predicate::Distinct(distinct) => {
+            Predicate::Distinct(Box::new(ess_primitives::predicate::Distinct {
+                over: path(&distinct.over),
+                ..(**distinct).clone()
+            }))
+        }
     }
 }
 
@@ -1765,8 +1795,229 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
                 }));
             }
         }
-        Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {}
+        Predicate::Always
+        | Predicate::Never
+        | Predicate::Truthy(_)
+        | Predicate::Defined(_)
+        | Predicate::Distinct(_) => {}
     }
+}
+
+/// The longest list a `distinct` is shaped to ([`Choice::Keyed`]): a `.count` compared with a
+/// larger literal keeps the count ladder's own lengths.
+const MAX_KEYED: usize = 16;
+
+/// One list a `distinct` among the guards reads ([`keyed_lists`]).
+struct KeyedList {
+    /// Where it sits in the input: `files`, or `groups.0.members` under a quantifier rebound onto
+    /// its first element.
+    path: FactPath,
+    /// The key a duplicate repeats.
+    repeat: Repeat,
+    /// The lengths a guard's `.count` of the list is compared at, from two to [`MAX_KEYED`].
+    required: Vec<usize>,
+}
+
+/// The candidates for `guards` with the ones that decide each `distinct` among them first
+/// (`docs/design/expression-family-source22.md`, `distinct`).
+///
+/// A `distinct` guard's two sides are witnessed by lists that decide it rather than by a list of
+/// none or one, which holds vacuously and passes a target that compares nothing: for each list,
+/// a duplicate that is neither adjacent nor whole — the third element repeats the first one's key,
+/// in another spelling where it is an instant — beside every other such list held distinct, and a
+/// duplicate at each length a guard's `.count` of the list requires; then every list distinct with
+/// two elements; then each list distinct at each such length. A list under a quantifier is shaped
+/// in the first element of each enclosing list, which then holds one. Tried first, so the refusing
+/// branch is sent the duplicate and the accepting branch the distinct lists. Only commands with
+/// such a guard get them, so every other suite keeps its bytes.
+fn decisive_first(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    mut inputs: Vec<BTreeMap<String, Node>>,
+) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
+    let keyed = keyed_lists(builder, guards);
+    if keyed.is_empty() {
+        return Ok(inputs);
+    }
+    let shaped = |held: usize, repeat: Option<&Repeat>| {
+        Choice::Keyed(Keyed {
+            held,
+            repeat: repeat.cloned(),
+        })
+    };
+    let mut spread: BTreeMap<FactPath, Choice> = BTreeMap::new();
+    for list in &keyed {
+        for enclosing in enclosing_lists(builder, &list.path) {
+            spread.entry(enclosing).or_insert(Choice::Elements(1));
+        }
+        spread.insert(list.path.clone(), shaped(2, None));
+    }
+    let mut choices: Vec<BTreeMap<FactPath, Choice>> = Vec::new();
+    for list in &keyed {
+        for held in
+            std::iter::once(3).chain(list.required.iter().copied().filter(|held| *held != 3))
+        {
+            let mut overrides = spread.clone();
+            overrides.insert(list.path.clone(), shaped(held, Some(&list.repeat)));
+            choices.push(overrides);
+        }
+    }
+    choices.push(spread.clone());
+    for list in &keyed {
+        for &held in list.required.iter().filter(|held| **held != 2) {
+            let mut overrides = spread.clone();
+            overrides.insert(list.path.clone(), shaped(held, None));
+            choices.push(overrides);
+        }
+    }
+    let mut decisive = Vec::new();
+    for overrides in &choices {
+        let input = builder.input(command, overrides)?;
+        if !decisive.contains(&input) {
+            decisive.push(input);
+        }
+    }
+    inputs.retain(|input| !decisive.contains(input));
+    decisive.extend(inputs);
+    inputs = decisive;
+    inputs.truncate(MAX_CANDIDATES);
+    Ok(inputs)
+}
+
+/// The lists enclosing `path` at their first element — `groups` for `groups.0.members` — that the
+/// builder varies: each must hold an element for the list inside it to exist.
+fn enclosing_lists(builder: &Builder<'_>, path: &FactPath) -> Vec<FactPath> {
+    let segments = path.segments();
+    (1..segments.len())
+        .filter(|&end| segments[end] == "0")
+        .map(|end| FactPath::from_segments(&segments[..end]))
+        .filter(|enclosing| builder.lists.contains(enclosing))
+        .collect()
+}
+
+/// Every list of the input a guard's `distinct` reads outside any quantifier — and, through the
+/// quantifier bodies the search rebinds onto their first element, inside one — each with the key
+/// its duplicate repeats and the lengths a guard's `.count` of it is compared at: the lists
+/// [`Choice::Keyed`] shapes. In guard order, each once.
+fn keyed_lists(builder: &Builder<'_>, guards: &[&Predicate]) -> Vec<KeyedList> {
+    let mut found: Vec<KeyedList> = Vec::new();
+    for guard in guards {
+        for (distinct, scope) in guard.distincts() {
+            if !scope.is_empty()
+                || !builder.lists.contains(&distinct.over)
+                || found.iter().any(|list| list.path == distinct.over)
+            {
+                continue;
+            }
+            let member = distinct
+                .key
+                .as_ref()
+                .map(|key| key.segments()[1..].to_vec())
+                .unwrap_or_default();
+            let instant = distinct.key_kind == Some(DistinctKeyKind::Timestamp);
+            let mut required = Vec::new();
+            for held in count_lengths(guards, &distinct.over.child("count"), false) {
+                if (2..=MAX_KEYED).contains(&held) && !required.contains(&held) {
+                    required.push(held);
+                }
+            }
+            found.push(KeyedList {
+                path: distinct.over.clone(),
+                repeat: Repeat { member, instant },
+                required,
+            });
+        }
+    }
+    found
+}
+
+/// Why no list of the input a `distinct` among `guards` reads can be distinct at a length the
+/// guards compare its `.count` with: its key is a `Boolean` or an enum with fewer values than that
+/// length (`docs/design/expression-family-source22.md`, `distinct`: a finite key domain that cannot
+/// supply enough unequal values is the named no-witness refusal). `None` where every such domain
+/// is large enough, or no `.count` is compared. A caller asks only where no candidate decided the
+/// branch, so the gap explains the refusal rather than predicting it.
+pub(crate) fn exhausted_key_domain(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+) -> Option<WitnessGap> {
+    let mut expanded: Vec<Predicate> = guards.iter().map(|guard| (*guard).clone()).collect();
+    for guard in guards {
+        element_bodies(guard, &mut expanded);
+    }
+    let expanded: Vec<&Predicate> = expanded.iter().collect();
+    for guard in &expanded {
+        for (distinct, scope) in guard.distincts() {
+            if !scope.is_empty() {
+                continue;
+            }
+            let mut key = distinct.over.child("0");
+            if let Some(by) = &distinct.key {
+                for segment in &by.segments()[1..] {
+                    key = key.child(segment);
+                }
+            }
+            let Ok(resolved) =
+                ess_compiler::expression::resolve_path(ir, &command.input, &key, "distinct key")
+            else {
+                continue;
+            };
+            let values = match (&resolved.variants, &resolved.terminal) {
+                (Some(variants), _) => variants.len(),
+                (
+                    None,
+                    ResolvedTypeRef::Primitive {
+                        name: Primitive::Boolean,
+                    },
+                ) => 2,
+                _ => continue,
+            };
+            let longest = count_lengths(&expanded, &distinct.over.child("count"), false)
+                .into_iter()
+                .filter(|held| *held >= 2)
+                .max();
+            if longest.is_some_and(|longest| longest > values) || values < 2 {
+                return Some(WitnessGap {
+                    path: distinct.over.to_string(),
+                    type_ref: resolved.declared,
+                    reason: "has fewer values than the length the guards require the list at, \
+                             so no list of that length holds distinct keys",
+                });
+            }
+        }
+    }
+    None
+}
+
+/// The value at `member` under `value`, which is `value` itself for no member.
+fn member_at<'n>(value: &'n Node, member: &[String]) -> Option<&'n Node> {
+    member.iter().try_fold(value, |at, segment| match at {
+        Node::Map(fields) => fields.get(segment),
+        _ => None,
+    })
+}
+
+/// [`member_at`], to write.
+fn member_at_mut<'n>(value: &'n mut Node, member: &[String]) -> Option<&'n mut Node> {
+    member.iter().try_fold(value, |at, segment| match at {
+        Node::Map(fields) => fields.get_mut(segment),
+        _ => None,
+    })
+}
+
+/// The instant `value` names, spelled with a `-05:00` offset rather than as written, or `None`
+/// where it names none: a duplicate only an instant comparison finds.
+fn respelled(value: &Node) -> Option<Node> {
+    let Node::Text(text) = value else {
+        return None;
+    };
+    let instant = Rfc3339Instant::parse_rfc3339(text)?;
+    let local = instant.plus_elapsed(-5 * 3_600)?.to_rfc3339();
+    let spelled = format!("{}-05:00", local.strip_suffix('Z')?);
+    (spelled != *text && Rfc3339Instant::parse_rfc3339(&spelled) == Some(instant))
+        .then_some(Node::Text(spelled))
 }
 
 /// `text` with every ASCII letter in the other case and every other character kept.
@@ -3092,7 +3343,7 @@ fn solve(
                 .filter(|choice| match choice {
                     Choice::Value(_) => true,
                     Choice::Elements(_) => counted_lists.contains(&path),
-                    Choice::Omit | Choice::Null => false,
+                    Choice::Omit | Choice::Null | Choice::Keyed(_) => false,
                 })
                 .collect();
             (path, kept)
@@ -3665,6 +3916,9 @@ impl<'ir> Builder<'ir> {
         // Built even where the base keeps the list empty, so its leaves are recorded
         // before any ladder is drawn.
         let element = self.value(of, &path.child("0"), overrides, depth + 1, record)?;
+        if let Some(Choice::Keyed(keyed)) = overrides.get(path) {
+            return self.keyed(of, path, element, keyed, depth).map(Node::Seq);
+        }
         // A length the repaired base carries (an invariant counts the list) is the base's; a
         // candidate's own length wins over it.
         Ok(
@@ -3677,6 +3931,48 @@ impl<'ir> Builder<'ir> {
                 _ => Node::Seq(Vec::new()),
             },
         )
+    }
+
+    /// The elements of a list a `distinct` reads ([`Choice::Keyed`]): `first`, then each further one
+    /// built at its own position and the next [`Distinction`] — a `String` from its path, every
+    /// other primitive and an enum from the distinction — so the keys differ wherever the key's type
+    /// has enough values; a finite one that has not is left to the evaluator to call a duplicate.
+    /// With a repeat, the last element takes element 0's key, spelled as another instant where it is
+    /// one, and keeps every other member it was built with: a nonadjacent duplicate that only the
+    /// key makes one.
+    fn keyed(
+        &mut self,
+        of: &ResolvedTypeRef,
+        path: &FactPath,
+        first: Node,
+        keyed: &Keyed,
+        depth: usize,
+    ) -> Result<Vec<Node>, WitnessGap> {
+        let mut elements = vec![first];
+        for ordinal in 1..keyed.held {
+            let mut further = self.clone();
+            further.distinction = Distinction::further(self.distinction.get() + ordinal);
+            elements.push(further.value(
+                of,
+                &path.child(&ordinal.to_string()),
+                &BTreeMap::new(),
+                depth + 1,
+                false,
+            )?);
+        }
+        if let (Some(repeat), [first, .., last]) = (&keyed.repeat, elements.as_mut_slice()) {
+            if let Some(key) = member_at(first, &repeat.member).cloned() {
+                let key = if repeat.instant {
+                    respelled(&key).unwrap_or(key)
+                } else {
+                    key
+                };
+                if let Some(slot) = member_at_mut(last, &repeat.member) {
+                    *slot = key;
+                }
+            }
+        }
+        Ok(elements)
     }
 
     /// One value of `Map<key, of>` at `path`: one entry (beyond10x/ess#196), or as many as a

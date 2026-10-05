@@ -859,3 +859,44 @@ decisions it took where this page left a choice.
   name (`crates/generate/ess-entity-runtime/src/{lib,subset}.rs`).
 - Mutation: `sets-retarget` retargets a path to a same-named top-level input
   (`crates/verify/ess-conformance/src/mutate.rs`).
+
+## U6 implementation seams (2026-10-05)
+
+Refreshed citations for the seams unit U6 (`distinct`) changed, and the choices it made inside the
+section above.
+
+- Predicate and canonical form: `Predicate::Distinct(Box<Distinct>)`, `Distinct` (`over`, `bind`,
+  `key`, `key_kind`), `Distinct::key_path` and `Distinct::evaluate`, `DistinctKeyKind` and its
+  canonical spelling `kind: boolean|integer|decimal|string|uuid|timestamp|enum`,
+  `Predicate::reads_distinct` and `Predicate::distincts`, the reader `Predicate::distinct`
+  (`crates/specify/ess-primitives/src/predicate.rs`). `key_kind` is an `Option`: `None` only as an
+  authored source writes it, before resolution; nothing compares an unresolved key and no suite
+  reader admits one. A `distinct:` mapping is read as the construct only where it holds `as`, which
+  is no operator, so `distinct: {in: [a, b]}` keeps meaning the fact `distinct`; below `ess/22` the
+  construct is refused naming the format. Shared vectors
+  `crates/specify/ess-primitives/tests/vectors/distinct.json`.
+- Resolver and checker: `key_kinds`, `with_key_kind`, `typed_over` and `distinct_key_kind` beside
+  `TypeEnvironment::primitive`, and `Checker::distinct`
+  (`crates/specify/ess-domain/src/expression.rs`); the compiler's environment answers `primitive`
+  (`crates/specify/ess-compiler/src/expression.rs`). A list is required (a `Map` and a scalar are
+  refused), the key must resolve to an admitted scalar, a supplied kind must agree, and a direct
+  assembly without a kind is refused naming it.
+- Suite format: `expression_format::reads`, `binds_sequences` and `unkinded`; the Rust runner binds
+  a row's sequences element by element only for a predicate `binds_sequences` answers
+  (`runner::row_facts_with_sequences`, decision 1), and synthesis admits those reads
+  (`input::sequence_read`). Go `parseDistinct`, `distinct`, `distinctKey` and
+  `predicateUsesDistinct`; TypeScript `parseDistinct`, `distinctKey`, `Predicate.distinct` and
+  `predicateUsesDistinct`.
+- Synthesis: `Choice::Keyed`, `Builder::keyed`, `keyed_lists` and `respelled`
+  (`crates/verify/ess-conformance/src/witness.rs`): a command whose guard reads `distinct` is tried
+  first with, per list, a three-element duplicate whose third element repeats the first one's key —
+  in a `-05:00` spelling for an instant — beside every other such list held distinct, then with every
+  list distinct at two elements. The finite-domain controls of the section above — three Boolean
+  keys, a singleton enum refused by name — are not implemented by U6.
+- Generated lanes: `determined::supported` owes a guard, filter or selection reading `distinct` by
+  name; the Rust and Go invariant checks refuse it by name; Entity Runtime refuses it as
+  `DistinctUnsupported`; `infra-spec/1` refuses it. Mutation excludes a `distinct` leaf from
+  `guard-boundary` (decision 16); the guard around it is still negated.
+- Undecidable rows: an absent key is `Unknown` in all three runners, which the Rust runner reports
+  as `error` and the Go runner as `failed`. That split is older than this unit and holds for every
+  undecidable `satisfies`.

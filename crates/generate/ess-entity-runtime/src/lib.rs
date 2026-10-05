@@ -503,6 +503,10 @@ pub enum LoweringCode {
     /// constant, and lowering the offset as the text it is spelled like, or as its base alone,
     /// would decide a different rule.
     OffsetUnsupported,
+    /// A predicate requires that no two elements of a list share a key (ess/22, `distinct: {in,
+    /// as, by}`): entity-core has no condition that compares keys across a list's elements, and
+    /// a quantifier over one element at a time decides a different rule.
+    DistinctUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -642,6 +646,17 @@ impl Projector<'_> {
                     "`{predicate}` compares with one constant offset of a fact, and Entity Runtime \
                      has no operand that moves a value by a constant; lowering the offset as text, \
                      or as its base alone, would decide a different rule"
+                ),
+            );
+        }
+        if predicate.reads_distinct() {
+            self.diagnostic(
+                LoweringCode::DistinctUnsupported,
+                at,
+                format!(
+                    "`{predicate}` requires distinct list members, and Entity Runtime has no \
+                     condition that compares keys across a list's elements; a quantifier over one \
+                     element at a time would decide a different rule"
                 ),
             );
         }
@@ -3832,8 +3847,10 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         Predicate::Always => Condition::Literal(true),
         // A fold never reaches a lowered definition: every lowered predicate site carrying one is
         // refused as `CaseFoldUnsupported` first (`refuse_text_lengths`), and a refusal returns no
-        // output.
-        Predicate::Never | Predicate::FoldMatch { .. } => Condition::Literal(false),
+        // output. So does `distinct`, refused as `DistinctUnsupported`.
+        Predicate::Never | Predicate::FoldMatch { .. } | Predicate::Distinct(_) => {
+            Condition::Literal(false)
+        }
         Predicate::All(children) if children.is_empty() => Condition::Literal(true),
         Predicate::All(children) => Condition::All {
             all: children

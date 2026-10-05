@@ -947,6 +947,11 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
                 "`{predicate}`, a text test over a value that is not text"
             )),
         },
+        // No generated guard, filter or selection compares keys across a list's elements (ess/22,
+        // `docs/design/expression-family-source22.md`, `distinct`): owed by name, never decided.
+        Predicate::Distinct(_) => Err(format!(
+            "`{predicate}`, distinct list members no generated behaviour compares"
+        )),
         _ => Err(format!("the guard `{predicate}`")),
     }
 }

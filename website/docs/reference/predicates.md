@@ -325,6 +325,35 @@ An offset is written back as one closed mapping, `upper: {lte: {offset: {fact: l
 with an offset stays owed, an entity invariant with one refuses the generated target by name, and
 Entity Runtime refuses it as `OffsetUnsupported`.
 
+### From `ess/22`: distinct list members
+
+From `ess/22` (beyond10x/ess#237), `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds
+when no two elements of a `List` share a key: the element itself, or, with `by`, the one member of
+it that `by` names under the binder, such as `{distinct: {in: files, as: file, by: file.path}}`.
+`by` is optional for a list of scalars and required for a list of structs. The key resolves,
+through newtypes and `Optional`, to a `Boolean`, `Integer`, `Decimal`, `String`, `Uuid`, `Timestamp`
+or enum; a struct, list, map, union, `Json`, `Binary64`, `Duration` or `Bytes` key is refused as
+`type_mismatch`, and so is a `Map` or a scalar in `in`.
+
+Keys compare by their type: numbers exactly, so `1` and `1.0` are one `Decimal` key and
+`9007199254740992` and `9007199254740993` two `Integer` keys; a `Timestamp` by the instant it names,
+so `2020-01-01T00:00:00Z` and `2019-12-31T19:00:00-05:00` are one key; text, a `Uuid` and an enum
+exactly. An empty or one-element list holds. For two or more, two known equal keys anywhere make
+it false; every key known and pairwise unequal makes it true; anything else is unknown. An absent
+`Optional` list is unknown, not empty, and an absent key is neither skipped nor one shared null.
+A key outside its type — a fraction under `Integer`, a text no `date-time` spells — is unknown.
+Negation keeps unknown.
+
+The source leaves the key's type out; the canonical form writes it, as
+`{distinct: {in: files, as: file, by: file.path, kind: string}}`, where `kind` is one of `boolean`,
+`integer`, `decimal`, `string`, `uuid`, `timestamp` and `enum`. A source that writes `kind` must
+write the one its declarations give. A mapping under `distinct` without `as` is a constraint on a
+fact named `distinct`, as it always was. It is an `ess/22` form, refused below it, and a suite
+carrying it is `ess-conformance/40` or `/41`, whose readers require `kind` and read a view row's
+lists element by element. Generated Rust and Go behaviour owes a guard or a view filter reading it
+by name, an entity invariant with it refuses the generated target by name, and Entity Runtime
+refuses it as `DistinctUnsupported`.
+
 ### Absence is not `null`
 
 An unquoted `null` on the right of `==` or `!=` is refused, with a hint that names `defined(x)` or

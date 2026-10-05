@@ -90,6 +90,7 @@ pub(crate) const SET_EFFECT: &str = "a set effect (`instances:`, `affects:`, `{c
 pub(crate) const RELATED_GUARD: &str = "`when_related:`";
 pub(crate) const UNIT_VARIANT: &str = "a union variant with no payload (ess/22)";
 pub(crate) const OFFSET: &str = "one constant offset (`upper == lower + 5`, `issued_at - 24h`)";
+pub(crate) const DISTINCT: &str = "distinct list members (`distinct: {in, as, by}`)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -491,6 +492,12 @@ pub const CONSTRUCTS: &[Construct] = &[
             "tests/offset_guard.rs::a_guard_reading_a_timestamp_offset_is_refused_by_name",
         ],
     ),
+    refused(
+        DISTINCT,
+        LoweringCode::DistinctUnsupported,
+        Needs::EntityCore("a condition that compares keys across a list's elements"),
+        &["tests/distinct_guard.rs::a_guard_requiring_distinct_members_is_refused_by_name"],
+    ),
 ];
 
 impl LoweringCode {
@@ -528,6 +535,7 @@ impl LoweringCode {
         Self::RelatedGuardUnsupported,
         Self::UnitVariantUnsupported,
         Self::OffsetUnsupported,
+        Self::DistinctUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -742,6 +750,11 @@ impl LoweringCode {
                 "OffsetUnsupported",
                 OFFSET,
                 "A predicate compares a fact with one constant offset of another.",
+            ),
+            Self::DistinctUnsupported => (
+                "DistinctUnsupported",
+                DISTINCT,
+                "A predicate requires that no two elements of a list share a key.",
             ),
         }
     }

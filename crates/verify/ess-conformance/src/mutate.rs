@@ -85,6 +85,11 @@ pub enum MutantClass {
     /// Move a guard boundary in an outcome's `when`: swap the strictness of an ordering comparison
     /// (`>=`↔`>`, `<=`↔`<`); move the integral literal of a `>=` or `<=` one step outward, the
     /// direction the swap does not take; or flip `==`↔`!=` on a leaf that is not the whole guard.
+    ///
+    /// A `distinct` leaf (`ess/22`) is excluded by decision 16 of
+    /// `docs/design/expression-family-source22.md`: it has no boundary to move and no operator to
+    /// flip, and re-keying it would name a member no source chose. The guard around it is still
+    /// negated, re-connected and reordered by the classes below.
     GuardBoundary,
     /// Take a `sets` value from the first other input field of the identical written type.
     SetsRetarget,

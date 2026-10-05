@@ -415,6 +415,23 @@ fn scope_of(raw: RawScope, location: &str, errors: &mut ValidationErrors) -> Sco
     }
 }
 
+/// Why `predicate` reads an operator `infra-spec/1` does not carry, or `None`.
+///
+/// The predicate grammar is shared with ESS, and `infra-spec/1` does not gain the string operators
+/// (beyond10x/ess#95), the case-insensitive ones (beyond10x/ess#140) or distinct list members
+/// (`ess/22`, beyond10x/ess#237) by accident: admitting them is its own format decision.
+fn foreign_operator(predicate: &Predicate) -> Option<&'static str> {
+    if predicate.uses_text_match() || predicate.uses_case_fold() {
+        return Some(
+            "`starts_with`, `ends_with`, `contains`, `equals_ignore_case` and `in_ignore_case` are \
+             not part of infra-spec/1; compare with `==`, `!=` or `any_of`",
+        );
+    }
+    predicate
+        .reads_distinct()
+        .then_some("`distinct` is not part of infra-spec/1; a workload fact is a scalar")
+}
+
 /// Validates one kind's own parameters. `None` when the kind cannot decide anything at all, in
 /// which case a refusal has already been recorded.
 fn kind_of(
@@ -488,16 +505,11 @@ fn kind_of(
                 );
                 return None;
             }
-            // The predicate grammar is shared with ESS, and `infra-spec/1` does not gain the
-            // string operators (beyond10x/ess#95) or the case-insensitive ones (beyond10x/ess#140)
-            // by accident: admitting them is its own format decision.
-            if predicate.uses_text_match() || predicate.uses_case_fold() {
+            if let Some(refusal) = foreign_operator(&predicate) {
                 errors.refuse(
                     InfraCode::SpecInvalidExpectation,
                     at("workload_predicate"),
-                    "`starts_with`, `ends_with`, `contains`, `equals_ignore_case` and \
-                     `in_ignore_case` are not part of infra-spec/1; compare with `==`, `!=` or \
-                     `any_of`",
+                    refusal,
                 );
                 return None;
             }

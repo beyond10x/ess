@@ -166,6 +166,7 @@ fn quantified(quantified: &Quantified, out: &mut Vec<Token>) {
 }
 
 /// Every variant, by its own tag: adding one to [`Predicate`] fails to compile here.
+#[allow(clippy::too_many_lines)]
 fn walk(predicate: &Predicate, out: &mut Vec<Token>) {
     match predicate {
         Predicate::Always => out.push(Token::Tag(0)),
@@ -251,6 +252,24 @@ fn walk(predicate: &Predicate, out: &mut Vec<Token>) {
         Predicate::Exists(body) => {
             out.push(Token::Tag(13));
             quantified(body, out);
+        }
+        Predicate::Distinct(distinct) => {
+            out.push(Token::Tag(14));
+            path(&distinct.over, out);
+            out.push(Token::Text(distinct.bind.clone()));
+            match &distinct.key {
+                Some(key) => {
+                    out.push(Token::Tag(1));
+                    path(key, out);
+                }
+                None => out.push(Token::Tag(0)),
+            }
+            out.push(Token::Text(
+                distinct
+                    .key_kind
+                    .map_or("", |kind| kind.keyword())
+                    .to_owned(),
+            ));
         }
     }
 }

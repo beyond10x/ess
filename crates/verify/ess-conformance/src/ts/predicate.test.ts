@@ -28,6 +28,7 @@ import {
   admitPredicateLeaf,
   admitPredicatePath,
   admitQuotedOperand,
+  distinctKey,
   facts,
   factPath,
   fromNode,
@@ -49,7 +50,13 @@ import {
   TruthUnknown,
 } from './predicate.js';
 import type { FactSource, Truth } from './predicate.js';
-import { admitPredicateVersion, admitSuite, predicateNumbers, strictJSON } from './runtime.js';
+import {
+  admitPredicateVersion,
+  admitSuite,
+  exactDecimal,
+  predicateNumbers,
+  strictJSON,
+} from './runtime.js';
 import type { Node, Row } from './runtime.js';
 
 const source = (entries: Record<string, Node>): FactSource => new Map(Object.entries(entries));
@@ -1331,6 +1338,189 @@ test('a2: every paired fault disagrees with an offset vector', () => {
   for (const [fault, arithmetic] of faults) {
     assert.ok(
       vectors.integer.some((vector) => answer(arithmetic, vector) !== vector.truth),
+      `no vector tells the ${fault} fault apart`,
+    );
+  }
+});
+
+// ---- distinct list members (docs/design/expression-family-source22.md, `distinct`) ------------
+
+interface DistinctVector {
+  name: string;
+  predicate: Node;
+  row: Row;
+  truth: string;
+}
+
+/** The shared distinct vectors, read without rounding a number through binary64. */
+function distinctVectors(): {
+  evaluate: DistinctVector[];
+  refused: DistinctVector[];
+  unkinded: DistinctVector[];
+} {
+  // `crates/specify/ess-primitives/tests/vectors/distinct.json`, which `tests/distinct.rs` and
+  // `tests/fixtures/distinct.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/distinct.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      return strictJSON(readFileSync(candidate, 'utf8')) as unknown as ReturnType<
+        typeof distinctVectors
+      >;
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+test('distinct: the shared vectors are answered', () => {
+  const vectors = distinctVectors();
+  let answered = 0;
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(predicateNumbers(vector.predicate)).evaluate(facts(vector.row));
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of [...vectors.refused, ...vectors.unkinded]) {
+    assert.throws(() => parsePredicate(predicateNumbers(vector.predicate)), vector.name);
+    answered += 1;
+  }
+  assert.ok(answered >= 50, `${answered} vectors answered`);
+});
+
+test('distinct: suite/40 admits it and an older major refuses it', () => {
+  const canonical = { distinct: { in: 'files', as: 'file', by: 'file.path', kind: 'string' } };
+  admitPredicateVersion(canonical, 40);
+  assert.match(
+    raised(() => admitPredicateVersion(canonical, 39)),
+    /suite\/40 or \/41/,
+  );
+  const nested = {
+    not: {
+      forall: {
+        in: 'groups',
+        as: 'g',
+        that: { distinct: { in: 'g.tags', as: 't', kind: 'string' } },
+      },
+    },
+  };
+  assert.match(
+    raised(() => admitPredicateVersion(nested, 39)),
+    /suite\/40 or \/41/,
+  );
+  assert.throws(() => admitPredicateVersion({ distinct: { in: 'tags', as: 'tag' } }, 40));
+  admitPredicateVersion({ distinct: { in: ['a', 'b'] } }, 39);
+});
+
+test('distinct: every paired fault disagrees with a vector', () => {
+  interface Keyed {
+    name: string;
+    keys: Node[];
+    elements: Node[];
+    kind: string;
+    truth: string;
+  }
+  const rows: Keyed[] = [];
+  for (const vector of distinctVectors().evaluate) {
+    const fields = (vector.predicate as { [key: string]: Node }).distinct as
+      | { [key: string]: Node }
+      | undefined;
+    if (fields === undefined) continue;
+    const elements = (vector.row as { [key: string]: Node })[fields.in as string];
+    if (!Array.isArray(elements)) continue;
+    const by = typeof fields.by === 'string' ? fields.by.split('.').slice(1) : [];
+    const keys = elements.map((element) => {
+      let at: Node = element;
+      for (const segment of by) {
+        at =
+          at !== null && typeof at === 'object' && !Array.isArray(at)
+            ? ((at as { [key: string]: Node })[segment] ?? null)
+            : null;
+      }
+      return at;
+    });
+    rows.push({
+      name: vector.name,
+      keys,
+      elements,
+      kind: fields.kind as string,
+      truth: vector.truth,
+    });
+  }
+  assert.ok(rows.length >= 30, `${rows.length} rows`);
+  const spelled = (keys: Node[], kind: string): (string | null)[] =>
+    keys.map((key) => (key === null ? null : distinctKey(kind, key)));
+  const pairwise = (keys: (string | null)[], adjacentOnly = false): string => {
+    if (keys.length < 2) return 'true';
+    let unknown = false;
+    for (let left = 0; left < keys.length; left += 1) {
+      for (let right = left + 1; right < keys.length; right += 1) {
+        if (adjacentOnly && right > left + 1) break;
+        if (keys[left] === null || keys[right] === null) unknown = true;
+        else if (keys[left] === keys[right]) return 'false';
+      }
+    }
+    return unknown ? 'unknown' : 'true';
+  };
+  const reference = (row: Keyed): string => pairwise(spelled(row.keys, row.kind));
+  for (const row of rows) assert.equal(reference(row), row.truth, `the reference: ${row.name}`);
+  const numbers = (row: Keyed, spell: (key: Node) => string): (string | null)[] =>
+    row.keys.map((key, index) =>
+      exactDecimal(key) !== null && (row.kind === 'integer' || row.kind === 'decimal')
+        ? spell(key)
+        : spelled([row.keys[index]!], row.kind)[0]!,
+    );
+  const faults: [string, (row: Keyed) => string][] = [
+    ['neighbours only', (row) => pairwise(spelled(row.keys, row.kind), true)],
+    [
+      '`by` ignored',
+      (row) =>
+        pairwise(
+          row.elements.map((element) => (element === null ? null : JSON.stringify(element))),
+        ),
+    ],
+    [
+      'spellings compared',
+      (row) => pairwise(spelled(row.keys, row.kind === 'timestamp' ? 'string' : row.kind)),
+    ],
+    [
+      'instants for text',
+      (row) =>
+        pairwise(
+          row.kind === 'string'
+            ? row.keys.map((key) =>
+                key === null ? null : (distinctKey('timestamp', key) ?? distinctKey('string', key)),
+              )
+            : spelled(row.keys, row.kind),
+        ),
+    ],
+    [
+      'Unknown read as distinct',
+      (row) => pairwise(spelled(row.keys, row.kind).filter((key) => key !== null)),
+    ],
+    [
+      'one shared null',
+      (row) =>
+        pairwise(
+          row.keys.map((key, index) =>
+            key === null ? 'null' : spelled(row.keys, row.kind)[index]!,
+          ),
+        ),
+    ],
+    ['binary64 numbers', (row) => pairwise(numbers(row, (key) => String(Number(String(key)))))],
+    [
+      'lexical decimals',
+      (row) =>
+        pairwise(
+          row.kind === 'decimal' ? numbers(row, (key) => String(key)) : spelled(row.keys, row.kind),
+        ),
+    ],
+    ['any two accepted', (row) => (row.keys.length === 2 ? 'true' : reference(row))],
+  ];
+  for (const [fault, judge] of faults) {
+    assert.ok(
+      rows.some((row) => judge(row) !== row.truth),
       `no vector tells the ${fault} fault apart`,
     );
   }

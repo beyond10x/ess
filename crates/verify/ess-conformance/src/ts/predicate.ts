@@ -229,6 +229,8 @@ interface PredicateFields {
   over?: string;
   bind?: string;
   body?: Predicate | null;
+  key?: string;
+  keyKind?: string;
 }
 
 /** A condition over facts. */
@@ -248,6 +250,9 @@ export class Predicate {
   over: string;
   bind: string;
   body: Predicate | null;
+  /** distinct (suite/40): the key under `bind`, empty for the element itself, and its kind. */
+  key: string;
+  keyKind: string;
 
   constructor(fields: PredicateFields = {}) {
     this.kind = fields.kind ?? '';
@@ -261,6 +266,8 @@ export class Predicate {
     this.over = fields.over ?? '';
     this.bind = fields.bind ?? '';
     this.body = fields.body ?? null;
+    this.key = fields.key ?? '';
+    this.keyKind = fields.keyKind ?? '';
   }
 
   toString(): string {
@@ -306,6 +313,8 @@ export class Predicate {
       case 'forall':
       case 'exists':
         return `${this.kind} ${this.bind} in ${this.over}: (${this.body})`;
+      case 'distinct':
+        return `distinct ${this.bind} in ${this.over}${this.key === '' ? '' : ` by ${this.key}`} as ${this.keyKind}`;
       default:
         return this.kind;
     }
@@ -357,6 +366,8 @@ export class Predicate {
       case 'forall':
       case 'exists':
         return this.quantify(source);
+      case 'distinct':
+        return this.distinct(source);
       default:
         return TruthUnknown;
     }
@@ -499,14 +510,55 @@ export class Predicate {
     }
     return result;
   }
+
+  /**
+   * `distinct: {in, as, by, kind}` (suite/40), Go's `distinct` and Rust's `Distinct::evaluate`: a
+   * present empty or one-element list holds; for more, two known equal keys anywhere make it false,
+   * every key known and pairwise unequal makes it true, and anything else is unknown. An absent list
+   * is unknown, not empty, and an absent key is neither skipped nor one shared null.
+   */
+  distinct(source: FactSource): Truth {
+    const counted = `${this.over}.count`;
+    if (!source.has(counted)) return TruthUnknown;
+    const [count, ok] = asNumber(source.get(counted) ?? null);
+    if (
+      !ok ||
+      count < 0 ||
+      !Number.isFinite(count) ||
+      count !== Math.trunc(count) ||
+      count >= 2 ** 63
+    ) {
+      return TruthUnknown;
+    }
+    if (count < 2) return TruthTrue;
+    const key = this.key === '' ? this.bind : this.key;
+    const seen = new Set<string>();
+    let unknown = false;
+    for (let index = 0; index < count; index += 1) {
+      const element = rebind(source, this.bind, `${this.over}.${index}`);
+      const [value, read] = readLeaf(element, key);
+      const spelled =
+        read && value !== null && value !== undefined ? distinctKey(this.keyKind, value) : null;
+      if (spelled === null) {
+        unknown = true;
+        continue;
+      }
+      if (seen.has(spelled)) return TruthFalse;
+      seen.add(spelled);
+    }
+    return unknown ? TruthUnknown : TruthTrue;
+  }
 }
 
 /**
  * The source seen from inside one element: reads of `<bind>.rest` become reads of `<prefix>.rest`,
- * and every other path passes through.
+ * and every other path passes through. A root of the same name as `bind`, and everything under it,
+ * is out of sight, as Rust's `Element::rebind` hides it and Go's `rebind` does: an element without
+ * the member read is Unknown, never the root field's value.
  */
 export function rebind(source: FactSource, bind: string, prefix: string): FactSource {
-  const bound: FactSource = new Map(source);
+  const outer = (path: string): boolean => path === bind || path.startsWith(`${bind}.`);
+  const bound: FactSource = new Map([...source].filter(([path]) => !outer(path)));
   for (const [path, value] of source) {
     if (path === prefix) {
       bound.set(bind, value);
@@ -520,7 +572,7 @@ export function rebind(source: FactSource, bind: string, prefix: string): FactSo
   if (held !== undefined) {
     const rebound = presence(bound);
     for (const path of held) {
-      rebound.add(path);
+      if (!outer(path)) rebound.add(path);
       if (path === prefix) rebound.add(bind);
       else if (path.startsWith(`${prefix}.`))
         rebound.add(`${bind}.${path.slice(prefix.length + 1)}`);
@@ -582,6 +634,13 @@ export function fromNodes(nodes: Node[], binders: readonly string[] = []): Predi
 
 export function fromEntry(key: string, value: Node, binders: readonly string[] = []): Predicate {
   switch (key) {
+    case 'distinct':
+      // `as` is no operator, so a mapping holding it was never a constraint on a fact named
+      // `distinct`, as Rust's `from_entry` reads it.
+      if (isFactMapping(value) && Object.hasOwn(value, 'as')) {
+        return parseDistinct(value);
+      }
+      return parseConstraint(key, value, binders);
     case 'all':
     case 'and':
     case 'all_of':
@@ -781,6 +840,85 @@ function daysFromCivil(year: number, month: number, day: number): bigint {
   const doy = Math.floor((153 * shifted + 2) / 5) + day - 1;
   const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
   return BigInt(era * 146097 + doe - 719468);
+}
+
+/** The key kinds a `distinct` names, Rust's `DistinctKeyKind`. */
+export const DISTINCT_KINDS = [
+  'boolean',
+  'integer',
+  'decimal',
+  'string',
+  'uuid',
+  'timestamp',
+  'enum',
+] as const;
+
+/**
+ * Reads `{distinct: {in, as, by, kind}}` (suite/40, `docs/design/expression-family-source22.md`
+ * `distinct`), Go's `parseDistinct`, and requires `kind`: a suite never carries a key whose
+ * equality its reader would have to infer.
+ */
+export function parseDistinct(fields: { [key: string]: Node }): Predicate {
+  for (const field of Object.keys(fields)) {
+    if (!['in', 'as', 'by', 'kind'].includes(field)) {
+      throw new Error(
+        `distinct: \`${field}\`: \`distinct\` takes \`in\`, \`as\`, \`by\` and \`kind\`, and nothing else`,
+      );
+    }
+  }
+  const over = fields['in'];
+  if (typeof over !== 'string' || !factPath.test(over)) {
+    throw new Error('distinct: `in` names the list, a fact path');
+  }
+  const bind = fields['as'];
+  if (typeof bind !== 'string' || !factPath.test(bind) || bind.includes('.')) {
+    throw new Error('distinct: `as` names each element, one fact path segment');
+  }
+  let key = '';
+  if (Object.hasOwn(fields, 'by')) {
+    const by = fields['by'];
+    if (typeof by !== 'string' || !factPath.test(by) || !by.startsWith(`${bind}.`)) {
+      throw new Error(`distinct: \`by\` names one member under the binder \`${bind}\``);
+    }
+    key = by;
+  }
+  const kind = fields['kind'];
+  if (typeof kind !== 'string' || !(DISTINCT_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(
+      'distinct: `kind` names the key kind: boolean, integer, decimal, string, uuid, timestamp or enum',
+    );
+  }
+  return new Predicate({ kind: 'distinct', over, bind, key, keyKind: kind });
+}
+
+/**
+ * A value spelled under its key kind so equal keys spell alike — exact numbers, the instant of a
+ * timestamp, exact text — or null where the value lies outside the kind. Go's `distinctKey`.
+ */
+export function distinctKey(kind: string, value: Node): string | null {
+  switch (kind) {
+    case 'boolean':
+      return typeof value === 'boolean' ? String(value) : null;
+    case 'integer': {
+      const integer = integerOf(value);
+      return integer === null ? null : integer.toString();
+    }
+    case 'decimal': {
+      const decimal = exactDecimal(value);
+      return decimal === null ? null : `${decimal[0]}e-${decimal[1]}`;
+    }
+    case 'string':
+    case 'uuid':
+    case 'enum':
+      return typeof value === 'string' ? value : null;
+    case 'timestamp': {
+      if (typeof value !== 'string') return null;
+      const at = parseInstant(value);
+      return at === undefined ? null : `${at.seconds}.${at.nanos}`;
+    }
+    default:
+      return null;
+  }
 }
 
 export function parseQuantifier(
