@@ -12,8 +12,27 @@ use std::{collections::BTreeSet, fmt, marker::PhantomData};
 pub const ABI: &str = "ess-conformance-browser-abi/1";
 /// Exact host/runtime ABI version.
 pub const ABI_VERSION: u32 = 0x0001_0000;
-/// Whole request/response envelope bound (unmeasured profile; validated by product tests).
+/// The runtime build a completed receipt names: package, version, semantic revision and ABI.
+pub const RUNTIME: &str = concat!(
+    "ess-conformance ",
+    env!("CARGO_PKG_VERSION"),
+    " semantic-revision 1 ",
+    "ess-conformance-browser-abi/1"
+);
+/// Whole request/response envelope bound (design section 4, enforced at its exact value).
 pub const MAX_FRAME: usize = 64 * 1024 * 1024;
+/// Closed manifest bound, independent of the original documents it binds.
+pub const MAX_MANIFEST: usize = 256 * 1024;
+/// Original source documents one bundle may carry.
+pub const MAX_SOURCES: usize = 1024;
+/// Blob path label bound in UTF-8 bytes.
+pub const MAX_PATH: usize = 1024;
+/// Scenario-id control string bound in UTF-8 bytes.
+pub const MAX_SCENARIO_ID: usize = 4096;
+/// Safe error category plus location text bound in UTF-8 bytes.
+pub const MAX_SAFE_ERROR: usize = 512;
+/// Linear-memory maximum the documented consumer build links with (8,192 WASM pages).
+pub const MAX_MEMORY: usize = 512 * 1024 * 1024;
 /// Safe closed product failures; no source, target or panic text is retained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -188,7 +207,22 @@ impl<I: Installation> Product<I> {
             .map_err(|_| Error::InternalFailure)?
             .to_canonical_json()
             .map_err(|_| Error::InternalFailure)?;
-        let display = presentation::report(&run)?;
+        let implementation = executed.implementation.to_string();
+        let input_digest = loaded.input_digest();
+        let display = presentation::completed(
+            &presentation::Receipt {
+                namespace: &namespace,
+                nonce: &nonce_text,
+                generation,
+                selected_digest: suite.digest(),
+                parent_digests: loaded.parent_digests(),
+                input_digest: &input_digest,
+                source_digests: loaded.source_digests(),
+                implementation: &implementation,
+                runtime: RUNTIME,
+            },
+            &run,
+        )?;
         if report
             .len()
             .checked_add(run.len())

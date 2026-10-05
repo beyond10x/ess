@@ -3,8 +3,8 @@
 Status: binding design for the complete browser conformance product; implementation and runtime
 validation remain outstanding. This contract governs default ordinary and coverage
 `ess verify conform web` emission. Its product, presentation and ABI identities are registered
-separately from suite/input/report versions. Resource limits below remain proposed and unmeasured
-until validated; feature completeness is a completion obligation, not an implementation claim.
+separately from suite/input/report versions. Resource limits below are enforced and measured
+(section 4); feature completeness is a completion obligation, not an implementation claim.
 
 ## 1. Authority, baseline and complete source admission
 
@@ -211,13 +211,21 @@ compiled that source. No guessed Cargo version or manually asserted source hash 
 using the tested concrete runtime library. Evolving host semantics requires a coordinated ABI/
 semantic revision and compatibility tests, not only retaining a numeric package version.
 
-## 4. Proposed finite browser resource profile (unmeasured)
+## 4. Finite browser resource profile
 
-These are proposed product budgets, not existing source facts or measured safe peaks. They need
-boundary tests and actual Firefox peak measurements before acceptance; adjust coherently if
-measurements show the profile cannot process its own advertised bounds.
+These product budgets are enforced at their exact values: each exact bound is admitted and one
+byte or one item more is a `resource_limit` (`resource_profile_admits_each_exact_bound_and_refuses_one_over`,
+`display_node_budget_admits_its_exact_bound_and_refuses_one_over`,
+`payload_writers_fill_their_frame_exactly_and_refuse_one_byte_more`). In Firefox 156 the emitted
+module reserves exactly 64 MiB and refuses one byte more, grows to exactly 8,192 pages and no
+further, and admits and runs a valid Load frame of exactly 64 MiB with a measured high-water mark
+of 3,095 pages (about 194 MiB); an ordinary small bundle peaks at 32 pages
+(`wasm_frame_memory_and_fetch_budgets_are_enforced_and_measured_in_firefox`). The 300-second
+watchdog ends a non-returning run as aborted/cleanup-unconfirmed
+(`adversary_watchdog_timeout_ends_cleanup_unconfirmed_without_report_or_disclosure`). Adjust
+coherently if later measurements show the profile cannot process its own advertised bounds.
 
-| Bound | Proposed value | Rationale / failure |
+| Bound | Value | Rationale / failure |
 | --- | --- | --- |
 | Entire Load frame | 64 MiB | Bounds original archives, escaped lineage carrier, and presentation together; checked before reserve. |
 | Manifest | 256 KiB | Bounded closed metadata independently of large original documents. |

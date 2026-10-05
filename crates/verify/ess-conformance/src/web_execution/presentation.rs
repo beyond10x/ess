@@ -174,14 +174,147 @@ pub(super) fn document(
         scenarios: cards,
     })
 }
-/// Display only the Runner's already sanitized canonical report.
-pub(super) fn report(raw: &str) -> Result<String> {
-    encode(&Budget { nodes: 0 }.value(raw, 0)?)
+/// The identity a completed run is displayed under (design section 8): which admitted bytes it
+/// executed, in which namespace, under which nonce and presentation generation. None of it is a
+/// target observation, so none of it can carry a protected value.
+pub(super) struct Receipt<'a> {
+    /// Fresh namespace given to `Ids` and to the installation.
+    pub namespace: &'a str,
+    /// Run nonce, lowercase hexadecimal.
+    pub nonce: &'a str,
+    /// Presentation generation the run was requested under.
+    pub generation: u32,
+    /// Exact admitted selected suite digest.
+    pub selected_digest: &'a str,
+    /// Every retained original parent digest, nearest first.
+    pub parent_digests: Vec<&'a str>,
+    /// Bare SHA-256 of the exact execution input bytes held.
+    pub input_digest: &'a str,
+    /// The manifest's bare SHA-256 of every original source document, in declared order.
+    pub source_digests: Vec<&'a str>,
+    /// The installed implementation's identity, as its report names it.
+    pub implementation: &'a str,
+    /// The runtime build that executed it.
+    pub runtime: &'a str,
+}
+impl Budget {
+    /// Count one display node at `depth` exactly as [`Budget::value`] counts each value.
+    fn node(&mut self, depth: usize) -> Result<()> {
+        if depth > MAX_DEPTH || self.nodes >= MAX_NODES {
+            return Err(Error::ResourceLimit);
+        }
+        self.nodes += 1;
+        Ok(())
+    }
+}
+/// Display the Runner's already sanitized canonical run under its receipt. The wrapper, the
+/// receipt and the run share one node and depth budget, the one the player checks the whole
+/// completed display against.
+pub(super) fn completed(receipt: &Receipt<'_>, raw: &str) -> Result<String> {
+    encode(&completed_value(receipt, raw)?)
+}
+fn completed_value(receipt: &Receipt<'_>, raw: &str) -> Result<DisplayValue> {
+    let mut budget = Budget { nodes: 0 };
+    budget.node(0)?;
+    budget.node(1)?;
+    let mut text = |value: &str| -> Result<DisplayValue> {
+        budget.node(2)?;
+        Ok(DisplayValue::Text(value.to_owned()))
+    };
+    let state = text("completed")?;
+    let namespace = text(receipt.namespace)?;
+    let nonce = text(receipt.nonce)?;
+    let selected = text(receipt.selected_digest)?;
+    let input = text(receipt.input_digest)?;
+    let implementation = text(receipt.implementation)?;
+    let runtime = text(receipt.runtime)?;
+    budget.node(2)?;
+    let generation = DisplayValue::NumberText(receipt.generation.to_string());
+    let mut list = |values: &[&str]| -> Result<DisplayValue> {
+        budget.node(2)?;
+        values
+            .iter()
+            .map(|value| {
+                budget.node(3)?;
+                Ok(DisplayValue::Text((*value).to_owned()))
+            })
+            .collect::<Result<_>>()
+            .map(DisplayValue::List)
+    };
+    let parents = list(&receipt.parent_digests)?;
+    let sources = list(&receipt.source_digests)?;
+    let receipt = DisplayValue::Object(vec![
+        ("state".into(), state),
+        ("namespace".into(), namespace),
+        ("nonce".into(), nonce),
+        ("generation".into(), generation),
+        ("selected_digest".into(), selected),
+        ("parent_digests".into(), parents),
+        ("input_digest".into(), input),
+        ("source_digests".into(), sources),
+        ("implementation".into(), implementation),
+        ("runtime".into(), runtime),
+    ]);
+    let run = budget.value(raw, 1)?;
+    Ok(DisplayValue::Object(vec![
+        ("receipt".into(), receipt),
+        ("run".into(), run),
+    ]))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The completed display is checked by the player as one value, so its receipt wrapper counts
+    /// against the same depth and node budget as the run inside it.
+    #[test]
+    fn completed_display_counts_its_receipt_wrapper_in_the_same_budget() {
+        let receipt = Receipt {
+            namespace: "browser-ns",
+            nonce: "00",
+            generation: 0,
+            selected_digest: "sha256:00",
+            parent_digests: vec!["sha256:01"],
+            input_digest: "02",
+            source_digests: vec!["03", "04"],
+            implementation: "target 1",
+            runtime: "runtime",
+        };
+        let nested = |depth: usize| format!("{}null{}", "[".repeat(depth), "]".repeat(depth));
+        // The run sits at depth 1 under the wrapper: 1,023 more levels fit, 1,024 do not.
+        assert!(completed(&receipt, &nested(MAX_DEPTH - 1)).is_ok());
+        assert!(matches!(
+            completed(&receipt, &nested(MAX_DEPTH)),
+            Err(Error::ResourceLimit)
+        ));
+        // Wrapper 1, receipt 1, eight scalar fields, two lists and their three entries: 15 nodes.
+        let entries = MAX_NODES - 15 - 1;
+        let fits = format!("[{}]", vec!["null"; entries].join(","));
+        assert!(completed_value(&receipt, &fits).is_ok());
+        let over = format!("[{}]", vec!["null"; entries + 1].join(","));
+        assert!(matches!(
+            completed_value(&receipt, &over),
+            Err(Error::ResourceLimit)
+        ));
+    }
+
+    /// Section 4: exactly 1,000,000 display nodes are presented; one more is a resource limit.
+    #[test]
+    fn display_node_budget_admits_its_exact_bound_and_refuses_one_over() {
+        for (entries, admitted) in [(MAX_NODES - 1, true), (MAX_NODES, false)] {
+            let raw = format!("[{}]", vec!["null"; entries].join(","));
+            let display = Budget { nodes: 0 }.value(&raw, 0);
+            if admitted {
+                let DisplayValue::List(values) = display.unwrap() else {
+                    panic!("a list")
+                };
+                assert_eq!(values.len() + 1, MAX_NODES);
+            } else {
+                assert!(matches!(display, Err(Error::ResourceLimit)));
+            }
+        }
+    }
 
     #[test]
     fn producer_counts_logical_values_before_serde_display_wrappers() {

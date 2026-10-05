@@ -213,3 +213,192 @@ fn adversary_abort_of_a_running_target_is_not_reported_as_internal_failure() {
          after an explicit Abort: {observed}"
     );
 }
+
+/// A factory that fails with a typed product error ends as a visible execution error, with no
+/// report, no download and no issued plaintext on any channel (design section 8).
+#[test]
+fn adversary_factory_error_ends_visibly_without_report_or_disclosure() {
+    let root = root("factory-error");
+    let site = emit(&root);
+    let (observed, channels) = observe(&root, &site, 3, false);
+    assert!(
+        !channels.contains(SENTINEL),
+        "an issued plaintext escaped a browser channel"
+    );
+    assert_eq!(observed["state"], "execution_error", "{observed}");
+    assert_eq!(observed["error"], "execution_error", "{observed}");
+    assert_eq!(observed["links"], 0, "{observed}");
+    assert_eq!(observed["results"], "", "{observed}");
+    for message in observed["messages"].as_array().unwrap() {
+        assert!(
+            message.get("report").is_none(),
+            "a failed factory produced a report: {message}"
+        );
+    }
+}
+
+/// Start a run whose target never returns and poll the page until the product's own 300-second
+/// watchdog ends it. Each poll is its own short `BiDi` call: one call cannot outlive the session
+/// timeout, and the watchdog is the product's, not the harness's.
+#[test]
+fn adversary_watchdog_timeout_ends_cleanup_unconfirmed_without_report_or_disclosure() {
+    const START: &str = r"(async()=>{
+        const el=id=>document.getElementById(id);
+        const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+        const end=performance.now()+10000;while(!window.essBrowser&&performance.now()<end)await sleep(20);
+        window.adversaryMessages=[];const OriginalWorker=window.Worker;
+        window.Worker=class extends OriginalWorker {constructor(...args){super(...args);this.addEventListener('message',event=>window.adversaryMessages.push(event.data));}};
+        await window.essBrowser.connect();
+        const loaded=el('runtime-state').textContent;
+        window.adversaryStarted=performance.now();el('run').click();await sleep(1000);
+        return JSON.stringify({loaded,state:el('runtime-state').textContent,abort:el('abort').disabled});
+    })()";
+    const POLL: &str = r"(async()=>{
+        const el=id=>document.getElementById(id);
+        return JSON.stringify({elapsed:performance.now()-window.adversaryStarted,
+            state:el('runtime-state').textContent,error:el('error').textContent,
+            results:el('results').textContent,links:document.querySelectorAll('#downloads a').length,
+            runDisabled:el('run').disabled,dom:document.body.innerText,messages:window.adversaryMessages},
+            (_key,value)=>value instanceof Uint8Array?new TextDecoder().decode(value):value);
+    })()";
+    let root = root("watchdog");
+    let site = emit(&root);
+    let wasm = build_host(&root, 2);
+    fs::copy(wasm, site.join("runner.wasm")).unwrap();
+    let server = browser::Server::new(&site);
+    let evidence = root.join("firefox-watchdog");
+    fs::create_dir_all(&evidence).unwrap();
+    let mut firefox = browser::Browser::new(&evidence);
+    let context = firefox.open(&format!("{}/index.html", server.url));
+    firefox.subscribe_logs();
+    let started = firefox.evaluate(&context, START);
+    assert_eq!(
+        started["state"], "Rust admission complete. Not executed.",
+        "the target must still be running: {started}"
+    );
+    assert_eq!(started["abort"], false, "{started}");
+    let begun = std::time::Instant::now();
+    let observed = loop {
+        std::thread::sleep(std::time::Duration::from_secs(15));
+        let polled = firefox.evaluate(&context, POLL);
+        if polled["state"].as_str().unwrap().contains("aborted")
+            || begun.elapsed() > std::time::Duration::from_secs(400)
+        {
+            break polled;
+        }
+    };
+    drop(firefox);
+    let encoded = observed.to_string();
+    fs::write(root.join("observed-watchdog.json"), &encoded).unwrap();
+    let receipt = fs::read_to_string(evidence.join("bidi.jsonl")).unwrap();
+    assert!(
+        !encoded.contains(SENTINEL) && !receipt.contains(SENTINEL),
+        "an issued plaintext escaped a browser channel"
+    );
+    assert_eq!(
+        observed["state"], "aborted — cleanup unconfirmed",
+        "{observed}"
+    );
+    let elapsed = observed["elapsed"].as_f64().unwrap();
+    assert!(
+        (300_000.0..360_000.0).contains(&elapsed),
+        "the product watchdog, not another failure, ended the run: {elapsed} ms"
+    );
+    assert_eq!(observed["error"], "", "{observed}");
+    assert_eq!(observed["results"], "", "{observed}");
+    assert_eq!(observed["links"], 0, "{observed}");
+    assert_eq!(observed["runDisabled"], true, "{observed}");
+    for message in observed["messages"].as_array().unwrap() {
+        assert!(message.get("report").is_none(), "{message}");
+    }
+}
+
+/// After a run that issued fresh secrets completed in the worker, a Load of changed original
+/// bytes is refused and the old capability is gone. Every worker message on that path, the page
+/// and the `BiDi` log stay free of every issued plaintext.
+#[test]
+fn adversary_admission_refusal_after_an_executed_secret_discloses_nothing() {
+    use ess_conformance::web_execution::{abi::load_request, bundle::hash};
+    let root = root("refusal-after-execution");
+    let site = emit(&root);
+    let original = fs::read_to_string(site.join("browser.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&original).unwrap();
+    let blobs: Vec<_> = manifest["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain([&manifest["execution"]["file"], &manifest["presentation"]])
+        .map(|reference| {
+            let path = reference["path"].as_str().unwrap().to_owned();
+            ess_conformance::web_execution::bundle::Blob {
+                bytes: fs::read(site.join(&path)).unwrap(),
+                path,
+            }
+        })
+        .collect();
+    let good = load_request(1, &original, &blobs).unwrap();
+    fs::write(site.join("good-load.payload"), &good[24..]).unwrap();
+    let mut changed = blobs.clone();
+    let execution_blob = changed.len() - 2;
+    changed[execution_blob]
+        .bytes
+        .splice(1..1, b"\"unknown\":true,".iter().copied())
+        .for_each(drop);
+    let mut repinned = manifest.clone();
+    repinned["execution"]["file"]["sha256"] = hash(&changed[execution_blob].bytes).into();
+    repinned["execution"]["file"]["byte_length"] = changed[execution_blob].bytes.len().into();
+    let mutated = load_request(3, &repinned.to_string(), &changed).unwrap();
+    fs::write(site.join("mutated-load.payload"), &mutated[24..]).unwrap();
+    let wasm = build_host(&root, 4);
+    fs::copy(wasm, site.join("runner.wasm")).unwrap();
+    let server = browser::Server::new(&site);
+    let evidence = root.join("firefox-refusal");
+    fs::create_dir_all(&evidence).unwrap();
+    let mut firefox = browser::Browser::new(&evidence);
+    let context = firefox.open(&format!("{}/index.html", server.url));
+    firefox.subscribe_logs();
+    let observed = firefox.evaluate(
+        &context,
+        r"(async()=>{
+        const read=async path=>new Uint8Array(await (await fetch(path)).arrayBuffer());
+        const worker=new Worker('worker.js',{type:'module'}),messages=[];
+        const send=(id,opcode,payload)=>new Promise(resolve=>{
+            const listen=({data})=>{messages.push(data);if(data.id===id||data.kind==='fatal'){worker.removeEventListener('message',listen);resolve(data);}};
+            worker.addEventListener('message',listen);
+            worker.postMessage({kind:'request',id,opcode,payload},[payload.buffer]);
+        });
+        const run=handle=>{const bytes=new Uint8Array(24),view=new DataView(bytes.buffer);
+            view.setUint32(0,handle,true);crypto.getRandomValues(bytes.subarray(4,20));view.setUint32(20,0,true);return bytes;};
+        const load=await send(1,1,await read('good-load.payload'));
+        const executed=await send(2,3,run(load.handle));
+        const refused=await send(3,1,await read('mutated-load.payload'));
+        const stale=await send(4,3,run(load.handle));
+        worker.terminate();
+        return JSON.stringify({handle:load.handle,loadError:load.error??null,
+            executed:{error:executed.error??null,report:executed.report?new TextDecoder().decode(executed.report):null},
+            refused:refused.error??null,stale:stale.error??null,messages,dom:document.body.innerText},
+            (_key,value)=>value instanceof Uint8Array?new TextDecoder().decode(value):value);
+    })()",
+    );
+    drop(firefox);
+    let encoded = observed.to_string();
+    fs::write(root.join("observed-refusal.json"), &encoded).unwrap();
+    let receipt = fs::read_to_string(evidence.join("bidi.jsonl")).unwrap();
+    assert!(
+        !encoded.contains(SENTINEL) && !receipt.contains(SENTINEL),
+        "an issued plaintext escaped a browser channel"
+    );
+    assert_ne!(observed["handle"], 0, "{observed}");
+    assert_eq!(observed["loadError"], serde_json::Value::Null, "{observed}");
+    assert_eq!(
+        observed["executed"]["error"],
+        serde_json::Value::Null,
+        "{observed}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(observed["executed"]["report"].as_str().unwrap()).unwrap();
+    assert_eq!(report["counts"]["total"], 1, "{report}");
+    assert_eq!(observed["refused"], "admission_refused", "{observed}");
+    assert_eq!(observed["stale"], "invalid_handle", "{observed}");
+    assert_eq!(observed["messages"].as_array().unwrap().len(), 4);
+}

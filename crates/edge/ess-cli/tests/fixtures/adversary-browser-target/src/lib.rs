@@ -15,7 +15,9 @@ pub const SENTINEL: &str = "adv-sentinel-4f1c9e2a7b";
 
 /// 0 panics on the second command while holding the issued secret;
 /// 1 panics inside `Installation::create` with the secret in its message;
-/// 2 issues the secret, then never returns from the second command.
+/// 2 issues the secret, then never returns from the second command;
+/// 3 fails `Installation::create` with a typed product error;
+/// 4 issues a fresh secret on every command and completes.
 pub struct AdversaryInstallation<const MODE: u8>;
 pub struct AdversaryTarget<const MODE: u8> {
     calls: Cell<usize>,
@@ -28,6 +30,9 @@ impl<const MODE: u8> Installation for AdversaryInstallation<MODE> {
     ) -> ess_conformance::web_execution::Result<Installed<Self::Target, Self::Clock>> {
         if MODE == 1 {
             panic!("factory failed while holding {SENTINEL}");
+        }
+        if MODE == 3 {
+            return Err(ess_conformance::web_execution::Error::ExecutionError);
         }
         Ok(Installed {
             target: AdversaryTarget {

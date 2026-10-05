@@ -1,5 +1,8 @@
 //! Closed bounded linear-memory protocol. Payload values never cross JavaScript JSON parsing.
-use super::{bundle::Blob, Error, Installation, Product, Result, MAX_FRAME};
+use super::{
+    bundle::Blob, Error, Installation, Product, Result, MAX_FRAME, MAX_MANIFEST, MAX_PATH,
+    MAX_SCENARIO_ID, MAX_SOURCES,
+};
 const MAGIC: &[u8; 4] = b"ESBW";
 /// A worker-local request/response owner; exported buffers cannot outlive the next reserve.
 pub struct Bridge<I> {
@@ -69,15 +72,15 @@ impl<I: Installation> Bridge<I> {
                     1 => {
                         // Failed Load, including framing refusal, cannot retain earlier authority.
                         self.product.loaded = None;
-                        let manifest = read.text(256 * 1024)?;
+                        let manifest = read.text(MAX_MANIFEST)?;
                         let count = read.word()? as usize;
-                        if count > 1026 {
+                        if count > MAX_SOURCES + 2 {
                             return Err(Error::ResourceLimit);
                         }
                         let mut blobs = Vec::new();
                         for _ in 0..count {
                             blobs.push(Blob {
-                                path: read.text(1024)?.into(),
+                                path: read.text(MAX_PATH)?.into(),
                                 bytes: read.bytes(MAX_FRAME)?.to_vec(),
                             });
                         }
@@ -98,7 +101,7 @@ impl<I: Installation> Bridge<I> {
                         let mut ids = Vec::new();
                         for _ in 0..count {
                             ids.push(
-                                crate::ScenarioId::parse(read.text(4096)?)
+                                crate::ScenarioId::parse(read.text(MAX_SCENARIO_ID)?)
                                     .map_err(|_| Error::InvalidFrame)?,
                             );
                         }
@@ -214,17 +217,23 @@ impl<'a> Read<'a> {
         }
     }
 }
-struct Write(Vec<u8>);
+/// A bounded payload writer: a response payload fits beside its 28-byte header, a request
+/// payload beside its 24-byte header, so both whole frames stay within `MAX_FRAME`.
+struct Write(Vec<u8>, usize);
 impl Write {
     const fn new() -> Self {
-        Self(Vec::new())
+        Self(Vec::new(), MAX_FRAME - 28)
+    }
+    const fn request() -> Self {
+        Self(Vec::new(), MAX_FRAME - 24)
     }
     fn raw(&mut self, bytes: &[u8]) -> Result<()> {
+        let limit = self.1;
         if self
             .0
             .len()
             .checked_add(bytes.len())
-            .is_none_or(|n| n > MAX_FRAME - 28)
+            .is_none_or(|n| n > limit)
         {
             return Err(Error::ResourceLimit);
         }
@@ -241,7 +250,7 @@ impl Write {
 }
 /// Build a bounded Load request in Rust, useful to native callers and parity tests.
 pub fn load_request(id: u32, manifest: &str, blobs: &[Blob]) -> Result<Vec<u8>> {
-    let mut payload = Write::new();
+    let mut payload = Write::request();
     payload.text(manifest)?;
     payload.word(u32::try_from(blobs.len()).map_err(|_| Error::ResourceLimit)?)?;
     for blob in blobs {
@@ -262,4 +271,21 @@ pub fn load_request(id: u32, manifest: &str, blobs: &[Blob]) -> Result<Vec<u8>> 
     }
     out.extend_from_slice(&payload.0);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Section 4: a response payload fills its frame exactly and no further; a request payload
+    /// may use the four header bytes a response header spends on its status.
+    #[test]
+    fn payload_writers_fill_their_frame_exactly_and_refuse_one_byte_more() {
+        for (mut writer, header) in [(Write::new(), 28), (Write::request(), 24)] {
+            let exact = vec![0; MAX_FRAME - header];
+            writer.raw(&exact).unwrap();
+            assert_eq!(writer.0.len() + header, MAX_FRAME);
+            assert_eq!(writer.raw(&[0]), Err(Error::ResourceLimit));
+        }
+    }
 }

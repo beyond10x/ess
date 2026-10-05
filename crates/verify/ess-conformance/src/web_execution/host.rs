@@ -77,8 +77,11 @@ Build the exact emitted module with the bounded memory profile:
 Copy the resulting consumer .wasm artifact to runner.wasm beside index.html. Record rustc/cargo
 versions, command exit, Cargo.lock hash, emitted module hash, exact runtime and installation
 revision/content identity and WASM hash with your build evidence. Offline missing dependencies
-or lock drift is a build failure; do not replace the module with a stub. The proposed memory,
-input/output and watchdog limits require actual boundary validation before release.
+or lock drift is a build failure; do not replace the module with a stub. The frame (64 MiB),
+manifest (256 KiB), source count (1,024), path label (1,024 bytes), scenario id (4,096 bytes)
+and linear memory (512 MiB) bounds hold at their exact values; anything over is a
+resource_limit, never truncated. A run the 300-second watchdog ends is aborted with cleanup
+unconfirmed and produces no report.
 
 Connect runtime passes the original byte bundle and full lineage through Rust admission before
 any factory/target callback. Ordinary Run executes the whole suite; scenario navigation never

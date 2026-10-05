@@ -2,13 +2,17 @@
 export const MAX_FRAME = 64 * 1024 * 1024;
 const MAX_DISPLAY_DEPTH=1024;
 // An Object display layer is an object, an entries array and a key/value pair array.
-// The document/scenarios/card envelope and terminal display object add four levels.
+// The document/scenarios/card envelope and terminal display object add four levels. A completed
+// run's display has no envelope: its receipt wrapper is logical depth 0 of the same 1,024-level
+// budget Rust counts the run inside, so this bound covers it with three levels to spare.
 const MAX_CONTROL_DEPTH=3*MAX_DISPLAY_DEPTH+4;
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal:true});
 export const text = bytes => decoder.decode(bytes);
 export function failure(code) { return new Error(code); }
 export function pathValid(path) {
-  return typeof path === 'string' && encoder.encode(path).length <= 1024 && path.length > 0 &&
+  // An over-budget label is a resource_limit, as Rust reports it; every other defect is invalid.
+  if (typeof path === 'string' && encoder.encode(path).length > 1024) throw failure('resource_limit');
+  return typeof path === 'string' && path.length > 0 &&
     !/[\\:%?#\p{Cc}]/u.test(path) && path.split('/').every(x => x && x !== '.' && x !== '..');
 }
 function closed(value, fields) {
@@ -61,7 +65,8 @@ export async function acquire() {
   closed(manifest.generator,['package','version','semantic_revision']);
   if (manifest.generator.package !== 'ess-conformance' || manifest.generator.semantic_revision !== 1 || typeof manifest.generator.version !== 'string') throw failure('invalid_bundle');
   closed(manifest.execution,['kind','file']);
-  if (!['ordinary_suite','coverage_input'].includes(manifest.execution.kind) || !Array.isArray(manifest.sources) || manifest.sources.length === 0 || manifest.sources.length > 1024) throw failure('invalid_bundle');
+  if (!['ordinary_suite','coverage_input'].includes(manifest.execution.kind) || !Array.isArray(manifest.sources) || manifest.sources.length === 0) throw failure('invalid_bundle');
+  if (manifest.sources.length > 1024) throw failure('resource_limit'); // Rust: MAX_SOURCES
   const refs = [...manifest.sources,manifest.execution.file,manifest.presentation], seen = new Set(), blobs = [];
   for (const ref of refs) {
     closed(ref,['path','sha256','byte_length']);
@@ -102,7 +107,8 @@ export function validatePresentation(display) {
   closed(display,['format','selected_digest','parent_digests','sources','model','suite','scenarios']);
   if (display.format !== 'ess-conformance-browser-presentation/1' || !Array.isArray(display.scenarios) || !Array.isArray(display.parent_digests) || !Array.isArray(display.sources)) throw failure('invalid_bundle');
   const digest=value=>typeof value==='string'&&/^sha256:[a-f0-9]{64}$/u.test(value);
-  if(!digest(display.selected_digest)||display.parent_digests.some(value=>!digest(value))||display.sources.length===0||display.sources.length>1024)throw failure('invalid_bundle');
+  if(!digest(display.selected_digest)||display.parent_digests.some(value=>!digest(value))||display.sources.length===0)throw failure('invalid_bundle');
+  if(display.sources.length>1024)throw failure('resource_limit');
   const sourceLabels=new Set();for(const source of display.sources){closed(source,['path','sha256','byte_length']);if(!pathValid(source.path)||sourceLabels.has(source.path)||typeof source.sha256!=='string'||!/^[a-f0-9]{64}$/u.test(source.sha256)||!Number.isSafeInteger(source.byte_length)||source.byte_length<0||source.byte_length>MAX_FRAME)throw failure('invalid_bundle');sourceLabels.add(source.path);}
   const budget = {nodes:0}; validateValue(display.model,budget); validateValue(display.suite,budget);
   const seen = new Set();

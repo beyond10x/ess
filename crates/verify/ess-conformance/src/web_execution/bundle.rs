@@ -1,5 +1,5 @@
 //! Closed byte-bound browser bundle and full Rust source/lineage admission.
-use super::{presentation, Error, Result, ABI, MAX_FRAME};
+use super::{presentation, Error, Result, ABI, MAX_FRAME, MAX_MANIFEST, MAX_PATH, MAX_SOURCES};
 use crate::{coverage::AdmittedInput, AdmittedSuite, ScenarioId, SuiteProvenance};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -117,7 +117,7 @@ pub struct Loaded {
 impl Loaded {
     /// Validate every original file before exposing an execution capability.
     pub fn admit(manifest: &str, mut blobs: Vec<Blob>) -> Result<Self> {
-        if manifest.len() > 256 * 1024 {
+        if manifest.len() > MAX_MANIFEST {
             return Err(Error::ResourceLimit);
         }
         let manifest_bytes = manifest.len();
@@ -134,7 +134,7 @@ impl Loaded {
         {
             return Err(Error::InvalidBundle);
         }
-        if manifest.sources.is_empty() || manifest.sources.len() > 1024 {
+        if manifest.sources.is_empty() || manifest.sources.len() > MAX_SOURCES {
             return Err(Error::ResourceLimit);
         }
         let refs: Vec<&BlobRef> = manifest
@@ -219,6 +219,26 @@ impl Loaded {
     pub fn presentation(&self) -> &str {
         &self.presentation
     }
+    /// The manifest's digest of every original source document, in declared order.
+    pub fn source_digests(&self) -> Vec<&str> {
+        self.sources
+            .iter()
+            .map(|source| source.sha256.as_str())
+            .collect()
+    }
+    /// Bare lowercase SHA-256 of the exact execution input held: the original suite or input/1
+    /// bytes, or the derived input of an explicit coverage selection.
+    pub fn input_digest(&self) -> String {
+        hash(self.original_input.as_bytes())
+    }
+    /// Every retained original parent digest, nearest first; none for an ordinary suite.
+    pub fn parent_digests(&self) -> Vec<&str> {
+        self.execution
+            .parents()
+            .iter()
+            .map(AdmittedSuite::digest)
+            .collect()
+    }
     /// Explicit coverage narrowing, never ordinary subset fabrication.
     pub(super) fn select(&self, ids: &[ScenarioId]) -> Result<Self> {
         if ids.windows(2).any(|pair| pair[0] >= pair[1]) {
@@ -264,10 +284,13 @@ impl Loaded {
 fn utf8(bytes: Vec<u8>) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| Error::InvalidBundle)
 }
-/// Check relative paths before any browser fetch.
+/// Check relative paths before any browser fetch. A label over the profile's 1,024 UTF-8 bytes
+/// is a `resource_limit`, like every other over-budget input (design section 4).
 pub fn validate_path(path: &str) -> Result<()> {
-    if path.len() > 1024
-        || path.is_empty()
+    if path.len() > MAX_PATH {
+        return Err(Error::ResourceLimit);
+    }
+    if path.is_empty()
         || path
             .chars()
             .any(|c| c.is_control() || matches!(c, '\\' | ':' | '?' | '#' | '%'))
@@ -345,7 +368,7 @@ fn check_provenance(ir: &ess_compiler::EssIr, execution: &Execution) -> Result<(
 /// Generate a manifest and raw blobs from checked source/ordinary-or-coverage authority.
 /// This emits no target implementation and does not invoke an installation.
 pub fn create(sources: &[SourceDocument], execution: &Execution) -> Result<(String, Vec<Blob>)> {
-    if sources.is_empty() || sources.len() > 1024 {
+    if sources.is_empty() || sources.len() > MAX_SOURCES {
         return Err(Error::ResourceLimit);
     }
     let text = execution.original()?;

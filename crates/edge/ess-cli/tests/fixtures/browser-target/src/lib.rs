@@ -1174,3 +1174,940 @@ impl<const MODE: u8> ConformanceTarget for TimerTarget<MODE> {
         })
     }
 }
+
+/// The service's own grant table: which actor it admits to which command. Never read from a model.
+const NOTE_GRANTS: &[(&str, &[&str])] = &[(
+    "demo.notes.AccountUser",
+    &["demo.notes.CreateNote", "demo.notes.EditNote"],
+)];
+
+/// An independent note service. It authenticates every command as the caller it is sent as,
+/// keeps its own rows, decides an edit from the stored agent and refuses actors its own grant
+/// table does not admit. Faults: 1 records the first caller's account for every caller; 2 never
+/// refuses an edit; 3 lets only the first caller it ever served edit; 4 cannot authenticate as a
+/// caller; 5 runs a command for an actor it does not grant.
+pub struct NotesInstallation<const MODE: u8>;
+/// Caller-scoped note rows of one installed run.
+pub struct NotesTarget<const MODE: u8> {
+    active: RefCell<Option<String>>,
+    notes: RefCell<BTreeMap<String, ViewRow>>,
+    events: RefCell<Vec<ObservedEvent>>,
+    minted: Cell<u64>,
+    first: RefCell<Option<BTreeMap<String, Node>>>,
+}
+impl<const MODE: u8> Installation for NotesInstallation<MODE> {
+    type Target = NotesTarget<MODE>;
+    type Clock = SharedClock;
+    fn create(
+        _: &RunContext,
+    ) -> ess_conformance::web_execution::Result<Installed<Self::Target, Self::Clock>> {
+        FACTORIES.fetch_add(1, Ordering::Relaxed);
+        Ok(Installed {
+            target: NotesTarget {
+                active: RefCell::new(None),
+                notes: RefCell::new(BTreeMap::new()),
+                events: RefCell::new(Vec::new()),
+                minted: Cell::new(0),
+                first: RefCell::new(None),
+            },
+            clock: SharedClock(Rc::new(Cell::new(1_767_603_600_000))),
+            config: RunnerConfig::new(500),
+        })
+    }
+}
+impl<const MODE: u8> NotesTarget<MODE> {
+    fn granted(actor: Option<&str>, command: &str) -> bool {
+        NOTE_GRANTS
+            .iter()
+            .any(|(name, commands)| Some(*name) == actor && commands.contains(&command))
+    }
+}
+impl<const MODE: u8> ConformanceTarget for NotesTarget<MODE> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new(
+            "independent-browser-notes",
+            "1",
+        ))
+    }
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.notes.borrow_mut().clear();
+        self.events.borrow_mut().clear();
+        *self.active.borrow_mut() = Some(context.correlation.to_string());
+        Ok(())
+    }
+    fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        *self.active.borrow_mut() = None;
+        Ok(())
+    }
+    #[allow(clippy::too_many_lines)]
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        if self.active.borrow().as_deref() != Some(request.correlation.to_string().as_str()) {
+            return Err(TargetError::unavailable(
+                "context",
+                "inactive isolated scenario",
+            ));
+        }
+        let command = request.command.to_string();
+        let actor = request.actor.as_ref().map(ToString::to_string);
+        if MODE != 5 && !Self::granted(actor.as_deref(), &command) {
+            return Err(TargetError::not_granted(actor));
+        }
+        if MODE == 4 {
+            return Err(TargetError::unsupported(
+                "sending a command as a caller",
+                "this installation holds one credential",
+            ));
+        }
+        let caller = match (request.caller.clone(), MODE) {
+            (Some(caller), _) => caller,
+            (None, 5) => BTreeMap::new(),
+            (None, _) => {
+                return Err(TargetError::unavailable(
+                    "authenticating",
+                    "this service authenticates every command as a caller",
+                ))
+            }
+        };
+        let first = self
+            .first
+            .borrow_mut()
+            .get_or_insert_with(|| caller.clone())
+            .clone();
+        let serial = self.minted.get() + 1;
+        self.minted.set(serial);
+        let token =
+            ess_primitives::consistency::ConsistencyToken::new(format!("notes-{serial}")).unwrap();
+        let attribute = |caller: &BTreeMap<String, Node>, name: &str| {
+            caller.get(name).cloned().unwrap_or(Node::Null)
+        };
+        let text = request.input.get("text").cloned().unwrap_or(Node::Null);
+        let mut notes = self.notes.borrow_mut();
+        let result = match command.as_str() {
+            "demo.notes.CreateNote" => {
+                let id = format!("00000000-0000-4000-8000-{serial:012}");
+                let account = attribute(if MODE == 1 { &first } else { &caller }, "account_id");
+                notes.insert(
+                    id.clone(),
+                    BTreeMap::from([
+                        ("note_id".into(), Node::Text(id.clone())),
+                        ("account_id".into(), account.clone()),
+                        ("agent_id".into(), attribute(&caller, "agent_id")),
+                        ("text".into(), text.clone()),
+                        ("state".into(), Node::Text("Open".into())),
+                    ]),
+                );
+                let event = ObservedEvent::new("demo.notes.NoteCreated".parse().unwrap())
+                    .with("note_id", Node::Text(id))
+                    .with("account_id", account)
+                    .with("text", text)
+                    .in_activity(request.correlation)
+                    .at(serial);
+                self.events.borrow_mut().push(event.clone());
+                SemanticCommandResult::took(OutcomeRef::new(
+                    request.command,
+                    "created".parse().unwrap(),
+                ))
+                .emitting(event)
+            }
+            "demo.notes.EditNote" => {
+                let Some(Node::Text(id)) = request.input.get("note_id").cloned() else {
+                    return Ok(SemanticCommandResult::undeclared().with_consistency(token));
+                };
+                let Some(row) = notes.get_mut(&id) else {
+                    return Ok(SemanticCommandResult::undeclared().with_consistency(token));
+                };
+                let refused = match MODE {
+                    2 => false,
+                    3 => caller != first,
+                    _ => row.get("agent_id") != caller.get("agent_id"),
+                };
+                if refused {
+                    SemanticCommandResult::took(OutcomeRef::new(
+                        request.command,
+                        "forbidden".parse().unwrap(),
+                    ))
+                    .with_error(DeclaredErrorValue::new(
+                        "demo.notes.NotYourNote".parse().unwrap(),
+                    ))
+                } else {
+                    row.insert("text".into(), text.clone());
+                    let event = ObservedEvent::new("demo.notes.NoteEdited".parse().unwrap())
+                        .with("note_id", Node::Text(id))
+                        .with("text", text)
+                        .in_activity(request.correlation)
+                        .at(serial);
+                    self.events.borrow_mut().push(event.clone());
+                    SemanticCommandResult::took(OutcomeRef::new(
+                        request.command,
+                        "edited".parse().unwrap(),
+                    ))
+                    .emitting(event)
+                }
+            }
+            _ => {
+                return Err(TargetError::unsupported(
+                    "command",
+                    "not this service's API",
+                ))
+            }
+        };
+        Ok(result.with_consistency(token))
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        if request.view.to_string() != "demo.notes.NoteDetails" {
+            return Err(TargetError::unsupported("view", "not this service's API"));
+        }
+        Ok(SemanticViewResult::of(
+            self.notes.borrow().values().cloned(),
+        ))
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Ok(self
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| {
+                event.event == request.event
+                    && event.correlation.as_ref() == Some(&request.correlation)
+            })
+            .cloned()
+            .collect())
+    }
+    fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "external",
+            "not this service's API",
+        ))
+    }
+    fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "redelivery",
+            "not this service's API",
+        ))
+    }
+}
+
+/// The record service's own declared contract: entity, identity kind, required fields.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IdentityKind {
+    Text,
+    Integer,
+    Uuid,
+}
+const RECORD_ENTITIES: &[(&str, &str, IdentityKind)] = &[
+    (
+        "records.ids.TextRecord",
+        "records.ids.TextRecords",
+        IdentityKind::Text,
+    ),
+    (
+        "records.ids.CountRecord",
+        "records.ids.CountRecords",
+        IdentityKind::Integer,
+    ),
+    (
+        "records.ids.UuidRecord",
+        "records.ids.UuidRecords",
+        IdentityKind::Uuid,
+    ),
+];
+/// Independently established upstream rows whose identities spell alike across entities.
+/// It validates each setup against its own contract and stores rows per entity. Faults:
+/// 1 acknowledges a setup without storing it; 2 stores a different amount; 3 keeps an Integer
+/// identity as its text; 4 keys every entity's rows in one store by identity spelling.
+pub struct SetupInstallation<const MODE: u8>;
+/// Rows per entity, or (fault 4) one store keyed by identity spelling.
+pub struct SetupTarget<const MODE: u8> {
+    rows: RefCell<BTreeMap<(String, String), ViewRow>>,
+    active: RefCell<Option<String>>,
+}
+impl<const MODE: u8> Installation for SetupInstallation<MODE> {
+    type Target = SetupTarget<MODE>;
+    type Clock = SharedClock;
+    fn create(
+        _: &RunContext,
+    ) -> ess_conformance::web_execution::Result<Installed<Self::Target, Self::Clock>> {
+        FACTORIES.fetch_add(1, Ordering::Relaxed);
+        Ok(Installed {
+            target: SetupTarget {
+                rows: RefCell::new(BTreeMap::new()),
+                active: RefCell::new(None),
+            },
+            clock: SharedClock(Rc::new(Cell::new(1_767_603_600_000))),
+            config: RunnerConfig::new(500),
+        })
+    }
+}
+fn spelled(identity: &Node) -> String {
+    match identity {
+        Node::Text(text) => text.clone(),
+        Node::Number(number) => number.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+impl<const MODE: u8> ConformanceTarget for SetupTarget<MODE> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new(
+            "independent-browser-records",
+            "1",
+        ))
+    }
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.rows.borrow_mut().clear();
+        *self.active.borrow_mut() = Some(context.correlation.to_string());
+        Ok(())
+    }
+    fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        *self.active.borrow_mut() = None;
+        Ok(())
+    }
+    fn establish_entity(&self, request: EntitySetupRequest) -> Result<(), TargetError> {
+        if self.active.borrow().as_deref() != Some(request.correlation.to_string().as_str()) {
+            return Err(TargetError::unavailable(
+                "entity setup",
+                "inactive isolated scenario",
+            ));
+        }
+        let entity = request.entity.to_string();
+        let Some((_, _, kind)) = RECORD_ENTITIES.iter().find(|(name, ..)| *name == entity) else {
+            return Err(TargetError::unsupported(
+                "entity setup",
+                "not this service's entity",
+            ));
+        };
+        let valid_identity = match (kind, &request.identity) {
+            (IdentityKind::Integer, Node::Number(_)) | (IdentityKind::Text, Node::Text(_)) => true,
+            (IdentityKind::Uuid, Node::Text(text)) => {
+                text.len() == 36
+                    && text.char_indices().all(|(at, c)| {
+                        if matches!(at, 8 | 13 | 18 | 23) {
+                            c == '-'
+                        } else {
+                            c.is_ascii_hexdigit() && !c.is_ascii_uppercase()
+                        }
+                    })
+            }
+            _ => false,
+        };
+        let amount_valid = matches!(request.fields.get("amount"), Some(Node::Number(n)) if !n.to_string().starts_with('-'));
+        let known = request
+            .fields
+            .keys()
+            .all(|field| matches!(field.as_str(), "amount" | "note"));
+        if !valid_identity || !amount_valid || !known || request.state.to_string() != "Kept" {
+            return Err(TargetError::unavailable(
+                "entity setup",
+                "the setup violates this service's record contract",
+            ));
+        }
+        if MODE == 1 {
+            return Ok(());
+        }
+        let mut row = request.fields.clone();
+        let identity = if MODE == 3 && *kind == IdentityKind::Integer {
+            Node::Text(spelled(&request.identity))
+        } else {
+            request.identity.clone()
+        };
+        if MODE == 2 {
+            if let Some(Node::Number(amount)) = row.get("amount").cloned() {
+                let changed: i64 = amount.to_string().parse::<i64>().unwrap() + 1;
+                row.insert("amount".into(), Node::Number(Number::from(changed)));
+            }
+        }
+        row.insert("record_id".into(), identity);
+        row.insert("entity".into(), Node::Text(entity.clone()));
+        let key = if MODE == 4 {
+            (String::new(), spelled(&request.identity))
+        } else {
+            (entity, spelled(&request.identity))
+        };
+        self.rows.borrow_mut().insert(key, row);
+        Ok(())
+    }
+    fn execute_command(
+        &self,
+        _: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        Err(TargetError::unsupported(
+            "command",
+            "this service accepts no commands",
+        ))
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        let view = request.view.to_string();
+        let Some((entity, ..)) = RECORD_ENTITIES.iter().find(|(_, name, _)| *name == view) else {
+            return Err(TargetError::unsupported("view", "not this service's API"));
+        };
+        Ok(SemanticViewResult::of(
+            self.rows
+                .borrow()
+                .values()
+                .filter(|row| row.get("entity") == Some(&Node::Text((*entity).into())))
+                .map(|row| {
+                    row.iter()
+                        .filter(|(field, _)| matches!(field.as_str(), "record_id" | "amount"))
+                        .map(|(field, value)| (field.clone(), value.clone()))
+                        .collect()
+                }),
+        ))
+    }
+    fn observe_events(
+        &self,
+        _: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Ok(Vec::new())
+    }
+    fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "external",
+            "not this service's API",
+        ))
+    }
+    fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "redelivery",
+            "not this service's API",
+        ))
+    }
+}
+
+/// The run namespace as `Ids::seeded` spells it: ASCII alphanumerics and single hyphens.
+fn correlation_prefix(namespace: &str) -> String {
+    let mut prefix = String::new();
+    for character in namespace.chars() {
+        if character.is_ascii_alphanumeric() {
+            prefix.push(character);
+        } else if !prefix.ends_with('-') {
+            prefix.push('-');
+        }
+    }
+    format!("{}-", prefix.trim_matches('-'))
+}
+
+/// An independent job scheduler deciding `starts_at < now - 60s` from its own clock. Healthy, its
+/// clock is the one the runner reads its wall time from. Faults: 1 decides against a historical
+/// epoch of its own (2020-01-01); 2 runs one hour ahead of the runner's wall clock.
+pub struct JobsInstallation<const MODE: u8>;
+/// Job rows and the shared logical clock of one installed run.
+pub struct JobsTarget<const MODE: u8> {
+    clock: Rc<Cell<u64>>,
+    active: RefCell<Option<String>>,
+    jobs: RefCell<Vec<ViewRow>>,
+    events: RefCell<Vec<ObservedEvent>>,
+    minted: Cell<u64>,
+}
+impl<const MODE: u8> Installation for JobsInstallation<MODE> {
+    type Target = JobsTarget<MODE>;
+    type Clock = SharedClock;
+    fn create(
+        _: &RunContext,
+    ) -> ess_conformance::web_execution::Result<Installed<Self::Target, Self::Clock>> {
+        FACTORIES.fetch_add(1, Ordering::Relaxed);
+        let clock = Rc::new(Cell::new(1_767_603_600_000));
+        Ok(Installed {
+            target: JobsTarget {
+                clock: Rc::clone(&clock),
+                active: RefCell::new(None),
+                jobs: RefCell::new(Vec::new()),
+                events: RefCell::new(Vec::new()),
+                minted: Cell::new(0),
+            },
+            clock: SharedClock(clock),
+            config: RunnerConfig::new(500),
+        })
+    }
+}
+impl<const MODE: u8> ConformanceTarget for JobsTarget<MODE> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new("independent-browser-jobs", "1"))
+    }
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.jobs.borrow_mut().clear();
+        self.events.borrow_mut().clear();
+        *self.active.borrow_mut() = Some(context.correlation.to_string());
+        Ok(())
+    }
+    fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        *self.active.borrow_mut() = None;
+        Ok(())
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        use ess_primitives::time::Rfc3339Instant;
+        if self.active.borrow().as_deref() != Some(request.correlation.to_string().as_str()) {
+            return Err(TargetError::unavailable(
+                "context",
+                "inactive isolated scenario",
+            ));
+        }
+        if request.command.to_string() != "demo.jobs.ScheduleJob" {
+            return Err(TargetError::unsupported(
+                "command",
+                "not this service's API",
+            ));
+        }
+        let actor = request.actor.as_ref().map(ToString::to_string);
+        if actor.as_deref() != Some("demo.jobs.Clerk") {
+            return Err(TargetError::not_granted(actor));
+        }
+        let Some(Node::Text(sent)) = request.input.get("starts_at") else {
+            return Err(TargetError::unavailable(
+                "ScheduleJob",
+                "starts_at is not a timestamp",
+            ));
+        };
+        let starts = Rfc3339Instant::parse_rfc3339(sent)
+            .ok_or_else(|| TargetError::unavailable("ScheduleJob", "starts_at is not RFC 3339"))?;
+        let now_ms = match MODE {
+            1 => 1_577_836_800_000,
+            2 => self.clock.get() + 3_600_000,
+            _ => self.clock.get(),
+        };
+        let now = Rfc3339Instant::from_epoch_millis(i64::try_from(now_ms).unwrap()).unwrap();
+        let serial = self.minted.get() + 1;
+        self.minted.set(serial);
+        let token =
+            ess_primitives::consistency::ConsistencyToken::new(format!("jobs-{serial}")).unwrap();
+        if starts < now.plus_seconds(-60).unwrap() {
+            return Ok(SemanticCommandResult::took(OutcomeRef::new(
+                request.command,
+                "start-in-past".parse().unwrap(),
+            ))
+            .with_error(DeclaredErrorValue::new(
+                "demo.jobs.StartInPast".parse().unwrap(),
+            ))
+            .with_consistency(token));
+        }
+        let id = Node::Text(format!("00000000-0000-4000-8000-{serial:012}"));
+        self.jobs.borrow_mut().push(BTreeMap::from([
+            ("job_id".into(), id.clone()),
+            ("starts_at".into(), Node::Text(sent.clone())),
+        ]));
+        let event = ObservedEvent::new("demo.jobs.JobScheduled".parse().unwrap())
+            .with("job_id", id)
+            .with("starts_at", Node::Text(sent.clone()))
+            .in_activity(request.correlation)
+            .at(serial);
+        self.events.borrow_mut().push(event.clone());
+        Ok(SemanticCommandResult::took(OutcomeRef::new(
+            request.command,
+            "scheduled".parse().unwrap(),
+        ))
+        .emitting(event)
+        .with_consistency(token))
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        if request.view.to_string() != "demo.jobs.JobDetails" {
+            return Err(TargetError::unsupported("view", "not this service's API"));
+        }
+        Ok(SemanticViewResult::of(self.jobs.borrow().iter().cloned()))
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Ok(self
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| {
+                event.event == request.event
+                    && event.correlation.as_ref() == Some(&request.correlation)
+            })
+            .cloned()
+            .collect())
+    }
+    fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "external",
+            "not this service's API",
+        ))
+    }
+    fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "redelivery",
+            "not this service's API",
+        ))
+    }
+}
+
+std::thread_local! {
+    /// A store that outlives each installed run, as a deployed backend does. Healthy rows are
+    /// keyed by the runner's namespaced scenario correlation; fault 1 keys them by scenario id.
+    static DURABLE_ROWS: RefCell<BTreeMap<String, BTreeMap<String, ViewRow>>> =
+        const { RefCell::new(BTreeMap::new()) };
+}
+/// A creation service over durable storage that isolates by the run namespace. Fault 1 isolates
+/// by scenario name instead, so a repeated run in the same worker reads its earlier rows.
+pub struct IsolatedStoreInstallation<const MODE: u8>;
+/// The run namespace and the active durable partition.
+pub struct IsolatedStoreTarget<const MODE: u8> {
+    prefix: String,
+    partition: RefCell<Option<(String, String)>>,
+    events: RefCell<Vec<ObservedEvent>>,
+}
+impl<const MODE: u8> Installation for IsolatedStoreInstallation<MODE> {
+    type Target = IsolatedStoreTarget<MODE>;
+    type Clock = SharedClock;
+    fn create(
+        context: &RunContext,
+    ) -> ess_conformance::web_execution::Result<Installed<Self::Target, Self::Clock>> {
+        FACTORIES.fetch_add(1, Ordering::Relaxed);
+        Ok(Installed {
+            target: IsolatedStoreTarget {
+                prefix: correlation_prefix(&context.namespace),
+                partition: RefCell::new(None),
+                events: RefCell::new(Vec::new()),
+            },
+            clock: SharedClock(Rc::new(Cell::new(1_767_603_600_000))),
+            config: RunnerConfig::new(500),
+        })
+    }
+}
+impl<const MODE: u8> ConformanceTarget for IsolatedStoreTarget<MODE> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new(
+            "independent-browser-durable-store",
+            "1",
+        ))
+    }
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        let correlation = context.correlation.to_string();
+        // The runner's ids and this installation's namespace must be the same namespace.
+        if !correlation.starts_with(&self.prefix) {
+            return Err(TargetError::unavailable(
+                "isolation",
+                "scenario correlation outside the installed run namespace",
+            ));
+        }
+        let partition = if MODE == 1 {
+            context.scenario.to_string()
+        } else {
+            correlation.clone()
+        };
+        *self.partition.borrow_mut() = Some((partition, correlation));
+        self.events.borrow_mut().clear();
+        Ok(())
+    }
+    fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        *self.partition.borrow_mut() = None;
+        Ok(())
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let Some((partition, correlation)) = self.partition.borrow().clone() else {
+            return Err(TargetError::unavailable("context", "no isolated scenario"));
+        };
+        if request.command.to_string() != "demo.response.Create"
+            || correlation != request.correlation.to_string()
+        {
+            return Err(TargetError::unsupported(
+                "command",
+                "inactive context or unknown API",
+            ));
+        }
+        let serial = DURABLE_ROWS.with(|rows| {
+            let mut rows = rows.borrow_mut();
+            let rows = rows.entry(partition).or_default();
+            let serial = rows.len() + 1;
+            let id = format!("00000000-0000-4000-8000-{serial:012}");
+            rows.insert(id.clone(), BTreeMap::from([("id".into(), Node::Text(id))]));
+            serial as u64
+        });
+        let id = format!("00000000-0000-4000-8000-{serial:012}");
+        let event = ObservedEvent::new("demo.response.Created".parse().unwrap())
+            .with("id", Node::Text(id.clone()))
+            .in_activity(request.correlation)
+            .at(serial);
+        self.events.borrow_mut().push(event.clone());
+        let mut result = SemanticCommandResult::took(OutcomeRef::new(
+            request.command,
+            "created".parse().unwrap(),
+        ));
+        result.response = Some(BTreeMap::from([("id".into(), Node::Text(id))]));
+        result.direct_events.push(event);
+        result.consistency = Some(
+            ess_primitives::consistency::ConsistencyToken::new(format!("durable-{serial}"))
+                .unwrap(),
+        );
+        Ok(result)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        if request.view.to_string() != "demo.response.CreatedRows" {
+            return Err(TargetError::unsupported("view", "unknown API"));
+        }
+        let Some((partition, _)) = self.partition.borrow().clone() else {
+            return Err(TargetError::unavailable("view", "no isolated scenario"));
+        };
+        Ok(SemanticViewResult::of(DURABLE_ROWS.with(|rows| {
+            rows.borrow()
+                .get(&partition)
+                .map(|rows| rows.values().cloned().collect::<Vec<_>>())
+                .unwrap_or_default()
+        })))
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Ok(self
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| {
+                event.event == request.event
+                    && event.correlation.as_ref() == Some(&request.correlation)
+            })
+            .cloned()
+            .collect())
+    }
+    fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "external",
+            "not this service's API",
+        ))
+    }
+    fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "redelivery",
+            "not this service's API",
+        ))
+    }
+}
+
+/// An independent session service with a fixture provider of its own. The provider resolves
+/// values for the scenario the runner names, in the installed namespace, before the scenario
+/// opens; the service accepts only principals of its own namespace. Fault 1 provisions under a
+/// shared namespace instead of the run's.
+pub struct FixtureNamespaceInstallation<const MODE: u8>;
+/// The run namespace and the scenario the provider resolved values for.
+pub struct FixtureNamespaceTarget<const MODE: u8> {
+    prefix: String,
+    provisioned: RefCell<Option<String>>,
+    active: RefCell<Option<String>>,
+}
+impl<const MODE: u8> FixtureNamespaceTarget<MODE> {
+    fn email(namespace: &str) -> String {
+        format!(
+            "principal@{}.fixtures.test",
+            namespace.trim_end_matches('-')
+        )
+    }
+}
+impl<const MODE: u8> Installation for FixtureNamespaceInstallation<MODE> {
+    type Target = FixtureNamespaceTarget<MODE>;
+    type Clock = SharedClock;
+    fn create(
+        context: &RunContext,
+    ) -> ess_conformance::web_execution::Result<Installed<Self::Target, Self::Clock>> {
+        FACTORIES.fetch_add(1, Ordering::Relaxed);
+        Ok(Installed {
+            target: FixtureNamespaceTarget {
+                prefix: correlation_prefix(&context.namespace),
+                provisioned: RefCell::new(None),
+                active: RefCell::new(None),
+            },
+            clock: SharedClock(Rc::new(Cell::new(1_767_603_600_000))),
+            config: RunnerConfig::new(500),
+        })
+    }
+}
+impl<const MODE: u8> ConformanceTarget for FixtureNamespaceTarget<MODE> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new(
+            "independent-browser-fixtures",
+            "1",
+        ))
+    }
+    fn fixture_values(
+        &self,
+        scenario: &ScenarioContext,
+        _: &ess_conformance::fixtures::Contract,
+    ) -> Result<BTreeMap<String, Node>, TargetError> {
+        let correlation = scenario.correlation.to_string();
+        if !correlation.starts_with(&self.prefix) {
+            return Err(TargetError::unavailable(
+                "fixture values",
+                "scenario correlation outside the installed run namespace",
+            ));
+        }
+        if self.active.borrow().is_some() {
+            return Err(TargetError::unavailable(
+                "fixture values",
+                "provisioning after the scenario opened",
+            ));
+        }
+        *self.provisioned.borrow_mut() = Some(correlation);
+        let namespace = if MODE == 1 {
+            "shared-"
+        } else {
+            self.prefix.as_str()
+        };
+        Ok(BTreeMap::from([
+            (
+                "current-principal-id".into(),
+                Node::Text("d248c830-37a4-466b-8319-af71667f1364".into()),
+            ),
+            (
+                "current-principal-email".into(),
+                Node::Text(Self::email(namespace)),
+            ),
+        ]))
+    }
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        let correlation = context.correlation.to_string();
+        if self.provisioned.borrow().as_deref() != Some(correlation.as_str()) {
+            return Err(TargetError::unavailable(
+                "isolation",
+                "fixtures were not provisioned for this scenario before it opened",
+            ));
+        }
+        *self.active.borrow_mut() = Some(correlation);
+        Ok(())
+    }
+    fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        *self.active.borrow_mut() = None;
+        *self.provisioned.borrow_mut() = None;
+        Ok(())
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        if request.command.to_string() != "fixturetest.session.Open"
+            || self.active.borrow().as_deref() != Some(request.correlation.to_string().as_str())
+        {
+            return Err(TargetError::unsupported(
+                "command",
+                "inactive context or unknown API",
+            ));
+        }
+        // The service opens a principal's session only inside that principal's namespace; any
+        // other principal gets an anonymous session.
+        let own = Self::email(&self.prefix);
+        let email = match request.input.get("email") {
+            Some(Node::Text(email)) if *email == own => email.clone(),
+            _ => "anonymous@fixtures.test".into(),
+        };
+        let event = ObservedEvent::new("fixturetest.session.Opened".parse().unwrap())
+            .with(
+                "principal_id",
+                request
+                    .input
+                    .get("principal_id")
+                    .cloned()
+                    .unwrap_or(Node::Null),
+            )
+            .with("email", Node::Text(email))
+            .with(
+                "region",
+                request.input.get("region").cloned().unwrap_or(Node::Null),
+            )
+            .in_activity(request.correlation);
+        Ok(
+            SemanticCommandResult::took(OutcomeRef::new(
+                request.command,
+                "opened".parse().unwrap(),
+            ))
+            .emitting(event),
+        )
+    }
+    fn query_view(&self, _: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        Err(TargetError::unsupported("view", "not this service's API"))
+    }
+    fn observe_events(
+        &self,
+        _: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Ok(Vec::new())
+    }
+    fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "external",
+            "not this service's API",
+        ))
+    }
+    fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "redelivery",
+            "not this service's API",
+        ))
+    }
+}
+
+/// The healthy response service, holding the worker for a while inside every command so a test
+/// can navigate, select or abort while the synchronous Runner is busy.
+pub struct SlowInstallation<const MODE: u8>;
+/// The healthy response service plus a bounded busy section per command.
+pub struct SlowTarget<const MODE: u8> {
+    inner: Backend<0>,
+}
+/// Busy iterations per command: long enough for a page to act while the worker is busy.
+pub const SLOW_ITERATIONS: u64 = 3_000_000_000;
+impl<const MODE: u8> Installation for SlowInstallation<MODE> {
+    type Target = SlowTarget<MODE>;
+    type Clock = SharedClock;
+    fn create(
+        context: &RunContext,
+    ) -> ess_conformance::web_execution::Result<Installed<Self::Target, Self::Clock>> {
+        let installed = BrowserInstallation::<0>::create(context)?;
+        Ok(Installed {
+            target: SlowTarget {
+                inner: installed.target,
+            },
+            clock: installed.clock,
+            config: installed.config,
+        })
+    }
+}
+impl<const MODE: u8> ConformanceTarget for SlowTarget<MODE> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.inner.identity()
+    }
+    fn begin_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.begin_scenario(context)
+    }
+    fn end_scenario(&self, context: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(context)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let mut total = 0_u64;
+        for step in 0..SLOW_ITERATIONS {
+            total = total.wrapping_add(std::hint::black_box(step));
+        }
+        std::hint::black_box(total);
+        self.inner.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.inner.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+}
