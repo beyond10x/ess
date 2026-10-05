@@ -418,7 +418,11 @@ impl<'a> Reading<'a> {
             command,
             selection,
             supplied: supplied.clone(),
-            input: resolved_literals(supplied, rows),
+            input: if subject_fact::identity_selectors(ir) {
+                resolved_literals(supplied, rows)
+            } else {
+                literals(supplied)
+            },
             subject,
             rows: candidates,
         })
@@ -431,9 +435,14 @@ impl<'a> Reading<'a> {
         // The input the send names is written in where it is literal, as the arrangement reads it: an
         // input naming an arranged instance — the addressed row of an `updates:` (ess/23,
         // beyond10x/ess#429) — leaves the rest of the input unflattened, and the literal it compares
-        // with would read nothing.
+        // with would read nothing. From `ess/23` only: an older document keeps the suite it had.
+        let literal_input = subject_fact::identity_selectors(self.ir);
         let written = written_in(predicate, &|path| {
-            subject_value(path, subject).or_else(|| input_value(path, &self.input))
+            subject_value(path, subject).or_else(|| {
+                literal_input
+                    .then(|| input_value(path, &self.input))
+                    .flatten()
+            })
         });
         if written.fact_paths().iter().any(|path| {
             path.segments().len() > 1
@@ -451,10 +460,11 @@ impl<'a> Reading<'a> {
         // identity (ess/23, beyond10x/ess#429) reads the key the row is stored under.
         // Only where the predicate reads the identity: every other predicate binds what it bound.
         let identity = &self.ir.entity(&row.entity).identity;
-        let reads_identity = predicate
-            .fact_paths()
-            .iter()
-            .any(|path| path.segments().len() == 1 && path.namespace() == identity.name);
+        let reads_identity = subject_fact::identity_selectors(self.ir)
+            && predicate
+                .fact_paths()
+                .iter()
+                .any(|path| path.segments().len() == 1 && path.namespace() == identity.name);
         let mut settled = std::borrow::Cow::Borrowed(&row.settled);
         if let Some(value) = row
             .identity

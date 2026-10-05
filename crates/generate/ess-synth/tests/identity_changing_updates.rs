@@ -77,6 +77,18 @@ fn the_rust_target_generates_the_rename_rather_than_owing_it() {
         !behaviour.contains("RenameSecretBehavior> crate::"),
         "the command is not forwarded to the ports as an obligation: {behaviour}"
     );
+    // The row is inserted under the new identity before the old one is removed, so a port that
+    // fails between the two leaves the record held twice rather than not at all.
+    let rename = behaviour
+        .find("RenameSecretBehavior for Generated<P>")
+        .expect("the rename impl");
+    let body = &behaviour[rename..];
+    let put = body.find("SecretStorage::put(&mut self.ports, next);");
+    let delete = body.find("SecretStorage::delete(&mut self.ports, &input.name);");
+    assert!(
+        matches!((put, delete), (Some(put), Some(delete)) if put < delete),
+        "put before delete in the rename: {body}"
+    );
 }
 
 // ---- building the generated server ---------------------------------------------------------------

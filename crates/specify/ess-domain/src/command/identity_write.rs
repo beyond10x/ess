@@ -12,6 +12,7 @@
 //! | the identity write under a header older than `ess/23` | [`UnsupportedFormatVersion`](ValidationCode::UnsupportedFormatVersion) |
 //! | the identity write beside `compensates: true` | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
 //! | the identity write on the updating branch of a create-or-update pair | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
+//! | the identity write on an entity whose identity is a struct | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
 //! | the identity write on an entity a declared relation carries | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
 //! | the identity write with no declared collision answer | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //!
@@ -105,6 +106,27 @@ fn refusal(
                 .with_hint(hint.to_owned()),
         )
     };
+    // A struct identity is out of this cut: its collision answer would compare an aggregate, which
+    // `==` refuses, so the rename is refused here, by name.
+    let structured = match &entity.identity.type_ref {
+        crate::types::TypeRef::Named(name) => spec
+            .system()
+            .types
+            .get(name)
+            .is_some_and(|named| matches!(named.body, crate::types::TypeBody::Struct { .. })),
+        _ => false,
+    };
+    if structured {
+        return unsupported(
+            format!(
+                "outcome `{}` writes `{identity}`, the identity of `{}`, which is a struct; a \
+                 re-key of a struct identity is not supported",
+                outcome.name, entity.name
+            ),
+            "rename only an entity whose identity is a scalar or a newtype over one, or drop the \
+             identity from `sets:`",
+        );
+    }
     if outcome.compensates {
         return unsupported(
             format!(

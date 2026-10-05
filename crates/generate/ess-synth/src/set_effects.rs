@@ -9,9 +9,9 @@
 //! or none.
 //!
 //! An `updates:` whose `sets:` writes the identity moves its row to another identity. The generated
-//! Rust behaviour removes the row and inserts it under the new identity through its storage port;
-//! the Go, Web and Clap seams write the row their request names in place, so each such branch is
-//! named rather than emitted writing a field the row is stored under.
+//! Rust behaviour inserts the row under the new identity and then removes the old one, through its
+//! storage port; the Go, Web and Clap seams write the row their request names in place, so each such
+//! branch is named rather than emitted writing a field the row is stored under.
 
 use ess_compiler::ir::ResolvedOutcome;
 

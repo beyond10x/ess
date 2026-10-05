@@ -485,3 +485,49 @@ fn the_go_runner_gives_the_reference_verdict_for_every_mode() {
         check(&label, mode, &verdicts);
     }
 }
+
+/// Correction round 1: every scenario that arranges the row in a known state and asserts an error
+/// reading `{subject: state}` compares it, the compensating refusal's own and each source of its
+/// move included (`from_source`).
+#[test]
+fn a_compensating_refusal_reading_the_held_state_is_compared_from_every_source() {
+    let model = include_str!("../../../specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml")
+        .replace("format: ess/22\n", "format: ess/23\n")
+        .replace(
+            "  - name: shop.order.Refused\n    summary: The upstream refused the join.\n    fields: []\n",
+            "  - name: shop.order.Refused\n    summary: The upstream refused the join.\n    fields:\n      - {name: was, type: shop.order.Order.State}\n",
+        )
+        .replace(
+            "        compensates: true\n",
+            "        compensates: true\n        payload:\n          shop.order.Refused: {was: {subject: state}}\n",
+        );
+    assert!(model.contains("{was: {subject: state}}"));
+    let ir = ir_of("order.yaml", &model);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let mut compared = BTreeMap::new();
+    for (id, scenario) in &synthesis.suite.scenarios {
+        for step in &scenario.steps {
+            if let ScenarioStep::ExpectError { error, fields } = step {
+                if error.to_string() == "shop.order.Refused" {
+                    compared.insert(id.to_string(), fields.get("was").cloned());
+                }
+            }
+        }
+    }
+    assert_eq!(
+        compared.get("shop.order.Order/transition/reset/by/shop.order.JoinOrder/failed"),
+        Some(&Some(text("Joined"))),
+        "{compared:#?}"
+    );
+    assert_eq!(
+        compared.get("shop.order.JoinOrder/outcome/failed"),
+        Some(&Some(text("Idle"))),
+        "{compared:#?}"
+    );
+    let verdicts = support_go::rust_outcomes(&synthesis.suite, &Interpreted::for_model(ir));
+    assert_eq!(
+        support_go::not_passed(&verdicts),
+        Vec::<&str>::new(),
+        "{verdicts:#?}"
+    );
+}

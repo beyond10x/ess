@@ -3834,12 +3834,15 @@ fn state_refusals(
                         models.mark_run(&mut run);
                         witnessed += 1;
                         steps.extend(run.steps());
+                        // The row rests in `state`, which `{subject: state}` reads (ess/23).
+                        let before =
+                            with_held_state(ir, &run.before_settled, &subject.entity, Some(state));
                         steps.push(expect_error(
                             ir,
                             outcome,
                             outcome.error.as_ref().expect("named refusal"),
                             &run.input,
-                            &run.before_settled,
+                            &before,
                         ));
                         source.extend(run.source);
                     }
@@ -9515,7 +9518,7 @@ fn arrange_toward_bound(
                 _ => None,
             })
             .collect();
-        let published = steered_identity(identity, filter, creator.outcome);
+        let published = steered_identity(ir, identity, filter, creator.outcome);
         if let Some(field) = published {
             mapped.entry(identity.name.as_str()).or_insert(field);
         }
@@ -9598,18 +9601,21 @@ fn arrange_toward_bound(
 
 /// The input `creator` publishes its new row's identity from, where `filter` reads the identity
 /// itself (a row-set selector, ess/23, beyond10x/ess#429), so the arrangement is steered through
-/// it; `None` for every other filter, which maps what it mapped before.
+/// it, from `ess/23` only; `None` for every other filter, and below `ess/23`, which map what they
+/// mapped before.
 fn steered_identity<'a>(
+    ir: &EssIr,
     identity: &ess_compiler::ir::ResolvedField,
     filter: &Predicate,
     creator: &'a ResolvedOutcome,
 ) -> Option<&'a str> {
-    filter
-        .fact_paths()
-        .iter()
-        .any(|path| path.segments().len() == 1 && path.namespace() == identity.name)
-        .then(|| published_identity_input(creator))
-        .flatten()
+    (subject_fact::identity_selectors(ir)
+        && filter
+            .fact_paths()
+            .iter()
+            .any(|path| path.segments().len() == 1 && path.namespace() == identity.name))
+    .then(|| published_identity_input(creator))
+    .flatten()
 }
 
 /// `reached` with the identity it was created under, where the steering chose it.
@@ -11689,15 +11695,11 @@ fn from_source(
     // A compensating refusal moves from this source too (ess/22, beyond10x/ess#197), and from each
     // it still answers its error and publishes nothing: a target answering success from one
     // source alone is a different branch.
+    // The row rests in `from`, which `{subject: state}` reads (ess/23).
+    let held = with_held_state(ir, &arrangement.settled, &subject.entity, Some(from));
     if outcome.compensates {
         if let Some(error) = &outcome.error {
-            steps.push(expect_error(
-                ir,
-                outcome,
-                error,
-                &supplied,
-                &arrangement.settled,
-            ));
+            steps.push(expect_error(ir, outcome, error, &supplied, &held));
         }
         for event in not_emitted(ir, &[]) {
             steps.push(ScenarioStep::ExpectNoEvent { event });
@@ -11706,7 +11708,7 @@ fn from_source(
     for event in outcome.emits.iter().map(EventRef::from) {
         steps.push(expect_event_step(
             &event,
-            determined_payload(ir, outcome, &event, &supplied, &arrangement.settled),
+            determined_payload(ir, outcome, &event, &supplied, &held),
             determined_identities(
                 ir,
                 outcome,
@@ -11718,7 +11720,7 @@ fn from_source(
             crate::response::event_shape(ir, &event, outcome),
         ));
     }
-    let determined = settled(ir, outcome, &supplied, &arrangement.settled);
+    let determined = settled(ir, outcome, &supplied, &held);
     let before = arrangement.settled.clone();
     let mut left = arrangement.settled;
     absorb(&mut left, outcome, determined);
@@ -12806,7 +12808,8 @@ fn boundaries(
             models.mark(caller::InvocationPhase::Arrange, &mut arrangement.steps);
             out.0.extend(arrangement.steps);
             out.1.extend(arrangement.source);
-            settled = arrangement.settled;
+            // The row rests in `before`, which `{subject: state}` reads (ess/23).
+            settled = with_held_state(ir, &arrangement.settled, &subject.entity, Some(before));
             supplied.insert(
                 field.name.clone(),
                 ScenarioValue::instance(arrangement.instance),

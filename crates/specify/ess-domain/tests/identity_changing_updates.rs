@@ -348,3 +348,25 @@ fn a_set_effect_keeps_refusing_an_identity_write() {
         "{errors:#?}"
     );
 }
+
+#[test]
+fn a_struct_identity_rename_is_refused_by_name() {
+    // A struct identity is out of this cut (0.54.0): refused at the write, by name, rather than by
+    // the incidental `==` over an aggregate in its collision answer.
+    let text = replaced(
+        MODEL,
+        "  - {name: demo.vault.SecretName, kind: newtype, of: String}\n",
+        "  - name: demo.vault.SecretName\n    kind: struct\n    fields:\n      - {name: shelf, type: String}\n      - {name: label, type: String}\n",
+    );
+    let errors = refused(&text);
+    let error = errors
+        .iter()
+        .find(|error| error.location == format!("{RENAMED}.sets.name"))
+        .unwrap_or_else(|| panic!("{errors:#?}"));
+    assert_eq!(
+        error.code,
+        ValidationCode::UnsupportedConstruct,
+        "{error:#?}"
+    );
+    assert!(error.message.contains("struct"), "{error:#?}");
+}

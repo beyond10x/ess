@@ -350,13 +350,9 @@ pub(super) fn state_answered_rows(
         });
         match &branch.error {
             Some(error) => {
-                steps.push(super::expect_error(
-                    ir,
-                    branch,
-                    error,
-                    &supplied,
-                    &arrangement.settled,
-                ));
+                // The row rests in `held`, which `{subject: state}` reads (ess/23).
+                let before = super::with_held_state(ir, &arrangement.settled, entity, Some(held));
+                steps.push(super::expect_error(ir, branch, error, &supplied, &before));
                 steps.push(ScenarioStep::ExpectNoEvents);
             }
             None => steps.push(ScenarioStep::ExpectNoError),
@@ -485,7 +481,8 @@ fn evaluate_row(
     // The identity, where the steps settled it and the predicate reads it: a row-set selector over
     // the identity (ess/23, beyond10x/ess#429) reads the row's own key. Bound only then, so every
     // other predicate binds the fields it bound before.
-    if values.contains_key(&declared.identity.name)
+    if identity_selectors(ir)
+        && values.contains_key(&declared.identity.name)
         && predicate
             .fact_paths()
             .iter()
@@ -520,6 +517,13 @@ fn evaluate_row(
         Truth::Unknown if as_guard && unknown_by_absence(predicate, &facts) => Truth::False,
         truth => truth,
     }
+}
+
+/// Whether a row-set selector over the identity is read as the row's key (ess/23, beyond10x/ess#429):
+/// from `ess/23` only, so an `ess/22` document whose selector reads the identity keeps the suite it
+/// synthesized, refusals included.
+pub(super) fn identity_selectors(ir: &EssIr) -> bool {
+    ir.format().major() >= ess_domain::system::FormatVersion::V23.major()
 }
 
 /// The distinction the second owner a link comparison names is arranged under: past every further
@@ -5979,7 +5983,8 @@ fn send_for_row(
             outcome,
             error,
             &supplied,
-            &arrangement.settled,
+            // The row as arranged, its held state included (ess/23).
+            &super::with_held_state(ir, &arrangement.settled, entity, Some(&arrangement.state)),
         )),
         None => steps.push(ScenarioStep::ExpectNoError),
     }
@@ -5988,7 +5993,12 @@ fn send_for_row(
     absorb(
         &mut left,
         outcome,
-        super::settled(ir, outcome, &supplied, &arrangement.settled),
+        super::settled(
+            ir,
+            outcome,
+            &supplied,
+            &super::with_held_state(ir, &arrangement.settled, entity, Some(&arrangement.state)),
+        ),
     );
     if let Some(transition) = outcome
         .subject

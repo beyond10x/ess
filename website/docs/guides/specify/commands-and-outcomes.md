@@ -203,14 +203,14 @@ The command must answer a new identity another record carries: a refusal guarded
 `when_related: {entity: <the entity>, where: <identity> == input.<field>, exists: true}` over the
 input the identity is written from, or validate refuses the outcome as `missing_declaration`. The
 guard reads the rows as they were before the branch, so a rename to the record's own identity is the
-collision. The identity write is refused by name beside `compensates:`, in a create-or-update pair
-and on an entity an `owns` or `references` relation carries, and below `ess/23` it is refused naming
-`ess/23`. Its scenario requires the row under the new identity with its other fields, no row under
-the old one, and the same request again answered as an unknown instance; the collision's scenario
-requires every immediate view unchanged, for another record's identity and for the record's own.
-The generated Rust behaviour removes the row and inserts it under the new identity through its
-storage port; Go, Web and Clap refuse the write by name, and Entity Runtime lowering refuses it
-with `IdentityChangeUnsupported`.
+collision. The identity write is refused by name beside `compensates:`, in a create-or-update pair,
+on an entity an `owns` or `references` relation carries and on a struct identity, and below `ess/23`
+it is refused naming `ess/23`. Its scenario requires the row under the new identity with its other
+fields, no row under the old one, and the same request again answered as an unknown instance; the
+collision's scenario requires every immediate view unchanged, for another record's identity and for the record's own.
+The generated Rust behaviour inserts the row under the new identity, then removes the old one,
+through its storage port; Go, Web and Clap refuse the write by name, and Entity Runtime lowering
+refuses it with `IdentityChangeUnsupported`.
 
 ## A creation can land in a declared state
 

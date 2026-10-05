@@ -32,9 +32,10 @@ the record**:
   sent again takes the command's unknown-instance answer.
 
 Guards read the row as it was before the outcome (`when:`, `when_subject*`), `payload:` reads
-`input.*` as today, and `wrong_state`/unknown-instance answers on the old identity are unchanged. A
-struct identity is written whole (`sets: {address: input.new_address}`); a dotted write into one
-member of an identity is not in this cut.
+`input.*` as today, and `wrong_state`/unknown-instance answers on the old identity are unchanged. The
+identity is a scalar or a newtype over one: a struct identity is refused by name
+(`unsupported_construct`), because its collision answer would compare an aggregate, which `==`
+refuses.
 
 The meaning is derived, not carried: `ResolvedOutcome::identity_write` reads it off the subject and
 `sets:` the IR always held, so no model's IR bytes move.
@@ -71,6 +72,7 @@ even when the new one is carried.
 | the identity write beside `compensates: true` | `unsupported_construct` | `…outcomes.<o>.sets.<identity>` |
 | the identity write on the updating branch of a create-or-update pair (`unknown_instance:` on a creation) | `unsupported_construct` | `…outcomes.<o>.sets.<identity>` |
 | the identity write on an entity a declared `owns` or `references` relation carries | `unsupported_construct` | `…outcomes.<o>.sets.<identity>` |
+| the identity write on an entity whose identity is a struct | `unsupported_construct` | `…outcomes.<o>.sets.<identity>` |
 | the identity write with no collision answer, or written from anything but `input.<field>` | `missing_declaration` | `…outcomes.<o>` |
 | the identity written by `affects:` or `instances:` | `conflicting_declaration`, unchanged (`set_effects::identity_set`) | `…sets.<identity>` |
 
@@ -110,7 +112,7 @@ model's suite moves.
 | target | answer |
 |---|---|
 | interpreter | re-keys: the row is removed under the old identity and inserted under the new one; a re-key onto a carried identity the model left undecided is `NotInterpreted` |
-| generated Rust | the collision refusal looks the addressed identity and the written identity up through the entity's storage port; the branch writes the identity into the snapshot, deletes the old row and puts the new one |
+| generated Rust | the collision refusal looks the addressed identity and the written identity up through the entity's storage port; the branch writes the identity into the snapshot, puts the row under the new identity, then deletes the old one, so a port failing between the two holds the record twice rather than losing it |
 | Go, Web, Clap | refused by name: `MissingRepresentation` at `commands.<c>.outcomes.<o>.sets.<identity>` |
 | Entity Runtime | refused by name: `IdentityChangeUnsupported` at `<c>.<o>.sets.<identity>` |
 | `ess verify diff` | the `outcome-sets-changed` entry writing the identity reads `<identity> <- …, re-keying the record`, and its line says the outcome now (or no longer) re-keys the record |
@@ -118,6 +120,6 @@ model's suite moves.
 
 ## Not in this cut
 
-A dotted write into a member of a struct identity; a `moves:` that writes the identity; cascading a
+A struct identity, whole or one member of it; a `moves:` that writes the identity; cascading a
 new key to the records a relation carries it in; a collision answer written in any other shape than
 the exact selector above; Go, Web, Clap and Entity Runtime realisations.

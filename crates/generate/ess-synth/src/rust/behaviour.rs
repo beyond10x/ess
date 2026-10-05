@@ -1905,8 +1905,14 @@ impl Writer<'_> {
                             matches!(effect, ResolvedEffect::Updates) || !outcome.sets.is_empty();
                         if writes {
                             self.write_sets(&mut out, outcome, "held", entity);
-                            // A re-key (ess/23, beyond10x/ess#429): the row leaves the identity
-                            // it was read under, and is inserted under the one written.
+                            let _ = writeln!(
+                                commit,
+                                "            {storage}::put(&mut self.ports, next);"
+                            );
+                            // A re-key (ess/23, beyond10x/ess#429): the row is inserted under
+                            // the identity written, then leaves the one it was read under, so a
+                            // port failing between the two holds the record twice, never not at
+                            // all.
                             if outcome.identity_write(self.ir).is_some() {
                                 let _ = writeln!(
                                     commit,
@@ -1914,10 +1920,6 @@ impl Writer<'_> {
                                      &input.{identity});"
                                 );
                             }
-                            let _ = writeln!(
-                                commit,
-                                "            {storage}::put(&mut self.ports, next);"
-                            );
                         }
                     }
                     ResolvedEffect::Deletes => {
