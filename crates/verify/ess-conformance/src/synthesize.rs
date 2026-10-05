@@ -206,8 +206,9 @@ use std::fmt;
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
-    ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedInstance, ResolvedOutcome,
-    ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
+    ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedFallback, ResolvedInstance,
+    ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::{OutcomeName, TestStrategy};
@@ -2562,6 +2563,7 @@ pub(crate) fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &Qualif
 }
 
 /// One scenario per declared outcome (§10), or the refusal that says why there is none.
+#[allow(clippy::too_many_lines)]
 fn outcome_scenario_in(
     models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -2589,21 +2591,28 @@ fn outcome_scenario_in(
     // `{input: f, else: <literal>}` — the sent value wins, and the literal stands in for none.
     // Not a refusal where it cannot be built: the full invocation above is the scenario. A
     // replayed branch and a state refusal are arranged by their own searches, and not again.
+    // From ess/22 each Optional the branch's fallbacks and absent values hang on is left out in a
+    // run of its own (`fallback_omissions`), so a target choosing a fallback by another Optional's
+    // absence fails; below ess/22 the one run leaves them out together, as it always did.
     let again = outcome.replays.is_none() && !is_state_refusal(command, outcome);
-    if let Some((more, depends, _)) = again
-        .then(|| {
-            exercise_as(
-                models,
-                command,
-                outcome,
-                actors,
-                &id,
-                &mut Vec::new(),
-                Witness::LiteralFallbacks,
-            )
-        })
-        .flatten()
-    {
+    let runs =
+        if models.arrangement.format().major() >= ess_domain::system::FormatVersion::V22.major() {
+            MAX_FALLBACK_RUNS
+        } else {
+            1
+        };
+    for run in (0..runs).take_while(|_| again) {
+        let Some((more, depends, _)) = exercise_as(
+            models,
+            command,
+            outcome,
+            actors,
+            &id,
+            &mut Vec::new(),
+            Witness::LiteralFallbacks(run),
+        ) else {
+            break;
+        };
         steps.extend(more);
         source.extend(depends);
     }
@@ -2841,10 +2850,11 @@ fn related_boundaries(
 enum Witness {
     /// The witness input, every optional input it can send included.
     Full,
-    /// A further instance and input, with every optional input the branch reads only through
-    /// `{input: f, else: <literal>}` left out ([`without_literal_fallbacks`]). A run that can leave
-    /// nothing out is not built.
-    LiteralFallbacks,
+    /// A further instance and input, with the optional inputs the branch reads only through
+    /// `{input: f, else: …}` left out ([`fallback_omissions`]): below `ess/22` all of them in the one
+    /// run `0`; from `ess/22` the `n`th alone in run `n`, so each Optional decides its own value. A
+    /// run that can leave nothing out is not built.
+    LiteralFallbacks(usize),
     /// A further instance arranged in the `n`th state a listed `when_subject_state:` names (ess/18,
     /// beyond10x/ess#201), so every listed state is witnessed and not only the first one reached.
     Listed(usize),
@@ -3219,7 +3229,7 @@ fn run_as(
                     related_at = Distinction::further(nth);
                     related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
                 }
-                Witness::LiteralFallbacks
+                Witness::LiteralFallbacks(_)
                 | Witness::Listed(_)
                 | Witness::RelatedValueAbsent(_)
                 | Witness::UnionVariant(_) => return Err(related_guard::unarranged()),
@@ -3309,11 +3319,18 @@ fn run_as(
     // from this command's events, and later steps name it rather than the first occurrence. So is
     // the row a further run of a creating branch makes for its absent-reference witness (ess/22,
     // beyond10x/ess#285): the scenario already ran the branch once.
-    let captured = if let Witness::RelatedValueAbsent(point) = witness {
-        related_at = Distinction::further(ABSENT_REFERENCE_WITNESS + point);
-        true
-    } else {
-        false
+    // So is the row the further run of a branch reading an input path (ess/22, A4) makes with an
+    // Optional on that path left out; a model reading no path keeps the steps it had.
+    let captured = match witness {
+        Witness::RelatedValueAbsent(point) => {
+            related_at = Distinction::further(ABSENT_REFERENCE_WITNESS + point);
+            true
+        }
+        Witness::LiteralFallbacks(run) => {
+            related_at = fallback_distinction(run);
+            true
+        }
+        _ => false,
     };
     if related || captured {
         if let Some(ResolvedSubject {
@@ -3495,7 +3512,9 @@ fn unchanged_writes(
                 ResolvedPayloadValue::Literal { value } => {
                     literal_value(ir, &set.target_type, value, 0)
                 }
-                ResolvedPayloadValue::InputField { field, .. } => input.get(field).cloned(),
+                ResolvedPayloadValue::InputField { field, .. } => {
+                    ess_compiler::ir::read_input(input, field).cloned()
+                }
                 _ => None,
             };
             written.is_some() && written == held_value(ir, settled, &set.target, &set.target_type)
@@ -4537,8 +4556,12 @@ fn filed_under(
         .sets
         .iter()
         .find_map(|set| match &set.value {
+            // A scenario names an arranged owner by a top-level input only: a path (ess/22, A4)
+            // reads inside a literal, which holds no reference to an arranged row.
             ResolvedPayloadValue::InputField { field, .. }
-                if set.target == belongs.via && set.conversion.is_none() =>
+                if set.target == belongs.via
+                    && set.conversion.is_none()
+                    && !ess_domain::command::input_path::is_path(field) =>
             {
                 Some(field.clone())
             }
@@ -4791,7 +4814,12 @@ fn arrange_owner(
             set.target == belongs.via,
             set.conversion.is_some(),
         ) {
-            (ResolvedPayloadValue::InputField { field, .. }, true, false) => Some(field.clone()),
+            // A path (ess/22, A4) reads inside a literal, which holds no arranged row's reference.
+            (ResolvedPayloadValue::InputField { field, .. }, true, false)
+                if !ess_domain::command::input_path::is_path(field) =>
+            {
+                Some(field.clone())
+            }
             _ => None,
         }
     })?;
@@ -6255,7 +6283,7 @@ fn determined_identities(
     };
     for field in payload.fields.iter().filter(|it| it.conversion.is_none()) {
         let value = match &field.value {
-            ResolvedPayloadValue::InputField { field: input, .. } => supplied.get(input).cloned(),
+            ResolvedPayloadValue::InputField { field: input, .. } => supplied_at(supplied, input),
             ResolvedPayloadValue::SubjectField { field: read, .. }
                 if Some(read) == subject_identity =>
             {
@@ -6348,8 +6376,8 @@ fn determined_fields(
                 }
             }
             ResolvedPayloadValue::InputField { field: input, .. } => {
-                if let Some(ScenarioValue::Literal { value }) = supplied.get(input) {
-                    values.insert(field.target.clone(), value.clone());
+                if let Some(ScenarioValue::Literal { value }) = supplied_at(supplied, input) {
+                    values.insert(field.target.clone(), value);
                 }
             }
             // ess/14: asserted where the arrangement determined what they read, as a literal.
@@ -6615,6 +6643,8 @@ fn view_expectations(
                     &ir.entity(&subject.entity).name,
                     Distinction::further(ABSENT_REFERENCE_WITNESS + point),
                 )
+        }) || (0..MAX_FALLBACK_RUNS).any(|run| {
+            *captured == instance_name(&ir.entity(&subject.entity).name, fallback_distinction(run))
         })
     };
     let identity = match (instance, &subject.instance) {
@@ -7220,13 +7250,20 @@ fn expression_value_at(
             field: read,
             otherwise,
             ..
-        } => match supplied.get(read) {
-            None | Some(ScenarioValue::Literal { value: Node::Null }) => {
-                let written = otherwise.as_deref()?;
-                literal_value(ir, &field.target_type, written, 0)
-                    .map(|value| ScenarioValue::Literal { value })
-            }
-            Some(value @ ScenarioValue::Literal { .. }) => Some(value.clone()),
+        } => match supplied_at(supplied, read) {
+            None | Some(ScenarioValue::Literal { value: Node::Null }) => match otherwise.as_ref()? {
+                ResolvedFallback::Literal(written) => {
+                    literal_value(ir, &field.target_type, written, 0)
+                        .map(|value| ScenarioValue::Literal { value })
+                }
+                // ess/22 (A4): the fallback input the scenario sent, unchanged.
+                ResolvedFallback::Input { input } => match supplied_at(supplied, &input.field)? {
+                    ScenarioValue::Literal { value: Node::Null } => None,
+                    value @ ScenarioValue::Literal { .. } => Some(value),
+                    _ => None,
+                },
+            },
+            Some(value @ ScenarioValue::Literal { .. }) => Some(value),
             Some(_) => None,
         },
         ResolvedPayloadValue::Struct { fields } => {
@@ -7252,6 +7289,169 @@ fn expression_value_at(
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => None,
     }
+}
+
+/// What a scenario sends at `input.<field>`: the input, or from ess/22 (Family F A4) the member a
+/// path reaches inside a literal struct input. `None` where nothing is sent there — a member on the
+/// way is missing, or an `Optional` before the last segment is absent — and for a path into an
+/// input that is no literal. A top-level read answers what `supplied.get(field)` does.
+pub(crate) fn supplied_at(
+    supplied: &BTreeMap<String, ScenarioValue>,
+    field: &str,
+) -> Option<ScenarioValue> {
+    if !ess_domain::command::input_path::is_path(field) {
+        return supplied.get(field).cloned();
+    }
+    let (root, rest) = field.split_once('.')?;
+    let ScenarioValue::Literal { value } = supplied.get(root)? else {
+        return None;
+    };
+    let mut value = value;
+    for segment in rest.split('.') {
+        value = value.as_map()?.get(segment)?;
+    }
+    Some(ScenarioValue::Literal {
+        value: value.clone(),
+    })
+}
+
+/// Whether a value source copies through an input path or falls back to another input (ess/22,
+/// Family F A4), at any depth of a nested mapping.
+fn value_reads_input_path(value: &ResolvedPayloadValue) -> bool {
+    match value {
+        ResolvedPayloadValue::InputField { field, .. } => {
+            ess_domain::command::input_path::is_path(field)
+        }
+        ResolvedPayloadValue::InputOrGenerated {
+            field, otherwise, ..
+        } => {
+            ess_domain::command::input_path::is_path(field)
+                || matches!(otherwise, Some(ResolvedFallback::Input { .. }))
+        }
+        ResolvedPayloadValue::Struct { fields } => fields
+            .iter()
+            .any(|field| value_reads_input_path(&field.value)),
+        _ => false,
+    }
+}
+
+/// Every prefix of the input path `field`, root first and last segment included, whose declared
+/// type may be absent — `Optional<…>` itself, or a newtype declared over one — outermost first:
+/// what a scenario leaves out, one at a time, so that the path reads absent at each `Optional` on
+/// it (ess/22, Family F A4). Empty where nothing on it may be absent.
+pub(crate) fn optional_prefixes(ir: &EssIr, command: &ResolvedCommand, field: &str) -> Vec<String> {
+    fn optional(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
+        let mut current = type_ref;
+        for _ in 0..=MAX_TYPE_DEPTH {
+            match current {
+                ResolvedTypeRef::Optional { .. } => return true,
+                ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => current = of,
+                    _ => return false,
+                },
+                _ => return false,
+            }
+        }
+        false
+    }
+    let mut found = Vec::new();
+    let mut segments = field.split('.');
+    let Some(root) = segments.next() else {
+        return found;
+    };
+    let Some(mut current) = command
+        .input
+        .iter()
+        .find(|input| input.name == root)
+        .map(|input| &input.type_ref)
+    else {
+        return found;
+    };
+    let mut at = root.to_owned();
+    loop {
+        if optional(ir, current) {
+            found.push(at.clone());
+        }
+        let Some(segment) = segments.next() else {
+            return found;
+        };
+        let Some(member) = struct_members(ir, current)
+            .and_then(|members| members.iter().find(|member| member.name == segment))
+        else {
+            return found;
+        };
+        current = &member.type_ref;
+        at = format!("{at}.{segment}");
+    }
+}
+
+/// The declared type of the input `field` reads: the input's, or from ess/22 (Family F A4) the
+/// last segment's of a path through struct inputs. `None` where it names nothing.
+pub(crate) fn input_type<'ir>(
+    ir: &'ir EssIr,
+    command: &'ir ResolvedCommand,
+    field: &str,
+) -> Option<&'ir ResolvedTypeRef> {
+    let mut segments = field.split('.');
+    let root = segments.next()?;
+    let mut current = &command
+        .input
+        .iter()
+        .find(|input| input.name == root)?
+        .type_ref;
+    for segment in segments {
+        current = &struct_members(ir, current)?
+            .iter()
+            .find(|member| member.name == segment)?
+            .type_ref;
+    }
+    Some(current)
+}
+
+/// The members of the struct `type_ref` resolves to through `Optional` and newtypes.
+pub(crate) fn struct_members<'ir>(
+    ir: &'ir EssIr,
+    type_ref: &'ir ResolvedTypeRef,
+) -> Option<&'ir [ess_compiler::ir::ResolvedField]> {
+    let mut current = type_ref;
+    for _ in 0..=MAX_TYPE_DEPTH {
+        match current {
+            ResolvedTypeRef::Optional { of } => current = of,
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => current = of,
+                ResolvedBody::Struct { fields, .. } => return Some(fields),
+                _ => return None,
+            },
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Writes `value` at `input.<field>` — a top-level field, or from ess/22 (Family F A4) the member a
+/// path reaches through nested mappings — or leaves it out where `value` is `None`. `false`, with
+/// `input` unchanged, where a mapping the path passes through is not there to write into.
+pub(crate) fn set_at(input: &mut BTreeMap<String, Node>, field: &str, value: Option<Node>) -> bool {
+    let mut segments: Vec<&str> = field.split('.').collect();
+    let Some(last) = segments.pop() else {
+        return false;
+    };
+    let mut members = input;
+    for segment in segments {
+        match members.get_mut(segment) {
+            Some(Node::Map(inner)) => members = inner,
+            _ => return false,
+        }
+    }
+    match value {
+        Some(value) => {
+            members.insert(last.to_owned(), value);
+        }
+        None => {
+            members.remove(last);
+        }
+    }
+    true
 }
 
 fn before_literal_at<'a>(
@@ -7281,7 +7481,9 @@ fn arranged_as(
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
     match witness {
         Witness::Full => arranged(ir, command, outcome, actors, routed),
-        Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
+        Witness::LiteralFallbacks(run) => {
+            arranged_without_fallbacks(ir, command, outcome, actors, run)
+        }
         Witness::Listed(nth) => arranged_in_listed_state(ir, command, outcome, actors, nth),
         Witness::RelatedValueAbsent(point) => {
             arranged_with_absent_reference(ir, command, outcome, actors, point)
@@ -7308,14 +7510,19 @@ fn arranged_without_fallbacks(
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    run: usize,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
-    if subject_fact::routes(command, outcome) || has_subject_guards(command) {
+    let source22 = ir.format().major() >= ess_domain::system::FormatVersion::V22.major();
+    if subject_fact::routes(command, outcome)
+        || has_subject_guards(command)
+        || (run > 0 && !source22)
+    {
         return Err(no_literal_fallback_run(command));
     }
-    let distinction = Distinction::further(FRESH_WITNESSES + 1);
+    let distinction = fallback_distinction(run);
     let setup = prepare_in(ir, outcome, actors, None, distinction)?;
     let input = reach(ir, command, outcome, distinction)?;
-    let input = existence::fresh_created(ir, command, outcome, input, true)?;
+    let input = existence::fresh_created_again(ir, command, outcome, input, run)?;
     let input = freshened(
         ir,
         command,
@@ -7324,11 +7531,55 @@ fn arranged_without_fallbacks(
         setup.before.as_ref(),
         &setup.settled,
     );
-    let omitted = without_literal_fallbacks(ir, command, outcome, &setup, input.clone());
+    let held = setup.before.as_ref();
+    let omissions = fallback_omissions(ir, command, outcome, &setup);
+    let leaves_out = |input: &BTreeMap<String, Node>, field: &str| {
+        let mut trimmed = input.clone();
+        let present = ess_compiler::ir::read_input(&trimmed, field).is_some();
+        (present
+            && set_at(&mut trimmed, field, None)
+            && admitted(ir, command, &trimmed)
+            && selects_branch(ir, command, outcome, held, &trimmed).unwrap_or(false))
+        .then_some(trimmed)
+    };
+    let omitted = if source22 {
+        // One Optional per run, each checked alone against the full input.
+        omissions
+            .iter()
+            .filter_map(|field| leaves_out(&input, field))
+            .nth(run)
+            .ok_or_else(|| no_literal_fallback_run(command))?
+    } else {
+        // Each one decided on its own, so one a guard needs does not keep the rest.
+        let mut omitted = input.clone();
+        for field in &omissions {
+            if let Some(trimmed) = leaves_out(&omitted, field) {
+                omitted = trimmed;
+            }
+        }
+        omitted
+    };
     if omitted == input {
         return Err(no_literal_fallback_run(command));
     }
     Ok((setup, omitted))
+}
+
+/// How many further runs a branch's fallbacks are witnessed in, at most (ess/22, one per Optional).
+const MAX_FALLBACK_RUNS: usize = 16;
+
+/// The first witness the further fallback runs after the first are arranged under: past every
+/// further instance a candidate search, the listed-state runs and the absent-reference runs number,
+/// so their rows and identities are their own.
+const FALLBACK_RUN_WITNESS: usize = 10_000;
+
+/// The witness the `run`th fallback run is arranged under; the first keeps the one it always had.
+fn fallback_distinction(run: usize) -> Distinction {
+    if run == 0 {
+        Distinction::further(FRESH_WITNESSES + 1)
+    } else {
+        Distinction::further(FALLBACK_RUN_WITNESS + run)
+    }
 }
 
 /// The arrangement and input of [`Witness::Listed`]: a further instance, under a distinction of its
@@ -7540,84 +7791,98 @@ fn no_literal_fallback_run(command: &ResolvedCommand) -> RefusalCause {
     })
 }
 
-/// The input with every optional field left out that this outcome reads only through
-/// `{input: f, else: <literal>}` (ess/16, #163), so the scenario asserts the literal.
-///
-/// A witness sends every optional input it can, so without this no scenario reached the fallback
-/// and an implementation storing any other default passed. A field is kept when anything else in
-/// the outcome needs it sent — a plain `input.f` into a required target or through a conversion,
-/// a `{generated: true}` fallback, the subject's identity, a fixture, an owner the arrangement bound — or when
-/// the input no longer selects the branch without it, so a guard that reads the field still
-/// decides it. Each field is decided on its own, so one a guard needs does not keep the rest.
-fn without_literal_fallbacks(
-    ir: &EssIr,
-    command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
-    setup: &Setup,
-    input: BTreeMap<String, Node>,
-) -> BTreeMap<String, Node> {
-    /// How one value of the outcome reads an input field.
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Read {
-        /// `{input: f, else: <literal>}`: the literal stands in for an omitted input.
-        Fallback,
-        /// A plain `input.f` copied, unconverted, into an `Optional` target: an omitted input
-        /// leaves that target absent, which the omission run then asserts.
-        Nullable,
-        /// Anything that needs the value sent: a required target, a conversion, a
-        /// `{generated: true}` fallback.
-        Needed,
-    }
-    fn reads<'a>(
-        target: &'a ess_compiler::ir::ResolvedPayloadField,
-        out: &mut Vec<(&'a str, Read)>,
-    ) {
-        match &target.value {
-            ResolvedPayloadValue::InputOrGenerated {
-                field, otherwise, ..
-            } => out.push((
+/// How one value of the outcome reads an input field.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Read {
+    /// `{input: f, else: <literal>}`: the literal stands in for an omitted input.
+    Fallback,
+    /// A plain `input.f` copied, unconverted, into an `Optional` target: an omitted input
+    /// leaves that target absent, which the omission run then asserts.
+    Nullable,
+    /// Anything that needs the value sent: a required target, a conversion, a
+    /// `{generated: true}` fallback.
+    Needed,
+}
+fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(&'a str, Read)>) {
+    match &target.value {
+        ResolvedPayloadValue::InputOrGenerated {
+            field, otherwise, ..
+        } => {
+            out.push((
                 field,
                 if otherwise.is_some() {
                     Read::Fallback
                 } else {
                     Read::Needed
                 },
-            )),
-            ResolvedPayloadValue::InputField { field, .. } => out.push((
-                field,
-                if target.target_type.is_optional() && target.conversion.is_none() {
-                    Read::Nullable
-                } else {
-                    Read::Needed
-                },
-            )),
-            ResolvedPayloadValue::RelatedField {
-                via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
-                ..
-            } => out.push((field, Read::Needed)),
-            ResolvedPayloadValue::Struct { fields } => {
-                for leaf in fields {
-                    reads(leaf, out);
-                }
+            ));
+            // ess/22 (A4): an input fallback is sent whenever the primary is not.
+            if let Some(ResolvedFallback::Input { input }) = otherwise {
+                out.push((&input.field, Read::Needed));
             }
-            ResolvedPayloadValue::Literal { .. }
-            | ResolvedPayloadValue::ResponseField { .. }
-            | ResolvedPayloadValue::Generated
-            | ResolvedPayloadValue::Cleared
-            | ResolvedPayloadValue::SubjectField { .. }
-            | ResolvedPayloadValue::RelatedField { .. }
-            | ResolvedPayloadValue::Increment { .. }
-            | ResolvedPayloadValue::CallerAttribute { .. }
-            | ResolvedPayloadValue::ChangedCount => {}
         }
+        ResolvedPayloadValue::InputField { field, .. } => out.push((
+            field,
+            if target.target_type.is_optional() && target.conversion.is_none() {
+                Read::Nullable
+            } else {
+                Read::Needed
+            },
+        )),
+        ResolvedPayloadValue::RelatedField {
+            via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
+            ..
+        } => out.push((field, Read::Needed)),
+        ResolvedPayloadValue::Struct { fields } => {
+            for leaf in fields {
+                reads(leaf, out);
+            }
+        }
+        ResolvedPayloadValue::Literal { .. }
+        | ResolvedPayloadValue::ResponseField { .. }
+        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Cleared
+        | ResolvedPayloadValue::SubjectField { .. }
+        | ResolvedPayloadValue::RelatedField { .. }
+        | ResolvedPayloadValue::Increment { .. }
+        | ResolvedPayloadValue::CallerAttribute { .. }
+        | ResolvedPayloadValue::ChangedCount => {}
     }
-    let (held, bound) = (setup.before.as_ref(), &setup.bound);
+}
+
+/// The inputs this outcome's fallbacks and absent values hang on, each a candidate to leave out, in
+/// byte order: an optional field read only through `{input: f, else: <literal>}` (ess/16, #163),
+/// so the scenario asserts the literal; and from ess/22 (A4) every `Optional` on a path whose
+/// absence selects a fallback or leaves a copied value absent, the inner ones as well as the
+/// outer, so an absent inner parent is witnessed with the outer one present.
+///
+/// A witness sends every optional input it can, so without this no scenario reached the fallback
+/// and an implementation storing any other default passed. A field is kept when anything else in
+/// the outcome needs it sent — a plain `input.f` into a required target or through a conversion,
+/// a `{generated: true}` fallback, an input fallback, the subject's identity, a fixture, an owner
+/// the arrangement bound. Whether the branch is still selected without it is the caller's to ask.
+fn fallback_omissions(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    setup: &Setup,
+) -> Vec<String> {
+    let bound = &setup.bound;
     let mut read = Vec::new();
     for field in outcome
         .payload
         .iter()
         .flat_map(|payload| &payload.fields)
         .chain(&outcome.sets)
+    {
+        reads(field, &mut read);
+    }
+    // ess/22 (A4): an error payload's reads where it reads a path or falls back to another input,
+    // and only those, so a model with neither keeps the runs it had.
+    for field in outcome
+        .error_payload
+        .iter()
+        .filter(|field| value_reads_input_path(&field.value))
     {
         reads(field, &mut read);
     }
@@ -7628,35 +7893,48 @@ fn without_literal_fallbacks(
             ResolvedInstance::Supplied { field } => Some(field.name.as_str()),
             ResolvedInstance::Observed { .. } => None,
         });
-    let omitted: BTreeSet<&str> = read
-        .iter()
-        .filter(|(_, how)| *how == Read::Fallback)
-        .map(|(field, _)| *field)
-        .filter(|field| {
-            read.iter()
-                .all(|(other, how)| other != field || *how != Read::Needed)
-                && identity != Some(*field)
-                && !command.fixture_inputs.contains_key(*field)
-                && !bound.contains_key(*field)
-                && command
-                    .input
-                    .iter()
-                    .any(|declared| declared.name == *field && declared.type_ref.is_optional())
+    // What each read may leave out: a top-level field itself; for a path (ess/22, A4) every
+    // `Optional` on it, whose absence leaves the value absent. A plain path copied into an
+    // `Optional` target is left absent too, so a run asserts an absent parent's absence.
+    let leaves_out = |field: &str, how: Read| -> Vec<String> {
+        if !ess_domain::command::input_path::is_path(field) {
+            return if how == Read::Fallback {
+                vec![field.to_owned()]
+            } else {
+                Vec::new()
+            };
+        }
+        if matches!(how, Read::Fallback | Read::Nullable) {
+            optional_prefixes(ir, command, field)
+        } else {
+            Vec::new()
+        }
+    };
+    let needed_under = |omitted: &str| {
+        read.iter().any(|(other, how)| {
+            *how == Read::Needed
+                && (*other == omitted
+                    || other
+                        .strip_prefix(omitted)
+                        .is_some_and(|rest| rest.starts_with('.')))
         })
-        .collect();
-    let mut input = input;
-    for field in omitted {
-        let mut trimmed = input.clone();
-        if trimmed.remove(field).is_none() {
-            continue;
-        }
-        if admitted(ir, command, &trimmed)
-            && selects_branch(ir, command, outcome, held, &trimmed).unwrap_or(false)
-        {
-            input = trimmed;
-        }
-    }
-    input
+    };
+    let omissions: BTreeSet<String> =
+        read.iter()
+            .flat_map(|(field, how)| leaves_out(field, *how))
+            .filter(|field| {
+                let root = field.split('.').next().unwrap_or_default();
+                !needed_under(field)
+                    && identity != Some(root)
+                    && !command.fixture_inputs.contains_key(root)
+                    && !bound.contains_key(root)
+                    && (ess_domain::command::input_path::is_path(field)
+                        || command.input.iter().any(|declared| {
+                            declared.name == *field && declared.type_ref.is_optional()
+                        }))
+            })
+            .collect();
+    omissions.into_iter().collect()
 }
 
 /// The literal one leaf of a nested mapping determines, where the scenario knows it; `None` where
@@ -7673,8 +7951,8 @@ fn leaf_value(
     }
     match &leaf.value {
         ResolvedPayloadValue::Literal { value } => literal_value(ir, &leaf.target_type, value, 0),
-        ResolvedPayloadValue::InputField { field: read, .. } => match supplied.get(read) {
-            Some(ScenarioValue::Literal { value }) => Some(value.clone()),
+        ResolvedPayloadValue::InputField { field: read, .. } => match supplied_at(supplied, read) {
+            Some(ScenarioValue::Literal { value }) => Some(value),
             _ => None,
         },
         _ => match expression_value_at(ir, leaf, supplied, before, target_location)? {
@@ -7988,17 +8266,19 @@ fn settled(
             // generated suite catches an implementation that files the new row under a different
             // owner. Restricting this to literals dropped the field instead, which asserted nothing
             // about it at all.
-            ResolvedPayloadValue::InputField { field: read, .. } => match supplied.get(read) {
-                Some(value) => value.clone(),
-                // An `Optional` input the invocation left out — absent on the wire, never `null`
-                // — leaves the `Optional` field it fills absent, which a row carries as a null
-                // exactly as `{cleared: true}` does. It is the one way a scenario can arrange a
-                // row that `not defined(field)` selects.
-                None if field.target_type.is_optional() => {
-                    ScenarioValue::Literal { value: Node::Null }
+            ResolvedPayloadValue::InputField { field: read, .. } => {
+                match supplied_at(supplied, read) {
+                    Some(value) => value,
+                    // An `Optional` input the invocation left out — absent on the wire, never `null`
+                    // — leaves the `Optional` field it fills absent, which a row carries as a null
+                    // exactly as `{cleared: true}` does. It is the one way a scenario can arrange a
+                    // row that `not defined(field)` selects.
+                    None if field.target_type.is_optional() => {
+                        ScenarioValue::Literal { value: Node::Null }
+                    }
+                    None => continue,
                 }
-                None => continue,
-            },
+            }
             // ess/14 (`docs/design/value-expressions.md`): read against the row before this act.
             ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::Increment { .. }
@@ -8111,14 +8391,14 @@ fn freshened(
             continue;
         };
         let already = held_value(ir, settled, &set.target, &set.target_type);
-        if already.is_none() || input.get(field) != already.as_ref() {
+        if already.is_none() || ess_compiler::ir::read_input(&input, field) != already.as_ref() {
             continue;
         }
         for nth in 1..=FRESH_WITNESSES {
             let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
-                .and_then(|mut further| further.remove(field))
+                .and_then(|further| ess_compiler::ir::read_input(&further, field).cloned())
             else {
                 continue;
             };
@@ -8127,7 +8407,9 @@ fn freshened(
                 continue;
             }
             let mut next = input.clone();
-            next.insert(field.clone(), moved);
+            if !set_at(&mut next, field, Some(moved)) {
+                continue;
+            }
             if admitted(ir, command, &next)
                 && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
             {
@@ -10264,8 +10546,8 @@ fn preconditions(models: &caller::InvocationModels<'_>, suite: &mut ConformanceS
             );
         }
         for field in identity_inputs(command) {
-            if let Some(value) = input.get(&field) {
-                creates.push((command_ref.clone(), field, value.clone()));
+            if let Some(value) = supplied_at(&input, &field) {
+                creates.push((command_ref.clone(), field, value));
             }
         }
         prelude.push(ScenarioStep::ExecuteCommand {
@@ -10358,9 +10640,9 @@ fn recreates(steps: &[ScenarioStep], creates: &[Recreated]) -> bool {
         let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
             return false;
         };
-        creates
-            .iter()
-            .any(|(creating, field, value)| creating == command && input.get(field) == Some(value))
+        creates.iter().any(|(creating, field, value)| {
+            creating == command && supplied_at(input, field).as_ref() == Some(value)
+        })
     })
 }
 
@@ -10425,14 +10707,16 @@ pub(super) fn keeps_branch(
     field: &str,
     value: &Node,
 ) -> bool {
-    let Some(declared) = command.input.iter().find(|declared| declared.name == field) else {
+    let Some(declared) = input_type(ir, command, field) else {
         return false;
     };
-    if crate::input::validate_typed_value(ir, &declared.type_ref, value).is_err() {
+    if crate::input::validate_typed_value(ir, declared, value).is_err() {
         return false;
     }
     let mut moved = input.clone();
-    moved.insert(field.to_owned(), value.clone());
+    if !set_at(&mut moved, field, Some(value.clone())) {
+        return false;
+    }
     let Ok(before) = flatten(ir, command, input) else {
         return true;
     };

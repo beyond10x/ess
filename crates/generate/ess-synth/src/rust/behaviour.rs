@@ -44,8 +44,8 @@ use std::fmt::Write as _;
 
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
-    ResolvedEntity, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedRelatedTest, ResolvedRelatedVia, ResolvedTypeRef,
+    ResolvedEntity, ResolvedFallback, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -2098,6 +2098,76 @@ impl Writer<'_> {
         format!("self.ports.try_{method}()?")
     }
 
+    /// The owned value `input.<field>` reads: the input, or from ess/22 (Family F A4) the member a
+    /// path reaches through struct inputs — through a newtype's representation, and, past an
+    /// `Optional`, as an `Option` that is `None` where any `Optional` on the way is absent. The
+    /// expression has the IR's type for the read: the last segment's, or `Option` of it.
+    fn input_value(&self, field: &str) -> String {
+        let mut segments = field.split('.');
+        let root = segments.next().unwrap_or_default();
+        let mut expression = format!("input.{}", name::value_ident(root));
+        let Some(mut current) = self
+            .command
+            .input
+            .iter()
+            .find(|input| input.name == root)
+            .map(|input| input.type_ref.clone())
+        else {
+            return format!("{expression}.clone()");
+        };
+        // Whether `expression` is an `Option<&T>` rather than a place of type `T`.
+        let mut optional = false;
+        for segment in segments {
+            for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+                match &current {
+                    ResolvedTypeRef::Optional { of } => {
+                        expression = if optional {
+                            format!("{expression}.and_then(|value| value.as_ref())")
+                        } else {
+                            format!("{expression}.as_ref()")
+                        };
+                        optional = true;
+                        current = (**of).clone();
+                    }
+                    ResolvedTypeRef::Declared { name } => match &self.ir.named_type(name).body {
+                        ResolvedBody::Newtype { of, .. } => {
+                            expression = if optional {
+                                format!("{expression}.map(|value| &value.0)")
+                            } else {
+                                format!("{expression}.0")
+                            };
+                            current = of.clone();
+                        }
+                        _ => break,
+                    },
+                    _ => break,
+                }
+            }
+            let ResolvedTypeRef::Declared { name } = &current else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            let ResolvedBody::Struct { fields, .. } = &self.ir.named_type(name).body else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            let member = fields
+                .iter()
+                .find(|member| member.name == segment)
+                .expect("ess-domain admits a path through declared members only");
+            let ident = name::value_ident(&member.name);
+            expression = if optional {
+                format!("{expression}.map(|value| &value.{ident})")
+            } else {
+                format!("{expression}.{ident}")
+            };
+            current = member.type_ref.clone();
+        }
+        match (optional, current.is_optional()) {
+            (false, _) => format!("{expression}.clone()"),
+            (true, false) => format!("{expression}.cloned()"),
+            (true, true) => format!("{expression}.and_then(|value| value.clone())"),
+        }
+    }
+
     /// The value one source fills its field with. `before` names the held data before the
     /// outcome, where the branch holds a row.
     // One arm per value source the model declares, each rendering its own expression.
@@ -2125,10 +2195,7 @@ impl Writer<'_> {
             ResolvedPayloadValue::InputField {
                 field: source,
                 type_ref,
-            } => wrap(
-                type_ref,
-                format!("input.{}.clone()", name::value_ident(source)),
-            ),
+            } => wrap(type_ref, self.input_value(source)),
             ResolvedPayloadValue::SubjectField {
                 field: source,
                 type_ref,
@@ -2172,13 +2239,17 @@ impl Writer<'_> {
                 otherwise,
                 ..
             } => {
-                let read = format!("input.{}.clone()", name::value_ident(source));
+                let read = self.input_value(source);
                 if target.is_optional() && otherwise.is_none() {
                     return read;
                 }
                 let required = target.required();
                 let fallback = match otherwise {
-                    Some(text) => literal(self.ir, self.layout, required, text),
+                    Some(ResolvedFallback::Literal(text)) => {
+                        literal(self.ir, self.layout, required, text)
+                    }
+                    // ess/22 (A4): another input, present whenever the request is valid.
+                    Some(ResolvedFallback::Input { input }) => self.input_value(&input.field),
                     None => self.generate(required),
                 };
                 let chosen = format!("match {read} {{ Some(value) => value, None => {fallback} }}");

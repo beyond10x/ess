@@ -148,6 +148,8 @@ type recordedResult struct {
 	Consistency  *string         `json:"consistency"`
 	DirectEvents []recordedEvent `json:"direct_events"`
 	Response     map[string]Node `json:"response"`
+	// ErrorPayload is the declared error's payload the reference target carried.
+	ErrorPayload map[string]Node `json:"error_payload"`
 	// NotGranted is the standard refusal for an actor no grant admits (beyond10x/ess#265).
 	NotGranted      bool    `json:"not_granted"`
 	NotGrantedActor *string `json:"not_granted_actor"`
@@ -160,6 +162,7 @@ func (r recordedResult) result() CommandResult {
 	}
 	if r.Error != nil {
 		result.Error = *r.Error
+		result.ErrorPayload = r.ErrorPayload
 	}
 	if r.Consistency != nil {
 		result.Consistency = *r.Consistency

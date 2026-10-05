@@ -73,6 +73,7 @@ pub(crate) const TEXT_COUNT: &str = "`.count` of a text";
 pub(crate) const SUBJECT_VALUE: &str = "`{subject: …}`";
 pub(crate) const INCREMENT: &str = "`{increment: …}`";
 pub(crate) const FALLBACK: &str = "`{input: …, else: …}`";
+pub(crate) const INPUT_PATH: &str = "a value read through an input path (`input.<path>`)";
 pub(crate) const STRUCT: &str = "a struct of sources";
 pub(crate) const RELATED_VALUE: &str = "`{related: …}`";
 pub(crate) const CASE_FOLD: &str = "`equals_ignore_case`, `in_ignore_case`";
@@ -97,6 +98,9 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         Source::SubjectField { .. } => SUBJECT_VALUE,
         Source::Increment { .. } => INCREMENT,
         Source::InputOrGenerated { .. } => FALLBACK,
+        Source::InputField { field, .. } if ess_domain::command::input_path::is_path(field) => {
+            INPUT_PATH
+        }
         Source::Struct { .. } => STRUCT,
         Source::RelatedField { .. } => RELATED_VALUE,
         Source::ResponseField { .. }
@@ -402,6 +406,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         LoweringCode::ValueExpressionUnsupported,
         Needs::EntityCore("a value expression with a fallback"),
         &["tests/lowerable_subset.rs::each_value_expression_is_refused_under_its_own_construct"],
+    ),
+    refused(
+        INPUT_PATH,
+        LoweringCode::ValueExpressionUnsupported,
+        Needs::EntityCore("a read of a member of a structured argument, absent where an `Optional` on the way is"),
+        &["tests/input_value_paths.rs::a4_a_value_read_through_an_input_path_is_refused_by_name"],
     ),
     refused(
         STRUCT,

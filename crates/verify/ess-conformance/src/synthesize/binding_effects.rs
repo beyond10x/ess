@@ -162,6 +162,12 @@ pub(super) fn destination<'a>(
         }
     }
     match source {
+        // A path (ess/22, A4) reads inside a struct input, where no arranged identity is sent.
+        Some((ResolvedPayloadValue::InputField { field: from, .. }, false))
+            if ess_domain::command::input_path::is_path(from) =>
+        {
+            unavailable("it is read from a member of a struct input")
+        }
         Some((ResolvedPayloadValue::InputField { field: from, .. }, false)) => {
             Destination::TriggerInput {
                 entity,
@@ -571,8 +577,8 @@ fn literal_identity(ir: &EssIr, arrangement: &Arrangement) -> Option<Node> {
                 _ => None,
             })
     })?;
-    match input.get(&source)? {
-        ScenarioValue::Literal { value } => Some(value.clone()),
+    match super::supplied_at(input, &source)? {
+        ScenarioValue::Literal { value } => Some(value),
         _ => None,
     }
 }

@@ -90,6 +90,9 @@ pub(super) enum Fresh {
     /// The same creation again, in the invocation that leaves out every input read only through
     /// an `else:` literal.
     CreatedAgain,
+    /// The same creation in the `n`th further fallback run after the first (ess/22, A4), each
+    /// leaving out one Optional.
+    CreatedAgainIn(usize),
     /// The `nth` row a two-call segment stores before sending its identity again.
     Stored(usize),
 }
@@ -99,6 +102,7 @@ impl Fresh {
         match self {
             Self::Created => 0,
             Self::CreatedAgain => 1,
+            Self::CreatedAgainIn(run) => FRESH_SLOTS - 16 + run.min(15),
             Self::Stored(nth) => 2 + nth.min(FRESH_SLOTS - 3),
         }
     }
@@ -143,17 +147,14 @@ fn identity_at(
                 inputs
                     .into_iter()
                     .next()
-                    .and_then(|input| input.get(field).cloned())
+                    .and_then(|input| ess_compiler::ir::read_input(&input, field).cloned())
             })
     };
     let unfresh = || {
         RefusalCause::NoWitness(WitnessGap {
             path: field.to_owned(),
-            type_ref: command
-                .input
-                .iter()
-                .find(|input| input.name == field)
-                .map(|input| input.type_ref.to_string())
+            type_ref: super::input_type(ir, command, field)
+                .map(ToString::to_string)
                 .unwrap_or_default(),
             reason: "has too few values to name an identity no other scenario sends, so no \
                      instance is known to be new",
@@ -169,7 +170,9 @@ fn identity_at(
     // creation in the same run has no identity of its own (beyond10x/ess#287).
     if super::singleton::names_the_one_row(ir, command, field) {
         return match fresh {
-            Fresh::CreatedAgain => Err(super::singleton::second_row(command, field)),
+            Fresh::CreatedAgain | Fresh::CreatedAgainIn(_) => {
+                Err(super::singleton::second_row(command, field))
+            }
             Fresh::Created | Fresh::Stored(_) => Ok(mine),
         };
     }
@@ -210,7 +213,29 @@ pub(super) fn fresh_created(
             Fresh::Created
         };
         let identity = identity_at(ir, command, field, fresh, &input)?;
-        input.insert(field.to_owned(), identity);
+        super::set_at(&mut input, field, Some(identity));
+    }
+    Ok(input)
+}
+
+/// [`fresh_created`] for the `run`th further fallback run: the first takes the identity the one run
+/// always took, and every later one (ess/22, A4) one of its own.
+pub(super) fn fresh_created_again(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    run: usize,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    if run == 0 {
+        return fresh_created(ir, command, outcome, input, true);
+    }
+    let Some(field) = identity_input(outcome) else {
+        return Ok(input);
+    };
+    if creates_unknown(outcome) || creates_beside_existing(command, outcome) {
+        let identity = identity_at(ir, command, field, Fresh::CreatedAgainIn(run), &input)?;
+        super::set_at(&mut input, field, Some(identity));
     }
     Ok(input)
 }
@@ -852,9 +877,9 @@ fn segment(
     let at = fresh.distinction();
     let mut first = creating_input(ir, creator, creating, at, actors)?;
     let identity = identity_at(ir, creator, field, fresh, &first)?;
-    first.insert(field.to_owned(), identity.clone());
+    super::set_at(&mut first, field, Some(identity.clone()));
     let mut second = second;
-    second.insert(field.to_owned(), identity);
+    super::set_at(&mut second, field, Some(identity));
 
     let driver = Driver {
         command: creator,

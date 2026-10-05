@@ -68,6 +68,40 @@ both halves: it first sends the input and asserts the sent value, then invokes t
 without the input and asserts the literal. An implementation that ignores the input fails the
 first check, and one that stores another default fails the second.
 
+From source `ess/22` a value can be read from a member of a struct input, and a fallback can be
+another input:
+
+```yaml
+input:
+  - {name: opening, type: leases.pool.Opening}             # struct {generation_id, label}
+  - {name: previous, type: Optional<leases.pool.Opening>}
+  - {name: settings, type: leases.pool.Settings}           # struct {defaults: {label}}
+outcomes:
+  - name: opened
+    creates: leases.pool.Lease
+    instance: lease_id
+    sets:
+      generation_id: input.opening.generation_id           # through a required struct
+      previous_generation: input.previous.generation_id    # absent where `previous` is
+      label: {input: previous.label, else: input.settings.defaults.label}
+```
+
+A path names declared fields: its first segment is an input, and each further segment a member of
+the struct before it, through any `Optional` and newtype around that struct. A primitive, enum,
+list, map or union has no members. The value is the last member's; an absent `Optional` anywhere
+before it leaves the value absent, so such a path fills an `Optional<…>` target and is refused
+with `type_mismatch` for a required one. `{input: <path>, else: …}` falls back wherever any
+`Optional` on the path is absent. `else: input.<path>` reads an input that must be present
+whenever the request is valid — required along its whole route — and fills the target as a plain
+`input.` source would; there is no second fallback. A path may supply a creation's identity, or
+the address another row is read through, only where nothing on it may be absent.
+
+The same paths work in an event's `payload:`, an error's `payload:` and a nested mapping's
+leaves. Synthesis sends every path present, then sends the branch again with the shallowest
+`Optional` on each path left out, and asserts the absent value and the fallback. Below `ess/22`
+each form keeps the refusal it had: `input.a.b` is an input the command does not declare, and
+`{input: a.b, else: …}` names more than one field. Entity Runtime lowering refuses a path by name.
+
 From source `ess/16` a value can come from a field of the row the subject references:
 
 ```yaml

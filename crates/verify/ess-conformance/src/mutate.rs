@@ -840,6 +840,39 @@ fn acts_on_existing_row(outcome: &RawOutcome) -> bool {
     outcome.creates.is_none() && (outcome.updates.is_some() || outcome.moves.is_some())
 }
 
+/// The declared type the last member of the input path `path` holds (ess/22, A4), read over the
+/// documents' own type declarations; `None` where the path names no declared member.
+fn path_terminal(
+    documents: &[Document],
+    command: &RawCommandSpec,
+    path: &str,
+) -> Option<ess_domain::types::TypeRef> {
+    let mut registry = ess_domain::types::TypeRegistry::new();
+    for raw in documents.iter().flat_map(|(_, file)| &file.types) {
+        if let Ok(declared) = ess_domain::types::NamedType::try_from(raw.clone()) {
+            // A name declared twice is refused when the model compiles; the first stands here.
+            let _ = registry.insert(declared);
+        }
+    }
+    let mut segments = path.split('.');
+    let root = segments.next()?;
+    let mut current = command
+        .input
+        .iter()
+        .find(|input| input.name == root)?
+        .type_ref
+        .clone();
+    for segment in segments {
+        current = registry
+            .struct_fields(&current)?
+            .iter()
+            .find(|member| member.name == segment)?
+            .type_ref
+            .clone();
+    }
+    Some(current)
+}
+
 /// Whether `target`, a field of the row `outcome` updates or moves, is declared `Optional<…>`.
 ///
 /// Such a field nothing wrote is held absent, and no synthesized row expectation states an
@@ -1270,6 +1303,25 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
                     outcome: outcome_name.clone(),
                     target: set.target.clone(),
                 });
+            }
+            // ess/22 (A4): a path retargeted to the same-named top-level input of the type its
+            // last member holds, the decoy an implementation reads where it means the member, held
+            // to the rule a top-level retarget is.
+            if let Some((_, member)) = field.rsplit_once('.') {
+                let held = path_terminal(documents, command, field);
+                if command
+                    .input
+                    .iter()
+                    .any(|input| input.name == member && Some(&input.type_ref) == held.as_ref())
+                {
+                    found.push(Mutation::SetsRetarget {
+                        command: command_name.clone(),
+                        outcome: outcome_name.clone(),
+                        target: set.target.clone(),
+                        field: member.to_owned(),
+                    });
+                }
+                continue;
             }
             let Some(written) = command.input.iter().find(|input| input.name == *field) else {
                 continue;

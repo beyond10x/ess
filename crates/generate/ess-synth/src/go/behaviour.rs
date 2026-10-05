@@ -40,8 +40,8 @@ use std::fmt::Write as _;
 
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
-    ResolvedEntity, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedRelatedTest, ResolvedRelatedVia, ResolvedTypeRef,
+    ResolvedEntity, ResolvedFallback, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -2027,6 +2027,138 @@ impl<'a> Writer<'a> {
         )
     }
 
+    /// The value `input.<field>` reads, with the Go type of the IR's type for the read: the input
+    /// member, or from ess/22 (Family F A4) the member a path reaches through struct inputs and
+    /// newtype representations. Past an `Optional` the value is a pointer, nil where any `Optional`
+    /// on the way is absent, built by statements emitted before the expression.
+    fn input_value(&mut self, field: &str) -> String {
+        let mut segments = field.split('.');
+        let root = segments.next().unwrap_or_default();
+        let mut expression = self.input_member(root);
+        let rest: Vec<&str> = segments.collect();
+        if rest.is_empty() {
+            return expression;
+        }
+        let Some(mut current) = self
+            .command
+            .input
+            .iter()
+            .find(|input| input.name == root)
+            .map(|input| input.type_ref.clone())
+        else {
+            return expression;
+        };
+        // Without an `Optional` before the last segment the read is one expression; with one, the
+        // value is declared first and assigned inside one nil check per `Optional` crossed.
+        let Some((crosses, terminal)) = self.path_shape(&current, &rest) else {
+            return expression;
+        };
+        let out = if crosses {
+            let out = self.temp("v");
+            let go_type = if terminal.is_optional() {
+                self.emit.go_type(&terminal)
+            } else {
+                self.emit.go_type(&ResolvedTypeRef::Optional {
+                    of: Box::new(terminal.clone()),
+                })
+            };
+            self.lines.push(&format!("var {out} {go_type}"));
+            Some(out)
+        } else {
+            None
+        };
+        let mut opened = 0;
+        for segment in &rest {
+            for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+                match &current {
+                    ResolvedTypeRef::Optional { of } => {
+                        self.lines.open(&format!("if {expression} != nil {{"));
+                        opened += 1;
+                        let bound = self.temp("v");
+                        self.lines.push(&format!("{bound} := *{expression}"));
+                        expression = bound;
+                        current = (**of).clone();
+                    }
+                    ResolvedTypeRef::Declared { name } => match &self.ir.named_type(name).body {
+                        ResolvedBody::Newtype { of, .. } => {
+                            expression = format!("{expression}.Value()");
+                            current = of.clone();
+                        }
+                        _ => break,
+                    },
+                    _ => break,
+                }
+            }
+            let ResolvedTypeRef::Declared { name } = &current else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            let ResolvedBody::Struct { fields, .. } = &self.ir.named_type(name).body else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            expression = format!("{expression}.{}", items::member_ident(fields, segment));
+            current = fields
+                .iter()
+                .find(|member| member.name == *segment)
+                .expect("ess-domain admits a path through declared members only")
+                .type_ref
+                .clone();
+        }
+        let Some(out) = out else {
+            return expression;
+        };
+        let held = if terminal.is_optional() {
+            expression
+        } else {
+            let copied = self.temp("v");
+            self.lines.push(&format!("{copied} := {expression}"));
+            format!("&{copied}")
+        };
+        self.lines.push(&format!("{out} = {held}"));
+        for _ in 0..opened {
+            self.lines.close("}");
+        }
+        out
+    }
+
+    /// Whether a path from a value of type `current` through the members `rest` crosses an
+    /// `Optional` before its last segment, and the last segment's declared type; `None` where the
+    /// path names no declared member.
+    fn path_shape(
+        &self,
+        current: &ResolvedTypeRef,
+        rest: &[&str],
+    ) -> Option<(bool, ResolvedTypeRef)> {
+        let mut current = current.clone();
+        let mut crosses = false;
+        for segment in rest {
+            for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+                match &current {
+                    ResolvedTypeRef::Optional { of } => {
+                        crosses = true;
+                        current = (**of).clone();
+                    }
+                    ResolvedTypeRef::Declared { name } => match &self.ir.named_type(name).body {
+                        ResolvedBody::Newtype { of, .. } => current = of.clone(),
+                        _ => break,
+                    },
+                    _ => break,
+                }
+            }
+            let ResolvedTypeRef::Declared { name } = &current else {
+                return None;
+            };
+            let ResolvedBody::Struct { fields, .. } = &self.ir.named_type(name).body else {
+                return None;
+            };
+            current = fields
+                .iter()
+                .find(|member| member.name == *segment)?
+                .type_ref
+                .clone();
+        }
+        Some((crosses, current))
+    }
+
     /// The Go member of an entity's data struct.
     fn data_member(entity: &ResolvedEntity, field: &str) -> String {
         super::invariant::data_member(entity, field)
@@ -2854,7 +2986,7 @@ impl<'a> Writer<'a> {
                 field: source,
                 type_ref,
             } => {
-                let read = self.input_member(source);
+                let read = self.input_value(source);
                 if type_ref == target {
                     read
                 } else {
@@ -2930,7 +3062,7 @@ impl<'a> Writer<'a> {
                 otherwise,
                 ..
             } => {
-                let read = self.input_member(source);
+                let read = self.input_value(source);
                 if target.is_optional() && otherwise.is_none() {
                     return read;
                 }
@@ -2943,7 +3075,9 @@ impl<'a> Writer<'a> {
                 self.lines.close("} else {");
                 self.lines.indent();
                 let fallback = match otherwise {
-                    Some(text) => self.literal(&required, text),
+                    Some(ResolvedFallback::Literal(text)) => self.literal(&required, text),
+                    // ess/22 (A4): another input, present whenever the request is valid.
+                    Some(ResolvedFallback::Input { input }) => self.input_value(&input.field),
                     None => self.generate(&required),
                 };
                 self.lines.push(&format!("{chosen} = {fallback}"));

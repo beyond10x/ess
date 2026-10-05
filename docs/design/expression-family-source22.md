@@ -818,3 +818,44 @@ Refreshed citations for the seams unit U2 (A2, one constant offset) changed.
   `offset_step` moves an offset outward (`crates/verify/ess-conformance/src/mutate.rs`).
 - Entity Runtime: `LoweringCode::OffsetUnsupported` (`crates/generate/ess-entity-runtime/src/lib.rs`,
   `subset.rs`).
+
+## U3 implementation seams (2026-10-05)
+
+Refreshed citations for the seams unit U3 (A4, dotted input value paths) changed, with the
+decisions it took where this page left a choice.
+
+- Representation. The in-memory and IR `field` stays a `String` holding the declared segments
+  joined by `.`, so a one-segment read keeps its bytes; `type_ref` is the last segment's type,
+  `Optional<…>` of it where an `Optional` before it may leave it absent (the precedent of
+  `{related: …}` through an Optional reference). The fallback is
+  `ResolvedFallback::{Literal(String), Input { input: ResolvedInputRead }}`, untagged, so a
+  literal still serializes as `"otherwise": "<text>"` and an input as
+  `"otherwise": {"input": {"field", "type_ref"}}` (`crates/specify/ess-compiler/src/ir.rs`).
+- Domain. `crates/specify/ess-domain/src/command/input_path.rs` resolves a path (`resolve`,
+  `InputPath`, `Unresolved`) and states its refusals; `CommandSpec::read_input` is the one entry
+  every value-source check uses (`command.rs`: `check_payload_entry`, `validate_sets`;
+  `command/value_expression.rs`: `check_read`, `check_fallback`, `check_input_fallback`). The
+  parser admits `{input: <path>, else: …}` and `else: input.<path>` while
+  `ess_primitives::predicate::reads_source22_operands()` holds, so below `ess/22` each form keeps
+  the refusal it had; a source with no header is refused at assembly (`input_path::below_ess_22`).
+  Decision 8: `identity_paths` refuses a path that may be absent as a creation identity, and
+  `related_via` refuses one as the address of another row (`input_path::optional_route`).
+- Compiler: `Resolver::input_read` in `crates/specify/ess-compiler/src/resolve.rs`, beside
+  `payload_field` and `expression_field`.
+- Native interpreter: `Context::get` reads structurally (`ess_compiler::ir::read_input`) in
+  `crates/verify/ess-conformance/src/interpret/execute/history.rs`, so payload, `sets:`,
+  existence and related reads all reach a member; error payloads read a path or an input fallback
+  in `error_value` (`interpret/execute.rs`).
+- Synthesis: `supplied_at`, `set_at`, `input_type`, `optional_prefix`, `reads_input_path` and the
+  path-aware `without_literal_fallbacks` in `crates/verify/ess-conformance/src/synthesize.rs`;
+  the further run that leaves an Optional on a path out captures its own instance. Existence
+  (`synthesize/existence.rs`) writes a nested identity with `set_at`. Arrangements that name a
+  row through an input — an owner, a related row, a binding's trigger input, an aggregate's row —
+  read top-level inputs only and refuse a path by name.
+- Generated targets: `input_value` in `crates/generate/ess-synth/src/rust/behaviour.rs` and
+  `crates/generate/ess-synth/src/go/behaviour.rs`; `existence_identity` in `determined.rs` keeps a
+  command whose existence lookup would read a path an obligation.
+- Entity Runtime: `is_input_path` and the `INPUT_PATH` row of the lowerable subset refuse a path by
+  name (`crates/generate/ess-entity-runtime/src/{lib,subset}.rs`).
+- Mutation: `sets-retarget` retargets a path to a same-named top-level input
+  (`crates/verify/ess-conformance/src/mutate.rs`).

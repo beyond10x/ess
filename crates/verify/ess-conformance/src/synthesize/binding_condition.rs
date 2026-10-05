@@ -371,7 +371,11 @@ impl Search<'_> {
                     .find(|field| &field.target == name);
                 let source = match source {
                     Some(field) if field.conversion.is_none() => match &field.value {
-                        ResolvedPayloadValue::InputField { field: input, .. } => {
+                        // A path (ess/22, A4) reads inside a struct input, which is not chosen
+                        // here.
+                        ResolvedPayloadValue::InputField { field: input, .. }
+                            if !ess_domain::command::input_path::is_path(input) =>
+                        {
                             Source::Input(input.clone())
                         }
                         ResolvedPayloadValue::Literal { .. } => Source::Literal,

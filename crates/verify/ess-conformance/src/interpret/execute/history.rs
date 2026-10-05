@@ -33,6 +33,16 @@ impl std::ops::Deref for Context<'_> {
 }
 
 impl Context<'_> {
+    /// The value `input.<field>` reads: the field, or from ess/22 (Family F A4) the member a path
+    /// reaches, absent where an `Optional` on the way is ([`ess_compiler::ir::read_input`]).
+    ///
+    /// Named as the map's own lookup on purpose, so that every value read through a context —
+    /// copied into a payload or a row, an identity existence checks, a reference address — reads
+    /// structurally; a top-level field answers exactly what the map does.
+    pub(super) fn get(&self, field: &str) -> Option<&Node> {
+        ess_compiler::ir::read_input(self.input, field)
+    }
+
     /// Retain an unresolved history alternative without losing other proven provider choices.
     pub(super) fn defer(&self, why: Undetermined) -> Result<(), Undetermined> {
         if self.operation.is_some() && matches!(why, Undetermined::Undecidable { .. }) {

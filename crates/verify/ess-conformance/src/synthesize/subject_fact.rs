@@ -1234,7 +1234,7 @@ fn spread(
         let Some(sent) = mapping.get(quantified.over.namespace()) else {
             continue;
         };
-        let mut path = vec![(*sent).to_owned()];
+        let mut path: Vec<String> = sent.split('.').map(str::to_owned).collect();
         path.extend(quantified.over.segments()[1..].iter().cloned());
         if !written.insert(path.clone()) {
             continue;
@@ -1669,8 +1669,11 @@ fn row_under(
                 .sets
                 .iter()
                 .find_map(|set| match &set.value {
+                    // A path (ess/22, A4) reads inside a literal, which holds no owner's reference.
                     ResolvedPayloadValue::InputField { field, .. }
-                        if set.target == via && set.conversion.is_none() =>
+                        if set.target == via
+                            && set.conversion.is_none()
+                            && !ess_domain::command::input_path::is_path(field) =>
                     {
                         Some(field.clone())
                     }
@@ -2486,7 +2489,9 @@ fn hinted(
                 hint,
                 &|path: &FactPath| match mapping.get(path.namespace()) {
                     Some(input) => {
-                        let mut segments = vec![(*input).to_owned()];
+                        // A path (ess/22, A4) is its segments.
+                        let mut segments: Vec<String> =
+                            input.split('.').map(str::to_owned).collect();
                         segments.extend(path.segments()[1..].iter().cloned());
                         FactPath::from_segments(segments)
                     }
@@ -3199,7 +3204,7 @@ fn through_copies(
         .map(|hint| {
             map_paths(&hint, &|path: &FactPath| match onto.get(path.namespace()) {
                 Some(field) => {
-                    let mut segments = vec![(*field).to_owned()];
+                    let mut segments: Vec<String> = field.split('.').map(str::to_owned).collect();
                     segments.extend(path.segments()[1..].iter().cloned());
                     FactPath::from_segments(segments)
                 }

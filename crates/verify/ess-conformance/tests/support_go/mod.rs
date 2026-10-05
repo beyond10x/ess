@@ -175,6 +175,7 @@ fn command_result(result: &SemanticCommandResult) -> Value {
     json!({
         "outcome": result.outcome.as_ref().map(|outcome| outcome.outcome.to_string()),
         "error": result.error.as_ref().map(|error| error.error.to_string()),
+        "error_payload": result.error.as_ref().map(|error| nodes(&error.fields)),
         "consistency": result.consistency.as_ref().map(ToString::to_string),
         "direct_events": events(&result.direct_events),
         "response": result.response.as_ref().map(nodes),

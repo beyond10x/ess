@@ -2791,6 +2791,15 @@ impl Projector<'_> {
                 );
                 None
             }
+            value @ ResolvedPayloadValue::InputField { .. } if is_input_path(value) => {
+                self.diagnostic_naming(
+                    LoweringCode::ValueExpressionUnsupported,
+                    subset::value_expression(value),
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    format!("`{}` has no entity-core lowering", value.describe()),
+                );
+                None
+            }
             ResolvedPayloadValue::InputField { field, type_ref }
                 if mapping.conversion.is_none() =>
             {
@@ -3623,7 +3632,15 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
-    )
+    ) || is_input_path(value)
+}
+
+/// A value read through an input path (ess/22, Family F A4, `input.opening.label`): entity-core
+/// is not known to reach a member of a structured argument, so it is refused by name rather than
+/// lowered as an argument whose name merely contains dots.
+fn is_input_path(value: &ResolvedPayloadValue) -> bool {
+    matches!(value, ResolvedPayloadValue::InputField { field, .. }
+        if ess_domain::command::input_path::is_path(field))
 }
 
 fn decode_literal(scalar: Option<&Scalar>, text: &str) -> Result<Value, LoweringCode> {

@@ -1,0 +1,100 @@
+format: ess/22
+system: leases
+version: v1
+domain: leases.pool
+
+summary: >-
+  Values copied from members of struct inputs (`input.<path>`, Family F A4): through a required
+  struct, an Optional parent, a newtype over a struct and a nested struct, with an input fallback
+  after `else:`, into stored fields, an event payload and an error payload.
+
+types:
+  - {name: leases.pool.LeaseId, kind: newtype, of: Uuid}
+  - {name: leases.pool.GenerationId, kind: newtype, of: String}
+  - name: leases.pool.Opening
+    kind: struct
+    fields:
+      - {name: generation_id, type: leases.pool.GenerationId}
+      - {name: label, type: String}
+  - {name: leases.pool.Sealed, kind: newtype, of: leases.pool.Opening}
+  - name: leases.pool.Defaults
+    kind: struct
+    fields:
+      - {name: label, type: String}
+  - name: leases.pool.Settings
+    kind: struct
+    fields:
+      - {name: defaults, type: leases.pool.Defaults}
+
+entities:
+  - name: leases.pool.Lease
+    identity: {name: lease_id, type: leases.pool.LeaseId}
+    fields:
+      - {name: generation_id, type: leases.pool.GenerationId}
+      - {name: previous_generation, type: Optional<leases.pool.GenerationId>}
+      - {name: label, type: String}
+      - {name: sealed_label, type: String}
+      - {name: copied, type: leases.pool.Defaults}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+
+errors:
+  - name: leases.pool.Rejected
+    summary: The opening is refused.
+    fields:
+      - {name: generation_id, type: leases.pool.GenerationId}
+      - {name: label, type: String}
+
+events:
+  - name: leases.pool.Opened
+    fields:
+      - {name: lease_id, type: leases.pool.LeaseId}
+      - {name: generation_id, type: leases.pool.GenerationId}
+      - {name: previous, type: Optional<leases.pool.GenerationId>}
+      - {name: label, type: String}
+
+commands:
+  - name: leases.pool.Open
+    input:
+      - {name: lease_id, type: leases.pool.LeaseId}
+      - {name: generation_id, type: leases.pool.GenerationId}
+      - {name: opening, type: leases.pool.Opening}
+      - {name: previous, type: Optional<leases.pool.Opening>}
+      - {name: sealed, type: leases.pool.Sealed}
+      - {name: settings, type: leases.pool.Settings}
+      - {name: reject, type: Boolean}
+    outcomes:
+      - name: rejected
+        when: reject == true
+        error: leases.pool.Rejected
+        payload:
+          leases.pool.Rejected:
+            generation_id: input.opening.generation_id
+            label: {input: previous.label, else: input.settings.defaults.label}
+      - name: opened
+        creates: leases.pool.Lease
+        instance: lease_id
+        emits: [leases.pool.Opened]
+        payload:
+          leases.pool.Opened:
+            lease_id: input.lease_id
+            generation_id: input.opening.generation_id
+            previous: input.previous.generation_id
+            label: {input: previous.label, else: input.settings.defaults.label}
+        sets:
+          generation_id: input.opening.generation_id
+          previous_generation: input.previous.generation_id
+          label: {input: previous.label, else: input.settings.defaults.label}
+          sealed_label: input.sealed.label
+          copied: {label: input.opening.label}
+
+views:
+  - name: leases.pool.LeaseDetails
+    source: leases.pool.Lease
+    consistency: read_your_writes
+    fields:
+      - {name: lease_id, type: leases.pool.LeaseId}
+      - {name: generation_id, type: leases.pool.GenerationId}
+      - {name: previous_generation, type: Optional<leases.pool.GenerationId>}
+      - {name: label, type: String}
+      - {name: sealed_label, type: String}
+      - {name: copied, type: leases.pool.Defaults}

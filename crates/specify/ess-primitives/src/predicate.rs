@@ -111,6 +111,14 @@ fn source22_operands() -> bool {
     SOURCE22_OPERANDS.with(std::cell::Cell::get)
 }
 
+/// Whether the source being read admits the `ess/22` grammar: on, unless a parser that knows its
+/// source is older turned it off with [`reading_source22_operands`]. Read by the value-source
+/// parser too, so an `ess/22` input path (`{input: a.b, else: input.c}`) is admitted where the
+/// predicate grammar is (`docs/design/expression-family-source22.md`, A4).
+pub fn reads_source22_operands() -> bool {
+    source22_operands()
+}
+
 /// The result of evaluating a predicate.
 ///
 /// `Unknown` means no observation has been made yet; it is distinct from `False`, which means

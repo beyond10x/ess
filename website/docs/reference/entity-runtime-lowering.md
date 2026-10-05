@@ -63,6 +63,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | `<`, `<=`, `>`, `>=` over text | `TextOrderingUnsupported` | entity-core: an ordering of text by its UTF-8 bytes |
 | `{subject: …}` | `ValueExpressionUnsupported` | entity-core: a value expression over the stored row |
 | `{input: …, else: …}` | `ValueExpressionUnsupported` | entity-core: a value expression with a fallback |
+| a value read through an input path (`input.<path>`) | `ValueExpressionUnsupported` | entity-core: a read of a member of a structured argument, absent where an `Optional` on the way is |
 | a struct of sources | `ValueExpressionUnsupported` | entity-core: a value assembled from several sources |
 | `equals_ignore_case`, `in_ignore_case` | `CaseFoldUnsupported` | entity-core: a condition that folds ASCII case |
 | `deletes:` | `OutcomeShapeUnsupported` | entity-core: removal of an instance |

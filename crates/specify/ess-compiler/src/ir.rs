@@ -1007,11 +1007,14 @@ pub enum ResolvedPayloadValue {
     },
     /// Explicit implementation ownership, retaining ordinary type assertions.
     Generated,
-    /// A field of the command's input.
+    /// A field of the command's input, or from ess/22 (Family F A4) a member of a struct input
+    /// reached by a path.
     InputField {
-        /// The field's name.
+        /// The field's name, or the declared segments of a path joined by `.`: `opening.label`.
         field: String,
-        /// Its type, which had to be assignable to the event field's or declared convertible.
+        /// Its type, which had to be assignable to the event field's or declared convertible. For a
+        /// path, the last segment's type, or `Optional<…>` of it where an `Optional` before it may
+        /// leave it absent.
         type_ref: ResolvedTypeRef,
     },
     /// A value written in the outcome itself.
@@ -1041,18 +1044,20 @@ pub enum ResolvedPayloadValue {
         /// The amount, as canonical text.
         by: String,
     },
-    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14) or
-    /// the literal written after `else:` (ess/16).
+    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14),
+    /// the literal written after `else:` (ess/16), or another input (ess/22).
+    ///
+    /// From ess/22 (Family F A4) `field` may be a path through struct inputs, `opening.label`:
+    /// absent where any `Optional` on it is.
     InputOrGenerated {
-        /// The input field read.
+        /// The input read: a field, or from ess/22 the declared segments of a path joined by `.`.
         field: String,
         /// Its resolved type, `Optional<…>`.
         type_ref: ResolvedTypeRef,
-        /// The fallback literal, as [`Literal`](Self::Literal) carries one: checked by `ess-domain`
-        /// against the target's type. Absent for `{generated: true}`, which keeps the bytes an
-        /// `ess/14` document compiled to.
+        /// What stands in for an absent input. Absent for `{generated: true}`, which keeps the
+        /// bytes an `ess/14` document compiled to.
         #[serde(skip_serializing_if = "Option::is_none")]
-        otherwise: Option<String>,
+        otherwise: Option<ResolvedFallback>,
     },
     /// One source per field of a struct-typed target, in the struct's declaration order (ess/14).
     Struct {
@@ -1091,6 +1096,83 @@ pub enum ResolvedPayloadValue {
     },
     /// How many rows the set outcome changed (ess/16, beyond10x/ess#167): `{count: changed}`.
     ChangedCount,
+}
+
+/// What stands in for an absent input in [`ResolvedPayloadValue::InputOrGenerated`].
+///
+/// Untagged, so a literal keeps the bytes an `ess/16` document compiled to:
+/// `"otherwise": "Standard"`. An input fallback (ess/22, Family F A4) is the one mapping:
+/// `"otherwise": {"input": {"field": "settings.defaults.label", "type_ref": …}}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(untagged)]
+pub enum ResolvedFallback {
+    /// A literal, as [`ResolvedPayloadValue::Literal`] carries one: checked by `ess-domain`
+    /// against the target's type.
+    Literal(String),
+    /// Another input, required along its whole route.
+    Input {
+        /// The input read.
+        input: ResolvedInputRead,
+    },
+}
+
+impl ResolvedFallback {
+    /// The literal, where the fallback is one.
+    pub fn literal(&self) -> Option<&str> {
+        match self {
+            Self::Literal(value) => Some(value),
+            Self::Input { .. } => None,
+        }
+    }
+
+    /// The input read, where the fallback is one.
+    pub fn input(&self) -> Option<&ResolvedInputRead> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Input { input } => Some(input),
+        }
+    }
+}
+
+impl fmt::Display for ResolvedFallback {
+    /// As a reader of generated documentation sees it: `"Standard"`, or `input.settings.label`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal(value) => write!(f, "\"{value}\""),
+            Self::Input { input } => write!(f, "input.{}", input.field),
+        }
+    }
+}
+
+/// A read of the command's input: a field, or a path through struct inputs (ess/22, A4).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedInputRead {
+    /// The field, or the declared segments of a path joined by `.`.
+    pub field: String,
+    /// The type it is read at.
+    pub type_ref: ResolvedTypeRef,
+}
+
+/// The segments of an input read: `["opening", "label"]` for `opening.label`, and the field alone
+/// for a top-level one (ess/22, Family F A4).
+pub fn input_segments(field: &str) -> impl Iterator<Item = &str> {
+    field.split('.')
+}
+
+/// The value an input read finds in a request's `input`: the field, or the member a path reaches
+/// through nested mappings (ess/22, Family F A4). `None` where a member on the way is missing, or
+/// an `Optional` before the last segment is absent; a top-level read answers exactly what
+/// `input.get(field)` does, `null` included.
+pub fn read_input<'a>(
+    input: &'a std::collections::BTreeMap<String, ess_primitives::node::Node>,
+    field: &str,
+) -> Option<&'a ess_primitives::node::Node> {
+    let mut segments = input_segments(field);
+    let mut value = input.get(segments.next()?)?;
+    for segment in segments {
+        value = value.as_map()?.get(segment)?;
+    }
+    Some(value)
 }
 
 /// What a [`ResolvedCondition::Related`] branch requires of the row the input names (ess/18).
@@ -1259,7 +1341,7 @@ impl ResolvedPayloadValue {
                 field,
                 otherwise: Some(value),
                 ..
-            } => format!("input.{field}, else \"{value}\""),
+            } => format!("input.{field}, else {value}"),
             Self::Struct { fields } => format!(
                 "{{{}}}",
                 fields

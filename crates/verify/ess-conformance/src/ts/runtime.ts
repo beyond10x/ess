@@ -3898,6 +3898,13 @@ export class ScenarioRun {
         `ESS-CF-ERROR: refused with \`${orNone(this.last.error)}\`, and the specification says \`${step.error}\``,
       );
     }
+    // The declared fields the branch determines (ess/19), each carried and equal, as the Rust
+    // runner's `expect_error` compares them.
+    if (!matches(this.last.errorPayload ?? {}, step.fields ?? {}))
+      return this.fail(
+        index,
+        `ESS-CF-ERROR: refused with \`${step.error}\`, and it did not carry ${describe(step.fields ?? {})}`,
+      );
     return true;
   }
 

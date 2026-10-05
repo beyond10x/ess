@@ -341,8 +341,11 @@ fn filled_from<'ir>(creator: &Driver<'ir>, field: &str) -> Option<&'ir str> {
         .sets
         .iter()
         .find_map(|set| match &set.value {
+            // A path (ess/22, A4) reads inside a struct input, which no arrangement here writes.
             ResolvedPayloadValue::InputField { field: input, .. }
-                if set.target == field && set.conversion.is_none() =>
+                if set.target == field
+                    && set.conversion.is_none()
+                    && !ess_domain::command::input_path::is_path(input) =>
             {
                 Some(input.as_str())
             }
@@ -957,7 +960,9 @@ fn scenario(
         .iter()
         .filter(|set| set.conversion.is_none())
         .filter_map(|set| match &set.value {
-            ResolvedPayloadValue::InputField { field, .. } => {
+            ResolvedPayloadValue::InputField { field, .. }
+                if !ess_domain::command::input_path::is_path(field) =>
+            {
                 Some((set.target.as_str(), field.as_str()))
             }
             _ => None,

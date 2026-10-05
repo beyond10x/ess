@@ -449,6 +449,14 @@ fn include_payload_field(
     field: &ResolvedPayloadField,
 ) {
     include_type_ref(types, &field.target_type);
+    // An input fallback (ess/22, A4) reads a second input at its own type.
+    if let ResolvedPayloadValue::InputOrGenerated {
+        otherwise: Some(ess_compiler::ir::ResolvedFallback::Input { input }),
+        ..
+    } = &field.value
+    {
+        include_type_ref(types, &input.type_ref);
+    }
     let source = match &field.value {
         ResolvedPayloadValue::ResponseField { type_ref, .. }
         | ResolvedPayloadValue::InputField { type_ref, .. }

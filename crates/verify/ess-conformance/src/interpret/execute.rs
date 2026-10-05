@@ -59,9 +59,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedInstance,
-    ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest,
-    ResolvedRelatedVia, ResolvedSubject, ResolvedTypeRef,
+    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedFallback,
+    ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
+    ResolvedRelatedTest, ResolvedRelatedVia, ResolvedSubject, ResolvedTypeRef,
 };
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
@@ -1386,6 +1386,34 @@ fn error_value(
         ResolvedPayloadValue::Literal { value } => {
             Some(Value::Known(literal(ir, &field.target_type, value)?))
         }
+        // ess/22 (A4): an input path, or another input after `else:`, read as an event's is. A
+        // fallback the implementation generates, or a literal one after a plain input, stays as
+        // it was.
+        ResolvedPayloadValue::InputOrGenerated {
+            field: read,
+            otherwise: Some(otherwise),
+            ..
+        } if ess_domain::command::input_path::is_path(read)
+            || matches!(otherwise, ResolvedFallback::Input { .. }) =>
+        {
+            match input.get(read).filter(|value| **value != Node::Null) {
+                Some(value) => Some(Value::Known(value.clone())),
+                None => match otherwise {
+                    ResolvedFallback::Literal(text) => {
+                        Some(Value::Known(literal(ir, &field.target_type, text)?))
+                    }
+                    ResolvedFallback::Input { input: fallback } => Some(Value::Known(
+                        input
+                            .get(&fallback.field)
+                            .filter(|value| **value != Node::Null)
+                            .cloned()
+                            .ok_or_else(|| Undetermined::NoValue {
+                                what: format!("the required fallback `input.{}`", fallback.field),
+                            })?,
+                    )),
+                },
+            }
+        }
         other => {
             return Err(Undetermined::NotInterpreted {
                 construct: format!("the value source `{}` of an error", other.describe()),
@@ -1882,9 +1910,19 @@ fn value_at(
         } => match input.get(source).filter(|value| **value != Node::Null) {
             Some(value) => Ok(Some(Value::Known(value.clone()))),
             None => match otherwise {
-                Some(text) => {
+                Some(ResolvedFallback::Literal(text)) => {
                     literal(ir, &field.target_type, text).map(|value| Some(Value::Known(value)))
                 }
+                // ess/22 (A4): another input, required along its route, read from the same
+                // immutable invocation input.
+                Some(ResolvedFallback::Input { input: read }) => input
+                    .get(&read.field)
+                    .filter(|value| **value != Node::Null)
+                    .cloned()
+                    .map(|value| Some(Value::Known(value)))
+                    .ok_or_else(|| Undetermined::NoValue {
+                        what: format!("the required fallback `input.{}`", read.field),
+                    }),
                 None => mint(ir, &field.target_type, work),
             },
         },

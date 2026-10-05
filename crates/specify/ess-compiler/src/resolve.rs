@@ -65,10 +65,11 @@ use crate::ir::{
     ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCommandGroup,
     ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedCondition,
     ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
-    ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping, ResolvedMappingValue,
-    ResolvedOutcome, ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRelation, ResolvedSubject,
-    ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
+    ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia,
+    ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
+    ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -2611,7 +2612,11 @@ impl<'a> Resolver<'a> {
         } else {
             input
         };
-        let Some(read) = input.and_then(|fields| fields.iter().find(|it| &it.name == value)) else {
+        let read = match input {
+            Some(fields) if !response_source => self.input_read(command, fields, value),
+            fields => fields.and_then(|fields| fields.iter().find(|it| &it.name == value).cloned()),
+        };
+        let Some(read) = read.as_ref() else {
             // Either the input did not resolve — its own refusal stands — or a hand-built
             // specification reads a field the command does not take.
             if input.is_some() {
@@ -2705,6 +2710,39 @@ impl<'a> Resolver<'a> {
             .map(|crossing| Some(crossing.because.clone()))
     }
 
+    /// What a value source `input.<field>` reads among the command's resolved `input`: the field,
+    /// or from ess/22 (Family F A4) a member of a struct input reached by a path, by the rule
+    /// `ess-domain` validated it with ([`ess_domain::command::input_path`]). A path is named by
+    /// its declared segments and read at its last segment's type, `Optional<…>` of it where an
+    /// `Optional` before it may leave it absent. `None` where it resolves to nothing.
+    fn input_read(
+        &mut self,
+        command: &CommandSpec,
+        input: &[ResolvedField],
+        field: &str,
+    ) -> Option<ResolvedField> {
+        use ess_domain::command::input_path;
+        if !(input_path::is_path(field) && input_path::admitted(Some(self.spec.system().format))) {
+            return input.iter().find(|it| it.name == field).cloned();
+        }
+        let root = input
+            .iter()
+            .find(|it| Some(it.name.as_str()) == field.split('.').next())?;
+        let path = input_path::resolve(command, &self.spec.system().types, field).ok()?;
+        let type_ref = self.type_ref(
+            codes::COMMAND_UNDECLARED_REFERENCE,
+            &path.type_ref(),
+            &format!("{}.{field}", command.name),
+            &format!("commands.{}.input.{field}", command.name),
+            &[],
+        )?;
+        Some(ResolvedField {
+            name: field.to_owned(),
+            type_ref,
+            naming: root.naming.clone(),
+        })
+    }
+
     /// The input field `read` at its present type, when `outcome` is only ever taken with it
     /// present and the specification is `ess/16` or later (#169,
     /// `docs/design/optional-input-narrowing.md`). `None` reads it at its declared type.
@@ -2776,7 +2814,8 @@ impl<'a> Resolver<'a> {
                 )
             }
             PayloadSource::InputOrGenerated { field, otherwise } => {
-                let read = input.and_then(|fields| fields.iter().find(|it| &it.name == field));
+                let read = input.and_then(|fields| self.input_read(command, fields, field));
+                let read = read.as_ref();
                 let Some(read) = read else {
                     if input.is_some() {
                         self.refuse_payload(
@@ -2799,17 +2838,17 @@ impl<'a> Resolver<'a> {
                     ResolvedTypeRef::Optional { of } => of.as_ref().clone(),
                     other => other.clone(),
                 };
+                let otherwise = self.fallback(
+                    (command, outcome, block),
+                    (target, source),
+                    otherwise.as_deref(),
+                    input,
+                )?;
                 (
                     ResolvedPayloadValue::InputOrGenerated {
                         field: read.name.clone(),
                         type_ref: read.type_ref.clone(),
-                        // As a top-level literal compiles: an unquoted scalar to its quoted
-                        // form's text.
-                        otherwise: otherwise.as_deref().and_then(|literal| match literal {
-                            PayloadSource::Literal { value }
-                            | PayloadSource::Scalar { value, .. } => Some(value.clone()),
-                            _ => None,
-                        }),
+                        otherwise,
                     },
                     present,
                 )
@@ -2842,6 +2881,64 @@ impl<'a> Resolver<'a> {
             value,
             conversion,
         })
+    }
+
+    /// What stands in for an absent input after `else:`: `Some(None)` for `{generated: true}`, a
+    /// literal as a top-level one compiles (an unquoted scalar to its quoted form's text), or
+    /// (ess/22, A4) another input, required along its whole route and filling the target as
+    /// `ess-domain` checked. `None` where that input is refused, for a model built field by field.
+    #[allow(clippy::option_option)]
+    fn fallback(
+        &mut self,
+        (command, outcome, block): (&CommandSpec, &ess_domain::command::Outcome, SourceBlock<'_>),
+        (target, source): (&ResolvedField, &PayloadSource),
+        otherwise: Option<&PayloadSource>,
+        input: Option<&[ResolvedField]>,
+    ) -> Option<Option<ResolvedFallback>> {
+        let Some(PayloadSource::InputField { field: other }) = otherwise else {
+            return Some(match otherwise {
+                Some(PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. }) => {
+                    Some(ResolvedFallback::Literal(value.clone()))
+                }
+                _ => None,
+            });
+        };
+        let fallback = input.and_then(|fields| self.input_read(command, fields, other));
+        let admitted = fallback.as_ref().filter(|fallback| {
+            !fallback.type_ref.is_optional()
+                && (self.admits(fallback, target).is_some()
+                    || self
+                        .admits(
+                            fallback,
+                            &ResolvedField {
+                                type_ref: target.type_ref.required().clone(),
+                                ..target.clone()
+                            },
+                        )
+                        .is_some())
+        });
+        let Some(fallback) = admitted else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_TYPE_MISMATCH,
+                format!(
+                    "outcome `{}` of `{}` falls back to `input.{other}`, which is no required \
+                     input that fills `{}`",
+                    outcome.name, command.name, target.name
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        Some(Some(ResolvedFallback::Input {
+            input: ResolvedInputRead {
+                field: fallback.name.clone(),
+                type_ref: fallback.type_ref.clone(),
+            },
+        }))
     }
 
     /// `when_related:` (ess/18, #211): the input field a related-guard branch reads and the entity

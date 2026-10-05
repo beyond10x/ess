@@ -74,6 +74,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     types,
                     conversions: spec.conversions(),
                     inhabitation: &inhabitation,
+                    paths: super::input_path::admitted(Some(spec.system().format)),
                 },
                 subject,
             };
@@ -109,6 +110,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 }
             }
             errors.extend(error_payload(&context, &site));
+            errors.extend(identity_paths(&context, &site));
             if let Some((entity, _)) = context.subject {
                 for (target, source) in &outcome.sets {
                     let held = if entity.identity.name == *target {
@@ -223,6 +225,59 @@ fn error_payload(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors
     errors
 }
 
+/// Decision 8 of the design's final review (`ess/22`, A4): a dotted input path supplies the
+/// identity a creating branch names its instance by only when nothing on its route — the last
+/// segment included — may be absent. Existence then reads it as it reads a top-level input.
+fn identity_paths(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let outcome = context.outcome;
+    let Some(subject) = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| subject.effect == Effect::Creates && context.resolved.paths)
+    else {
+        return errors;
+    };
+    let mut sources: Vec<(ConstructRef, &PayloadSource)> = outcome
+        .payload
+        .iter()
+        .filter_map(|(event, fields)| {
+            fields.get(&subject.instance).map(|source| {
+                (
+                    site.clone()
+                        .key("payload")
+                        .named(event.to_string())
+                        .named(&subject.instance),
+                    source,
+                )
+            })
+        })
+        .collect();
+    if let Some(entity) = context.spec.entities().get(&subject.entity) {
+        if let Some(source) = outcome.sets.get(&entity.identity.name) {
+            sources.push((
+                site.clone().key("sets").named(&entity.identity.name),
+                source,
+            ));
+        }
+    }
+    for (at, source) in sources {
+        let (PayloadSource::InputField { field } | PayloadSource::InputOrGenerated { field, .. }) =
+            source
+        else {
+            continue;
+        };
+        if !super::input_path::is_path(field) {
+            continue;
+        }
+        let resolved = super::input_path::resolve(context.command, context.resolved.types, field);
+        if resolved.is_ok_and(|path| path.may_be_absent()) {
+            errors.push(super::input_path::optional_route(&at, field, "an identity"));
+        }
+    }
+    errors
+}
+
 /// The `sets:` of one `affects:` entry (ess/16, #175), checked as a subject's own over `entity`,
 /// whose rows exist before the outcome.
 pub(super) fn validate_affect(
@@ -244,6 +299,7 @@ pub(super) fn validate_affect(
             types,
             conversions: spec.conversions(),
             inhabitation: &inhabitation,
+            paths: super::input_path::admitted(Some(spec.system().format)),
         },
         subject: Some((entity, true)),
     };
@@ -425,6 +481,25 @@ fn related_via<'a>(
                 })
                 .and_then(|(entity, _)| entity.field(name).or(Some(&entity.identity)))
                 .filter(|held| held.name == *name);
+            // Decision 8 (`ess/22`, A4): a creating branch reads the address from the input path
+            // that fills the field, and a path supplies one only when its whole route is
+            // required.
+            let carried = context
+                .subject
+                .filter(|_| created.is_some())
+                .and_then(|(entity, _)| subject_field_from_input(context.outcome, entity, name))
+                .filter(|path| super::input_path::is_path(path));
+            if let Some(path) = carried {
+                let resolved = super::input_path::resolve(command, context.resolved.types, path);
+                if resolved.is_ok_and(|path| path.may_be_absent()) {
+                    errors.push(super::input_path::optional_route(
+                        at,
+                        path,
+                        "the address of another row",
+                    ));
+                    return None;
+                }
+            }
             let held = if let Some(held) = created {
                 held
             } else {
@@ -1024,7 +1099,23 @@ fn check_fallback(
     otherwise: Option<&PayloadSource>,
     errors: &mut ValidationErrors,
 ) {
-    if let Some(literal) = otherwise {
+    // From `ess/22` (A4) the input read may be a path, and the fallback another input path.
+    let fallback_read = match otherwise {
+        Some(PayloadSource::InputField { field }) => Some(field.as_str()),
+        _ => None,
+    };
+    if !context.resolved.paths {
+        let below = if super::input_path::is_path(field) {
+            Some("`{input: <path>, else: …}`")
+        } else {
+            fallback_read.map(|_| "an input after `else:`")
+        };
+        if let Some(what) = below {
+            errors.push(super::input_path::below_ess_22(at, what));
+            return;
+        }
+    }
+    if let Some(literal) = otherwise.filter(|_| fallback_read.is_none()) {
         let format = context.spec.system().format;
         if format.major() < FormatVersion::V16.major() {
             errors.push(
@@ -1049,14 +1140,24 @@ fn check_fallback(
         check(context, at, place, (target, target), literal, depth, errors);
     }
     let command = context.command;
-    let Some(read) = command.input_field(field) else {
-        errors.push(ValidationError::at(
-            at.clone(),
-            ValidationCode::UndeclaredReference,
-            format!("`{field}` is not an input of `{}`", command.name),
-        ));
-        return;
+    let read = match command.read_input((context.resolved.types, context.resolved.paths), field) {
+        Ok(read) => read,
+        Err(Some(unresolved)) => {
+            errors.push(unresolved.refusal(at, command, field));
+            return;
+        }
+        Err(None) => {
+            errors.push(ValidationError::at(
+                at.clone(),
+                ValidationCode::UndeclaredReference,
+                format!("`{field}` is not an input of `{}`", command.name),
+            ));
+            return;
+        }
     };
+    if let Some(other) = fallback_read {
+        check_input_fallback(context, at, target, other, errors);
+    }
     if !read.type_ref.is_optional() {
         errors.push(
             ValidationError::at(
@@ -1080,6 +1181,67 @@ fn check_fallback(
             at,
             &format!("`{}.{field}` when present", command.name),
             present,
+            target,
+        ));
+    }
+}
+
+/// `else: input.<path>` (`ess/22`, A4): the fallback reads another input, which must be present
+/// whenever the request is valid — required along its whole route — because `else:` promises a
+/// value; and its type must fill the target as a plain `input.` source would.
+fn check_input_fallback(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    field: &str,
+    errors: &mut ValidationErrors,
+) {
+    let command = context.command;
+    let read = match command.read_input((context.resolved.types, context.resolved.paths), field) {
+        Ok(read) => read,
+        Err(Some(unresolved)) => {
+            errors.push(unresolved.refusal(at, command, field));
+            return;
+        }
+        Err(None) => {
+            errors.push(ValidationError::at(
+                at.clone(),
+                ValidationCode::UndeclaredReference,
+                format!("`{field}` is not an input of `{}`", command.name),
+            ));
+            return;
+        }
+    };
+    // A newtype declared over an `Optional` may be absent as surely as the `Optional` itself.
+    if context
+        .resolved
+        .types
+        .newtype_layers(&read.type_ref)
+        .optional
+    {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`input.{field}` is `{}`, which may be absent, and `else:` promises a value",
+                    read.type_ref
+                ),
+            )
+            .with_hint(
+                "fall back to an input that is required along its whole route, or to a literal",
+            ),
+        );
+        return;
+    }
+    let conversions = context.resolved.conversions;
+    if !conversions.permits(&read.type_ref, target.type_ref.required())
+        && !conversions.permits(&read.type_ref, &target.type_ref)
+    {
+        errors.push(mismatch(
+            at,
+            &format!("`input.{field}`"),
+            &read.type_ref,
             target,
         ));
     }
@@ -1402,11 +1564,23 @@ fn check_read(
 ) {
     let command = context.command;
     let read = if response {
-        command.response.iter().find(|read| read.name == field)
+        command
+            .response
+            .iter()
+            .find(|read| read.name == field)
+            .cloned()
     } else {
-        command.input_field(field)
+        // From `ess/22` a leaf may read a member of a struct input (A4).
+        match command.read_input((context.resolved.types, context.resolved.paths), field) {
+            Ok(read) => Some(read),
+            Err(Some(unresolved)) => {
+                errors.push(unresolved.refusal(at, command, field));
+                return;
+            }
+            Err(None) => None,
+        }
     };
-    let Some(read) = read else {
+    let Some(read) = read.as_ref() else {
         errors.push(ValidationError::at(
             at.clone(),
             ValidationCode::UndeclaredReference,

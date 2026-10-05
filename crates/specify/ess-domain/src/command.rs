@@ -202,6 +202,7 @@ pub(crate) mod absent_input;
 pub mod caller_value;
 pub mod finite;
 pub mod fixture_inputs;
+pub mod input_path;
 mod narrowing;
 mod one_time_response;
 pub(crate) mod outcome_shapes;
@@ -948,9 +949,10 @@ pub enum PayloadSource {
     },
     /// The implementation chooses this field, subject to its declared type.
     Generated,
-    /// A field of the command's declared input: `input.amount`.
+    /// A field of the command's declared input: `input.amount`; from `ess/22` a member of a struct
+    /// input reached by a path, `input.opening.label` ([`input_path`], A4).
     InputField {
-        /// The field's name.
+        /// The field's name, or a path's declared segments joined by `.`.
         field: String,
     },
     /// A value written in the outcome itself.
@@ -1017,11 +1019,12 @@ pub enum PayloadSource {
     /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137), or the literal written after
     /// `else:`: `{input: tier, else: Standard}` (ess/16, #163).
     InputOrGenerated {
-        /// The optional input field read.
+        /// The optional input field read, or from `ess/22` a path whose route may be absent.
         field: String,
-        /// The fallback when it is a literal — only ever a [`Literal`](Self::Literal) or a
-        /// [`Scalar`](Self::Scalar), checked against the target as a literal written there would
-        /// be. `None` is `{generated: true}`.
+        /// The fallback: a [`Literal`](Self::Literal) or a [`Scalar`](Self::Scalar), checked
+        /// against the target as a literal written there would be, or from `ess/22` an
+        /// [`InputField`](Self::InputField) required along its whole route. `None` is
+        /// `{generated: true}`.
         #[serde(skip_serializing_if = "Option::is_none")]
         otherwise: Option<Box<PayloadSource>>,
     },
@@ -1491,6 +1494,16 @@ fn source_field(field: String) -> Option<String> {
     (!field.is_empty() && !field.contains('.')).then_some(field)
 }
 
+/// The input `{input: …, else: …}` reads: one field, or from `ess/22` a path of fields
+/// (`input_path`, A4), every segment present. Below `ess/22` a path is refused as it always was.
+fn source_input(field: String) -> Option<String> {
+    if ess_primitives::predicate::reads_source22_operands() {
+        (!field.split('.').any(str::is_empty)).then_some(field)
+    } else {
+        source_field(field)
+    }
+}
+
 impl TryFrom<RawPayloadSource> for PayloadSource {
     type Error = &'static str;
     fn try_from(raw: RawPayloadSource) -> Result<Self, Self::Error> {
@@ -1585,6 +1598,17 @@ impl PayloadSource {
         match Self::try_from(otherwise)? {
             Self::Generated => Ok(None),
             literal @ (Self::Literal { .. } | Self::Scalar { .. }) => Ok(Some(Box::new(literal))),
+            // From `ess/22` (A4) another input path, which `value_expression` holds to being
+            // required along its whole route: `else:` promises a value.
+            read @ Self::InputField { .. }
+                if ess_primitives::predicate::reads_source22_operands() =>
+            {
+                Ok(Some(Box::new(read)))
+            }
+            _ if ess_primitives::predicate::reads_source22_operands() => Err(
+                "`else:` admits `{generated: true}`, a literal (format ess/16) or \
+                 `input.<path>` (format ess/22)",
+            ),
             _ => Err("`else:` admits `{generated: true}` only, or a literal (format ess/16)"),
         }
     }
@@ -1669,7 +1693,7 @@ impl PayloadSource {
                 otherwise: Some(otherwise),
             } => {
                 let otherwise = Self::fallback(*otherwise)?;
-                source_field(field)
+                source_input(field)
                     .map(|field| Self::InputOrGenerated { field, otherwise })
                     .ok_or("`{input: <field>, else: …}` names one field of the command's input")
             }
@@ -2178,6 +2202,25 @@ impl CommandSpec {
         self.input.iter().find(|field| field.name == name)
     }
 
+    /// What a value source `input.<field>` reads, as a field named by what it reads, at the type it
+    /// is read at: the declared input, or from `ess/22` a member of a struct input reached by a
+    /// path ([`input_path`], A4). `Err(None)` where the input itself is undeclared, which the
+    /// outcome's shape check reports; `Err(Some(_))` where a path's members do not resolve.
+    pub fn read_input(
+        &self,
+        (types, paths): (&TypeRegistry, bool),
+        field: &str,
+    ) -> Result<Field, Option<input_path::Unresolved>> {
+        if paths && input_path::is_path(field) {
+            return match input_path::resolve(self, types, field) {
+                Ok(path) => Ok(path.as_field()),
+                Err(input_path::Unresolved::Root(_)) => Err(None),
+                Err(unresolved) => Err(Some(unresolved)),
+            };
+        }
+        self.input_field(field).cloned().ok_or(None)
+    }
+
     /// The outcome with this name.
     pub fn outcome(&self, name: &OutcomeName) -> Option<&Outcome> {
         self.outcomes.iter().find(|outcome| &outcome.name == name)
@@ -2351,7 +2394,13 @@ impl CommandSpec {
                     .with_hint("name the second branch after what makes it different"),
                 );
             }
-            errors.extend(self.validate_outcome(outcome, &inputs));
+            // From `ess/22` a value source may read a member of a struct input (`input_path`, A4):
+            // known from the registry's format, or while parsing from the header being read.
+            let paths = types.and_then(TypeRegistry::format).map_or_else(
+                ess_primitives::predicate::reads_source22_operands,
+                |format| input_path::admitted(Some(format)),
+            );
+            errors.extend(self.validate_outcome(outcome, &inputs, paths));
             errors.extend(self.validate_replay(outcome));
             let location = self.site().key("outcomes").named(outcome.name.as_str());
             errors.extend(match types {
@@ -2385,7 +2434,12 @@ impl CommandSpec {
     /// Checks one outcome: that it is observable, that a refusal changes nothing, and that its
     /// condition is decidable from what the caller supplied.
     #[allow(clippy::too_many_lines)]
-    fn validate_outcome(&self, outcome: &Outcome, inputs: &BTreeSet<&str>) -> ValidationErrors {
+    fn validate_outcome(
+        &self,
+        outcome: &Outcome,
+        inputs: &BTreeSet<&str>,
+        paths: bool,
+    ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let location = self.site().key("outcomes").named(outcome.name.as_str());
 
@@ -2532,8 +2586,8 @@ impl CommandSpec {
             }
         }
 
-        errors.extend(self.validate_payload_shape(outcome, inputs, &location));
-        errors.extend(self.validate_sets_shape(outcome, inputs, &location));
+        errors.extend(self.validate_payload_shape(outcome, (inputs, paths), &location));
+        errors.extend(self.validate_sets_shape(outcome, (inputs, paths), &location));
         errors
     }
 
@@ -2543,7 +2597,7 @@ impl CommandSpec {
     fn validate_payload_shape(
         &self,
         outcome: &Outcome,
-        inputs: &BTreeSet<&str>,
+        inputs: (&BTreeSet<&str>, bool),
         location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
@@ -2552,22 +2606,17 @@ impl CommandSpec {
                 let PayloadSource::InputField { field } = source else {
                     continue;
                 };
-                if !inputs.contains(field.as_str()) {
-                    errors.push(
-                        ValidationError::at(
-                            location
-                                .clone()
-                                .key("payload")
-                                .named(error.to_string())
-                                .named(target),
-                            ValidationCode::UndeclaredReference,
-                            format!(
-                                "`{source}` reads `{field}`, which `{}` does not declare as input",
-                                self.name
-                            ),
-                        )
-                        .with_hint(format!("declared input: {}", join(inputs.iter()))),
-                    );
+                if let Some(refusal) = self.undeclared_read(
+                    inputs,
+                    source,
+                    field,
+                    location
+                        .clone()
+                        .key("payload")
+                        .named(error.to_string())
+                        .named(target),
+                ) {
+                    errors.push(refusal);
                 }
             }
         }
@@ -2600,26 +2649,49 @@ impl CommandSpec {
                 let PayloadSource::InputField { field } = source else {
                     continue;
                 };
-                if !inputs.contains(field.as_str()) {
-                    errors.push(
-                        ValidationError::at(
-                            location
-                                .clone()
-                                .key("payload")
-                                .named(event.to_string())
-                                .named(target),
-                            ValidationCode::UndeclaredReference,
-                            format!(
-                                "`{source}` reads `{field}`, which `{}` does not declare as input",
-                                self.name
-                            ),
-                        )
-                        .with_hint(format!("declared input: {}", join(inputs.iter()))),
-                    );
+                if let Some(refusal) = self.undeclared_read(
+                    inputs,
+                    source,
+                    field,
+                    location
+                        .clone()
+                        .key("payload")
+                        .named(event.to_string())
+                        .named(target),
+                ) {
+                    errors.push(refusal);
                 }
             }
         }
         errors
+    }
+
+    /// The refusal for an `input.` source whose input the command does not declare. From `ess/22`
+    /// (`paths`) a path reads a member of a struct input (A4), and only its first segment is an
+    /// input; its members are checked with the registry in hand.
+    fn undeclared_read(
+        &self,
+        (inputs, paths): (&BTreeSet<&str>, bool),
+        source: &PayloadSource,
+        field: &str,
+        at: ConstructRef,
+    ) -> Option<ValidationError> {
+        let read = if paths && input_path::is_path(field) {
+            field.split('.').next().unwrap_or_default()
+        } else {
+            field
+        };
+        (!inputs.contains(read)).then(|| {
+            ValidationError::at(
+                at,
+                ValidationCode::UndeclaredReference,
+                format!(
+                    "`{source}` reads `{read}`, which `{}` does not declare as input",
+                    self.name
+                ),
+            )
+            .with_hint(format!("declared input: {}", join(inputs.iter())))
+        })
     }
 
     /// Checks that what an outcome sets is set on something, and read from what the caller supplied.
@@ -2629,7 +2701,7 @@ impl CommandSpec {
     fn validate_sets_shape(
         &self,
         outcome: &Outcome,
-        inputs: &BTreeSet<&str>,
+        inputs: (&BTreeSet<&str>, bool),
         location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
@@ -2659,18 +2731,13 @@ impl CommandSpec {
             let PayloadSource::InputField { field } = source else {
                 continue;
             };
-            if !inputs.contains(field.as_str()) {
-                errors.push(
-                    ValidationError::at(
-                        location.clone().key("sets").named(target),
-                        ValidationCode::UndeclaredReference,
-                        format!(
-                            "`{source}` reads `{field}`, which `{}` does not declare as input",
-                            self.name
-                        ),
-                    )
-                    .with_hint(format!("declared input: {}", join(inputs.iter()))),
-                );
+            if let Some(refusal) = self.undeclared_read(
+                inputs,
+                source,
+                field,
+                location.clone().key("sets").named(target),
+            ) {
+                errors.push(refusal);
             }
         }
         errors
@@ -3156,6 +3223,7 @@ pub fn validate_payloads(
                             types,
                             conversions,
                             inhabitation: &inhabitation,
+                            paths: input_path::admitted(types.format()),
                         },
                     ));
                 }
@@ -3178,6 +3246,9 @@ struct Resolved<'a> {
     /// Which declarations `check_inhabitation` refuses, so a rule staying silent can check that
     /// somebody else really speaks — about the type in hand, and not merely about a name under it.
     inhabitation: &'a crate::system::Inhabitation,
+    /// Whether a value source reads a member of a struct input, `input.<path>`: from `ess/22`
+    /// ([`input_path`], A4).
+    paths: bool,
 }
 
 // One arm per source; ess/16 `{count: changed}` took it past the line limit.
@@ -3221,11 +3292,22 @@ fn check_payload_entry(
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.
             let read = if matches!(source, PayloadSource::ResponseField { .. }) {
-                command.response.iter().find(|read| &read.name == field)
+                command
+                    .response
+                    .iter()
+                    .find(|read| &read.name == field)
+                    .cloned()
             } else {
-                command.input_field(field)
+                match command.read_input((resolved.types, resolved.paths), field) {
+                    Ok(read) => Some(read),
+                    Err(Some(unresolved)) => {
+                        errors.push(unresolved.refusal(at, command, field));
+                        return errors;
+                    }
+                    Err(None) => None,
+                }
             };
-            let Some(read) = read else {
+            let Some(read) = read.as_ref() else {
                 errors.push(ValidationError::at(
                     at.clone(),
                     ValidationCode::UndeclaredReference,
@@ -3541,6 +3623,7 @@ pub fn validate_sets(
                         types,
                         conversions,
                         inhabitation: &inhabitation,
+                        paths: input_path::admitted(types.format()),
                     };
                     if let Some(refusal) =
                         sets_literal(&entity.name, target, held, source, command, resolved)
@@ -3558,34 +3641,56 @@ pub fn validate_sets(
                     // second is checked against the command's declared response.
                     continue;
                 };
-                let Some(read) = command.input_field(field) else {
-                    continue;
-                };
-                // Read as `payload:` reads it: narrowed from `ess/16` (#169), declared first.
-                let format = types.format();
-                if command.admits_input_read(outcome, read, &held.type_ref, conversions, format) {
-                    continue;
+                if let Some(refusal) = sets_input_read(
+                    (command, outcome),
+                    (&entity.name, target, held),
+                    field,
+                    (types, conversions),
+                    at,
+                ) {
+                    errors.push(refusal);
                 }
-                errors.push(
-                    ValidationError::new(
-                        ValidationCode::TypeMismatch,
-                        at,
-                        format!(
-                            "`{}.{field}` has type `{}`, and `{}.{target}` holds `{}`; no \
-                             conversion is declared",
-                            command.name, read.type_ref, entity.name, held.type_ref
-                        ),
-                    )
-                    .with_hint(format!(
-                        "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` \
-                         — or make the two types agree",
-                        read.type_ref, held.type_ref
-                    )),
-                );
             }
         }
     }
     errors
+}
+
+/// The refusal for one `sets:` entry `target: input.<field>`, where the input it reads cannot fill
+/// the field it is written to; from `ess/22` the input may be a path ([`input_path`], A4).
+fn sets_input_read(
+    (command, outcome): (&CommandSpec, &Outcome),
+    (entity, target, held): (&QualifiedName, &str, &Field),
+    field: &str,
+    (types, conversions): (&TypeRegistry, &crate::types::ConversionRegistry),
+    at: String,
+) -> Option<ValidationError> {
+    let read = match command.read_input((types, input_path::admitted(types.format())), field) {
+        Ok(read) => read,
+        Err(None) => return None,
+        Err(Some(unresolved)) => return Some(unresolved.refusal_at(at, command, field)),
+    };
+    // Read as `payload:` reads it: narrowed from `ess/16` (#169), declared first.
+    let format = types.format();
+    if command.admits_input_read(outcome, &read, &held.type_ref, conversions, format) {
+        return None;
+    }
+    Some(
+        ValidationError::new(
+            ValidationCode::TypeMismatch,
+            at,
+            format!(
+                "`{}.{field}` has type `{}`, and `{entity}.{target}` holds `{}`; no conversion is \
+                 declared",
+                command.name, read.type_ref, held.type_ref
+            ),
+        )
+        .with_hint(format!(
+            "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` — or make the \
+             two types agree",
+            read.type_ref, held.type_ref
+        )),
+    )
 }
 
 /// Checks that every required field an entity invariant reads is set by every branch creating it.

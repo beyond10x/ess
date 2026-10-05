@@ -753,8 +753,10 @@ fn input_read<'a>(
     outcome: &'a ResolvedOutcome,
     via: &'a ResolvedRelatedVia,
 ) -> Option<&'a str> {
-    match via {
-        ResolvedRelatedVia::Input { field, .. } => Some(field),
+    // A path (ess/22, A4) reads inside a struct input, where no arranged row's identity is sent:
+    // the related row is not arranged through one.
+    let read = match via {
+        ResolvedRelatedVia::Input { field, .. } => Some(field.as_str()),
         ResolvedRelatedVia::Subject { field, .. } => {
             let subject = outcome
                 .subject
@@ -767,7 +769,8 @@ fn input_read<'a>(
                 .flatten()
             })
         }
-    }
+    };
+    read.filter(|read| !ess_domain::command::input_path::is_path(read))
 }
 
 /// Whether `entity`'s identity carries a `references`, `cardinality: one` relation to another

@@ -13,9 +13,9 @@
 
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
-    ResolvedEntity, ResolvedField, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedSubject,
-    ResolvedTypeRef,
+    ResolvedEntity, ResolvedFallback, ResolvedField, ResolvedInstance, ResolvedOutcome,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
+    ResolvedSubject, ResolvedTypeRef,
 };
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
@@ -380,9 +380,7 @@ fn value(
             if inner != target.required() {
                 return Err(format!("a value of another type for `{}`", field.target));
             }
-            if let Some(otherwise) = otherwise {
-                literal(ir, target, otherwise)?;
-            }
+            fallback(ir, field, otherwise.as_ref())?;
         }
         ResolvedPayloadValue::Struct { fields } => {
             let ResolvedTypeRef::Declared { name } = target.required() else {
@@ -432,6 +430,25 @@ fn value(
 }
 
 /// `true` where a value of `source` fills a field of `target` as it is, or wrapped as present.
+/// Whether what stands in for an absent input after `else:` fills `field`: a literal its type
+/// reads, or (ess/22, A4) another input of its type.
+fn fallback(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    otherwise: Option<&ResolvedFallback>,
+) -> Result<(), String> {
+    let target = &field.target_type;
+    match otherwise {
+        Some(ResolvedFallback::Literal(otherwise)) => literal(ir, target, otherwise),
+        Some(ResolvedFallback::Input { input })
+            if !assignable(&input.type_ref, target.required()) =>
+        {
+            Err(format!("a fallback of another type for `{}`", field.target))
+        }
+        Some(ResolvedFallback::Input { .. }) | None => Ok(()),
+    }
+}
+
 pub(crate) fn assignable(source: &ResolvedTypeRef, target: &ResolvedTypeRef) -> bool {
     source == target || matches!(target, ResolvedTypeRef::Optional { of } if of.as_ref() == source)
 }
@@ -1137,6 +1154,22 @@ pub(crate) fn identity_input(outcome: &ResolvedOutcome) -> Option<(&str, bool)> 
 /// creating half of create-or-update reads it from a required input field. Anything else keeps the
 /// command an obligation, since the lookup would read an identity the creation does not take.
 fn existence_identity(command: &ResolvedCommand) -> Result<(), String> {
+    // ess/22 (A4): the generated lookup reads a top-level input; an identity read through a path
+    // keeps the command an obligation, by name.
+    let decided =
+        existing_instance(command).is_some() || command.outcomes.iter().any(creates_unknown);
+    if let Some(outcome) = command.outcomes.iter().find(|outcome| {
+        decided
+            && identity_input(outcome)
+                .is_some_and(|(field, _)| ess_domain::command::input_path::is_path(field))
+    }) {
+        return Err(format!(
+            "a creation selected by existence whose identity is read through the input path \
+             `{}`, in `{}`",
+            identity_input(outcome).map_or_else(String::new, |(field, _)| field.to_owned()),
+            outcome.name
+        ));
+    }
     for outcome in command.outcomes.iter().filter(|it| creates_unknown(it)) {
         if !matches!(identity_input(outcome), Some((_, false))) {
             return Err(format!(

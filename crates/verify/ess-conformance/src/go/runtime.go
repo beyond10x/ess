@@ -2437,6 +2437,12 @@ func (r *run) expectError(index int, step Step) bool {
 	if r.last.Error != step.Error {
 		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and the specification says `%s`", orNone(r.last.Error), step.Error)
 	}
+	// The declared fields the branch determines (ess/19), each carried and equal, as
+	// ess_conformance::runner's `expect_error` compares them: naming the right error with the wrong
+	// payload is a different repair from naming the wrong error.
+	if reason := payloadCarries(r.last.ErrorPayload, step.Fields); reason != "" {
+		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and %s", step.Error, reason)
+	}
 	return true
 }
 

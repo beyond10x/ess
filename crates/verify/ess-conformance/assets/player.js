@@ -153,6 +153,19 @@ function applyAct(world, act, index) {
       }
     }
   }
+  // Whether the act sends the input `from` names: a field, or (ess/22) a member a path reaches
+  // inside a literal struct input.
+  const carries = (input, from) => {
+    const [root, ...members] = from.split('.')
+    if (!Object.hasOwn(input, root)) return false
+    if (members.length === 0) return true
+    let value = input[root]?.kind === 'literal' ? input[root].value : undefined
+    for (const member of members) {
+      if (value === null || typeof value !== 'object' || !Object.hasOwn(value, member)) return false
+      value = value[member]
+    }
+    return true
+  }
   // replay/1 drops every literal and all assignment types/conversions, including on moves.
   // A named input is a declaration, never proof of the post-assignment value.
   for (const set of outcome.sets ?? []) {
@@ -160,7 +173,7 @@ function applyAct(world, act, index) {
     effect(reason, set.target, created?.instance)
     const entry = world.unknownEffects[world.unknownEffects.length - 1]
     entry.from = set.from
-    if (set.from !== null && !Object.hasOwn(act.input, set.from)) {
+    if (set.from !== null && !carries(act.input, set.from)) {
       entry.missingInput = `Unknown: assignment input ${JSON.stringify(set.from)} is missing.`
     }
     const affected = created ? [created] : subject.kind === 'creates' ? []
