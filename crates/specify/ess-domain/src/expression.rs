@@ -1318,6 +1318,46 @@ fn offset_spelled<E: TypeEnvironment>(
         })
 }
 
+/// Text that begins with one dotted word naming a view parameter or a command input
+/// (`param.queues`, `input.limits.max`): that word, and the rest of the text after it, trimmed —
+/// empty where the word is the whole text. `None` for any other text.
+fn parameter_spelling(text: &str) -> Option<(&str, &str)> {
+    let text = text.trim();
+    let end = text.find(char::is_whitespace).unwrap_or(text.len());
+    let (word, rest) = text.split_at(end);
+    let (namespace, name) = word.split_once('.')?;
+    let identifier = |segment: &str| {
+        segment
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+            && segment
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    (matches!(namespace, "param" | "input") && name.split('.').all(identifier))
+        .then(|| (word, rest.trim()))
+}
+
+/// The hint for a comparison operand that starts with a parameter or an input and goes on as text
+/// (`param.limit_s * 1000`, beyond10x/ess#438): a comparison has no arithmetic but one constant
+/// offset, and a scale belongs before the read, in the unit the parameter is declared in.
+fn scaled_parameter(text: &str) -> Option<String> {
+    let (word, rest) = parameter_spelling(text)?;
+    if rest.is_empty() {
+        return None;
+    }
+    let constant = rest
+        .split(|c: char| !c.is_ascii_digit())
+        .rfind(|digits| !digits.is_empty())
+        .unwrap_or("1");
+    Some(format!(
+        "`{text}` is read as text, because a comparison does no arithmetic but one constant \
+         offset of a fact, such as `{word} + {constant}`: declare the parameter in the unit the \
+         field is stored in, and convert at the adapter before the read"
+    ))
+}
+
 /// Whether an offset's base names something here: a binder in scope, a root, or a dotted path
 /// through either — and, with `input_namespace`, `input.<path>` naming the input `<path>`.
 fn base_resolves<E: TypeEnvironment>(
@@ -1775,13 +1815,56 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             } if right.is_some_and(|value| value.scalar.is_none()) => Some(path),
             _ => None,
         };
+        let hint = match expression {
+            Predicate::Compare { left, right, .. } => [left, right]
+                .into_iter()
+                .find_map(|operand| match operand {
+                    Operand::Literal(FactValue::Text(text)) => scaled_parameter(text),
+                    _ => None,
+                })
+                .map(|hint| format!("; {hint}"))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
         self.checked.errors.push(error(
             self.owner,
             ValidationCode::TypeMismatch,
             unreadable,
             None,
-            format!("`{expression}`: operator `{operator}` does not admit {operands}"),
+            format!("`{expression}`: operator `{operator}` does not admit {operands}{hint}"),
         ));
+    }
+
+    /// A membership operand spelled as one dotted word naming a view parameter or a command input
+    /// (`queue_id: {in: param.queues}`, beyond10x/ess#438): a membership list holds literal values
+    /// only, so the word is the text it spells and the list never reads what the caller sent.
+    /// Refused in every format and against every field type — a `String` field would otherwise
+    /// admit the text silently — naming the quantifier that asks the question. `true` when refused.
+    fn membership_parameter(
+        &mut self,
+        expression: &Predicate,
+        path: &FactPath,
+        value: &FactValue,
+    ) -> bool {
+        let FactValue::Text(text) = value else {
+            return false;
+        };
+        let Some((word, "")) = parameter_spelling(text) else {
+            return false;
+        };
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::TypeMismatch,
+            Some(path),
+            None,
+            format!(
+                "`{expression}` reads `{word}` as the text literal \"{word}\", not the list it \
+                 names: a membership list holds literal values only. To ask whether `{path}` is \
+                 one of the values `{word}` holds, write `exists: {{in: {word}, as: x, that: \
+                 {path} == x}}`"
+            ),
+        ));
+        true
     }
 
     fn enum_literal(&mut self, expression: &Predicate, typed: &ValueType, literal: &FactValue) {
@@ -2853,6 +2936,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     return;
                 }
                 for value in values {
+                    if self.membership_parameter(predicate, path, value) {
+                        continue;
+                    }
                     let kind = ScalarKind::literal(value);
                     if typed.scalar != Some(kind) {
                         let literal = ValueType {

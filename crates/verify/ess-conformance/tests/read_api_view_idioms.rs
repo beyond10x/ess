@@ -1243,3 +1243,51 @@ fn adversary_correlated_two_spans_of_one_key_refuse_the_end_today() {
     suite.scenarios = authoring.scenarios;
     assert_eq!(failed(&run(&suite, ir)), BTreeSet::new());
 }
+
+// ---- beyond10x/ess#439: a clock-relative window is resolved by the caller -----------------------
+
+const WINDOW_HEADING: &str = "## A clock-relative window is resolved by the caller";
+
+#[test]
+fn caller_resolved_window_section_states_the_idiom() {
+    section_states(
+        NOTE,
+        WINDOW_HEADING,
+        &[
+            "`param.from`",
+            "`param.to`",
+            "the caller resolves",
+            "zone",
+            "last N minutes",
+            "no zone data",
+            "running duration",
+        ],
+    );
+}
+
+/// The window idiom's model: `idioms.window.CallsInRange` takes the instants the caller resolved
+/// as `from` and `to`, and synthesis witnesses it.
+#[test]
+fn caller_resolved_window_example_validates() {
+    let ir = example();
+    assert!(
+        file("window.yaml")
+            .lines()
+            .any(|line| line == "domain: idioms.window"),
+        "window.yaml declares the domain idioms.window"
+    );
+    holds_views(&ir, "idioms.window", &["idioms.window.CallsInRange"]);
+    let in_range = view(&ir, "idioms.window.CallsInRange");
+    let params: Vec<&str> = in_range
+        .params
+        .iter()
+        .map(|param| param.name.as_str())
+        .collect();
+    assert_eq!(params, ["from", "to"]);
+    let synthesis = synthesize(&ir);
+    assert!(
+        scenario_ids(&synthesis).contains("idioms.window.CallsInRange/aggregate"),
+        "{:#?}",
+        refusals(&synthesis)
+    );
+}

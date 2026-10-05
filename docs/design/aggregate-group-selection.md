@@ -39,6 +39,29 @@ distinguished:
 - a **group selector**, whose query argument is taken from an actual arranged group key and never
   overwrites the row's tuple.
 
+A **list selector** (beyond10x/ess#438) is a group selector too: a declared `List` parameter read
+only by one top-level `exists: {in: param.name, as: b, that: key == b}` conjunct over a group key,
+either way round, or by that membership beside `param.name.count == 0` in a two-way `any:`. Each
+read sends the arranged key as a list of one; one further read sends every arranged key in one
+list, in reverse group order, so a target matching only the first element answers fewer groups; and
+where the `count == 0` disjunct is written, one read sends `[]` and asserts every group. A valid
+nonmatching read sends a list of one value no group holds. A key whose values are identities the
+target generates cannot be listed, and refuses the view by name. Every other read of a list
+parameter keeps the `ESS-SYNTH-017` refusal.
+
+A **range selector** (beyond10x/ess#439) bounds rows rather than selecting groups: a required
+`Timestamp` parameter read only by one top-level ordering (`>=`, `>`, `<`, `<=`) of a required
+`Timestamp` field the creating command sets from its input, either way round, that is not a group
+key. A view with one is observed exactly under `Empty` authority. The lower bound is sent as
+`2020-01-01T10:00:00Z` and the upper as `2020-01-01T12:00:00Z`; admitted rows are arranged on each
+inside edge (at an inclusive bound, a second inside an exclusive one) and an hour inside, that one
+spelled at an offset under which its written text sorts outside a bound; refuted rows on each
+outside edge, with a further refuted row in group A for each edge `x` does not take. The expected
+numbers come from `shows`, which compares instants. Bounds on two fields, two bounds on one side,
+and a bounded field an aggregate reads are refused by name; every other read of a `Timestamp`
+parameter keeps `ESS-SYNTH-017`. The caller resolves a named range or a sliding window into the two
+instants (`docs/design/read-api-view-idioms.md`).
+
 Parameter and field types are the source-resolved ones, including nominal and `Optional` wrappers.
 Values come through the existing key ladder, related arrangement and actual settled value, never
 through string conversion or a second related-row evaluator. Ordinary `String`/`Uuid` keys, walked

@@ -1,0 +1,70 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.calls
+events:
+  - name: demo.calls.CallRecorded
+    fields: [{name: call_id, type: Uuid}]
+entities:
+  - name: demo.calls.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: abandoned, type: Boolean}
+      - {name: duration_ms, type: Integer}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+commands:
+  - name: demo.calls.RecordCall
+    input:
+      - {name: queue_id, type: Integer}
+      - {name: abandoned, type: Boolean}
+      - {name: duration_ms, type: Integer}
+    outcomes:
+      - name: recorded
+        creates: demo.calls.Call
+        instance: call_id
+        sets: {queue_id: input.queue_id, abandoned: input.abandoned, duration_ms: input.duration_ms}
+        emits: [demo.calls.CallRecorded]
+        payload: {demo.calls.CallRecorded: {call_id: {generated: true}}}
+views:
+  # Membership in a list the caller sends: the calls of the listed queues.
+  - name: demo.calls.InQueues
+    source: demo.calls.Call
+    consistency: read_your_writes
+    params: [{name: queues, type: List<Integer>}]
+    filter: {exists: {in: param.queues, as: q, that: queue_id == q}}
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: calls, type: Integer, aggregate: {count: {}}}
+      - {name: talk_ms, type: Integer, aggregate: {sum: duration_ms}}
+  # An empty list reads every queue.
+  - name: demo.calls.InQueuesOrAll
+    source: demo.calls.Call
+    consistency: read_your_writes
+    params: [{name: queues, type: List<Integer>}]
+    filter:
+      any:
+        - param.queues.count == 0
+        - {exists: {in: param.queues, as: q, that: queue_id == q}}
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: calls, type: Integer, aggregate: {count: {}}}
+  # A switch the caller may leave out: absent reads as `false`.
+  - name: demo.calls.ByAbandonment
+    source: demo.calls.Call
+    consistency: read_your_writes
+    params: [{name: abandoned, type: Optional<Boolean>}]
+    filter:
+      any:
+        - all: ["not defined(param.abandoned)", abandoned == false]
+        - abandoned == param.abandoned
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: calls, type: Integer, aggregate: {count: {}}}

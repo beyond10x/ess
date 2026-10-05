@@ -1,8 +1,8 @@
 # Read-API view idioms
 
-Status: decision record for requests declined with an idiom (beyond10x/ess#441, #442, #443, #444,
-#446, #447). Each section names what was asked, the construct ESS already has that states it, and
-the shape to start from if the request is reopened. No format changes here.
+Status: decision record for requests declined with an idiom (beyond10x/ess#439, #441, #442, #443,
+#444, #446, #447). Each section names what was asked, the construct ESS already has that states
+it, and the shape to start from if the request is reopened. No format changes here.
 
 Every idiom has a validated model in `docs/design/read-api-view-idioms.example/`, one file and one
 domain per idiom (`system.yaml` carries the header). The held-row idiom of #442 is a conformance
@@ -194,3 +194,38 @@ field name identifier … contains '.'") and a field the source does not have (`
 If a live join is needed, start from `field: {related:` on a view field, in full `field: {related:
 {via: <reference field>, field: <field>}}`: the existing value source read at query time, one hop,
 absent where the reference is.
+
+## A clock-relative window is resolved by the caller
+
+Asked (#439): a read that counts rows whose instant falls in a range named relative to the request
+time (`TODAY`, `LAST_7_DAYS`, …) in a named zone, the same over the last N minutes, and one value
+that is the time a row has spent in its current state, measured at read time.
+
+There is no window parameter kind, no named zone and no clock in a view: the caller resolves the
+range. It turns `TODAY` in its zone, or the last N minutes against its own clock, into two
+instants and sends them as two `Timestamp` parameters. The view compares each row's instant with
+them, `from` inclusive and `to` exclusive: `filter: [started_at >= param.from, started_at <
+param.to]` (`idioms.window.CallsInRange`). ESS needs no zone data and reads no clock for it; that the resolver
+puts `TODAY` in the right zone, across a daylight-saving change too, is the adopter's to test.
+
+Synthesis witnesses the idiom on an aggregate view under the suite's empty initial state. A
+top-level ordering of a `Timestamp` field against a `Timestamp` parameter is a range selector. Rows
+are arranged a second either side of each bound and on it: `param.from` is sent as
+`2020-01-01T10:00:00Z`, `param.to` as `2020-01-01T12:00:00Z`, and rows land at 09:59:59, 10:00:00,
+11:59:59 and 12:00:00 UTC. One further row inside is spelled at an offset under which its written
+text sorts outside (`2020-01-01T08:00:00-03:00`), so a target comparing text, ignoring a bound or
+making `to` inclusive counts another number. A range parameter read any other way, a bound on a
+group key and two bounds on one side keep the `ESS-SYNTH-017` refusal.
+
+Refused today, and kept refused: `started_at >= now - 1h` in a view filter (`type_mismatch`, naming
+the guard positions where `now` is admitted) and a calendar `window:` in a view filter
+(`type_mismatch`). A named zone is refused everywhere (`docs/design/calendar-window-guards.md`).
+
+Out of scope: the running duration of a row in its current state at read time. It needs a computed
+view field and a read-time clock, neither of which a view has (#441 above;
+`docs/design/current-time-guards.md`). Return the instant the row entered its state and let the
+consumer subtract it from its own clock.
+
+If reopened, start from a `window:` parameter kind resolved against a request clock the suite can
+set, with a pinned zone-data dependency; it needs `ess/23`, a suite step that fixes the target's
+clock and zone data in every lane.

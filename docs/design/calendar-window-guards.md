@@ -219,7 +219,10 @@ instant, to disagree with a vector in Go and TypeScript.
 ## Not in this design
 
 - Named zones and daylight saving (above).
-- A window in an invariant, a view filter, a selection or any suite predicate.
+- A window in an invariant, a view filter, a selection or any suite predicate. A read over a range
+  named in a zone (`TODAY`, the last 15 minutes) takes the two instants its caller resolved as
+  `Timestamp` parameters, with no zone data and no clock in the view (beyond10x/ess#439,
+  `read-api-view-idioms.md`, "A clock-relative window is resolved by the caller").
 - A compact spelling, seconds in `from`/`to`, more than one interval per window (write `any:` of two
   windows), dates or holidays.
 - Generated Rust and Go evaluating a window, and Entity Runtime lowering one.

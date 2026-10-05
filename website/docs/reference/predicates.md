@@ -511,7 +511,16 @@ A fact path used as a key constrains that fact. The value is one of three things
 | `truthy` | | any value | the fact is present and truthy |
 
 The comparison operators also accept their symbols as keys (`"=="`, `"<="`, …). A string operand
-follows the compact right-hand-side rule: a bare dotted word is a fact path.
+of a comparison operator follows the compact right-hand-side rule: a bare dotted word is a fact
+path. A comparison has no arithmetic beyond one constant offset, so `duration_ms > param.limit_s *
+1000` compares with the text `param.limit_s * 1000` and is refused as `type_mismatch`, naming the
+offset form and a parameter declared in the unit the field is stored in.
+
+`any_of`, `none_of` and their aliases hold literal values only (beyond10x/ess#438). An operand that
+is one dotted word naming a view parameter or a command input, `queue_id: {in: param.queues}`,
+would be the text it spells, so it is refused as `type_mismatch` in every format and against every
+field type. Membership in a list the caller sends is a quantifier: `exists: {in: param.queues, as:
+q, that: queue_id == q}`.
 
 ### The equality shorthand reads a literal
 
@@ -761,9 +770,11 @@ One command decision reads one instant: its input guard and every row it reads a
 it, over the rows as they were before the outcome. Below `ess/22` such a stored ordering is refused
 as `unsupported_format_version`, naming `ess/22`. Anywhere else — an invariant, a view filter, a
 selection, a set-effect filter — the operand is refused, because none of those is read while a
-request is handled. `==` and `!=` against `now` are refused too: an instant is ordered against the
-current time, never equated with it. Below `ess/16` the guard is refused as
-`unsupported_format_version`. Over a `String`, `now` is still the text `now`.
+request is handled. A view over the last N minutes, or over a range named in a zone, takes the two
+instants its caller resolved as `Timestamp` parameters instead, `filter: [started_at >= param.from,
+started_at < param.to]` (beyond10x/ess#439). `==` and `!=` against `now` are refused too: an
+instant is ordered against the current time, never equated with it. Below `ess/16` the guard is
+refused as `unsupported_format_version`. Over a `String`, `now` is still the text `now`.
 
 A generated suite witnesses such a guard a second either side of its boundary and never on it:
 `starts_at < now - 60s` is sent `now - 61s` requiring the refusal and `now - 59s` requiring the
