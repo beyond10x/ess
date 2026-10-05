@@ -3,7 +3,7 @@
 //!
 //! * `instances: {where: <predicate>}` on a `moves:` or `updates:` outcome: every stored row of the
 //!   entity the predicate selects, read with `input.<field>` operands. Beside `instance:`, or on a
-//!   `creates:`/`deletes:`, it is refused.
+//!   `creates:`, it is refused; on a `deletes:` it is admitted from ess/23 (beyond10x/ess#452).
 //! * `{count: changed}` in `payload:`: how many rows such an outcome changed, into an `Integer`.
 //! * `affects:` on an outcome with one subject: a list of `{entity, where, sets}` effects on other
 //!   rows, whose `where` reads `input.<field>` and `subject.<field>` (the subject before the
@@ -406,4 +406,338 @@ fn a_refusal_changing_a_set_of_rows_is_refused() {
         "        instances: {where: team == input.team}\n        error: demo.desk.NotOpen\n",
     ));
     assert_code(&errors, ValidationCode::RefusalMutatedState, "instances");
+}
+
+// ---- deleting the selected rows (ess/23, beyond10x/ess#452) ------------------------------------
+
+/// `RevokeTokens` deletes every token a filter selects; `DeleteUser` deletes its subject and, in an
+/// `affects:` entry, every token the user owns.
+const DELETES: &str = include_str!("../../ess-compiler/tests/fixtures/set-deletes.yaml");
+
+/// The `affects:` entry of `DeleteUser`, as the fixture writes it.
+const DELETING_ENTRY: &str = "        affects:
+          - entity: demo.auth.Token
+            where: user_id == subject.user_id
+            deletes: demo.auth.Token
+";
+
+fn deletes_edited(from: &str, to: &str) -> String {
+    assert!(DELETES.contains(from), "the fixture holds:\n{from}");
+    DELETES.replacen(from, to, 1)
+}
+
+/// The one refusal sited under `command`, or a failure listing them all.
+fn only_under<'e>(
+    errors: &'e ValidationErrors,
+    command: &str,
+) -> &'e ess_primitives::error::ValidationError {
+    let found: Vec<_> = errors
+        .as_slice()
+        .iter()
+        .filter(|error| error.location.contains(command))
+        .collect();
+    let [refusal] = found.as_slice() else {
+        panic!("one refusal of {command}:\n{errors}")
+    };
+    refusal
+}
+
+fn no_empty_declaration(errors: &ValidationErrors) {
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .all(|error| error.code != ValidationCode::EmptyDeclaration
+                && !error.to_string().contains("declares no outcomes")),
+        "the refusal comes alone, with no ESS-COMMAND-007 cascade:\n{errors}"
+    );
+}
+
+#[test]
+fn bulk_delete_and_a_deleting_affects_entry_are_admitted_under_ess_23() {
+    let spec = admitted(DELETES);
+    let outcome = |command: &str| {
+        spec.commands()
+            .values()
+            .find(|declared| declared.name.to_string() == command)
+            .map_or_else(
+                || panic!("{command} is declared"),
+                |declared| declared.outcomes[0].clone(),
+            )
+    };
+    let revoked = outcome("demo.auth.RevokeTokens");
+    assert!(
+        revoked.subject.is_none(),
+        "a set subject is not one instance"
+    );
+    let set = revoked
+        .set_effects
+        .instances
+        .as_ref()
+        .expect("`instances:` is kept beside `deletes:`");
+    assert_eq!(set.entity.to_string(), "demo.auth.Token");
+    assert_eq!(set.effect.verb(), "deletes");
+    let deleted = outcome("demo.auth.DeleteUser");
+    assert_eq!(
+        deleted
+            .subject
+            .as_ref()
+            .map(|subject| subject.effect.verb()),
+        Some("deletes")
+    );
+    let [entry] = deleted.set_effects.affects.as_slice() else {
+        panic!("one entry: {:#?}", deleted.set_effects.affects)
+    };
+    assert!(entry.deletes, "the entry removes the rows it selects");
+    assert!(entry.sets.is_empty() && entry.moves.is_none());
+    for outcome in [revoked, deleted] {
+        let written = serde_yaml::to_string(&RawOutcome::from(outcome.clone()))
+            .expect("an outcome serializes");
+        let read: RawOutcome =
+            serde_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
+        let back = ess_domain::command::Outcome::try_from(read)
+            .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
+        assert_eq!(back, outcome, "{written}");
+    }
+}
+
+#[test]
+fn bulk_delete_with_sets_is_refused() {
+    let errors = refused(&deletes_edited(
+        "          demo.auth.TokensRevoked: {user_id: input.user_id, revoked: {count: changed}}\n",
+        "          demo.auth.TokensRevoked: {user_id: input.user_id, revoked: {count: changed}}\n        sets: {scope: input.scope}\n",
+    ));
+    let refusal = errors
+        .as_slice()
+        .iter()
+        .find(|error| error.code == ValidationCode::ConflictingDeclaration)
+        .unwrap_or_else(|| panic!("a conflicting_declaration:\n{errors}"));
+    assert!(
+        refusal
+            .location
+            .ends_with("RevokeTokens.outcomes.revoked.sets"),
+        "{refusal}"
+    );
+    assert!(
+        refusal.message.contains("`sets:`") && refusal.message.contains("`deletes:`"),
+        "the refusal names both keys: {refusal}"
+    );
+    no_empty_declaration(&errors);
+}
+
+#[test]
+fn affects_delete_entry_naming_other_entity_is_conflicting() {
+    let errors = refused(&deletes_edited(
+        "            deletes: demo.auth.Token\n",
+        "            deletes: demo.auth.Session\n",
+    ));
+    let refusal = only_under(&errors, "DeleteUser");
+    assert_eq!(
+        refusal.code,
+        ValidationCode::ConflictingDeclaration,
+        "{refusal}"
+    );
+    assert!(
+        refusal
+            .location
+            .ends_with("DeleteUser.outcomes.deleted.affects[0]"),
+        "{refusal}"
+    );
+    assert!(
+        refusal.message.contains("demo.auth.Session")
+            && refusal.message.contains("demo.auth.Token"),
+        "the message names both entities: {refusal}"
+    );
+    no_empty_declaration(&errors);
+}
+
+#[test]
+fn affects_delete_beside_other_entry_same_entity_is_conflicting() {
+    // A deleting entry, then a setting entry over the same entity.
+    let errors = refused(&deletes_edited(
+        DELETING_ENTRY,
+        &format!(
+            "{DELETING_ENTRY}          - entity: demo.auth.Token\n            where: user_id == subject.user_id\n            sets: {{scope: gone}}\n"
+        ),
+    ));
+    let refusal = errors
+        .as_slice()
+        .iter()
+        .find(|error| error.code == ValidationCode::ConflictingDeclaration)
+        .unwrap_or_else(|| panic!("a conflicting_declaration:\n{errors}"));
+    assert!(
+        refusal
+            .location
+            .ends_with("DeleteUser.outcomes.deleted.affects[1]"),
+        "refused at the second entry: {refusal}"
+    );
+    // A moving entry, then a deleting entry over the same entity.
+    let moving = deletes_edited(
+        "    lifecycle: {initial: Live, states: [Live], terminal: [Live]}\n",
+        "    lifecycle:\n      initial: Live\n      states: [Live, Expired]\n      terminal: [Expired]\n      transitions: [{name: expire, from: [Live], to: Expired}]\n",
+    )
+    .replacen(
+        DELETING_ENTRY,
+        &format!(
+            "        affects:\n          - entity: demo.auth.Token\n            where: user_id == subject.user_id\n            moves: demo.auth.Token.expire\n{}",
+            &DELETING_ENTRY["        affects:\n".len()..]
+        ),
+        1,
+    );
+    let errors = refused(&moving);
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .any(|error| error.code == ValidationCode::ConflictingDeclaration
+                && error
+                    .location
+                    .ends_with("DeleteUser.outcomes.deleted.affects[1]")),
+        "refused at the second entry:\n{errors}"
+    );
+    // Over two different entities the same pair validates.
+    admitted(&deletes_edited(
+        DELETING_ENTRY,
+        &format!(
+            "{DELETING_ENTRY}          - entity: demo.auth.User\n            where: team == subject.team\n            sets: {{team: orphaned}}\n"
+        ),
+    ));
+}
+
+#[test]
+fn set_delete_below_ess23_is_refused_naming_ess23_without_cascade() {
+    let below = DELETES.replacen("format: ess/23", "format: ess/22", 1);
+    let errors = refused(&below);
+    for (command, key) in [
+        ("RevokeTokens", "RevokeTokens.outcomes.revoked.instances"),
+        ("DeleteUser", "DeleteUser.outcomes.deleted.affects"),
+    ] {
+        let refusal = only_under(&errors, command);
+        assert_eq!(
+            refusal.code,
+            ValidationCode::UnsupportedConstruct,
+            "{refusal}"
+        );
+        assert!(refusal.location.ends_with(key), "{refusal}");
+        assert!(
+            refusal.message.contains("ess/23"),
+            "names ess/23: {refusal}"
+        );
+    }
+    assert_eq!(errors.len(), 2, "{errors}");
+    no_empty_declaration(&errors);
+    // The entry's own `deletes:` beside a subject that updates.
+    let updating = deletes_edited(
+        "        deletes: demo.auth.User\n        instance: user_id\n",
+        "        updates: demo.auth.User\n        instance: user_id\n        sets: {team: gone}\n",
+    );
+    admitted(&updating);
+    let errors = refused(&updating.replacen("format: ess/23", "format: ess/22", 1));
+    let refusal = only_under(&errors, "DeleteUser");
+    assert_eq!(
+        refusal.code,
+        ValidationCode::UnsupportedFormatVersion,
+        "{refusal}"
+    );
+    assert!(
+        refusal
+            .location
+            .ends_with("DeleteUser.outcomes.deleted.affects[0].deletes"),
+        "{refusal}"
+    );
+    assert!(refusal.message.contains("ess/23"), "{refusal}");
+    no_empty_declaration(&errors);
+}
+
+/// A repository file, read at run time.
+fn repository_file(path: &str) -> String {
+    let at = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join(path);
+    std::fs::read_to_string(&at).unwrap_or_else(|error| panic!("{}: {error}", at.display()))
+}
+
+/// The text under `heading` up to the next heading of the same level, or a failure naming it.
+fn section<'t>(text: &'t str, heading: &str) -> &'t str {
+    let start = text
+        .find(&format!("\n{heading}\n"))
+        .unwrap_or_else(|| panic!("missing heading `{heading}`"));
+    let body = &text[start + heading.len() + 2..];
+    body.find("\n## ").map_or(body, |end| &body[..end])
+}
+
+/// Every phrase is in `text`, read with its line breaks as spaces: where Markdown wraps a line does
+/// not change what the page says.
+fn contains_all(what: &str, text: &str, phrases: &[&str]) {
+    let read = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    for phrase in phrases {
+        assert!(read.contains(phrase), "{what} does not say {phrase:?}");
+    }
+}
+
+#[test]
+fn selection_effects_page_states_admitted_forms_and_cascade_idiom() {
+    let page = repository_file("website/docs/guides/specify/selection-effects.md");
+    let description = page
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .expect("the page has a description");
+    contains_all(
+        "the page's first paragraph (description)",
+        description,
+        &["`deletes:`", "`instances:`"],
+    );
+    let refusals = page
+        .split("\n\n")
+        .find(|paragraph| paragraph.contains("`instance:` beside `instances:`"))
+        .expect("the page lists the refused combinations");
+    assert!(
+        !refusals.contains("`deletes:`"),
+        "the refusal list no longer names `deletes:`:\n{refusals}"
+    );
+    section(&page, "## Delete every record a filter selects");
+    contains_all(
+        "`## Removal in other domains is one binding per domain`",
+        section(
+            &page,
+            "## Removal in other domains is one binding per domain",
+        ),
+        &[
+            "one event",
+            "one binding per receiving domain",
+            "`delivery:`",
+            "`on_failure:`",
+            "no order between bindings",
+            "atomicity",
+        ],
+    );
+}
+
+#[test]
+fn set_effects_note_records_bulk_delete() {
+    let note = repository_file("docs/design/set-effects-over-filtered-instances.md");
+    let heading = "## Deleting the selected rows (ess/23, beyond10x/ess#452)";
+    let deleting = section(&note, heading);
+    let at = note.find(heading).expect("found above");
+    let targets = note
+        .find("\n## Targets\n")
+        .expect("missing heading `## Targets`");
+    assert!(at < targets, "`{heading}` comes before `## Targets`");
+    contains_all(
+        heading,
+        deleting,
+        &[
+            "`deletes:` with `instances:`",
+            "`{count: changed}`",
+            "`affects:`",
+            "`deletes: <Entity>`",
+            "`SetEffectUnsupported`",
+            "one binding per receiving domain",
+        ],
+    );
+    contains_all(
+        "`## Out of scope`",
+        section(&note, "## Out of scope"),
+        &["cross-domain cascade"],
+    );
 }

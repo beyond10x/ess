@@ -5,7 +5,8 @@ Both constructs are admitted under source format `ess/16`. Below it `instances:`
 `{count: changed}` beside `instances:` are refused with `unsupported_format_version` at the key
 written, before the outcome is converted, so no shape rule of the construct and no cascade
 (`missing_declaration`, `empty_declaration`) is reported beside it; a `{count: changed}` on any other
-outcome stays the nested mapping it was.
+outcome stays the nested mapping it was. From `ess/23` both also delete the rows they select
+(beyond10x/ess#452, below).
 
 ## The gap
 
@@ -48,11 +49,11 @@ the caller and are refused by name under a set effect. A `moves:` inside `affect
 `ess/22` (below).
 
 Refused besides: `instance:` with `instances:` (`conflicting_declaration`); `instances:` on
-`creates:` (`conflicting_declaration`) or on `deletes:`/`preserves:` (`unsupported_construct`);
-`instances:` with no verb (`missing_declaration`); `instances:` on a refusal
-(`refusal_mutated_state`) or under a condition other than `when:` or the default
-(`unsupported_construct`); `affects:` beside `instances:` or on a creation, deletion or preservation
-(`unsupported_construct`) or with no subject (`missing_declaration`); a `sets:` entry writing the
+`creates:` (`conflicting_declaration`) or on `preserves:` (`unsupported_construct`), and on
+`deletes:` below `ess/23` (below); `instances:` with no verb (`missing_declaration`); `instances:` on
+a refusal (`refusal_mutated_state`) or under a condition other than `when:` or the default
+(`unsupported_construct`); `affects:` beside `instances:` or on a creation or preservation
+(`unsupported_construct`), on a deletion below `ess/23`, or with no subject (`missing_declaration`); a `sets:` entry writing the
 entity's identity under `instances:` or in an `affects:` entry (`conflicting_declaration`: every
 selected row would hold one identity); an undeclared entity or
 transition (`undeclared_reference`); a filter reading an undeclared field or input.
@@ -150,6 +151,47 @@ Entity Runtime and the Rust, Go, Web and Clap targets refuse the moving form by 
 every `affects:` (below): a generated seam acts on the one instance its request names, so the
 effect stays an obligation the conformance suite checks.
 
+## Deleting the selected rows (ess/23, beyond10x/ess#452)
+
+Two refusals of the first cut are lifted from `ess/23`; no keyword is added.
+
+**Bulk removal.** `deletes:` with `instances:` removes every stored row of the entity the filter
+selects, the same selection `moves:` and `updates:` make: "revoke every token of this user". Zero
+selected rows is an accepted answer. `{count: changed}` in `payload:` is the number of rows removed.
+`sets:` beside it is refused (`conflicting_declaration`), as on a single `deletes:`: a removed row
+holds nothing to set.
+
+**Removal beside a subject.** An `affects:` entry may declare `deletes: <Entity>`, spelled like the
+entry's `moves: <Entity>.<transition>`: every row of the entry's entity its filter selects is
+removed, the subject itself excepted where the entity is the subject's. It names the entry's own
+`entity`; another entity is `conflicting_declaration` at the entry, naming both. `sets:` beside it,
+or `moves:` in the same entry, is `conflicting_declaration`. A deleting entry beside any other entry
+over the same entity is `conflicting_declaration` at the second of them, as two moving entries are;
+over different entities the pair is admitted. And `affects:` is admitted beside a `deletes:`
+subject, which exists before the outcome, so `subject.<field>` reads it as it was: "delete the user
+and its tokens".
+
+Below `ess/23` each keeps the refusal it had, naming `ess/23`: `instances:` on `deletes:` and
+`affects:` beside `deletes:` are `unsupported_construct`, and the entry's `deletes:` key is
+`unsupported_format_version`. The refused key is taken off before the outcome is converted, so the
+refusal comes alone, with no `empty_declaration` ("declares no outcomes") beside it.
+
+The rows are witnessed as other set effects are (above): three rows the filter selects, one per
+conjunct left out, the command, then each removed row read absent from every immediate view of its
+entity with `deletes:`'s absence check (`expect_subject_absent`, `ess-conformance/22`) and each
+other row read as arranged; the bulk form then sends the command again under an input selecting
+nothing, with a count of 0 and every row as the first call left it. No suite step is new. The
+interpreter removes the rows. Entity Runtime refuses both with `SetEffectUnsupported`, and Rust,
+Go, Web and Clap as `MissingRepresentation`, as for every set effect. `ess-diff`'s
+`outcome-set-effect-changed` line names the deletion, and the generated documentation says which
+rows are removed.
+
+**Removal in other domains** is not an `affects:` entry: a domain boundary is where bindings
+belong. The deleting command emits one event, and the cascade is one binding per receiving domain
+on that event, each with its own `delivery:` and `on_failure:`; each receiving command removes its
+own rows with the bulk form. ESS states no order between bindings of one event, and atomicity
+across them stays out of scope (below).
+
 ## Targets
 
 Entity Runtime refuses both with `SetEffectUnsupported`: an entity-core operation acts on the one
@@ -161,4 +203,5 @@ carrying one line per construct on each side.
 ## Out of scope
 
 Atomicity and partial failure (an implementation stopping at the first error), `affects:` across a
-relation by name, and the order in which rows change.
+relation by name, the order in which rows change, and cross-domain cascade (one binding per
+receiving domain answers it, beyond10x/ess#452).

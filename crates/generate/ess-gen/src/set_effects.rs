@@ -29,6 +29,14 @@ pub(crate) fn set_sentence(ir: &EssIr, set: &ResolvedSetSubject) -> Vec<Inline> 
                 "; a selected row resting outside the move's starting states is left as it is.",
             ),
         ],
+        // From ess/23 a set subject may remove its rows (beyond10x/ess#452).
+        ResolvedEffect::Deletes => vec![
+            Inline::text("It removes every "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" its filter "),
+            Inline::code(set.filter.to_string()),
+            Inline::text(" selects."),
+        ],
         _ => vec![
             Inline::text("It changes every "),
             Inline::code(entity.name.to_string()),
@@ -54,6 +62,16 @@ pub(crate) fn affects_sentences(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<In
 
 fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
     let entity = ir.entity(&affect.entity);
+    // From ess/23 an entry may remove its rows (beyond10x/ess#452).
+    if affect.deletes {
+        return vec![
+            Inline::text(" Beside its subject, it removes every "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" the filter "),
+            Inline::code(affect.filter.to_string()),
+            Inline::text(" selects, the subject itself excepted."),
+        ];
+    }
     // From ess/22 an entry may move its rows (beyond10x/ess#229); an entry that only sets fields
     // reads as it always did.
     let Some(transition) = &affect.moves else {

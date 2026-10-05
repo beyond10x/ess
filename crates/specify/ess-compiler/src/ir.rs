@@ -999,13 +999,14 @@ impl ResolvedOutcome {
 /// Every stored row of an entity a filter selects, and what a set outcome does to each (ess/16).
 ///
 /// A `moves:` takes the selected rows resting in the transition's `from` states and skips the
-/// others; an `updates:` changes every selected row. The outcome's own
-/// [`sets`](ResolvedOutcome::sets) apply to each changed row.
+/// others; an `updates:` changes every selected row; a `deletes:` (ess/23, beyond10x/ess#452)
+/// removes every selected row. The outcome's own [`sets`](ResolvedOutcome::sets) apply to each
+/// changed row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedSetSubject {
     /// The entity whose rows change.
     pub entity: EntityHandle,
-    /// [`ResolvedEffect::Moves`] or [`ResolvedEffect::Updates`].
+    /// [`ResolvedEffect::Moves`], [`ResolvedEffect::Updates`] or [`ResolvedEffect::Deletes`].
     #[serde(flatten)]
     pub effect: ResolvedEffect,
     /// The rows selected: the entity's stored fields, with `input.<field>` operands.
@@ -1028,6 +1029,10 @@ pub struct ResolvedAffect {
     /// only sets fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moves: Option<Transition>,
+    /// Every selected row is removed (ess/23, beyond10x/ess#452). Left out of the document where
+    /// the entry sets fields or moves its rows.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deletes: bool,
 }
 
 /// Where a determined payload field's value comes from, resolved.

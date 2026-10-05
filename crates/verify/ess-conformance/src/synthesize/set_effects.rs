@@ -16,6 +16,10 @@
 //!   entry that moves its rows (ess/22, beyond10x/ess#229) is witnessed as an `instances:` move
 //!   ([`affect_rows`]): its changed rows rest in the move's `from` states and are read back in its
 //!   arrival state, and one row the filter selects rests outside them and is read back unmoved.
+//! * **Deletion** (ess/23, beyond10x/ess#452): a `deletes:` set subject, or a deleting `affects:`
+//!   entry, is witnessed on the same rows, and each row it removes is read absent by its identity
+//!   ([`require_absent`], `deletes:`'s `expect_subject_absent`) from every view that holds every
+//!   row ([`observed_removal`]); the rows it leaves are read as arranged.
 //!
 //! Every row is read from a view that publishes the entity's identity, unfiltered, whole and
 //! immediate, and that publishes the state a set move leaves and every field the effect writes
@@ -180,6 +184,56 @@ fn observed<'i>(
         ));
     }
     Ok(views)
+}
+
+/// [`observing`], for a set effect that removes its rows (ess/23, beyond10x/ess#452): a removed row
+/// is read absent by its identity and a kept one as arranged, so any view holding every row of the
+/// entity with its identity observes both; or a refusal where none does.
+fn observed_removal<'i>(
+    ir: &'i EssIr,
+    entity: &EntityHandle,
+    at: String,
+) -> Result<Vec<&'i ResolvedView>, RefusalCause> {
+    let views = observing(ir, entity);
+    if views.is_empty() {
+        return Err(gap(
+            at,
+            entity.to_string(),
+            "is removed by a set effect and published by no immediate, unfiltered, \
+             unparameterised, unpaged view carrying its identity, so a removed row and a kept \
+             one cannot be told apart when read back",
+        ));
+    }
+    Ok(views)
+}
+
+/// The read requiring `instance` of `entity` absent from `view` after the command: `deletes:`'s
+/// absence check (`expect_subject_absent`, `ess-conformance/22`), after one query of the view.
+fn require_absent(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    name: &ViewRef,
+    instance: &InstanceName,
+    reads: &mut Vec<ScenarioStep>,
+) {
+    if !reads
+        .iter()
+        .any(|step| matches!(step, ScenarioStep::QueryView { view, .. } if view == name))
+    {
+        reads.push(ScenarioStep::QueryView {
+            view: name.clone(),
+            params: BTreeMap::new(),
+        });
+    }
+    reads.push(ScenarioStep::ExpectSubjectAbsent {
+        view: name.clone(),
+        subject: [(
+            ir.entity(entity).identity.name.clone(),
+            ScenarioValue::instance(instance.clone()),
+        )]
+        .into_iter()
+        .collect(),
+    });
 }
 
 fn gap(path: String, type_ref: String, reason: &'static str) -> RefusalCause {
@@ -592,15 +646,15 @@ fn row_fields(
     shown(view, fields, settled)
 }
 
-/// Every row read back after the command: changed rows as the effect leaves them, the others as
-/// they were arranged.
+/// Every row read back after the command: changed rows as the effect leaves them — absent where
+/// it removes them (ess/23, beyond10x/ess#452) — the others as they were arranged.
 #[allow(clippy::too_many_arguments)]
 fn read_back(
     ir: &EssIr,
     entity: &EntityHandle,
     views: &[&ResolvedView],
     rows: &Rows,
-    to: Option<&StateName>,
+    (to, removes): (Option<&StateName>, bool),
     sets: &ResolvedOutcome,
     supplied: &BTreeMap<String, ScenarioValue>,
     steps: &mut Vec<ScenarioStep>,
@@ -609,7 +663,10 @@ fn read_back(
     for view in views {
         let name = ViewRef::new(view.name.clone());
         let mut reads = Vec::new();
-        for row in &rows.changed {
+        for row in rows.changed.iter().filter(|_| removes) {
+            require_absent(ir, entity, &name, &row.instance, &mut reads);
+        }
+        for row in rows.changed.iter().filter(|_| !removes) {
             let state = to.unwrap_or(&row.state);
             let left = after(ir, sets, supplied, &row.settled);
             let fields = row_fields(ir, entity, view, &row.instance, state, &left);
@@ -784,7 +841,12 @@ fn set_scenario(
     let entity = &set.entity;
     let at = || format!("{}.instances", outcome.name);
     let moves = matches!(set.effect, ResolvedEffect::Moves { .. });
-    let views = observed(ir, entity, at(), (moves, &outcome.sets))?;
+    let removes = set.effect == ResolvedEffect::Deletes;
+    let views = if removes {
+        observed_removal(ir, entity, at())?
+    } else {
+        observed(ir, entity, at(), (moves, &outcome.sets))?
+    };
     let input = reach(ir, command, outcome, Distinction::PLAIN)?;
     let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
     let selection = Selection {
@@ -833,13 +895,13 @@ fn set_scenario(
         entity,
         &views,
         &arranged,
-        to,
+        (to, removes),
         outcome,
         &supplied,
         &mut steps,
         &mut source,
     );
-    let left = left_by(ir, outcome, &supplied, &arranged, to);
+    let left = left_by(ir, outcome, &supplied, &arranged, (to, removes));
     if let Some(none) = matching_none(ir, command, outcome, &set.filter, entity, &left) {
         zero_match(
             models,
@@ -960,10 +1022,27 @@ fn read_back_left(
     source: &mut BTreeSet<EssSemanticRef>,
 ) {
     let entity = &entry.affect.entity;
+    // A deleting entry (ess/23, beyond10x/ess#452) stands alone over its entity, so each row it
+    // changes is one it removes, read absent; the rows it leaves are read as every entry leaves them.
+    let removed = if entry.affect.deletes {
+        entry.rows.changed.len()
+    } else {
+        0
+    };
     for view in &entry.views {
         let name = ViewRef::new(view.name.clone());
         let mut reads = Vec::new();
-        for (row, (state, settled)) in entry.rows.changed.iter().chain(&entry.rows.kept).zip(left) {
+        for row in &entry.rows.changed[..removed] {
+            require_absent(ir, entity, &name, &row.instance, &mut reads);
+        }
+        for (row, (state, settled)) in entry
+            .rows
+            .changed
+            .iter()
+            .chain(&entry.rows.kept)
+            .zip(left)
+            .skip(removed)
+        {
             let fields = row_fields(ir, entity, view, &row.instance, state, settled);
             require(
                 view,
@@ -1204,12 +1283,16 @@ fn affects_segment(
     let filters = subject_filters(outcome, &subject.entity, &setup.settled, &operands.symbols)?;
     for (index, (affect, filter)) in filters.into_iter().enumerate() {
         let sets = with_sets(outcome, affect);
-        let views = observed(
-            ir,
-            &affect.entity,
-            at(index),
-            (affect.moves.is_some(), &affect.sets),
-        )?;
+        let views = if affect.deletes {
+            observed_removal(ir, &affect.entity, at(index))?
+        } else {
+            observed(
+                ir,
+                &affect.entity,
+                at(index),
+                (affect.moves.is_some(), &affect.sets),
+            )?
+        };
         let selection = Selection {
             ir,
             command,
@@ -1302,20 +1385,25 @@ pub(super) fn misses(filter: &Predicate) -> Vec<Predicate> {
 }
 
 /// Every arranged row as the branch under test leaves it: the changed ones in their new state with
-/// what `sets:` wrote, the others as they were.
+/// what `sets:` wrote, the others as they were. A removed row (ess/23, beyond10x/ess#452) is left
+/// nowhere, so only the others remain.
 fn left_by(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     supplied: &BTreeMap<String, ScenarioValue>,
     rows: &Rows,
-    to: Option<&StateName>,
+    (to, removes): (Option<&StateName>, bool),
 ) -> Vec<Arrangement> {
-    let changed = rows.changed.iter().map(|row| Arrangement {
-        state: to.unwrap_or(&row.state).clone(),
-        settled: after(ir, outcome, supplied, &row.settled),
-        unwritten: super::still_unwritten(&row.unwritten, outcome),
-        ..row.clone()
-    });
+    let changed = rows
+        .changed
+        .iter()
+        .filter(|_| !removes)
+        .map(|row| Arrangement {
+            state: to.unwrap_or(&row.state).clone(),
+            settled: after(ir, outcome, supplied, &row.settled),
+            unwritten: super::still_unwritten(&row.unwritten, outcome),
+            ..row.clone()
+        });
     changed.chain(rows.kept.iter().cloned()).collect()
 }
 
@@ -1376,7 +1464,15 @@ fn zero_match(
         kept: left,
     };
     read_back(
-        ir, entity, views, &unchanged, None, outcome, &supplied, steps, source,
+        ir,
+        entity,
+        views,
+        &unchanged,
+        (None, false),
+        outcome,
+        &supplied,
+        steps,
+        source,
     );
     Ok(())
 }

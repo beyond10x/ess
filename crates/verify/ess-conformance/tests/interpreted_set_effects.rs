@@ -503,3 +503,137 @@ fn admitted_struct_set_fields_use_the_same_typed_leaf_sources() {
         ]))
     );
 }
+
+/// Deleting the selected rows (ess/23, beyond10x/ess#452).
+mod deletes {
+    use super::*;
+
+    const DELETES: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-deletes.yaml");
+
+    fn run(ir: &EssIr, store: &mut Store, command: &str, input: &BTreeMap<String, Node>) -> Step {
+        let mut steps = execute(
+            ir,
+            store,
+            &format!("demo.auth.{command}").parse().unwrap(),
+            input,
+            &Externals::Withheld,
+        )
+        .unwrap_or_else(|error| panic!("{command}: {error:?}"));
+        assert_eq!(steps.len(), 1);
+        let step = steps.remove(0);
+        *store = step.next.clone();
+        step
+    }
+
+    fn created(
+        ir: &EssIr,
+        store: &mut Store,
+        (command, event, field): (&str, &str, &str),
+        id: &str,
+        input: &BTreeMap<String, Node>,
+    ) {
+        let mut steps = execute_generating(
+            ir,
+            store,
+            &format!("demo.auth.{command}").parse().unwrap(),
+            input,
+            &Externals::Withheld,
+            &Generated::Given(BTreeMap::from([(
+                GeneratedSlot::new(format!("demo.auth.{event}").parse().unwrap(), field),
+                text(id),
+            )])),
+        )
+        .unwrap();
+        *store = steps.remove(0).next;
+    }
+
+    fn user(ir: &EssIr, store: &mut Store, id: &str) {
+        created(
+            ir,
+            store,
+            ("AddUser", "UserAdded", "user_id"),
+            id,
+            &values([("team", text("one"))]),
+        );
+    }
+
+    fn token(ir: &EssIr, store: &mut Store, id: &str, user: &str, scope: &str) {
+        created(
+            ir,
+            store,
+            ("IssueToken", "TokenIssued", "token_id"),
+            id,
+            &values([("user_id", text(user)), ("scope", text(scope))]),
+        );
+    }
+
+    fn held(store: &Store, entity: &str, id: &str) -> bool {
+        store
+            .instance(&format!("demo.auth.{entity}").parse().unwrap(), id)
+            .is_some()
+    }
+
+    #[test]
+    fn the_interpreter_removes_every_selected_row_and_counts_them() {
+        let ir = model(DELETES);
+        let mut store = Store::default();
+        for (id, user, scope) in [
+            ("a", "ann", "read"),
+            ("b", "ann", "read"),
+            ("c", "ann", "read"),
+            ("write", "ann", "write"),
+            ("bob", "bob", "read"),
+        ] {
+            token(&ir, &mut store, id, user, scope);
+        }
+        let input = values([("user_id", text("ann")), ("scope", text("read"))]);
+        let revoked = run(&ir, &mut store, "RevokeTokens", &input);
+        assert_eq!(
+            revoked.outcome.as_ref().map(ToString::to_string),
+            Some("demo.auth.RevokeTokens/revoked".to_owned())
+        );
+        assert_eq!(count(&revoked, "revoked"), Node::Number(3_i64.into()));
+        for id in ["a", "b", "c"] {
+            assert!(!held(&store, "Token", id), "{id} is removed");
+        }
+        for id in ["write", "bob"] {
+            assert!(held(&store, "Token", id), "{id} is kept");
+        }
+        let before = store.clone();
+        let again = run(&ir, &mut store, "RevokeTokens", &input);
+        assert_eq!(count(&again, "revoked"), Node::Number(0_i64.into()));
+        assert_eq!(store, before, "a zero-match call changes nothing");
+    }
+
+    #[test]
+    fn the_interpreter_removes_the_subject_and_the_rows_it_owns() {
+        let ir = model(DELETES);
+        let mut store = Store::default();
+        for id in ["ann", "bob"] {
+            user(&ir, &mut store, id);
+        }
+        for (id, owner) in [("a", "ann"), ("b", "ann"), ("bob-1", "bob")] {
+            token(&ir, &mut store, id, owner, "read");
+        }
+        let deleted = run(
+            &ir,
+            &mut store,
+            "DeleteUser",
+            &values([("user_id", text("ann"))]),
+        );
+        assert_eq!(
+            deleted.outcome.as_ref().map(ToString::to_string),
+            Some("demo.auth.DeleteUser/deleted".to_owned())
+        );
+        assert!(!held(&store, "User", "ann"));
+        assert!(held(&store, "User", "bob"));
+        for id in ["a", "b"] {
+            assert!(!held(&store, "Token", id), "{id} is removed with its owner");
+        }
+        assert!(
+            held(&store, "Token", "bob-1"),
+            "another user's token is kept"
+        );
+    }
+}

@@ -1,0 +1,86 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.auth
+types:
+  - {name: demo.auth.UserId, kind: newtype, of: String}
+  - {name: demo.auth.TokenId, kind: newtype, of: String}
+entities:
+  - name: demo.auth.User
+    identity: {name: user_id, type: demo.auth.UserId}
+    fields: [{name: team, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.auth.Token
+    identity: {name: token_id, type: demo.auth.TokenId}
+    fields:
+      - {name: user_id, type: demo.auth.UserId}
+      - {name: scope, type: String}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+events:
+  - name: demo.auth.UserAdded
+    fields: [{name: user_id, type: demo.auth.UserId}]
+  - name: demo.auth.TokenIssued
+    fields: [{name: token_id, type: demo.auth.TokenId}]
+  - name: demo.auth.TokensRevoked
+    fields: [{name: user_id, type: demo.auth.UserId}, {name: revoked, type: Integer}]
+  - name: demo.auth.UserDeleted
+    fields: [{name: user_id, type: demo.auth.UserId}]
+errors: [{name: demo.auth.NoSuchUser}]
+actors:
+  - name: demo.auth.Admin
+    may: [demo.auth.AddUser, demo.auth.IssueToken, demo.auth.RevokeTokens, demo.auth.DeleteUser]
+commands:
+  - name: demo.auth.AddUser
+    input: [{name: team, type: String}]
+    outcomes:
+      - name: added
+        creates: demo.auth.User
+        instance: user_id
+        emits: [demo.auth.UserAdded]
+        payload: {demo.auth.UserAdded: {user_id: {generated: true}}}
+        sets: {team: input.team}
+  - name: demo.auth.IssueToken
+    input: [{name: user_id, type: demo.auth.UserId}, {name: scope, type: String}]
+    outcomes:
+      - name: issued
+        creates: demo.auth.Token
+        instance: token_id
+        emits: [demo.auth.TokenIssued]
+        payload: {demo.auth.TokenIssued: {token_id: {generated: true}}}
+        sets: {user_id: input.user_id, scope: input.scope}
+  - name: demo.auth.RevokeTokens
+    input: [{name: user_id, type: demo.auth.UserId}, {name: scope, type: String}]
+    outcomes:
+      - name: revoked
+        deletes: demo.auth.Token
+        instances: {where: {all: [user_id == input.user_id, scope == input.scope]}}
+        emits: [demo.auth.TokensRevoked]
+        payload:
+          demo.auth.TokensRevoked: {user_id: input.user_id, revoked: {count: changed}}
+  - name: demo.auth.DeleteUser
+    input: [{name: user_id, type: demo.auth.UserId}]
+    outcomes:
+      - name: deleted
+        deletes: demo.auth.User
+        instance: user_id
+        emits: [demo.auth.UserDeleted]
+        payload: {demo.auth.UserDeleted: {user_id: input.user_id}}
+        affects:
+          - entity: demo.auth.Token
+            where: user_id == subject.user_id
+            deletes: demo.auth.Token
+      - {name: no-such-user, unknown_instance: true, error: demo.auth.NoSuchUser}
+views:
+  - name: demo.auth.Users
+    source: demo.auth.User
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: demo.auth.UserId}
+      - {name: team, type: String}
+  - name: demo.auth.Tokens
+    source: demo.auth.Token
+    consistency: read_your_writes
+    fields:
+      - {name: token_id, type: demo.auth.TokenId}
+      - {name: user_id, type: demo.auth.UserId}
+      - {name: scope, type: String}

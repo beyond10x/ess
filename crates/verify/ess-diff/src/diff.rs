@@ -2803,6 +2803,15 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
         ));
     }
     for affect in &outcome.affects {
+        // From ess/23 an entry may remove its rows (beyond10x/ess#452).
+        if affect.deletes {
+            lines.push(format!(
+                "affects every `{}` where `{}`: deletes them",
+                affect.entity.name(),
+                affect.filter
+            ));
+            continue;
+        }
         // From ess/22 an entry may move its rows (beyond10x/ess#229); a line without one reads as
         // it always did.
         let moves = affect

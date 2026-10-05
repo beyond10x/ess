@@ -18,6 +18,12 @@
 //!   `moves: <Entity>.<transition>`: every selected row resting in the transition's `from` states
 //!   takes it, and a selected row resting elsewhere is skipped, as under `instances:`.
 //!
+//! From ess/23 (beyond10x/ess#452) `instances:` is also admitted beside `deletes:`, removing every
+//! row the filter selects; an `affects:` entry may declare `deletes: <Entity>` naming its own
+//! entity, removing every row it selects; and `affects:` sits beside a `deletes:` subject. Neither
+//! takes `sets:`, and a deleting entry stands alone over its entity among the entries. Below ess/23
+//! each keeps its refusal, naming ess/23.
+//!
 //! `sets:` of either takes a literal, `input.<field>`, `{input: …, else: …}`, `{generated: true}`
 //! or `{cleared: true}`; a source that reads one row (`{subject: …}`, `{related: …}`,
 //! `{increment: …}`) or the caller is refused by name in this first cut. Below ess/22 a move inside
@@ -66,14 +72,20 @@ pub struct RawAffect {
     /// elsewhere is skipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moves: Option<QualifiedName>,
+    /// Every selected row is removed, written `deletes: <Entity>` naming `entity` (ess/23,
+    /// beyond10x/ess#452).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletes: Option<QualifiedName>,
 }
 
-/// The rows a `moves:` or `updates:` outcome changes, selected by a filter rather than named.
+/// The rows a `moves:`, `updates:` or — from ess/23 — `deletes:` outcome changes, selected by a
+/// filter rather than named.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SetSubject {
     /// The entity whose rows change.
     pub entity: QualifiedName,
-    /// [`Effect::Moves`] or [`Effect::Updates`], and nothing else.
+    /// [`Effect::Moves`], [`Effect::Updates`] or [`Effect::Deletes`] (ess/23, beyond10x/ess#452),
+    /// and nothing else.
     #[serde(flatten)]
     pub effect: Effect,
     /// The rows selected.
@@ -93,6 +105,15 @@ pub struct Affect {
     /// beyond10x/ess#229); `None` where the entry only sets fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moves: Option<String>,
+    /// Every selected row is removed (ess/23, beyond10x/ess#452); `false` where the entry sets
+    /// fields or moves its rows.
+    #[serde(skip_serializing_if = "is_false")]
+    pub deletes: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference.
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Both constructs of one outcome; empty on every outcome that declares neither.
@@ -126,15 +147,19 @@ fn refusal(
 
 /// The verbs an outcome declared beside `instances:`, by key.
 pub(super) struct Verbs<'a> {
-    /// `creates`, `deletes` or `preserves`, where the outcome wrote one of them.
+    /// `creates` or `preserves`, where the outcome wrote one of them.
     pub(super) other: Option<&'static str>,
     pub(super) instance: bool,
     pub(super) moves: &'a mut Option<QualifiedName>,
     pub(super) updates: &'a mut Option<QualifiedName>,
+    /// `deletes:`, which takes a set subject from ess/23 (beyond10x/ess#452); below it the header
+    /// refuses the pair before conversion ([`refuse_deletions`]).
+    pub(super) deletes: &'a mut Option<QualifiedName>,
 }
 
-/// `instances:` as the set subject it declares, taking the `moves:` or `updates:` it was written
-/// beside so [`super::subject_of`] sees no single subject; or the refusal of a combination.
+/// `instances:` as the set subject it declares, taking the `moves:`, `updates:` or `deletes:` it
+/// was written beside so [`super::subject_of`] sees no single subject; or the refusal of a
+/// combination.
 pub(super) fn set_subject(
     name: &OutcomeName,
     instances: Option<RawInstances>,
@@ -181,10 +206,18 @@ pub(super) fn set_subject(
             ValidationCode::UnsupportedConstruct,
             format!(
                 "outcome `{name}` {verb} an entity and declares `instances:`; a set subject is \
-                 admitted beside `moves:` and `updates:` only"
+                 admitted beside `moves:`, `updates:` and `deletes:` only"
             ),
-            "name one row with `instance:`, or change the rows with `moves:` or `updates:`",
+            "name one row with `instance:`, or change the rows with `moves:`, `updates:` or \
+             `deletes:`",
         ));
+    }
+    if let Some(entity) = verbs.deletes.take() {
+        return Ok(Some(SetSubject {
+            entity,
+            effect: Effect::Deletes,
+            filter,
+        }));
     }
     if let Some(entity) = verbs.updates.take() {
         return Ok(Some(SetSubject {
@@ -256,10 +289,30 @@ fn misnamed_move(
     }
 }
 
+/// Why `deleted`, written as `deletes:` inside an `affects:` entry over `entity`, is not that
+/// entity (beyond10x/ess#452), as the refusal's message and hint; `None` where it is.
+fn misnamed_deletion(
+    name: &str,
+    entity: &QualifiedName,
+    deleted: &QualifiedName,
+) -> Option<(String, String)> {
+    (deleted != entity).then(|| {
+        (
+            format!(
+                "outcome `{name}` deletes `{deleted}` inside an `affects:` entry over `{entity}`; \
+                 the entry removes rows of `{entity}` only"
+            ),
+            format!("name the entry's own entity: `deletes: {entity}`"),
+        )
+    })
+}
+
 /// `affects:` as written, with a move naming another entity than the entry's refused and a field
 /// set twice refused. An assembled specification reaches this with such a move already taken off
 /// the entry and refused alone by [`refuse_affect_moves`], which also says whether the format
-/// admits a move at all; the refusal here is the backstop for an outcome converted on its own.
+/// admits a move at all; the refusal here is the backstop for an outcome converted on its own. A
+/// `deletes:` naming another entity than the entry's is refused at the entry the same way, with
+/// [`refuse_deletions`] as the pass before conversion.
 pub(super) fn affects(
     name: &OutcomeName,
     written: Vec<RawAffect>,
@@ -294,6 +347,22 @@ pub(super) fn affects(
                 }
             },
         };
+        let deletes = match &raw.deletes {
+            None => false,
+            Some(deleted) => match misnamed_deletion(name.as_str(), &raw.entity, deleted) {
+                None => true,
+                Some((message, hint)) => {
+                    errors.extend(refusal(
+                        name,
+                        &format!("affects[{index}]"),
+                        ValidationCode::ConflictingDeclaration,
+                        message,
+                        &hint,
+                    ));
+                    continue;
+                }
+            },
+        };
         let mut sets = BTreeMap::new();
         for entry in raw.sets.0 {
             if sets.contains_key(&entry.target) {
@@ -313,12 +382,14 @@ pub(super) fn affects(
             filter,
             sets,
             moves,
+            deletes,
         });
     }
     errors.into_result(affects)
 }
 
-/// `affects:` is admitted beside one existing subject that `moves:` or `updates:`.
+/// `affects:` is admitted beside one existing subject that `moves:`, `updates:` or — from ess/23,
+/// which [`refuse_deletions`] and [`validate`] hold — `deletes:`.
 pub(super) fn affects_beside(
     name: &OutcomeName,
     affects: &[Affect],
@@ -341,17 +412,18 @@ pub(super) fn affects_beside(
         ));
     }
     match subject.map(|subject| &subject.effect) {
-        Some(Effect::Moves { .. } | Effect::Updates) => Ok(()),
+        Some(Effect::Moves { .. } | Effect::Updates | Effect::Deletes) => Ok(()),
         Some(effect) => Err(refusal(
             name,
             "affects",
             ValidationCode::UnsupportedConstruct,
             format!(
                 "outcome `{name}` {} its subject and declares `affects:`; a secondary effect is \
-                 admitted beside `moves:` and `updates:`, whose subject exists before the outcome",
+                 admitted beside `moves:`, `updates:` and, from ess/23, `deletes:`, whose subject \
+                 exists before the outcome",
                 effect.verb()
             ),
-            "move `affects:` to the branch that moves or updates an existing row",
+            "move `affects:` to the branch that moves, updates or deletes an existing row",
         )),
         None => Err(refusal(
             name,
@@ -366,18 +438,21 @@ pub(super) fn affects_beside(
     }
 }
 
+/// The single subject's verbs, as [`written`] takes and gives them back: `moves`, `updates` and
+/// `deletes`.
+pub(super) type WrittenVerbs = (
+    Option<QualifiedName>,
+    Option<QualifiedName>,
+    Option<QualifiedName>,
+);
+
 /// The keys `effects` is written back with: the verb the set subject takes, `instances:` and
-/// `affects:`. `moves` and `updates` are the single subject's, and kept where there is no set one.
+/// `affects:`. `moves`, `updates` and `deletes` are the single subject's, and kept where there is
+/// no set one.
 pub(super) fn written(
     effects: SetEffects,
-    moves: Option<QualifiedName>,
-    updates: Option<QualifiedName>,
-) -> (
-    Option<QualifiedName>,
-    Option<QualifiedName>,
-    Option<RawInstances>,
-    Vec<RawAffect>,
-) {
+    (moves, updates, deletes): WrittenVerbs,
+) -> (WrittenVerbs, Option<RawInstances>, Vec<RawAffect>) {
     let affects = effects
         .affects
         .into_iter()
@@ -386,6 +461,7 @@ pub(super) fn written(
                 .moves
                 .as_deref()
                 .map(|transition| affect.entity.child(transition)),
+            deletes: affect.deletes.then(|| affect.entity.clone()),
             entity: affect.entity,
             filter: affect.filter.into(),
             sets: PayloadTable(
@@ -398,20 +474,17 @@ pub(super) fn written(
         })
         .collect();
     let Some(set) = effects.instances else {
-        return (moves, updates, None, affects);
+        return ((moves, updates, deletes), None, affects);
     };
     let instances = Some(RawInstances {
         filter: set.filter.into(),
     });
-    match set.effect {
-        Effect::Moves { transition } => (
-            Some(set.entity.child(&transition)),
-            updates,
-            instances,
-            affects,
-        ),
-        _ => (moves, Some(set.entity), instances, affects),
-    }
+    let verbs = match set.effect {
+        Effect::Moves { transition } => (Some(set.entity.child(&transition)), updates, deletes),
+        Effect::Deletes => (moves, updates, Some(set.entity)),
+        _ => (moves, Some(set.entity), deletes),
+    };
+    (verbs, instances, affects)
 }
 
 /// The transitions set moves take, for the lifecycle-cause check: an `instances:` move and, from
@@ -501,6 +574,12 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 }
                 continue;
             }
+            if format.major() < FormatVersion::V23.major() {
+                // A backstop for a specification assembled without the one header
+                // [`refuse_deletions`] reads.
+                errors.extend(deletions_below_ess_23(outcome, &site));
+            }
+            errors.extend(deletion_shapes(command, outcome, &site));
             if let Some(set) = &outcome.set_effects.instances {
                 let at = site.clone().key("instances");
                 errors.extend(set_branch(outcome, &at));
@@ -1069,6 +1148,258 @@ pub(crate) fn refuse_affect_moves(
                     refused_moves.insert(named);
                     affect.moves = None;
                 }
+            }
+        }
+    }
+}
+
+/// The refusal of `instances:` beside `deletes:` below ess/23, at `at`: the code and message it
+/// always had, naming the format that admits it (beyond10x/ess#452).
+fn bulk_deletion_below_ess_23(name: &str, at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedConstruct,
+        at,
+        format!(
+            "outcome `{name}` deletes an entity and declares `instances:`; a set subject is \
+             admitted beside `moves:` and `updates:` only, and beside `deletes:` from \
+             specification format ess/23"
+        ),
+    )
+    .with_hint("declare `format: ess/23`, or name one row with `instance:`")
+}
+
+/// The refusal of `affects:` beside a `deletes:` subject below ess/23, at `at`: the code and
+/// message it always had, naming the format that admits it (beyond10x/ess#452).
+fn affects_beside_deletion_below_ess_23(name: &str, at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedConstruct,
+        at,
+        format!(
+            "outcome `{name}` deletes its subject and declares `affects:`; a secondary effect is \
+             admitted beside `moves:` and `updates:`, whose subject exists before the outcome, \
+             and beside `deletes:` from specification format ess/23"
+        ),
+    )
+    .with_hint(
+        "declare `format: ess/23`, or move `affects:` to the branch that moves or updates an \
+         existing row",
+    )
+}
+
+/// The refusal of `deletes:` inside an `affects:` entry below ess/23, at `at` (beyond10x/ess#452).
+fn affect_deletion_below_ess_23(at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedFormatVersion,
+        at,
+        "a deletion inside `affects:` — `deletes: <Entity>` on the rows an entry selects — \
+         requires specification format ess/23",
+    )
+    .with_hint("declare `format: ess/23`")
+}
+
+/// Every deletion a set effect declares under a format below ess/23, refused where an assembled
+/// specification did not already take it off before conversion ([`refuse_deletions`]).
+fn deletions_below_ess_23(outcome: &Outcome, site: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let name = outcome.name.as_str();
+    if outcome
+        .set_effects
+        .instances
+        .as_ref()
+        .is_some_and(|set| set.effect == Effect::Deletes)
+    {
+        errors.push(bulk_deletion_below_ess_23(
+            name,
+            site.clone().key("instances").render(),
+        ));
+    }
+    let deletes_subject = outcome
+        .subject
+        .as_ref()
+        .is_some_and(|subject| subject.effect == Effect::Deletes);
+    if deletes_subject && !outcome.set_effects.affects.is_empty() {
+        errors.push(affects_beside_deletion_below_ess_23(
+            name,
+            site.clone().key("affects").render(),
+        ));
+    }
+    for (index, affect) in outcome.set_effects.affects.iter().enumerate() {
+        if affect.deletes {
+            errors.push(affect_deletion_below_ess_23(
+                site.clone()
+                    .key("affects")
+                    .index(index)
+                    .key("deletes")
+                    .render(),
+            ));
+        }
+    }
+    errors
+}
+
+/// The shape of every deletion a set effect declares (ess/23, beyond10x/ess#452): no `sets:` beside
+/// a bulk `deletes:` or a deleting entry, no `moves:` in a deleting entry, and a deleting entry
+/// alone over its entity among the entries.
+fn deletion_shapes(
+    command: &CommandSpec,
+    outcome: &Outcome,
+    site: &ConstructRef,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if let Some(set) = outcome
+        .set_effects
+        .instances
+        .as_ref()
+        .filter(|set| set.effect == Effect::Deletes && !outcome.sets.is_empty())
+    {
+        errors.push(
+            ValidationError::at(
+                site.clone().key("sets"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` of `{}` deletes every `{}` its filter selects and declares \
+                     `sets:`; a removed row holds nothing to set, so `sets:` beside `deletes:` \
+                     writes nothing",
+                    outcome.name, command.name, set.entity
+                ),
+            )
+            .with_hint("drop `sets:`, or split the branch into a set update and a set deletion"),
+        );
+    }
+    let affects = &outcome.set_effects.affects;
+    for (index, affect) in affects.iter().enumerate() {
+        let at = site.clone().key("affects").index(index);
+        if affect.deletes && !affect.sets.is_empty() {
+            errors.push(
+                ValidationError::at(
+                    at.clone().key("sets"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "outcome `{}` of `{}` deletes the rows `affects[{index}]` selects and \
+                         declares `sets:` on them; a removed row holds nothing to set",
+                        outcome.name, command.name
+                    ),
+                )
+                .with_hint("drop `sets:` from the deleting entry"),
+            );
+        }
+        if affect.deletes && affect.moves.is_some() {
+            errors.push(
+                ValidationError::at(
+                    at.clone().key("moves"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "outcome `{}` of `{}` both moves and deletes the rows `affects[{index}]` \
+                         selects; one entry does one thing to its rows",
+                        outcome.name, command.name
+                    ),
+                )
+                .with_hint("keep `deletes:`, or keep `moves:` and remove the rows with a command of their own"),
+            );
+        }
+        // A deleting entry beside any other entry over the same entity, refused at the second of
+        // the two: a row both select would be changed and removed, in no defined order.
+        let Some(first) = affects[..index].iter().position(|earlier| {
+            earlier.entity == affect.entity && (earlier.deletes || affect.deletes)
+        }) else {
+            continue;
+        };
+        errors.push(
+            ValidationError::at(
+                at,
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` of `{}` declares `affects[{first}]` and `affects[{index}]` over \
+                     `{}`, and one of them deletes the rows it selects; a row both select would \
+                     be changed and removed, and no order between them is defined",
+                    outcome.name, command.name, affect.entity
+                ),
+            )
+            .with_hint(
+                "keep the deleting entry alone over its entity, or change the other rows with a \
+                 command of their own",
+            ),
+        );
+    }
+    errors
+}
+
+/// Refuses, before any outcome is converted, each deletion a set effect cannot declare under the
+/// one header (beyond10x/ess#452), at the key written: from `ess/16` below `ess/23` `instances:`
+/// beside `deletes:`, `affects:` beside a `deletes:` subject, and `deletes:` inside an `affects:`
+/// entry, each naming `ess/23`; from `ess/23` an entry's `deletes:` naming another entity than the
+/// entry's.
+///
+/// What is refused is taken off — `instances:` with its `deletes:` (and with them a `{count:
+/// changed}` and an `affects:` the branch could only hold beside a set subject), `affects:`, or the
+/// entry — so the branch converts and the refusal comes alone: no `empty_declaration` for a command
+/// whose only branch it refused. Below `ess/16` the whole construct is [`refuse_below_ess_16`]'s; a
+/// specification of several headers keeps the conversion's refusal and [`validate`]'s.
+pub(crate) fn refuse_deletions(
+    files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
+    errors: &mut ValidationErrors,
+) {
+    let headers: Vec<Option<FormatVersion>> = files
+        .iter()
+        .filter(|(_, file)| file.system.is_some())
+        .map(|(_, file)| file.format)
+        .collect();
+    let [format] = headers.as_slice() else {
+        return;
+    };
+    let major = format.unwrap_or(FormatVersion::V1).major();
+    if major < FormatVersion::V16.major() {
+        return;
+    }
+    let below_23 = major < FormatVersion::V23.major();
+    for (_, file) in files.iter_mut() {
+        for command in &mut file.commands {
+            for outcome in &mut command.outcomes {
+                let at = format!("command.{}.outcomes.{}", command.name, outcome.name);
+                let name = outcome.name.as_str().to_owned();
+                if below_23 && outcome.deletes.is_some() && outcome.instances.is_some() {
+                    errors.push(bulk_deletion_below_ess_23(&name, format!("{at}.instances")));
+                    outcome.instances = None;
+                    outcome.deletes = None;
+                    outcome.affects.clear();
+                    for (_, table) in &mut outcome.payload.0 {
+                        for field in &mut table.0 {
+                            if field.source == PayloadSource::ChangedCount {
+                                field.source = PayloadSource::Generated;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if below_23 && outcome.deletes.is_some() && !outcome.affects.is_empty() {
+                    errors.push(affects_beside_deletion_below_ess_23(
+                        &name,
+                        format!("{at}.affects"),
+                    ));
+                    outcome.affects.clear();
+                    continue;
+                }
+                let mut index = 0;
+                outcome.affects.retain(|affect| {
+                    let at = format!("{at}.affects[{index}]");
+                    index += 1;
+                    let Some(deleted) = &affect.deletes else {
+                        return true;
+                    };
+                    if below_23 {
+                        errors.push(affect_deletion_below_ess_23(format!("{at}.deletes")));
+                        return false;
+                    }
+                    let Some((message, hint)) = misnamed_deletion(&name, &affect.entity, deleted)
+                    else {
+                        return true;
+                    };
+                    errors.push(
+                        ValidationError::new(ValidationCode::ConflictingDeclaration, at, message)
+                            .with_hint(hint),
+                    );
+                    false
+                });
             }
         }
     }

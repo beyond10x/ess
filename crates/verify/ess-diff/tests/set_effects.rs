@@ -111,3 +111,44 @@ fn issue_229_a_move_added_to_an_affects_entry_is_set_effect_changed() {
         "the entry's move is on the line that changed: {json}"
     );
 }
+
+/// `RevokeTokens` deletes every token a filter selects; `DeleteUser` deletes its subject and, in
+/// an `affects:` entry, every token it owns (ess/23, beyond10x/ess#452).
+const DELETES: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-deletes.yaml");
+
+#[test]
+fn set_delete_diff_line_names_the_deletion() {
+    let narrowed = DELETES.replacen(
+        "{all: [user_id == input.user_id, scope == input.scope]}",
+        "user_id == input.user_id",
+        1,
+    );
+    assert_ne!(narrowed, DELETES);
+    let delta = diff(&ir(DELETES), &ir(&narrowed)).unwrap();
+    let json = delta.to_canonical_json();
+    assert!(
+        json.contains(r#""kind": "outcome-set-effect-changed""#),
+        "{json}"
+    );
+    assert!(
+        delta.changes().iter().any(|change| {
+            let line = change.describe();
+            line.contains("deletes every `demo.auth.Token`")
+                && line.contains("scope == input.scope")
+        }),
+        "the bulk deletion is on the line that changed: {json}"
+    );
+    let entry = "        affects:\n          - entity: demo.auth.Token\n            where: user_id == subject.user_id\n            deletes: demo.auth.Token\n";
+    assert!(DELETES.contains(entry), "{entry}");
+    let without = DELETES.replacen(entry, "", 1);
+    let delta = diff(&ir(&without), &ir(DELETES)).unwrap();
+    let json = delta.to_canonical_json();
+    assert!(
+        delta.changes().iter().any(|change| {
+            let line = change.describe();
+            line.contains("`demo.auth.Token` where `user_id == subject.user_id`")
+                && line.contains("deletes")
+        }),
+        "the deleting entry is on the line that changed: {json}"
+    );
+}

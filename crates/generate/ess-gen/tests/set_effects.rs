@@ -83,3 +83,31 @@ fn issue_229_the_documentation_says_an_affects_entry_moves_its_rows() {
         "the entry's move is published: {docs}"
     );
 }
+
+/// Deleting the selected rows (ess/23, beyond10x/ess#452): the documentation says which rows a
+/// bulk `deletes:` and a deleting `affects:` entry remove.
+#[test]
+fn issue_452_the_documentation_says_which_rows_are_removed() {
+    const DELETES: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-deletes.yaml");
+    const AUTH: &str = "components:\n  - component: auth-service\n    owns:\n      domains: [demo.auth]\n    accepts:\n      commands: [demo.auth.AddUser, demo.auth.IssueToken, demo.auth.RevokeTokens, demo.auth.DeleteUser]\n    publishes:\n      events: [demo.auth.UserAdded, demo.auth.TokenIssued, demo.auth.TokensRevoked, demo.auth.UserDeleted]\n";
+    let raw = RawSpecFile::parse(&format!("{DELETES}{AUTH}")).unwrap();
+    let spec = Specification::assemble([(Source::new("auth.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let docs = artifacts(&ir, |path| {
+        std::path::Path::new(path)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+    });
+    assert!(
+        docs.contains("It removes every `demo.auth.Token` its filter"),
+        "the bulk deletion is published: {docs}"
+    );
+    assert!(
+        docs.contains(
+            "it removes every `demo.auth.Token` the filter `user_id == subject.user_id` selects"
+        ),
+        "the deleting entry is published: {docs}"
+    );
+}
