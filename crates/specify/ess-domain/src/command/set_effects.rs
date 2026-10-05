@@ -46,6 +46,28 @@ use crate::Specification;
 /// The root an `affects:` filter reads the subject under: `subject.team`.
 pub const SUBJECT_NAMESPACE: &str = "subject";
 
+std::thread_local! {
+    /// Whether the commands being converted belong to an `ess/23` source, where `deletes:` takes a
+    /// set subject and `affects:` (beyond10x/ess#452). Set only while
+    /// [`crate::spec::Specification::assemble`] converts a source whose one header it has read; it
+    /// decides only what a refusal of another verb names as admitted.
+    static ADMITS_DELETIONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `convert` with `deletes:` named among the verbs a set subject and `affects:` sit beside
+/// when `admitted`, restoring what was set before, so a nested assembly cannot leak its format
+/// into its caller's.
+pub(crate) fn converting_deletions<T>(admitted: bool, convert: impl FnOnce() -> T) -> T {
+    let before = ADMITS_DELETIONS.with(|cell| cell.replace(admitted));
+    let converted = convert();
+    ADMITS_DELETIONS.with(|cell| cell.set(before));
+    converted
+}
+
+fn admits_deletions() -> bool {
+    ADMITS_DELETIONS.with(std::cell::Cell::get)
+}
+
 /// What `instances:` holds as written.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -200,17 +222,7 @@ pub(super) fn set_subject(
         ));
     }
     if let Some(verb) = verbs.other {
-        return Err(refusal(
-            name,
-            "instances",
-            ValidationCode::UnsupportedConstruct,
-            format!(
-                "outcome `{name}` {verb} an entity and declares `instances:`; a set subject is \
-                 admitted beside `moves:`, `updates:` and `deletes:` only"
-            ),
-            "name one row with `instance:`, or change the rows with `moves:`, `updates:` or \
-             `deletes:`",
-        ));
+        return Err(other_verb_beside_instances(name, verb));
     }
     if let Some(entity) = verbs.deletes.take() {
         return Ok(Some(SetSubject {
@@ -258,6 +270,37 @@ pub(super) fn set_subject(
         },
         filter,
     }))
+}
+
+/// The refusal of `instances:` beside `verb`, `preserves` (`creates` is refused before it). Below
+/// ess/23 the wording is the one it always was; `deletes:` is named only where the source's format
+/// admits it (beyond10x/ess#452).
+fn other_verb_beside_instances(name: &OutcomeName, verb: &str) -> ValidationErrors {
+    let (message, hint) = if admits_deletions() {
+        (
+            format!(
+                "outcome `{name}` {verb} an entity and declares `instances:`; a set subject is \
+                 admitted beside `moves:` and `updates:` only, and, from ess/23, `deletes:`"
+            ),
+            "name one row with `instance:`, or change the rows with `moves:` or `updates:`, or, \
+             from ess/23, remove them with `deletes:`",
+        )
+    } else {
+        (
+            format!(
+                "outcome `{name}` {verb} an entity and declares `instances:`; a set subject is \
+                 admitted beside `moves:` and `updates:` only"
+            ),
+            "name one row with `instance:`, or change the rows with `moves:` or `updates:`",
+        )
+    };
+    refusal(
+        name,
+        "instances",
+        ValidationCode::UnsupportedConstruct,
+        message,
+        hint,
+    )
 }
 
 /// Why `moved`, written inside an `affects:` entry over `entity`, is not a transition of that
@@ -347,6 +390,8 @@ pub(super) fn affects(
                 }
             },
         };
+        // A misnamed deletion is refused and the rest of the entry still read, so its other
+        // refusals keep their place (beyond10x/ess#452).
         let deletes = match &raw.deletes {
             None => false,
             Some(deleted) => match misnamed_deletion(name.as_str(), &raw.entity, deleted) {
@@ -359,7 +404,7 @@ pub(super) fn affects(
                         message,
                         &hint,
                     ));
-                    continue;
+                    false
                 }
             },
         };
@@ -413,18 +458,32 @@ pub(super) fn affects_beside(
     }
     match subject.map(|subject| &subject.effect) {
         Some(Effect::Moves { .. } | Effect::Updates | Effect::Deletes) => Ok(()),
-        Some(effect) => Err(refusal(
-            name,
-            "affects",
-            ValidationCode::UnsupportedConstruct,
-            format!(
-                "outcome `{name}` {} its subject and declares `affects:`; a secondary effect is \
-                 admitted beside `moves:`, `updates:` and, from ess/23, `deletes:`, whose subject \
-                 exists before the outcome",
-                effect.verb()
-            ),
-            "move `affects:` to the branch that moves, updates or deletes an existing row",
-        )),
+        Some(effect) => {
+            // Below ess/23 the wording is the one it always was; `deletes:` is named only where
+            // the source's format admits it (beyond10x/ess#452).
+            let (beside, hint) = if admits_deletions() {
+                (
+                    "`moves:` and `updates:`, and, from ess/23, `deletes:`",
+                    "move `affects:` to the branch that moves, updates or deletes an existing row",
+                )
+            } else {
+                (
+                    "`moves:` and `updates:`",
+                    "move `affects:` to the branch that moves or updates an existing row",
+                )
+            };
+            Err(refusal(
+                name,
+                "affects",
+                ValidationCode::UnsupportedConstruct,
+                format!(
+                    "outcome `{name}` {} its subject and declares `affects:`; a secondary effect \
+                     is admitted beside {beside}, whose subject exists before the outcome",
+                    effect.verb()
+                ),
+                hint,
+            ))
+        }
         None => Err(refusal(
             name,
             "affects",
@@ -579,7 +638,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 // [`refuse_deletions`] reads.
                 errors.extend(deletions_below_ess_23(outcome, &site));
             }
-            errors.extend(deletion_shapes(command, outcome, &site));
+            errors.extend(deletion_shapes(spec, command, outcome, &site));
             if let Some(set) = &outcome.set_effects.instances {
                 let at = site.clone().key("instances");
                 errors.extend(set_branch(outcome, &at));
@@ -1051,6 +1110,9 @@ pub(crate) fn refuse_below_ess_16(
                     errors.push(refuse(format!("{at}.instances"), "instances:"));
                     refused_moves.extend(outcome.moves.take());
                     outcome.updates = None;
+                    // A `deletes:` beside it (ess/23, beyond10x/ess#452) goes with it, so no
+                    // `missing_declaration` for the `instance:` it never had follows.
+                    outcome.deletes = None;
                     for (event, table) in &mut outcome.payload.0 {
                         for field in &mut table.0 {
                             if field.source == PayloadSource::ChangedCount {
@@ -1237,10 +1299,44 @@ fn deletions_below_ess_23(outcome: &Outcome, site: &ConstructRef) -> ValidationE
     errors
 }
 
+/// A deleting `affects:` entry over an entity another domain than the command's owns, refused at
+/// the entry (ess/23, beyond10x/ess#452): removal in another domain is the cascade the story
+/// declines, answered with one event and one binding per receiving domain.
+fn deletion_across_domains(
+    spec: &Specification,
+    command: &CommandSpec,
+    outcome: &Outcome,
+    affect: &Affect,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    let system = spec.system();
+    let own = system.owner_of(&command.name)?;
+    let other = system.owner_of(&affect.entity)?;
+    (own.name != other.name).then(|| {
+        ValidationError::at(
+            at.clone(),
+            ValidationCode::UnsupportedConstruct,
+            format!(
+                "outcome `{}` of `{}` deletes rows of `{}`, which domain `{}` owns, from domain \
+                 `{}`; `affects:` stays inside its outcome's domain, and removal in another domain \
+                 is one event and one binding per receiving domain",
+                outcome.name, command.name, affect.entity, other.name, own.name
+            ),
+        )
+        .with_hint(format!(
+            "emit an event from this branch and bind it to a command of `{}` that deletes its own \
+             rows with `instances:`, with that binding's own `delivery:` and `on_failure:`",
+            other.name
+        ))
+    })
+}
+
 /// The shape of every deletion a set effect declares (ess/23, beyond10x/ess#452): no `sets:` beside
-/// a bulk `deletes:` or a deleting entry, no `moves:` in a deleting entry, and a deleting entry
-/// alone over its entity among the entries.
+/// a bulk `deletes:` or a deleting entry, no `moves:` in a deleting entry, a deleting entry alone
+/// over its entity among the entries that change rows, and a deleting entry over an entity of the
+/// command's own domain only.
 fn deletion_shapes(
+    spec: &Specification,
     command: &CommandSpec,
     outcome: &Outcome,
     site: &ConstructRef,
@@ -1297,10 +1393,25 @@ fn deletion_shapes(
                 .with_hint("keep `deletes:`, or keep `moves:` and remove the rows with a command of their own"),
             );
         }
+        if let Some(across) = affect
+            .deletes
+            .then(|| deletion_across_domains(spec, command, outcome, affect, &at))
+            .flatten()
+        {
+            errors.push(across);
+        }
         // A deleting entry beside any other entry over the same entity, refused at the second of
-        // the two: a row both select would be changed and removed, in no defined order.
+        // the two: a row both select would be changed and removed, in no defined order. An entry
+        // that changes no row — one whose `deletes:` was refused and taken off — is beside nothing.
+        let changes =
+            |entry: &Affect| entry.deletes || entry.moves.is_some() || !entry.sets.is_empty();
+        if !changes(affect) {
+            continue;
+        }
         let Some(first) = affects[..index].iter().position(|earlier| {
-            earlier.entity == affect.entity && (earlier.deletes || affect.deletes)
+            changes(earlier)
+                && earlier.entity == affect.entity
+                && (earlier.deletes || affect.deletes)
         }) else {
             continue;
         };
@@ -1332,9 +1443,13 @@ fn deletion_shapes(
 ///
 /// What is refused is taken off — `instances:` with its `deletes:` (and with them a `{count:
 /// changed}` and an `affects:` the branch could only hold beside a set subject), `affects:`, or the
-/// entry — so the branch converts and the refusal comes alone: no `empty_declaration` for a command
-/// whose only branch it refused. Below `ess/16` the whole construct is [`refuse_below_ess_16`]'s; a
-/// specification of several headers keeps the conversion's refusal and [`validate`]'s.
+/// entry's `deletes:` key, the entry itself kept so every later entry keeps its position and the
+/// entry's own entity is still checked — so the branch converts and the refusal comes alone: no
+/// `empty_declaration` for a command whose only branch it refused. A bulk deletion the conversion
+/// refuses first under every format — beside `instance:`, or with a filter that does not parse —
+/// is left to it, with the refusal it always had. Below `ess/16` the whole construct is
+/// [`refuse_below_ess_16`]'s; a specification of several headers keeps the conversion's refusal
+/// and [`validate`]'s.
 pub(crate) fn refuse_deletions(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
@@ -1357,49 +1472,54 @@ pub(crate) fn refuse_deletions(
             for outcome in &mut command.outcomes {
                 let at = format!("command.{}.outcomes.{}", command.name, outcome.name);
                 let name = outcome.name.as_str().to_owned();
-                if below_23 && outcome.deletes.is_some() && outcome.instances.is_some() {
-                    errors.push(bulk_deletion_below_ess_23(&name, format!("{at}.instances")));
-                    outcome.instances = None;
-                    outcome.deletes = None;
-                    outcome.affects.clear();
-                    for (_, table) in &mut outcome.payload.0 {
-                        for field in &mut table.0 {
-                            if field.source == PayloadSource::ChangedCount {
-                                field.source = PayloadSource::Generated;
+                if below_23 && outcome.deletes.is_some() {
+                    if let Some(instances) = &outcome.instances {
+                        if outcome.instance.is_some() || instances.filter.predicate().is_none() {
+                            // The conversion refuses `instance:` beside `instances:`, or the
+                            // filter, before it reads the verb, as it always did.
+                            continue;
+                        }
+                        errors.push(bulk_deletion_below_ess_23(&name, format!("{at}.instances")));
+                        outcome.instances = None;
+                        outcome.deletes = None;
+                        outcome.affects.clear();
+                        for (_, table) in &mut outcome.payload.0 {
+                            for field in &mut table.0 {
+                                if field.source == PayloadSource::ChangedCount {
+                                    field.source = PayloadSource::Generated;
+                                }
                             }
                         }
+                        continue;
                     }
-                    continue;
+                    if !outcome.affects.is_empty() {
+                        errors.push(affects_beside_deletion_below_ess_23(
+                            &name,
+                            format!("{at}.affects"),
+                        ));
+                        outcome.affects.clear();
+                        continue;
+                    }
                 }
-                if below_23 && outcome.deletes.is_some() && !outcome.affects.is_empty() {
-                    errors.push(affects_beside_deletion_below_ess_23(
-                        &name,
-                        format!("{at}.affects"),
-                    ));
-                    outcome.affects.clear();
-                    continue;
-                }
-                let mut index = 0;
-                outcome.affects.retain(|affect| {
-                    let at = format!("{at}.affects[{index}]");
-                    index += 1;
+                for (index, affect) in outcome.affects.iter_mut().enumerate() {
                     let Some(deleted) = &affect.deletes else {
-                        return true;
+                        continue;
                     };
-                    if below_23 {
-                        errors.push(affect_deletion_below_ess_23(format!("{at}.deletes")));
-                        return false;
-                    }
-                    let Some((message, hint)) = misnamed_deletion(&name, &affect.entity, deleted)
-                    else {
-                        return true;
-                    };
-                    errors.push(
+                    let at = format!("{at}.affects[{index}]");
+                    let refusal = if below_23 {
+                        affect_deletion_below_ess_23(format!("{at}.deletes"))
+                    } else {
+                        let Some((message, hint)) =
+                            misnamed_deletion(&name, &affect.entity, deleted)
+                        else {
+                            continue;
+                        };
                         ValidationError::new(ValidationCode::ConflictingDeclaration, at, message)
-                            .with_hint(hint),
-                    );
-                    false
-                });
+                            .with_hint(hint)
+                    };
+                    errors.push(refusal);
+                    affect.deletes = None;
+                }
             }
         }
     }

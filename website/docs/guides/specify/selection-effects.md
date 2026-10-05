@@ -128,15 +128,16 @@ outcome: deleting a user removes its tokens.
       deletes: demo.auth.Token
 ```
 
-Another entity than the entry's, `sets:` or `moves:` in a deleting entry, and a deleting entry
-beside any other entry over the same entity are refused; over different entities they may sit side
-by side. The suite reads every removed record absent from each immediate view of its entity and
+Another entity than the entry's, `sets:` or `moves:` in a deleting entry, a deleting entry beside
+any other entry over the same entity, and a deleting entry over an entity another domain owns are
+refused; over different entities of the outcome's domain they may sit side by side. The suite reads every removed record absent from each immediate view of its entity and
 every other record as arranged; for `instances:` it then sends the command again selecting nothing,
 and requires a count of 0. Below `ess/23` each form keeps the refusal it had, naming `ess/23`.
 
 ## Removal in other domains is one binding per domain
 
-`affects:` stays inside the domain of its outcome. To remove records another domain owns when a
+A deleting `affects:` entry stays inside the domain of its outcome: one over an entity another
+domain owns is refused, naming this idiom. To remove records another domain owns when a
 record here is deleted, the deleting command emits one event, and each receiving domain gets one
 binding on it: one binding per receiving domain, each with its own `delivery:` and `on_failure:`
 ([bindings](bindings-and-components.md)), invoking a command of that domain that deletes its own

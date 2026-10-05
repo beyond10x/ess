@@ -167,14 +167,20 @@ removed, the subject itself excepted where the entity is the subject's. It names
 `entity`; another entity is `conflicting_declaration` at the entry, naming both. `sets:` beside it,
 or `moves:` in the same entry, is `conflicting_declaration`. A deleting entry beside any other entry
 over the same entity is `conflicting_declaration` at the second of them, as two moving entries are;
-over different entities the pair is admitted. And `affects:` is admitted beside a `deletes:`
-subject, which exists before the outcome, so `subject.<field>` reads it as it was: "delete the user
-and its tokens".
+over different entities the pair is admitted, and an entry whose `deletes:` was refused and taken
+off changes nothing and is beside nothing. A deleting entry over an entity another domain owns than
+the command's is `unsupported_construct` at the entry, naming the binding idiom (below). And
+`affects:` is admitted beside a `deletes:` subject, which exists before the outcome, so
+`subject.<field>` reads it as it was: "delete the user and its tokens".
 
 Below `ess/23` each keeps the refusal it had, naming `ess/23`: `instances:` on `deletes:` and
 `affects:` beside `deletes:` are `unsupported_construct`, and the entry's `deletes:` key is
 `unsupported_format_version`. The refused key is taken off before the outcome is converted, so the
-refusal comes alone, with no `empty_declaration` ("declares no outcomes") beside it.
+refusal comes alone, with no `empty_declaration` ("declares no outcomes") beside it; an entry keeps
+its place, so every later entry's refusal names the position written. A bulk deletion that the
+conversion refuses first under every format — beside `instance:`, or with a filter that does not
+parse — keeps that refusal. Below `ess/16` `instances:` is refused with its `deletes:` taken off.
+A refusal of another verb names `deletes:` as admitted only in an `ess/23` source.
 
 The rows are witnessed as other set effects are (above): three rows the filter selects, one per
 conjunct left out, the command, then each removed row read absent from every immediate view of its
@@ -186,8 +192,8 @@ Go, Web and Clap as `MissingRepresentation`, as for every set effect. `ess-diff`
 `outcome-set-effect-changed` line names the deletion, and the generated documentation says which
 rows are removed.
 
-**Removal in other domains** is not an `affects:` entry: a domain boundary is where bindings
-belong. The deleting command emits one event, and the cascade is one binding per receiving domain
+**Removal in other domains** is not an `affects:` entry, and a deleting entry over another
+domain's entity is refused: a domain boundary is where bindings belong. The deleting command emits one event, and the cascade is one binding per receiving domain
 on that event, each with its own `delivery:` and `on_failure:`; each receiving command removes its
 own rows with the bulk form. ESS states no order between bindings of one event, and atomicity
 across them stays out of scope (below).
