@@ -419,3 +419,106 @@ fn implied_relation_docs_state_the_rule() {
         );
     }
 }
+
+/// Adversary, W3-3 pass 1: an `ess/23` rename (beyond10x/ess#429) of the entity a field names.
+/// `Grant.secret` stores a secret's identity with no relation. Both repairs a hint could name — a
+/// `references` on the field or an `owns` carried by it — make the secret a relation-carried
+/// entity, whose re-key validate refuses. A warning whose only repair is a refusal cannot be
+/// silenced, so none is given (coordinator decision, correction round 1: the case first asserted
+/// the hinted relation validates, which #429's rule forbids).
+#[test]
+fn adversary_a_field_naming_a_renamed_entity_does_not_warn() {
+    let (output, report) = validate_json(&written("rename", &renamed_with_grant()));
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !warning_codes(&report)
+            .iter()
+            .any(|code| code == "ESS-ENTITY-019"),
+        "`demo.vault.Secret` is re-keyed, so no relation to it can be declared: {report}"
+    );
+}
+
+/// The `ess/23` vault model with a `Grant` that stores a secret's identity and declares nothing.
+fn renamed_with_grant() -> String {
+    let rename = fs::read_to_string(
+        repo().join("crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml"),
+    )
+    .unwrap();
+    let model = rename
+        .replace(
+            "  - {name: demo.vault.SecretName, kind: newtype, of: String}\n",
+            "  - {name: demo.vault.SecretName, kind: newtype, of: String}\n  - {name: demo.vault.GrantId, kind: newtype, of: Uuid}\n",
+        )
+        .replace(
+            "\nerrors:\n",
+            "\n  - name: demo.vault.Grant\n    identity: {name: grant_id, type: demo.vault.GrantId}\n    fields:\n      - {name: secret, type: demo.vault.SecretName}\n    lifecycle: {initial: Held, states: [Held], terminal: [Held]}\nerrors:\n",
+        );
+    assert!(model.contains("  - name: demo.vault.Grant\n"), "{model}");
+    model
+}
+
+/// The same class for a guard: a `when_related:` row of a re-keyed entity, settled by its type,
+/// gets no `ESS-COMMAND-019` either, because the relation that would settle it is refused.
+#[test]
+fn a_guard_reading_a_renamed_entity_does_not_warn() {
+    let model = renamed_with_grant()
+        .replace(
+            "  - {name: demo.vault.Keeper, may: [demo.vault.StoreSecret, demo.vault.RenameSecret]}\n",
+            "  - {name: demo.vault.Keeper, may: [demo.vault.StoreSecret, demo.vault.RenameSecret, demo.vault.GrantSecret]}\n",
+        )
+        .replace(
+            "\nviews:\n",
+            "\n  - name: demo.vault.GrantSecret\n    input:\n      - {name: secret, type: demo.vault.SecretName}\n    outcomes:\n      - name: no-secret\n        when_related: {via: input.secret, exists: false}\n        error: demo.vault.NoSuchSecret\n      - name: granted\n        creates: demo.vault.Grant\n        instance: grant_id\n        sets: {secret: input.secret}\n        emits: [demo.vault.SecretGranted]\n        payload:\n          demo.vault.SecretGranted: {grant_id: {generated: true}}\nviews:\n",
+        )
+        .replace(
+            "\nactors:\n",
+            "\n  - name: demo.vault.SecretGranted\n    fields:\n      - {name: grant_id, type: demo.vault.GrantId}\nactors:\n",
+        );
+    assert!(
+        model.contains("when_related: {via: input.secret"),
+        "{model}"
+    );
+    let (output, report) = validate_json(&written("rename-guard", &model));
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        !warning_codes(&report)
+            .iter()
+            .any(|code| code.ends_with("-019")),
+        "`demo.vault.Secret` is re-keyed, so no relation to it can be declared: {report}"
+    );
+}
+
+/// Adversary, W3-3 pass 1: an `owns` is carried only by a field typed exactly the owner's
+/// identity, so for an `Optional<…>` or `List<…>` field that alternative would be refused. The
+/// hint names only `references` there (coordinator decision, correction round 1: the case first
+/// asserted the offered `owns` validates).
+#[test]
+fn adversary_the_hint_for_an_optional_or_list_field_names_only_references() {
+    for wrapped in [
+        "'Optional<probe.staff.PoolId>'",
+        "'List<probe.staff.PoolId>'",
+    ] {
+        // The field, the input `AddAgent` copies into it and the view that projects it, alike.
+        let model = fixture().replace(
+            "{name: pool, type: probe.staff.PoolId}",
+            &format!("{{name: pool, type: {wrapped}}}"),
+        );
+        assert!(model.contains(wrapped), "{model}");
+        let (output, report) = validate_json(&written("wrapped-hint", &model));
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(warning_codes(&report), ["ESS-ENTITY-019"], "{report}");
+        let hint = report["warnings"][0]["hint"].as_str().unwrap();
+        assert!(hint.contains("`references`"), "{hint}");
+        assert!(
+            !hint.contains("`owns`"),
+            "an `owns` is refused for a {wrapped} field, so the hint must not offer it: {hint}"
+        );
+    }
+
+    // A field typed exactly the identity may still be carried by an `owns`, and the hint says so.
+    let (_, report) = validate_json(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/implied-relation.yaml"),
+    );
+    let hint = report["warnings"][0]["hint"].as_str().unwrap();
+    assert!(hint.contains("`owns`"), "{hint}");
+}

@@ -508,3 +508,41 @@ fn validate_completeness_guide_section() {
         );
     }
 }
+
+/// Adversary, W3-3 pass 1: text mode prints nothing about completeness, yet `validate` synthesizes
+/// the whole suite before it answers. On this committed 119-line model, `compile` answers at once
+/// and released `conform synthesize` takes about a minute (0.53.0: 60 s; this debug build's
+/// `validate` took 241 s, against 5 ms for 0.53.0's `validate`). A text-mode verdict must not wait
+/// on a synthesis whose result it discards.
+#[test]
+fn adversary_text_validate_does_not_wait_on_synthesis() {
+    use std::time::{Duration, Instant};
+    let model =
+        repo().join("crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["specify", "validate", "--path", model.to_str().unwrap()])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    let deadline = Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if started.elapsed() > deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let status = status.unwrap_or_else(|| {
+        panic!(
+            "text-mode `validate` gave no verdict within {deadline:?} on {}",
+            model.display()
+        )
+    });
+    assert_eq!(status.code(), Some(0));
+}

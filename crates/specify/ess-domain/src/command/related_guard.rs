@@ -929,11 +929,14 @@ fn orders_present_refusals(
 /// field carries has nowhere a relation could be declared, and is not reported; nor is a `via`
 /// typed as a bare primitive, which [`crate::entity::implied_relations`] does not lint either. A
 /// row-set selector (`entity`, `where`) is a query, not a relation, and is not read here.
+/// Nor is a row of an entity whose identity an `updates:` rewrites (ess/23, beyond10x/ess#429):
+/// a relation carrying that identity is refused, so the warning could not be silenced.
 pub fn implied_relations(spec: &Specification) -> ValidationErrors {
     let mut advisories = ValidationErrors::new();
     if spec.system().format.major() < crate::system::FormatVersion::V18.major() {
         return advisories;
     }
+    let rekeyed = crate::entity::rekeyed(spec);
     for command in spec.commands().values().filter(|command| uses(command)) {
         for via in read_vias(command) {
             let Some((carrier, field, via_type)) = carried(spec, command, via) else {
@@ -949,6 +952,10 @@ pub fn implied_relations(spec: &Specification) -> ValidationErrors {
             else {
                 continue;
             };
+            // A re-keyed entity's identity carries no relation (beyond10x/ess#429).
+            if rekeyed.contains(&target.name) {
+                continue;
+            }
             let Some(outcome) = command.outcomes.iter().find(|outcome| {
                 matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. } if read == via)
             }) else {
@@ -965,11 +972,14 @@ pub fn implied_relations(spec: &Specification) -> ValidationErrors {
                         command.name, target.name, carrier.name, target.name
                     ),
                 )
-                .with_hint(format!(
-                    "declare a `references` relation on `{}`: `{{name: {field}, kind: \
-                     references, target: {}, cardinality: one, via: {field}}}`, or an `owns` \
-                     relation on `{}` carried by `{field}`",
-                    carrier.name, target.name, target.name
+                .with_hint(crate::entity::implied_relation_hint(
+                    &carrier.name,
+                    &field,
+                    &target.name,
+                    crate::entity::Cardinality::One,
+                    carrier.fields.iter().any(|held| {
+                        held.name == field && held.type_ref == target.identity.type_ref
+                    }),
                 )),
             );
         }

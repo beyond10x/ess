@@ -452,7 +452,7 @@ ess specify cli [OPTIONS] --binding <BINDING>
 
 Validate and resolve an ESS specification.
 
-A valid specification's `--format json|yaml` report carries `completeness` when conformance synthesis owes anything: the constructs it gives no scenario (`unscenarioed`), the scenarios held outside `--component` (`outside`), the questions the model leaves unanswered (`unanswered`), and their `counts`. Advisory warnings, such as a relation the model only implies, are printed on standard error and carried as `warnings`. Neither changes the exit status.
+A valid specification's `--format json|yaml` report carries `completeness` when conformance synthesis owes anything: the constructs it gives no scenario (`unscenarioed`), the scenarios held outside `--component` (`outside`), the questions the model leaves unanswered (`unanswered`), and their `counts`. To answer, `json` and `yaml` run conformance synthesis and take as long as `ess verify conform synthesize`; text mode does not synthesize. Advisory warnings, such as a relation the model only implies, are printed on standard error and carried as `warnings`. Neither changes the exit status.
 
 ```text
 ess specify validate [OPTIONS]

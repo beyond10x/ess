@@ -130,9 +130,10 @@ enum SpecifyCommand {
     /// A valid specification's `--format json|yaml` report carries `completeness` when conformance
     /// synthesis owes anything: the constructs it gives no scenario (`unscenarioed`), the scenarios
     /// held outside `--component` (`outside`), the questions the model leaves unanswered
-    /// (`unanswered`), and their `counts`. Advisory warnings, such as a relation the model only
-    /// implies, are printed on standard error and carried as `warnings`. Neither changes the exit
-    /// status.
+    /// (`unanswered`), and their `counts`. To answer, `json` and `yaml` run conformance synthesis and
+    /// take as long as `ess verify conform synthesize`; text mode does not synthesize. Advisory
+    /// warnings, such as a relation the model only implies, are printed on standard error and
+    /// carried as `warnings`. Neither changes the exit status.
     Validate {
         #[command(flatten)]
         input: SpecPath,
@@ -2526,9 +2527,15 @@ fn validate(path: &Path, format: Format, component: Option<&str>) -> Result<Exit
         }
     };
     // What conformance synthesis owes and cannot hold (beyond10x/ess#434): advisory, so it is
-    // reported and never changes the exit status. An unknown component is refused as
+    // reported and never changes the exit status. Only the `json` and `yaml` reports carry it, so
+    // only they synthesize, at what `conform synthesize` costs; text mode gives its verdict without
+    // waiting on a suite it would discard. An unknown component is refused in every format, as
     // `conform synthesize --component` refuses it.
-    let completeness = match Completeness::of(&ir, component) {
+    let completeness = match format {
+        Format::Text => Completeness::declared_component(&ir, component).map(|()| None),
+        Format::Json | Format::Yaml => Completeness::of(&ir, component).map(Some),
+    };
+    let completeness = match completeness {
         Ok(completeness) => completeness,
         Err(unknown) => {
             eprintln!("{unknown}");
@@ -2571,7 +2578,7 @@ fn validate(path: &Path, format: Format, component: Option<&str>) -> Result<Exit
         components: ir.components().len(),
         unresolved_references: &[],
         scenario_refusals,
-        completeness: (!completeness.is_empty()).then_some(completeness),
+        completeness: completeness.filter(|completeness| !completeness.is_empty()),
         warnings: &warnings,
     };
     if matches!(format, Format::Text) {
@@ -5025,22 +5032,7 @@ impl Completeness {
         component: Option<&str>,
     ) -> Result<Self, ess_conformance::synthesize::UnknownComponent> {
         // Before admission, so an unknown name is refused whatever the model.
-        if let Some(name) = component {
-            if !ir
-                .components()
-                .values()
-                .any(|declared| declared.name.as_str() == name)
-            {
-                return Err(ess_conformance::synthesize::UnknownComponent {
-                    component: name.to_owned(),
-                    declared: ir
-                        .components()
-                        .keys()
-                        .map(|declared| declared.as_str().to_owned())
-                        .collect(),
-                });
-            }
-        }
+        Self::declared_component(ir, component)?;
         if let Err(refused) = ess_conformance::admission::model(ir) {
             let unsynthesizable: Vec<Unsynthesizable> = refused
                 .issues
@@ -5097,6 +5089,32 @@ impl Completeness {
             outside,
             unanswered,
             unsynthesizable: Vec::new(),
+        })
+    }
+
+    /// Refuses a `component` the specification does not declare, as `conform synthesize
+    /// --component` does, without synthesizing anything.
+    fn declared_component(
+        ir: &EssIr,
+        component: Option<&str>,
+    ) -> Result<(), ess_conformance::synthesize::UnknownComponent> {
+        let Some(name) = component else {
+            return Ok(());
+        };
+        if ir
+            .components()
+            .values()
+            .any(|declared| declared.name.as_str() == name)
+        {
+            return Ok(());
+        }
+        Err(ess_conformance::synthesize::UnknownComponent {
+            component: name.to_owned(),
+            declared: ir
+                .components()
+                .keys()
+                .map(|declared| declared.as_str().to_owned())
+                .collect(),
         })
     }
 

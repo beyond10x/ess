@@ -144,7 +144,9 @@ its identity in an emitted event, and the misspelling took away the event that w
 A valid specification can still leave things undecided. `ess specify validate --format json` (or
 `yaml`) answers how much, as data a merge can be gated on: when conformance synthesis owes
 anything, the report carries a `completeness` object. It is advisory: the exit status and the text
-output do not change, and the object is left out when nothing is owed.
+output do not change, and the object is left out when nothing is owed. To answer, `json` and
+`yaml` run conformance synthesis, so they take as long as `ess verify conform synthesize` on the
+same model, which on a large one is far longer than validating; text mode does not synthesize.
 
 | Key | What it lists | `ess verify conform synthesize` prints it as |
 |---|---|---|
@@ -185,8 +187,11 @@ warning[ESS-ENTITY-019]: `probe.staff.Agent` stores `pool`, typed `probe.staff.P
   addressed subject, or the field the branch fills from the input — and that its named identity
   type alone settled, because no relation on that field says which entity it names.
 
-Declaring the relation the hint names silences the warning. Neither shape changes the exit
-status, the compiled model or anything generated. A field or `via` typed as a bare primitive such
+Declaring the relation the hint names silences the warning; the hint offers the target's `owns` only
+for a field typed exactly its identity, the only field an `owns` is carried by. An entity whose
+identity an `updates:` rewrites (`ess/23`) is never the target: a relation carrying its identity
+refuses the rename, so nothing is reported. Neither shape changes the exit status, the compiled
+model or anything generated. A field or `via` typed as a bare primitive such
 as `Uuid` is not linted, because many entities share one and naming one would be a guess, and a
 row set selector (`when_related: {entity, where}`) is a query, not a relation.
 

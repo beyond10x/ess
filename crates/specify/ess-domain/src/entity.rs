@@ -1518,7 +1518,13 @@ pub fn validate_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> Val
 /// is never linted — many entities share one, and naming one would be a guess. The identity
 /// itself is not a stored field and is not linted either. An aggregate view groups by fields drawn
 /// from its source entity, so a group key that implies a relation is reported here, on the field.
-pub fn implied_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> ValidationErrors {
+///
+/// An entity whose identity an `updates:` rewrites (ess/23, beyond10x/ess#429) is never the target:
+/// a declared relation carrying its identity refuses that re-key, so a warning there could only be
+/// silenced by a refusal (correction round 1 of beyond10x/ess#437).
+pub fn implied_relations(spec: &crate::spec::Specification) -> ValidationErrors {
+    let entities = spec.entities();
+    let rekeyed = rekeyed(spec);
     let mut advisories = ValidationErrors::new();
     for holder in entities.values() {
         for field in &holder.fields {
@@ -1540,6 +1546,9 @@ pub fn implied_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> Vali
             let (Some(target), None) = (identified.next(), identified.next()) else {
                 continue;
             };
+            if rekeyed.contains(&target.name) {
+                continue;
+            }
             let referenced = holder.relations.iter().any(|relation| {
                 relation.kind == RelationKind::References && relation.via == field.name
             });
@@ -1565,16 +1574,51 @@ pub fn implied_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> Vali
                         holder.name, field.name, field.type_ref, target.name, target.name
                     ),
                 )
-                .with_hint(format!(
-                    "declare a `references` relation on `{}`: `{{name: {}, kind: references, \
-                     target: {}, cardinality: {cardinality}, via: {}}}`, or an `owns` relation on \
-                     `{}` carried by `{}`",
-                    holder.name, field.name, target.name, field.name, target.name, field.name
+                .with_hint(implied_relation_hint(
+                    &holder.name,
+                    &field.name,
+                    &target.name,
+                    cardinality,
+                    field.type_ref == target.identity.type_ref,
                 )),
             );
         }
     }
     advisories
+}
+
+/// Every entity whose identity an `updates:` branch rewrites (ess/23, beyond10x/ess#429). A
+/// relation carrying such an identity is refused, so no implied relation to one is reported.
+pub(crate) fn rekeyed(spec: &crate::spec::Specification) -> BTreeSet<&QualifiedName> {
+    spec.commands()
+        .values()
+        .flat_map(|command| &command.outcomes)
+        .filter_map(|outcome| crate::command::identity_write::written(spec, outcome))
+        .map(|(entity, _)| &entity.name)
+        .collect()
+}
+
+/// The repair for a relation `holder`'s `field` implies to `target`: the `references` to declare,
+/// and — only where `exact`, a field typed exactly the target's identity, which is the only field
+/// an `owns` is carried by — the target's `owns` as the alternative.
+pub(crate) fn implied_relation_hint(
+    holder: &QualifiedName,
+    field: &str,
+    target: &QualifiedName,
+    cardinality: Cardinality,
+    exact: bool,
+) -> String {
+    let mut hint = format!(
+        "declare a `references` relation on `{holder}`: `{{name: {field}, kind: references, \
+         target: {target}, cardinality: {cardinality}, via: {field}}}`"
+    );
+    if exact {
+        let _ = write!(
+            hint,
+            ", or an `owns` relation on `{target}` carried by `{field}`"
+        );
+    }
+    hint
 }
 
 /// A relation whose target nothing declares.

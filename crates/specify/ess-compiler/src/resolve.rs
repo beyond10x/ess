@@ -1046,7 +1046,7 @@ pub fn advise_locating(
     sources: &SourceMap,
     files: &[impl AsRef<str>],
 ) -> Diagnostics {
-    let mut advisories = ess_domain::entity::implied_relations(specification.entities());
+    let mut advisories = ess_domain::entity::implied_relations(specification);
     advisories.extend(ess_domain::command::related_guard::implied_relations(
         specification,
     ));
