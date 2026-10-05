@@ -229,6 +229,9 @@ fn subject_value(path: &FactPath, before: &BTreeMap<String, Determined>) -> Opti
 fn written_in(filter: &Predicate, read: &dyn Fn(&FactPath) -> Option<FactValue>) -> Predicate {
     let operand = |it: &Operand| match it {
         Operand::Fact(path) => read(path).map_or_else(|| it.clone(), Operand::Literal),
+        Operand::Offset(offset) => read(&offset.base)
+            .and_then(|base| offset.value_at(&base))
+            .map_or_else(|| it.clone(), Operand::Literal),
         Operand::Literal(_) => it.clone(),
     };
     match filter {

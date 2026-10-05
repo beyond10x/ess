@@ -673,6 +673,9 @@ fn write_predicate(
 ) -> Predicate {
     let operand = |it: &Operand| match it {
         Operand::Fact(path) => fact(path).map_or_else(|| it.clone(), Operand::Literal),
+        Operand::Offset(offset) => fact(&offset.base)
+            .and_then(|base| offset.value_at(&base))
+            .map_or_else(|| it.clone(), Operand::Literal),
         Operand::Literal(_) => it.clone(),
     };
     match predicate {

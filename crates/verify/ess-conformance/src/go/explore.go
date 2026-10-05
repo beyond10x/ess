@@ -471,6 +471,10 @@ func explorePaths(p predicate) []string {
 			if node.right.isFact {
 				found[node.right.path] = true
 			}
+			// An offset reads its base (A2).
+			if node.right.offset != nil {
+				found[node.right.offset.base] = true
+			}
 		case node.kind == "forall" || node.kind == "exists":
 			found[node.over] = true
 		case node.path != "":

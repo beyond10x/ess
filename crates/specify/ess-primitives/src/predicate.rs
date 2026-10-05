@@ -46,6 +46,11 @@
 //! (`docs/design/expression-family-source22.md`, A1). [`Predicate::from_node_spelled`] keeps the one
 //! bit that decision needs: which right-hand sides were written as an unquoted, undotted word.
 //!
+//! One fact moved by one constant — `upper == lower + 5`, `expires_at <= issued_at - 24h` — is
+//! [`Operand::Offset`] (A2), canonically `upper: {eq: {offset: {fact: lower, add: 5}}}`. The compact
+//! spelling is text to this reader for the same reason a bare word is, and
+//! [`Spelled::offsets`] marks where it was written unquoted.
+//!
 //! # Quantifiers
 //!
 //! Everything above asks about one value. A claim about a *collection* — every element, or some
@@ -379,22 +384,341 @@ pub enum Operand {
     Fact(FactPath),
     /// A constant written in the document.
     Literal(FactValue),
+    /// One fact moved by one constant, `lower + 5` or `issued_at - 24h`
+    /// (`docs/design/expression-family-source22.md`, A2). Legal on the right of a comparison only.
+    Offset(OffsetOperand),
+}
+
+/// Which way an offset moves its base.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OffsetDirection {
+    /// `+`, written `add`.
+    Add,
+    /// `-`, written `subtract`.
+    Subtract,
+}
+
+impl OffsetDirection {
+    /// The key the canonical mapping writes the magnitude under.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Subtract => "subtract",
+        }
+    }
+
+    /// The sign the compact spelling writes.
+    pub fn symbol(self) -> char {
+        match self {
+            Self::Add => '+',
+            Self::Subtract => '-',
+        }
+    }
+}
+
+/// The constant an offset moves its base by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffsetMagnitude {
+    /// A whole number, from zero to `i64::MAX`, added to or taken from an `Integer`. The sum is the
+    /// exact mathematical integer, never wrapped, clamped, rounded or turned `Unknown`.
+    Integer(crate::facts::Number),
+    /// Elapsed UTC seconds added to or taken from a `Timestamp`, with the unit they were written in.
+    ElapsedSeconds {
+        /// How many seconds, from zero to [`crate::time::CurrentTime::MAX_OFFSET_SECONDS`].
+        seconds: i64,
+        /// `s`, `m` or `h`, as written.
+        written_unit: crate::time::ElapsedUnit,
+    },
+}
+
+impl OffsetMagnitude {
+    /// Reads a magnitude as a source writes it: a whole number without a sign, fraction or
+    /// leading zero that fits `i64` (an Integer magnitude), or the same digits followed by `s`, `m`
+    /// or `h` under the current-time bound (an elapsed one). `None` for anything else.
+    pub fn parse(text: &str) -> Option<Self> {
+        if let Some((seconds, written_unit)) = crate::time::ElapsedUnit::parse_magnitude(text) {
+            return Some(Self::ElapsedSeconds {
+                seconds,
+                written_unit,
+            });
+        }
+        if text.is_empty()
+            || !text.bytes().all(|byte| byte.is_ascii_digit())
+            || (text.len() > 1 && text.starts_with('0'))
+        {
+            return None;
+        }
+        text.parse::<i64>()
+            .ok()
+            .map(|value| Self::Integer(crate::facts::Number::from(value)))
+    }
+
+    /// The Integer magnitude as an `i64`, where it is a whole number from zero to `i64::MAX`.
+    pub fn integer(self) -> Option<i64> {
+        match self {
+            Self::Integer(number) => number.as_i64().filter(|value| *value >= 0),
+            Self::ElapsedSeconds { .. } => None,
+        }
+    }
+
+    /// The canonical node: the number, or the elapsed text in its written unit (`24h`).
+    fn node(self) -> Node {
+        match self {
+            Self::Integer(number) => Node::Number(number),
+            Self::ElapsedSeconds { .. } => Node::Text(self.to_string()),
+        }
+    }
+
+    /// Reads the canonical node back: a number that is a whole number from zero to `i64::MAX`, or
+    /// an elapsed text. A whole number written as text is refused: the canonical form writes it
+    /// as a number.
+    fn from_node(node: &Node) -> Option<Self> {
+        match node {
+            Node::Number(number) => number
+                .as_i64()
+                .filter(|value| *value >= 0)
+                .map(|value| Self::Integer(crate::facts::Number::from(value))),
+            Node::Text(text) => match Self::parse(text)? {
+                elapsed @ Self::ElapsedSeconds { .. } => Some(elapsed),
+                Self::Integer(_) => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for OffsetMagnitude {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Integer(number) => write!(f, "{}", number.exact_text()),
+            Self::ElapsedSeconds {
+                seconds,
+                written_unit,
+            } => write!(
+                f,
+                "{}{}",
+                seconds / written_unit.seconds(),
+                written_unit.letter()
+            ),
+        }
+    }
+}
+
+/// One fact moved by one constant: `lower + 5`, `issued_at - 24h`
+/// (`docs/design/expression-family-source22.md`, A2).
+///
+/// Its canonical form is the closed mapping `{offset: {fact: <path>, add|subtract: <magnitude>}}`,
+/// which suite `/40` and specification format `ess/22` introduce. No offset nests: the base is one
+/// fact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetOperand {
+    /// The fact moved.
+    pub base: FactPath,
+    /// Which way.
+    pub direction: OffsetDirection,
+    /// By how much.
+    pub magnitude: OffsetMagnitude,
+}
+
+impl OffsetOperand {
+    /// Every way an unquoted right side splits into `<base> ws? (+|-) ws? <magnitude>`, left to
+    /// right: one per `+` or `-` whose text before it, without the spaces beside the sign, is a
+    /// fact path, with the text after it. Whether the base resolves and the magnitude reads is
+    /// for the caller to decide (final review decision 4, rule 3a): `my-field-5` splits after
+    /// `my` and after `my-field`.
+    pub fn spellings(text: &str) -> Vec<(FactPath, OffsetDirection, &str)> {
+        let mut found = Vec::new();
+        for (at, byte) in text.bytes().enumerate() {
+            let direction = match byte {
+                b'+' => OffsetDirection::Add,
+                b'-' => OffsetDirection::Subtract,
+                _ => continue,
+            };
+            let base = text[..at].trim_end_matches(' ');
+            if base.is_empty() {
+                continue;
+            }
+            if let Ok(path) = FactPath::new(base) {
+                found.push((path, direction, text[at + 1..].trim_start_matches(' ')));
+            }
+        }
+        found
+    }
+
+    /// The same offset the other way: `base - k` for `base + k`. Where `left == base + k`,
+    /// `base == left - k`: the offset that reads the base back from the left side.
+    #[must_use]
+    pub fn reversed(&self, base: FactPath) -> Self {
+        Self {
+            base,
+            direction: match self.direction {
+                OffsetDirection::Add => OffsetDirection::Subtract,
+                OffsetDirection::Subtract => OffsetDirection::Add,
+            },
+            magnitude: self.magnitude,
+        }
+    }
+
+    /// `base ± magnitude` for an Integer magnitude, exactly: every sum of two `i64`s fits `i128`.
+    /// `None` for an elapsed magnitude, or a magnitude that is not a whole number in `i64`.
+    pub fn integer_at(&self, base: i64) -> Option<i128> {
+        let magnitude = i128::from(self.magnitude.integer()?);
+        Some(match self.direction {
+            OffsetDirection::Add => i128::from(base) + magnitude,
+            OffsetDirection::Subtract => i128::from(base) - magnitude,
+        })
+    }
+
+    /// `base ± seconds` for an elapsed magnitude, through the arithmetic the current time shares
+    /// ([`crate::time::Rfc3339Instant::plus_elapsed`]): `None` for an Integer magnitude, or where
+    /// the instant is past the years a `date-time` spells.
+    pub fn instant_at(
+        &self,
+        base: crate::time::Rfc3339Instant,
+    ) -> Option<crate::time::Rfc3339Instant> {
+        let OffsetMagnitude::ElapsedSeconds { seconds, .. } = self.magnitude else {
+            return None;
+        };
+        match self.direction {
+            OffsetDirection::Add => base.plus_elapsed(seconds),
+            OffsetDirection::Subtract => base.plus_elapsed(seconds.checked_neg()?),
+        }
+    }
+
+    /// The value this offset names where its base holds `base`: the exact sum where it is an
+    /// `i64`, the moved instant in UTC, and `None` where the base is of the wrong kind or the
+    /// value is past what a stored `Integer` or a `date-time` holds. What a synthesizer writes in
+    /// for an offset whose base it already knows; evaluation never goes through it.
+    pub fn value_at(&self, base: &FactValue) -> Option<FactValue> {
+        match self.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                let sum = self.integer_at(base.as_number()?.as_i64()?)?;
+                i64::try_from(sum)
+                    .ok()
+                    .map(|value| FactValue::Number(crate::facts::Number::from(value)))
+            }
+            OffsetMagnitude::ElapsedSeconds { .. } => {
+                let instant = crate::time::Rfc3339Instant::parse_rfc3339(base.as_text()?)?;
+                self.instant_at(instant)
+                    .map(|moved| FactValue::Text(moved.to_rfc3339()))
+            }
+        }
+    }
+
+    /// The canonical mapping, `{offset: {fact: <path>, add|subtract: <magnitude>}}`.
+    pub fn to_node(&self) -> Node {
+        Node::Map(
+            [(
+                "offset".to_owned(),
+                Node::Map(
+                    [
+                        ("fact".to_owned(), Node::Text(self.base.to_string())),
+                        (self.direction.keyword().to_owned(), self.magnitude.node()),
+                    ]
+                    .into(),
+                ),
+            )]
+            .into(),
+        )
+    }
+
+    /// Reads the inside of `{offset: …}`: exactly `fact` and one of `add` and `subtract`.
+    fn from_entries(fields: &std::collections::BTreeMap<String, Node>) -> Option<Self> {
+        if fields.len() != 2 {
+            return None;
+        }
+        let Some(Node::Text(base)) = fields.get("fact") else {
+            return None;
+        };
+        let base = FactPath::new(base).ok()?;
+        let (direction, magnitude) = match (fields.get("add"), fields.get("subtract")) {
+            (Some(magnitude), None) => (OffsetDirection::Add, magnitude),
+            (None, Some(magnitude)) => (OffsetDirection::Subtract, magnitude),
+            _ => return None,
+        };
+        Some(Self {
+            base,
+            direction,
+            magnitude: OffsetMagnitude::from_node(magnitude)?,
+        })
+    }
+}
+
+impl fmt::Display for OffsetOperand {
+    /// The canonical mapping in one line, never the compact `lower + 5`: that spelling reads back
+    /// as text wherever no declaration says `lower` is a fact.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{{offset: {{fact: {}, {}: {}}}}}",
+            self.base,
+            self.direction.keyword(),
+            self.magnitude
+        )
+    }
+}
+
+impl serde::Serialize for OffsetOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_node().serialize(serializer)
+    }
 }
 
 impl Operand {
-    /// Resolves this operand, returning `None` when a referenced fact is unobserved.
+    /// Resolves this operand, returning `None` when a referenced fact is unobserved. An offset has
+    /// no value of its own: [`Predicate::evaluate_offset`] compares with it.
     fn resolve(&self, facts: &dyn FactSource) -> Option<FactValue> {
         match self {
             Self::Fact(path) => facts.observe(path),
             Self::Literal(value) => Some(value.clone()),
+            Self::Offset(_) => None,
         }
     }
 
-    /// The fact path this operand reads, if any.
+    /// The fact path this operand reads, if any: an offset reads its base.
     pub fn fact_path(&self) -> Option<&FactPath> {
         match self {
             Self::Fact(path) => Some(path),
+            Self::Offset(offset) => Some(&offset.base),
             Self::Literal(_) => None,
+        }
+    }
+
+    /// This operand with the path it reads — a fact, or an offset's base — moved by `map`; a
+    /// literal is kept. What every rewrite of a predicate's reads uses, so an offset's base is
+    /// never left behind.
+    #[must_use]
+    pub fn map_path(&self, map: impl FnOnce(&FactPath) -> FactPath) -> Self {
+        match self {
+            Self::Fact(path) => Self::Fact(map(path)),
+            Self::Offset(offset) => Self::Offset(OffsetOperand {
+                base: map(&offset.base),
+                direction: offset.direction,
+                magnitude: offset.magnitude,
+            }),
+            Self::Literal(value) => Self::Literal(value.clone()),
+        }
+    }
+
+    /// Whether `raw`, read by [`Self::parse_in`] under `binders`, is unquoted text with a `+` or a
+    /// `-` after a fact path: a text literal today, and the spelling a source format may read as
+    /// an offset (`docs/design/expression-family-source22.md`, A2, rule 3a).
+    ///
+    /// A dotted spelling with an unspaced `-` — `window.lower-5` — reads as a fact path here, because
+    /// `-` may stand inside a segment; it is marked too, so a format whose declarations name no such
+    /// field may read it as the offset it also spells.
+    fn is_offset_spelling(raw: &str, binders: &[String]) -> bool {
+        let unquoted = !raw.trim().starts_with(['"', '\'']);
+        match Self::parse_in(raw, binders) {
+            Self::Literal(FactValue::Text(text)) => {
+                unquoted && !OffsetOperand::spellings(&text).is_empty()
+            }
+            Self::Fact(path) => {
+                unquoted
+                    && path.segments().len() > 1
+                    && !OffsetOperand::spellings(&path.to_string()).is_empty()
+            }
+            _ => false,
         }
     }
 
@@ -472,7 +796,8 @@ impl Operand {
         let refuse = || {
             ParseError::predicate(
                 &written(),
-                "a comparison operand must be a scalar, or `{fact: <path>}` naming a fact",
+                "a comparison operand must be a scalar, `{fact: <path>}` naming a fact, or \
+                 `{offset: {fact: <path>, add|subtract: <magnitude>}}`",
             )
         };
         match entries.iter().next() {
@@ -480,6 +805,18 @@ impl Operand {
                 FactPath::new(path).map(Self::Fact).map_err(|error| {
                     ParseError::predicate(&written(), format!("`{{fact: …}}`: {error}"))
                 })
+            }
+            Some((key, Node::Map(fields))) if entries.len() == 1 && key == "offset" => {
+                OffsetOperand::from_entries(fields)
+                    .map(Self::Offset)
+                    .ok_or_else(|| {
+                        ParseError::predicate(
+                            &written(),
+                            "`{offset: …}` takes exactly `fact`, a fact path, and one of `add` \
+                             and `subtract`: a whole number from 0 to 9223372036854775807, or a \
+                             whole number of `s`, `m` or `h` without a leading zero",
+                        )
+                    })
             }
             _ => Err(refuse()),
         }
@@ -497,7 +834,7 @@ fn instant_operand(
 ) -> Option<crate::time::Rfc3339Instant> {
     crate::time::Rfc3339Instant::parse_rfc3339(text).or_else(|| match operand {
         Operand::Literal(_) => crate::time::CurrentTime::parse(text)?.at(facts.now()?),
-        Operand::Fact(_) => None,
+        Operand::Fact(_) | Operand::Offset(_) => None,
     })
 }
 
@@ -571,6 +908,7 @@ impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Fact(path) => write!(f, "{path}"),
+            Self::Offset(offset) => write!(f, "{offset}"),
             Self::Literal(FactValue::Text(text))
                 if text.contains('.')
                     || text.is_empty()
@@ -748,6 +1086,33 @@ pub struct Spelled {
     pub predicate: Predicate,
     /// Per comparison, in pre-order: whether its right-hand side was a bare word.
     pub words: Vec<bool>,
+    /// Per comparison, in pre-order: whether its right-hand side was unquoted text with a `+` or a
+    /// `-` after a fact path, or a dotted path with a `-` in it — the spelling a source format may
+    /// read as one constant offset of that fact (`docs/design/expression-family-source22.md`, A2,
+    /// rule 3a), and text or the dotted fact otherwise.
+    pub offsets: Vec<bool>,
+}
+
+/// What the spelled readers record per comparison, in pre-order: [`Spelled::words`] and
+/// [`Spelled::offsets`].
+#[derive(Default)]
+struct Spellings {
+    words: Vec<bool>,
+    offsets: Vec<bool>,
+}
+
+impl Spellings {
+    /// One comparison whose right side is not text an author could have meant as a fact.
+    fn literal(&mut self) {
+        self.words.push(false);
+        self.offsets.push(false);
+    }
+
+    /// One comparison whose right side was written as `raw` under `binders`.
+    fn written(&mut self, raw: &str, binders: &[String]) {
+        self.words.push(Operand::is_word(raw, binders));
+        self.offsets.push(Operand::is_offset_spelling(raw, binders));
+    }
 }
 
 /// A quantified claim: a collection, the name its elements are bound to, and the body.
@@ -976,6 +1341,9 @@ impl Predicate {
         kind: CompareKind,
         facts: &dyn FactSource,
     ) -> (Truth, Option<String>) {
+        if let Some(offset) = Self::offset_compare(left, op, right, facts) {
+            return offset;
+        }
         let (Some(left_value), Some(right_value)) = (left.resolve(facts), right.resolve(facts))
         else {
             return (Truth::Unknown, None);
@@ -1080,6 +1448,92 @@ impl Predicate {
                     None,
                 )
             }
+        }
+    }
+
+    /// A comparison with an offset on either side, or `None` where neither side is one: one on
+    /// the right is [`Self::evaluate_offset`]; one on the left, which no reader builds, is `Unknown`.
+    fn offset_compare(
+        left: &Operand,
+        op: CompareOp,
+        right: &Operand,
+        facts: &dyn FactSource,
+    ) -> Option<(Truth, Option<String>)> {
+        match (left, right) {
+            (_, Operand::Offset(offset)) => Some(Self::evaluate_offset(left, op, offset, facts)),
+            (Operand::Offset(offset), _) => Some((
+                Truth::Unknown,
+                Some(format!(
+                    "`{offset}` stands on the left of `{op}`; an offset is legal on the right of a \
+                     comparison only"
+                )),
+            )),
+            _ => None,
+        }
+    }
+
+    /// `left <op> base ± magnitude` (`docs/design/expression-family-source22.md`, A2).
+    ///
+    /// An Integer magnitude compares two `Integer` values with the exact mathematical sum: every
+    /// `i64 ± i64` fits `i128`, so nothing wraps, saturates, rounds through binary64 or turns
+    /// `Unknown` at the ends of the stored range. An elapsed magnitude moves a `Timestamp` by UTC
+    /// seconds and compares instants under all six operators. An unobserved or absent operand is
+    /// `Unknown`, and so is a value of the wrong kind or an instant no `date-time` spells, with a
+    /// note saying which.
+    fn evaluate_offset(
+        left: &Operand,
+        op: CompareOp,
+        offset: &OffsetOperand,
+        facts: &dyn FactSource,
+    ) -> (Truth, Option<String>) {
+        let (Some(left_value), Some(base_value)) =
+            (left.resolve(facts), facts.observe(&offset.base))
+        else {
+            return (Truth::Unknown, None);
+        };
+        let ordering = match offset.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                let integer =
+                    |value: &FactValue| value.as_number().and_then(crate::facts::Number::as_i64);
+                match (integer(&left_value), integer(&base_value)) {
+                    (Some(left_integer), Some(base_integer)) => offset
+                        .integer_at(base_integer)
+                        .map(|bound| i128::from(left_integer).cmp(&bound)),
+                    _ => None,
+                }
+                .ok_or_else(|| {
+                    format!(
+                        "cannot compare {left_value} with `{offset}` of {base_value}: an Integer \
+                         offset compares two whole numbers"
+                    )
+                })
+            }
+            OffsetMagnitude::ElapsedSeconds { .. } => {
+                let instant = |value: &FactValue| {
+                    value
+                        .as_text()
+                        .and_then(crate::time::Rfc3339Instant::parse_rfc3339)
+                };
+                match (instant(&left_value), instant(&base_value)) {
+                    (Some(left_instant), Some(base_instant)) => offset
+                        .instant_at(base_instant)
+                        .map(|bound| left_instant.cmp(&bound))
+                        .ok_or_else(|| {
+                            format!(
+                                "`{offset}` of {base_value} is no instant an RFC 3339 date-time \
+                                 spells"
+                            )
+                        }),
+                    _ => Err(format!(
+                        "cannot compare {left_value} with `{offset}` of {base_value} as instants: \
+                         each side must be an RFC 3339 date-time"
+                    )),
+                }
+            }
+        };
+        match ordering {
+            Ok(ordering) => (Truth::from_bool(op.accepts(ordering)), None),
+            Err(note) => (Truth::Unknown, Some(note)),
         }
     }
 
@@ -1382,6 +1836,28 @@ impl Predicate {
         }
     }
 
+    /// Whether any comparison, at any depth, compares with one constant offset of a fact
+    /// (`docs/design/expression-family-source22.md`, A2): the question the `ess/22` source gate and
+    /// the suite pair `/40` and `/41` ask beside [`Self::reads_root_fact_operand`].
+    pub fn reads_offset(&self) -> bool {
+        match self {
+            Self::Compare { left, right, .. } => {
+                matches!(left, Operand::Offset(_)) || matches!(right, Operand::Offset(_))
+            }
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_offset),
+            Self::Not(inner) => inner.reads_offset(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_offset(),
+            Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. } => false,
+        }
+    }
+
     /// A comparison by value: what every comparison was before decision 2's tag.
     pub fn compare(left: Operand, op: CompareOp, right: Operand) -> Self {
         Self::Compare {
@@ -1421,24 +1897,32 @@ impl Predicate {
     /// not a.b"}}` is four levels of one predicate written two ways, and two counters would let a
     /// document alternate between them to buy twice the depth.
     pub fn from_node(node: &Node) -> Result<Self, ParseError> {
-        Self::from_node_nested(node, 0, &[], &mut Vec::new())
+        Self::from_node_nested(node, 0, &[], &mut Spellings::default())
     }
 
     /// [`Self::from_node`], also saying which comparisons' right-hand sides were bare words.
     ///
     /// The predicate is exactly the one [`Self::from_node`] reads; see [`Spelled`].
     pub fn from_node_spelled(node: &Node) -> Result<Spelled, ParseError> {
-        let mut words = Vec::new();
-        let predicate = Self::from_node_nested(node, 0, &[], &mut words)?;
-        Ok(Spelled { predicate, words })
+        let mut spellings = Spellings::default();
+        let predicate = Self::from_node_nested(node, 0, &[], &mut spellings)?;
+        Ok(Spelled {
+            predicate,
+            words: spellings.words,
+            offsets: spellings.offsets,
+        })
     }
 
     /// [`Self::parse_expression`], also saying which comparisons' right-hand sides were bare
     /// words. The predicate is exactly the one [`Self::parse_expression`] reads; see [`Spelled`].
     pub fn parse_expression_spelled(expression: &str) -> Result<Spelled, ParseError> {
-        let mut words = Vec::new();
-        let predicate = Self::parse_expression_nested(expression, 0, &[], &mut words)?;
-        Ok(Spelled { predicate, words })
+        let mut spellings = Spellings::default();
+        let predicate = Self::parse_expression_nested(expression, 0, &[], &mut spellings)?;
+        Ok(Spelled {
+            predicate,
+            words: spellings.words,
+            offsets: spellings.offsets,
+        })
     }
 
     /// [`Self::from_node`], counting how deep it already is.
@@ -1446,7 +1930,7 @@ impl Predicate {
         node: &Node,
         depth: usize,
         binders: &[String],
-        words: &mut Vec<bool>,
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
         if depth > MAX_PREDICATE_DEPTH {
             return Err(ParseError::too_deep(
@@ -1494,7 +1978,7 @@ impl Predicate {
         value: &Node,
         depth: usize,
         binders: &[String],
-        words: &mut Vec<bool>,
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
         let mut nested = |node: &Node| Self::from_node_nested(node, depth + 1, binders, words);
         match key {
@@ -1525,7 +2009,7 @@ impl Predicate {
                 if source22_operands()
                     && matches!(value, Node::Map(fields) if fields.contains_key("left")) =>
             {
-                words.push(false);
+                words.literal();
                 Self::tagged_compare(value, binders)
             }
             "none" | "none_of_these" => {
@@ -1556,7 +2040,7 @@ impl Predicate {
         value: &Node,
         depth: usize,
         binders: &[String],
-        words: &mut Vec<bool>,
+        words: &mut Spellings,
     ) -> Result<Quantified, ParseError> {
         let Node::Map(entries) = value else {
             return Err(ParseError::shape(
@@ -1691,11 +2175,11 @@ impl Predicate {
         path: FactPath,
         value: &Node,
         binders: &[String],
-        words: &mut Vec<bool>,
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
         // The equality shorthand is always a literal, so no right-hand side of it is a word.
-        let shorthand = |right: FactValue, words: &mut Vec<bool>| {
-            words.push(false);
+        let shorthand = |right: FactValue, words: &mut Spellings| {
+            words.literal();
             Ok(Self::Compare {
                 kind: CompareKind::Value,
                 left: Operand::Fact(path.clone()),
@@ -1740,7 +2224,7 @@ impl Predicate {
         operator: &str,
         operand: &Node,
         binders: &[String],
-        words: &mut Vec<bool>,
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
         if let Some(op) = CompareOp::from_keyword(operator) {
             let right = match operand {
@@ -1765,7 +2249,10 @@ impl Predicate {
                     ))
                 }
             };
-            words.push(matches!(operand, Node::Text(text) if Operand::is_word(text, binders)));
+            match operand {
+                Node::Text(text) => words.written(text, binders),
+                _ => words.literal(),
+            }
             return Ok(Self::Compare {
                 kind: CompareKind::Value,
                 left: Operand::Fact(path),
@@ -1876,7 +2363,7 @@ impl Predicate {
     /// [`ParseError::TooDeep`]. This is the string half of the same budget
     /// [`Self::from_node`] spends.
     pub fn parse_expression(expression: &str) -> Result<Self, ParseError> {
-        Self::parse_expression_nested(expression, 0, &[], &mut Vec::new())
+        Self::parse_expression_nested(expression, 0, &[], &mut Spellings::default())
     }
 
     /// [`Self::parse_expression`], counting how deep it already is.
@@ -1884,7 +2371,7 @@ impl Predicate {
         expression: &str,
         depth: usize,
         binders: &[String],
-        words: &mut Vec<bool>,
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
         let trimmed = expression.trim();
         if depth > MAX_PREDICATE_DEPTH {
@@ -1966,7 +2453,7 @@ impl Predicate {
                     ),
                 ));
             }
-            words.push(Operand::is_word(right, binders));
+            words.written(right, binders);
             return Ok(Self::Compare {
                 kind: CompareKind::Value,
                 left: Operand::Fact(left_path),
@@ -2106,6 +2593,20 @@ impl Predicate {
                 right,
                 kind: CompareKind::Instant,
             } => tagged_comparison_node(left, *op, right),
+            // Always the closed mapping: `lower + 5` reads back as text wherever no declaration
+            // says `lower` is a fact (A2).
+            Self::Compare {
+                left: Operand::Fact(path),
+                op,
+                right: Operand::Offset(offset),
+                kind: CompareKind::Value,
+            } => Node::Map(
+                [(
+                    path.to_string(),
+                    Node::Map([(op.keyword().to_owned(), offset.to_node())].into()),
+                )]
+                .into(),
+            ),
             Self::Compare {
                 left: Operand::Fact(path),
                 op,
@@ -2158,10 +2659,12 @@ fn tagged_comparison_node(left: &Operand, op: CompareOp, right: &Operand) -> Nod
         Operand::Fact(path) => {
             Node::Map([("fact".to_owned(), Node::Text(path.to_string()))].into())
         }
+        Operand::Offset(offset) => offset.to_node(),
         Operand::Literal(value) => value_node(value),
     };
     let left = match left {
         Operand::Fact(path) => Node::Text(path.to_string()),
+        Operand::Offset(offset) => offset.to_node(),
         Operand::Literal(value) => value_node(value),
     };
     Node::Map(
@@ -2552,8 +3055,10 @@ impl schemars::JsonSchema for Predicate {
              text literal, map form only, with `starts_with`, `ends_with` or `contains`, and \
              without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a \
              list). From `ess/22` a comparison operand may be the explicit fact `{fact: <path>}`, \
-             and two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, \
-             right, as: timestamp}}`."
+             two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, \
+             right, as: timestamp}}`, and a comparison operand may be one fact moved by one \
+             constant, `{offset: {fact: <path>, add|subtract: <magnitude>}}` — a whole number for \
+             an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`."
                 .to_owned(),
         );
         schema.into()

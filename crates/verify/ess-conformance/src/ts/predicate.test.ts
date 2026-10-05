@@ -49,7 +49,7 @@ import {
   TruthUnknown,
 } from './predicate.js';
 import type { FactSource, Truth } from './predicate.js';
-import { admitPredicateVersion, admitSuite } from './runtime.js';
+import { admitPredicateVersion, admitSuite, predicateNumbers, strictJSON } from './runtime.js';
 import type { Node, Row } from './runtime.js';
 
 const source = (entries: Record<string, Node>): FactSource => new Map(Object.entries(entries));
@@ -1195,5 +1195,143 @@ test('a1_timestamp_sibling_instant_order: the shared instant vectors', () => {
   }
   for (const vector of vectors.refused) {
     assert.throws(() => parsePredicate(vector.predicate), vector.name);
+  }
+});
+
+// ---- one constant offset (docs/design/expression-family-source22.md, A2) ---------------------
+
+/** The shared offset vectors, read without rounding a number through binary64. */
+function offsetVectors(): {
+  integer: OffsetRow[];
+  timestamp: OffsetRow[];
+  evaluate: { name: string; predicate: Node; row: Row; truth: string }[];
+  refused: { name: string; predicate: Node }[];
+} {
+  // `crates/specify/ess-primitives/tests/vectors/offset-operand.json`, which
+  // `tests/offset_operand.rs` and `tests/fixtures/offset-operand.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/offset-operand.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      return strictJSON(readFileSync(candidate, 'utf8')) as unknown as ReturnType<
+        typeof offsetVectors
+      >;
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+interface OffsetRow {
+  name: string;
+  left: Node;
+  base: Node;
+  direction: string;
+  magnitude: Node;
+  op: string;
+  truth: string;
+}
+
+const offsetTruths = new Map<Truth, string>([
+  [TruthTrue, 'true'],
+  [TruthFalse, 'false'],
+  [TruthUnknown, 'unknown'],
+]);
+
+test('a2: the offset operand answers the shared vectors', () => {
+  const vectors = offsetVectors();
+  let answered = 0;
+  for (const vector of [...vectors.integer, ...vectors.timestamp]) {
+    const predicate = predicateNumbers({
+      left: { [vector.op]: { offset: { fact: 'base', [vector.direction]: vector.magnitude } } },
+    });
+    const truth = parsePredicate(predicate).evaluate(
+      facts({ left: vector.left, base: vector.base }),
+    );
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(predicateNumbers(vector.predicate)).evaluate(facts(vector.row));
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(predicateNumbers(vector.predicate)), vector.name);
+    answered += 1;
+  }
+  assert.ok(answered >= 60, `${answered} vectors answered`);
+});
+
+test('a2: every paired fault disagrees with an offset vector', () => {
+  const vectors = offsetVectors();
+  const int = (node: Node): bigint => BigInt(String(node));
+  const order = (left: bigint, right: bigint): number => (left < right ? -1 : left > right ? 1 : 0);
+  const accepts = (op: string, ordering: number): boolean =>
+    ({
+      eq: ordering === 0,
+      ne: ordering !== 0,
+      lt: ordering < 0,
+      lte: ordering <= 0,
+      gt: ordering > 0,
+    })[op] ?? ordering >= 0;
+  const wrap = (value: bigint): bigint => BigInt.asIntN(64, value);
+  const max = 2n ** 63n - 1n;
+  const min = -(2n ** 63n);
+  type Arithmetic = (base: bigint, magnitude: bigint, left: bigint, add: boolean) => number | null;
+  const exact: Arithmetic = (base, magnitude, left, add) =>
+    order(left, add ? base + magnitude : base - magnitude);
+  const faults: [string, Arithmetic][] = [
+    [
+      'wrap',
+      (base, magnitude, left, add) => order(left, wrap(add ? base + magnitude : base - magnitude)),
+    ],
+    [
+      'clamp',
+      (base, magnitude, left, add) => {
+        const sum = add ? base + magnitude : base - magnitude;
+        return order(left, sum > max ? max : sum < min ? min : sum);
+      },
+    ],
+    [
+      'binary64',
+      (base, magnitude, left, add) => {
+        const sum = add ? Number(base) + Number(magnitude) : Number(base) - Number(magnitude);
+        return Number(left) < sum ? -1 : Number(left) > sum ? 1 : 0;
+      },
+    ],
+    [
+      'unknown on overflow',
+      (base, magnitude, left, add) => {
+        const sum = add ? base + magnitude : base - magnitude;
+        return sum > max || sum < min ? null : order(left, sum);
+      },
+    ],
+    ['ignored sign', (base, magnitude, left) => order(left, base + magnitude)],
+    ['ignored base', (_base, magnitude, left) => order(left, magnitude)],
+    [
+      'field minus field',
+      (base, magnitude, left, add) => order(wrap(left - base), add ? magnitude : wrap(-magnitude)),
+    ],
+  ];
+  const answer = (arithmetic: Arithmetic, vector: OffsetRow): string => {
+    const ordering = arithmetic(
+      int(vector.base),
+      int(vector.magnitude),
+      int(vector.left),
+      vector.direction === 'add',
+    );
+    if (ordering === null) return 'unknown';
+    return accepts(vector.op, ordering) ? 'true' : 'false';
+  };
+  for (const vector of vectors.integer) {
+    assert.equal(answer(exact, vector), vector.truth, `the exact reference: ${vector.name}`);
+  }
+  for (const [fault, arithmetic] of faults) {
+    assert.ok(
+      vectors.integer.some((vector) => answer(arithmetic, vector) !== vector.truth),
+      `no vector tells the ${fault} fault apart`,
+    );
   }
 });

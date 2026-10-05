@@ -618,6 +618,7 @@ fn search_uncached(
         }
     }
     equality_copies(&builder, &expanded, false, &mut ladders);
+    offset_copies(&builder, &expanded, &mut ladders);
     count_ladders(&builder, &expanded, &mut ladders);
     let mut ladders: Vec<(FactPath, Vec<Choice>)> = ladders.into_iter().collect();
 
@@ -1604,10 +1605,7 @@ fn remapped(
             map(read).unwrap_or_else(|| read.clone())
         }
     };
-    let operand = |operand: &Operand| match operand {
-        Operand::Fact(read) => Operand::Fact(path(read)),
-        Operand::Literal(value) => Operand::Literal(value.clone()),
-    };
+    let operand = |operand: &Operand| operand.map_path(path);
     match predicate {
         Predicate::Always => Predicate::Always,
         Predicate::Never => Predicate::Never,
@@ -2446,6 +2444,127 @@ fn equality_copies(
     }
 }
 
+/// Every comparison of a fact with one constant offset of another, in the order the guards write
+/// them (`docs/design/expression-family-source22.md`, A2).
+fn offset_comparisons(
+    guards: &[&Predicate],
+) -> Vec<(FactPath, ess_primitives::predicate::OffsetOperand)> {
+    fn walk(
+        predicate: &Predicate,
+        found: &mut Vec<(FactPath, ess_primitives::predicate::OffsetOperand)>,
+    ) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                right: Operand::Offset(offset),
+                ..
+            } => {
+                let pair = (left.clone(), offset.clone());
+                if !found.contains(&pair) {
+                    found.push(pair);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for guard in guards {
+        walk(guard, &mut found);
+    }
+    found
+}
+
+/// For each comparison `left <op> base ± k` between two leaves of the input, each side tried at the
+/// boundary the other side's base makes and one unit either side of it
+/// (`docs/design/expression-family-source22.md`, A2): `left` at `base ± k`, `base` at `left ∓ k`.
+/// Synthesis composes the two sides' candidates rather than solving an equation; an `Integer` moves
+/// by one, a `Timestamp` by one second, and a value its type cannot hold — past `i64`, past what a
+/// `date-time` spells — is not tried. A command with no offset keeps its ladders.
+fn offset_copies(
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+    ladders: &mut BTreeMap<FactPath, Vec<Choice>>,
+) {
+    use ess_primitives::predicate::{OffsetMagnitude, OffsetOperand};
+    // `from ± k` and one unit either side, as the nodes a leaf of `leaf` holds.
+    let boundary = |offset: &OffsetOperand, leaf: &Leaf, from: &Node| -> Vec<Node> {
+        match (offset.magnitude, leaf, from) {
+            (OffsetMagnitude::Integer(_), Leaf::Number { .. }, Node::Number(number)) => {
+                let Some(bound) = number.as_i64().and_then(|value| offset.integer_at(value)) else {
+                    return Vec::new();
+                };
+                [bound, bound - 1, bound + 1]
+                    .into_iter()
+                    .filter_map(|value| i64::try_from(value).ok())
+                    .map(|value| Node::Number(Number::from(value)))
+                    .collect()
+            }
+            (OffsetMagnitude::ElapsedSeconds { .. }, Leaf::Timestamp, Node::Text(text)) => {
+                let Some(bound) =
+                    Rfc3339Instant::parse_rfc3339(text).and_then(|value| offset.instant_at(value))
+                else {
+                    return Vec::new();
+                };
+                [0, -1, 1]
+                    .into_iter()
+                    .filter_map(|step| bound.plus_elapsed(step))
+                    .map(|value| Node::Text(value.to_rfc3339()))
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    };
+    for (left, offset) in offset_comparisons(guards) {
+        let (Some((left_leaf, left_base)), Some((base_leaf, base_base))) =
+            (builder.leaves.get(&left), builder.leaves.get(&offset.base))
+        else {
+            continue;
+        };
+        // The base read back from the left: the same offset the other way.
+        let inverse = offset.reversed(left.clone());
+        for (to, to_leaf, to_base, values) in [
+            (
+                &left,
+                left_leaf,
+                left_base,
+                boundary(&offset, left_leaf, base_base),
+            ),
+            (
+                &offset.base,
+                base_leaf,
+                base_base,
+                boundary(&inverse, base_leaf, left_base),
+            ),
+        ] {
+            // Tried first: the boundary is what decides the comparison, so the first candidate
+            // that takes a branch the offset guards takes it at the boundary, not a day away.
+            let ladder = ladders.entry(to.clone()).or_default();
+            let mut first: Vec<Choice> = Vec::new();
+            for value in values {
+                if matches!(to_leaf, Leaf::Number { integral: false }) {
+                    continue;
+                }
+                let choice = Choice::Value(value);
+                if choice != Choice::Value(to_base.clone()) && !first.contains(&choice) {
+                    first.push(choice);
+                }
+            }
+            ladder.retain(|choice| !first.contains(choice));
+            first.append(ladder);
+            *ladder = first;
+            if ladder.is_empty() {
+                ladders.remove(to);
+            }
+        }
+    }
+}
+
 /// One entity invariant a branch holds its input to ([`outcome_constraints`]).
 #[derive(Debug, Clone, PartialEq)]
 struct Held {
@@ -2959,6 +3078,7 @@ fn solve(
         }
     }
     equality_copies(builder, constraints, true, &mut ladders);
+    offset_copies(builder, constraints, &mut ladders);
     count_ladders(builder, constraints, &mut ladders);
     // Values, and the length of a list an invariant counts; an omission is a guard's to vary.
     let counted_lists: BTreeSet<FactPath> =

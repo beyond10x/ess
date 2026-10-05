@@ -293,6 +293,38 @@ A suite carrying the explicit operand or the tag is written as `ess-conformance/
 `/41` (coverage), which the Rust, Go and TypeScript runners read; a suite labelled with an earlier
 number is refused before any step runs. A suite whose comparisons need neither keeps its number.
 
+### From `ess/22`: one constant offset
+
+From `ess/22` (beyond10x/ess#233, #244), the right side of a comparison may be one fact moved by
+one constant: `upper <= lower + 5`, `expires_at <= issued_at - 24h`. An unquoted right side written
+`<fact> + <magnitude>` or `<fact> - <magnitude>`, with or without spaces around the sign, is an
+offset where the fact names a binder in scope, a field of the place or a dotted path through
+either; where it names nothing it stays the text it always was.
+
+- Between two `Integer` facts (through newtypes and `Optional`) the magnitude is a whole number
+  from `0` to `9223372036854775807`, with no sign, fraction or leading zero. The comparison uses the
+  exact sum: `upper < lower + 1` holds for `9223372036854775807` on both sides, and nothing wraps,
+  saturates or rounds. `Decimal` and `Binary64` are refused.
+- Between two `Timestamp` facts the magnitude is a whole number of `s`, `m` or `h` under the
+  current-time bound, and the base moves by that many elapsed UTC seconds. A day is `24h`; there are
+  no days, months, calendars or zones.
+
+All six operators are admitted for both. A fact not observed, an absent `Optional`, a text that
+names no instant, or a moved instant past what an RFC 3339 `date-time` spells makes the comparison
+unknown. A base of another type is refused as `type_mismatch`. Against an `Integer` or a `Timestamp`,
+so is a right side spelled as an offset of a field whose magnitude does not read — `lower + 05`,
+`lower + 5 + 3`, `issued_at - 1d` — or that is quoted; against a `String` such a spelling is the text
+it always was, so `mode == read-only` beside a field named `read` still compares with `read-only`.
+`now - 60s` keeps reading the current time, with its `<`, `<=`, `>`, `>=` restriction, wherever no
+field is named `now`.
+
+An offset is written back as one closed mapping, `upper: {lte: {offset: {fact: lower, add: 5}}}` or
+`expires_at: {lte: {offset: {fact: issued_at, subtract: 24h}}}`, with exactly `fact` and one of
+`add` and `subtract`. It is an `ess/22` form, refused below it, and a suite carrying it is
+`ess-conformance/40` or `/41`. Generated Rust and Go behaviour decides such a guard; a view filter
+with an offset stays owed, an entity invariant with one refuses the generated target by name, and
+Entity Runtime refuses it as `OffsetUnsupported`.
+
 ### Absence is not `null`
 
 An unquoted `null` on the right of `==` or `!=` is refused, with a hint that names `defined(x)` or

@@ -377,6 +377,8 @@ const HELPER_NAMES: &[&str] = &[
     "sumValues",
     "spell",
     "average",
+    "compareOffsetIntegers",
+    "compareOffsetInstants",
 ];
 
 /// `body` with every helper whose name is an imported package's moved out of its way, as a local
@@ -807,6 +809,14 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
         // The `isEq`…`isGe` acceptors are written with `compareNumbers`.
         (
             "compareInstants",
+            &["instant", "truth", "known", "compareNumbers"],
+        ),
+        (
+            "compareOffsetIntegers",
+            &["truth", "known", "compareNumbers"],
+        ),
+        (
+            "compareOffsetInstants",
             &["instant", "truth", "known", "compareNumbers"],
         ),
         ("numberKey", &["numberParts"]),
@@ -1481,6 +1491,49 @@ func average(present int, units *big.Int, scale int) (*string, bool) {
 	}
 	text := spell(quotient, 6)
 	return &text, true
+}
+"),
+    ("compareOffsetIntegers", &["math/big"], "
+// compareOffsetIntegers compares an Integer rendering with another moved by a constant, exactly:
+// big integers, so nothing wraps, saturates or rounds; an unread or unparsable one is unknown.
+func compareOffsetIntegers(left *string, base *string, offset string, accepts func(int) bool) truth {
+	if left == nil || base == nil {
+		return unknown
+	}
+	leftValue, leftOk := new(big.Int).SetString(*left, 10)
+	baseValue, baseOk := new(big.Int).SetString(*base, 10)
+	delta, deltaOk := new(big.Int).SetString(offset, 10)
+	if !leftOk || !baseOk || !deltaOk {
+		return unknown
+	}
+	return known(accepts(leftValue.Cmp(baseValue.Add(baseValue, delta))))
+}
+"),
+    ("compareOffsetInstants", &[], "
+// compareOffsetInstants compares an RFC 3339 rendering with another moved by elapsed seconds, by
+// the instants they name; an unread one, one that names no instant, or a moved instant no
+// `date-time` spells is unknown.
+func compareOffsetInstants(left *string, base *string, seconds int64, accepts func(int) bool) truth {
+	if left == nil || base == nil {
+		return unknown
+	}
+	leftSeconds, leftNanos, leftOk := instant(*left)
+	baseSeconds, baseNanos, baseOk := instant(*base)
+	if !leftOk || !baseOk {
+		return unknown
+	}
+	moved := baseSeconds + seconds
+	if moved < -62167219200 || moved > 253402300799 {
+		return unknown
+	}
+	order := 0
+	switch {
+	case leftSeconds < moved, leftSeconds == moved && leftNanos < baseNanos:
+		order = -1
+	case leftSeconds > moved, leftSeconds == moved && leftNanos > baseNanos:
+		order = 1
+	}
+	return known(accepts(order))
 }
 "),
 ];
@@ -2981,6 +3034,18 @@ struct Guards<'a, 'w> {
     row_entity: Option<&'a ResolvedEntity>,
 }
 
+/// The generated acceptor of an ordering `op` decides by, one of the `isEq`…`isGe` helpers.
+fn acceptor(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Eq => "isEq",
+        CompareOp::Ne => "isNe",
+        CompareOp::Lt => "isLt",
+        CompareOp::Le => "isLe",
+        CompareOp::Gt => "isGt",
+        CompareOp::Ge => "isGe",
+    }
+}
+
 impl Guards<'_, '_> {
     /// A fresh temporary named from `base`.
     fn temp(&mut self, base: &str) -> String {
@@ -3020,13 +3085,19 @@ impl Guards<'_, '_> {
                 format!("truthOf({read})")
             }
             Predicate::Compare {
+                left,
+                op,
+                right: Operand::Offset(offset),
+                ..
+            } => self.offset(env, left, *op, offset),
+            Predicate::Compare {
                 left, op, right, ..
             } => {
                 let kind = [left, right]
                     .into_iter()
                     .find_map(|operand| match operand {
                         Operand::Fact(path) => Some(self.resolve(env, path).kind),
-                        Operand::Literal(_) => None,
+                        Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
                 let left = self.operand(env, left, &kind);
@@ -3039,14 +3110,7 @@ impl Guards<'_, '_> {
                         "compareNumbers"
                     };
                     self.uses.helpers.insert(helper);
-                    let accepts = match op {
-                        CompareOp::Eq => "isEq",
-                        CompareOp::Ne => "isNe",
-                        CompareOp::Lt => "isLt",
-                        CompareOp::Le => "isLe",
-                        CompareOp::Gt => "isGt",
-                        CompareOp::Ge => "isGe",
-                    };
+                    let accepts = acceptor(*op);
                     format!("{helper}({left}, {right}, {accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
@@ -3133,6 +3197,46 @@ impl Guards<'_, '_> {
                 self.read(&resolved)
             }
             Operand::Literal(value) => self.fact_literal(value),
+            Operand::Offset(_) => unreachable!("an offset is compared by `offset`"),
+        }
+    }
+
+    /// `left <op> base ± magnitude` (`docs/design/expression-family-source22.md`, A2): two
+    /// `Integer` renderings compared with the exact sum in `math/big`, or two `Timestamp`
+    /// renderings compared as instants after moving the base by elapsed seconds — unknown where a
+    /// value is absent or the moved instant is past what a `date-time` spells.
+    fn offset(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        op: CompareOp,
+        offset: &ess_primitives::predicate::OffsetOperand,
+    ) -> String {
+        use ess_primitives::predicate::{OffsetDirection, OffsetMagnitude};
+        let base = self.resolve(env, &offset.base);
+        let left = self.operand(env, left, &base.kind);
+        let base = self.read(&base);
+        let accepts = acceptor(op);
+        let negate = offset.direction == OffsetDirection::Subtract;
+        match offset.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                self.uses.helpers.insert("compareOffsetIntegers");
+                let magnitude = offset
+                    .magnitude
+                    .integer()
+                    .expect("the plan admits whole Integer magnitudes");
+                let delta = if negate {
+                    format!("-{magnitude}")
+                } else {
+                    magnitude.to_string()
+                };
+                format!("compareOffsetIntegers({left}, {base}, \"{delta}\", {accepts})")
+            }
+            OffsetMagnitude::ElapsedSeconds { seconds, .. } => {
+                self.uses.helpers.insert("compareOffsetInstants");
+                let delta = if negate { -seconds } else { seconds };
+                format!("compareOffsetInstants({left}, {base}, {delta}, {accepts})")
+            }
         }
     }
 

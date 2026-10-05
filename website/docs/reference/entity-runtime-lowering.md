@@ -73,6 +73,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | a set effect (`instances:`, `affects:`, `{count: changed}`) | `SetEffectUnsupported` | entity-core: an operation over more than the one instance its request names |
 | `when_related:` | `RelatedGuardUnsupported` | entity-core: a read of another entity's row |
 | a union variant with no payload (ess/22) | `UnitVariantUnsupported` | entity-core: a union variant that admits no payload member; every entity-core variant admits one |
+| one constant offset (`upper == lower + 5`, `issued_at - 24h`) | `OffsetUnsupported` | entity-core: an operand that moves a value by a constant |
 
 ## Every code
 
@@ -111,5 +112,6 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `SetEffectUnsupported` | a set effect (`instances:`, `affects:`, `{count: changed}`) | An outcome changes rows beside, or instead of, the one its request names. |
 | `RelatedGuardUnsupported` | `when_related:` | A branch is guarded by a row of another entity. |
 | `UnitVariantUnsupported` | a union variant with no payload (ess/22) | A union lowered as a field declares a variant that carries nothing. |
+| `OffsetUnsupported` | one constant offset (`upper == lower + 5`, `issued_at - 24h`) | A predicate compares a fact with one constant offset of another. |
 
 [ess-lowering-end]: #

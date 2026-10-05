@@ -332,6 +332,12 @@ impl<'a> Check<'a> {
         let mut operand = |this: &mut Self, operand: &Operand| -> Result<String, String> {
             match operand {
                 Operand::Literal(value) => Ok(literal(value)),
+                // The shared invariant evaluator moves no value by a constant (A2): refused by
+                // name rather than read as the text it is spelled like.
+                Operand::Offset(offset) => Err(format!(
+                    "`{offset}` moves a fact by a constant, which the generated invariant check \
+                     does not evaluate"
+                )),
                 Operand::Fact(path) => {
                     let walked = this.walk(path)?;
                     if let Walked::Value { terminal, .. } = &walked {

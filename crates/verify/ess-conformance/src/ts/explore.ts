@@ -389,6 +389,8 @@ function paths(predicate: Predicate): string[] {
     if (node.kind === 'compare') {
       if (node.left.isFact) found.add(node.left.path);
       if (node.right.isFact) found.add(node.right.path);
+      // An offset reads its base (A2).
+      if (node.right.offset !== null) found.add(node.right.offset.base);
     } else if (node.kind === 'forall' || node.kind === 'exists') {
       found.add(node.over);
     } else if (node.path !== '') {

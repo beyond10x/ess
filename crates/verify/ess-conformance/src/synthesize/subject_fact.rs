@@ -924,6 +924,25 @@ fn ground_leaf(
                 .as_ref()
                 .and_then(super::fact_value)
                 .map(Operand::Literal),
+            // An offset of an input stays an offset of that input; one of a stored value is the
+            // value it names (A2), or grounds nothing where the row holds no such value.
+            Operand::Offset(offset) => {
+                let base = &offset.base;
+                match input_path(base) {
+                    Some(rest) if !bound.iter().any(|(name, _)| *name == base.namespace()) => {
+                        Some(Operand::Offset(ess_primitives::predicate::OffsetOperand {
+                            base: rest,
+                            direction: offset.direction,
+                            magnitude: offset.magnitude,
+                        }))
+                    }
+                    _ => held_node(settled, bound, base)
+                        .as_ref()
+                        .and_then(super::fact_value)
+                        .and_then(|value| offset.value_at(&value))
+                        .map(Operand::Literal),
+                }
+            }
             Operand::Literal(value) => Some(Operand::Literal(value.clone())),
         }
     };
@@ -935,12 +954,33 @@ fn ground_leaf(
             kind,
         } => {
             if let (Some(left), Some(right)) = (side(left), side(right)) {
+                // A held value against an offset of an input (`upper == input.to + 5`) is the input
+                // against the held value moved back (`to == upper - 5`), with the operator turned
+                // round: one input leaf against a literal, whose boundary the ladders try exactly
+                // and a unit either side (A2). Where the moved value is past what the type holds,
+                // nothing is grounded.
+                let (left, op, right) = match (left, right) {
+                    (Operand::Literal(held), Operand::Offset(offset)) => {
+                        let Some(bound) = offset.reversed(offset.base.clone()).value_at(&held)
+                        else {
+                            return;
+                        };
+                        (
+                            Operand::Fact(offset.base.clone()),
+                            turned(*op),
+                            Operand::Literal(bound),
+                        )
+                    }
+                    (left, right) => (left, *op, right),
+                };
                 // Only a comparison the input takes part in steers the input.
-                if matches!(left, Operand::Fact(_)) || matches!(right, Operand::Fact(_)) {
+                if matches!(left, Operand::Fact(_))
+                    || matches!(right, Operand::Fact(_) | Operand::Offset(_))
+                {
                     out.push(Predicate::Compare {
                         kind: *kind,
                         left,
-                        op: *op,
+                        op,
                         right,
                     });
                 }
@@ -963,6 +1003,17 @@ fn ground_leaf(
             }
         }
         _ => {}
+    }
+}
+
+/// `op` with its two sides swapped: `a < b` is `b > a`.
+fn turned(op: CompareOp) -> CompareOp {
+    match op {
+        CompareOp::Lt => CompareOp::Gt,
+        CompareOp::Le => CompareOp::Ge,
+        CompareOp::Gt => CompareOp::Lt,
+        CompareOp::Ge => CompareOp::Le,
+        other => other,
     }
 }
 

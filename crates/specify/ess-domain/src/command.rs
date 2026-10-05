@@ -2710,6 +2710,23 @@ impl CommandSpec {
                 {
                     continue;
                 }
+                // `input.lower-5` reads as the path it is spelled like until the source format
+                // decides it is one constant offset of the input `lower` (A2, rule 3a); the
+                // registry-aware checker refuses it there if it is neither.
+                if READS_INPUT_NAMESPACE.with(std::cell::Cell::get)
+                    && root == subject_fact::INPUT_NAMESPACE
+                    && ess_primitives::predicate::OffsetOperand::spellings(&path.to_string())
+                        .iter()
+                        .any(|(base, _, _)| {
+                            base.namespace() == subject_fact::INPUT_NAMESPACE
+                                && base
+                                    .segments()
+                                    .get(1)
+                                    .is_some_and(|field| inputs.contains(field.as_str()))
+                        })
+                {
+                    continue;
+                }
                 errors.push(
                     ValidationError::at(
                         location.clone().key("when"),

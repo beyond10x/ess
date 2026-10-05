@@ -55,9 +55,23 @@ pub enum LexicalOperand {
     /// Read the way every format reads it: a typed literal, a quoted text, a dotted fact, a binder
     /// in scope, or the explicit `{fact: …}` operand.
     Read(Operand),
-    /// An unquoted, undotted word that no binder in scope names. Text before `ess/22`; from it,
-    /// possibly a root fact.
+    /// An unquoted, undotted word that no binder in scope names, or unquoted text spelled
+    /// `<fact> ± <magnitude>`. Text before `ess/22`; from it, possibly a root fact (A1) or one
+    /// constant offset of a fact (A2).
     UnquotedText(String),
+    /// A dotted fact path with a `-` in it, `window.lower-5`: the fact it reads in every format,
+    /// and from `ess/22` the offset it also spells where it names no fact (A2, rule 3a — a field
+    /// name holds no `-`, so the dotted reading names nothing there).
+    DottedSpelling(FactPath),
+}
+
+/// How one undecided right side was written, as the resolver is asked about it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Spelling<'w> {
+    /// An unquoted word or text ([`LexicalOperand::UnquotedText`]).
+    Word(&'w str),
+    /// A dotted path with a `-` in it ([`LexicalOperand::DottedSpelling`]).
+    Dotted(&'w FactPath),
 }
 
 /// A predicate whose comparisons keep how their right-hand sides were written.
@@ -92,7 +106,7 @@ pub enum LexicalPredicate {
 /// What a resolver answers for one bare word: given the comparison's left side, its operator, the
 /// word, and the quantifiers it sits in, outermost first, the operand it is.
 pub(crate) type Decide<'a, 'f> =
-    dyn FnMut(&Operand, CompareOp, &str, &[&'a LexicalQuantified]) -> Operand + 'f;
+    dyn FnMut(&Operand, CompareOp, Spelling<'_>, &[&'a LexicalQuantified]) -> Operand + 'f;
 
 /// A quantifier whose body is still lexical.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,8 +136,14 @@ impl LexicalPredicate {
         Self::build(predicate.clone(), &mut std::iter::repeat(false))
     }
 
+    /// A right side is left to decide where it was a bare word (A1) or unquoted text spelled as an
+    /// offset (A2, rule 3a): the resolver tells the two apart by their spelling.
     fn from_spelled(spelled: Spelled) -> Self {
-        let mut words = spelled.words.into_iter();
+        let mut words = spelled
+            .words
+            .into_iter()
+            .zip(spelled.offsets)
+            .map(|(word, offset)| word || offset);
         Self::build(spelled.predicate, &mut words)
     }
 
@@ -148,6 +168,7 @@ impl LexicalPredicate {
                     Operand::Literal(FactValue::Text(text)) if word => {
                         LexicalOperand::UnquotedText(text)
                     }
+                    Operand::Fact(path) if word => LexicalOperand::DottedSpelling(path),
                     other => LexicalOperand::Read(other),
                 };
                 Self::Compare {
@@ -186,17 +207,20 @@ impl LexicalPredicate {
     /// Exactly the predicate the ordinary reader returns for the same document, so a source below
     /// `ess/22` keeps its meaning and its canonical bytes.
     pub fn literal(&self) -> Predicate {
-        self.lower(&mut |_, _, word| Operand::Literal(FactValue::Text(word.to_owned())))
+        self.lower(&mut |_, _, spelling| match spelling {
+            Spelling::Word(word) => Operand::Literal(FactValue::Text(word.to_owned())),
+            Spelling::Dotted(path) => Operand::Fact(path.clone()),
+        })
     }
 
     /// Rebuilds the predicate, asking `decide` what each bare word is: given the comparison's left
     /// side, its operator and the word, under the binders enclosing it.
     pub(crate) fn lower(
         &self,
-        decide: &mut dyn FnMut(&Operand, CompareOp, &str) -> Operand,
+        decide: &mut dyn FnMut(&Operand, CompareOp, Spelling<'_>) -> Operand,
     ) -> Predicate {
         self.lower_scoped(
-            &mut |left, op, word, _| decide(left, op, word),
+            &mut |left, op, spelling, _| decide(left, op, spelling),
             &mut Vec::new(),
         )
     }
@@ -219,7 +243,12 @@ impl LexicalPredicate {
                 op: *op,
                 right: match right {
                     LexicalOperand::Read(operand) => operand.clone(),
-                    LexicalOperand::UnquotedText(word) => decide(left, *op, word, scope),
+                    LexicalOperand::UnquotedText(word) => {
+                        decide(left, *op, Spelling::Word(word), scope)
+                    }
+                    LexicalOperand::DottedSpelling(path) => {
+                        decide(left, *op, Spelling::Dotted(path), scope)
+                    }
                 },
             },
             // Rebuilt as the variants they were, never through the simplifying constructors: the
@@ -265,7 +294,10 @@ impl LexicalPredicate {
     /// Whether any comparison still has a bare word to decide.
     pub fn has_words(&self) -> bool {
         match self {
-            Self::Compare { right, .. } => matches!(right, LexicalOperand::UnquotedText(_)),
+            Self::Compare { right, .. } => matches!(
+                right,
+                LexicalOperand::UnquotedText(_) | LexicalOperand::DottedSpelling(_)
+            ),
             Self::All(children) | Self::Any(children) => children.iter().any(Self::has_words),
             Self::Not(inner) => inner.has_words(),
             Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.has_words(),
@@ -432,8 +464,9 @@ impl Written {
     }
 }
 
-/// The input guard an outcome's `when:` became, wherever its condition keeps it.
-fn input_guard(condition: &OutcomeCondition) -> Option<&Predicate> {
+/// The input guard an outcome's `when:` became, wherever its condition keeps it: the predicate
+/// its source format resolved the written one to.
+pub fn input_guard(condition: &OutcomeCondition) -> Option<&Predicate> {
     match condition {
         OutcomeCondition::When(predicate) | OutcomeCondition::ExternalWhen { predicate, .. } => {
             Some(predicate)
@@ -552,7 +585,9 @@ pub(crate) fn resolutions(
     written: &Written,
 ) -> Vec<(Site, Predicate)> {
     use crate::command::subject_fact::INPUT_NAMESPACE;
-    use crate::expression::{read_input_namespace, resolve_lexical, DomainEnvironment};
+    use crate::expression::{
+        read_input_namespace, resolve_lexical, resolve_lexical_reading, DomainEnvironment,
+    };
     if spec.system().format.major() < FormatVersion::V22.major() {
         return Vec::new();
     }
@@ -589,8 +624,9 @@ pub(crate) fn resolutions(
                 let current = input_guard(&outcome.condition)?;
                 let environment =
                     DomainEnvironment::new(registry, &command.input).with_current_time();
-                let mut predicate = resolve_lexical(&environment, lexical);
-                if !declares(&command.input, INPUT_NAMESPACE) {
+                let namespace = !declares(&command.input, INPUT_NAMESPACE);
+                let mut predicate = resolve_lexical_reading(&environment, lexical, namespace);
+                if namespace {
                     predicate = read_input_namespace(&predicate);
                 }
                 Some((current.clone(), predicate))

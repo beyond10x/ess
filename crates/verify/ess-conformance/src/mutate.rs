@@ -476,6 +476,11 @@ pub struct Mutant {
 impl Mutant {
     /// Describes `mutation` against `documents`, or `None` when its site is not there.
     pub fn new(documents: &[Document], mutation: Mutation) -> Option<Self> {
+        Self::described(&resolved(documents), mutation)
+    }
+
+    /// [`Self::new`] against documents [`resolved`] already.
+    fn described(documents: &[Document], mutation: Mutation) -> Option<Self> {
         let change = describe(documents, &mutation)?;
         Some(Self {
             id: format!("{}/{}", mutation.class(), mutation.site()),
@@ -725,6 +730,12 @@ fn outward(node: &Predicate) -> Option<Predicate> {
         Some(Operand::Literal(FactValue::Number(Number::from(moved))))
     };
     let (left, right) = match (left, op, right) {
+        (Operand::Fact(_), CompareOp::Ge, Operand::Offset(offset)) => {
+            (left.clone(), Operand::Offset(offset_step(offset, -1)?))
+        }
+        (Operand::Fact(_), CompareOp::Le, Operand::Offset(offset)) => {
+            (left.clone(), Operand::Offset(offset_step(offset, 1)?))
+        }
         (Operand::Fact(_), CompareOp::Ge, Operand::Literal(value)) => {
             (left.clone(), step(value, -1)?)
         }
@@ -744,6 +755,57 @@ fn outward(node: &Predicate) -> Option<Predicate> {
         left,
         op: *op,
         right,
+    })
+}
+
+/// One constant offset moved one step by `by` (`docs/design/expression-family-source22.md`, A2):
+/// an Integer magnitude by one, an elapsed one by one second, written in seconds so the step is
+/// spelled exactly. The sign follows the sum, so `lower + 0` moved down is `lower - 1`. `None`
+/// where the step leaves the magnitude's range.
+fn offset_step(
+    offset: &ess_primitives::predicate::OffsetOperand,
+    by: i64,
+) -> Option<ess_primitives::predicate::OffsetOperand> {
+    use ess_primitives::predicate::{OffsetDirection, OffsetMagnitude, OffsetOperand};
+    let signed = |magnitude: i64| match offset.direction {
+        OffsetDirection::Add => Some(magnitude),
+        OffsetDirection::Subtract => magnitude.checked_neg(),
+    };
+    let split = |moved: i64| {
+        if moved < 0 {
+            (OffsetDirection::Subtract, moved.checked_neg())
+        } else {
+            (OffsetDirection::Add, Some(moved))
+        }
+    };
+    let (direction, magnitude) = match offset.magnitude {
+        OffsetMagnitude::Integer(_) => {
+            let moved = signed(offset.magnitude.integer()?)?.checked_add(by)?;
+            let (direction, magnitude) = split(moved);
+            (
+                direction,
+                OffsetMagnitude::Integer(ess_primitives::facts::Number::from(magnitude?)),
+            )
+        }
+        OffsetMagnitude::ElapsedSeconds { seconds, .. } => {
+            let moved = signed(seconds)?.checked_add(by)?;
+            let (direction, seconds) = split(moved);
+            let seconds = seconds.filter(|seconds| {
+                *seconds <= ess_primitives::time::CurrentTime::MAX_OFFSET_SECONDS
+            })?;
+            (
+                direction,
+                OffsetMagnitude::ElapsedSeconds {
+                    seconds,
+                    written_unit: ess_primitives::time::ElapsedUnit::Seconds,
+                },
+            )
+        }
+    };
+    Some(OffsetOperand {
+        base: offset.base.clone(),
+        direction,
+        magnitude,
     })
 }
 
@@ -811,6 +873,51 @@ fn flipped(direction: Direction) -> Direction {
 }
 
 // ---- enumeration --------------------------------------------------------------------------------
+
+/// `documents` with every outcome's `when:` written as the predicate its source format resolved it
+/// to, where that is not what the document spelled (`docs/design/expression-family-source22.md`,
+/// final review decision 16).
+///
+/// From `ess/22` a bare word may name a field and `lower + 5` may be one constant offset of one, and
+/// which is decided only against the declarations. A guard edited as the text it was spelled like
+/// would compare with that text and be refused; edited as what it resolved to, `upper >= lower + 5`
+/// becomes `upper > lower + 5` or `upper >= lower + 4`, and assembly keeps the edit, because a
+/// predicate that is no longer the document's own spelling is not resolved again. Below `ess/22`, or
+/// where the documents do not assemble, nothing moves.
+fn resolved(documents: &[Document]) -> Vec<Document> {
+    let mut resolved = documents.to_vec();
+    let Ok(specification) = Specification::assemble(documents.to_vec()) else {
+        return resolved;
+    };
+    if specification.system().format.major() < ess_domain::system::FormatVersion::V22.major() {
+        return resolved;
+    }
+    for (_, file) in &mut resolved {
+        for command in &mut file.commands {
+            let Some(assembled) = specification.commands().get(&command.name) else {
+                continue;
+            };
+            for outcome in &mut command.outcomes {
+                let Some(when) = outcome.when.as_mut() else {
+                    continue;
+                };
+                let guard = assembled
+                    .outcomes
+                    .iter()
+                    .find(|candidate| candidate.name == outcome.name)
+                    .and_then(|candidate| {
+                        ess_domain::expression::lexical::input_guard(&candidate.condition)
+                    });
+                if let Some(guard) = guard {
+                    if guard != when {
+                        *when = guard.clone();
+                    }
+                }
+            }
+        }
+    }
+    resolved
+}
 
 /// Every mutant of the selected classes, in byte order of id.
 pub fn mutants(documents: &[Document], classes: &[MutantClass]) -> Vec<Mutant> {
@@ -947,6 +1054,7 @@ pub struct Selection {
 /// A specification that does not compile has no `emit-swap` site here, and is refused by whatever
 /// compiles it.
 pub fn selection(documents: &[Document], classes: &[MutantClass]) -> Selection {
+    let documents = &resolved(documents);
     let selected: BTreeSet<MutantClass> = classes.iter().copied().collect();
     let (swaps, mut unavailable) = if selected.contains(&MutantClass::EmitSwap) {
         swap_sites(documents)
@@ -957,7 +1065,7 @@ pub fn selection(documents: &[Document], classes: &[MutantClass]) -> Selection {
         .into_iter()
         .chain(swaps)
         .filter(|mutation| selected.contains(&mutation.class()))
-        .filter_map(|mutation| Mutant::new(documents, mutation))
+        .filter_map(|mutation| Mutant::described(documents, mutation))
         .collect();
     found.sort_by(|left, right| left.id.cmp(&right.id));
     found.dedup_by(|left, right| left.id == right.id);
@@ -1447,7 +1555,7 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
 
 /// The documents with `mutation` applied: a clone with one edit, or why the site is not there.
 pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document>, String> {
-    let mut mutated = documents.to_vec();
+    let mut mutated = resolved(documents);
     let absent = || format!("the specification has no site `{}`", mutation.site());
     match mutation {
         Mutation::FromDrop {

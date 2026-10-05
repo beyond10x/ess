@@ -787,3 +787,34 @@ that record.
   `compare_instants` / `compareInstants` in `rust/behaviour.rs` and `go/behaviour.rs`.
 - Diff: `written_condition` (:1007) and `written_invariants` (:370) in
   `crates/verify/ess-diff/src/diff.rs`.
+
+## U2 implementation seams (2026-10-05)
+
+Refreshed citations for the seams unit U2 (A2, one constant offset) changed.
+
+- Operand and canonical form: `Operand::Offset`, `OffsetOperand` (`spellings`, `integer_at`,
+  `instant_at`, `value_at`, `to_node`), `OffsetMagnitude` and `OffsetDirection`; the reader arm in
+  `Operand::fact_mapping`; `Spelled::offsets`; `Predicate::evaluate_offset` and
+  `Predicate::reads_offset` (`crates/specify/ess-primitives/src/predicate.rs`). The shared
+  elapsed-time grammar and arithmetic are `ElapsedUnit::parse_magnitude` and
+  `Rfc3339Instant::plus_elapsed`, which `CurrentTime` now uses (`crates/specify/ess-primitives/src/time.rs`).
+- Resolver and checker: `resolve_lexical_reading`, `offset_spelled` and `base_resolves` (rule 3a),
+  `Checker::offset` and `Checker::malformed_offset`, and `TypeEnvironment::is_integer` in
+  `crates/specify/ess-domain/src/expression.rs`; the lexical capture keeps an offset spelling as
+  `LexicalOperand::UnquotedText`, and a dotted path with an unspaced `-` (`window.lower-5`) as
+  `LexicalOperand::DottedSpelling`, decided through `Spelling` (`expression/lexical.rs`). A stored-row
+  guard against an offset of an input is grounded as that input against the held value moved back
+  (`ground_leaf`, `synthesize/subject_fact.rs`).
+- Suite format: `expression_format::reads`; the Go reader `parseOffsetOperand`, `admitOffsetOperand`
+  and `compareOffset` (`go/predicate.go`, `go/runtime.go`) and the TypeScript `parseOffsetOperand`,
+  `admitOffsetOperand`, `compareOffset` and `predicateNumbers` (`ts/predicate.ts`, `ts/runtime.ts`);
+  shared vectors `crates/specify/ess-primitives/tests/vectors/offset-operand.json`.
+- Synthesis: `offset_copies` beside `equality_copies` (`crates/verify/ess-conformance/src/witness.rs`).
+- Generated guards: `offset_supported` (`crates/generate/ess-synth/src/determined.rs`), the
+  `compare_offset_integers`/`compare_offset_instants` and `compareOffsetIntegers`/`compareOffsetInstants`
+  helpers in `rust/behaviour.rs` and `go/behaviour.rs`; generated invariant checks refuse an offset
+  by name (`rust/invariant.rs`, `go/invariant.rs`).
+- Mutation: guard-boundary sites read the resolved guard of an `ess/22` source, and
+  `offset_step` moves an offset outward (`crates/verify/ess-conformance/src/mutate.rs`).
+- Entity Runtime: `LoweringCode::OffsetUnsupported` (`crates/generate/ess-entity-runtime/src/lib.rs`,
+  `subset.rs`).

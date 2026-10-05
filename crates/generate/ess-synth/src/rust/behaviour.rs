@@ -533,6 +533,16 @@ fn helpers(out: &mut String, uses: &Uses) {
     if uses.helpers.contains("compare_instants") {
         out.push_str(COMPARE_INSTANTS);
     }
+    if uses.helpers.contains("compare_offset_integers") {
+        out.push_str(COMPARE_OFFSET_INTEGERS);
+    }
+    if uses.helpers.contains("compare_offset_instants") {
+        out.push_str(COMPARE_OFFSET_INSTANTS);
+    }
+    if uses.helpers.contains("compare_instants") || uses.helpers.contains("compare_offset_instants")
+    {
+        out.push_str(INSTANT_OF);
+    }
     for (helper, text) in QUERY_HELPERS {
         if uses.helpers.contains(helper) {
             out.push_str(text);
@@ -604,7 +614,48 @@ fn compare_instants(
 ) -> Option<bool> {
     Some(accepts(instant_of(&left?)?.cmp(&instant_of(&right?)?)))
 }
+";
 
+/// The guard comparisons with one constant offset of a fact
+/// (`docs/design/expression-family-source22.md`, A2), each written only where a guard uses it.
+const COMPARE_OFFSET_INTEGERS: &str = "
+/// Compares an `Integer` rendering with another moved by a constant, exactly: every `i64 ± i64`
+/// fits `i128`, so nothing wraps, saturates or rounds; an unread one is Unknown.
+fn compare_offset_integers(
+    left: Option<String>,
+    base: Option<String>,
+    offset: i128,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    let left: i128 = left?.parse().ok()?;
+    let base: i128 = base?.parse().ok()?;
+    Some(accepts(left.cmp(&(base + offset))))
+}
+";
+
+/// See [`COMPARE_OFFSET_INTEGERS`].
+const COMPARE_OFFSET_INSTANTS: &str = "
+/// Compares an RFC 3339 rendering with another moved by elapsed seconds, by the instants they name;
+/// an unread one, one that names no instant, or a moved instant no `date-time` spells is Unknown.
+fn compare_offset_instants(
+    left: Option<String>,
+    base: Option<String>,
+    seconds: i64,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    let left = instant_of(&left?)?;
+    let (base, nanos) = instant_of(&base?)?;
+    let moved = base.checked_add(seconds)?;
+    if !(-62_167_219_200..=253_402_300_799).contains(&moved) {
+        return None;
+    }
+    Some(accepts(left.cmp(&(moved, nanos))))
+}
+";
+
+/// What [`COMPARE_INSTANTS`] and [`COMPARE_OFFSET_INSTANTS`] read an instant with, written once
+/// after whichever of them a guard uses.
+const INSTANT_OF: &str = "
 /// The instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds.
 fn instant_of(text: &str) -> Option<(i64, u32)> {
     let bytes = text.as_bytes();
@@ -2144,6 +2195,18 @@ struct Guards<'a> {
     row: &'a str,
 }
 
+/// The generated acceptor of an ordering `op` decides by: `core::cmp::Ordering::<acceptor>`.
+fn acceptor(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Eq => "is_eq",
+        CompareOp::Ne => "is_ne",
+        CompareOp::Lt => "is_lt",
+        CompareOp::Le => "is_le",
+        CompareOp::Gt => "is_gt",
+        CompareOp::Ge => "is_ge",
+    }
+}
+
 impl Guards<'_> {
     /// `self.ports.caller_<attribute>()`, recorded on the context: an `Option` of the attribute.
     fn caller(&mut self, attribute: &str, type_ref: &ResolvedTypeRef) -> String {
@@ -2186,13 +2249,19 @@ impl Guards<'_> {
                 self.read(&resolved)
             }
             Predicate::Compare {
+                left,
+                op,
+                right: Operand::Offset(offset),
+                ..
+            } => self.offset(env, left, *op, offset),
+            Predicate::Compare {
                 left, op, right, ..
             } => {
                 let kind = [left, right]
                     .into_iter()
                     .find_map(|operand| match operand {
                         Operand::Fact(path) => Some(self.resolve(env, path).kind),
-                        Operand::Literal(_) => None,
+                        Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
                 let left = self.operand(env, left, &kind);
@@ -2205,14 +2274,7 @@ impl Guards<'_> {
                         "compare_numbers"
                     };
                     self.uses.helpers.insert(helper);
-                    let accepts = match op {
-                        CompareOp::Eq => "is_eq",
-                        CompareOp::Ne => "is_ne",
-                        CompareOp::Lt => "is_lt",
-                        CompareOp::Le => "is_le",
-                        CompareOp::Gt => "is_gt",
-                        CompareOp::Ge => "is_ge",
-                    };
+                    let accepts = acceptor(*op);
                     format!("{helper}({left}, {right}, core::cmp::Ordering::{accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
@@ -2274,6 +2336,52 @@ impl Guards<'_> {
                 self.read(&resolved)
             }
             Operand::Literal(value) => fact_literal(value, kind),
+            Operand::Offset(_) => unreachable!("an offset is compared by `offset`"),
+        }
+    }
+
+    /// `left <op> base ± magnitude` (`docs/design/expression-family-source22.md`, A2): two
+    /// `Integer` renderings compared with the exact sum in `i128`, or two `Timestamp` renderings
+    /// compared as instants after moving the base by elapsed seconds — Unknown where a value is
+    /// absent or the moved instant is past what a `date-time` spells.
+    fn offset(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        op: CompareOp,
+        offset: &ess_primitives::predicate::OffsetOperand,
+    ) -> String {
+        use ess_primitives::predicate::{OffsetDirection, OffsetMagnitude};
+        let base = self.resolve(env, &offset.base);
+        let left = self.operand(env, left, &base.kind);
+        let base = self.read(&base);
+        let accepts = acceptor(op);
+        let negate = offset.direction == OffsetDirection::Subtract;
+        match offset.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                self.uses.helpers.insert("compare_offset_integers");
+                let magnitude = offset
+                    .magnitude
+                    .integer()
+                    .expect("the plan admits whole Integer magnitudes");
+                let delta = if negate {
+                    format!("-{magnitude}")
+                } else {
+                    magnitude.to_string()
+                };
+                format!(
+                    "compare_offset_integers({left}, {base}, {delta}_i128, \
+                     core::cmp::Ordering::{accepts})"
+                )
+            }
+            OffsetMagnitude::ElapsedSeconds { seconds, .. } => {
+                self.uses.helpers.insert("compare_offset_instants");
+                let delta = if negate { -seconds } else { seconds };
+                format!(
+                    "compare_offset_instants({left}, {base}, {delta}_i64, \
+                     core::cmp::Ordering::{accepts})"
+                )
+            }
         }
     }
 

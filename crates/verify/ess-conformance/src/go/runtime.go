@@ -4823,6 +4823,16 @@ func admitPredicateEnvelope(value any, depth int) error {
 	return nil
 }
 
+// admitMappingOperand admits a comparison operand mapping: one constant offset `{offset: {fact,
+// add|subtract}}` (suite/40, A2), read by the predicate reader, or the explicit fact operand.
+func admitMappingOperand(operand map[string]any) error {
+	if inner, ok := operand["offset"]; ok && len(operand) == 1 {
+		_, err := parseOffsetOperand("admitted", "eq", inner)
+		return err
+	}
+	return admitFactOperand(operand)
+}
+
 // admitFactOperand admits exactly `{fact: <path>}`, the canonical one-segment fact operand
 // (docs/design/expression-family-source22.md, A1).
 func admitFactOperand(operand map[string]any) error {
@@ -4858,8 +4868,9 @@ func admitPredicateConstraint(value any) error {
 			switch operator {
 			case "eq", "equals", "==", "ne", "not_equals", "!=", "lt", "<", "le", "lte", "<=", "gt", ">", "ge", "gte", ">=":
 				if fact, ok := operand.(map[string]any); ok {
-					// The explicit fact operand (suite/40); admitPredicateVersion gates the major.
-					if err := admitFactOperand(fact); err != nil {
+					// The explicit fact operand or one constant offset (suite/40);
+					// admitPredicateVersion gates the major.
+					if err := admitMappingOperand(fact); err != nil {
 						return err
 					}
 					continue
@@ -8270,6 +8281,9 @@ func admitPredicateVersion(value any, major int) error {
 	if major < 14 && predicateUsesTextMatch(value) {
 		return fmt.Errorf("string predicate operators require suite/14 or /15")
 	}
+	if major < 40 && predicateUsesOffset(value) {
+		return fmt.Errorf("one constant offset {offset: …} requires suite/40 or /41")
+	}
 	if major < 40 && predicateUsesFactOperand(value) {
 		return fmt.Errorf("a one-segment fact operand {fact: …} requires suite/40 or /41")
 	}
@@ -8277,6 +8291,43 @@ func admitPredicateVersion(value any, major int) error {
 		return fmt.Errorf("a comparison tagged as: timestamp requires suite/40 or /41")
 	}
 	return nil
+}
+
+// predicateUsesOffset walks the admitted grammar for one constant offset `{offset: …}` (suite/40,
+// docs/design/expression-family-source22.md A2).
+func predicateUsesOffset(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesOffset(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesOffset(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesOffset(fields["that"]) {
+					return true
+				}
+			default:
+				if operators, ok := child.(map[string]any); ok {
+					for _, operand := range operators {
+						if mapping, ok := operand.(map[string]any); ok {
+							if _, offset := mapping["offset"]; offset {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // predicateUsesFactOperand walks the admitted grammar for the explicit fact operand `{fact: …}`

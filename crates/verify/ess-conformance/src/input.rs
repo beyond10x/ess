@@ -596,6 +596,10 @@ impl ProofBudget {
                 for operand in [left, right] {
                     match operand {
                         Operand::Fact(value) => path(value)?,
+                        Operand::Offset(offset) => {
+                            path(&offset.base)?;
+                            self.charge(offset.magnitude.to_string().len())?;
+                        }
                         Operand::Literal(value) => literal(value)?,
                     }
                 }
@@ -1196,7 +1200,7 @@ impl<'ir> InputFacts<'ir> {
             } => {
                 let mut unresolved = false;
                 for operand in [left, right] {
-                    if let Operand::Fact(path) = operand {
+                    if let Some(path) = operand.fact_path() {
                         if self.observe(path).is_none() {
                             unresolved = true;
                             push(self.explain_path(path));
@@ -1258,6 +1262,8 @@ impl<'ir> InputFacts<'ir> {
         match operand {
             Operand::Fact(path) => self.observe(path),
             Operand::Literal(value) => Some(value.clone()),
+            // An offset names no value of its own; its base is explained as a path.
+            Operand::Offset(_) => None,
         }
     }
 

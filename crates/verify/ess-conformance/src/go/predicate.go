@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
@@ -126,11 +127,26 @@ type predicate struct {
 	body *predicate
 }
 
-// operand is one side of a comparison: a fact to look up, or a constant.
+// operand is one side of a comparison: a fact to look up, a constant, or one fact moved by a
+// constant.
 type operand struct {
 	path    string
 	literal Node
 	isFact  bool
+	offset  *offsetOperand
+}
+
+// offsetOperand is one fact moved by one constant (suite/40, docs/design/expression-family-source22.md
+// A2): an exact integer, or elapsed seconds.
+type offsetOperand struct {
+	base string
+	add  bool
+	// integer is the Integer magnitude, or nil for an elapsed one.
+	integer *big.Int
+	// seconds is the elapsed magnitude; 0 for an Integer one.
+	seconds int64
+	// spelled is the magnitude as written: `5`, `24h`.
+	spelled string
 }
 
 func (p predicate) String() string {
@@ -191,6 +207,13 @@ func (p predicate) String() string {
 }
 
 func (o operand) String() string {
+	if o.offset != nil {
+		direction := "subtract"
+		if o.offset.add {
+			direction = "add"
+		}
+		return fmt.Sprintf("{offset: {fact: %s, %s: %s}}", o.offset.base, direction, o.offset.spelled)
+	}
 	if o.isFact {
 		return o.path
 	}
@@ -207,7 +230,55 @@ func parsePredicate(raw json.RawMessage) (predicate, error) {
 	if err := decoder.Decode(&node); err != nil {
 		return predicate{}, err
 	}
+	// An offset's magnitude is read from its own digits: `i64::MAX` is a magnitude, and the binary64
+	// every other number of a predicate is read as would round it (suite/40, A2).
+	if strings.Contains(string(raw), `"offset"`) {
+		exact := json.NewDecoder(strings.NewReader(string(raw)))
+		exact.UseNumber()
+		var kept any
+		if exact.Decode(&kept) == nil {
+			node = offsetMagnitudes(kept)
+		}
+	}
 	return fromNode(node)
+}
+
+// offsetMagnitudes is a predicate decoded with every number a float64, as it always was, but an
+// offset's `add` or `subtract`, which keeps the token it was written as. TypeScript's
+// `predicateNumbers`.
+func offsetMagnitudes(node any) any {
+	switch value := node.(type) {
+	case []any:
+		kept := make([]any, len(value))
+		for index, child := range value {
+			kept[index] = offsetMagnitudes(child)
+		}
+		return kept
+	case map[string]any:
+		kept := make(map[string]any, len(value))
+		for key, child := range value {
+			fields, isOffset := child.(map[string]any)
+			if key != "offset" || !isOffset {
+				kept[key] = offsetMagnitudes(child)
+				continue
+			}
+			offset := make(map[string]any, len(fields))
+			for field, magnitude := range fields {
+				if field == "add" || field == "subtract" {
+					offset[field] = magnitude
+				} else {
+					offset[field] = offsetMagnitudes(magnitude)
+				}
+			}
+			kept[key] = offset
+		}
+		return kept
+	case json.Number:
+		parsed, _ := value.Float64()
+		return parsed
+	default:
+		return value
+	}
 }
 
 func fromNode(node any) (predicate, error) {
@@ -334,7 +405,7 @@ func parseTaggedCompare(fields map[string]any, binders []string) (predicate, err
 	case string:
 		right = parseOperandIn(value, binders)
 	case map[string]any:
-		fact, err := parseFactOperand("compare", "right", value)
+		fact, err := parseMappingOperand("compare", "right", value)
 		if err != nil {
 			return predicate{}, err
 		}
@@ -416,7 +487,7 @@ func parseOperator(path, key string, raw any, binders []string) (predicate, erro
 		case string:
 			right = parseOperandIn(value, binders)
 		case map[string]any:
-			fact, err := parseFactOperand(path, key, value)
+			fact, err := parseMappingOperand(path, key, value)
 			if err != nil {
 				return predicate{}, err
 			}
@@ -489,6 +560,74 @@ func parseOperator(path, key string, raw any, binders []string) (predicate, erro
 // A1), as Rust's `Operand::fact_mapping` does: exactly one key, naming a fact path. Anything else
 // is refused rather than compared as the mapping it is. Which suite majors may carry it is the
 // runtime's admission to decide; this reader only reads it.
+func parseMappingOperand(path, key string, value map[string]any) (operand, error) {
+	if inner, ok := value["offset"]; ok && len(value) == 1 {
+		return parseOffsetOperand(path, key, inner)
+	}
+	return parseFactOperand(path, key, value)
+}
+
+// elapsedMagnitude is the current-time grammar of an elapsed magnitude: a whole number without a
+// leading zero, of at most ten digits, then `s`, `m` or `h`.
+var elapsedMagnitude = regexp.MustCompile(`^([1-9][0-9]{0,9}|0)([smh])$`)
+
+// parseOffsetOperand reads one constant offset, `{offset: {fact: <path>, add|subtract:
+// <magnitude>}}` (suite/40, docs/design/expression-family-source22.md A2), as Rust's
+// `OffsetOperand::from_entries` does: exactly `fact` and one of `add` and `subtract`; a number
+// that is a whole number from 0 to `i64::MAX`, or a text `<digits><s|m|h>` under the current-time
+// bound. A whole number written as text is refused.
+func parseOffsetOperand(path, key string, value any) (operand, error) {
+	refuse := fmt.Errorf("`%s: {%s: {offset: …}}` takes exactly `fact`, a fact path, and one of `add` and `subtract`", path, key)
+	fields, ok := value.(map[string]any)
+	if !ok || len(fields) != 2 {
+		return operand{}, refuse
+	}
+	base, ok := fields["fact"].(string)
+	added, add := fields["add"]
+	subtracted, subtract := fields["subtract"]
+	if !ok || !factPath.MatchString(base) || add == subtract {
+		return operand{}, refuse
+	}
+	magnitude := subtracted
+	if add {
+		magnitude = added
+	}
+	offset := &offsetOperand{base: base, add: add}
+	if text, isText := magnitude.(string); isText {
+		matched := elapsedMagnitude.FindStringSubmatch(text)
+		if matched == nil {
+			return operand{}, refuse
+		}
+		digits, _ := strconv.ParseInt(matched[1], 10, 64)
+		unit := map[string]int64{"s": 1, "m": 60, "h": 3600}[matched[2]]
+		if digits*unit > 3155760000 {
+			return operand{}, refuse
+		}
+		offset.seconds = digits * unit
+		offset.spelled = text
+		return operand{offset: offset}, nil
+	}
+	if _, isFlag := magnitude.(bool); isFlag {
+		return operand{}, refuse
+	}
+	integer, ok := integerOf(magnitude)
+	if !ok || integer.Sign() < 0 {
+		return operand{}, refuse
+	}
+	offset.integer = integer
+	offset.spelled = integer.String()
+	return operand{offset: offset}, nil
+}
+
+// integerOf is an Integer value: a number whose exact value is a whole number within int64.
+func integerOf(value Node) (*big.Int, bool) {
+	exact, ok := numberValue(value)
+	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
+		return nil, false
+	}
+	return new(big.Int).Set(exact.Num()), true
+}
+
 func parseFactOperand(path, key string, value map[string]any) (operand, error) {
 	fact, ok := value["fact"].(string)
 	if len(value) != 1 || !ok || !factPath.MatchString(fact) {
@@ -774,6 +913,9 @@ func (p predicate) evaluate(source factSource) truth {
 }
 
 func (p predicate) compare(source factSource) truth {
+	if p.right.offset != nil {
+		return p.compareOffset(source, p.right.offset)
+	}
 	left, leftOk := p.left.resolve(source)
 	right, rightOk := p.right.resolve(source)
 	if !leftOk || !rightOk {
@@ -810,6 +952,49 @@ func (p predicate) compare(source factSource) truth {
 	default:
 		return truthUnknown
 	}
+}
+
+// compareOffset is `left <op> base ± magnitude` (A2), as Rust's `Predicate::evaluate_offset`: an
+// Integer magnitude compares two whole numbers with the exact sum, in `math/big`, so nothing wraps,
+// saturates or rounds; an elapsed one moves the base instant by seconds and compares instants. An
+// unread value, a value of the wrong kind, or a moved instant past what a `date-time` spells is
+// Unknown.
+func (p predicate) compareOffset(source factSource, offset *offsetOperand) truth {
+	left, leftOk := p.left.resolve(source)
+	base, baseOk := readLeaf(source, offset.base)
+	if !leftOk || !baseOk {
+		return truthUnknown
+	}
+	if offset.integer != nil {
+		leftValue, leftOk := integerOf(left)
+		baseValue, baseOk := integerOf(base)
+		if !leftOk || !baseOk {
+			return truthUnknown
+		}
+		if offset.add {
+			baseValue.Add(baseValue, offset.integer)
+		} else {
+			baseValue.Sub(baseValue, offset.integer)
+		}
+		return truthOf(acceptsOrder(p.op, leftValue.Cmp(baseValue)))
+	}
+	leftText, leftIsText := left.(string)
+	baseText, baseIsText := base.(string)
+	leftInstant, leftOk := parseInstant(leftText)
+	baseInstant, baseOk := parseInstant(baseText)
+	if !leftIsText || !baseIsText || !leftOk || !baseOk {
+		return truthUnknown
+	}
+	moved := baseInstant
+	if offset.add {
+		moved.seconds += offset.seconds
+	} else {
+		moved.seconds -= offset.seconds
+	}
+	if moved.seconds < -62167219200 || moved.seconds > 253402300799 {
+		return truthUnknown
+	}
+	return truthOf(acceptsOrder(p.op, leftInstant.compare(moved)))
 }
 
 // acceptsOrder applies a comparison operator to an ordering, as Rust's `CompareOp::accepts` does.

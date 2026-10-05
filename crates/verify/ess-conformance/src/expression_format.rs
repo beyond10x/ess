@@ -10,8 +10,9 @@
 //! mapping or, worse, read the bare word it replaces as text. A binder and a dotted path are not
 //! such operands, so a suite comparing only those keeps its prior format and bytes (decision 5).
 //!
-//! Later Family F units add their constructs here — `Offset`, `Distinct`, the derived
-//! `Utf8Bytes` selector and the tagged Timestamp comparison — each one more arm of [`reads`].
+//! One constant offset of a fact, `{offset: {fact, add|subtract}}` (A2), selects it too. Later Family F
+//! units add their constructs here — `Distinct` and the derived `Utf8Bytes` selector — each one more
+//! arm of [`reads`].
 //!
 //! # Cumulative over 36–39
 //!
@@ -36,12 +37,12 @@ pub const ADMITTED: [u32; 2] = [ORDINARY, COVERAGE];
 
 /// What a refusal of a relabelled older suite says.
 pub const REQUIRES: &str =
-    "the expression vocabulary of a one-segment fact operand `{fact: …}` or a \
-     comparison tagged `as: timestamp` requires suite/40 or /41";
+    "the expression vocabulary of a one-segment fact operand `{fact: …}`, a \
+     comparison tagged `as: timestamp` or one constant offset `{offset: …}` requires suite/40 or /41";
 
 /// Whether this predicate carries vocabulary only a `/40` reader reads.
 pub fn reads(predicate: &Predicate) -> bool {
-    predicate.reads_root_fact_operand() || predicate.compares_instants()
+    predicate.reads_root_fact_operand() || predicate.compares_instants() || predicate.reads_offset()
 }
 
 /// Whether a typed suite needs `/40` (ordinary) or `/41` (coverage).

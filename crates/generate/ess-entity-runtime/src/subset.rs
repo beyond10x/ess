@@ -88,6 +88,7 @@ pub(crate) const CALLER: &str = "the caller (`{caller: …}`, `caller.<attribute
 pub(crate) const SET_EFFECT: &str = "a set effect (`instances:`, `affects:`, `{count: changed}`)";
 pub(crate) const RELATED_GUARD: &str = "`when_related:`";
 pub(crate) const UNIT_VARIANT: &str = "a union variant with no payload (ess/22)";
+pub(crate) const OFFSET: &str = "one constant offset (`upper == lower + 5`, `issued_at - 24h`)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -471,6 +472,15 @@ pub const CONSTRUCTS: &[Construct] = &[
         Needs::EntityCore("a union variant that admits no payload member; every entity-core variant admits one"),
         &["tests/union_unit_variants.rs::a_stored_union_with_a_unit_variant_is_refused_by_name"],
     ),
+    refused(
+        OFFSET,
+        LoweringCode::OffsetUnsupported,
+        Needs::EntityCore("an operand that moves a value by a constant"),
+        &[
+            "tests/offset_guard.rs::a_guard_reading_an_integer_offset_is_refused_by_name",
+            "tests/offset_guard.rs::a_guard_reading_a_timestamp_offset_is_refused_by_name",
+        ],
+    ),
 ];
 
 impl LoweringCode {
@@ -507,6 +517,7 @@ impl LoweringCode {
         Self::SetEffectUnsupported,
         Self::RelatedGuardUnsupported,
         Self::UnitVariantUnsupported,
+        Self::OffsetUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -716,6 +727,11 @@ impl LoweringCode {
                 "UnitVariantUnsupported",
                 UNIT_VARIANT,
                 "A union lowered as a field declares a variant that carries nothing.",
+            ),
+            Self::OffsetUnsupported => (
+                "OffsetUnsupported",
+                OFFSET,
+                "A predicate compares a fact with one constant offset of another.",
             ),
         }
     }

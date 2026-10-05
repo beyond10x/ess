@@ -556,6 +556,11 @@ fn misplaced(predicate: &Predicate, roots: &[Field]) -> Option<FactPath> {
             children.iter().find_map(|child| misplaced(child, roots))
         }
         Predicate::Not(child) => misplaced(child, roots),
+        // A caller moved by a constant (A2) is no caller equality, whatever the operator.
+        Predicate::Compare {
+            right: Operand::Offset(offset),
+            ..
+        } if is_caller_path(&offset.base, roots) => Some(offset.base.clone()),
         Predicate::Compare {
             left, op, right, ..
         } => match (caller(left), caller(right)) {

@@ -799,6 +799,20 @@ impl Rfc3339Instant {
         })
     }
 
+    /// The instant `seconds` of elapsed UTC time later (earlier when negative), or `None` where
+    /// that instant is past the years an RFC 3339 `date-time` spells (0000 through 9999).
+    ///
+    /// The one checked arithmetic every elapsed-time operand shares: the current time `now - 60s`
+    /// ([`CurrentTime::at`]) and a fact moved by a constant, `issued_at + 24h`
+    /// (`docs/design/expression-family-source22.md`, A2). It never wraps and never compares a
+    /// spelling: an instant no `date-time` names is no answer at all.
+    #[must_use]
+    pub fn plus_elapsed(self, seconds: i64) -> Option<Self> {
+        self.plus_seconds(seconds).filter(|instant| {
+            (FIRST_SPELLED_SECOND..=LAST_SPELLED_SECOND).contains(&instant.seconds)
+        })
+    }
+
     /// The instant `seconds` later (earlier when negative), or `None` past `i64` seconds.
     #[must_use]
     pub fn plus_seconds(self, seconds: i64) -> Option<Self> {
@@ -910,23 +924,8 @@ impl CurrentTime {
             b'-' => (-1, &rest[1..]),
             _ => return None,
         };
-        let rest = rest.trim_start_matches(' ');
-        let unit = match rest.as_bytes().last()? {
-            b's' => 1,
-            b'm' => 60,
-            b'h' => 3_600,
-            _ => return None,
-        };
-        let digits = &rest[..rest.len() - 1];
-        if digits.is_empty()
-            || digits.len() > 10
-            || !digits.bytes().all(|byte| byte.is_ascii_digit())
-            || (digits.len() > 1 && digits.starts_with('0'))
-        {
-            return None;
-        }
-        let magnitude = digits.parse::<i64>().ok()?.checked_mul(unit)?;
-        (magnitude <= Self::MAX_OFFSET_SECONDS).then_some(Self {
+        let (magnitude, _) = ElapsedUnit::parse_magnitude(rest.trim_start_matches(' '))?;
+        Some(Self {
             offset_seconds: sign * magnitude,
         })
     }
@@ -949,9 +948,65 @@ impl CurrentTime {
     /// RFC 3339 `date-time` spells.
     #[must_use]
     pub fn at(self, now: Rfc3339Instant) -> Option<Rfc3339Instant> {
-        now.plus_seconds(self.offset_seconds).filter(|instant| {
-            (FIRST_SPELLED_SECOND..=LAST_SPELLED_SECOND).contains(&instant.seconds)
-        })
+        now.plus_elapsed(self.offset_seconds)
+    }
+}
+
+/// The unit an elapsed-time magnitude is written in: `s`, `m` or `h`, and nothing calendrical
+/// (beyond10x/ess#171, #244). Kept beside the seconds it names so a canonical writer gives back
+/// `24h` rather than `86400s`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ElapsedUnit {
+    /// `s`: one second.
+    Seconds,
+    /// `m`: sixty seconds.
+    Minutes,
+    /// `h`: three thousand six hundred seconds.
+    Hours,
+}
+
+impl ElapsedUnit {
+    /// The letter the unit is written with.
+    pub fn letter(self) -> char {
+        match self {
+            Self::Seconds => 's',
+            Self::Minutes => 'm',
+            Self::Hours => 'h',
+        }
+    }
+
+    /// How many seconds one of this unit is.
+    pub fn seconds(self) -> i64 {
+        match self {
+            Self::Seconds => 1,
+            Self::Minutes => 60,
+            Self::Hours => 3_600,
+        }
+    }
+
+    /// Reads `<digits><unit>` — a whole number without a sign or a leading zero, of at most ten
+    /// digits, followed by `s`, `m` or `h` — as the seconds it names and the unit it was written
+    /// in, or `None` where the text is not that or names more than
+    /// [`CurrentTime::MAX_OFFSET_SECONDS`].
+    ///
+    /// The current time's offset (`now - 60s`) and a fact's (`issued_at + 24h`) are one grammar.
+    pub fn parse_magnitude(text: &str) -> Option<(i64, Self)> {
+        let unit = match text.as_bytes().last()? {
+            b's' => Self::Seconds,
+            b'm' => Self::Minutes,
+            b'h' => Self::Hours,
+            _ => return None,
+        };
+        let digits = &text[..text.len() - 1];
+        if digits.is_empty()
+            || digits.len() > 10
+            || !digits.bytes().all(|byte| byte.is_ascii_digit())
+            || (digits.len() > 1 && digits.starts_with('0'))
+        {
+            return None;
+        }
+        let seconds = digits.parse::<i64>().ok()?.checked_mul(unit.seconds())?;
+        (seconds <= CurrentTime::MAX_OFFSET_SECONDS).then_some((seconds, unit))
     }
 }
 

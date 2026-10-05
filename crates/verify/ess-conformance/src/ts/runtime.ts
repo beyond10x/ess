@@ -859,6 +859,36 @@ export function plainNumbers(value: Node): Node {
   return value;
 }
 
+/**
+ * A predicate's numbers as [`plainNumbers`] reads them, but for an offset's magnitude
+ * (`{offset: {fact, add|subtract}}`, suite/40, A2), which keeps its exact digits: `i64::MAX` is a
+ * magnitude, and a binary64 would round it. Go's `offsetMagnitudes`.
+ */
+export function predicateNumbers(value: Node): Node {
+  if (Array.isArray(value)) {
+    return value.map(predicateNumbers);
+  }
+  if (isObject(value)) {
+    const result: { [key: string]: Node } = {};
+    for (const key of Object.keys(value)) {
+      const child = value[key] ?? null;
+      if (key === 'offset' && isObject(child)) {
+        const offset: { [key: string]: Node } = {};
+        for (const field of Object.keys(child)) {
+          const magnitude = child[field] ?? null;
+          offset[field] =
+            field === 'add' || field === 'subtract' ? magnitude : predicateNumbers(magnitude);
+        }
+        result[key] = offset;
+      } else {
+        result[key] = predicateNumbers(child);
+      }
+    }
+    return result;
+  }
+  return plainNumbers(value);
+}
+
 // ---- exact coverage inventory and original parent admission ------------------------------------
 
 export function coverageError(): Error {
@@ -6508,7 +6538,7 @@ function decodeExpectation(value: Node): Expectation | undefined {
     expectation.fields = fields;
   }
   if (Object.prototype.hasOwnProperty.call(value, 'predicate')) {
-    expectation.predicate = plainNumbers(value.predicate);
+    expectation.predicate = predicateNumbers(value.predicate);
   }
   if (Object.prototype.hasOwnProperty.call(value, 'order_by')) {
     expectation.order_by = (value.order_by as Node[]).map((item) => item as string);
@@ -7160,6 +7190,18 @@ export function admitPredicateScalar(value: Node): void {
   throw new Error('predicate operand must be a boolean, number or string');
 }
 
+/**
+ * Admits a comparison operand mapping: one constant offset `{offset: {fact, add|subtract}}` (suite/40,
+ * A2), read by the predicate reader, or the explicit fact operand.
+ */
+function admitMappingOperand(operand: { [key: string]: Node }): void {
+  if (Object.keys(operand).length === 1 && Object.hasOwn(operand, 'offset')) {
+    fromNode({ admitted: { eq: operand } });
+    return;
+  }
+  admitFactOperand(operand);
+}
+
 /** Admits exactly `{fact: <path>}`, the canonical one-segment fact operand (suite/40). */
 function admitFactOperand(operand: { [key: string]: Node }): void {
   const path = operand['fact'];
@@ -7197,8 +7239,9 @@ export function admitPredicateConstraint(value: Node): void {
         case 'gte':
         case '>=':
           if (isObject(operand)) {
-            // The explicit fact operand (suite/40); admitPredicateVersion gates the major.
-            admitFactOperand(operand);
+            // The explicit fact operand or one constant offset (suite/40); admitPredicateVersion
+            // gates the major.
+            admitMappingOperand(operand);
           } else {
             admitPredicateScalar(operand);
           }
@@ -11025,12 +11068,56 @@ export function admitPredicateVersion(value: Node, major: number): void {
   if (major < 8 && predicateNeedsLosslessReader(value)) {
     throw new Error('normalized structured comparison operands require suite/8 or /9');
   }
+  if (major < 40 && predicateUsesOffset(value)) {
+    throw new Error('one constant offset {offset: …} requires suite/40 or /41');
+  }
   if (major < 40 && predicateUsesFactOperand(value)) {
     throw new Error('a one-segment fact operand {fact: …} requires suite/40 or /41');
   }
   if (major < 40 && predicateUsesOperator(value, ['left'])) {
     throw new Error('a comparison tagged as: timestamp requires suite/40 or /41');
   }
+}
+
+/** Whether admitted predicate grammar carries one constant offset `{offset: …}` (suite/40, A2). */
+export function predicateUsesOffset(value: Node): boolean {
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesOffset);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key] ?? null;
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesOffset(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (
+          isObject(child) &&
+          predicateUsesOffset((child as { [key: string]: Node }).that ?? null)
+        ) {
+          return true;
+        }
+        break;
+      default:
+        if (isObject(child)) {
+          for (const operand of Object.values(child as { [key: string]: Node })) {
+            if (isObject(operand) && Object.hasOwn(operand, 'offset')) return true;
+          }
+        }
+    }
+  }
+  return false;
 }
 
 /** Whether admitted predicate grammar carries the explicit fact operand `{fact: …}` (suite/40). */

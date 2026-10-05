@@ -837,6 +837,9 @@ impl TypeEnvironment for WithSubject<'_> {
     fn is_string(&self, reference: &Read) -> bool {
         Self::declared(reference).is_some_and(|type_ref| self.inner.is_string(type_ref))
     }
+    fn is_integer(&self, reference: &Read) -> bool {
+        Self::declared(reference).is_some_and(|type_ref| self.inner.is_integer(type_ref))
+    }
     fn admits_text_length(&self) -> bool {
         self.inner.admits_text_length()
     }

@@ -33,7 +33,15 @@
 // One thing the Go file leaves to chance is reconstructed as a fixed order rather than a random
 // one, and it is called out at `comparisonOperators`.
 
-import { asNumber, compare, equal, render, sortStrings } from './runtime.js';
+import {
+  asNumber,
+  compare,
+  equal,
+  exactDecimal,
+  JsonNumber,
+  render,
+  sortStrings,
+} from './runtime.js';
 import type { Node, Row } from './runtime.js';
 
 /** A three-valued result. */
@@ -146,6 +154,12 @@ export function bindFact(into: FactSource, path: string, value: Node): void {
     }
     return;
   }
+  // A number kept as its digits is one scalar, as Go's `json.Number` is, never a mapping of its
+  // `raw` field: an offset compares `i64::MAX` exactly only where the row still holds its digits.
+  if (value instanceof JsonNumber) {
+    into.set(path, value);
+    return;
+  }
   if (value !== null && typeof value === 'object') {
     presence(into).add(path);
     for (const [key, nested] of Object.entries(value)) {
@@ -158,19 +172,42 @@ export function bindFact(into: FactSource, path: string, value: Node): void {
 
 // ---- the predicate ----------------------------------------------------------------------------
 
-/** One side of a comparison: a fact to look up, or a constant. */
+/**
+ * One fact moved by one constant (suite/40, `docs/design/expression-family-source22.md` A2): an
+ * exact integer, or elapsed seconds — Go's `offsetOperand`.
+ */
+export interface OffsetOperand {
+  base: string;
+  add: boolean;
+  /** The Integer magnitude, or null for an elapsed one. */
+  integer: bigint | null;
+  /** The elapsed magnitude in seconds; 0 for an Integer one. */
+  seconds: bigint;
+  /** The magnitude as written: `5`, `24h`. */
+  spelled: string;
+}
+
+/** One side of a comparison: a fact to look up, a constant, or one fact moved by a constant. */
 export class Operand {
   path: string;
   literal: Node;
   isFact: boolean;
+  offset: OffsetOperand | null;
 
-  constructor(fields: { path?: string; literal?: Node; isFact?: boolean } = {}) {
+  constructor(
+    fields: { path?: string; literal?: Node; isFact?: boolean; offset?: OffsetOperand } = {},
+  ) {
     this.path = fields.path ?? '';
     this.literal = fields.literal ?? null;
     this.isFact = fields.isFact ?? false;
+    this.offset = fields.offset ?? null;
   }
 
   toString(): string {
+    if (this.offset !== null) {
+      const direction = this.offset.add ? 'add' : 'subtract';
+      return `{offset: {fact: ${this.offset.base}, ${direction}: ${this.offset.spelled}}}`;
+    }
     return this.isFact ? this.path : render(this.literal);
   }
 
@@ -362,6 +399,7 @@ export class Predicate {
 
   /** The Go method of the same name; `compare` below it is the runtime's ordering function. */
   compare(source: FactSource): Truth {
+    if (this.right.offset !== null) return this.compareOffset(source, this.right.offset);
     const [left, leftOk] = this.left.resolve(source);
     const [right, rightOk] = this.right.resolve(source);
     if (!leftOk || !rightOk) return TruthUnknown;
@@ -390,6 +428,36 @@ export class Predicate {
       default:
         return TruthUnknown;
     }
+  }
+
+  /**
+   * `left <op> base ± magnitude` (A2), as Go's `compareOffset`: an Integer magnitude compares two
+   * whole numbers with the exact sum, as `bigint`, so nothing wraps, saturates or rounds; an elapsed
+   * one moves the base instant by seconds and compares instants. An unread value, a value of the
+   * wrong kind, or a moved instant past what a `date-time` spells is Unknown.
+   */
+  compareOffset(source: FactSource, offset: OffsetOperand): Truth {
+    const [left, leftOk] = this.left.resolve(source);
+    const [base, baseOk] = readLeaf(source, offset.base);
+    if (!leftOk || !baseOk) return TruthUnknown;
+    if (offset.integer !== null) {
+      const a = integerOf(left);
+      const b = integerOf(base);
+      if (a === null || b === null) return TruthUnknown;
+      const bound = offset.add ? b + offset.integer : b - offset.integer;
+      return truthOf(acceptsOrder(this.op, a < bound ? -1 : a > bound ? 1 : 0));
+    }
+    const a = typeof left === 'string' ? parseInstant(left) : undefined;
+    const b = typeof base === 'string' ? parseInstant(base) : undefined;
+    if (a === undefined || b === undefined) return TruthUnknown;
+    const moved = {
+      seconds: b.seconds + (offset.add ? offset.seconds : -offset.seconds),
+      nanos: b.nanos,
+    };
+    if (moved.seconds < FIRST_SPELLED_SECOND || moved.seconds > LAST_SPELLED_SECOND) {
+      return TruthUnknown;
+    }
+    return truthOf(acceptsOrder(this.op, compareInstants(a, moved)));
   }
 
   /**
@@ -571,7 +639,7 @@ export function parseTaggedCompare(
   if (typeof compared === 'string') {
     right = parseOperand(compared, binders);
   } else if (isFactMapping(compared)) {
-    right = parseFactOperand('compare', 'right', compared);
+    right = parseMappingOperand('compare', 'right', compared);
   } else if (compared === null || Array.isArray(compared)) {
     return refuse('`right` is a scalar or `{fact: <path>}`');
   } else {
@@ -602,6 +670,18 @@ function acceptsOrder(op: string, order: number): boolean {
     default:
       return order >= 0;
   }
+}
+
+/** `0000-01-01T00:00:00Z` and `9999-12-31T23:59:59Z`: the seconds a `date-time` spells. */
+const FIRST_SPELLED_SECOND = -62167219200n;
+const LAST_SPELLED_SECOND = 253402300799n;
+
+/** An Integer value: a number whose exact value is a whole number within `i64`, or null. */
+function integerOf(value: Node): bigint | null {
+  const decimal = exactDecimal(value);
+  if (decimal === null || decimal[1] !== 0) return null;
+  const [units] = decimal;
+  return units > 9223372036854775807n || units < -9223372036854775808n ? null : units;
 }
 
 /** One RFC 3339 `date-time` on the UTC line: seconds since the epoch and nanoseconds. */
@@ -794,7 +874,7 @@ export function parseConstraint(
         typeof compared === 'string'
           ? parseOperand(compared, binders)
           : isFactMapping(compared)
-            ? parseFactOperand(path, spelling, compared)
+            ? parseMappingOperand(path, spelling, compared)
             : new Operand({ literal: compared });
       return new Predicate({
         kind: 'compare',
@@ -819,6 +899,63 @@ function isFactMapping(value: Node): value is { [key: string]: Node } {
  * rather than compared as the mapping it is. Which suite majors may carry it is the runtime's
  * admission to decide; this reader only reads it.
  */
+function parseMappingOperand(path: string, key: string, value: { [key: string]: Node }): Operand {
+  if (Object.keys(value).length === 1 && Object.hasOwn(value, 'offset')) {
+    return parseOffsetOperand(path, key, value['offset'] ?? null);
+  }
+  return parseFactOperand(path, key, value);
+}
+
+/**
+ * Reads one constant offset, `{offset: {fact: <path>, add|subtract: <magnitude>}}` (suite/40, A2),
+ * as Rust's `OffsetOperand::from_entries` does: exactly `fact` and one of `add` and `subtract`; a
+ * number that is a whole number from 0 to `i64::MAX`, or a text `<digits><s|m|h>` without a leading
+ * zero under the current-time bound. A whole number written as text is refused.
+ */
+function parseOffsetOperand(path: string, key: string, value: Node): Operand {
+  const refuse = (): never => {
+    throw new Error(
+      `\`${path}: {${key}: {offset: …}}\` takes exactly \`fact\`, a fact path, and one of \`add\` and \`subtract\``,
+    );
+  };
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    value instanceof JsonNumber
+  ) {
+    return refuse();
+  }
+  const fields = value as { [key: string]: Node };
+  const base = fields['fact'];
+  const add = Object.hasOwn(fields, 'add');
+  const direction = add ? 'add' : 'subtract';
+  if (
+    Object.keys(fields).length !== 2 ||
+    typeof base !== 'string' ||
+    !factPath.test(base) ||
+    add === Object.hasOwn(fields, 'subtract')
+  ) {
+    return refuse();
+  }
+  const magnitude = fields[direction] ?? null;
+  if (typeof magnitude === 'string') {
+    const matched = /^([1-9][0-9]{0,9}|0)([smh])$/.exec(magnitude);
+    if (matched === null) return refuse();
+    const unit = { s: 1n, m: 60n, h: 3600n }[matched[2] as 's' | 'm' | 'h'];
+    const seconds = BigInt(matched[1]!) * unit;
+    if (seconds > 3155760000n) return refuse();
+    return new Operand({
+      offset: { base, add, integer: null, seconds, spelled: magnitude },
+    });
+  }
+  const integer = integerOf(magnitude);
+  if (integer === null || integer < 0n || typeof magnitude === 'boolean') return refuse();
+  return new Operand({
+    offset: { base, add, integer, seconds: 0n, spelled: integer.toString() },
+  });
+}
+
 function parseFactOperand(path: string, key: string, value: { [key: string]: Node }): Operand {
   const fact = value['fact'];
   if (Object.keys(value).length !== 1 || typeof fact !== 'string' || !factPath.test(fact)) {

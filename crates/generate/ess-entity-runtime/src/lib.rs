@@ -498,6 +498,11 @@ pub enum LoweringCode {
     /// the tag alone, and every entity-core union variant admits a payload member, so a lowered
     /// definition would accept `{"kind": "Open", "value": …}`, which ESS refuses.
     UnitVariantUnsupported,
+    /// A predicate compares a fact with one constant offset of another (ess/22, `upper == lower +
+    /// 5`, `expires_at <= issued_at - 24h`): entity-core has no operand that moves a value by a
+    /// constant, and lowering the offset as the text it is spelled like, or as its base alone,
+    /// would decide a different rule.
+    OffsetUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -629,6 +634,17 @@ impl Projector<'_> {
         predicate: &Predicate,
         at: &str,
     ) {
+        if predicate.reads_offset() {
+            self.diagnostic(
+                LoweringCode::OffsetUnsupported,
+                at,
+                format!(
+                    "`{predicate}` compares with one constant offset of a fact, and Entity Runtime \
+                     has no operand that moves a value by a constant; lowering the offset as text, \
+                     or as its base alone, would decide a different rule"
+                ),
+            );
+        }
         if predicate.uses_case_fold() {
             self.diagnostic(
                 LoweringCode::CaseFoldUnsupported,
@@ -3912,6 +3928,9 @@ fn lower_operand(operand: &Operand, rewrite: &PathRewrite) -> Value {
     match operand {
         Operand::Fact(path) => rewrite.path(path),
         Operand::Literal(value) => fact_value(value),
+        // Refused before lowering (`OffsetUnsupported`), so no definition carrying this is ever
+        // returned; the base alone is a reference, never the text the offset is spelled like.
+        Operand::Offset(offset) => rewrite.path(&offset.base),
     }
 }
 

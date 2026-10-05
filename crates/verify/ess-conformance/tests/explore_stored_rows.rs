@@ -539,6 +539,69 @@ fn a_stored_field_no_command_sets_is_undetermined_and_redrawn() {
     );
 }
 
+/// The fixture under `ess/22` with `Annotate`, whose refusal compares the stored `uses` with one
+/// constant offset of a stored field `stale` no command sets (A2, beyond10x/ess#233).
+fn unset_offset_base() -> String {
+    let text = replace(FIXTURE, "format: ess/18", "format: ess/22");
+    let text = replace(
+        &text,
+        "      - {name: uses, type: Integer}\n    lifecycle:",
+        "      - {name: uses, type: Integer}\n      - {name: stale, type: Integer}\n    lifecycle:",
+    );
+    let text = replace(
+        &text,
+        "      - exploredraw.keys.Grant\n\nerrors:",
+        "      - exploredraw.keys.Grant\n      - exploredraw.keys.Annotate\n\nerrors:",
+    );
+    replace(
+        &text,
+        "\nviews:",
+        "
+  - name: exploredraw.keys.Annotate
+    input:
+      - {name: key_id, type: exploredraw.keys.KeyId}
+    outcomes:
+      - name: noted
+        when_subject:
+          predicate: uses > stale + 5
+        error: exploredraw.keys.Stuck
+      - name: annotated
+        updates: exploredraw.keys.Key
+        instance: key_id
+        emits: [exploredraw.keys.Kept]
+        payload: {exploredraw.keys.Kept: {key_id: input.key_id}}
+
+views:",
+    )
+}
+
+/// A stored-row guard left Unknown by the base of an offset names that base, the field no command
+/// sets — never the left side, which the row holds (adversary pass 1 on E-U2: `paths()` left an
+/// offset's base out). Both lanes alike.
+#[test]
+fn a2_an_unset_offset_base_is_the_path_the_explorer_names() {
+    let ir = ir(&unset_offset_base());
+    let cases = json!([{"name": "correct", "mode": "", "allowExcluded": true}]);
+    let root = scratch("unset-offset");
+    let lanes = [
+        ("typescript", typescript(&root, &ir, &cases)),
+        ("go", go(&root, &ir, &cases)),
+    ];
+    std::fs::remove_dir_all(&root).ok();
+    for (language, lane) in &lanes {
+        let found = &lane.results["correct"];
+        assert_eq!(
+            strings(&found["undetermined"]),
+            ["exploredraw.keys.Annotate guard of `noted` reads stale, which no command set"],
+            "{language}: {found}"
+        );
+    }
+    assert_eq!(
+        lanes[0].1.results["correct"], lanes[1].1.results["correct"],
+        "typescript and go explore the unset offset base differently"
+    );
+}
+
 /// The fixture with an accepting `bulk` branch on `Use` declared *before* the stored-row refusal
 /// `exhausted`.
 fn bulk_declared_first() -> String {

@@ -12212,10 +12212,7 @@ fn rebased(predicate: &Predicate, prefix: &str, body: &ResolvedBody) -> Predicat
 /// the one it was handed — one that leaves its binder alone — and two closures written at different
 /// places are two types.
 fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Predicate {
-    let operand = |it: &Operand| match it {
-        Operand::Fact(path) => Operand::Fact(onto(path)),
-        Operand::Literal(value) => Operand::Literal(value.clone()),
-    };
+    let operand = |it: &Operand| it.map_path(onto);
     match predicate {
         Predicate::Always => Predicate::Always,
         Predicate::Never => Predicate::Never,

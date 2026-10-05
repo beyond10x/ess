@@ -868,11 +868,20 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
             )),
         },
         Predicate::Compare {
+            right: Operand::Offset(offset),
+            left,
+            ..
+        } => offset_supported(ir, env, predicate, left, offset),
+        Predicate::Compare {
+            left: Operand::Offset(_),
+            ..
+        } => Err(format!("`{predicate}`, an offset on the left")),
+        Predicate::Compare {
             left, op, right, ..
         } => {
             let kind = |operand: &Operand| match operand {
                 Operand::Fact(path) => resolve(ir, env, path).map(|it| Some(it.kind)),
-                Operand::Literal(_) => Ok(None),
+                Operand::Literal(_) | Operand::Offset(_) => Ok(None),
             };
             let (left_kind, right_kind) = (kind(left)?, kind(right)?);
             let compared = match (&left_kind, &right_kind) {
@@ -923,11 +932,49 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
     }
 }
 
+/// `Ok` where a guard compares a fact with one constant offset of another the way a generated
+/// behaviour decides it (`docs/design/expression-family-source22.md`, A2): an Integer magnitude
+/// between two `Integer` reads, compared exactly; an elapsed one between two `Timestamp` reads, as
+/// instants. A view filter's offset is refused by name: no generated query compares one.
+fn offset_supported(
+    ir: &EssIr,
+    env: &Env<'_>,
+    predicate: &Predicate,
+    left: &Operand,
+    offset: &ess_primitives::predicate::OffsetOperand,
+) -> Result<(), String> {
+    use ess_primitives::predicate::OffsetMagnitude;
+    if matches!(env, Env::Row(_)) {
+        return Err(format!(
+            "`{predicate}`, an offset the generated view query does not compare"
+        ));
+    }
+    let Operand::Fact(path) = left else {
+        return Err(format!("`{predicate}`, an offset compared with a literal"));
+    };
+    let (left, base) = (
+        resolve(ir, env, path)?.kind,
+        resolve(ir, env, &offset.base)?.kind,
+    );
+    let integer = Kind::Number(Primitive::Integer);
+    match offset.magnitude {
+        OffsetMagnitude::Integer(_) if left == integer && base == integer => Ok(()),
+        OffsetMagnitude::ElapsedSeconds { .. }
+            if left == Kind::Instant && base == Kind::Instant =>
+        {
+            Ok(())
+        }
+        _ => Err(format!(
+            "`{predicate}`, an offset over values no generated guard moves"
+        )),
+    }
+}
+
 /// The literal an operand is, where it is one.
 fn literal_of(operand: &Operand) -> Option<&FactValue> {
     match operand {
         Operand::Literal(value) => Some(value),
-        Operand::Fact(_) => None,
+        Operand::Fact(_) | Operand::Offset(_) => None,
     }
 }
 

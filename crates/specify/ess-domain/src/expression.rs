@@ -11,7 +11,8 @@ pub mod lexical;
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    CompareKind, CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp,
+    CompareKind, CompareOp, FoldOp, OffsetMagnitude, OffsetOperand, Operand, Predicate, Quantified,
+    TextOp,
 };
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
@@ -114,6 +115,14 @@ pub trait TypeEnvironment {
     /// one answer `true` too. [`ScalarKind::Text`] cannot say it: it also covers `Timestamp`,
     /// `Duration`, `Uuid`, `Bytes` and enums.
     fn is_string(&self, _reference: &Self::Type) -> bool {
+        false
+    }
+    /// Whether this terminal type is the `Integer` primitive, the one numeric type an Integer
+    /// offset (`upper == lower + 5`, `docs/design/expression-family-source22.md` A2) moves.
+    ///
+    /// Asked of the resolved terminal, so a newtype of `Integer` at any depth, an `Optional` of one
+    /// and a collection's `.count` answer `true`; a `Decimal` and a `Binary64` answer `false`.
+    fn is_integer(&self, _reference: &Self::Type) -> bool {
         false
     }
     /// Whether this environment admits `.count` on a `String`, the length in Unicode scalar values
@@ -353,6 +362,9 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     }
     fn is_string(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Primitive(Primitive::String))
+    }
+    fn is_integer(&self, reference: &TypeRef) -> bool {
+        matches!(reference, TypeRef::Primitive(Primitive::Integer))
     }
     fn admits_text_length(&self) -> bool {
         self.registry
@@ -812,33 +824,117 @@ fn canonical_ordinal(segment: &str) -> bool {
 ///    `state == Open` keeps its meaning even beside a root named `Open`;
 /// 2. the word is exactly an observable root of the environment: that fact — a root named `now`
 ///    included, which is why the current-time reading needs no root of that name;
-/// 3. otherwise the text it always was.
+/// 3. the text is `<binder | root | dotted path> ws? (+|-) ws? <magnitude>` whose base resolves here
+///    and whose magnitude reads ([`OffsetMagnitude::parse`]): one constant offset of that fact (A2,
+///    final review decision 4, rule 3a) — whatever the base's type, which the checker holds to
+///    `Integer` or `Timestamp`;
+/// 4. otherwise the text it always was.
 ///
 /// Nothing is refused here. [`check_predicate`] checks the result as it checks any predicate.
 pub fn resolve_lexical<E: TypeEnvironment>(
     environment: &E,
     lexical: &lexical::LexicalPredicate,
 ) -> Predicate {
+    resolve_lexical_reading(environment, lexical, false)
+}
+
+/// [`resolve_lexical`], with `input_namespace` saying whether `input.<path>` names the input
+/// `<path>` here — a plain input guard whose command declares no root named `input`, which
+/// [`read_input_namespace`] rewrites afterwards (decision 6) — so an offset's base written
+/// `input.lower` resolves as `lower` does.
+pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
+    environment: &E,
+    lexical: &lexical::LexicalPredicate,
+    input_namespace: bool,
+) -> Predicate {
     let resolved = lexical.lower_scoped(
-        &mut |left, _, word, scope| {
+        &mut |left, _, spelling, scope| {
             let bindings = scope_bindings(environment, scope);
+            let word = match spelling {
+                lexical::Spelling::Word(word) => word,
+                // A dotted path with a `-`: the fact it reads where it names one, else the offset
+                // it also spells (`window.lower-5`), else the fact it always was, which the checker
+                // refuses as unobservable as before.
+                lexical::Spelling::Dotted(path) => {
+                    if base_resolves(environment, &bindings, path, input_namespace) {
+                        return Operand::Fact(path.clone());
+                    }
+                    return offset_spelled(
+                        environment,
+                        &bindings,
+                        &path.to_string(),
+                        input_namespace,
+                    )
+                    .map_or_else(|| Operand::Fact(path.clone()), Operand::Offset);
+                }
+            };
             let variant = match left {
                 Operand::Fact(path) => resolve(environment, path, "", &bindings)
                     .ok()
                     .and_then(|resolved| resolved.variants)
                     .is_some_and(|variants| variants.iter().any(|variant| variant == word)),
-                Operand::Literal(_) => false,
+                Operand::Literal(_) | Operand::Offset(_) => false,
             };
-            if !variant && environment.root(word).is_some() {
+            let text = Operand::Literal(FactValue::Text(word.to_owned()));
+            if variant {
+                return text;
+            }
+            if environment.root(word).is_some() {
                 if let Ok(path) = FactPath::new(word) {
                     return Operand::Fact(path);
                 }
             }
-            Operand::Literal(FactValue::Text(word.to_owned()))
+            offset_spelled(environment, &bindings, word, input_namespace)
+                .map_or(text, Operand::Offset)
         },
         &mut Vec::new(),
     );
     tag_instants(environment, resolved, &mut Vec::new())
+}
+
+/// The first way `text` splits into `<base> ± <magnitude>` ([`OffsetOperand::spellings`]) whose base
+/// resolves under `bindings` and whose magnitude reads, as the offset it spells.
+fn offset_spelled<E: TypeEnvironment>(
+    environment: &E,
+    bindings: &[Binding<E::Type>],
+    text: &str,
+    input_namespace: bool,
+) -> Option<OffsetOperand> {
+    OffsetOperand::spellings(text)
+        .into_iter()
+        .find_map(|(base, direction, magnitude)| {
+            let magnitude = OffsetMagnitude::parse(magnitude)?;
+            base_resolves(environment, bindings, &base, input_namespace).then_some(OffsetOperand {
+                base,
+                direction,
+                magnitude,
+            })
+        })
+}
+
+/// Whether an offset's base names something here: a binder in scope, a root, or a dotted path
+/// through either — and, with `input_namespace`, `input.<path>` naming the input `<path>`.
+fn base_resolves<E: TypeEnvironment>(
+    environment: &E,
+    bindings: &[Binding<E::Type>],
+    base: &FactPath,
+    input_namespace: bool,
+) -> bool {
+    if resolve(environment, base, "", bindings).is_ok() {
+        return true;
+    }
+    let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
+    input_namespace
+        && base.namespace() == namespace
+        && base.segments().len() > 1
+        && !bindings.iter().any(|binding| binding.name == namespace)
+        && resolve(
+            environment,
+            &FactPath::from_segments(&base.segments()[1..]),
+            "",
+            bindings,
+        )
+        .is_ok()
 }
 
 /// Tags every comparison of two facts that both resolve to `Timestamp` to compare instants
@@ -978,10 +1074,7 @@ pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
         }
     }
     fn operand(operand: &Operand, bound: &[&str]) -> Operand {
-        match operand {
-            Operand::Fact(path) => Operand::Fact(strip(path, bound)),
-            Operand::Literal(_) => operand.clone(),
-        }
+        operand.map_path(|path| strip(path, bound))
     }
     fn walk<'a>(predicate: &'a Predicate, bound: &mut Vec<&'a str>) -> Predicate {
         match predicate {
@@ -1074,6 +1167,9 @@ struct Checker<'a, E: TypeEnvironment> {
     checked: Checked<E::Type>,
 }
 
+// Each flag is one question the environment answers of the terminal type, asked by a different
+// comparison rule; `command.rs` keeps its outcome flags the same way.
+#[allow(clippy::struct_excessive_bools)]
 struct ValueType {
     declared: String,
     /// The type that declares `variants`, which is not always `declared`.
@@ -1091,6 +1187,8 @@ struct ValueType {
     duration: bool,
     /// Whether the terminal type is `String`, which a string operator applies to.
     string: bool,
+    /// Whether the terminal type is `Integer`, which an Integer offset moves (A2).
+    integer: bool,
 }
 
 impl<E: TypeEnvironment> Checker<'_, E> {
@@ -1135,6 +1233,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             instant: self.environment.is_instant(&resolved.terminal),
             duration: self.environment.is_duration(&resolved.terminal),
             string: self.environment.is_string(&resolved.terminal),
+            integer: self.environment.is_integer(&resolved.terminal),
             declaring_variants: resolved
                 .variants
                 .is_some()
@@ -1148,6 +1247,10 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     fn operand(&mut self, operand: &Operand) -> Option<ValueType> {
         match operand {
             Operand::Fact(path) => self.read(path, false).map(|resolved| self.typed(resolved)),
+            // An offset is a value of its base's type, which `offset` holds to the magnitude.
+            Operand::Offset(offset) => self
+                .read(&offset.base, false)
+                .map(|resolved| self.typed(resolved)),
             Operand::Literal(value) => {
                 let scalar = ScalarKind::literal(value);
                 Some(ValueType {
@@ -1158,6 +1261,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     instant: false,
                     duration: false,
                     string: false,
+                    integer: false,
                 })
             }
         }
@@ -1316,6 +1420,12 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             ));
             return;
         }
+        // Only where text is no value of the fact anyway: a `String` compared with `read-only` beside
+        // a field named `read` keeps its text, quoted or not (rule 3a reads only a magnitude).
+        let offset_typed = typed.instant || typed.scalar == Some(ScalarKind::Number);
+        if !enum_variant && offset_typed && self.malformed_offset(expression, path, text) {
+            return;
+        }
         if typed.instant && self.current_time_literal(expression, path, op, text) {
             return;
         }
@@ -1444,10 +1554,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         self.checked.errors.push(error(
             self.owner,
             ValidationCode::TypeMismatch,
-            match operand {
-                Operand::Fact(path) => Some(path),
-                Operand::Literal(_) => None,
-            },
+            operand.fact_path(),
             None,
             format!(
                 "`{predicate}`: a Duration has no ordering, because its ISO 8601 text would put \
@@ -1534,7 +1641,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                         resolved.scalar.is_some() && self.environment.is_instant(&resolved.terminal)
                     })
                 }
-                Operand::Literal(_) => false,
+                Operand::Literal(_) | Operand::Offset(_) => false,
             };
             if !instant {
                 self.checked.errors.push(error(
@@ -1553,6 +1660,24 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     }
 
     fn compare(&mut self, predicate: &Predicate, left: &Operand, op: CompareOp, right: &Operand) {
+        match (left, right) {
+            (_, Operand::Offset(offset)) => return self.offset(predicate, left, offset),
+            (Operand::Offset(offset), _) => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(&offset.base),
+                    None,
+                    format!(
+                        "`{predicate}` puts the offset `{offset}` on the left; one constant offset \
+                         of a fact stands on the right of a comparison only, such as \
+                         `upper == lower + 5`"
+                    ),
+                ));
+                return;
+            }
+            _ => {}
+        }
         if !self.root_fact_operand(predicate, right) {
             return;
         }
@@ -1598,6 +1723,130 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 }
             }
         }
+    }
+
+    /// One constant offset on the right (`docs/design/expression-family-source22.md`, A2): from
+    /// `ess/22`; an Integer magnitude between an `Integer` fact on the left and an `Integer` base,
+    /// an elapsed one between two `Timestamp` facts, each through newtypes and `Optional`. All six
+    /// operators are admitted. `Decimal` and `Binary64` are refused rather than coerced.
+    fn offset(&mut self, predicate: &Predicate, left: &Operand, offset: &OffsetOperand) {
+        if !self.environment.admits_root_facts() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(&offset.base),
+                None,
+                format!(
+                    "`{predicate}` compares with one constant offset of `{}`, written `{offset}`, \
+                     which requires specification format ess/22",
+                    offset.base
+                ),
+            ));
+            return;
+        }
+        let Operand::Fact(_) = left else {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(&offset.base),
+                None,
+                format!(
+                    "`{predicate}` compares a literal with an offset; the left of an offset \
+                     comparison is a fact"
+                ),
+            ));
+            return;
+        };
+        let left_type = self.operand(left);
+        let base_type = self.operand(&Operand::Fact(offset.base.clone()));
+        let (Some(left_type), Some(base_type)) = (left_type, base_type) else {
+            return;
+        };
+        let describe = |value: &ValueType| {
+            format!(
+                "`{}` ({})",
+                value.declared,
+                value
+                    .scalar
+                    .map_or_else(|| "aggregate".to_owned(), |kind| kind.to_string())
+            )
+        };
+        let (fits, wanted) = match offset.magnitude {
+            OffsetMagnitude::Integer(_) => (
+                left_type.integer
+                    && base_type.integer
+                    && left_type.scalar.is_some()
+                    && base_type.scalar.is_some()
+                    && offset.magnitude.integer().is_some(),
+                "an Integer offset — a whole number from 0 to 9223372036854775807 — compares two \
+                 Integer facts; Decimal and Binary64 are refused rather than coerced",
+            ),
+            OffsetMagnitude::ElapsedSeconds { seconds, .. } => (
+                left_type.instant
+                    && base_type.instant
+                    && left_type.scalar.is_some()
+                    && base_type.scalar.is_some()
+                    && (0..=ess_primitives::time::CurrentTime::MAX_OFFSET_SECONDS)
+                        .contains(&seconds),
+                "an elapsed offset — a whole number of `s`, `m` or `h` — compares two Timestamp \
+                 facts",
+            ),
+        };
+        if !fits {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(&offset.base),
+                None,
+                format!(
+                    "`{predicate}`: {wanted}, and it reads {} against {}",
+                    describe(&left_type),
+                    describe(&base_type)
+                ),
+            ));
+        }
+    }
+
+    /// From `ess/22`, a text literal spelled `<fact> ± <something>` whose base names a fact here,
+    /// compared with an `Integer` or a `Timestamp` (`docs/design/expression-family-source22.md`, A2,
+    /// rule 3a): what reaches the checker as text is either quoted or a magnitude that does not read
+    /// — `lower + 05`, `lower + 5 + 3`, `issued_at - 1d` — and is refused naming the offset grammar
+    /// rather than as a mere text against a number. Against a `String` such text is the text it
+    /// always was; the caller asks only where text is no value of the fact. `true` when refused.
+    fn malformed_offset(&mut self, expression: &Predicate, path: &FactPath, text: &str) -> bool {
+        if !self.environment.resolves_bare_words() {
+            return false;
+        }
+        let bindings = self.bindings.clone();
+        let Some((base, _, magnitude)) = OffsetOperand::spellings(text)
+            .into_iter()
+            .find(|(base, _, _)| base_resolves(self.environment, &bindings, base, false))
+        else {
+            return false;
+        };
+        let reason = if OffsetMagnitude::parse(magnitude).is_some() {
+            "quoted, it is the text, which would compare with the spelling rather than the fact; \
+             write it unquoted"
+                .to_owned()
+        } else {
+            format!(
+                "`{magnitude}` is no offset magnitude: an Integer offset is a whole number without \
+                 a sign, a fraction or a leading zero, and a Timestamp offset a whole number of \
+                 `s`, `m` or `h` (a day is `24h`), at most {} seconds; one offset per comparison",
+                ess_primitives::time::CurrentTime::MAX_OFFSET_SECONDS
+            )
+        };
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::TypeMismatch,
+            Some(path),
+            None,
+            format!(
+                "`{expression}` reads \"{text}\" as text, but it is spelled as an offset of the fact \
+                 `{base}`: {reason}"
+            ),
+        ));
+        true
     }
 
     /// The format gate and the shadowing rule for a one-segment fact on the right
@@ -1847,6 +2096,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                             instant: false,
                             duration: false,
                             string: false,
+                            integer: false,
                         };
                         self.mismatch(predicate, op, &typed, Some(&literal));
                     }
