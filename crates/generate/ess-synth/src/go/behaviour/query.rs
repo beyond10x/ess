@@ -33,23 +33,44 @@ pub(super) fn method(
     let entity = emit.ir.entity(&view.source);
     uses.storages.insert(entity.name.clone());
     uses.listed.insert(entity.name.clone());
+    // The parameters the query string carries, decoded by the route as the port takes them, named
+    // apart from the receiver, every package-level name the body calls or qualifies by — each
+    // helper, each imported package — and every local the body binds; none for a view without
+    // parameters, which keeps its bytes (beyond10x/ess#200).
+    let package = super::package_level(reserved);
+    let taken: Vec<&str> = package
+        .iter()
+        .map(String::as_str)
+        .chain([receiver])
+        .collect();
+    let arguments = super::super::port::view_params(emit, view, &taken);
+    let mut reserved = reserved.clone();
+    reserved.extend(arguments.iter().map(|(ident, _)| ident.clone()));
+    let params = view
+        .params
+        .iter()
+        .cloned()
+        .zip(arguments.iter().map(|(ident, _)| ident.clone()))
+        .collect();
     let mut query = Query {
         emit,
         view,
         entity,
         uses,
         lines: Lines::new(1),
-        reserved,
+        reserved: &reserved,
         receiver,
         next: 0,
+        params,
     };
     query.body(&storages[&entity.name]);
     let method = emit.layout.declared(&view.name);
     let row = emit.reference(&view.name);
     let unmet = emit.unmet();
+    let signature = super::super::port::signature(&arguments);
     format!(
         "\n// {method} is `{}`, generated: every row is one the specification fully determines \
-         from the\n// stored `{}`s.\nfunc ({receiver} *Generated) {method}() ([]{row}, {unmet}) \
+         from the\n// stored `{}`s.\nfunc ({receiver} *Generated) {method}({signature}) ([]{row}, {unmet}) \
          {{\n{}}}\n",
         view.name,
         entity.name,
@@ -67,6 +88,8 @@ struct Query<'a, 'u> {
     reserved: &'a BTreeSet<String>,
     receiver: &'a str,
     next: usize,
+    /// The view's parameters, each with the identifier its argument is bound to.
+    params: Vec<(ResolvedField, String)>,
 }
 
 impl<'a> Query<'a, '_> {
@@ -96,6 +119,7 @@ impl<'a> Query<'a, '_> {
             input: String::new(),
             command: None,
             row_entity: Some(self.entity),
+            params: self.params.clone(),
         }
     }
 

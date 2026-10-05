@@ -30,7 +30,7 @@ fn text_match(at: &str, op: TextOp, value: FactValue) -> Predicate {
     Predicate::TextMatch {
         path: path(at),
         op,
-        value,
+        value: value.into(),
     }
 }
 

@@ -408,7 +408,7 @@ fn every_resolved_variant() -> Vec<Predicate> {
         Predicate::TextMatch {
             path: FactPath::new("label").unwrap(),
             op: ess_primitives::predicate::TextOp::StartsWith,
-            value: FactValue::text("x"),
+            value: FactValue::text("x").into(),
         },
         Predicate::FoldMatch {
             path: FactPath::new("label").unwrap(),

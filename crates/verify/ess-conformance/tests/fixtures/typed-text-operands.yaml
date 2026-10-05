@@ -1,0 +1,185 @@
+format: ess/22
+system: directory
+version: v1
+domain: directory.people
+summary: >-
+  Contacts searched by the text a caller sends, and calls screened, matched and dialled against
+  text the caller sends: every string operator with a view parameter or a command input on its
+  right (beyond10x/ess#200).
+
+types:
+  - {name: directory.people.ContactId, kind: newtype, of: Uuid}
+  - {name: directory.people.Phone, kind: newtype, of: String}
+
+entities:
+  - name: directory.people.Contact
+    identity: {name: contact_id, type: directory.people.ContactId}
+    fields:
+      - {name: name, type: String}
+      - {name: note, type: String}
+      - {name: phone, type: directory.people.Phone}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed]}
+
+errors:
+  - {name: directory.people.Blocked, summary: The caller begins with the blocked prefix., fields: []}
+  - {name: directory.people.Spoofed, summary: The caller ends with the carrier's suffix., fields: []}
+  - {name: directory.people.Flagged, summary: The caller holds the flagged digits., fields: []}
+  - {name: directory.people.Mismatch, summary: The contact does not match the text sent., fields: []}
+  - {name: directory.people.UnknownContact, summary: No contact carries the identity., fields: []}
+  - {name: directory.people.NoContact, summary: No contact carries the identity., fields: []}
+  - {name: directory.people.WrongNumber, summary: The contact is not the one the text describes., fields: []}
+
+events:
+  - name: directory.people.ContactAdded
+    fields:
+      - {name: contact_id, type: directory.people.ContactId}
+  - name: directory.people.CallScreened
+    fields:
+      - {name: caller, type: directory.people.Phone}
+  - name: directory.people.ContactMatched
+    fields:
+      - {name: contact_id, type: directory.people.ContactId}
+  - name: directory.people.Dialled
+    fields:
+      - {name: contact_id, type: directory.people.ContactId}
+
+commands:
+  - name: directory.people.AddContact
+    input:
+      - {name: name, type: String}
+      - {name: note, type: String}
+      - {name: phone, type: directory.people.Phone}
+    outcomes:
+      - name: added
+        creates: directory.people.Contact
+        instance: contact_id
+        sets: {name: input.name, note: input.note, phone: input.phone}
+        emits: [directory.people.ContactAdded]
+        payload:
+          directory.people.ContactAdded: {contact_id: {generated: true}}
+
+  - name: directory.people.Screen
+    input:
+      - {name: caller, type: directory.people.Phone}
+      - {name: blocked, type: String}
+      - {name: carrier, type: Optional<String>}
+      - {name: digits, type: directory.people.Phone}
+    outcomes:
+      - name: blocked
+        when: {caller: {starts_with: {input: blocked}}}
+        error: directory.people.Blocked
+      - name: spoofed
+        when: {caller: {ends_with: {input: carrier}}}
+        error: directory.people.Spoofed
+      - name: flagged
+        when: {caller: {contains: {input: digits}}}
+        error: directory.people.Flagged
+      - name: screened
+        emits: [directory.people.CallScreened]
+        payload:
+          directory.people.CallScreened: {caller: input.caller}
+
+  - name: directory.people.Match
+    input:
+      - {name: contact_id, type: directory.people.ContactId}
+      - {name: initial, type: String}
+      - {name: tail, type: String}
+      - {name: term, type: String}
+    outcomes:
+      - name: mismatch
+        when_subject:
+          predicate:
+            not:
+              all:
+                - {name: {starts_with: {input: initial}}}
+                - {phone: {ends_with: {input: tail}}}
+                - {note: {contains: {input: term}}}
+        error: directory.people.Mismatch
+      - name: matched
+        updates: directory.people.Contact
+        instance: contact_id
+        emits: [directory.people.ContactMatched]
+        payload:
+          directory.people.ContactMatched: {contact_id: input.contact_id}
+      - {name: unknown-contact, unknown_instance: true, error: directory.people.UnknownContact}
+
+  - name: directory.people.Dial
+    input:
+      - {name: contact_id, type: directory.people.ContactId}
+      - {name: initial, type: String}
+      - {name: tail, type: String}
+      - {name: term, type: String}
+    outcomes:
+      - name: no-contact
+        when_related: {via: input.contact_id, exists: false}
+        error: directory.people.NoContact
+      - name: wrong-number
+        when_related:
+          via: input.contact_id
+          predicate:
+            not:
+              all:
+                - {name: {starts_with: {input: initial}}}
+                - {phone: {ends_with: {input: tail}}}
+                - {note: {contains: {input: term}}}
+        error: directory.people.WrongNumber
+      - name: dialled
+        emits: [directory.people.Dialled]
+        payload:
+          directory.people.Dialled: {contact_id: input.contact_id}
+
+views:
+  - name: directory.people.Contacts
+    source: directory.people.Contact
+    consistency: read_your_writes
+    fields:
+      - {name: contact_id, type: directory.people.ContactId}
+      - {name: state, type: directory.people.Contact.State}
+      - {name: name, type: String}
+      - {name: note, type: String}
+      - {name: phone, type: directory.people.Phone}
+
+  - name: directory.people.ByName
+    source: directory.people.Contact
+    consistency: read_your_writes
+    params: [{name: q, type: String}]
+    filter: {name: {starts_with: {param: q}}}
+    fields:
+      - {name: contact_id, type: directory.people.ContactId}
+      - {name: name, type: String}
+
+  - name: directory.people.ByPhone
+    source: directory.people.Contact
+    consistency: read_your_writes
+    params: [{name: tail, type: Optional<directory.people.Phone>}]
+    filter: {phone: {ends_with: {param: tail}}}
+    fields:
+      - {name: contact_id, type: directory.people.ContactId}
+      - {name: phone, type: directory.people.Phone}
+
+  - name: directory.people.ByNote
+    source: directory.people.Contact
+    consistency: read_your_writes
+    params: [{name: term, type: String}]
+    filter: {note: {contains: {param: term}}}
+    fields:
+      - {name: contact_id, type: directory.people.ContactId}
+      - {name: note, type: String}
+
+components:
+  - component: directory-service
+    summary: Holds every contact, and screens, matches and dials against them.
+    owns: {domains: [directory.people]}
+    accepts:
+      commands:
+        - directory.people.AddContact
+        - directory.people.Screen
+        - directory.people.Match
+        - directory.people.Dial
+    publishes:
+      events:
+        - directory.people.ContactAdded
+        - directory.people.CallScreened
+        - directory.people.ContactMatched
+        - directory.people.Dialled
+    reached_by: network

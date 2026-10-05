@@ -139,7 +139,11 @@ fn reads(
         Predicate::AnyOf { path, values } | Predicate::NoneOf { path, values } => {
             note(path, values);
         }
-        Predicate::TextMatch { path, value, .. } => note(path, std::slice::from_ref(value)),
+        // A parameter (beyond10x/ess#200) suggests no value for the row's field.
+        Predicate::TextMatch { path, value, .. } => match value.as_literal() {
+            Some(literal) => note(path, std::slice::from_ref(literal)),
+            None => note(path, &[]),
+        },
         Predicate::FoldMatch { path, values, .. } => note(path, values),
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             note(&quantified.over, &[]);

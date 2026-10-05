@@ -175,7 +175,10 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
         Predicate::TextMatch {
             path,
             op,
-            value: ess_primitives::facts::FactValue::Text(literal),
+            value:
+                ess_primitives::predicate::TextOperand::Literal(ess_primitives::facts::FactValue::Text(
+                    literal,
+                )),
         } => {
             let id = reads[&path.to_string()];
             format!(

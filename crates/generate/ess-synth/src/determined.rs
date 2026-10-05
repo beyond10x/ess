@@ -646,6 +646,9 @@ pub(crate) enum Root {
     State,
     /// An attribute of the authenticated caller.
     Caller(String),
+    /// A parameter of the view whose query reads it, compared with by a string operator
+    /// (beyond10x/ess#200).
+    Param(String),
 }
 
 /// One step from a value to the next.
@@ -780,6 +783,35 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
         }
         (_, []) => return Err(unknown()),
     };
+    walk(ir, path, root, root_type, rest)
+}
+
+/// A view parameter a string operator compares with (beyond10x/ess#200), resolved as a fact path
+/// rooted at the generated query's argument of that name.
+pub(crate) fn resolve_param(ir: &EssIr, param: &ResolvedField) -> Result<Resolved, String> {
+    let path = FactPath::from_segments([ess_domain::view::ViewSpec::PARAM, param.name.as_str()]);
+    walk(
+        ir,
+        &path,
+        Root::Param(param.name.clone()),
+        param.type_ref.clone(),
+        &[],
+    )
+}
+
+/// The steps from `root`, of type `root_type`, along the segments `rest` of `path`.
+// One walk of a dotted path through every type shape it can cross, kept together so the rules
+// an emitter renders are read in one place.
+#[allow(clippy::too_many_lines)]
+fn walk(
+    ir: &EssIr,
+    path: &FactPath,
+    root: Root,
+    root_type: ResolvedTypeRef,
+    rest: &[String],
+) -> Result<Resolved, String> {
+    let segments = path.segments();
+    let unknown = || format!("the guard path `{path}`");
     let mut steps = Vec::new();
     let mut current = root_type.clone();
     let mut remaining = rest.iter();
@@ -1029,18 +1061,60 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
                 .iter()
                 .try_for_each(|value| literal_matches(&kind, Some(value)))
         }
-        Predicate::TextMatch { path, value, .. } => match (resolve(ir, env, path)?.kind, value) {
-            (Kind::Text, FactValue::Text(_)) => Ok(()),
-            _ => Err(format!(
-                "`{predicate}`, a text test over a value that is not text"
-            )),
-        },
+        Predicate::TextMatch { path, value, .. } => {
+            text_match_supported(ir, env, predicate, path, value)
+        }
         // No generated guard, filter or selection compares keys across a list's elements (ess/22,
         // `docs/design/expression-family-source22.md`, `distinct`): owed by name, never decided.
         Predicate::Distinct(_) => Err(format!(
             "`{predicate}`, distinct list members no generated behaviour compares"
         )),
         _ => Err(format!("the guard `{predicate}`")),
+    }
+}
+
+/// `Ok` where a string operator tests a text against a text literal, or against an operand the
+/// generated code reads where the predicate sits (beyond10x/ess#200): a command's input in its
+/// guards, a view's parameter in its query's filter.
+fn text_match_supported(
+    ir: &EssIr,
+    env: &Env<'_>,
+    predicate: &Predicate,
+    path: &FactPath,
+    value: &ess_primitives::predicate::TextOperand,
+) -> Result<(), String> {
+    use ess_primitives::predicate::{TextNamespace, TextOperand};
+    let not_text = || format!("`{predicate}`, a text test over a value that is not text");
+    if resolve(ir, env, path)?.kind != Kind::Text {
+        return Err(not_text());
+    }
+    match (value, env) {
+        // A view's parameter: the query takes it as an argument, and `view_query` holds it to a
+        // text the query string carries.
+        (TextOperand::Literal(FactValue::Text(_)), _)
+        | (
+            TextOperand::Fact {
+                namespace: TextNamespace::Param,
+                ..
+            },
+            Env::Row(_),
+        ) => Ok(()),
+        (TextOperand::Literal(_), _) => Err(not_text()),
+        // A command's input, compared with as it is read.
+        (
+            TextOperand::Fact {
+                namespace: TextNamespace::Input,
+                path: read,
+                ..
+            },
+            Env::Input(_) | Env::Subject(..),
+        ) => match resolve(ir, env, read)?.kind {
+            Kind::Text => Ok(()),
+            _ => Err(not_text()),
+        },
+        (TextOperand::Fact { .. }, _) => Err(format!(
+            "`{predicate}`, a text test against an operand the generated code does not read here"
+        )),
     }
 }
 

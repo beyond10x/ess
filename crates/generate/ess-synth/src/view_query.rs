@@ -28,11 +28,7 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
     if view.paging.is_some() {
         return Err("a paged view (`paging:`)".to_owned());
     }
-    if !view.params.is_empty() {
-        return Err(
-            "a view parameter (`params:`), which a generated query does not apply".to_owned(),
-        );
-    }
+    params(ir, view)?;
     let entity = ir.entity(&view.source);
     if let Some(filter) = &view.filter {
         determined::supported(ir, &Env::Row(entity), filter)
@@ -42,6 +38,34 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
         || projected(ir, view, entity),
         |aggregation| aggregated(ir, view, entity, aggregation),
     )
+}
+
+/// `Ok` where the query applies every parameter the view declares: a view without one, or one each
+/// of whose parameters is a `String`, or a newtype of one, `Optional` admitted, that its row-level
+/// `filter:` reads as a string operator's operand, `{param: <name>}` (beyond10x/ess#200, final
+/// review decision 3). The route decodes the query string into the arguments the query takes, so
+/// a parameter read any other way — an equality, a measure's condition — keeps the query owed.
+fn params(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
+    if view.params.is_empty() {
+        return Ok(());
+    }
+    let unapplied =
+        || "a view parameter (`params:`), which a generated query does not apply".to_owned();
+    let Some(filter) = view.filter.as_ref() else {
+        return Err(unapplied());
+    };
+    if view.aggregation.is_some() {
+        return Err(unapplied());
+    }
+    for param in &view.params {
+        if !filter.reads_text_parameter(&param.name)
+            || leaf(ir, &param.type_ref) != Some(Primitive::String)
+        {
+            return Err(unapplied());
+        }
+    }
+    // Every other read of a parameter is one `determined::supported` refuses over a stored row.
+    Ok(())
 }
 
 /// `Ok` where every group key is compared and every aggregate computed as the suite reads them.

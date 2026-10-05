@@ -1202,7 +1202,7 @@ impl Projector<'_> {
                                     path: FactPath::new(ess_domain::NamedType::VALUE)
                                         .expect("the newtype pseudo-field is a fact path"),
                                     op: TextOp::StartsWith,
-                                    value: FactValue::text(prefix.clone()),
+                                    value: FactValue::text(prefix.clone()).into(),
                                 },
                                 &PathRewrite::Nominal {
                                     base: base.to_owned(),
@@ -3975,9 +3975,16 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         // Byte-wise and case-sensitive under every semantics key, `Unknown` for an unrecorded or null
         // operand and `false` for a resolved non-string, which is the ESS table, so no guard wraps
         // the condition. `fact_value` escapes a `$`-leading literal entity-core would otherwise read
-        // as a reference.
+        // as a reference. A parameter or an input (beyond10x/ess#200) is the reference operand its
+        // path rewrites to — `$args.input.<name>` in a guard — tested the same way.
         Predicate::TextMatch { path, op, value } => {
-            let operands = [rewrite.path(path), fact_value(value)];
+            let operand = match value {
+                ess_primitives::predicate::TextOperand::Literal(value) => fact_value(value),
+                ess_primitives::predicate::TextOperand::Fact { path: read, .. } => {
+                    rewrite.path(read)
+                }
+            };
+            let operands = [rewrite.path(path), operand];
             match op {
                 TextOp::StartsWith => Condition::StartsWith {
                     starts_with: operands,

@@ -22,7 +22,9 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedEntity, ResolvedField, Resol
 use ess_domain::Primitive;
 use ess_gen::{Artifact, Provenance};
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{
+    CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
+};
 
 use super::layout::Layout;
 use super::selection::go_string;
@@ -346,8 +348,17 @@ impl<'a> Check<'a> {
                 };
                 let fact = self.fact(path)?;
                 let literal = match value {
-                    FactValue::Text(text) => format!("{}({})", self.iv("Text"), go_string(text)),
-                    _ => self.iv("Absent"),
+                    TextOperand::Literal(FactValue::Text(text)) => {
+                        format!("{}({})", self.iv("Text"), go_string(text))
+                    }
+                    TextOperand::Literal(_) => self.iv("Absent"),
+                    // No invariant reads a parameter or an input (beyond10x/ess#200).
+                    TextOperand::Fact { .. } => {
+                        return Err(format!(
+                            "`{predicate}` compares with a parameter or an input, which no \
+                             invariant reads"
+                        ))
+                    }
                 };
                 format!(
                     "{}({fact}, {}, {literal})",

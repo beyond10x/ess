@@ -128,7 +128,9 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{CompareOp, DistinctKeyKind, Operand, Predicate, TextOp};
+use ess_primitives::predicate::{
+    CompareOp, DistinctKeyKind, Operand, Predicate, TextOp, TextOperand,
+};
 use ess_primitives::time::{CurrentTime, Rfc3339Instant};
 
 use crate::decision::Decision;
@@ -620,6 +622,7 @@ fn search_uncached(
     }
     equality_copies(&builder, &expanded, false, &mut ladders);
     offset_copies(&builder, &expanded, &mut ladders);
+    text_copies(&builder, &expanded, &mut ladders);
     count_ladders(&builder, &expanded, &mut ladders);
     let mut ladders: Vec<(FactPath, Vec<Choice>)> = ladders.into_iter().collect();
 
@@ -650,7 +653,7 @@ fn search_uncached(
     // it is the input the refuting branch is sent; a satisfying branch skips it. Only commands
     // with such a guard get it, so every other suite keeps its bytes.
     let mut refuting = Vec::new();
-    for (path, text) in fold_refutations_at(&expanded) {
+    for (path, text) in refutations_at(&builder, &expanded) {
         let input = builder.input(
             command,
             &BTreeMap::from([(path, Choice::Value(Node::Text(text)))]),
@@ -1784,8 +1787,8 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
         Predicate::TextMatch {
             path: read, value, ..
         } => {
-            if read == path {
-                found.push(value.clone());
+            if let (true, Some(literal)) = (read == path, value.as_literal()) {
+                found.push(literal.clone());
             }
         }
         // A literal with its ASCII case changed satisfies its own operator as the literal does, and
@@ -2212,7 +2215,7 @@ fn text_reads(predicate: &Predicate, path: &FactPath, positive: bool, found: &mu
         Predicate::TextMatch {
             path: read,
             op,
-            value: FactValue::Text(literal),
+            value: TextOperand::Literal(FactValue::Text(literal)),
         } if read == path => found.push(TextRead {
             op: *op,
             literal: literal.clone(),
@@ -3138,6 +3141,145 @@ fn offset_copies(
             }
         }
     }
+}
+
+/// Every string operator comparing one text of the input with another (beyond10x/ess#200):
+/// `(fact, op, operand)`, in the order the guards write them.
+fn text_operand_comparisons(guards: &[&Predicate]) -> Vec<(FactPath, TextOp, FactPath)> {
+    fn walk(predicate: &Predicate, found: &mut Vec<(FactPath, TextOp, FactPath)>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::TextMatch {
+                path,
+                op,
+                value: TextOperand::Fact { path: operand, .. },
+            } => {
+                let triple = (path.clone(), *op, operand.clone());
+                if !found.contains(&triple) {
+                    found.push(triple);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for guard in guards {
+        walk(guard, &mut found);
+    }
+    found
+}
+
+/// An operand `op` holds of against `text`, and that is not `text` itself
+/// (beyond10x/ess#200): `text` without its last character under `starts_with`, without its first
+/// under `ends_with`, and without both under `contains` — so an implementation testing the operand
+/// against the fact, the wrong way round, refuses it. A text too short to shorten is its own
+/// witness; the empty text has none, because every operator holds of it.
+pub(crate) fn text_operand_witness(op: TextOp, text: &str) -> Option<String> {
+    let characters: Vec<char> = text.chars().collect();
+    let kept = match (op, characters.len()) {
+        (_, 0) => return None,
+        (_, 1) => &characters[..],
+        (TextOp::StartsWith, length) => &characters[..length - 1],
+        (TextOp::EndsWith, _) => &characters[1..],
+        (TextOp::Contains, 2) => &characters[..1],
+        (TextOp::Contains, length) => &characters[1..length - 1],
+    };
+    Some(kept.iter().collect())
+}
+
+/// An operand differing from [`text_operand_witness`] at the character `op` decides on, which
+/// therefore refutes `op` against `text` (beyond10x/ess#200): the deciding-byte witness a target
+/// comparing only lengths, or only a first byte, accepts.
+pub(crate) fn text_operand_refutation(op: TextOp, text: &str) -> Option<String> {
+    refuting(op, &text_operand_witness(op, text)?)
+}
+
+/// For each string operator comparing two texts of the input (beyond10x/ess#200), the operand
+/// tried at a text the operator holds of against the fact's base, and at one differing from it at
+/// the deciding character; and the fact tried at a text built around the operand's base, which
+/// the operator holds of the other way round only. A command with no such comparison keeps its
+/// ladders.
+fn text_copies(
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+    ladders: &mut BTreeMap<FactPath, Vec<Choice>>,
+) {
+    for (fact, op, operand) in text_operand_comparisons(guards) {
+        let (
+            Some((Leaf::Text, Node::Text(fact_base))),
+            Some((Leaf::Text, Node::Text(operand_base))),
+        ) = (builder.leaves.get(&fact), builder.leaves.get(&operand))
+        else {
+            continue;
+        };
+        let around = match op {
+            TextOp::StartsWith => format!("{operand_base}{TEXT_STEP}"),
+            TextOp::EndsWith => format!("{TEXT_STEP}{operand_base}"),
+            TextOp::Contains => format!("{TEXT_STEP}{operand_base}{TEXT_STEP}"),
+        };
+        for (to, base, values) in [
+            (
+                &operand,
+                operand_base,
+                [
+                    text_operand_witness(op, fact_base),
+                    text_operand_refutation(op, fact_base),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>(),
+            ),
+            (&fact, fact_base, vec![around]),
+        ] {
+            let ladder = ladders.entry(to.clone()).or_default();
+            for value in values {
+                let choice = Choice::Value(Node::Text(value));
+                if choice != Choice::Value(Node::Text(base.clone())) && !ladder.contains(&choice) {
+                    ladder.push(choice);
+                }
+            }
+            if ladder.is_empty() {
+                ladders.remove(to);
+            }
+        }
+    }
+}
+
+/// The refuting inputs tried first: each case-insensitive guard's literal with one character
+/// changed ([`fold_refutations_at`]), and each string operator against another input refuted by its
+/// operand changed at the deciding character (beyond10x/ess#200,
+/// [`text_operand_refutations_at`]).
+fn refutations_at(builder: &Builder<'_>, guards: &[&Predicate]) -> Vec<(FactPath, String)> {
+    let mut found = fold_refutations_at(guards);
+    found.extend(text_operand_refutations_at(builder, guards));
+    found
+}
+
+/// Per string operator comparing two texts of the input, the operand at the deciding-character
+/// refutation of the fact's base ([`text_operand_refutation`]): the input a refuting branch is
+/// sent first (beyond10x/ess#200), as a case-insensitive guard's is.
+fn text_operand_refutations_at(
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+) -> Vec<(FactPath, String)> {
+    let mut found = Vec::new();
+    for (fact, op, operand) in text_operand_comparisons(guards) {
+        if let (Some((Leaf::Text, Node::Text(fact_base))), Some((Leaf::Text, _))) =
+            (builder.leaves.get(&fact), builder.leaves.get(&operand))
+        {
+            if let Some(text) = text_operand_refutation(op, fact_base) {
+                if !found.contains(&(operand.clone(), text.clone())) {
+                    found.push((operand, text));
+                }
+            }
+        }
+    }
+    found
 }
 
 /// One entity invariant a branch holds its input to ([`outcome_constraints`]).

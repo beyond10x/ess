@@ -136,6 +136,7 @@ fn select(
                 match filter.evaluate(&facts) {
                     Truth::True => {}
                     Truth::False => continue,
+                    Truth::Unknown if absent_text_operands(view, filter, &facts) => continue,
                     Truth::Unknown => return Err(unsupported()),
                 }
             }
@@ -317,6 +318,35 @@ fn project(
     }
 
     Ok(rows)
+}
+
+/// Whether a filter is unknown only because the read left out an optional parameter a string
+/// operator compares with (beyond10x/ess#200): an absence the caller chose, not an observation the
+/// model failed to determine, so the row is not shown — as the suite and a generated query read an
+/// unknown filter — rather than the read refused.
+fn absent_text_operands(
+    view: &ResolvedView,
+    filter: &ess_primitives::predicate::Predicate,
+    facts: &ViewFacts<'_>,
+) -> bool {
+    use ess_primitives::facts::FactSource;
+    let mut unobserved = filter
+        .fact_paths()
+        .into_iter()
+        .filter(|path| facts.observe(path).is_none())
+        .peekable();
+    unobserved.peek().is_some()
+        && unobserved.all(|path| {
+            let [namespace, name] = path.segments() else {
+                return false;
+            };
+            namespace == ess_domain::view::ViewSpec::PARAM
+                && filter.reads_text_parameter(name)
+                && view
+                    .params
+                    .iter()
+                    .any(|param| &param.name == name && param.type_ref.is_optional())
+        })
 }
 
 /// Keep parameter and entity namespaces distinct without discarding their declared scalar kinds.

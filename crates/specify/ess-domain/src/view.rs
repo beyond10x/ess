@@ -1175,7 +1175,12 @@ impl ViewSpec {
         errors.extend(self.validate_condition_paging(&measure_reads));
         // A parameter only a measure's condition reads is a parameter the view reads.
         read_params.extend(measure_reads.into_keys());
-        errors.extend(self.validate_params(&read_params));
+        // From `ess/22` a string operator reads a parameter too (beyond10x/ess#200), and the
+        // repair says so; below it the words are the ones they always were.
+        let text_operands = types
+            .format()
+            .is_some_and(|format| format.major() >= crate::system::FormatVersion::V22.major());
+        errors.extend(self.validate_params(&read_params, text_operands));
         errors.extend(self.validate_order(projected_fields));
         errors.extend(self.validate_grouping(types));
 
@@ -1711,7 +1716,7 @@ impl ViewSpec {
     /// declared parameter no filter reads is worse than useless: every caller is made to supply it
     /// and nothing selects on it, so two different values return the same rows and the view looks
     /// parameterised to a reader who then trusts it.
-    fn validate_params(&self, read: &BTreeSet<String>) -> ValidationErrors {
+    fn validate_params(&self, read: &BTreeSet<String>, text_operands: bool) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let declared: BTreeSet<&str> = self
             .params
@@ -1733,10 +1738,19 @@ impl ViewSpec {
                         self.name
                     ),
                 )
-                .with_hint(format!(
-                    "read it in `filter:` as `param.{name}`, or drop it — a parameter nothing \
-                     selects on makes the view look narrower than it is"
-                )),
+                .with_hint(if text_operands {
+                    format!(
+                        "read it in `filter:` as `param.{name}` in a comparison, or as \
+                         `{{param: {name}}}` under `starts_with`, `ends_with` or `contains`, or \
+                         drop it — a parameter nothing selects on makes the view look narrower \
+                         than it is"
+                    )
+                } else {
+                    format!(
+                        "read it in `filter:` as `param.{name}`, or drop it — a parameter \
+                         nothing selects on makes the view look narrower than it is"
+                    )
+                }),
             );
         }
         errors

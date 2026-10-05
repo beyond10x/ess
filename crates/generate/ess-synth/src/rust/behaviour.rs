@@ -2334,8 +2334,17 @@ impl Writer<'_> {
             uses: &mut *self.uses,
             bounds: &mut self.bounds,
             row,
+            params: &[],
         }
     }
+}
+
+/// The argument a generated view query binds its parameter at `position` to (beyond10x/ess#200):
+/// by position, so no parameter name can shadow a helper the body calls or a local it binds, and
+/// no two arguments meet. The obligation trait keeps the declared names; an implementation's
+/// argument names are its own.
+fn param_binding(position: usize) -> String {
+    format!("param_{position}")
 }
 
 // ---- guards --------------------------------------------------------------------------------------
@@ -2349,6 +2358,9 @@ struct Guards<'a> {
     bounds: &'a mut Bounds,
     /// The variable a stored field or `state` is read from: a snapshot, or a reference to one.
     row: &'a str,
+    /// The parameters of the view whose query this renders, in declaration order, each bound to
+    /// the argument [`param_binding`] names; none for a command's guard (beyond10x/ess#200).
+    params: &'a [ess_compiler::ir::ResolvedField],
 }
 
 /// The generated acceptor of an ordering `op` decides by: `core::cmp::Ordering::<acceptor>`.
@@ -2471,15 +2483,43 @@ impl Guards<'_> {
                 }
             }
             Predicate::TextMatch { path, op, value } => {
+                use ess_primitives::predicate::{TextNamespace, TextOperand};
                 let resolved = self.resolve(env, path);
-                let FactValue::Text(literal) = value else {
-                    unreachable!("the plan admits text tests of text literals")
-                };
-                format!(
-                    "{}.map(|value| value.{}({literal:?}))",
-                    self.read(&resolved),
-                    op.keyword()
-                )
+                let read = self.read(&resolved);
+                match value {
+                    TextOperand::Literal(FactValue::Text(literal)) => {
+                        format!("{read}.map(|value| value.{}({literal:?}))", op.keyword())
+                    }
+                    TextOperand::Literal(_) => {
+                        unreachable!("the plan admits text tests of text literals")
+                    }
+                    // A parameter or an input (beyond10x/ess#200): the fact tested against the
+                    // operand, byte for byte; either absent is Unknown.
+                    TextOperand::Fact {
+                        namespace,
+                        name,
+                        path: at,
+                    } => {
+                        let operand = match namespace {
+                            TextNamespace::Param => {
+                                let param = self
+                                    .params
+                                    .iter()
+                                    .find(|param| &param.name == name)
+                                    .expect("the plan admits a parameter the view declares");
+                                determined::resolve_param(self.ir, param)
+                                    .expect("the plan admits a parameter that resolves")
+                            }
+                            TextNamespace::Input => self.resolve(env, at),
+                        };
+                        let operand = self.read(&operand);
+                        format!(
+                            "{read}.zip({operand}).map(|(value, operand)| \
+                             value.{}(operand.as_str()))",
+                            op.keyword()
+                        )
+                    }
+                }
             }
             _ => unreachable!("the plan admits only the guards `determined::supported` names"),
         }
@@ -2588,6 +2628,14 @@ impl Guards<'_> {
             Root::State => format!("Some(&{}.state)", self.row),
             Root::Caller(attribute) => {
                 format!("{}.as_ref()", self.caller(attribute, &resolved.root_type))
+            }
+            Root::Param(param) => {
+                let position = self
+                    .params
+                    .iter()
+                    .position(|declared| &declared.name == param)
+                    .expect("a parameter path is read in the query of the view that declares it");
+                format!("Some(&{})", param_binding(position))
             }
         };
         for step in &resolved.steps {

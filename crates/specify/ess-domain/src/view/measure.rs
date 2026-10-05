@@ -19,7 +19,7 @@ use std::hash::{Hash, Hasher};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::predicate::{
     CompareKind, CompareOp, Derived, FoldOp, OffsetDirection, OffsetMagnitude, Operand, Predicate,
-    Quantified, TextOp,
+    Quantified, TextOp, TextOperand,
 };
 
 /// The key under which `where` is written in an aggregate map.
@@ -242,7 +242,17 @@ fn walk(predicate: &Predicate, out: &mut Vec<Token>) {
             out.push(Token::Tag(10));
             path(fact, out);
             out.push(Token::Op(text_op(*op)));
-            value(literal, out);
+            match literal {
+                TextOperand::Literal(literal) => value(literal, out),
+                // After every literal tag, so a parameter is never keyed as the text spelling it.
+                TextOperand::Fact {
+                    namespace, name, ..
+                } => {
+                    out.push(Token::Tag(3));
+                    out.push(Token::Text(namespace.keyword().to_owned()));
+                    out.push(Token::Text(name.clone()));
+                }
+            }
         }
         Predicate::FoldMatch {
             path: fact,

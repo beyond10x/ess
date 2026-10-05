@@ -12,7 +12,7 @@ use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
     CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude,
-    OffsetOperand, Operand, Predicate, Quantified, TextOp,
+    OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp, TextOperand,
 };
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
@@ -202,6 +202,22 @@ pub trait TypeEnvironment {
     /// stored-field predicate reading the command's input (beyond10x/ess#157).
     fn parameter_namespace(&self) -> &'static str {
         "param"
+    }
+    /// Whether the roots of this environment are a command's input: a command outcome's plain
+    /// `when:`, where `{input: <name>}` (beyond10x/ess#200) reads the input root `<name>` itself.
+    ///
+    /// `false` by default: a stored row's predicate reads the input under `input.`
+    /// ([`Self::parameter_namespace`]), and every other site reads no input.
+    fn reads_input_roots(&self) -> bool {
+        false
+    }
+    /// Whether `{input: <name>}` (beyond10x/ess#200) may stand here: a command's guards — its
+    /// plain `when:` and a `when_subject:` or `when_related:` predicate over a stored row. A
+    /// set effect's filter reads `input.<path>` and no typed text operand.
+    ///
+    /// `false` by default.
+    fn admits_input_operands(&self) -> bool {
+        false
     }
     /// Whether `caller.<attribute>` reads the authenticated caller in this environment (ess/16,
     /// beyond10x/ess#168). A root field named `caller` keeps being read as itself.
@@ -509,6 +525,17 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     }
     fn parameter_namespace(&self) -> &'static str {
         self.namespace
+    }
+    fn reads_input_roots(&self) -> bool {
+        // The input-guard site is the one `with_current_time` marks.
+        self.current_time == CurrentTimeSite::Input
+    }
+    fn admits_input_operands(&self) -> bool {
+        // The guard sites are the ones that read the decision's instant.
+        matches!(
+            self.current_time,
+            CurrentTimeSite::Input | CurrentTimeSite::Stored
+        )
     }
     fn parameter(&self, name: &str) -> Option<TypeRef> {
         self.params?
@@ -1485,10 +1512,11 @@ pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
                 path: strip(path, bound),
                 values: values.clone(),
             },
+            // `{input: <name>}` reads the input root too (beyond10x/ess#200).
             Predicate::TextMatch { path, op, value } => Predicate::TextMatch {
                 path: strip(path, bound),
                 op: *op,
-                value: value.clone(),
+                value: value.map_path(|read| strip(read, bound)),
             },
             Predicate::FoldMatch { path, op, values } => Predicate::FoldMatch {
                 path: strip(path, bound),
@@ -2467,19 +2495,31 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     }
 
     /// A string operator (beyond10x/ess#95): a `String` fact, or a newtype of one at any depth,
-    /// against a text literal that is not empty and does not name a field.
+    /// against a text literal that is not empty and does not name a field — or, from `ess/22`,
+    /// against a parameter or an input of the place it is written in (beyond10x/ess#200).
     fn text_match(
         &mut self,
         predicate: &Predicate,
         path: &FactPath,
         op: TextOp,
-        value: &FactValue,
+        value: &TextOperand,
     ) {
         if let Some(typed) = self.operand(&Operand::Fact(path.clone())) {
             if !typed.string {
                 self.mismatch(predicate, op.keyword(), &typed, None);
             }
         }
+        let value = match value {
+            TextOperand::Literal(value) => value,
+            TextOperand::Fact {
+                namespace,
+                name,
+                path: read,
+            } => {
+                self.text_operand(predicate, path, op, *namespace, name, read);
+                return;
+            }
+        };
         let text = match value {
             FactValue::Text(text) => text,
             other => {
@@ -2522,6 +2562,151 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 format!(
                     "`{predicate}` reads `{text}` as the text literal \"{text}\", not the field \
                      `{text}`: a string operator compares with a literal only"
+                ),
+            ));
+            return;
+        }
+        self.namespace_spelling(predicate, path, text);
+    }
+
+    /// From `ess/22`, a string operator's literal spelled `param.<name>` or `input.<name>` where
+    /// that names a declared parameter or input of this place (beyond10x/ess#200): the text it
+    /// always was, which is never what was meant, refused with the operand that reads the value.
+    /// Below `ess/22` it keeps its meaning, and a spelling naming nothing declared stays text.
+    fn namespace_spelling(&mut self, predicate: &Predicate, path: &FactPath, text: &str) {
+        if !self.environment.resolves_bare_words() {
+            return;
+        }
+        let Some((namespace, name)) = text.split_once('.') else {
+            return;
+        };
+        let Some(namespace) = TextNamespace::from_keyword(namespace) else {
+            return;
+        };
+        let declared = match namespace {
+            TextNamespace::Param => {
+                self.environment.has_parameters()
+                    && self.environment.parameter_namespace() == TextNamespace::Param.keyword()
+                    && self.environment.parameter(name).is_some()
+            }
+            TextNamespace::Input => {
+                (self.environment.has_parameters()
+                    && self.environment.parameter_namespace() == TextNamespace::Input.keyword()
+                    && self.environment.admits_input_operands()
+                    && self.environment.parameter(name).is_some())
+                    || (self.environment.reads_input_roots()
+                        && self
+                            .environment
+                            .root(TextNamespace::Input.keyword())
+                            .is_none()
+                        && self.environment.root(name).is_some())
+            }
+        };
+        if !declared {
+            return;
+        }
+        let noun = match namespace {
+            TextNamespace::Param => "parameter",
+            TextNamespace::Input => "input",
+        };
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::TypeMismatch,
+            Some(path),
+            None,
+            format!(
+                "`{predicate}` reads \"{text}\" as the text literal \"{text}\", not the {noun} \
+                 `{name}`: a string operator compares with the {noun} written \
+                 `{{{namespace}: {name}}}`"
+            ),
+        ));
+    }
+
+    /// A string operator's typed operand (beyond10x/ess#200): `{param: <name>}` in a view's filter
+    /// or a measure's condition, `{input: <name>}` in a command's guards — its plain `when:`, or
+    /// a stored row's predicate, which reads the input under `input.` — naming one declared
+    /// `String`, or newtype of one, `Optional` admitted. An invariant reads neither.
+    fn text_operand(
+        &mut self,
+        predicate: &Predicate,
+        path: &FactPath,
+        op: TextOp,
+        namespace: TextNamespace,
+        name: &str,
+        read: &FactPath,
+    ) {
+        let written = format!("{{{namespace}: {name}}}");
+        if !self.environment.admits_root_facts() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` compares with `{written}`, which requires specification \
+                     format ess/22"
+                ),
+            ));
+            return;
+        }
+        let rooted = |root: &str| {
+            read.segments().len() == 2 && read.namespace() == root && read.segments()[1] == name
+        };
+        let namespaced = self.environment.has_parameters()
+            && self.environment.parameter_namespace() == namespace.keyword()
+            && rooted(namespace.keyword())
+            && (namespace == TextNamespace::Param || self.environment.admits_input_operands());
+        let input_root = namespace == TextNamespace::Input
+            && self.environment.reads_input_roots()
+            && read.segments().len() == 1
+            && read.namespace() == name;
+        if !namespaced && !input_root {
+            let site = match namespace {
+                TextNamespace::Param => {
+                    "only a view's `filter:` or a measure's `where:` has parameters"
+                }
+                TextNamespace::Input => {
+                    "only a command's guards — its `when:`, `when_subject:` and `when_related:` \
+                     predicates — read its input"
+                }
+            };
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnobservableFact,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` compares with `{written}`, which names nothing here: {site}; a \
+                     view's filter reads `{{param: <name>}}`, a command's guard \
+                     `{{input: <name>}}`, and an invariant reads neither"
+                ),
+            ));
+            return;
+        }
+        if input_root && self.environment.root(name).is_none() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UndeclaredReference,
+                Some(path),
+                Some(name),
+                format!("`{predicate}` compares with `{written}`, an undeclared input `{name}`"),
+            ));
+            return;
+        }
+        let Some(resolved) = self.read(read, false) else {
+            return;
+        };
+        let typed = self.typed(resolved);
+        if !typed.string || typed.scalar.is_none() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}`: `{written}` is `{}`, not text; `{op}` compares a text with a \
+                     `String`, or a newtype of one, `Optional` admitted",
+                    typed.declared
                 ),
             ));
         }

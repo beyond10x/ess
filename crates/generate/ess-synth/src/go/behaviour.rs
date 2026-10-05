@@ -353,6 +353,7 @@ const HELPER_NAMES: &[&str] = &[
     "anyOf",
     "equal",
     "textMatch",
+    "textMatchOperand",
     "numberParts",
     "magnitudeOrder",
     "compareNumbers",
@@ -386,6 +387,28 @@ const HELPER_NAMES: &[&str] = &[
     "compareOffsetInstants",
 ];
 
+/// Each helper whose name is an imported package's, with the name [`rename_helpers`] moves it to.
+fn renamed_helpers(reserved: &BTreeSet<String>) -> BTreeMap<&'static str, String> {
+    let mut taken: BTreeSet<String> = reserved.clone();
+    taken.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
+    HELPER_NAMES
+        .iter()
+        .filter(|name| reserved.contains(**name))
+        .map(|name| (*name, fresh(&taken, name)))
+        .collect()
+}
+
+/// Every package-level name a generated method body may call or qualify by: the imported
+/// packages (`reserved`), every helper, and the name each helper an imported package displaces
+/// is moved to. A view query's arguments are named apart from all of them, so none shadows what
+/// the body reads (beyond10x/ess#200).
+pub(super) fn package_level(reserved: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut taken: BTreeSet<String> = reserved.clone();
+    taken.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
+    taken.extend(renamed_helpers(reserved).into_values());
+    taken
+}
+
 /// `body` with every helper whose name is an imported package's moved out of its way, as a local
 /// is (`fresh`): a domain package called `equal` and a helper called `equal` are one name declared
 /// twice in this file.
@@ -394,13 +417,7 @@ const HELPER_NAMES: &[&str] = &[
 /// which is a package qualifier (`equal.TaskId`) or a selector, not a helper. A model whose
 /// package names meet no helper keeps every byte.
 fn rename_helpers(body: &str, reserved: &BTreeSet<String>) -> String {
-    let mut taken: BTreeSet<String> = reserved.clone();
-    taken.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
-    let renamed: BTreeMap<&str, String> = HELPER_NAMES
-        .iter()
-        .filter(|name| reserved.contains(**name))
-        .map(|name| (*name, fresh(&taken, name)))
-        .collect();
+    let renamed = renamed_helpers(reserved);
     if renamed.is_empty() {
         return body.to_owned();
     }
@@ -892,6 +909,7 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
         ("anyOf", &["truth"]),
         ("truthOf", &["truth", "known"]),
         ("textMatch", &["truth", "known"]),
+        ("textMatchOperand", &["textMatch", "unknown"]),
         ("undeclared", &[]),
     ];
     let mut changed = true;
@@ -1052,6 +1070,16 @@ func textMatch(value *string, op string, literal string) truth {
 		return known(strings.HasSuffix(*value, literal))
 	}
 	return known(strings.Contains(*value, literal))
+}
+"),
+    ("textMatchOperand", &[], "
+// textMatchOperand is a read text's test against a read parameter or input (beyond10x/ess#200);
+// either unread is unknown.
+func textMatchOperand(value *string, op string, operand *string) truth {
+	if operand == nil {
+		return unknown
+	}
+	return textMatch(value, op, *operand)
 }
 "),
     ("numberParts", &["strings"], "
@@ -3223,6 +3251,7 @@ impl<'a> Writer<'a> {
                 Env::Subject(_, entity) | Env::Row(entity) => Some(*entity),
                 Env::Input(_) => None,
             },
+            params: Vec::new(),
         };
         guards.predicate(env, predicate)
     }
@@ -3302,6 +3331,9 @@ struct Guards<'a, 'w> {
     command: Option<&'a ResolvedCommand>,
     /// The entity a stored field or `state` is read from.
     row_entity: Option<&'a ResolvedEntity>,
+    /// The parameters of the view whose query this renders, each with the Go identifier its
+    /// argument is bound to; none for a command's guard (beyond10x/ess#200).
+    params: Vec<(ess_compiler::ir::ResolvedField, String)>,
 }
 
 impl Guards<'_, '_> {
@@ -3406,17 +3438,48 @@ impl Guards<'_, '_> {
                 }
             }
             Predicate::TextMatch { path, op, value } => {
+                use ess_primitives::predicate::{TextNamespace, TextOperand};
                 let resolved = self.resolve(env, path);
-                let FactValue::Text(literal) = value else {
-                    unreachable!("the plan admits text tests of text literals")
-                };
-                self.uses.helpers.insert("textMatch");
                 let read = self.read(&resolved);
-                format!(
-                    "textMatch({read}, {}, {})",
-                    go_string(op.keyword()),
-                    go_string(literal)
-                )
+                match value {
+                    TextOperand::Literal(FactValue::Text(literal)) => {
+                        self.uses.helpers.insert("textMatch");
+                        format!(
+                            "textMatch({read}, {}, {})",
+                            go_string(op.keyword()),
+                            go_string(literal)
+                        )
+                    }
+                    TextOperand::Literal(_) => {
+                        unreachable!("the plan admits text tests of text literals")
+                    }
+                    // A parameter or an input (beyond10x/ess#200): the fact tested against the
+                    // operand, byte for byte; either unread is unknown.
+                    TextOperand::Fact {
+                        namespace,
+                        name,
+                        path: at,
+                    } => {
+                        let operand = match namespace {
+                            TextNamespace::Param => {
+                                let (param, _) = self
+                                    .params
+                                    .iter()
+                                    .find(|(param, _)| &param.name == name)
+                                    .expect("the plan admits a parameter the view declares");
+                                crate::determined::resolve_param(self.ir, param)
+                                    .expect("the plan admits a parameter that resolves")
+                            }
+                            TextNamespace::Input => self.resolve(env, at),
+                        };
+                        let operand = self.read(&operand);
+                        self.uses.helpers.insert("textMatchOperand");
+                        format!(
+                            "textMatchOperand({read}, {}, {operand})",
+                            go_string(op.keyword())
+                        )
+                    }
+                }
             }
             _ => unreachable!("the plan admits only the guards `determined::supported` names"),
         }
@@ -3571,6 +3634,12 @@ impl Guards<'_, '_> {
             }
             Root::Stored(field) => format!("{}.Data.{}", self.row, self.stored_member(field)),
             Root::State => format!("{}.State", self.row),
+            Root::Param(param) => self
+                .params
+                .iter()
+                .find(|(declared, _)| &declared.name == param)
+                .map(|(_, ident)| ident.clone())
+                .expect("a parameter path is read in the query of the view that declares it"),
             Root::Caller(attribute) => {
                 let method = caller_method(self.emit, self.uses, attribute, &resolved.root_type);
                 let (value, ok) = (self.temp("c"), self.temp("ok"));

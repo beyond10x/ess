@@ -77,7 +77,7 @@ fn starts_with(path: &str) -> Predicate {
     Predicate::TextMatch {
         path: FactPath::new(path).unwrap(),
         op: TextOp::StartsWith,
-        value: FactValue::text("A"),
+        value: FactValue::text("A").into(),
     }
 }
 

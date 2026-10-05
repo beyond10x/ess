@@ -122,7 +122,12 @@ fn step_uses(step: &ScenarioStep, uses: fn(&Predicate) -> bool) -> bool {
 /// than text.
 fn non_text_operand(predicate: &Predicate) -> bool {
     match predicate {
-        Predicate::TextMatch { value, .. } => !matches!(value, FactValue::Text(_)),
+        // A parameter or an input is no text a suite can carry (beyond10x/ess#200): no suite
+        // persists one, and a forged one is refused here.
+        Predicate::TextMatch { value, .. } => !matches!(
+            value,
+            ess_primitives::predicate::TextOperand::Literal(FactValue::Text(_))
+        ),
         Predicate::FoldMatch { values, .. } => values
             .iter()
             .any(|value| !matches!(value, FactValue::Text(_))),

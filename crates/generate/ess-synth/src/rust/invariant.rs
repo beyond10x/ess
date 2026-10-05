@@ -21,7 +21,9 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedEntity, ResolvedTypeRef};
 use ess_domain::entity::Invariant;
 use ess_domain::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{
+    CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
+};
 
 use super::{name, Emit};
 use crate::failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
@@ -282,8 +284,15 @@ impl<'a> Check<'a> {
                     TextOp::Contains => "Contains",
                 };
                 let literal = match value {
-                    FactValue::Text(text) => format!("Some({text:?})"),
-                    _ => "None".to_owned(),
+                    TextOperand::Literal(FactValue::Text(text)) => format!("Some({text:?})"),
+                    TextOperand::Literal(_) => "None".to_owned(),
+                    // No invariant reads a parameter or an input (beyond10x/ess#200).
+                    TextOperand::Fact { .. } => {
+                        return Err(format!(
+                            "`{predicate}` compares with a parameter or an input, which no \
+                             invariant reads"
+                        ))
+                    }
                 };
                 format!(
                     "iv::text_match({}, iv::TextOp::{op}, {literal})",

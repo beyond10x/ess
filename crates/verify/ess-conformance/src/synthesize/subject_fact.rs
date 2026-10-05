@@ -1040,6 +1040,13 @@ fn ground_leaf(
                 }
             }
         }
+        Predicate::TextMatch {
+            path,
+            op,
+            value: ess_primitives::predicate::TextOperand::Fact { path: operand, .. },
+        } if !bound.iter().any(|(name, _)| *name == operand.namespace()) => {
+            ground_text_operand(settled, bound, path, *op, operand, out);
+        }
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             let elements = match held_node(settled, bound, &quantified.over) {
                 Some(Node::Map(entries)) => entries.into_values().collect(),
@@ -1057,6 +1064,39 @@ fn ground_leaf(
             }
         }
         _ => {}
+    }
+}
+
+/// A held text against an input (`phone starts_with {input: prefix}`, beyond10x/ess#200), grounded
+/// on the row: the input tried at a text the operator holds of against the held one, and at one
+/// that differs from it at the deciding character. No predicate spells "a prefix of", so the two
+/// are grounded as the values the input is tried at.
+fn ground_text_operand(
+    settled: &BTreeMap<String, super::Determined>,
+    bound: &[(&str, &Node)],
+    path: &FactPath,
+    op: ess_primitives::predicate::TextOp,
+    operand: &FactPath,
+    out: &mut Vec<Predicate>,
+) {
+    let (Some(input), Some(Node::Text(held))) =
+        (input_path(operand), held_node(settled, bound, path))
+    else {
+        return;
+    };
+    let values: Vec<ess_primitives::facts::FactValue> = [
+        crate::witness::text_operand_witness(op, &held),
+        crate::witness::text_operand_refutation(op, &held),
+    ]
+    .into_iter()
+    .flatten()
+    .map(ess_primitives::facts::FactValue::text)
+    .collect();
+    if !values.is_empty() {
+        out.push(Predicate::AnyOf {
+            path: input,
+            values,
+        });
     }
 }
 

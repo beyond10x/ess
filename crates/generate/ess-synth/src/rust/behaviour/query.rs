@@ -45,10 +45,20 @@ pub(super) fn implementation(
     let type_name = layout.type_name(&view.name);
     let module = layout.module(layout.owner(&view.name)).to_owned();
     let method = super::name::value_ident(&type_name);
+    // The parameters the query string carries, decoded by the route as the port takes them, bound by
+    // position (`param_0`, …) rather than by name: no parameter shadows a helper the body calls
+    // (`all`, `any`) or a local it binds (`held`), and no two bindings meet whatever the names
+    // (beyond10x/ess#200). None for a view without parameters, which keeps its bytes.
+    let params: Vec<(String, String)> = crate::rust::port::view_params(layout, "crate", view)
+        .into_iter()
+        .enumerate()
+        .map(|(position, (_, of))| (super::param_binding(position), of))
+        .collect();
+    let params = crate::rust::port::signature(&params, "");
     format!(
         "\n/// `{}`, generated: every row is one the specification fully determines from the stored \
          `{}`s.\nimpl<P> crate::{module}::obligations::{type_name}Query for Generated<P>\nwhere\n    \
-         P: {},\n{{\n    fn {method}(&self) -> Result<Vec<crate::{module}::{type_name}>, \
+         P: {},\n{{\n    fn {method}(&self{params}) -> Result<Vec<crate::{module}::{type_name}>, \
          UnmetObligation> {{\n{body}    }}\n}}\n",
         view.name, entity.name, storages[&entity.name]
     )
@@ -73,6 +83,7 @@ impl Query<'_> {
             uses: &mut *self.uses,
             bounds: &mut *self.bounds,
             row,
+            params: &self.view.params,
         }
     }
 

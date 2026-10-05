@@ -339,6 +339,163 @@ impl fmt::Display for TextOp {
     }
 }
 
+/// Where a typed text operand reads its value (beyond10x/ess#200): a view's parameter or a
+/// command's input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TextNamespace {
+    /// `{param: <name>}`: a parameter the view's caller sends.
+    Param,
+    /// `{input: <name>}`: a field of the command's input.
+    Input,
+}
+
+impl TextNamespace {
+    /// Both namespaces, in the order the design names them.
+    pub const ALL: [Self; 2] = [Self::Param, Self::Input];
+
+    /// The mapping key, and the namespace a read under it is rooted at before resolution.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Param => "param",
+            Self::Input => "input",
+        }
+    }
+
+    /// Parses the mapping key.
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|namespace| namespace.keyword() == keyword)
+    }
+}
+
+impl fmt::Display for TextNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
+/// The right side of a string operator (beyond10x/ess#200): a text literal, read byte for byte, or
+/// one declared top-level parameter or input, `{param: <name>}` / `{input: <name>}`.
+///
+/// `path` is the fact the evaluator reads, which depends on where the predicate sits: a view's
+/// filter reads `param.<name>`, a stored row's predicate `input.<name>`, and a command's plain
+/// `when:` the input root `<name>` itself, as the domain resolver rewrites it. The canonical form
+/// writes only the namespace and the name, so it reads the same wherever it is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextOperand {
+    /// The literal, verbatim as written: never a fact path, never read as a number.
+    Literal(FactValue),
+    /// A parameter or an input, by its declared top-level name.
+    Fact {
+        /// Which namespace the name is declared in.
+        namespace: TextNamespace,
+        /// The declared name.
+        name: String,
+        /// The fact read for it where the predicate sits.
+        path: FactPath,
+    },
+}
+
+impl TextOperand {
+    /// The operand `{namespace: name}`, read at `namespace.name` until a resolver places it.
+    ///
+    /// # Errors
+    ///
+    /// When `name` is not one fact-path segment.
+    pub fn fact(namespace: TextNamespace, name: &str) -> Result<Self, ParseError> {
+        let single = FactPath::new(name)?;
+        if single.segments().len() != 1 {
+            return Err(ParseError::predicate(
+                &format!("{{{namespace}: {name}}}"),
+                TEXT_OPERAND_SHAPE,
+            ));
+        }
+        let path = FactPath::from_segments([namespace.keyword(), name]);
+        Ok(Self::Fact {
+            namespace,
+            name: name.to_owned(),
+            path,
+        })
+    }
+
+    /// The literal, where this is one.
+    pub fn as_literal(&self) -> Option<&FactValue> {
+        match self {
+            Self::Literal(value) => Some(value),
+            Self::Fact { .. } => None,
+        }
+    }
+
+    /// The fact this operand reads, where it reads one.
+    pub fn fact_path(&self) -> Option<&FactPath> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Fact { path, .. } => Some(path),
+        }
+    }
+
+    /// This operand with its fact read at `map(path)`; a literal is unchanged.
+    #[must_use]
+    pub fn map_path(&self, map: impl FnOnce(&FactPath) -> FactPath) -> Self {
+        match self {
+            Self::Literal(value) => Self::Literal(value.clone()),
+            Self::Fact {
+                namespace,
+                name,
+                path,
+            } => Self::Fact {
+                namespace: *namespace,
+                name: name.clone(),
+                path: map(path),
+            },
+        }
+    }
+
+    /// The canonical document form: the literal as written, or `{param: <name>}`.
+    pub fn to_node(&self) -> Node {
+        match self {
+            Self::Literal(value) => value_node(value),
+            Self::Fact {
+                namespace, name, ..
+            } => Node::Map([(namespace.keyword().to_owned(), Node::Text(name.clone()))].into()),
+        }
+    }
+
+    /// The value this operand compares with: the literal, or what `facts` observe at its path.
+    fn resolve(&self, facts: &dyn FactSource) -> Option<FactValue> {
+        match self {
+            Self::Literal(value) => Some(value.clone()),
+            Self::Fact { path, .. } => facts.observe(path),
+        }
+    }
+}
+
+impl From<FactValue> for TextOperand {
+    fn from(value: FactValue) -> Self {
+        Self::Literal(value)
+    }
+}
+
+/// For a reader and the semantic diff, never read back: a text literal is quoted by `Debug`, a
+/// number or a Boolean is bare, and a parameter or an input is its mapping.
+impl fmt::Display for TextOperand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal(FactValue::Text(text)) => write!(f, "{text:?}"),
+            Self::Literal(value) => write!(f, "{value}"),
+            Self::Fact {
+                namespace, name, ..
+            } => write!(f, "{{{namespace}: {name}}}"),
+        }
+    }
+}
+
+/// What a string operator's mapping operand must be.
+const TEXT_OPERAND_SHAPE: &str = "a comparison operand must be a scalar, or for a string \
+     operator `{param: <name>}` naming one view parameter or `{input: <name>}` naming one command \
+     input: exactly one key and one top-level name";
+
 /// A case-insensitive text operator (beyond10x/ess#140): a text fact equal, under ASCII case
 /// folding, to one text literal or to one of a list of them.
 ///
@@ -1159,18 +1316,20 @@ pub enum Predicate {
         /// Rejected values.
         values: Vec<FactValue>,
     },
-    /// The text fact begins with, ends with or contains a literal (beyond10x/ess#95).
+    /// The text fact begins with, ends with or contains a literal (beyond10x/ess#95), or a view
+    /// parameter or command input (beyond10x/ess#200).
     ///
-    /// Unobserved is [`Truth::Unknown`]; an observed value that is not text is [`Truth::False`],
-    /// and so is any observed value against a literal that is not text. Validation refuses such a
-    /// literal, so only an unchecked caller reaches that row.
+    /// Unobserved — the fact, or the parameter or input — is [`Truth::Unknown`]; an observed value
+    /// that is not text is [`Truth::False`], and so is any observed value against an operand that
+    /// is not text. Validation refuses such an operand, so only an unchecked caller reaches that
+    /// row.
     TextMatch {
         /// The fact to read.
         path: FactPath,
         /// Which of the three tests.
         op: TextOp,
-        /// The literal, verbatim as written: never a fact path, never read as a number.
-        value: FactValue,
+        /// What it is tested against: a literal, verbatim as written, or a typed operand.
+        value: TextOperand,
     },
     /// The text fact equals a literal, or one of a list of them, under ASCII case folding
     /// (beyond10x/ess#140).
@@ -1612,15 +1771,16 @@ impl Predicate {
                     Truth::from_bool(!values.contains(&observed))
                 })
             }
+            // A parameter or an input nobody observed is unknown, as the fact is: never the empty
+            // text, which every text would begin with, end with and contain.
             Self::TextMatch { path, op, value } => {
-                facts
-                    .observe(path)
-                    .map_or(Truth::Unknown, |observed| match (&observed, value) {
-                        (FactValue::Text(text), FactValue::Text(literal)) => {
-                            Truth::from_bool(op.holds(text, literal))
-                        }
-                        _ => Truth::False,
-                    })
+                match (facts.observe(path), value.resolve(facts)) {
+                    (None, _) | (_, None) => Truth::Unknown,
+                    (Some(FactValue::Text(text)), Some(FactValue::Text(operand))) => {
+                        Truth::from_bool(op.holds(&text, &operand))
+                    }
+                    _ => Truth::False,
+                }
             }
             Self::FoldMatch { path, op, values } => {
                 facts.observe(path).map_or(Truth::Unknown, |observed| {
@@ -1992,10 +2152,17 @@ impl Predicate {
             | Self::Defined(path)
             | Self::AnyOf { path, .. }
             | Self::NoneOf { path, .. }
-            | Self::TextMatch { path, .. }
             | Self::FoldMatch { path, .. } => {
                 if !bound.contains(&path.namespace()) {
                     visit(path);
+                }
+            }
+            // A parameter or an input is read as the fact is (beyond10x/ess#200).
+            Self::TextMatch { path, value, .. } => {
+                for path in std::iter::once(path).chain(value.fact_path()) {
+                    if !bound.contains(&path.namespace()) {
+                        visit(path);
+                    }
                 }
             }
             Self::Forall(quantified) | Self::Exists(quantified) => {
@@ -2081,6 +2248,64 @@ impl Predicate {
             | Self::Defined(_)
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_) => false,
+        }
+    }
+
+    /// Whether any string operator, at any depth, compares with a parameter or an input rather than
+    /// a literal (beyond10x/ess#200): the question every lane that executes only literal operands
+    /// asks before refusing by name.
+    pub fn uses_text_operand(&self) -> bool {
+        match self {
+            Self::TextMatch { value, .. } => value.fact_path().is_some(),
+            Self::All(children) | Self::Any(children) => {
+                children.iter().any(Self::uses_text_operand)
+            }
+            Self::Not(inner) => inner.uses_text_operand(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.uses_text_operand()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_) => false,
+        }
+    }
+
+    /// Whether any string operator, at any depth, compares with the view parameter `name`,
+    /// `{param: <name>}` (beyond10x/ess#200).
+    pub fn reads_text_parameter(&self, name: &str) -> bool {
+        match self {
+            Self::TextMatch {
+                value:
+                    TextOperand::Fact {
+                        namespace: TextNamespace::Param,
+                        name: read,
+                        ..
+                    },
+                ..
+            } => read == name,
+            Self::All(children) | Self::Any(children) => children
+                .iter()
+                .any(|child| child.reads_text_parameter(name)),
+            Self::Not(inner) => inner.reads_text_parameter(name),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.reads_text_parameter(name)
+            }
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
             | Self::FoldMatch { .. }
             | Self::Distinct(_) => false,
         }
@@ -2817,15 +3042,29 @@ impl Predicate {
     /// [`Operand::parse`], so `"+44"` stays text and `"a.b"` is no fact path. A number or a Boolean
     /// is kept as that value, for validation to refuse with a code and a site; anything else is not
     /// a scalar.
+    ///
+    /// From `ess/22` the operand may instead be the mapping `{param: <name>}` or `{input: <name>}`
+    /// (beyond10x/ess#200): one key, one top-level name. Below it a mapping is refused in the words
+    /// it always was.
     fn text_match(path: FactPath, operator: &str, operand: &Node) -> Result<Self, ParseError> {
         let op = TextOp::from_keyword(operator).expect("dispatched on a string operator keyword");
+        let written = || format!("{path}: {{{operator}: {operand}}}");
         let value = match operand {
-            Node::Text(text) => FactValue::Text(text.clone()),
-            Node::Number(number) => FactValue::Number(*number),
-            Node::Bool(value) => FactValue::Bool(*value),
-            other => {
+            Node::Text(text) => FactValue::Text(text.clone()).into(),
+            Node::Number(number) => FactValue::Number(*number).into(),
+            Node::Bool(value) => FactValue::Bool(*value).into(),
+            Node::Map(entries) if source22_operands() => match entries.iter().next() {
+                Some((key, Node::Text(name))) if entries.len() == 1 => {
+                    let namespace = TextNamespace::from_keyword(key)
+                        .ok_or_else(|| ParseError::predicate(&written(), TEXT_OPERAND_SHAPE))?;
+                    TextOperand::fact(namespace, name)
+                        .map_err(|_| ParseError::predicate(&written(), TEXT_OPERAND_SHAPE))?
+                }
+                _ => return Err(ParseError::predicate(&written(), TEXT_OPERAND_SHAPE)),
+            },
+            _ => {
                 return Err(ParseError::predicate(
-                    &format!("{path}: {{{operator}: {other}}}"),
+                    &written(),
                     "a comparison operand must be a scalar",
                 ))
             }
@@ -3079,11 +3318,12 @@ impl Predicate {
             Self::Distinct(distinct) => distinct.to_node(),
             // Explicit, never the compact fallback below: there is no compact form, so a string
             // operator rendered as text would be a document no reader parses back. A text operand
-            // is written as the text, with no quotes added, because the reader takes it verbatim.
+            // is written as the text, with no quotes added, because the reader takes it verbatim; a
+            // parameter or an input as its mapping, `{param: <name>}` (beyond10x/ess#200).
             Self::TextMatch { path, op, value } => Node::Map(
                 [(
                     path.to_string(),
-                    Node::Map([(op.keyword().to_owned(), value_node(value))].into()),
+                    Node::Map([(op.keyword().to_owned(), value.to_node())].into()),
                 )]
                 .into(),
             ),
@@ -3475,12 +3715,7 @@ impl fmt::Display for InScope<'_, '_> {
                 write!(f, "{path} not in [{}]", join_values(values))
             }
             // For a reader and the semantic diff, never read back: a text literal is quoted by
-            // `Debug`, a number or a Boolean is bare.
-            Predicate::TextMatch {
-                path,
-                op,
-                value: FactValue::Text(text),
-            } => write!(f, "{path} {op} {text:?}"),
+            // `Debug`, a number or a Boolean is bare, a parameter or an input is its mapping.
             Predicate::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
             // For a reader and the semantic diff, never read back: each text quoted by `Debug`.
             Predicate::FoldMatch { path, op, values } => {
@@ -3616,7 +3851,9 @@ impl schemars::JsonSchema for Predicate {
              be the UTF-8 byte length of a `String`, `{utf8_bytes: <path>}`, with the comparison \
              written `{compare: {left, op, right}}` where it stands on the left. From `ess/22` \
              `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements \
-             of a list share a key: the element, or the one scalar member `by` names."
+             of a list share a key: the element, or the one scalar member `by` names. A \
+             string operator may compare with a view parameter, `{param: <name>}`, or a command \
+             input, `{input: <name>}`."
                 .to_owned(),
         );
         schema.into()

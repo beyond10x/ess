@@ -855,7 +855,11 @@ fn texts(predicate: &Predicate, out: &mut BTreeSet<String>) {
                 value(literal, out);
             }
         }
-        Predicate::TextMatch { value: literal, .. } => value(literal, out),
+        Predicate::TextMatch { value: operand, .. } => {
+            if let Some(literal) = operand.as_literal() {
+                value(literal, out);
+            }
+        }
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             texts(&quantified.body, out);
         }

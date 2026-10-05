@@ -623,7 +623,12 @@ impl ProofBudget {
                 path: read, value, ..
             } => {
                 path(read)?;
-                literal(value)?;
+                match value {
+                    ess_primitives::predicate::TextOperand::Literal(value) => literal(value)?,
+                    ess_primitives::predicate::TextOperand::Fact { path: fact, .. } => {
+                        path(fact)?;
+                    }
+                }
             }
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
                 path(&quantified.over)?;

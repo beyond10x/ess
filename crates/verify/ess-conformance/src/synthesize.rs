@@ -219,7 +219,9 @@ use ess_domain::types::MAX_TYPE_DEPTH;
 use ess_domain::view::AssertionStyle;
 use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Distinct, Operand, Predicate, Quantified, Truth};
+use ess_primitives::predicate::{
+    Distinct, Operand, Predicate, Quantified, TextNamespace, TextOp, TextOperand, Truth,
+};
 use ess_primitives::time::Rfc3339Instant;
 
 use crate::decision::{when, Decision, Unevaluable};
@@ -6834,6 +6836,33 @@ fn view_expectations(
             &companions,
             &unwitnessed,
         ));
+        // An optional parameter a string operator compares with (beyond10x/ess#200), left out:
+        // the filter is unknown for every row, so the subject's row is not shown. Last, so every
+        // assertion above stays with the read that sends it.
+        let left_out = optional_text_params(view);
+        let fields = identifying(ir, subject, instance, view);
+        if *admits_subject && !left_out.is_empty() && !fields.is_empty() {
+            let mut absent = bound(ir, view, settled, identity);
+            absent.retain(|param, _| !left_out.contains(&param.as_str()));
+            let expectation = ViewExpectation::Excludes { fields };
+            match view.assertion_style {
+                AssertionStyle::Expect => {
+                    out.asserted.push(ScenarioStep::QueryView {
+                        view: name.clone(),
+                        params: absent,
+                    });
+                    out.asserted.push(ScenarioStep::ExpectView {
+                        view: name.clone(),
+                        expectation,
+                    });
+                }
+                AssertionStyle::Eventually => out.asserted.push(ScenarioStep::EventuallyView {
+                    view: name.clone(),
+                    params: absent,
+                    expectation,
+                }),
+            }
+        }
         out.views.insert(name);
     }
     out
@@ -7033,6 +7062,18 @@ fn arrange_matching(
                 filter: Some(byte_exact(filter)),
                 ..(**view).clone()
             });
+        // A parameter a string operator compares with (beyond10x/ess#200) is searched toward as
+        // the text the read sends, so a row differing from it at the deciding character is one
+        // the search can arrange.
+        let written = view
+            .filter
+            .as_ref()
+            .filter(|filter| filter.uses_text_operand())
+            .map(|filter| ResolvedView {
+                filter: Some(text_params_written(filter, params)),
+                ..(**view).clone()
+            });
+        let toward: &ResolvedView = written.as_ref().unwrap_or(view);
         let held = |row: &Arrangement| row.shows(ir, view, params);
         let under = |row: &Arrangement, via: &str, owner: &InstanceName| {
             row.settled.get(via).map(|held| &held.value)
@@ -7094,6 +7135,14 @@ fn arrange_matching(
                 Box::new(move |row: &Arrangement| held(row) == Ok(false)),
                 None,
             )),
+            // The filter tests a field against a parameter (beyond10x/ess#200), and holds the
+            // subject's row: a target ignoring the parameter returns every row, which with the
+            // subject the only one passes. A further row the filter refuses is arranged and
+            // asserted `Excludes`.
+            None if *admits_subject && identified && written.is_some() => wanted.push((
+                Box::new(move |row: &Arrangement| held(row) == Ok(false)),
+                None,
+            )),
             None if !identified
                 || *admits_subject
                 || plain_row_shown(ir, beside.entity, view, beside.actors, params) =>
@@ -7114,7 +7163,7 @@ fn arrange_matching(
                 let Some(companion) = arrange_toward_by(
                     ir,
                     beside.entity,
-                    view,
+                    toward,
                     beside.actors,
                     distinction,
                     *sibling,
@@ -9513,12 +9562,117 @@ fn bound(
         // A paging parameter is sent only by a page read (`paging::page_reads`), never by name.
         .filter(|param| !paging::reads(view, &param.name))
         .filter_map(|param| {
-            settled
-                .get(&param.name)
-                .map(|determined| determined.value.clone())
+            text_param(view, &param.name, settled)
+                .or_else(|| {
+                    settled
+                        .get(&param.name)
+                        .map(|determined| determined.value.clone())
+                })
                 .or_else(|| identity::param(ir, view, &param.name, settled, identity))
                 .map(|value| (param.name.clone(), value))
         })
+        .collect()
+}
+
+/// The first string operator in `filter` whose operand is the parameter `name`
+/// (beyond10x/ess#200): the field it tests and how.
+fn text_param_read(filter: &Predicate, name: &str) -> Option<(FactPath, TextOp)> {
+    match filter {
+        Predicate::TextMatch {
+            path,
+            op,
+            value:
+                TextOperand::Fact {
+                    namespace: TextNamespace::Param,
+                    name: read,
+                    ..
+                },
+        } if read == name => Some((path.clone(), *op)),
+        Predicate::All(children) | Predicate::Any(children) => children
+            .iter()
+            .find_map(|child| text_param_read(child, name)),
+        Predicate::Not(inner) => text_param_read(inner, name),
+        _ => None,
+    }
+}
+
+/// A parameter a view's filter compares a field with under a string operator
+/// (beyond10x/ess#200), sent as a text the operator holds of against what the arrangement settled
+/// in that field — and never the field's whole text, so a target testing the parameter against
+/// the field, the wrong way round, hides the row (`witness::text_operand_witness`). The row and
+/// the read are arranged with the one value. `None` where the field holds no text this scenario
+/// settled, which leaves the parameter to the other bindings.
+fn text_param(
+    view: &ResolvedView,
+    name: &str,
+    settled: &BTreeMap<String, Determined>,
+) -> Option<ScenarioValue> {
+    let (field, op) = text_param_read(view.filter.as_ref()?, name)?;
+    let [field] = field.segments() else {
+        return None;
+    };
+    let ScenarioValue::Literal {
+        value: Node::Text(text),
+    } = &settled.get(field)?.value
+    else {
+        return None;
+    };
+    crate::witness::text_operand_witness(op, text)
+        .map(|operand| ScenarioValue::literal(Node::Text(operand)))
+}
+
+/// `filter` with every parameter a string operator compares with written in as the text the read
+/// sends (beyond10x/ess#200): the predicate an arrangement is searched toward, whose witness
+/// ladders know only literals. A parameter the read does not send stays as it is.
+fn text_params_written(filter: &Predicate, params: &BTreeMap<String, ScenarioValue>) -> Predicate {
+    match filter {
+        Predicate::TextMatch {
+            path,
+            op,
+            value:
+                TextOperand::Fact {
+                    namespace: TextNamespace::Param,
+                    name,
+                    ..
+                },
+        } => match params.get(name).and_then(ScenarioValue::as_literal) {
+            Some(Node::Text(text)) => Predicate::TextMatch {
+                path: path.clone(),
+                op: *op,
+                value: TextOperand::Literal(FactValue::text(text.clone())),
+            },
+            _ => filter.clone(),
+        },
+        Predicate::All(children) => Predicate::All(
+            children
+                .iter()
+                .map(|child| text_params_written(child, params))
+                .collect(),
+        ),
+        Predicate::Any(children) => Predicate::Any(
+            children
+                .iter()
+                .map(|child| text_params_written(child, params))
+                .collect(),
+        ),
+        Predicate::Not(inner) => Predicate::Not(Box::new(text_params_written(inner, params))),
+        other => other.clone(),
+    }
+}
+
+/// The optional parameters a view's filter reads under a string operator (beyond10x/ess#200):
+/// each one a read leaves out shows no row, which the scenario asserts beside the read that sends
+/// it, so a target reading an absent parameter as the empty text — which every text contains —
+/// fails.
+fn optional_text_params(view: &ResolvedView) -> Vec<&str> {
+    let Some(filter) = &view.filter else {
+        return Vec::new();
+    };
+    view.params
+        .iter()
+        .filter(|param| param.type_ref.is_optional())
+        .filter(|param| text_param_read(filter, &param.name).is_some())
+        .map(|param| param.name.as_str())
         .collect()
 }
 
