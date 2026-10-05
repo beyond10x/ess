@@ -930,6 +930,14 @@ pub struct ResolvedOutcome {
     /// The outcome returns the command's complete typed response (ess/17).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// A refusal that changes its addressed row before answering (`compensates: true`, ess/22,
+    /// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): [`Self::error`] beside the
+    /// [`Self::subject`] it moves or updates and the [`Self::sets`] it writes, on an `external:`
+    /// branch, with no event. Every other branch naming an error changes nothing. A pure function of
+    /// `error` and `subject` both being present, written so a consumer refuses it by name. Left out
+    /// of the document when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub compensates: bool,
     /// Required String response fields disclosed only by their originating invocation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub one_time_response: Vec<String>,

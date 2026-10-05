@@ -46,6 +46,7 @@
 //! | a type added or removed | compatible: every use of it is its own change |
 //! | an actor gains a grant, or any construct is added | compatible |
 //! | an actor loses a grant, an actor or a command is removed | breaking for callers |
+//! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
@@ -363,6 +364,10 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
         SemanticChange::Command { changed, .. } => match changed {
             CommandChange::Added => [C, C, C],
             CommandChange::Removed => [B, C, C],
+            // A refusal that now changes its row, or no longer does (ess/22, beyond10x/ess#197):
+            // a caller retrying after it and a reader of the row meet a different state; nothing
+            // stored changes shape.
+            CommandChange::OutcomeCompensatesChanged { .. } => [B, B, C],
             _ => [U, U, C],
         },
         SemanticChange::Event { changed, .. } => match changed {

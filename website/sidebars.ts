@@ -44,6 +44,7 @@ const sidebars: SidebarsConfig = {
             'guides/specify/fields-and-invariants',
             'guides/specify/guards-and-predicates',
             'guides/specify/commands-and-outcomes',
+            'guides/specify/selection-effects',
             'guides/specify/values-and-views',
             'guides/specify/aggregate-views',
             'guides/specify/bindings-and-components',

@@ -2464,6 +2464,13 @@ fn outcome_state_changes(
             after: new.returns,
         });
     }
+    if old.compensates != new.compensates {
+        push(CommandChange::OutcomeCompensatesChanged {
+            outcome: name.to_owned(),
+            before: old.compensates,
+            after: new.compensates,
+        });
+    }
     let mut before = old.one_time_response.clone();
     let mut after = new.one_time_response.clone();
     before.sort();
@@ -2602,7 +2609,7 @@ fn residual_command(declaration: &mut serde_json::Value) {
 /// they are a pure function of one that does. `refs` is deliberately absent: it stays residual.
 ///
 /// [`outcome_keys_accounted`] names every field of the struct, so the two cannot drift silently.
-const OUTCOME_KEYS_ACCOUNTED: [&str; 20] = [
+const OUTCOME_KEYS_ACCOUNTED: [&str; 21] = [
     "name",
     "condition",
     "subject",
@@ -2617,6 +2624,7 @@ const OUTCOME_KEYS_ACCOUNTED: [&str; 20] = [
     "refuses",
     "accepts_nothing",
     "returns",
+    "compensates",
     "one_time_response",
     "summary",
     "sets",
@@ -2647,6 +2655,7 @@ fn outcome_keys_accounted(outcome: &ResolvedOutcome) -> &'static [&'static str] 
         refuses: _,        // OutcomeRefusesChanged
         accepts_nothing: _, // OutcomeAcceptsNothingChanged
         returns: _,        // OutcomeReturnsChanged
+        compensates: _,    // OutcomeCompensatesChanged
         one_time_response: _, // Accounted by the one-time contract comparison below.
         summary: _,        // OutcomeSummaryChanged
         refs: _,           // residual, deliberately
@@ -2802,10 +2811,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// Specifications whose outcomes, together, write every optional `ResolvedOutcome` key.
-    const MODELS: [&str; 7] = [
+    const MODELS: [&str; 8] = [
         include_str!("../../../../docs/design/one-time-response-values.example.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/outcome-shapes.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects.yaml"),
+        // `compensates` (ess/22, beyond10x/ess#197).
+        include_str!("../../../specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml"),
         include_str!("../../ess-conformance/tests/fixtures/error-payload-sources.yaml"),
         include_str!("../../ess-conformance/tests/fixtures/retained-replay.yaml"),
         "format: ess/17\nsystem: library\nversion: v1\ndomain: library.api\ncommands:\n  \

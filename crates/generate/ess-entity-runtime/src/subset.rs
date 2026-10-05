@@ -96,6 +96,8 @@ pub(crate) const ROW_SET: &str =
     "a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`)";
 pub(crate) const CALENDAR_WINDOW: &str =
     "a calendar window (`window: {at, days, from, to, offset}`, ess/22)";
+pub(crate) const COMPENSATING_REFUSAL: &str =
+    "a refusal that compensates (`compensates: true`, ess/22)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -528,6 +530,12 @@ pub const CONSTRUCTS: &[Construct] = &[
             "tests/calendar_window_guard.rs::a_guard_holding_now_to_a_calendar_window_is_refused_by_name",
         ],
     ),
+    refused(
+        COMPENSATING_REFUSAL,
+        LoweringCode::CompensatingRefusalUnsupported,
+        Needs::EntityCore("a refusal that changes the instance it answers for"),
+        &["tests/compensating_refusal.rs::a_compensating_refusal_is_refused_by_name"],
+    ),
 ];
 
 impl LoweringCode {
@@ -569,6 +577,7 @@ impl LoweringCode {
         Self::Utf8BytesUnsupported,
         Self::RowSetUnsupported,
         Self::CalendarWindowUnsupported,
+        Self::CompensatingRefusalUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -803,6 +812,11 @@ impl LoweringCode {
                 "CalendarWindowUnsupported",
                 CALENDAR_WINDOW,
                 "A guard holds an instant to a weekly window at a fixed offset.",
+            ),
+            Self::CompensatingRefusalUnsupported => (
+                "CompensatingRefusalUnsupported",
+                COMPENSATING_REFUSAL,
+                "A refusal changes its addressed instance before answering its error.",
             ),
         }
     }

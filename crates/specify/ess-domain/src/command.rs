@@ -168,7 +168,10 @@
 //! | no outcome catches the input every `when` missed | [`NonExhaustiveBranches`](ValidationCode::NonExhaustiveBranches) |
 //! | two outcomes are unconditional | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | an outcome neither emits nor errors | [`EmptyChange`](ValidationCode::EmptyChange) |
-//! | an outcome names an error *and* emits, or names an error *and* declares a subject | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
+//! | an outcome names an error *and* emits, or names an error *and* declares a subject without `compensates: true` | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
+//! | `compensates: true` on a refusal not decided by `external:`, or beside `creates:`, `deletes:` or `affects:` | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
+//! | `compensates: true` on a branch naming no error | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
+//! | `compensates: true` on a refusal declaring no change to its addressed row | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | an external outcome states no cause | [`UnexplainedDecision`](ValidationCode::UnexplainedDecision) |
 //! | a `wrong_state` outcome names no error | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | a command declares two `wrong_state` outcomes | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
@@ -329,6 +332,110 @@ impl From<OutcomeName> for String {
     fn from(value: OutcomeName) -> Self {
         value.0
     }
+}
+
+/// Holds a branch marked `compensates: true` to the one shape the marker admits (ess/22,
+/// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): an `external:` refusal that moves or
+/// updates the one row its `instance:` names, writes at most that row's `sets:`, and creates,
+/// deletes, emits and fans out nothing. An unmarked branch earns nothing here.
+///
+/// The marker's own misuses take the nearest codes — a branch that names no error is a conflict, a
+/// refusal that declares no change is missing it — and every change beyond the admitted one is the
+/// rule [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) already states. `emits:` beside
+/// the marker is refused by that rule's emits half, unchanged; `preserves:` by the preserving
+/// outcome's rule, and `instances:` by the set-effects rule.
+fn validate_compensation(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if !outcome.compensates {
+        return errors;
+    }
+    let marker = at.clone().key("compensates");
+    let Some(error) = &outcome.error else {
+        errors.push(
+            ValidationError::at(
+                marker,
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` declares `compensates: true` and names no error; the marker says \
+                     a refusal changes its addressed row, and a branch that succeeds already \
+                     declares its change",
+                    outcome.name
+                ),
+            )
+            .with_hint("drop `compensates:`, or name the error the branch reports with `error:`"),
+        );
+        return errors;
+    };
+    if !matches!(
+        outcome.condition,
+        OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+    ) {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::RefusalMutatedState,
+                format!(
+                    "outcome `{}` reports `{error}` and declares `compensates: true`, but only a \
+                     refusal decided by `external:` may change its addressed row; a refusal the \
+                     input, a held state or a related row decides is answered before that row is \
+                     read, and changes nothing",
+                    outcome.name
+                ),
+            )
+            .with_hint(
+                "decide the branch with `external:`, or drop `compensates:` and the change it \
+                 declares",
+            ),
+        );
+        return errors;
+    }
+    let others = !outcome.set_effects.affects.is_empty();
+    let effect = outcome.subject.as_ref().map(|subject| &subject.effect);
+    let unchanged = match effect {
+        Some(Effect::Updates) => outcome.sets.is_empty(),
+        None => outcome.set_effects.instances.is_none(),
+        Some(_) => false,
+    };
+    if others || matches!(effect, Some(Effect::Creates | Effect::Deletes)) {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::RefusalMutatedState,
+                format!(
+                    "outcome `{}` reports `{error}` and declares `compensates: true` beside {}; \
+                         a compensating refusal changes only the row its `instance:` names, by a \
+                         move or field writes",
+                    outcome.name,
+                    if others {
+                        "`affects:`, which changes other rows"
+                    } else {
+                        "a subject it creates or deletes"
+                    }
+                ),
+            )
+            .with_hint(
+                "declare the change with `moves:` or `updates:` and `sets:` on the addressed \
+                     row only",
+            ),
+        );
+    } else if unchanged {
+        errors.push(
+            ValidationError::at(
+                marker,
+                ValidationCode::MissingDeclaration,
+                format!(
+                    "outcome `{}` declares `compensates: true` and no change to its addressed \
+                         row; a compensating refusal moves the row or writes its fields",
+                    outcome.name
+                ),
+            )
+            .with_hint(
+                "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or \
+                     drop `compensates:`",
+            ),
+        );
+    }
+    errors
 }
 
 /// Checks that a wrong-state branch's answer and its `error:` say one thing rather than two.
@@ -2169,6 +2276,9 @@ impl schemars::JsonSchema for PayloadDeclaration {
 ///
 /// An outcome is observable or it is not an outcome: it emits events, or it names an error, and a
 /// branch that does neither is one no test can check.
+// One flag per marker an author writes (`refuses:`, `accepts: nothing`, `returns:`,
+// `compensates:`), as `RawOutcome` and `ResolvedOutcome` carry them: not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(into = "RawOutcome")]
 pub struct Outcome {
@@ -2230,6 +2340,11 @@ pub struct Outcome {
     /// No persistence or absence of side effects is implied by a direct return.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// A refusal that changes its addressed row before answering its error (ess/22,
+    /// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): [`Self::error`] and
+    /// [`Self::subject`] both present, on an `external:` branch. `false` on every other outcome,
+    /// where a refusal changes nothing ([`RefusalMutatedState`](ValidationCode::RefusalMutatedState)).
+    pub compensates: bool,
     /// Response fields disclosed only by this successful invocation (ess/21).
     pub one_time_response: Vec<String>,
     /// One line for generated documentation and for the generated scenario's title.
@@ -2259,6 +2374,7 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -2281,6 +2397,7 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -2307,6 +2424,7 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -2768,8 +2886,9 @@ impl CommandSpec {
             // The same rule read on the lifecycle. AEP's own version of it — a refused command
             // changes nothing and is still recorded — is what `AuditRecord::validate` enforces at
             // runtime; this is the specification refusing to *promise* the thing that record would
-            // have to refuse.
-            if let Some(subject) = &outcome.subject {
+            // have to refuse. A branch marked `compensates: true` (ess/22) is the one exception,
+            // and `validate_compensation` holds it to its own shape.
+            if let Some(subject) = outcome.subject.as_ref().filter(|_| !outcome.compensates) {
                 errors.push(
                     ValidationError::at(
                         location.clone(),
@@ -2789,6 +2908,8 @@ impl CommandSpec {
                 );
             }
         }
+
+        errors.extend(validate_compensation(outcome, &location));
 
         // §19: "do not generate vague *operation fails* tests if the domain declares a specific
         // error". A wrong-state branch exists precisely to name that error, and the states it
@@ -3672,6 +3793,25 @@ fn error_payload_contract(
     errors
 }
 
+/// The format gate of the one refusal that changes state (`compensates: true`, beyond10x/ess#197):
+/// admitted from `ess/22`. Its shape is held by `validate_compensation`, which reads no format, so
+/// below `ess/22` this is the branch's only refusal.
+fn compensation_format(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    (outcome.compensates && format.major() < crate::system::FormatVersion::V22.major()).then(|| {
+        ValidationError::at(
+            at.clone().key("compensates"),
+            ValidationCode::UnsupportedFormatVersion,
+            "a refusal that declares its compensating change — `compensates: true` beside \
+             `error:` — requires specification format ess/22",
+        )
+        .with_hint("declare `format: ess/22`, or drop `compensates:` and the change it declares")
+    })
+}
+
 /// Admit response vocabulary and the source-version-specific emitted payload completeness rule.
 pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
@@ -3718,6 +3858,9 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                     ValidationCode::UnsupportedFormatVersion,
                     "direct return outcomes require specification format ess/17",
                 ));
+            }
+            if let Some(refused) = compensation_format(spec.system().format, outcome, &at) {
+                errors.push(refused);
             }
             for (field, source) in &outcome.sets {
                 // `ess/14` hands a field to the implementation with `{generated: true}` (#134).
@@ -5423,6 +5566,12 @@ pub struct RawOutcome {
     /// The outcome returns the command's typed response (ess/17), without implying effects.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// `true` marks an `external:` refusal that changes the one row its `instance:` names before it
+    /// answers its `error:` (ess/22, beyond10x/ess#197, `docs/design/refusal-with-effect.md`). The
+    /// change is spelled with `moves:` or `updates:` and `sets:`; `false` is the document without
+    /// the key.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub compensates: bool,
     /// Outcome-local names of required String response fields (ess/21).
     #[serde(
         default,
@@ -5912,6 +6061,7 @@ impl TryFrom<RawOutcome> for Outcome {
             refuses,
             accepts_nothing: raw.accepts.is_some(),
             returns: raw.returns,
+            compensates: raw.compensates,
             one_time_response: raw.one_time_response.unwrap_or_default(),
             summary: raw.summary,
             refs: raw.refs,
@@ -6314,6 +6464,7 @@ impl From<Outcome> for RawOutcome {
             into,
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),
             returns: outcome.returns,
+            compensates: outcome.compensates,
             one_time_response: (!outcome.one_time_response.is_empty())
                 .then_some(outcome.one_time_response),
             creates,
@@ -6606,6 +6757,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -6656,6 +6808,7 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -6696,6 +6849,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -6729,6 +6883,7 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -6793,6 +6948,7 @@ outcomes:
             refuses: false,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -6876,6 +7032,7 @@ outcomes:
             refuses: false,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -6924,6 +7081,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7110,6 +7268,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7148,6 +7307,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7275,6 +7435,7 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -7599,6 +7760,7 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7731,6 +7893,7 @@ outcomes:
                     refuses: true,
                     accepts_nothing: false,
                     returns: false,
+                    compensates: false,
                     one_time_response: Vec::new(),
                     set_effects: SetEffects::default(),
                     summary: None,

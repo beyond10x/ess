@@ -79,6 +79,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | the UTF-8 byte length of a text (`label.utf8_bytes`) | `Utf8BytesUnsupported` | entity-core: an address for the UTF-8 byte length of a text |
 | a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | `RowSetUnsupported` | entity-core: a query over the rows of an entity, read atomically in one decision |
 | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | `CalendarWindowUnsupported` | entity-core: a weekday and time-of-day operand at a fixed offset, and a clock operand for `at: now` |
+| a refusal that compensates (`compensates: true`, ess/22) | `CompensatingRefusalUnsupported` | entity-core: a refusal that changes the instance it answers for |
 
 ## Every code
 
@@ -122,5 +123,6 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `Utf8BytesUnsupported` | the UTF-8 byte length of a text (`label.utf8_bytes`) | A predicate compares the UTF-8 byte length of a text. |
 | `RowSetUnsupported` | a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | A branch reads the rows a selector selects, or one value of the one row it selects. |
 | `CalendarWindowUnsupported` | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | A guard holds an instant to a weekly window at a fixed offset. |
+| `CompensatingRefusalUnsupported` | a refusal that compensates (`compensates: true`, ess/22) | A refusal changes its addressed instance before answering its error. |
 
 [ess-lowering-end]: #

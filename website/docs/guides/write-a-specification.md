@@ -55,7 +55,7 @@ an older link still finds it.
 - <a id="an-unknown-instance-can-have-its-own-outcome"></a>[An unknown instance can have its own outcome](specify/commands-and-outcomes.md#an-unknown-instance-can-have-its-own-outcome)
 - <a id="a-request-with-no-input-can-have-its-own-outcome"></a>[A request with no input can have its own outcome](specify/commands-and-outcomes.md#a-request-with-no-input-can-have-its-own-outcome)
 - <a id="an-outcome-can-be-selected-by-whether-the-record-exists"></a>[An outcome can be selected by whether the record exists](specify/commands-and-outcomes.md#an-outcome-can-be-selected-by-whether-the-record-exists)
-- <a id="an-outcome-can-change-every-record-a-filter-selects"></a>[An outcome can change every record a filter selects](specify/commands-and-outcomes.md#an-outcome-can-change-every-record-a-filter-selects)
+- <a id="an-outcome-can-change-every-record-a-filter-selects"></a>[An outcome can change every record a filter selects](specify/selection-effects.md)
 - <a id="an-outcome-can-delete-its-subject"></a>[An outcome can delete its subject](specify/commands-and-outcomes.md#an-outcome-can-delete-its-subject)
 - <a id="a-creation-can-land-in-a-declared-state"></a>[A creation can land in a declared state](specify/commands-and-outcomes.md#a-creation-can-land-in-a-declared-state)
 - <a id="an-accepted-request-can-change-nothing"></a>[An accepted request can change nothing](specify/commands-and-outcomes.md#an-accepted-request-can-change-nothing)

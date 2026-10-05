@@ -388,6 +388,7 @@ impl SemanticChange {
     #[allow(clippy::too_many_lines)]
     pub fn minimum_format(&self) -> u32 {
         match self {
+            Self::Command { changed, .. } if changed.is_compensation() => 14,
             Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
             Self::Binding {
                 changed: BindingChange::PredicateChanged { .. },
@@ -2333,6 +2334,20 @@ pub enum CommandChange {
         /// Now restricted response fields.
         after: Vec<String>,
     },
+    /// Whether a refusal declares the compensating change it makes to its addressed row before
+    /// answering (`compensates: true`, ess/22, beyond10x/ess#197) moved. `ess-diff/14`.
+    ///
+    /// Breaking for callers and readers either way: a caller retrying after the refusal, and a
+    /// reader of the row, meet a different state. The change itself is reported beside it as the
+    /// branch's `outcome-subject-changed`.
+    OutcomeCompensatesChanged {
+        /// Which branch.
+        outcome: String,
+        /// Whether it compensated.
+        before: bool,
+        /// Whether it compensates.
+        after: bool,
+    },
     /// Whether the outcome returns its response (ess-diff/12).
     OutcomeReturnsChanged {
         /// Which branch.
@@ -2464,6 +2479,7 @@ impl CommandChange {
             Self::OutcomeErrorPayloadChanged { .. } => "outcome-error-payload-changed",
             Self::OutcomeAcceptsNothingChanged { .. } => "outcome-accepts-nothing-changed",
             Self::OutcomeReturnsChanged { .. } => "outcome-returns-changed",
+            Self::OutcomeCompensatesChanged { .. } => "outcome-compensates-changed",
             Self::OutcomeOneTimeResponseChanged { .. } => "outcome-one-time-response-changed",
             Self::OutcomeDecidedByCallerChanged { .. } => "outcome-decided-by-caller-changed",
             Self::OutcomeErrorChanged { .. } => "outcome-error-changed",
@@ -2502,6 +2518,7 @@ impl CommandChange {
             | Self::OutcomeErrorPayloadChanged { outcome, .. }
             | Self::OutcomeAcceptsNothingChanged { outcome, .. }
             | Self::OutcomeReturnsChanged { outcome, .. }
+            | Self::OutcomeCompensatesChanged { outcome, .. }
             | Self::OutcomeOneTimeResponseChanged { outcome, .. }
             | Self::OutcomeDecidedByCallerChanged { outcome, .. }
             | Self::OutcomeErrorChanged { outcome, .. }
@@ -2542,6 +2559,12 @@ impl CommandChange {
         matches!(self, Self::OutcomeOneTimeResponseChanged { .. })
     }
 
+    /// Whether this is a refusal's compensating change moving (`ess-diff/14`, ess/22,
+    /// beyond10x/ess#197).
+    pub const fn is_compensation(&self) -> bool {
+        matches!(self, Self::OutcomeCompensatesChanged { .. })
+    }
+
     /// The clause for an outcome flag or error payload change, and empty for every other change.
     fn flag_clause(&self) -> String {
         if let Self::OutcomeOneTimeResponseChanged {
@@ -2572,6 +2595,11 @@ impl CommandChange {
                 before,
                 after,
             } => (outcome, "decided by the caller", before, after),
+            Self::OutcomeCompensatesChanged {
+                outcome,
+                before,
+                after,
+            } => (outcome, "compensates its refusal", before, after),
             _ => return self.error_payload_clause(),
         };
         format!("outcome `{outcome}` {flag} {before} → {after}")

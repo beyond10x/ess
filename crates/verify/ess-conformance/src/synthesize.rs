@@ -3014,6 +3014,10 @@ fn exercise_run_in(
     if moving {
         views.asserted = binding_effects::eventually(std::mem::take(&mut views.asserted));
     }
+    if let Some(cause) = unread_compensation(ir, command, outcome, &run, &views.asserted) {
+        refusals.push(Refusal::about(id, cause));
+        return None;
+    }
     models.mark(caller::InvocationPhase::Arrange, &mut views.arranged);
 
     let mut steps = run.steps();
@@ -3104,6 +3108,92 @@ fn exercise_run_in(
     source.extend(views.source);
     record_refused(id, &run, refusals);
     Some((steps, source, run))
+}
+
+/// The refusal of a compensating branch whose change `asserted` does not read back (ess/22,
+/// beyond10x/ess#197). The change has no event and no success to witness it: only the row read
+/// back does, so a scenario that cannot read it would pass a target that skips the change, and it
+/// is refused by name rather than written. `None` for every other branch.
+fn unread_compensation(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    run: &Run,
+    asserted: &[ScenarioStep],
+) -> Option<RefusalCause> {
+    (outcome.compensates && !reads_back_compensation(outcome, run, asserted)).then(|| {
+        RefusalCause::NoWitness(WitnessGap {
+            path: format!("{}.{}", command.name, outcome.name),
+            type_ref: outcome
+                .subject
+                .as_ref()
+                .map_or_else(String::new, |subject| {
+                    ir.entity(&subject.entity).name.to_string()
+                }),
+            reason: "a compensating refusal's change is observed only by reading its row back \
+                     through an immediate view of the entity showing the state it moves to or a \
+                     field it sets, and none does",
+        })
+    })
+}
+
+/// Whether `asserted` reads the row a compensating refusal changed (ess/22, beyond10x/ess#197):
+/// a view requirement naming the arranged instance and holding the state the move arrives at, or,
+/// for an update, one of the fields the branch sets.
+fn reads_back_compensation(
+    outcome: &ResolvedOutcome,
+    run: &Run,
+    asserted: &[ScenarioStep],
+) -> bool {
+    let Some(instance) = &run.instance else {
+        return false;
+    };
+    let moves_to = outcome
+        .subject
+        .as_ref()
+        .and_then(|subject| match &subject.effect {
+            ResolvedEffect::Moves { transition } => Some(transition.to.as_str().to_owned()),
+            _ => None,
+        });
+    asserted.iter().any(|step| {
+        let (ScenarioStep::ExpectView { expectation, .. }
+        | ScenarioStep::EventuallyView { expectation, .. }) = step
+        else {
+            return false;
+        };
+        let ViewExpectation::Contains { fields } = expectation else {
+            return false;
+        };
+        let names_row = fields.values().any(|value| {
+            matches!(value, ScenarioValue::Instance { instance: named } if named == instance)
+        });
+        let shows_change = match &moves_to {
+            // The arrival state, where the arrangement left the row in another one.
+            Some(state) => {
+                run.before.as_ref().map(StateName::as_str) != Some(state.as_str())
+                    && fields.values().any(|value| {
+                        matches!(value, ScenarioValue::Literal { value: Node::Text(text) } if text == state)
+                    })
+            }
+            None => outcome.sets.iter().any(|set| {
+                fields
+                    .get(&set.target)
+                    .is_some_and(|value| differs_from_arranged(run, &set.target, value))
+            }),
+        };
+        names_row && shows_change
+    })
+}
+
+/// Whether `asserted` for `field` is a value the arranged row did not already hold, so a target
+/// that skips the write fails the read-back. A field the arrangement left undetermined holds
+/// nothing, so only a present value differs from it; a cleared field read back as absent proves
+/// nothing there (beyond10x/ess#197, adversary F1).
+fn differs_from_arranged(run: &Run, field: &str, asserted: &ScenarioValue) -> bool {
+    match run.before_settled.get(field) {
+        Some(before) => before.value != *asserted,
+        None => !matches!(asserted, ScenarioValue::Literal { value: Node::Null }),
+    }
 }
 
 /// Records each further row `run` refused on its own ([`Run::refused`]) under the scenario's id,
@@ -11363,6 +11453,23 @@ fn from_source(
     steps.push(ScenarioStep::ExpectOutcome {
         outcome: outcome_ref.clone(),
     });
+    // A compensating refusal moves from this source too (ess/22, beyond10x/ess#197), and from each
+    // it still answers its error and publishes nothing: a target answering success from one
+    // source alone is a different branch.
+    if outcome.compensates {
+        if let Some(error) = &outcome.error {
+            steps.push(expect_error(
+                ir,
+                outcome,
+                error,
+                &supplied,
+                &arrangement.settled,
+            ));
+        }
+        for event in not_emitted(ir, &[]) {
+            steps.push(ScenarioStep::ExpectNoEvent { event });
+        }
+    }
     for event in outcome.emits.iter().map(EventRef::from) {
         steps.push(expect_event_step(
             &event,

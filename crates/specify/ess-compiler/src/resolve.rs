@@ -2197,6 +2197,7 @@ impl<'a> Resolver<'a> {
                 refuses: outcome.refuses,
                 accepts_nothing: outcome.accepts_nothing,
                 returns: outcome.returns,
+                compensates: outcome.compensates,
                 one_time_response: outcome.one_time_response.clone(),
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),

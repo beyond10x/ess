@@ -522,6 +522,10 @@ pub enum LoweringCode {
     /// offset}`): entity-core has no weekday or time-of-day operand, and no clock for `at: now`, so
     /// any lowering would decide a different rule.
     CalendarWindowUnsupported,
+    /// A refusal changes its addressed row before answering its error (ess/22, `compensates:
+    /// true`, beyond10x/ess#197): an entity-core refusal changes nothing, and lowering the branch
+    /// as a refusal would drop the change the specification promises.
+    CompensatingRefusalUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1388,6 +1392,29 @@ impl Projector<'_> {
         }
     }
 
+    /// Refuses every branch of `command` that changes its row before answering its error (ess/22,
+    /// `compensates: true`, beyond10x/ess#197), and says whether it refused one: such a command is
+    /// not lowered further. An entity-core refusal produces nothing durable, so lowering the branch
+    /// would drop the change the specification promises.
+    fn refuse_compensating_refusals(&mut self, command: &ResolvedCommand) -> bool {
+        let mut refused = false;
+        for outcome in command
+            .outcomes
+            .iter()
+            .filter(|outcome| outcome.compensates)
+        {
+            self.diagnostic(
+                LoweringCode::CompensatingRefusalUnsupported,
+                format!("{}.{}", command.name, outcome.name.as_str()),
+                "a refusal that changes its addressed row before answering (ess/22, \
+                 `compensates: true`) has no Entity Runtime definition; an entity-core refusal \
+                 changes nothing",
+            );
+            refused = true;
+        }
+        refused
+    }
+
     /// Refuses every set effect of `command` by name (ess/16, beyond10x/ess#167, #175), and says
     /// whether it refused one: such a command is not lowered further.
     fn refuse_set_effects(&mut self, command: &ResolvedCommand) -> bool {
@@ -1545,10 +1572,11 @@ impl Projector<'_> {
     #[allow(clippy::too_many_lines)]
     fn lower_command(&mut self, command: &ResolvedCommand) -> bool {
         let command_path = command.name.to_string();
-        // Both are asked before either returns, so one does not hide the other.
+        // Every one is asked before any returns, so one does not hide another.
         let set_effects = self.refuse_set_effects(command);
         let related_guards = self.refuse_related_guards(command);
-        if set_effects || related_guards {
+        let compensating = self.refuse_compensating_refusals(command);
+        if set_effects || related_guards || compensating {
             return false;
         }
         let mut targets = BTreeSet::new();

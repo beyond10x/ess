@@ -145,6 +145,7 @@ impl RawGroupOutcome {
             into: None,
             accepts: None,
             returns: false,
+            compensates: false,
             replays: None,
             instance: None,
             instances: None,

@@ -2540,6 +2540,10 @@
             "$ref": "#/definitions/RawAffect"
           }
         },
+        "compensates": {
+          "description": "`true` marks an `external:` refusal that changes the one row its `instance:` names before it answers its `error:` (ess/22, beyond10x/ess#197, `docs/design/refusal-with-effect.md`). The change is spelled with `moves:` or `updates:` and `sets:`; `false` is the document without the key.",
+          "type": "boolean"
+        },
         "creates": {
           "description": "The entity a new instance of which this outcome brings into existence.",
           "anyOf": [

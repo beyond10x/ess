@@ -254,12 +254,17 @@ Every `ValidationError` construction site in `crates/specify/ess-domain/src/`, a
 by `crates/specify/ess-compiler/tests/typed_diagnostics.rs`; a file with sites that is missing from
 this block, a count that does not match, and a listed file that has none, are each a failing test.
 
+`command.rs` rose from 50 to 55 typed sites with beyond10x/ess#197
+(`docs/design/refusal-with-effect.md`): `validate_compensation`'s four refusals of a misused
+`compensates: true` and its `ess/22` format gate `compensation_format`, all written with
+`ValidationError::at` under the `command` head. No string-located site was added.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
 actor.rs 3 2
 binding.rs 35 0
-command.rs 13 50
+command.rs 13 55
 component.rs 15 9
 domain.rs 5 0
 entity.rs 17 4

@@ -22,12 +22,26 @@ use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{CompareOp, Derived, Operand, Predicate};
 use ess_primitives::time::CurrentTime;
 
+/// `Err` for a command with a refusal that changes its addressed row before answering (ess/22,
+/// `compensates: true`, beyond10x/ess#197): no emitter writes a refusal with an effect, and one
+/// that answered the error alone would be the service that stopped rolling back. Owed by name.
+fn uncompensated(command: &ResolvedCommand) -> Result<(), String> {
+    match command.outcomes.iter().find(|outcome| outcome.compensates) {
+        Some(outcome) => Err(format!(
+            "a refusal that compensates (`compensates: true`), on `{}`",
+            outcome.name
+        )),
+        None => Ok(()),
+    }
+}
+
 /// `Ok` when every outcome of `command` is expressible; `Err` names the construct that keeps the
 /// whole command an obligation, in a phrase that reads after "kept an obligation by".
 pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), String> {
     if !command.response.is_empty() {
         return Err("a typed response (`response:`)".to_owned());
     }
+    uncompensated(command)?;
     let guarded = subject_guarded(command);
     let lifecycle = command.outcomes.iter().any(|outcome| {
         matches!(
