@@ -400,6 +400,7 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::AggregateUnwitnessed { .. }
         | RefusalCause::InvariantUnobservable { .. }
         | RefusalCause::RefusalUndeclared { .. }
+        | RefusalCause::InstantComparisonUntagged { .. }
         | RefusalCause::AbsenceUnwitnessed { .. } => Effect::CheckNotEmitted,
         RefusalCause::NoWitness(_)
         | RefusalCause::GuardUnevaluable(_)
@@ -500,7 +501,11 @@ fn coverage_version(
         || crate::grant::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
     crate::scenario::SuiteFormat::parse(
-        if crate::no_invocation::used_by(suite) || crate::no_invocation::refused_in(inventory) {
+        if crate::expression_format::coverage_floor(suite).is_some() {
+            "ess-conformance/41"
+        } else if crate::no_invocation::used_by(suite)
+            || crate::no_invocation::refused_in(inventory)
+        {
             "ess-conformance/37"
         } else if suite.provenance.scenario_initial_state.is_some()
             || crate::one_time_response::used_by(suite)

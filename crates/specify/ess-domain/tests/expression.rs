@@ -129,6 +129,7 @@ fn path(text: &str) -> FactPath {
 }
 fn compare(left: &str, right: &str) -> Predicate {
     Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: Operand::Fact(path(left)),
         op: CompareOp::Eq,
         right: Operand::Fact(path(right)),
@@ -212,6 +213,7 @@ fn scalar_operand_contract_is_distinct_from_nominal_assignment_and_satisfiabilit
         predicate("{note: {exists: true}}"),
         predicate("{amount: {any_of: []}}"),
         Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Literal(FactValue::Bool(true)),
             op: CompareOp::Eq,
             right: Operand::Literal(FactValue::Bool(false)),
@@ -244,6 +246,7 @@ fn every_operand_membership_item_and_dead_ast_child_is_checked() {
             Predicate::Not(Box::new(compare("flag", "text"))),
         ]),
         Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Literal(FactValue::Bool(true)),
             op: CompareOp::Eq,
             right: Operand::Literal(FactValue::text("true")),
@@ -574,6 +577,7 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
 fn enum_literal_cases(variant: &str) -> Vec<(String, Predicate)> {
     let literal = || Operand::Literal(FactValue::text(variant));
     let eq = |left: Operand, right: Operand| Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left,
         op: CompareOp::Eq,
         right,
@@ -588,6 +592,7 @@ fn enum_literal_cases(variant: &str) -> Vec<(String, Predicate)> {
         (
             "inequality".to_owned(),
             Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: Operand::Fact(path("state")),
                 op: CompareOp::Ne,
                 right: literal(),

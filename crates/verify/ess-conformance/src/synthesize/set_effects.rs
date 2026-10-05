@@ -245,7 +245,13 @@ fn written_in(filter: &Predicate, read: &dyn Fn(&FactPath) -> Option<FactValue>)
                 .collect(),
         ),
         Predicate::Not(inner) => Predicate::Not(Box::new(written_in(inner, read))),
-        Predicate::Compare { left, op, right } => Predicate::Compare {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => Predicate::Compare {
+            kind: *kind,
             left: operand(left),
             op: *op,
             right: operand(right),
@@ -316,7 +322,9 @@ impl Selection<'_> {
                 })
             }
             Predicate::Not(inner) => return self.truth_of(inner, row).not(),
-            Predicate::Compare { left, op, right } if self.symbolic(predicate) => {
+            Predicate::Compare {
+                left, op, right, ..
+            } if self.symbolic(predicate) => {
                 let instance = |operand: &Operand| {
                     let Operand::Fact(path) = operand else {
                         return None;
@@ -388,6 +396,7 @@ impl Selection<'_> {
                 left: Operand::Fact(left),
                 op,
                 right: Operand::Fact(right),
+                ..
             } if matches!(op, CompareOp::Eq | CompareOp::Ne) => {
                 let (instance, field) = self
                     .symbols

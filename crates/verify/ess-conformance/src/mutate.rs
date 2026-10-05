@@ -683,7 +683,10 @@ fn flip_equality(node: &mut Predicate) {
 fn outward(node: &Predicate) -> Option<Predicate> {
     use ess_primitives::facts::{FactValue, Number};
     use ess_primitives::predicate::Operand;
-    let Predicate::Compare { left, op, right } = node else {
+    let Predicate::Compare {
+        left, op, right, ..
+    } = node
+    else {
         return None;
     };
     let step = |value: &FactValue, by: i64| -> Option<Operand> {
@@ -709,6 +712,7 @@ fn outward(node: &Predicate) -> Option<Predicate> {
         _ => return None,
     };
     Some(Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left,
         op: *op,
         right,
@@ -1628,6 +1632,7 @@ fn equality_tests(
             left,
             op: CompareOp::Eq | CompareOp::Ne,
             right,
+            ..
         } => match (left, right) {
             (Operand::Fact(path), Operand::Literal(value))
             | (Operand::Literal(value), Operand::Fact(path)) => {

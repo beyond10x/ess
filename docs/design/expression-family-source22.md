@@ -753,3 +753,37 @@ Implementation follows the review's unit cut: U1 resolver and A1, U2 offsets, U3
 occurrence clock and history 2 (in parallel with U1–U3), U5 `now` over stored rows, U6 `distinct`,
 U7 UTF-8 byte length, U8 row sets and filtered reads, U9 typed text operands; integration in that
 order, with U4 before U5.
+
+## U1 implementation seams (2026-10-04)
+
+Refreshed citations for the seams unit U1 (resolver, A1, decision 2 tagging, the /40–/41 pair)
+changed. The citations above describe the tree the design was written against and are kept as
+that record.
+
+- Lexical capture: `Predicate::from_node_spelled` / `parse_expression_spelled` and `Spelled`
+  (`crates/specify/ess-primitives/src/predicate.rs`, `Operand::parse_in` at :392); the lexical
+  tree, the per-site capture `Written::from_document` and `resolutions` in
+  `crates/specify/ess-domain/src/expression/lexical.rs`; the source document is read beside the
+  typed fields in `RawSpecFile::parse` and resolved after assembly in `Specification::resolve_written`
+  (`crates/specify/ess-domain/src/spec.rs`).
+- Resolver and checker: `resolve_lexical` (:818), `read_input_namespace`, the instant tagging and
+  `check_predicate` (:1045) in `crates/specify/ess-domain/src/expression.rs`; the format gate and
+  shadowing rule beside `Checker::compare` (:1550); the quoted-root refusal in `text_literal`
+  (:1258); the identity-token ordering refusal `identity_orderings` in `lexical.rs`.
+- Canonical forms and evaluation: `CompareKind` and `Predicate::Compare { kind }`, `to_node`
+  (:2002), `Display` through `InScope` (:2364), the tagged reader `tagged_compare` and the instant
+  branch of `evaluate_compare` (:943) in `predicate.rs`.
+- Suite format: `crates/verify/ess-conformance/src/expression_format.rs`; the registered majors
+  `SUPPORTED_SUITE_FORMATS` (`scenario.rs:401`); the Go emitter cap (`go/mod.rs:370`) and runtime
+  `suiteMajor`/`suiteMajorsNotRead`, `admitFactOperand`, `predicateUsesFactOperand`
+  (`go/runtime.go`); the TypeScript `SUITE_MAJORS`, `admitFactOperand`, `predicateUsesFactOperand`
+  (`ts/runtime.ts`) and emitter cap (`ts/mod.rs:66`); readers `parseFactOperand` and
+  `parseTaggedCompare` in `go/predicate.go` (:313, :412) and `ts/predicate.ts` (:548, :822); the
+  shared vectors `crates/specify/ess-primitives/tests/vectors/root-fact-operand.json` and
+  `rfc3339-instants.json`.
+- Synthesis: `RefusalCause::InstantComparisonUntagged` (`ESS-SYNTH-021`) and `untagged_instants`,
+  and the shared-witness instance binding in `supply` (`crates/verify/ess-conformance/src/synthesize.rs`).
+- Generated guards: `Kind::Instant` in `crates/generate/ess-synth/src/determined.rs`;
+  `compare_instants` / `compareInstants` in `rust/behaviour.rs` and `go/behaviour.rs`.
+- Diff: `written_condition` (:1007) and `written_invariants` (:370) in
+  `crates/verify/ess-diff/src/diff.rs`.

@@ -216,6 +216,23 @@ pub mod subject_state;
 pub use outcome_shapes::{fixture_of as precondition_fixture, precondition_branch, Accepts};
 pub(crate) mod value_expression;
 
+std::thread_local! {
+    /// Whether the commands being converted belong to an `ess/22` source, where a guard may read
+    /// `input.<field>` (`docs/design/expression-family-source22.md`, A1). Set only while
+    /// [`crate::spec::Specification::assemble`] converts a source whose header it has read;
+    /// everywhere else a command converts as it did below `ess/22`.
+    static READS_INPUT_NAMESPACE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `convert` with `input.<field>` admitted in a guard when `admitted`, restoring what was set
+/// before, so a nested assembly cannot leak its format into its caller's.
+pub(crate) fn converting_input_namespace<T>(admitted: bool, convert: impl FnOnce() -> T) -> T {
+    let before = READS_INPUT_NAMESPACE.with(|cell| cell.replace(admitted));
+    let converted = convert();
+    READS_INPUT_NAMESPACE.with(|cell| cell.set(before));
+    converted
+}
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Write as _;
@@ -604,6 +621,7 @@ impl OutcomeCondition {
         match self {
             Self::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
             Self::SubjectField { field, equals, .. } => Some(Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: ess_primitives::predicate::Operand::Fact(
                     ess_primitives::facts::FactPath::new(field).ok()?,
                 ),
@@ -2679,6 +2697,17 @@ impl CommandSpec {
             if !inputs.contains(root) {
                 // `caller.<attribute>` (ess/16) is checked with the actors in hand.
                 if caller_value::is_caller_path(path, &self.input) {
+                    continue;
+                }
+                // `input.<field>` reads that input in an `ess/22` source; below it the root is
+                // refused here, as it always was.
+                if READS_INPUT_NAMESPACE.with(std::cell::Cell::get)
+                    && root == subject_fact::INPUT_NAMESPACE
+                    && path
+                        .segments()
+                        .get(1)
+                        .is_some_and(|field| inputs.contains(field.as_str()))
+                {
                     continue;
                 }
                 errors.push(

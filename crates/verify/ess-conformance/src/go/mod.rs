@@ -367,7 +367,7 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 37;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 41;
 
 /// The oldest suite major the generated runners execute only under an explicit
 /// `ESS_REPORT_FORMAT=2`: `/5` through `/7` and `/8` onwards, the two gates in `Run` / `runWith`.
@@ -397,6 +397,19 @@ pub(crate) fn refuse_unadmitted(
             format!(
                 "the generated {target} runner admits suite versions up to \
                  `ess-conformance/{NEWEST_ADMITTED_SUITE_MAJOR}` and would refuse `{version}`; \
+                 regenerate using a supported suite version"
+            ),
+        ));
+    }
+    // A major below the newest that other work has allocated and no runner here reads yet
+    // (`/38` and `/39` beside the binding pair `/36`–`/37` and the expression pair `/40`–`/41`).
+    if !version.is_supported() {
+        return Err(crate::admission::AdmissionError::new(
+            "UnsupportedTarget",
+            "$.provenance.suite_version",
+            format!(
+                "the generated {target} runner admits suite versions up to `ess-conformance/37`, \
+                 then `ess-conformance/40` and `ess-conformance/41`, and would refuse `{version}`; \
                  regenerate using a supported suite version"
             ),
         ));

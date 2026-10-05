@@ -343,7 +343,7 @@ pub fn reads_state(predicate: &ess_primitives::predicate::Predicate) -> bool {
 ///
 /// A `when_related` predicate reads the related row through the same list, from `ess/20`
 /// (beyond10x/ess#229).
-pub(super) fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types::Field> {
+pub(crate) fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types::Field> {
     let mut fields = entity.fields.clone();
     if admits_state
         && !entity

@@ -146,6 +146,7 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
             left: Operand::Fact(path),
             op,
             right: Operand::Literal(value),
+            ..
         } => {
             let ess_primitives::facts::FactValue::Text(value) = value else {
                 unreachable!()

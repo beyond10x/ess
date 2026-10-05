@@ -1613,7 +1613,13 @@ fn remapped(
                 .collect(),
         ),
         Predicate::Not(inner) => Predicate::Not(Box::new(remapped(inner, map, bound))),
-        Predicate::Compare { left, op, right } => Predicate::Compare {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => Predicate::Compare {
+            kind: *kind,
             left: operand(left),
             op: *op,
             right: operand(right),
@@ -1680,7 +1686,9 @@ fn ordered_at(guards: &[&Predicate], path: &FactPath) -> bool {
                 children.iter().any(|child| walk(child, path))
             }
             Predicate::Not(inner) => walk(inner, path),
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 op.needs_ordering()
                     && [left, right]
                         .into_iter()
@@ -1704,7 +1712,9 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
             }
         }
         Predicate::Not(inner) => collect_literals(inner, path, found),
-        Predicate::Compare { left, op: _, right } => {
+        Predicate::Compare {
+            left, op: _, right, ..
+        } => {
             for (operand, other) in [(left, right), (right, left)] {
                 if matches!(operand, Operand::Fact(read) if read == path) {
                     if let Operand::Literal(value) = other {
@@ -2353,6 +2363,7 @@ fn fact_comparisons(guards: &[&Predicate]) -> Vec<(FactPath, CompareOp, FactPath
                 left: Operand::Fact(left),
                 op,
                 right: Operand::Fact(right),
+                ..
             } => {
                 let triple = (left.clone(), *op, right.clone());
                 if !found.contains(&triple) {

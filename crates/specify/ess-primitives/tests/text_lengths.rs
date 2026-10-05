@@ -56,6 +56,7 @@ fn store(facts: &serde_json::Map<String, serde_json::Value>) -> FactStore {
 
 fn compare(at: &str, value: f64) -> Predicate {
     Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: ess_primitives::predicate::Operand::Fact(path(at)),
         op: ess_primitives::predicate::CompareOp::Eq,
         right: ess_primitives::predicate::Operand::Literal(
@@ -116,6 +117,7 @@ fn samples() -> Vec<Predicate> {
         yaml("keys.count == 3"),
         // The literal on the left: the grammar writes a fact first, so this side is built.
         Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: ess_primitives::predicate::Operand::Literal(FactValue::count(3)),
             op: ess_primitives::predicate::CompareOp::Eq,
             right: ess_primitives::predicate::Operand::Fact(path("keys.count")),

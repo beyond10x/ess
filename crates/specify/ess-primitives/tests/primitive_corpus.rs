@@ -163,6 +163,7 @@ fn every_text_ordering_vector_is_the_ordering_the_evaluator_answers() {
             (CompareOp::Ge, expected != Ordering::Less),
         ] {
             let predicate = Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: Operand::Fact(FactPath::new("caller").expect("a path")),
                 op,
                 right: Operand::Literal(FactValue::text(&vector.right)),

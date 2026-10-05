@@ -90,13 +90,22 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 37
+const newestSuiteMajor = 41
+
+// suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
+// runtime has no reader for yet. A suite labelled with one is refused by version, never read as
+// the next lower major. Suite/40 and /41 (the persisted expression vocabulary,
+// docs/design/expression-family-source22.md) are cumulative over them.
+var suiteMajorsNotRead = map[int]bool{38: true, 39: true}
 
 // suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
 // Each major implies every major below it, so one number answers every "does this suite carry X"
 // question the admission asks.
 func suiteMajor(version string) int {
 	for major := 1; major <= newestSuiteMajor; major++ {
+		if suiteMajorsNotRead[major] {
+			continue
+		}
 		if version == "ess-conformance/"+strconv.Itoa(major) {
 			return major
 		}
@@ -1771,7 +1780,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /35 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /41 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -4747,6 +4756,22 @@ func admitPredicateEnvelope(value any, depth int) error {
 				if err := admitPredicateEnvelope(child, depth+1); err != nil {
 					return err
 				}
+			case "compare":
+				if fields, ok := child.(map[string]any); ok {
+					if _, tagged := fields["left"]; tagged {
+						// A tagged comparison (suite/40); admitPredicateVersion gates the major.
+						if _, err := parseTaggedCompare(fields, nil); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				if err := admitPredicatePath(key); err != nil {
+					return err
+				}
+				if err := admitPredicateConstraint(child); err != nil {
+					return err
+				}
 			case "forall", "exists":
 				fields, err := closed(child, "in as that", "")
 				if err != nil {
@@ -4778,6 +4803,16 @@ func admitPredicateEnvelope(value any, depth int) error {
 	return nil
 }
 
+// admitFactOperand admits exactly `{fact: <path>}`, the canonical one-segment fact operand
+// (docs/design/expression-family-source22.md, A1).
+func admitFactOperand(operand map[string]any) error {
+	path, ok := operand["fact"].(string)
+	if len(operand) != 1 || !ok || !factPath.MatchString(path) {
+		return fmt.Errorf("a comparison operand must be a scalar, or {fact: <path>} naming a fact")
+	}
+	return nil
+}
+
 func admitPredicateScalar(value any) error {
 	switch value.(type) {
 	case bool, string, json.Number:
@@ -4802,6 +4837,13 @@ func admitPredicateConstraint(value any) error {
 		for operator, operand := range node {
 			switch operator {
 			case "eq", "equals", "==", "ne", "not_equals", "!=", "lt", "<", "le", "lte", "<=", "gt", ">", "ge", "gte", ">=":
+				if fact, ok := operand.(map[string]any); ok {
+					// The explicit fact operand (suite/40); admitPredicateVersion gates the major.
+					if err := admitFactOperand(fact); err != nil {
+						return err
+					}
+					continue
+				}
 				if err := admitPredicateScalar(operand); err != nil {
 					return err
 				}
@@ -7941,7 +7983,48 @@ func admitPredicateVersion(value any, major int) error {
 	if major < 14 && predicateUsesTextMatch(value) {
 		return fmt.Errorf("string predicate operators require suite/14 or /15")
 	}
+	if major < 40 && predicateUsesFactOperand(value) {
+		return fmt.Errorf("a one-segment fact operand {fact: …} requires suite/40 or /41")
+	}
+	if major < 40 && predicateUsesOperator(value, "left") {
+		return fmt.Errorf("a comparison tagged as: timestamp requires suite/40 or /41")
+	}
 	return nil
+}
+
+// predicateUsesFactOperand walks the admitted grammar for the explicit fact operand `{fact: …}`
+// (suite/40, docs/design/expression-family-source22.md A1).
+func predicateUsesFactOperand(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesFactOperand(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesFactOperand(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesFactOperand(fields["that"]) {
+					return true
+				}
+			default:
+				if operators, ok := child.(map[string]any); ok {
+					for _, operand := range operators {
+						if _, ok := operand.(map[string]any); ok {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // predicateUsesOperator walks the admitted grammar for a constraint operator named in operators:

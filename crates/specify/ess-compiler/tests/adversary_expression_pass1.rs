@@ -156,6 +156,7 @@ fn reverse_enum_literals_and_fact_operands_follow_the_same_representation_rules(
         (FactValue::Bool(false), Some(ValidationCode::TypeMismatch)),
     ] {
         let predicate = Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Literal(literal),
             op: CompareOp::Eq,
             right: Operand::Fact(FactPath::new("phase").unwrap()),
@@ -164,6 +165,7 @@ fn reverse_enum_literals_and_fact_operands_follow_the_same_representation_rules(
         assert_eq!(result.errors.first().map(|error| error.code), expected);
     }
     let predicate = Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: Operand::Fact(FactPath::new("entry.phase").unwrap()),
         op: CompareOp::Eq,
         right: Operand::Fact(FactPath::new("phase").unwrap()),

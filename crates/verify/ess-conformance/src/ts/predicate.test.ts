@@ -21,6 +21,8 @@ import test from 'node:test';
 
 import {
   Operand,
+  compareInstants,
+  parseInstant,
   Predicate,
   admitPredicateExpression,
   admitPredicateLeaf,
@@ -1110,5 +1112,88 @@ test('a bare word naming a binder in scope reads the binder, and every other spe
   ];
   for (const [name, predicate, values, want] of vectors) {
     assert.equal(parsePredicate(predicate).evaluate(facts(values)), want, name);
+  }
+});
+
+// ---- the explicit fact operand (docs/design/expression-family-source22.md, A1) --------------
+
+test('the explicit fact operand answers the shared vectors', () => {
+  // `crates/specify/ess-primitives/tests/vectors/root-fact-operand.json`, which
+  // `tests/root_fact_operand.rs` and `tests/fixtures/root-fact-operand.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/root-fact-operand.json';
+  let directory = import.meta.dirname;
+  let vectors:
+    | {
+        evaluate: { name: string; predicate: Node; row: Row; truth: string }[];
+        refused: { name: string; predicate: Node }[];
+      }
+    | undefined;
+  for (let depth = 0; depth < 12 && vectors === undefined; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) vectors = JSON.parse(readFileSync(candidate, 'utf8'));
+    directory = dirname(directory);
+  }
+  assert.ok(vectors, `the vectors are at ${relative}`);
+  const names = new Map<Truth, string>([
+    [TruthTrue, 'true'],
+    [TruthFalse, 'false'],
+    [TruthUnknown, 'unknown'],
+  ]);
+  assert.ok(vectors.evaluate.length > 0 && vectors.refused.length > 0);
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(vector.predicate).evaluate(facts(vector.row));
+    assert.equal(names.get(truth), vector.truth, vector.name);
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(vector.predicate), vector.name);
+  }
+});
+
+// ---- instants and the tagged comparison (decisions 2 and 14) --------------------------------
+
+test('a1_timestamp_sibling_instant_order: the shared instant vectors', () => {
+  // `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json`, which
+  // `tests/instant_comparison.rs` and `tests/fixtures/instant-comparison.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json';
+  let directory = import.meta.dirname;
+  let vectors:
+    | {
+        parse: { text: string; valid: boolean }[];
+        order: { left: string; right: string; ordering: string }[];
+        tagged: { name: string; predicate: Node; row: Row; truth: string }[];
+        refused: { name: string; predicate: Node }[];
+      }
+    | undefined;
+  for (let depth = 0; depth < 12 && vectors === undefined; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) vectors = JSON.parse(readFileSync(candidate, 'utf8'));
+    directory = dirname(directory);
+  }
+  assert.ok(vectors, `the vectors are at ${relative}`);
+  for (const vector of vectors.parse) {
+    assert.equal(parseInstant(vector.text) !== undefined, vector.valid, vector.text);
+  }
+  const orderings = new Map([
+    ['less', -1],
+    ['equal', 0],
+    ['greater', 1],
+  ]);
+  for (const vector of vectors.order) {
+    const left = parseInstant(vector.left);
+    const right = parseInstant(vector.right);
+    assert.ok(left && right, `${vector.left} ${vector.right}`);
+    assert.equal(compareInstants(left, right), orderings.get(vector.ordering));
+  }
+  const names = new Map<Truth, string>([
+    [TruthTrue, 'true'],
+    [TruthFalse, 'false'],
+    [TruthUnknown, 'unknown'],
+  ]);
+  for (const vector of vectors.tagged) {
+    const truth = parsePredicate(vector.predicate).evaluate(facts(vector.row));
+    assert.equal(names.get(truth), vector.truth, vector.name);
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(vector.predicate), vector.name);
   }
 });

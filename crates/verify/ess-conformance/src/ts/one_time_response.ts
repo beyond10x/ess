@@ -607,7 +607,12 @@ export function admitDisclosureId(
   trace: OneTimeTrace,
   version: string,
 ): DisclosureCell {
-  if (!['ess-conformance/34', 'ess-conformance/35'].includes(version)) return fail();
+  if (
+    !['ess-conformance/34', 'ess-conformance/35'].includes(version) &&
+    !['ess-conformance/40', 'ess-conformance/41'].includes(version)
+  ) {
+    return fail();
+  }
   const cell = parseDisclosureId(id);
   if (
     !trace.required_origins.some((origin) => equal(origin, cell.origin)) ||

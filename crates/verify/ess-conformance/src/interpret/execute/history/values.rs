@@ -583,7 +583,10 @@ fn tighten(
         }
         return;
     }
-    let Predicate::Compare { left, op, right } = predicate else {
+    let Predicate::Compare {
+        left, op, right, ..
+    } = predicate
+    else {
         return;
     };
     let (path, number, op) = match (left, right) {

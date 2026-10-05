@@ -530,6 +530,9 @@ fn helpers(out: &mut String, uses: &Uses) {
     if uses.helpers.contains("compare_numbers") {
         out.push_str(COMPARE_NUMBERS);
     }
+    if uses.helpers.contains("compare_instants") {
+        out.push_str(COMPARE_INSTANTS);
+    }
     for (helper, text) in QUERY_HELPERS {
         if uses.helpers.contains(helper) {
             out.push_str(text);
@@ -586,6 +589,85 @@ fn compare_numbers(
         (false, true) => core::cmp::Ordering::Greater,
     };
     Some(accepts(ordering))
+}
+";
+
+/// A guard's comparison of two `Timestamp` facts by the instants they name
+/// (`docs/design/expression-family-source22.md`, decision 2).
+const COMPARE_INSTANTS: &str = "
+/// Compares two RFC 3339 renderings by the instant each names; an unread one, or one that names
+/// no instant, is Unknown — never ordered by its spelling.
+fn compare_instants(
+    left: Option<String>,
+    right: Option<String>,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    Some(accepts(instant_of(&left?)?.cmp(&instant_of(&right?)?)))
+}
+
+/// The instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds.
+fn instant_of(text: &str) -> Option<(i64, u32)> {
+    let bytes = text.as_bytes();
+    let digits = |from: usize, to: usize| -> Option<u32> {
+        let slice = bytes.get(from..to)?;
+        if slice.is_empty() || !slice.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        slice
+            .iter()
+            .try_fold(0u32, |total, digit| Some(total * 10 + u32::from(digit - b'0')))
+    };
+    let at = |index: usize, expected: &[u8]| bytes.get(index).is_some_and(|b| expected.contains(b));
+    if !(at(4, b\"-\") && at(7, b\"-\") && at(10, b\"Tt\") && at(13, b\":\") && at(16, b\":\")) {
+        return None;
+    }
+    let (year, month, day) = (i64::from(digits(0, 4)?), digits(5, 7)?, digits(8, 10)?);
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let length = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    let (hour, minute, second) = (digits(11, 13)?, digits(14, 16)?, digits(17, 19)?);
+    if day < 1 || day > length || hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    let mut position = 19;
+    let mut nanos = 0u32;
+    if at(position, b\".\") {
+        let mut end = position + 1;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        let width = end - position - 1;
+        if width == 0 || width > 9 {
+            return None;
+        }
+        nanos = digits(position + 1, end)? * 10u32.pow(u32::try_from(9 - width).ok()?);
+        position = end;
+    }
+    let offset = match bytes.get(position..)? {
+        b\"Z\" | b\"z\" => 0i64,
+        [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
+            let (hours, minutes) = (digits(position + 1, position + 3)?, digits(position + 4, position + 6)?);
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            let magnitude = i64::from(hours * 3600 + minutes * 60);
+            if *sign == b'-' { -magnitude } else { magnitude }
+        }
+        _ => return None,
+    };
+    let shifted = if month <= 2 { year - 1 } else { year };
+    let era = shifted.div_euclid(400);
+    let of_era = shifted - era * 400;
+    let march = i64::from(if month > 2 { month - 3 } else { month + 9 });
+    let of_year = (153 * march + 2) / 5 + i64::from(day) - 1;
+    let of_cycle = of_era * 365 + of_era / 4 - of_era / 100 + of_year;
+    let days = era * 146_097 + of_cycle - 719_468;
+    Some((days * 86_400 + i64::from(hour * 3600 + minute * 60 + second) - offset, nanos))
 }
 ";
 
@@ -1401,6 +1483,7 @@ impl Writer<'_> {
                 let path = ess_primitives::facts::FactPath::new(field)
                     .expect("the compiler admitted the field");
                 let compare = Predicate::Compare {
+                    kind: ess_primitives::predicate::CompareKind::Value,
                     left: Operand::Fact(path),
                     op: CompareOp::Eq,
                     right: Operand::Literal(FactValue::Text(equals.clone())),
@@ -2102,7 +2185,9 @@ impl Guards<'_> {
                 let resolved = self.resolve(env, path);
                 self.read(&resolved)
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 let kind = [left, right]
                     .into_iter()
                     .find_map(|operand| match operand {
@@ -2112,8 +2197,14 @@ impl Guards<'_> {
                     .expect("the plan admits comparisons reading a fact");
                 let left = self.operand(env, left, &kind);
                 let right = self.operand(env, right, &kind);
-                if let Kind::Number(_) = kind {
-                    self.uses.helpers.insert("compare_numbers");
+                if let Kind::Number(_) | Kind::Instant = kind {
+                    // Two `Timestamp`s compare by the instants they name (decision 2).
+                    let helper = if kind == Kind::Instant {
+                        "compare_instants"
+                    } else {
+                        "compare_numbers"
+                    };
+                    self.uses.helpers.insert(helper);
                     let accepts = match op {
                         CompareOp::Eq => "is_eq",
                         CompareOp::Ne => "is_ne",
@@ -2122,7 +2213,7 @@ impl Guards<'_> {
                         CompareOp::Gt => "is_gt",
                         CompareOp::Ge => "is_ge",
                     };
-                    format!("compare_numbers({left}, {right}, core::cmp::Ordering::{accepts})")
+                    format!("{helper}({left}, {right}, core::cmp::Ordering::{accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
                     let equal = format!("equal({left}, {right})");
@@ -2213,7 +2304,9 @@ impl Guards<'_> {
     /// rendering and a `bool` as `true` or `false`.
     fn text(&mut self, resolved: &Resolved) -> String {
         match &resolved.kind {
-            Kind::Opaque => format!("{}.map(|value| value.0.clone())", self.reference(resolved)),
+            Kind::Opaque | Kind::Instant => {
+                format!("{}.map(|value| value.0.clone())", self.reference(resolved))
+            }
             Kind::Bool => format!("{}.map(|value| value.to_string())", self.read(resolved)),
             _ => self.read(resolved),
         }
@@ -2228,7 +2321,9 @@ impl Guards<'_> {
         }
         let leaf = leaf_type(self.ir, resolved);
         match &resolved.kind {
-            Kind::Number(Primitive::Decimal) => format!("{reference}.map(|value| value.0.clone())"),
+            Kind::Number(Primitive::Decimal) | Kind::Instant => {
+                format!("{reference}.map(|value| value.0.clone())")
+            }
             Kind::Number(_) => format!("{reference}.map(|value| value.to_string())"),
             Kind::Text => match leaf {
                 Some(Primitive::String) => format!("{reference}.map(|value| value.clone())"),

@@ -679,7 +679,13 @@ fn write_predicate(
                 .collect(),
         ),
         Predicate::Not(child) => Predicate::Not(Box::new(write_predicate(child, fact))),
-        Predicate::Compare { left, op, right } => Predicate::Compare {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => Predicate::Compare {
+            kind: *kind,
             left: operand(left),
             op: *op,
             right: operand(right),

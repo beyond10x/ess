@@ -806,6 +806,21 @@ pub enum RefusalCause {
         /// The state the entity is in when the assertion would run.
         state: StateName,
     },
+    /// An `ess/22` invariant compares two `Timestamp` facts without the tag that says to compare
+    /// them as instants (`docs/design/expression-family-source22.md`, final review decision 2).
+    ///
+    /// A view row carries no declared types, so a suite runner reading the untagged comparison
+    /// could only compare the two spellings, which order `12:00:00+01:00` after `11:30:00Z`. The
+    /// resolver tags every such comparison it reads from a source; one that arrives untagged —
+    /// assembled directly, or from a site no resolver reached — is not asserted on a view row.
+    InstantComparisonUntagged {
+        /// Whose invariant.
+        entity: EntityRef,
+        /// The condition, as the author wrote it.
+        invariant: String,
+        /// Each untagged pair of `Timestamp` facts, left then right.
+        pairs: Vec<(FactPath, FactPath)>,
+    },
     /// §19's rejection mechanism, which this command does not declare.
     ///
     /// A command attempted against an instance in a state none of its transitions run from **is**
@@ -953,6 +968,10 @@ pub const PRECEDENCE_CONTRADICTED: u16 = 19;
 /// [`PRECEDENCE_CONTRADICTED`] (ess/22, beyond10x/ess#285).
 pub const ABSENCE_UNWITNESSED: u16 = 20;
 
+/// `RefusalCause::InstantComparisonUntagged`'s number in the `SYNTH` family, the next after
+/// [`ABSENCE_UNWITNESSED`] (`docs/design/expression-family-source22.md`, decision 2).
+pub const INSTANT_UNTAGGED: u16 = 21;
+
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
 /// to point it at.
@@ -1090,6 +1109,11 @@ impl RefusalCause {
             Self::RefusalUndeclared { .. } => {
                 "give the command a `wrong_state:` outcome naming the error it reports; the states \
                  it answers in are already declared, as the states its transitions do not run from"
+            }
+            Self::InstantComparisonUntagged { .. } => {
+                "write the comparison in the source, where ess/22 tags two Timestamp facts to \
+                 compare as instants, or write the tagged form `{compare: {left, op, right, as: \
+                 timestamp}}`"
             }
             Self::ValueInvariantUnwitnessed { at: None, .. } => {
                 "publish a field that holds a value of this type in some view — outside a list, a \
@@ -1262,6 +1286,11 @@ crate::authored::diagnostic_catalogue! {
             "fill the reference from an Optional input that the branch, or the branch creating \
              the row that holds it, can be sent without; or cover the absent value with an \
              authored scenario (ess-scenario/1)";
+        Self::InstantComparisonUntagged { .. } => INSTANT_UNTAGGED,
+            "An invariant compares two Timestamp facts without the tag that compares them as \
+             instants.",
+            "write the comparison in an ess/22 source, which tags it, or write \
+             `{compare: {left, op, right, as: timestamp}}`";
     }
 }
 
@@ -1335,6 +1364,21 @@ impl fmt::Display for RefusalCause {
                  longer than the {bound} characters or elements this synthesizer builds"
             ),
             Self::DuplicateScenario => f.write_str("a second scenario claimed this id"),
+            Self::InstantComparisonUntagged {
+                entity,
+                invariant,
+                pairs,
+            } => {
+                write!(
+                    f,
+                    "`{entity}` invariant `{invariant}` compares Timestamp facts without the \
+                     `as: timestamp` tag, so a view row could only be read by spelling:"
+                )?;
+                for (left, right) in pairs {
+                    write!(f, "\n  - `{left}` with `{right}`")?;
+                }
+                Ok(())
+            }
             Self::StrategyWithoutGuard {
                 strategy: strategy @ TestStrategy::ObserveSubjectFact,
             } => write!(
@@ -4985,12 +5029,68 @@ fn supply(
         ResolvedInstance::Supplied { field } => Some(field.name.as_str()),
         ResolvedInstance::Observed { .. } => None,
     });
+    // Two identity inputs a guard holds equal (`task_id == depends_on`, beyond10x/ess#225) were
+    // given one witness value; they name one arranged instance, never a second row arranged for
+    // the other (`docs/design/expression-family-source22.md`, decision 9). Only such a pair: an
+    // equality of two one-segment input facts, which only an `ess/22` source writes, between two
+    // inputs of one declared type, so two references to one entity. Every other input keeps the
+    // row its own arrangement made, as before, even where two witnesses happen to be equal.
+    let held_equal = |field: &str| -> Option<&str> {
+        let declared = |name: &str| {
+            command
+                .input
+                .iter()
+                .find(|candidate| candidate.name == name)
+                .map(|candidate| &candidate.type_ref)
+        };
+        equal_input_pairs(command)
+            .into_iter()
+            .find_map(|(left, right)| {
+                let other = if left == field {
+                    right
+                } else if right == field {
+                    left
+                } else {
+                    return None;
+                };
+                (declared(field).is_some()
+                    && declared(field) == declared(other)
+                    && input.get(field).is_some()
+                    && input.get(field) == input.get(other))
+                .then_some(other)
+            })
+    };
+    let owner_of = |field: &str| -> Option<InstanceName> {
+        match (named, instance) {
+            (Some(named), Some(subject)) if named == field => Some(subject.clone()),
+            _ => bound.get(field).cloned(),
+        }
+    };
     input
         .iter()
         .map(|(field, value)| {
+            let shared = held_equal(field)
+                .filter(|_| bound.contains_key(field.as_str()))
+                .and_then(|other| {
+                    // The subject's row where it is one of the two; otherwise the row of the first
+                    // of the two, by name, that names one.
+                    let (first, second) = if other < field.as_str() {
+                        (other, field.as_str())
+                    } else {
+                        (field.as_str(), other)
+                    };
+                    if named.is_some_and(|named| named == first || named == second) {
+                        instance.cloned()
+                    } else {
+                        owner_of(first).or_else(|| owner_of(second))
+                    }
+                });
             let supplied = match (named, instance) {
                 (Some(named), Some(subject)) if named == field => {
                     ScenarioValue::instance(subject.clone())
+                }
+                _ if shared.is_some() => {
+                    ScenarioValue::instance(shared.clone().expect("matched by the guard"))
                 }
                 _ => match bound.get(field) {
                     Some(owner) => ScenarioValue::instance(owner.clone()),
@@ -9976,6 +10076,35 @@ fn recreates(steps: &[ScenarioStep], creates: &[Recreated]) -> bool {
 /// enough fresh identities inside a guard's interval for every slot a suite draws from one.
 const GUIDED_SPAN: u32 = 128;
 
+/// Every pair of the command's top-level inputs an input guard compares by `==`, by name: what an
+/// `ess/22` source writes as `task_id == depends_on` (decision 9). A dotted path is no such pair.
+fn equal_input_pairs(command: &ResolvedCommand) -> Vec<(&str, &str)> {
+    fn walk<'a>(predicate: &'a Predicate, found: &mut Vec<(&'a str, &'a str)>) {
+        match predicate {
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                op: ess_primitives::predicate::CompareOp::Eq,
+                right: Operand::Fact(right),
+                ..
+            } if left.segments().len() == 1 && right.segments().len() == 1 => {
+                found.push((left.namespace(), right.namespace()));
+            }
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for guard in input_guards(command) {
+        walk(guard, &mut found);
+    }
+    found
+}
+
 /// Every guard that reads a command's input: each branch's `when:`, an external branch's input
 /// guard, and the input half of a stored-row or related-row guard.
 pub(super) fn input_guards(command: &ResolvedCommand) -> Vec<&Predicate> {
@@ -10580,7 +10709,10 @@ fn ordered_bounds<'p>(conjuncts: &[&'p Predicate]) -> Vec<Bound<'p>> {
     use ess_primitives::predicate::CompareOp;
     let mut found = Vec::new();
     for (index, conjunct) in conjuncts.iter().enumerate() {
-        let Predicate::Compare { left, op, right } = conjunct else {
+        let Predicate::Compare {
+            left, op, right, ..
+        } = conjunct
+        else {
             continue;
         };
         let (path, op, literal) = match (left, right) {
@@ -11549,6 +11681,18 @@ fn holds_after(
     let mut steps = run.steps();
     let mut named: BTreeSet<ViewRef> = BTreeSet::new();
     for invariant in &entity.invariants {
+        let pairs = untagged_instants(ir, invariant, &entity.observable_fields());
+        if !pairs.is_empty() {
+            refusals.push(Refusal::about(
+                id,
+                RefusalCause::InstantComparisonUntagged {
+                    entity: entity_ref.clone(),
+                    invariant: invariant.statement.clone(),
+                    pairs,
+                },
+            ));
+            continue;
+        }
         let witnesses = witnesses_for(ir, invariant, views, &state, &run.settled, known.as_ref());
         if witnesses.is_empty() {
             let (unpublished, unassertable) =
@@ -11828,7 +11972,13 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
                 .collect(),
         ),
         Predicate::Not(inner) => Predicate::Not(Box::new(map_paths(inner, onto))),
-        Predicate::Compare { left, op, right } => Predicate::Compare {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => Predicate::Compare {
+            kind: *kind,
             left: operand(left),
             op: *op,
             right: operand(right),
@@ -12053,6 +12203,58 @@ fn unobserved(
             )
         })
     })
+}
+
+/// Each comparison of two `Timestamp` facts in an `ess/22` invariant that is not tagged to compare
+/// instants (decision 2). Empty below `ess/22`, whose suites keep what they always held.
+fn untagged_instants(
+    ir: &EssIr,
+    invariant: &Invariant,
+    fields: &[ess_compiler::ir::ResolvedField],
+) -> Vec<(FactPath, FactPath)> {
+    use ess_domain::expression::TypeEnvironment as _;
+    use ess_primitives::predicate::CompareKind;
+    fn pairs(predicate: &Predicate, found: &mut Vec<(FactPath, FactPath)>) {
+        match predicate {
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                right: Operand::Fact(right),
+                kind: CompareKind::Value,
+                ..
+            } => found.push((left.clone(), right.clone())),
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    pairs(child, found);
+                }
+            }
+            Predicate::Not(inner) => pairs(inner, found),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                pairs(&quantified.body, found);
+            }
+            _ => {}
+        }
+    }
+    if ir.format().major() < ess_domain::system::FormatVersion::V22.major() {
+        return Vec::new();
+    }
+    let environment = ess_compiler::expression::Environment::new(ir, fields);
+    let checked = ess_compiler::expression::check_predicate(
+        ir,
+        fields,
+        &invariant.predicate,
+        "entity invariant",
+    );
+    let instant = |path: &FactPath| {
+        checked.reads.iter().any(|read| {
+            &read.path == path
+                && read.resolution.scalar.is_some()
+                && environment.is_instant(&read.resolution.terminal)
+        })
+    };
+    let mut found = Vec::new();
+    pairs(&invariant.predicate, &mut found);
+    found.retain(|(left, right)| instant(left) && instant(right));
+    found
 }
 
 /// Every declared type a command's input reaches.
@@ -12969,6 +13171,91 @@ mod tests {
         assert!(
             rendered.contains("help:"),
             "a refusal that does not say what to change is a refusal nobody can act on: {rendered}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod instant_refusal_tests {
+    use super::*;
+    use ess_primitives::predicate::{CompareKind, CompareOp};
+
+    fn lease(format: u32) -> EssIr {
+        let text = format!(
+            "format: ess/{format}\nsystem: lease\nversion: v1\ndomain: lease.window\nentities:\n  \
+             - name: lease.window.Lease\n    identity: {{name: lease_id, type: Uuid}}\n    \
+             fields:\n      - {{name: valid_from, type: Timestamp}}\n      - {{name: valid_until, \
+             type: Timestamp}}\n      - {{name: note, type: String}}\n    lifecycle: {{initial: \
+             Open, states: [Open], terminal: [Open]}}\n"
+        );
+        let raw = ess_domain::spec::RawSpecFile::parse(&text).expect("parses");
+        let spec = ess_domain::spec::Specification::assemble([(
+            ess_domain::system::Source::new("lease.yaml"),
+            raw,
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        ess_compiler::resolve::compile(&spec, &ess_compiler::source::SourceMap::new())
+            .expect("compiles")
+    }
+
+    fn invariant(left: &str, right: &str, kind: CompareKind) -> Invariant {
+        Invariant {
+            statement: format!("{left} >= {right}"),
+            predicate: Predicate::Compare {
+                left: Operand::Fact(left.parse().unwrap()),
+                op: CompareOp::Ge,
+                right: Operand::Fact(right.parse().unwrap()),
+                kind,
+            },
+        }
+    }
+
+    /// Decision 2's refusal finds exactly the untagged pairs of two `Timestamp` facts, from ess/22.
+    #[test]
+    fn untagged_instant_pairs_are_found_only_where_the_tag_was_owed() {
+        let ir = lease(22);
+        let fields = ir
+            .entities()
+            .values()
+            .next()
+            .expect("the lease")
+            .observable_fields();
+        let untagged = invariant("valid_until", "valid_from", CompareKind::Value);
+        assert_eq!(
+            untagged_instants(&ir, &untagged, &fields),
+            vec![(
+                "valid_until".parse().unwrap(),
+                "valid_from".parse().unwrap()
+            )]
+        );
+        // The tagged form, read as a suite carries it (its kind is not named in this crate's
+        // sources, which a determinism scan reads for clock types).
+        let tagged = Invariant {
+            statement: "valid_until >= valid_from".to_owned(),
+            predicate: serde_json::from_str(
+                r#"{"compare": {"left": "valid_until", "op": "gte", "right": {"fact": "valid_from"}, "as": "timestamp"}}"#,
+            )
+            .expect("the tagged form reads"),
+        };
+        assert_eq!(untagged_instants(&ir, &tagged, &fields), Vec::new());
+        let text = invariant("note", "note", CompareKind::Value);
+        assert_eq!(untagged_instants(&ir, &text, &fields), Vec::new());
+        assert_eq!(
+            untagged_instants(&lease(21), &untagged, &fields),
+            Vec::new(),
+            "below ess/22 a suite keeps what it always held"
+        );
+        let cause = RefusalCause::InstantComparisonUntagged {
+            entity: EntityRef::new(ir.entities().values().next().unwrap().name.clone()),
+            invariant: untagged.statement.clone(),
+            pairs: untagged_instants(&ir, &untagged, &fields),
+        };
+        assert_eq!(cause.code().to_string(), "ESS-SYNTH-021");
+        assert!(
+            cause
+                .to_string()
+                .contains("`valid_until` with `valid_from`"),
+            "{cause}"
         );
     }
 }

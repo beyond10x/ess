@@ -718,6 +718,7 @@ fn scoping_equality(predicate: &Predicate) -> Option<(String, String)> {
         left: Operand::Fact(left),
         op: CompareOp::Eq,
         right: Operand::Fact(right),
+        ..
     } = predicate
     else {
         return None;

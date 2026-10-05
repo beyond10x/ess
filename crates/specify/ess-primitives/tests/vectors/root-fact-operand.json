@@ -1,0 +1,23 @@
+{
+  "about": "The explicit fact operand {fact: <path>} (docs/design/expression-family-source22.md, A1). Answered by tests/root_fact_operand.rs, the Go fixture ess-conformance/tests/fixtures/root-fact-operand.go and ess-conformance/src/ts/predicate.test.ts.",
+  "evaluate": [
+    {"name": "two equal identities", "predicate": {"task_id": {"eq": {"fact": "depends_on"}}}, "row": {"task_id": "a", "depends_on": "a"}, "truth": "true"},
+    {"name": "two different identities", "predicate": {"task_id": {"eq": {"fact": "depends_on"}}}, "row": {"task_id": "a", "depends_on": "b"}, "truth": "false"},
+    {"name": "inequality of different identities", "predicate": {"task_id": {"ne": {"fact": "depends_on"}}}, "row": {"task_id": "a", "depends_on": "b"}, "truth": "true"},
+    {"name": "the word is never the text it is spelled like", "predicate": {"task_id": {"eq": {"fact": "depends_on"}}}, "row": {"task_id": "depends_on", "depends_on": "x"}, "truth": "false"},
+    {"name": "an absent operand is unknown", "predicate": {"task_id": {"eq": {"fact": "blocked_by"}}}, "row": {"task_id": "a"}, "truth": "unknown"},
+    {"name": "an absent left side is unknown", "predicate": {"task_id": {"eq": {"fact": "blocked_by"}}}, "row": {"blocked_by": "a"}, "truth": "unknown"},
+    {"name": "a number ordered below a sibling", "predicate": {"leased": {"lte": {"fact": "capacity"}}}, "row": {"leased": 3, "capacity": 4}, "truth": "true"},
+    {"name": "a number ordered above a sibling", "predicate": {"leased": {"lte": {"fact": "capacity"}}}, "row": {"leased": 5, "capacity": 4}, "truth": "false"},
+    {"name": "a dotted path in the mapping", "predicate": {"low": {"lt": {"fact": "window.high"}}}, "row": {"low": 1, "window": {"high": 2}}, "truth": "true"},
+    {"name": "the compact word stays text", "predicate": "task_id == depends_on", "row": {"task_id": "depends_on", "depends_on": "x"}, "truth": "true"},
+    {"name": "a binder keeps its compact spelling", "predicate": {"forall": {"in": "tags", "as": "b", "that": {"tag": {"ne": {"fact": "b"}}}}}, "row": {"tag": "x", "tags": ["y", "z"]}, "truth": "true"}
+  ],
+  "refused": [
+    {"name": "a number for a path", "predicate": {"a": {"eq": {"fact": 1}}}},
+    {"name": "an extra key", "predicate": {"a": {"eq": {"fact": "b", "add": 1}}}},
+    {"name": "another key", "predicate": {"a": {"eq": {"facts": "b"}}}},
+    {"name": "no fact path", "predicate": {"a": {"eq": {"fact": "not a path"}}}},
+    {"name": "an empty mapping", "predicate": {"a": {"eq": {}}}}
+  ]
+}

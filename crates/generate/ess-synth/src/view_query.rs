@@ -61,7 +61,7 @@ fn aggregated(
         }
         match resolve(ir, entity, key)?.kind {
             Kind::Number(_) | Kind::Text | Kind::Enum(..) | Kind::State | Kind::Bool => {}
-            Kind::Opaque => {
+            Kind::Opaque | Kind::Instant => {
                 return Err(format!(
                     "the group key `{key}`, a value the generated query does not compare"
                 ))
@@ -285,7 +285,7 @@ pub(crate) fn values(ir: &EssIr, entity: &ResolvedEntity, name: &str) -> Option<
             _ => Some(Values::Other),
         },
         Kind::Enum(..) | Kind::State | Kind::Bool => Some(Values::Other),
-        Kind::Opaque => match leaf(ir, &resolved.root_type) {
+        Kind::Opaque | Kind::Instant => match leaf(ir, &resolved.root_type) {
             Some(Primitive::Timestamp) => Some(Values::Instant),
             _ => None,
         },

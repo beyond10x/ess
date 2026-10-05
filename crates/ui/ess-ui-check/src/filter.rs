@@ -268,6 +268,7 @@ fn parameter_conjuncts(predicate: &ModelPredicate, out: &mut Vec<(String, String
             left: Operand::Fact(field),
             op: CompareOp::Eq,
             right: Operand::Fact(param),
+            ..
         } => {
             let field = field.to_string();
             if let Some(param) = param.to_string().strip_prefix("param.") {

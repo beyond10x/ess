@@ -1054,6 +1054,7 @@ fn predicate_comparisons_change_operators_operands_and_fact_paths_without_cli_ef
         (CompareOp::Ge, ">="),
     ] {
         let expected = Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Fact(FactPath::new("amount").unwrap()),
             op: operator,
             right: Operand::Literal(FactValue::Number(0_i64.into())),
@@ -1062,6 +1063,7 @@ fn predicate_comparisons_change_operators_operands_and_fact_paths_without_cli_ef
         no_effect(&before, &after, "review.data", json!({"value":17}));
     }
     let expected = Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: Operand::Fact(FactPath::new("amount").unwrap()),
         op: CompareOp::Gt,
         right: Operand::Fact(FactPath::new("entry.amount").unwrap()),
@@ -1087,6 +1089,7 @@ fn predicate_boolean_text_and_membership_literals_change_without_cli_effect() {
         (
             "flag == true",
             Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: Operand::Fact(FactPath::new("flag").unwrap()),
                 op: CompareOp::Eq,
                 right: Operand::Literal(FactValue::Bool(true)),
@@ -1095,6 +1098,7 @@ fn predicate_boolean_text_and_membership_literals_change_without_cli_effect() {
         (
             "phase == Ready",
             Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: Operand::Fact(FactPath::new("phase").unwrap()),
                 op: CompareOp::Eq,
                 right: Operand::Literal(FactValue::Text("Ready".into())),

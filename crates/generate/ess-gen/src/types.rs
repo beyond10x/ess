@@ -914,7 +914,10 @@ fn integer_comparison(
     use ess_primitives::predicate::{Operand, Predicate};
     use ess_primitives::FactValue;
 
-    let Predicate::Compare { left, op, right } = &invariant.predicate else {
+    let Predicate::Compare {
+        left, op, right, ..
+    } = &invariant.predicate
+    else {
         return None;
     };
     let (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) = (left, right) else {

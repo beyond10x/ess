@@ -117,7 +117,9 @@ impl Orderings {
                 self.walk(&quantified.body, binders);
                 binders.pop();
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 let ordered = op.needs_ordering();
                 for (fact, literal) in [(left, right), (right, left)] {
                     let (Operand::Fact(path), Operand::Literal(FactValue::Text(text))) =

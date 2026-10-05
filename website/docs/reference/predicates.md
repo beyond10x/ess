@@ -190,7 +190,8 @@ The right-hand side of a comparison is read in this order:
    that binder: `t != l`.
 5. Anything else is text: `channel == Web`.
 
-A right-hand side without a dot is therefore never a field. To compare two fields, put them in one
+Through `ess/21` a right-hand side without a dot is therefore never a field (from `ess/22` see
+[a bare word names a field](#from-ess22-a-bare-word-names-a-field)). To compare two fields, put them in one
 struct and compare its members, for example `window.ends_at > window.starts_at`. See
 [order two instants](../guides/specify/fields-and-invariants.md#order-two-instants).
 
@@ -251,6 +252,46 @@ when: sku == A1 && gift
 ```yaml ess-check="when" ess-expect="synthesizes"
 when: sku == "A1 && gift"
 ```
+
+### From `ess/22`: a bare word names a field
+
+From `ess/22` (beyond10x/ess#225, #233), an unquoted word without a dot on the right of a comparison
+is decided against the declarations of the place it is written in, in this order:
+
+1. the name of a binder in scope is that binder, as before;
+2. where the left side is an enum that declares the word as a variant, it is that variant, so
+   `state == Open` keeps its meaning beside a field named `Open`;
+3. the name of a field the place reads — an input in a `when:`, a stored field in a
+   `when_subject:` or `when_related:` predicate, an `instances:` or `affects:` filter, an entity's,
+   struct's or newtype's invariant or a view's `filter:` — is that field: `task_id != depends_on`
+   compares two inputs, `leased <= capacity` two stored fields;
+4. anything else is the text it always was.
+
+A quoted word is text in every format, and one naming a field is still refused, now with the
+repair to write it unquoted. A field named `now` is that field; only where none is declared does
+`now` read the current time. A binder named like a field of the place is refused where a bare word
+would read it: rename the binder. A plain `when:` also reads `input.<field>` as that input, unless
+the command declares an input named `input`, which keeps being read as itself.
+
+A one-segment field on the right is written back as the explicit operand `{fact: depends_on}`
+(`task_id: {eq: {fact: depends_on}}`), because the compact `task_id == depends_on` reads as text
+in every earlier format. A dotted path and a binder keep their compact spelling. The explicit
+operand is an `ess/22` form: under `ess/21` and earlier it is refused as
+`unsupported_format_version`, and the bare word keeps its old meaning and its old refusal.
+
+A comparison of two `Timestamp` fields is tagged to compare the instants they name, never their
+spellings: `valid_until > valid_from` is written back as
+`{compare: {left: valid_until, op: gt, right: {fact: valid_from}, as: timestamp}}`. The tag is
+read only between two `Timestamp` facts, and only from `ess/22`. A `compare` mapping without
+`left` is still a constraint on a field named `compare`.
+
+Two inputs whose type is an entity's identity compare only by `==` and `!=`: ordering identities
+names nothing a caller supplied, and is refused as `type_mismatch`. Synthesis sends the equal case
+as one arranged instance named twice and the unequal case as two arranged instances.
+
+A suite carrying the explicit operand or the tag is written as `ess-conformance/40` (ordinary) or
+`/41` (coverage), which the Rust, Go and TypeScript runners read; a suite labelled with an earlier
+number is refused before any step runs. A suite whose comparisons need neither keeps its number.
 
 ### Absence is not `null`
 

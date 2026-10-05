@@ -123,7 +123,9 @@ fn pinned(held: &[&Predicate], path: &[&str], integral: bool) -> bool {
                     return true;
                 }
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 // Read as `path <op> literal`, flipping a literal written first.
                 let (op, literal) = match (left, right) {
                     (fact, Operand::Literal(literal)) if at(fact) => (*op, literal),

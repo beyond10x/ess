@@ -209,6 +209,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 35, None),
     ("ess-conformance", 36, None),
     ("ess-conformance", 37, None),
+    // The persisted expression vocabulary (`docs/design/expression-family-source22.md`).
+    ("ess-conformance", 40, None),
+    ("ess-conformance", 41, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

@@ -38,6 +38,14 @@
 //! containing a dot is read as a fact path and anything else as a literal; quote a literal
 //! that contains dots (`version == "1.2.3"`).
 //!
+//! A one-segment fact on the right — `depends_on` in a guard that compares two inputs — cannot be
+//! told from the text it is spelled like without knowing what the place it is written in declares,
+//! so the canonical form writes it as an explicit operand, `task_id: {eq: {fact: depends_on}}`, and
+//! this reader takes that mapping as the fact. Which bare words of an authored source are such facts
+//! is decided by the source format and its declarations, in `ess-domain`, never here
+//! (`docs/design/expression-family-source22.md`, A1). [`Predicate::from_node_spelled`] keeps the one
+//! bit that decision needs: which right-hand sides were written as an unquoted, undotted word.
+//!
 //! # Quantifiers
 //!
 //! Everything above asks about one value. A claim about a *collection* — every element, or some
@@ -75,6 +83,28 @@ use std::fmt;
 use crate::error::ParseError;
 use crate::facts::{FactPath, FactSource, FactValue, Scales};
 use crate::node::Node;
+
+std::thread_local! {
+    /// Whether the `ess/22` operand grammar is read: `{fact: <path>}` on the right of a comparison
+    /// and the tagged `{compare: …}` form (`docs/design/expression-family-source22.md`). A parser
+    /// that knows its source is older turns it off with [`reading_source22_operands`], and the
+    /// mapping is then refused as the non-scalar it always was. With no format known it is read,
+    /// and assembly refuses it below `ess/22`.
+    static SOURCE22_OPERANDS: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Runs `read` with the `ess/22` operand grammar read or not, restoring what was set before.
+pub fn reading_source22_operands<T>(admitted: bool, read: impl FnOnce() -> T) -> T {
+    let before = SOURCE22_OPERANDS.with(|cell| cell.replace(admitted));
+    let value = read();
+    SOURCE22_OPERANDS.with(|cell| cell.set(before));
+    value
+}
+
+/// Whether the `ess/22` operand grammar is read here; see [`reading_source22_operands`].
+fn source22_operands() -> bool {
+    SOURCE22_OPERANDS.with(std::cell::Cell::get)
+}
 
 /// The result of evaluating a predicate.
 ///
@@ -185,6 +215,19 @@ impl CompareOp {
             Self::Le => "<=",
             Self::Gt => ">",
             Self::Ge => ">=",
+        }
+    }
+
+    /// The keyword the canonical writer uses in a structured comparison: `eq`, `ne`, `lt`, `lte`,
+    /// `gt` or `gte`. [`Self::from_keyword`] reads each of them back.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Eq => "eq",
+            Self::Ne => "ne",
+            Self::Lt => "lt",
+            Self::Le => "lte",
+            Self::Gt => "gt",
+            Self::Ge => "gte",
         }
     }
 
@@ -348,7 +391,7 @@ impl Operand {
     }
 
     /// The fact path this operand reads, if any.
-    fn fact_path(&self) -> Option<&FactPath> {
+    pub fn fact_path(&self) -> Option<&FactPath> {
         match self {
             Self::Fact(path) => Some(path),
             Self::Literal(_) => None,
@@ -382,6 +425,64 @@ impl Operand {
             }
         }
         Self::Literal(FactValue::parse_literal(trimmed))
+    }
+
+    /// Whether `raw`, read by [`Self::parse_in`] under `binders`, is an unquoted, undotted word: a
+    /// text literal today, and the one spelling a source format may read as a root fact instead
+    /// (`docs/design/expression-family-source22.md`, A1). A quoted text, a Boolean, a number, a
+    /// dotted path, a binder and text that is no fact-path segment are not words.
+    fn is_word(raw: &str, binders: &[String]) -> bool {
+        match Self::parse_in(raw, binders) {
+            Self::Literal(FactValue::Text(text)) => {
+                let trimmed = raw.trim();
+                !trimmed.starts_with(['"', '\''])
+                    && FactPath::new(&text).is_ok_and(|path| path.segments().len() == 1)
+            }
+            _ => false,
+        }
+    }
+
+    /// The fact this operand reads when it is one segment that no binder in `binders` names: the
+    /// operand only the explicit `{fact: …}` mapping can spell.
+    fn root_fact<'a>(&'a self, binders: &[&str]) -> Option<&'a FactPath> {
+        match self {
+            Self::Fact(path)
+                if path.segments().len() == 1 && !binders.contains(&path.namespace()) =>
+            {
+                Some(path)
+            }
+            _ => None,
+        }
+    }
+
+    /// Reads the explicit fact operand `{fact: <path>}`, the canonical spelling of a fact on the
+    /// right of a comparison. Exactly one key; anything else is refused rather than compared as
+    /// the mapping it is.
+    fn fact_mapping(
+        entries: &std::collections::BTreeMap<String, Node>,
+        written: impl Fn() -> String,
+    ) -> Result<Self, ParseError> {
+        // Below `ess/22` a mapping is no operand at all, and is refused in the words it always was.
+        if !source22_operands() {
+            return Err(ParseError::predicate(
+                &written(),
+                "a comparison operand must be a scalar",
+            ));
+        }
+        let refuse = || {
+            ParseError::predicate(
+                &written(),
+                "a comparison operand must be a scalar, or `{fact: <path>}` naming a fact",
+            )
+        };
+        match entries.iter().next() {
+            Some((key, Node::Text(path))) if entries.len() == 1 && key == "fact" => {
+                FactPath::new(path).map(Self::Fact).map_err(|error| {
+                    ParseError::predicate(&written(), format!("`{{fact: …}}`: {error}"))
+                })
+            }
+            _ => Err(refuse()),
+        }
     }
 }
 
@@ -518,6 +619,30 @@ fn shallow(node: &Node) -> String {
     }
 }
 
+/// How a comparison compares its two operands (`docs/design/expression-family-source22.md`, final
+/// review decision 2).
+///
+/// [`CompareKind::Value`] is every comparison there was before: the evaluator compares by the
+/// representation it reads, and orders a declared `Timestamp` by its instant only where the fact
+/// source says the path is one. [`CompareKind::Instant`] says so in the predicate itself — both
+/// operands are `Timestamp` facts and compare as the instants they name under every operator — so a
+/// reader with no declared types (a suite runner over view rows) compares instants, never spellings.
+/// The domain's resolver tags it from `ess/22`; its canonical form is
+/// `{compare: {left, op, right, as: timestamp}}`, which only suite `/40` and later read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CompareKind {
+    /// The representation the evaluator reads.
+    #[default]
+    Value,
+    /// The instants two `Timestamp` operands name (`as: timestamp`).
+    Instant,
+}
+
+impl CompareKind {
+    /// The canonical spelling of [`CompareKind::Instant`]'s tag.
+    pub const TIMESTAMP: &'static str = "timestamp";
+}
+
 /// A condition over facts.
 ///
 /// # Depth
@@ -549,6 +674,8 @@ pub enum Predicate {
         op: CompareOp,
         /// Right-hand side.
         right: Operand,
+        /// How the operands compare: by value, or as instants (decision 2).
+        kind: CompareKind,
     },
     /// The fact is observed and truthy.
     Truthy(FactPath),
@@ -604,6 +731,23 @@ pub enum Predicate {
     ///
     /// Empty does not hold; unobserved is [`Truth::Unknown`].
     Exists(Box<Quantified>),
+}
+
+/// A predicate as read from a document, with the one fact about its spelling that the reading
+/// itself discards (`docs/design/expression-family-source22.md`, A1).
+///
+/// `words` holds one flag per comparison, in the order a pre-order walk of `predicate` meets them:
+/// `true` where the right-hand side was written as an unquoted, undotted word that no binder in
+/// scope names, which the reader keeps as a text literal. A quoted `"b"` and the bare `b` read as the
+/// same literal, and only the second may name a root fact under a source format that says so.
+/// Nothing here decides that; the domain's resolver does, with the declarations in hand. This is
+/// not a predicate and is never persisted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Spelled {
+    /// The predicate every reader of this crate reads, with every word a text literal.
+    pub predicate: Predicate,
+    /// Per comparison, in pre-order: whether its right-hand side was a bare word.
+    pub words: Vec<bool>,
 }
 
 /// A quantified claim: a collection, the name its elements are bound to, and the body.
@@ -777,7 +921,12 @@ impl Predicate {
                 .iter()
                 .fold(Truth::False, |acc, child| acc.or(child.evaluate(facts))),
             Self::Not(inner) => inner.evaluate(facts).not(),
-            Self::Compare { left, op, right } => Self::evaluate_compare(left, *op, right, facts).0,
+            Self::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } => Self::evaluate_compare(left, *op, right, *kind, facts).0,
             Self::Truthy(path) => facts
                 .observe(path)
                 .map_or(Truth::Unknown, |value| Truth::from_bool(value.is_truthy())),
@@ -824,12 +973,38 @@ impl Predicate {
         left: &Operand,
         op: CompareOp,
         right: &Operand,
+        kind: CompareKind,
         facts: &dyn FactSource,
     ) -> (Truth, Option<String>) {
         let (Some(left_value), Some(right_value)) = (left.resolve(facts), right.resolve(facts))
         else {
             return (Truth::Unknown, None);
         };
+
+        // A tagged comparison (decision 2) compares the instants its two `Timestamp` operands
+        // name, whatever the fact source knows of their types. A text that names no instant is
+        // `Unknown`: an instant nobody can read has no order, and sorting its spelling would
+        // invent one.
+        if kind == CompareKind::Instant {
+            let instant = |value: &FactValue| {
+                value
+                    .as_text()
+                    .and_then(crate::time::Rfc3339Instant::parse_rfc3339)
+            };
+            return match (instant(&left_value), instant(&right_value)) {
+                (Some(left_instant), Some(right_instant)) => (
+                    Truth::from_bool(op.accepts(left_instant.cmp(&right_instant))),
+                    None,
+                ),
+                _ => (
+                    Truth::Unknown,
+                    Some(format!(
+                        "cannot compare {left_value} with {right_value} as instants: each side \
+                         must be an RFC 3339 date-time"
+                    )),
+                ),
+            };
+        }
 
         // A declared Timestamp compares by the instant it names under every operator, so `==`
         // agrees with `<=` and `>=` on two spellings of one instant.
@@ -1003,7 +1178,12 @@ impl Predicate {
     /// Evaluates a leaf, returning any note about an ill-defined comparison.
     fn evaluate_leaf(&self, facts: &dyn FactSource) -> (Truth, Option<String>) {
         match self {
-            Self::Compare { left, op, right } => Self::evaluate_compare(left, *op, right, facts),
+            Self::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } => Self::evaluate_compare(left, *op, right, *kind, facts),
             other => (other.evaluate(facts), None),
         }
     }
@@ -1135,6 +1315,83 @@ impl Predicate {
         }
     }
 
+    /// Whether any comparison, at any depth, reads a one-segment fact on its right that no binder in
+    /// scope names: the operand the canonical form writes as `{fact: …}`
+    /// (`docs/design/expression-family-source22.md`, A1).
+    ///
+    /// The question the `ess/22` source gate and the suite pair `/40` and `/41` ask. A binder and a
+    /// dotted path are not such operands: their compact spelling was always read as a fact.
+    pub fn reads_root_fact_operand(&self) -> bool {
+        self.reads_root_fact_in(&mut Vec::new())
+    }
+
+    fn reads_root_fact_in<'a>(&'a self, binders: &mut Vec<&'a str>) -> bool {
+        match self {
+            Self::Compare {
+                right,
+                kind: CompareKind::Value,
+                ..
+            } => right.root_fact(binders).is_some(),
+            Self::All(children) | Self::Any(children) => children
+                .iter()
+                .any(|child| child.reads_root_fact_in(binders)),
+            Self::Not(inner) => inner.reads_root_fact_in(binders),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                binders.push(&quantified.bind);
+                let found = quantified.body.reads_root_fact_in(binders);
+                binders.pop();
+                found
+            }
+            // The tagged form always writes its fact operand explicitly.
+            Self::Compare {
+                kind: CompareKind::Instant,
+                ..
+            }
+            | Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. } => false,
+        }
+    }
+
+    /// Whether any comparison, at any depth, is tagged to compare instants (decision 2): the
+    /// question the `ess/22` source gate and the suite pair `/40` and `/41` ask beside
+    /// [`Self::reads_root_fact_operand`].
+    pub fn compares_instants(&self) -> bool {
+        match self {
+            Self::Compare { kind, .. } => *kind == CompareKind::Instant,
+            Self::All(children) | Self::Any(children) => {
+                children.iter().any(Self::compares_instants)
+            }
+            Self::Not(inner) => inner.compares_instants(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.compares_instants()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. } => false,
+        }
+    }
+
+    /// A comparison by value: what every comparison was before decision 2's tag.
+    pub fn compare(left: Operand, op: CompareOp, right: Operand) -> Self {
+        Self::Compare {
+            left,
+            op,
+            right,
+            kind: CompareKind::Value,
+        }
+    }
+
     /// Whether any leaf of this predicate, at any depth, is a case-insensitive text operator.
     ///
     /// The question every format gate asks of the construct (beyond10x/ess#140): `ess/15` for an
@@ -1164,11 +1421,33 @@ impl Predicate {
     /// not a.b"}}` is four levels of one predicate written two ways, and two counters would let a
     /// document alternate between them to buy twice the depth.
     pub fn from_node(node: &Node) -> Result<Self, ParseError> {
-        Self::from_node_nested(node, 0, &[])
+        Self::from_node_nested(node, 0, &[], &mut Vec::new())
+    }
+
+    /// [`Self::from_node`], also saying which comparisons' right-hand sides were bare words.
+    ///
+    /// The predicate is exactly the one [`Self::from_node`] reads; see [`Spelled`].
+    pub fn from_node_spelled(node: &Node) -> Result<Spelled, ParseError> {
+        let mut words = Vec::new();
+        let predicate = Self::from_node_nested(node, 0, &[], &mut words)?;
+        Ok(Spelled { predicate, words })
+    }
+
+    /// [`Self::parse_expression`], also saying which comparisons' right-hand sides were bare
+    /// words. The predicate is exactly the one [`Self::parse_expression`] reads; see [`Spelled`].
+    pub fn parse_expression_spelled(expression: &str) -> Result<Spelled, ParseError> {
+        let mut words = Vec::new();
+        let predicate = Self::parse_expression_nested(expression, 0, &[], &mut words)?;
+        Ok(Spelled { predicate, words })
     }
 
     /// [`Self::from_node`], counting how deep it already is.
-    fn from_node_nested(node: &Node, depth: usize, binders: &[String]) -> Result<Self, ParseError> {
+    fn from_node_nested(
+        node: &Node,
+        depth: usize,
+        binders: &[String],
+        words: &mut Vec<bool>,
+    ) -> Result<Self, ParseError> {
         if depth > MAX_PREDICATE_DEPTH {
             return Err(ParseError::too_deep(
                 "predicate",
@@ -1179,18 +1458,20 @@ impl Predicate {
         match node {
             Node::Bool(true) => Ok(Self::Always),
             Node::Bool(false) => Ok(Self::Never),
-            Node::Text(expression) => Self::parse_expression_nested(expression, depth, binders),
+            Node::Text(expression) => {
+                Self::parse_expression_nested(expression, depth, binders, words)
+            }
             Node::Seq(items) => {
                 let children = items
                     .iter()
-                    .map(|item| Self::from_node_nested(item, depth + 1, binders))
+                    .map(|item| Self::from_node_nested(item, depth + 1, binders, words))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::all(children))
             }
             Node::Map(entries) => {
                 let mut children = Vec::new();
                 for (key, value) in entries {
-                    children.push(Self::from_entry(key, value, depth, binders)?);
+                    children.push(Self::from_entry(key, value, depth, binders, words)?);
                 }
                 Ok(Self::all(children))
             }
@@ -1213,14 +1494,15 @@ impl Predicate {
         value: &Node,
         depth: usize,
         binders: &[String],
+        words: &mut Vec<bool>,
     ) -> Result<Self, ParseError> {
-        let nested = |node: &Node| Self::from_node_nested(node, depth + 1, binders);
+        let mut nested = |node: &Node| Self::from_node_nested(node, depth + 1, binders, words);
         match key {
             "all" | "and" | "all_of" => {
                 let children = value
                     .as_seq_or_single()
                     .into_iter()
-                    .map(nested)
+                    .map(&mut nested)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::all(children))
             }
@@ -1228,22 +1510,29 @@ impl Predicate {
                 let children = value
                     .as_seq_or_single()
                     .into_iter()
-                    .map(nested)
+                    .map(&mut nested)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::any(children))
             }
             "not" => Ok(Self::not(nested(value)?)),
             "forall" => Ok(Self::Forall(Box::new(Self::quantifier(
-                value, depth, binders,
+                value, depth, binders, words,
             )?))),
             "exists" => Ok(Self::Exists(Box::new(Self::quantifier(
-                value, depth, binders,
+                value, depth, binders, words,
             )?))),
+            "compare"
+                if source22_operands()
+                    && matches!(value, Node::Map(fields) if fields.contains_key("left")) =>
+            {
+                words.push(false);
+                Self::tagged_compare(value, binders)
+            }
             "none" | "none_of_these" => {
                 let children = value
                     .as_seq_or_single()
                     .into_iter()
-                    .map(nested)
+                    .map(&mut nested)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::not(Self::any(children)))
             }
@@ -1257,7 +1546,7 @@ impl Predicate {
                         ),
                     )
                 })?;
-                Self::from_constraint(path, value, binders)
+                Self::from_constraint(path, value, binders, words)
             }
         }
     }
@@ -1267,6 +1556,7 @@ impl Predicate {
         value: &Node,
         depth: usize,
         binders: &[String],
+        words: &mut Vec<bool>,
     ) -> Result<Quantified, ParseError> {
         let Node::Map(entries) = value else {
             return Err(ParseError::shape(
@@ -1294,7 +1584,7 @@ impl Predicate {
             match key.as_str() {
                 "in" => over = Some(Self::quantifier_collection(node)?),
                 "as" => bind = Some(Self::quantifier_binder(node)?),
-                "that" => body = Some(Self::from_node_nested(node, depth + 1, &scope)?),
+                "that" => body = Some(Self::from_node_nested(node, depth + 1, &scope, words)?),
                 other => {
                     return Err(ParseError::predicate(
                         other,
@@ -1315,6 +1605,56 @@ impl Predicate {
             over: over.ok_or_else(|| missing("in"))?,
             bind: bind.ok_or_else(|| missing("as"))?,
             body: body.ok_or_else(|| missing("that"))?,
+        })
+    }
+
+    /// Parses the closed canonical form of a tagged comparison (decision 2):
+    /// `{compare: {left: <path>, op: <keyword>, right: <operand>, as: timestamp}}`.
+    ///
+    /// Exactly those four keys. `left` is a fact path; `right` is a fact path, the explicit
+    /// `{fact: <path>}` or a scalar; `as` is `timestamp`, the one kind a tag names. A mapping under
+    /// `compare` without `left` is a constraint on a fact named `compare`, as it always was.
+    fn tagged_compare(value: &Node, binders: &[String]) -> Result<Self, ParseError> {
+        let written = || format!("compare: {}", shallow(value));
+        let Node::Map(fields) = value else {
+            unreachable!("dispatched on a mapping");
+        };
+        let refuse = |reason: &str| ParseError::predicate(&written(), reason.to_owned());
+        if fields.len() != 4
+            || ["left", "op", "right", "as"]
+                .iter()
+                .any(|key| !fields.contains_key(*key))
+        {
+            return Err(refuse(
+                "a tagged comparison takes exactly `left`, `op`, `right` and `as`",
+            ));
+        }
+        let left = match &fields["left"] {
+            Node::Text(path) => FactPath::new(path)?,
+            _ => return Err(refuse("`left` names a fact path")),
+        };
+        let op = match &fields["op"] {
+            Node::Text(keyword) => CompareOp::from_keyword(keyword)
+                .ok_or_else(|| refuse("`op` is one of eq, ne, lt, lte, gt, gte"))?,
+            _ => return Err(refuse("`op` is one of eq, ne, lt, lte, gt, gte")),
+        };
+        let right = match &fields["right"] {
+            Node::Text(text) => Operand::parse_in(text, binders),
+            Node::Bool(value) => Operand::Literal(FactValue::Bool(*value)),
+            Node::Number(number) => Operand::Literal(FactValue::Number(*number)),
+            Node::Map(entries) => Operand::fact_mapping(entries, written)?,
+            _ => return Err(refuse("`right` is a scalar or `{fact: <path>}`")),
+        };
+        if fields["as"] != Node::Text(CompareKind::TIMESTAMP.to_owned()) {
+            return Err(refuse(
+                "`as` names the one kind a comparison is tagged with, `timestamp`",
+            ));
+        }
+        Ok(Self::Compare {
+            left: Operand::Fact(left),
+            op,
+            right,
+            kind: CompareKind::Instant,
         })
     }
 
@@ -1351,23 +1691,22 @@ impl Predicate {
         path: FactPath,
         value: &Node,
         binders: &[String],
+        words: &mut Vec<bool>,
     ) -> Result<Self, ParseError> {
+        // The equality shorthand is always a literal, so no right-hand side of it is a word.
+        let shorthand = |right: FactValue, words: &mut Vec<bool>| {
+            words.push(false);
+            Ok(Self::Compare {
+                kind: CompareKind::Value,
+                left: Operand::Fact(path.clone()),
+                op: CompareOp::Eq,
+                right: Operand::Literal(right),
+            })
+        };
         match value {
-            Node::Bool(expected) => Ok(Self::Compare {
-                left: Operand::Fact(path),
-                op: CompareOp::Eq,
-                right: Operand::Literal(FactValue::Bool(*expected)),
-            }),
-            Node::Number(number) => Ok(Self::Compare {
-                left: Operand::Fact(path),
-                op: CompareOp::Eq,
-                right: Operand::Literal(FactValue::Number(*number)),
-            }),
-            Node::Text(text) => Ok(Self::Compare {
-                left: Operand::Fact(path),
-                op: CompareOp::Eq,
-                right: Operand::Literal(FactValue::parse_literal(text)),
-            }),
+            Node::Bool(expected) => shorthand(FactValue::Bool(*expected), words),
+            Node::Number(number) => shorthand(FactValue::Number(*number), words),
+            Node::Text(text) => shorthand(FactValue::parse_literal(text), words),
             Node::Seq(items) => Ok(Self::AnyOf {
                 path,
                 values: literal_values(items)?,
@@ -1380,6 +1719,7 @@ impl Predicate {
                         operator,
                         operand,
                         binders,
+                        words,
                     )?);
                 }
                 Ok(Self::all(children))
@@ -1400,12 +1740,16 @@ impl Predicate {
         operator: &str,
         operand: &Node,
         binders: &[String],
+        words: &mut Vec<bool>,
     ) -> Result<Self, ParseError> {
         if let Some(op) = CompareOp::from_keyword(operator) {
             let right = match operand {
                 Node::Text(text) => Operand::parse_in(text, binders),
                 Node::Bool(value) => Operand::Literal(FactValue::Bool(*value)),
                 Node::Number(number) => Operand::Literal(FactValue::Number(*number)),
+                Node::Map(entries) => {
+                    Operand::fact_mapping(entries, || format!("{path}: {{{operator}: {operand}}}"))?
+                }
                 Node::Null => {
                     return Err(ParseError::NullComparison {
                         expression: format!("{path}: {{{operator}: null}}"),
@@ -1414,14 +1758,16 @@ impl Predicate {
                         spelling: "null".to_owned(),
                     })
                 }
-                other => {
+                other @ Node::Seq(_) => {
                     return Err(ParseError::predicate(
                         &format!("{path}: {{{operator}: {other}}}"),
                         "a comparison operand must be a scalar",
                     ))
                 }
             };
+            words.push(matches!(operand, Node::Text(text) if Operand::is_word(text, binders)));
             return Ok(Self::Compare {
+                kind: CompareKind::Value,
                 left: Operand::Fact(path),
                 op,
                 right,
@@ -1530,7 +1876,7 @@ impl Predicate {
     /// [`ParseError::TooDeep`]. This is the string half of the same budget
     /// [`Self::from_node`] spends.
     pub fn parse_expression(expression: &str) -> Result<Self, ParseError> {
-        Self::parse_expression_nested(expression, 0, &[])
+        Self::parse_expression_nested(expression, 0, &[], &mut Vec::new())
     }
 
     /// [`Self::parse_expression`], counting how deep it already is.
@@ -1538,6 +1884,7 @@ impl Predicate {
         expression: &str,
         depth: usize,
         binders: &[String],
+        words: &mut Vec<bool>,
     ) -> Result<Self, ParseError> {
         let trimmed = expression.trim();
         if depth > MAX_PREDICATE_DEPTH {
@@ -1560,6 +1907,7 @@ impl Predicate {
                 rest,
                 depth + 1,
                 binders,
+                words,
             )?));
         }
         for (function, negate) in [("defined", false), ("exists", false), ("missing", true)] {
@@ -1618,7 +1966,9 @@ impl Predicate {
                     ),
                 ));
             }
+            words.push(Operand::is_word(right, binders));
             return Ok(Self::Compare {
+                kind: CompareKind::Value,
                 left: Operand::Fact(left_path),
                 op,
                 right: Operand::parse_in(right, binders),
@@ -1686,61 +2036,44 @@ impl Predicate {
     }
 
     /// Renders this predicate back into document form.
+    ///
+    /// A one-segment fact on the right of a comparison that no binder in scope names is written as
+    /// the explicit operand `{fact: …}` (`docs/design/expression-family-source22.md`, A1): its
+    /// compact spelling reads back as text. A binder and a dotted path keep their compact bytes.
     pub fn to_node(&self) -> Node {
+        self.node_in(&mut Vec::new())
+    }
+
+    fn node_in<'a>(&'a self, binders: &mut Vec<&'a str>) -> Node {
+        let seq = |children: &'a [Self], binders: &mut Vec<&'a str>| {
+            let mut nodes = Vec::with_capacity(children.len());
+            for child in children {
+                nodes.push(child.node_in(binders));
+            }
+            Node::Seq(nodes)
+        };
         match self {
             Self::Always => Node::Bool(true),
             Self::Never => Node::Bool(false),
             Self::All(children) => Node::Map(
-                [(
-                    "all".to_owned(),
-                    Node::Seq(children.iter().map(Self::to_node).collect()),
-                )]
-                .into_iter()
-                .collect(),
+                [("all".to_owned(), seq(children, binders))]
+                    .into_iter()
+                    .collect(),
             ),
             Self::Any(children) => Node::Map(
-                [(
-                    "any".to_owned(),
-                    Node::Seq(children.iter().map(Self::to_node).collect()),
-                )]
-                .into_iter()
-                .collect(),
+                [("any".to_owned(), seq(children, binders))]
+                    .into_iter()
+                    .collect(),
             ),
-            Self::Not(inner) => {
-                Node::Map([("not".to_owned(), inner.to_node())].into_iter().collect())
-            }
-            Self::AnyOf { path, values } => Node::Map(
-                [(
-                    path.to_string(),
-                    Node::Map(
-                        [(
-                            "any_of".to_owned(),
-                            Node::Seq(values.iter().map(value_node).collect()),
-                        )]
-                        .into_iter()
-                        .collect(),
-                    ),
-                )]
-                .into_iter()
-                .collect(),
+            Self::Not(inner) => Node::Map(
+                [("not".to_owned(), inner.node_in(binders))]
+                    .into_iter()
+                    .collect(),
             ),
-            Self::NoneOf { path, values } => Node::Map(
-                [(
-                    path.to_string(),
-                    Node::Map(
-                        [(
-                            "none_of".to_owned(),
-                            Node::Seq(values.iter().map(value_node).collect()),
-                        )]
-                        .into_iter()
-                        .collect(),
-                    ),
-                )]
-                .into_iter()
-                .collect(),
-            ),
-            Self::Forall(quantified) => quantifier_node("forall", quantified),
-            Self::Exists(quantified) => quantifier_node("exists", quantified),
+            Self::AnyOf { path, values } => values_constraint_node(path, "any_of", values),
+            Self::NoneOf { path, values } => values_constraint_node(path, "none_of", values),
+            Self::Forall(quantified) => quantifier_node("forall", quantified, binders),
+            Self::Exists(quantified) => quantifier_node("exists", quantified, binders),
             // Explicit, never the compact fallback below: there is no compact form, so a string
             // operator rendered as text would be a document no reader parses back. A text operand
             // is written as the text, with no quotes added, because the reader takes it verbatim.
@@ -1768,13 +2101,100 @@ impl Predicate {
                 )
             }
             Self::Compare {
+                left,
+                op,
+                right,
+                kind: CompareKind::Instant,
+            } => tagged_comparison_node(left, *op, right),
+            Self::Compare {
                 left: Operand::Fact(path),
                 op,
                 right: Operand::Literal(FactValue::Text(text)),
+                kind: CompareKind::Value,
             } => comparison_text_node(self, path, *op, text),
-            leaf => Node::Text(leaf.to_string()),
+            Self::Compare {
+                left: Operand::Fact(path),
+                op,
+                right,
+                kind: CompareKind::Value,
+            } if right.root_fact(binders).is_some() => {
+                fact_comparison_node(path, *op, right.root_fact(binders).expect("the guard"))
+            }
+            leaf => Node::Text(
+                InScope {
+                    predicate: leaf,
+                    binders,
+                }
+                .to_string(),
+            ),
         }
     }
+}
+
+/// `path: {<keyword>: [values…]}`: a value-list constraint.
+fn values_constraint_node(path: &FactPath, keyword: &str, values: &[FactValue]) -> Node {
+    Node::Map(
+        [(
+            path.to_string(),
+            Node::Map(
+                [(
+                    keyword.to_owned(),
+                    Node::Seq(values.iter().map(value_node).collect()),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+        )]
+        .into_iter()
+        .collect(),
+    )
+}
+
+/// `{compare: {left, op, right, as: timestamp}}`: the closed canonical form of a tagged comparison
+/// (decision 2). A fact on the right is always the explicit `{fact: …}`, so the form never depends
+/// on what a binder or a root is called.
+fn tagged_comparison_node(left: &Operand, op: CompareOp, right: &Operand) -> Node {
+    let operand = |operand: &Operand| match operand {
+        Operand::Fact(path) => {
+            Node::Map([("fact".to_owned(), Node::Text(path.to_string()))].into())
+        }
+        Operand::Literal(value) => value_node(value),
+    };
+    let left = match left {
+        Operand::Fact(path) => Node::Text(path.to_string()),
+        Operand::Literal(value) => value_node(value),
+    };
+    Node::Map(
+        [(
+            "compare".to_owned(),
+            Node::Map(
+                [
+                    ("left".to_owned(), left),
+                    ("op".to_owned(), Node::Text(op.keyword().to_owned())),
+                    ("right".to_owned(), operand(right)),
+                    (
+                        "as".to_owned(),
+                        Node::Text(CompareKind::TIMESTAMP.to_owned()),
+                    ),
+                ]
+                .into(),
+            ),
+        )]
+        .into(),
+    )
+}
+
+/// `path: {<op>: {fact: <fact>}}`: the canonical comparison with a one-segment fact on its right
+/// (`docs/design/expression-family-source22.md`, A1).
+fn fact_comparison_node(path: &FactPath, op: CompareOp, fact: &FactPath) -> Node {
+    let operand = Node::Map([("fact".to_owned(), Node::Text(fact.to_string()))].into());
+    Node::Map(
+        [(
+            path.to_string(),
+            Node::Map([(op.keyword().to_owned(), operand)].into()),
+        )]
+        .into(),
+    )
 }
 
 /// Preserve legacy compact bytes when they preserve the typed literal. Otherwise use the existing
@@ -1808,7 +2228,14 @@ fn compact_comparison_roundtrips(predicate: &Predicate, compact: &str) -> bool {
 /// Explicit rather than falling through to the string arm below, because there is no string form
 /// to fall through to: a quantifier that rendered as text would be a document this parser refuses
 /// to read back.
-fn quantifier_node(keyword: &str, quantified: &Quantified) -> Node {
+fn quantifier_node<'a>(
+    keyword: &str,
+    quantified: &'a Quantified,
+    binders: &mut Vec<&'a str>,
+) -> Node {
+    binders.push(&quantified.bind);
+    let body = quantified.body.node_in(binders);
+    binders.pop();
     Node::Map(
         [(
             keyword.to_owned(),
@@ -1816,7 +2243,7 @@ fn quantifier_node(keyword: &str, quantified: &Quantified) -> Node {
                 [
                     ("in".to_owned(), Node::Text(quantified.over.to_string())),
                     ("as".to_owned(), Node::Text(quantified.bind.clone())),
-                    ("that".to_owned(), quantified.body.to_node()),
+                    ("that".to_owned(), body),
                 ]
                 .into_iter()
                 .collect(),
@@ -1949,27 +2376,68 @@ fn split_comparison(expression: &str) -> Option<(&str, CompareOp, &str)> {
 
 impl fmt::Display for Predicate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Always => f.write_str("always"),
-            Self::Never => f.write_str("never"),
-            Self::All(children) => write_joined(f, children, " and "),
-            Self::Any(children) => write_joined(f, children, " or "),
-            Self::Not(inner) => write!(f, "not ({inner})"),
-            Self::Compare { left, op, right } => write!(f, "{left} {op} {right}"),
-            Self::Truthy(path) => write!(f, "{path}"),
-            Self::Defined(path) => write!(f, "defined({path})"),
-            Self::AnyOf { path, values } => write!(f, "{path} in [{}]", join_values(values)),
-            Self::NoneOf { path, values } => write!(f, "{path} not in [{}]", join_values(values)),
+        InScope {
+            predicate: self,
+            binders: &[],
+        }
+        .fmt(f)
+    }
+}
+
+/// A predicate rendered for a reader inside the quantifier bodies whose binders are `binders`.
+///
+/// A one-segment fact on the right of a comparison that no binder names reads `a == {fact: b}`, so
+/// the rendering of a comparison of two facts never equals the rendering of a comparison with the
+/// text `b` (`docs/design/expression-family-source22.md`, A1, decision 7). A binder reads as
+/// itself, as it always did.
+struct InScope<'a, 'b> {
+    predicate: &'a Predicate,
+    binders: &'b [&'a str],
+}
+
+impl fmt::Display for InScope<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let binders = self.binders;
+        let nested = |predicate| InScope { predicate, binders };
+        match self.predicate {
+            Predicate::Always => f.write_str("always"),
+            Predicate::Never => f.write_str("never"),
+            Predicate::All(children) => write_joined(f, children, binders, " and "),
+            Predicate::Any(children) => write_joined(f, children, binders, " or "),
+            Predicate::Not(inner) => write!(f, "not ({})", nested(inner)),
+            Predicate::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } => {
+                match right.root_fact(binders) {
+                    Some(fact) => write!(f, "{left} {op} {{fact: {fact}}}")?,
+                    None => write!(f, "{left} {op} {right}")?,
+                }
+                match kind {
+                    CompareKind::Instant => write!(f, " as {}", CompareKind::TIMESTAMP),
+                    CompareKind::Value => Ok(()),
+                }
+            }
+            Predicate::Truthy(path) => write!(f, "{path}"),
+            Predicate::Defined(path) => write!(f, "defined({path})"),
+            Predicate::AnyOf { path, values } => {
+                write!(f, "{path} in [{}]", join_values(values))
+            }
+            Predicate::NoneOf { path, values } => {
+                write!(f, "{path} not in [{}]", join_values(values))
+            }
             // For a reader and the semantic diff, never read back: a text literal is quoted by
             // `Debug`, a number or a Boolean is bare.
-            Self::TextMatch {
+            Predicate::TextMatch {
                 path,
                 op,
                 value: FactValue::Text(text),
             } => write!(f, "{path} {op} {text:?}"),
-            Self::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
+            Predicate::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
             // For a reader and the semantic diff, never read back: each text quoted by `Debug`.
-            Self::FoldMatch { path, op, values } => {
+            Predicate::FoldMatch { path, op, values } => {
                 let quoted = |value: &FactValue| match value {
                     FactValue::Text(text) => format!("{text:?}"),
                     other => other.to_string(),
@@ -1983,8 +2451,8 @@ impl fmt::Display for Predicate {
                     ),
                 }
             }
-            Self::Forall(quantified) => write_quantified(f, "forall", quantified),
-            Self::Exists(quantified) => write_quantified(f, "exists", quantified),
+            Predicate::Forall(quantified) => write_quantified(f, "forall", quantified, binders),
+            Predicate::Exists(quantified) => write_quantified(f, "exists", quantified, binders),
         }
     }
 }
@@ -1994,11 +2462,19 @@ fn write_quantified(
     f: &mut fmt::Formatter<'_>,
     keyword: &str,
     quantified: &Quantified,
+    binders: &[&str],
 ) -> fmt::Result {
+    let mut scope = binders.to_vec();
+    scope.push(&quantified.bind);
     write!(
         f,
         "{keyword} {} in {}: ({})",
-        quantified.bind, quantified.over, quantified.body
+        quantified.bind,
+        quantified.over,
+        InScope {
+            predicate: &quantified.body,
+            binders: &scope,
+        }
     )
 }
 
@@ -2006,6 +2482,7 @@ fn write_quantified(
 fn write_joined(
     f: &mut fmt::Formatter<'_>,
     children: &[Predicate],
+    binders: &[&str],
     separator: &str,
 ) -> fmt::Result {
     f.write_str("(")?;
@@ -2013,7 +2490,14 @@ fn write_joined(
         if index > 0 {
             f.write_str(separator)?;
         }
-        write!(f, "{child}")?;
+        write!(
+            f,
+            "{}",
+            InScope {
+                predicate: child,
+                binders,
+            }
+        )?;
     }
     f.write_str(")")
 }
@@ -2067,7 +2551,9 @@ impl schemars::JsonSchema for Predicate {
              `exists` or a fact path with an operator constraint. A text fact is tested against a \
              text literal, map form only, with `starts_with`, `ends_with` or `contains`, and \
              without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a \
-             list)."
+             list). From `ess/22` a comparison operand may be the explicit fact `{fact: <path>}`, \
+             and two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, \
+             right, as: timestamp}}`."
                 .to_owned(),
         );
         schema.into()
@@ -2388,6 +2874,7 @@ mod tests {
         assert_eq!(
             parse("tests.unit.failed == 0"),
             Predicate::Compare {
+                kind: CompareKind::Value,
                 left: Operand::Fact("tests.unit.failed".parse().expect("path")),
                 op: CompareOp::Eq,
                 right: Operand::Literal(FactValue::count(0)),
@@ -2886,6 +3373,7 @@ mod tests {
             assert_eq!(
                 predicate,
                 Predicate::Compare {
+                    kind: CompareKind::Value,
                     left: Operand::Fact("sku".parse().expect("path")),
                     op: CompareOp::Eq,
                     right: Operand::Literal(FactValue::text(text)),

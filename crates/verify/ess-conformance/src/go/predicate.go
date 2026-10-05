@@ -114,7 +114,10 @@ type predicate struct {
 	left  operand
 	op    string
 	right operand
-	path  string
+	// instant is a tagged comparison (`as: timestamp`, suite/40): the operands compare as the
+	// RFC 3339 instants they name, never by their spelling.
+	instant bool
+	path    string
 	// any_of / none_of
 	values []Node
 	// quantifier
@@ -149,6 +152,9 @@ func (p predicate) String() string {
 	case "not":
 		return "not (" + p.body.String() + ")"
 	case "compare":
+		if p.instant {
+			return fmt.Sprintf("%s %s %s as timestamp", p.left, p.op, p.right)
+		}
 		return fmt.Sprintf("%s %s %s", p.left, p.op, p.right)
 	case "truthy":
 		return p.path
@@ -288,9 +294,57 @@ func fromEntry(key string, value any, binders []string) (predicate, error) {
 		return predicate{kind: "not", body: &inner}, nil
 	case "forall", "exists":
 		return parseQuantifier(key, value, binders)
+	case "compare":
+		if fields, ok := value.(map[string]any); ok {
+			if _, tagged := fields["left"]; tagged {
+				return parseTaggedCompare(fields, binders)
+			}
+		}
+		return parseConstraint(key, value, binders)
 	default:
 		return parseConstraint(key, value, binders)
 	}
+}
+
+// parseTaggedCompare reads `{compare: {left, op, right, as: timestamp}}`, a comparison tagged to
+// compare instants (suite/40, docs/design/expression-family-source22.md decision 2), as Rust's
+// `Predicate::tagged_compare` does: exactly those four keys. A mapping under `compare` without
+// `left` is a constraint on a fact named `compare`, as it always was.
+func parseTaggedCompare(fields map[string]any, binders []string) (predicate, error) {
+	refuse := func(reason string) (predicate, error) {
+		return predicate{}, fmt.Errorf("compare: %s", reason)
+	}
+	if len(fields) != 4 {
+		return refuse("a tagged comparison takes exactly `left`, `op`, `right` and `as`")
+	}
+	left, ok := fields["left"].(string)
+	if !ok || !factPath.MatchString(left) {
+		return refuse("`left` names a fact path")
+	}
+	spelled, _ := fields["op"].(string)
+	op, ok := compareSpellings[spelled]
+	if !ok {
+		return refuse("`op` is one of eq, ne, lt, lte, gt, gte")
+	}
+	if kind, _ := fields["as"].(string); kind != "timestamp" {
+		return refuse("`as` names the one kind a comparison is tagged with, `timestamp`")
+	}
+	var right operand
+	switch value := fields["right"].(type) {
+	case string:
+		right = parseOperandIn(value, binders)
+	case map[string]any:
+		fact, err := parseFactOperand("compare", "right", value)
+		if err != nil {
+			return predicate{}, err
+		}
+		right = fact
+	case bool, json.Number, float64:
+		right = operand{literal: value}
+	default:
+		return refuse("`right` is a scalar or `{fact: <path>}`")
+	}
+	return predicate{kind: "compare", left: operand{path: left, isFact: true}, op: op, right: right, instant: true}, nil
 }
 
 func parseQuantifier(kind string, value any, binders []string) (predicate, error) {
@@ -358,8 +412,15 @@ var compareSpellings = map[string]string{
 func parseOperator(path, key string, raw any, binders []string) (predicate, error) {
 	if op, ok := compareSpellings[key]; ok {
 		right := operand{literal: raw}
-		if text, ok := raw.(string); ok {
-			right = parseOperandIn(text, binders)
+		switch value := raw.(type) {
+		case string:
+			right = parseOperandIn(value, binders)
+		case map[string]any:
+			fact, err := parseFactOperand(path, key, value)
+			if err != nil {
+				return predicate{}, err
+			}
+			right = fact
 		}
 		return predicate{kind: "compare", left: operand{path: path, isFact: true}, op: op, right: right}, nil
 	}
@@ -421,6 +482,19 @@ func parseOperator(path, key string, raw any, binders []string) (predicate, erro
 		return predicate{kind: "truthy", path: path}, nil
 	}
 	return predicate{}, fmt.Errorf("`%s` carries the operator %q, which this runner does not know", path, key)
+}
+
+// parseFactOperand reads the explicit fact operand `{fact: <path>}`, the canonical spelling of a
+// one-segment fact on the right of a comparison (suite/40, docs/design/expression-family-source22.md
+// A1), as Rust's `Operand::fact_mapping` does: exactly one key, naming a fact path. Anything else
+// is refused rather than compared as the mapping it is. Which suite majors may carry it is the
+// runtime's admission to decide; this reader only reads it.
+func parseFactOperand(path, key string, value map[string]any) (operand, error) {
+	fact, ok := value["fact"].(string)
+	if len(value) != 1 || !ok || !factPath.MatchString(fact) {
+		return operand{}, fmt.Errorf("`%s: {%s: …}`: a comparison operand must be a scalar, or `{fact: <path>}` naming a fact", path, key)
+	}
+	return operand{path: fact, isFact: true}, nil
 }
 
 // parseLeaf reads compact expressions. Unrepresentable literal data uses structured comparisons.
@@ -705,6 +779,18 @@ func (p predicate) compare(source factSource) truth {
 	if !leftOk || !rightOk {
 		return truthUnknown
 	}
+	if p.instant {
+		// Decision 2: the instants the two operands name, under every operator. A text that names
+		// no instant is Unknown, never ordered by its spelling.
+		leftText, leftIsText := left.(string)
+		rightText, rightIsText := right.(string)
+		leftInstant, leftOk := parseInstant(leftText)
+		rightInstant, rightOk := parseInstant(rightText)
+		if !leftIsText || !rightIsText || !leftOk || !rightOk {
+			return truthUnknown
+		}
+		return truthOf(acceptsOrder(p.op, leftInstant.compare(rightInstant)))
+	}
 	if p.op == "==" || p.op == "!=" {
 		return truthOf(equal(left, right) == (p.op == "=="))
 	}
@@ -724,6 +810,151 @@ func (p predicate) compare(source factSource) truth {
 	default:
 		return truthUnknown
 	}
+}
+
+// acceptsOrder applies a comparison operator to an ordering, as Rust's `CompareOp::accepts` does.
+func acceptsOrder(op string, order int) bool {
+	switch op {
+	case "==":
+		return order == 0
+	case "!=":
+		return order != 0
+	case "<":
+		return order < 0
+	case "<=":
+		return order <= 0
+	case ">":
+		return order > 0
+	default:
+		return order >= 0
+	}
+}
+
+// instant is one RFC 3339 `date-time` as a point on the UTC line: whole seconds since the epoch
+// and nanoseconds, as Rust's `Rfc3339Instant` holds it.
+type instant struct {
+	seconds int64
+	nanos   int64
+}
+
+func (a instant) compare(b instant) int {
+	switch {
+	case a.seconds < b.seconds:
+		return -1
+	case a.seconds > b.seconds:
+		return 1
+	case a.nanos < b.nanos:
+		return -1
+	case a.nanos > b.nanos:
+		return 1
+	}
+	return 0
+}
+
+// parseInstant is Rust's `Rfc3339Instant::parse_rfc3339` (decision 14): the `date-time`
+// production and nothing wider — `T` or `t`, seconds 00–59 (no leap second), up to nine fraction
+// digits, and `Z`, `z` or a `±HH:MM` offset; years 0000–9999 with real month lengths. The vectors
+// it answers are `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json`.
+func parseInstant(text string) (instant, bool) {
+	digits := func(from, to int) (int64, bool) {
+		if from >= to || to > len(text) {
+			return 0, false
+		}
+		var total int64
+		for index := from; index < to; index++ {
+			c := text[index]
+			if c < '0' || c > '9' {
+				return 0, false
+			}
+			total = total*10 + int64(c-'0')
+		}
+		return total, true
+	}
+	at := func(index int, expected string) bool {
+		return index < len(text) && strings.IndexByte(expected, text[index]) >= 0
+	}
+	if !(at(4, "-") && at(7, "-") && at(10, "Tt") && at(13, ":") && at(16, ":")) {
+		return instant{}, false
+	}
+	year, ok1 := digits(0, 4)
+	month, ok2 := digits(5, 7)
+	day, ok3 := digits(8, 10)
+	hour, ok4 := digits(11, 13)
+	minute, ok5 := digits(14, 16)
+	second, ok6 := digits(17, 19)
+	if !(ok1 && ok2 && ok3 && ok4 && ok5 && ok6) || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month) || hour > 23 || minute > 59 || second > 59 {
+		return instant{}, false
+	}
+	position := 19
+	var nanos int64
+	if at(position, ".") {
+		end := position + 1
+		for end < len(text) && text[end] >= '0' && text[end] <= '9' {
+			end++
+		}
+		width := end - position - 1
+		if width == 0 || width > 9 {
+			return instant{}, false
+		}
+		fraction, _ := digits(position+1, end)
+		for scale := width; scale < 9; scale++ {
+			fraction *= 10
+		}
+		nanos = fraction
+		position = end
+	}
+	var offset int64
+	rest := text[position:]
+	switch {
+	case rest == "Z" || rest == "z":
+	case len(rest) == 6 && (rest[0] == '+' || rest[0] == '-') && rest[3] == ':':
+		hours, okH := digits(position+1, position+3)
+		minutes, okM := digits(position+4, position+6)
+		if !okH || !okM || hours > 23 || minutes > 59 {
+			return instant{}, false
+		}
+		offset = hours*3600 + minutes*60
+		if rest[0] == '-' {
+			offset = -offset
+		}
+	default:
+		return instant{}, false
+	}
+	return instant{seconds: daysFromCivil(year, month, day)*86400 + hour*3600 + minute*60 + second - offset, nanos: nanos}, true
+}
+
+func daysInMonth(year, month int64) int64 {
+	switch month {
+	case 2:
+		if (year%4 == 0 && year%100 != 0) || year%400 == 0 {
+			return 29
+		}
+		return 28
+	case 4, 6, 9, 11:
+		return 30
+	default:
+		return 31
+	}
+}
+
+// daysFromCivil counts days from 1970-01-01 to a proleptic Gregorian date.
+func daysFromCivil(year, month, day int64) int64 {
+	if month <= 2 {
+		year--
+	}
+	era := year
+	if era < 0 {
+		era -= 399
+	}
+	era /= 400
+	yoe := year - era*400
+	shifted := month + 9
+	if month > 2 {
+		shifted = month - 3
+	}
+	doy := (153*shifted+2)/5 + day - 1
+	doe := yoe*365 + yoe/4 - yoe/100 + doy
+	return era*146097 + doe - 719468
 }
 
 // textMatch is a string operator (beyond10x/ess#95): byte-wise and case-sensitive, as

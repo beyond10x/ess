@@ -546,6 +546,7 @@ mod issue_298 {
         let ir = assemble(&boolean_model().replace("        when: pause == false\n", "")).unwrap();
         let command = ir.commands().values().next().unwrap();
         let reversed = Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: ess_primitives::predicate::Operand::Literal(FactValue::Bool(true)),
             op: ess_primitives::predicate::CompareOp::Eq,
             right: ess_primitives::predicate::Operand::Fact("pause".parse().unwrap()),

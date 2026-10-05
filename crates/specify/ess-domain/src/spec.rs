@@ -119,6 +119,12 @@ pub struct RawSpecFile {
     /// commands before anything is converted, and never seen by the rest of assembly.
     #[serde(default)]
     pub outcome_groups: Vec<crate::outcome_group::RawOutcomeGroup>,
+    /// How this file wrote its command guards and entity invariants, read beside the typed fields
+    /// by [`Self::parse`] (`docs/design/expression-family-source22.md`, A1). Never part of the
+    /// document, its schema or its bytes.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub(crate) spelled: crate::expression::lexical::Written,
 }
 
 /// Everything a specification declares, indexed by identity.
@@ -162,21 +168,65 @@ impl RawSpecFile {
     /// A newtype this file declares may key a map it writes (beyond10x/ess#143), together with any
     /// the caller already put in view — which is how [`Self::parse_all`] makes a sibling file's
     /// declarations count.
+    ///
+    /// It also keeps how each command guard and entity invariant was written, which a source from
+    /// `ess/22` reads its bare words by (`docs/design/expression-family-source22.md`, A1). A file
+    /// deserialised directly rather than through here keeps every bare word the text it is
+    /// spelled as, which is what every earlier format means by it.
     pub fn parse(text: &str) -> Result<Self, serde_yaml::Error> {
         let document: serde_yaml::Value = serde_yaml::from_str(text)?;
-        crate::types::MapKeyNewtypes::current()
-            .with_value(&document)
-            .scope(|| serde_yaml::from_value(document))
+        let spelled = crate::expression::lexical::Written::from_document(&document);
+        // A file that names its format reads the operand grammar of that format; one that does
+        // not reads what its caller set, `ess/22`'s when nobody did (see `parse_all`).
+        let format = written_format(&document);
+        let read = move || {
+            crate::types::MapKeyNewtypes::current()
+                .with_value(&document)
+                .scope(|| serde_yaml::from_value(document))
+        };
+        let mut file: Self = match format {
+            Some(format) => ess_primitives::predicate::reading_source22_operands(
+                format.major() >= FormatVersion::V22.major(),
+                read,
+            ),
+            None => read(),
+        }?;
+        file.spelled = spelled;
+        Ok(file)
     }
 
     /// Reads every file of one specification, each result in the order the texts were given.
     ///
     /// The same as [`Self::parse`] on each, except that a newtype declared in any of the files may
-    /// key a map in any other: validity must not depend on which file declares what.
+    /// key a map in any other: validity must not depend on which file declares what. A file that
+    /// names no format reads the operand grammar of the one its system header names.
     pub fn parse_all(texts: &[&str]) -> Vec<Result<Self, serde_yaml::Error>> {
-        crate::types::MapKeyNewtypes::from_documents(texts.iter().copied())
-            .scope(|| texts.iter().map(|text| Self::parse(text)).collect())
+        let headers: Vec<Option<FormatVersion>> = texts
+            .iter()
+            .filter_map(|text| serde_yaml::from_str::<serde_yaml::Value>(text).ok())
+            .filter(|document| document.get("system").is_some())
+            .map(|document| written_format(&document))
+            .collect();
+        let read = || {
+            crate::types::MapKeyNewtypes::from_documents(texts.iter().copied())
+                .scope(|| texts.iter().map(|text| Self::parse(text)).collect())
+        };
+        match headers.as_slice() {
+            [header] => ess_primitives::predicate::reading_source22_operands(
+                header.unwrap_or(FormatVersion::V1).major() >= FormatVersion::V22.major(),
+                read,
+            ),
+            _ => read(),
+        }
     }
+}
+
+/// The format a document names in its `format:` key, when it names one this build can read.
+fn written_format(document: &serde_yaml::Value) -> Option<FormatVersion> {
+    document
+        .get("format")
+        .and_then(serde_yaml::Value::as_str)
+        .and_then(|format| FormatVersion::parse(format).ok())
 }
 
 impl Specification {
@@ -263,9 +313,21 @@ impl Specification {
             &mut collected.refused.moves,
         );
 
-        for (source, file) in files {
-            parts.push(collected.absorb(&source, file, &mut errors));
-        }
+        // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
+        let headers: Vec<Option<FormatVersion>> = files
+            .iter()
+            .filter(|(_, file)| file.system.is_some())
+            .map(|(_, file)| file.format)
+            .collect();
+        let reads_input_namespace = matches!(
+            headers.as_slice(),
+            [Some(format)] if format.major() >= FormatVersion::V22.major()
+        );
+        crate::command::converting_input_namespace(reads_input_namespace, || {
+            for (source, file) in files {
+                parts.push(collected.absorb(&source, file, &mut errors));
+            }
+        });
 
         let lifecycle_types: Vec<NamedType> = collected
             .entities
@@ -287,7 +349,7 @@ impl Specification {
         crate::command::related_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::caller_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::set_effects::read_below_ess_16(system.format, &mut collected.commands);
-        let specification = Self {
+        let mut specification = Self {
             system,
             entities: collected.entities,
             commands: collected.commands,
@@ -301,9 +363,50 @@ impl Specification {
             conversions: collected.conversions,
         };
 
+        // From `ess/22` a bare word on the right of a comparison may name a field; which one is
+        // decided now that the format and every declaration are known (A1).
+        specification.resolve_written(&collected.spelled);
+
         errors.extend(specification.validate_after(&collected.refused));
         errors.extend(specification.validate_roster(&collected.roster));
         errors.into_result(specification)
+    }
+
+    /// Replaces every authored predicate an `ess/22` source wrote with what its bare words name
+    /// there (`docs/design/expression-family-source22.md`, A1). Nothing moves below `ess/22`.
+    fn resolve_written(&mut self, written: &crate::expression::lexical::Written) {
+        let registry = self.types_with_lifecycles(&mut ValidationErrors::new());
+        let resolved = crate::expression::lexical::resolutions(self, &registry, written);
+        for (site, predicate) in resolved {
+            if let crate::expression::lexical::Site::TypeInvariant { name, index } = &site {
+                // A declared type is held twice — in the registry and in its domain's list — and
+                // both copies say the same thing.
+                for domain in &mut self.system.domains {
+                    for declared in domain
+                        .types
+                        .iter_mut()
+                        .filter(|declared| &declared.name == name)
+                    {
+                        if let crate::types::TypeBody::Struct { invariants, .. }
+                        | crate::types::TypeBody::Newtype { invariants, .. } = &mut declared.body
+                        {
+                            if let Some(invariant) = invariants.get_mut(*index) {
+                                invariant.predicate = predicate.clone();
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(slot) = crate::expression::lexical::slot(
+                &site,
+                &mut self.commands,
+                &mut self.entities,
+                &mut self.views,
+                &mut self.system.types,
+            ) {
+                *slot = predicate;
+            }
+        }
     }
 
     /// Checks every reference in the specification.
@@ -344,6 +447,9 @@ impl Specification {
         errors.extend(crate::command::subject_state::validate(self, &registry));
         errors.extend(crate::command::subject_fact::validate(self, &registry));
         errors.extend(crate::command::related_guard::validate(self, &registry));
+        errors.extend(crate::expression::lexical::identity_orderings(
+            self, &registry,
+        ));
         for event in self.events.values() {
             if let Err(event_errors) = event.validate(&registry) {
                 errors.extend(event_errors);
@@ -512,7 +618,10 @@ impl Specification {
     }
 
     /// Build the registry shared by every member validation, retaining duplicate-type errors.
-    fn types_with_lifecycles(&self, errors: &mut ValidationErrors) -> crate::types::TypeRegistry {
+    pub(crate) fn types_with_lifecycles(
+        &self,
+        errors: &mut ValidationErrors,
+    ) -> crate::types::TypeRegistry {
         let mut registry = self.system.types.clone().with_format(self.system.format);
         for entity in self.entities.values() {
             if let Err(error) = registry.insert(entity.state_type()) {
@@ -794,6 +903,9 @@ struct Collected {
     /// The declarations whose own conversion failed, so the reference pass can tell a name that
     /// was declared and refused from a name nobody declared. See [`Refused`].
     refused: Refused,
+    /// How each authored predicate was written, until the header's format says what its bare
+    /// words name (`docs/design/expression-family-source22.md`, A1).
+    spelled: crate::expression::lexical::Written,
 }
 
 /// What has been written under one name, converted or not.
@@ -1004,6 +1116,7 @@ impl Collected {
     ) -> SpecPart {
         let mut part = SpecPart::new(source.clone());
         part.header = self.absorb_header(source, &file, errors);
+        self.spelled.absorb(file.spelled.clone());
         // The owner every member of this file is claimed for, as `Assembly::claim` will claim it.
         let owner = file.domain.clone();
         let owner = owner.as_ref();

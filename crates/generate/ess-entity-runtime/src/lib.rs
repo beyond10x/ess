@@ -3801,12 +3801,14 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         Predicate::Not(child) => Condition::Not {
             not: Box::new(lower_typed(child, rewrite, typing)),
         },
-        Predicate::Compare { left, op, right }
-            if op.needs_ordering() && typing.orders(left, right) != Ordering::Plain =>
-        {
+        Predicate::Compare {
+            left, op, right, ..
+        } if op.needs_ordering() && typing.orders(left, right) != Ordering::Plain => {
             ordered(left, *op, right, rewrite, typing)
         }
-        Predicate::Compare { left, op, right } => Condition::Compare {
+        Predicate::Compare {
+            left, op, right, ..
+        } => Condition::Compare {
             compare: Box::new(Comparison {
                 left: lower_operand(left, rewrite),
                 op: match op {
@@ -4018,6 +4020,7 @@ fn ordered(
     if typing.orders(left, right) == Ordering::Text {
         typing.refused.borrow_mut().push(
             Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: left.clone(),
                 op,
                 right: right.clone(),

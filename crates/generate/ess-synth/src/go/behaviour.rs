@@ -353,6 +353,7 @@ const HELPER_NAMES: &[&str] = &[
     "numberParts",
     "magnitudeOrder",
     "compareNumbers",
+    "compareInstants",
     "isEq",
     "isNe",
     "isLt",
@@ -803,6 +804,11 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
     // What each helper calls, so a used helper brings its own.
     let needs: &[(&str, &[&str])] = &[
         ("compareNumbers", &["numberParts", "truth", "known"]),
+        // The `isEq`…`isGe` acceptors are written with `compareNumbers`.
+        (
+            "compareInstants",
+            &["instant", "truth", "known", "compareNumbers"],
+        ),
         ("numberKey", &["numberParts"]),
         ("numberOrder", &["numberParts"]),
         ("sumValues", &["numberParts", "fitsWide"]),
@@ -1027,6 +1033,28 @@ func magnitudeOrder(leftNegative bool, leftWhole string, leftFraction string, ri
 		return -1
 	}
 	return 1
+}
+"),
+    ("compareInstants", &[], "
+// compareInstants compares two RFC 3339 renderings by the instant each names; an unread one, or
+// one that names no instant, is unknown — never ordered by its spelling.
+func compareInstants(left *string, right *string, accepts func(int) bool) truth {
+	if left == nil || right == nil {
+		return unknown
+	}
+	leftSeconds, leftNanos, leftOk := instant(*left)
+	rightSeconds, rightNanos, rightOk := instant(*right)
+	if !leftOk || !rightOk {
+		return unknown
+	}
+	order := 0
+	switch {
+	case leftSeconds < rightSeconds, leftSeconds == rightSeconds && leftNanos < rightNanos:
+		order = -1
+	case leftSeconds > rightSeconds, leftSeconds == rightSeconds && leftNanos > rightNanos:
+		order = 1
+	}
+	return known(accepts(order))
 }
 "),
     ("compareNumbers", &[], "
@@ -2107,6 +2135,7 @@ impl<'a> Writer<'a> {
                 let path = ess_primitives::facts::FactPath::new(field)
                     .expect("the compiler admitted the field");
                 let compare = Predicate::Compare {
+                    kind: ess_primitives::predicate::CompareKind::Value,
                     left: Operand::Fact(path),
                     op: CompareOp::Eq,
                     right: Operand::Literal(FactValue::Text(equals.clone())),
@@ -2990,7 +3019,9 @@ impl Guards<'_, '_> {
                 self.uses.helpers.insert("truthOf");
                 format!("truthOf({read})")
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 let kind = [left, right]
                     .into_iter()
                     .find_map(|operand| match operand {
@@ -3000,8 +3031,14 @@ impl Guards<'_, '_> {
                     .expect("the plan admits comparisons reading a fact");
                 let left = self.operand(env, left, &kind);
                 let right = self.operand(env, right, &kind);
-                if let Kind::Number(_) = kind {
-                    self.uses.helpers.insert("compareNumbers");
+                if let Kind::Number(_) | Kind::Instant = kind {
+                    // Two `Timestamp`s compare by the instants they name (decision 2).
+                    let helper = if kind == Kind::Instant {
+                        "compareInstants"
+                    } else {
+                        "compareNumbers"
+                    };
+                    self.uses.helpers.insert(helper);
                     let accepts = match op {
                         CompareOp::Eq => "isEq",
                         CompareOp::Ne => "isNe",
@@ -3010,7 +3047,7 @@ impl Guards<'_, '_> {
                         CompareOp::Gt => "isGt",
                         CompareOp::Ge => "isGe",
                     };
-                    format!("compareNumbers({left}, {right}, {accepts})")
+                    format!("{helper}({left}, {right}, {accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
                     let equal = format!("equal({left}, {right})");
@@ -3247,7 +3284,7 @@ impl Guards<'_, '_> {
     /// its rendering and a Boolean as `true` or `false`.
     fn text(&mut self, resolved: &Resolved) -> String {
         match &resolved.kind {
-            Kind::Opaque => {
+            Kind::Opaque | Kind::Instant => {
                 self.uses.helpers.insert("some");
                 let (guards, expression, _) = self.reference(resolved);
                 if guards.is_empty() {
@@ -3283,7 +3320,9 @@ impl Guards<'_, '_> {
             return ReadLeaf::Expression(format!("strconv.Itoa(len({at}))"));
         }
         match &resolved.kind {
-            Kind::Number(Primitive::Decimal) => ReadLeaf::Expression(format!("{at}.Value()")),
+            Kind::Number(Primitive::Decimal) | Kind::Instant => {
+                ReadLeaf::Expression(format!("{at}.Value()"))
+            }
             Kind::Number(_) => {
                 self.emit.import("strconv");
                 ReadLeaf::Expression(format!("strconv.FormatInt({at}, 10)"))

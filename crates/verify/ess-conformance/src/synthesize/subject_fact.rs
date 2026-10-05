@@ -69,6 +69,7 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
     match condition {
         ResolvedCondition::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
         ResolvedCondition::SubjectField { field, equals, .. } => Some(Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Fact(FactPath::new(field).ok()?),
             op: CompareOp::Eq,
             right: Operand::Literal(ess_primitives::facts::FactValue::text(equals.clone())),
@@ -523,6 +524,7 @@ pub(super) fn links(
             left: Operand::Fact(left),
             op: CompareOp::Eq | CompareOp::Ne,
             right: Operand::Fact(right),
+            ..
         } = leaf
         else {
             continue;
@@ -597,7 +599,7 @@ fn compares_link(
                 left: Operand::Fact(left),
                 op: CompareOp::Eq | CompareOp::Ne,
                 right: Operand::Fact(right),
-            } if pair(left, right) || pair(right, left)
+             .. } if pair(left, right) || pair(right, left)
         )
     })
 }
@@ -746,6 +748,7 @@ fn only_compared(
             left: Operand::Fact(left),
             op: CompareOp::Eq | CompareOp::Ne,
             right: Operand::Fact(right),
+            ..
         } if (row(left) && input(right)) || (input(left) && row(right)) => true,
         Predicate::Defined(path) if row(path) => true,
         other => !other.fact_paths().into_iter().any(&touches),
@@ -923,11 +926,17 @@ fn ground_leaf(
         }
     };
     match leaf {
-        Predicate::Compare { left, op, right } => {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => {
             if let (Some(left), Some(right)) = (side(left), side(right)) {
                 // Only a comparison the input takes part in steers the input.
                 if matches!(left, Operand::Fact(_)) || matches!(right, Operand::Fact(_)) {
                     out.push(Predicate::Compare {
+                        kind: *kind,
                         left,
                         op: *op,
                         right,
@@ -2108,6 +2117,7 @@ fn admit_alike(ir: &EssIr, command: &ResolvedCommand, left: &Predicate, right: &
 fn one_value_equality(guard: &Predicate) -> Predicate {
     match guard {
         Predicate::AnyOf { path, values } if values.len() == 1 => Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Fact(path.clone()),
             op: CompareOp::Eq,
             right: Operand::Literal(values[0].clone()),
@@ -2440,6 +2450,7 @@ fn on_literal(leaf: &Predicate) -> Option<Predicate> {
     match (left, right) {
         (Operand::Fact(_), Operand::Literal(_)) | (Operand::Literal(_), Operand::Fact(_)) => {
             Some(Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: left.clone(),
                 op: CompareOp::Eq,
                 right: right.clone(),
@@ -2678,7 +2689,10 @@ fn counter_leaf(
     leaf: &Predicate,
     counters: &BTreeMap<String, Counter>,
 ) -> Option<(String, CompareOp, Number)> {
-    let Predicate::Compare { left, op, right } = leaf else {
+    let Predicate::Compare {
+        left, op, right, ..
+    } = leaf
+    else {
         return None;
     };
     let (path, op, value) = match (left, right) {
@@ -4714,15 +4728,17 @@ fn positive(
                 Predicate::Any(children)
             }
         }
-        Predicate::Compare { left, op, right }
-            if negate && counter_leaf(predicate, counters).is_some() =>
-        {
-            Predicate::Compare {
-                left: left.clone(),
-                op: negated_op(*op),
-                right: right.clone(),
-            }
-        }
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } if negate && counter_leaf(predicate, counters).is_some() => Predicate::Compare {
+            kind: *kind,
+            left: left.clone(),
+            op: negated_op(*op),
+            right: right.clone(),
+        },
         other if negate => Predicate::Not(Box::new(other.clone())),
         other => other.clone(),
     }
@@ -4782,6 +4798,7 @@ pub(super) fn limit_goals(
                     continue;
                 }
                 let pin = Predicate::Compare {
+                    kind: ess_primitives::predicate::CompareKind::Value,
                     left: Operand::Fact(path.clone()),
                     op: CompareOp::Eq,
                     right: Operand::Literal(ess_primitives::facts::FactValue::Number(value)),

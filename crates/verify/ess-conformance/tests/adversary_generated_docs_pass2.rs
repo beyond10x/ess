@@ -135,7 +135,7 @@ fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
 /// Future majors still name the version, newest admitted major and target in their refusal.
 #[test]
 fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
-    for major in [36, 37] {
+    for major in [38, 39] {
         for (target, error) in [
             ("Go", go(&empty_suite(major)).unwrap_err()),
             ("TypeScript", typescript(&empty_suite(major)).unwrap_err()),
@@ -148,7 +148,7 @@ fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
             );
             for needle in [
                 format!("generated {target} runner"),
-                "`ess-conformance/35`".to_owned(),
+                "`ess-conformance/37`".to_owned(),
                 format!("`ess-conformance/{major}`"),
                 "regenerate using a supported suite version".to_owned(),
             ] {
@@ -208,12 +208,23 @@ fn adversary2_emit_boundary_is_the_limit_both_runtimes_declare() {
     let go_newest = go_newest(file(&go_runtime, "/runtime.go"));
     let ts_runtime = typescript(&empty_suite(4)).expect("suite/4 emits");
     let ts_majors = ts_majors(file(&ts_runtime, "/runtime.ts"));
+    // The registered majors up to the newest: contiguous but for the majors other work has
+    // allocated whose readers have not landed (`/36`–`/39` beside the expression pair `/40`, `/41`).
+    let admitted: Vec<u32> = (1..=go_newest)
+        .filter(|major| ess_conformance::scenario::SUPPORTED_SUITE_FORMATS.contains(major))
+        .collect();
     assert_eq!(
-        ts_majors,
-        (1..=go_newest).collect::<Vec<_>>(),
-        "the TypeScript runtime admits other majors than the Go runtime's 1..={go_newest}"
+        ts_majors, admitted,
+        "the TypeScript runtime admits other majors than the Go runtime's {admitted:?}"
     );
-    for major in 1..=go_newest {
+    for major in (1..=go_newest).filter(|major| !admitted.contains(major)) {
+        let suite = empty_suite(major);
+        assert!(
+            go(&suite).is_err() && typescript(&suite).is_err(),
+            "a package is emitted for /{major}, which neither runtime reads"
+        );
+    }
+    for major in admitted {
         let suite = empty_suite(major);
         assert!(
             go(&suite).is_ok(),

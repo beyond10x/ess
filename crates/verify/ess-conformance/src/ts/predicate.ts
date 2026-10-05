@@ -186,6 +186,7 @@ interface PredicateFields {
   left?: Operand;
   op?: string;
   right?: Operand;
+  instant?: boolean;
   path?: string;
   values?: Node[];
   over?: string;
@@ -201,6 +202,8 @@ export class Predicate {
   left: Operand;
   op: string;
   right: Operand;
+  /** A tagged comparison (`as: timestamp`, suite/40): the operands compare as instants. */
+  instant: boolean;
   path: string;
   // any_of / none_of
   values: Node[];
@@ -215,6 +218,7 @@ export class Predicate {
     this.left = fields.left ?? new Operand();
     this.op = fields.op ?? '';
     this.right = fields.right ?? new Operand();
+    this.instant = fields.instant ?? false;
     this.path = fields.path ?? '';
     this.values = fields.values ?? [];
     this.over = fields.over ?? '';
@@ -237,7 +241,9 @@ export class Predicate {
       case 'not':
         return `not (${this.body})`;
       case 'compare':
-        return `${this.left} ${this.op} ${this.right}`;
+        return this.instant
+          ? `${this.left} ${this.op} ${this.right} as timestamp`
+          : `${this.left} ${this.op} ${this.right}`;
       case 'truthy':
         return this.path;
       case 'defined':
@@ -359,6 +365,14 @@ export class Predicate {
     const [left, leftOk] = this.left.resolve(source);
     const [right, rightOk] = this.right.resolve(source);
     if (!leftOk || !rightOk) return TruthUnknown;
+    if (this.instant) {
+      // Decision 2: the instants the two operands name, under every operator. A text that names
+      // no instant is Unknown, never ordered by its spelling.
+      const a = typeof left === 'string' ? parseInstant(left) : undefined;
+      const b = typeof right === 'string' ? parseInstant(right) : undefined;
+      if (a === undefined || b === undefined) return TruthUnknown;
+      return truthOf(acceptsOrder(this.op, compareInstants(a, b)));
+    }
     if (this.op === '==' || this.op === '!=') {
       return truthOf(equal(left, right) === (this.op === '=='));
     }
@@ -515,9 +529,178 @@ export function fromEntry(key: string, value: Node, binders: readonly string[] =
     case 'forall':
     case 'exists':
       return parseQuantifier(key, value, binders);
+    case 'compare':
+      if (isFactMapping(value) && Object.hasOwn(value, 'left')) {
+        return parseTaggedCompare(value, binders);
+      }
+      return parseConstraint(key, value, binders);
     default:
       return parseConstraint(key, value, binders);
   }
+}
+
+/**
+ * Reads `{compare: {left, op, right, as: timestamp}}`, a comparison tagged to compare instants
+ * (suite/40, `docs/design/expression-family-source22.md` decision 2), as Rust's
+ * `Predicate::tagged_compare` does: exactly those four keys. A mapping under `compare` without
+ * `left` is a constraint on a fact named `compare`, as it always was.
+ */
+export function parseTaggedCompare(
+  fields: { [key: string]: Node },
+  binders: readonly string[] = [],
+): Predicate {
+  const refuse = (reason: string): never => {
+    throw new Error(`compare: ${reason}`);
+  };
+  if (Object.keys(fields).length !== 4) {
+    refuse('a tagged comparison takes exactly `left`, `op`, `right` and `as`');
+  }
+  const left = fields['left'];
+  if (typeof left !== 'string' || !factPath.test(left)) refuse('`left` names a fact path');
+  const spelled = fields['op'];
+  const op =
+    typeof spelled === 'string'
+      ? comparisonOperators.find(([spelling]) => spelling === spelled)?.[1]
+      : undefined;
+  if (op === undefined) refuse('`op` is one of eq, ne, lt, lte, gt, gte');
+  if (fields['as'] !== 'timestamp') {
+    refuse('`as` names the one kind a comparison is tagged with, `timestamp`');
+  }
+  const compared = fields['right'] ?? null;
+  let right: Operand;
+  if (typeof compared === 'string') {
+    right = parseOperand(compared, binders);
+  } else if (isFactMapping(compared)) {
+    right = parseFactOperand('compare', 'right', compared);
+  } else if (compared === null || Array.isArray(compared)) {
+    return refuse('`right` is a scalar or `{fact: <path>}`');
+  } else {
+    right = new Operand({ literal: compared });
+  }
+  return new Predicate({
+    kind: 'compare',
+    left: new Operand({ path: left as string, isFact: true }),
+    op: op as string,
+    right,
+    instant: true,
+  });
+}
+
+/** Applies a comparison operator to an ordering, as Rust's `CompareOp::accepts` does. */
+function acceptsOrder(op: string, order: number): boolean {
+  switch (op) {
+    case '==':
+      return order === 0;
+    case '!=':
+      return order !== 0;
+    case '<':
+      return order < 0;
+    case '<=':
+      return order <= 0;
+    case '>':
+      return order > 0;
+    default:
+      return order >= 0;
+  }
+}
+
+/** One RFC 3339 `date-time` on the UTC line: seconds since the epoch and nanoseconds. */
+export interface Instant {
+  seconds: bigint;
+  nanos: number;
+}
+
+export function compareInstants(a: Instant, b: Instant): number {
+  if (a.seconds !== b.seconds) return a.seconds < b.seconds ? -1 : 1;
+  if (a.nanos !== b.nanos) return a.nanos < b.nanos ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Rust's `Rfc3339Instant::parse_rfc3339` (decision 14): the `date-time` production and nothing
+ * wider — `T` or `t`, seconds 00–59 (no leap second), up to nine fraction digits, and `Z`, `z` or
+ * a `±HH:MM` offset; years 0000–9999 with real month lengths. The vectors it answers are
+ * `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json`.
+ */
+export function parseInstant(text: string): Instant | undefined {
+  const digits = (from: number, to: number): number | undefined => {
+    if (from >= to || to > text.length) return undefined;
+    let total = 0;
+    for (let index = from; index < to; index += 1) {
+      const code = text.charCodeAt(index);
+      if (code < 48 || code > 57) return undefined;
+      total = total * 10 + (code - 48);
+    }
+    return total;
+  };
+  const at = (index: number, expected: string): boolean =>
+    index < text.length && expected.includes(text[index]!);
+  if (!(at(4, '-') && at(7, '-') && at(10, 'Tt') && at(13, ':') && at(16, ':'))) return undefined;
+  const year = digits(0, 4);
+  const month = digits(5, 7);
+  const day = digits(8, 10);
+  const hour = digits(11, 13);
+  const minute = digits(14, 16);
+  const second = digits(17, 19);
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    return undefined;
+  }
+  let position = 19;
+  let nanos = 0;
+  if (at(position, '.')) {
+    let end = position + 1;
+    while (end < text.length && text.charCodeAt(end) >= 48 && text.charCodeAt(end) <= 57) end += 1;
+    const width = end - position - 1;
+    if (width === 0 || width > 9) return undefined;
+    nanos = digits(position + 1, end)! * 10 ** (9 - width);
+    position = end;
+  }
+  const rest = text.slice(position);
+  let offset = 0;
+  if (rest !== 'Z' && rest !== 'z') {
+    if (rest.length !== 6 || (rest[0] !== '+' && rest[0] !== '-') || rest[3] !== ':') {
+      return undefined;
+    }
+    const hours = digits(position + 1, position + 3);
+    const minutes = digits(position + 4, position + 6);
+    if (hours === undefined || minutes === undefined || hours > 23 || minutes > 59) {
+      return undefined;
+    }
+    offset = (hours * 3600 + minutes * 60) * (rest[0] === '-' ? -1 : 1);
+  }
+  const seconds =
+    daysFromCivil(year, month, day) * 86400n + BigInt(hour * 3600 + minute * 60 + second - offset);
+  return { seconds, nanos };
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/** Days from 1970-01-01 to a proleptic Gregorian date. */
+function daysFromCivil(year: number, month: number, day: number): bigint {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yoe = y - era * 400;
+  const shifted = month > 2 ? month - 3 : month + 9;
+  const doy = Math.floor((153 * shifted + 2) / 5) + day - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return BigInt(era * 146097 + doe - 719468);
 }
 
 export function parseQuantifier(
@@ -610,7 +793,9 @@ export function parseConstraint(
       const right =
         typeof compared === 'string'
           ? parseOperand(compared, binders)
-          : new Operand({ literal: compared });
+          : isFactMapping(compared)
+            ? parseFactOperand(path, spelling, compared)
+            : new Operand({ literal: compared });
       return new Predicate({
         kind: 'compare',
         left: new Operand({ path, isFact: true }),
@@ -620,6 +805,28 @@ export function parseConstraint(
     }
   }
   throw new Error(`\`${path}\` carries no operator this runner knows`);
+}
+
+/** Whether `value` is a mapping, which a comparison operand can only be as `{fact: <path>}`. */
+function isFactMapping(value: Node): value is { [key: string]: Node } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Reads the explicit fact operand `{fact: <path>}`, the canonical spelling of a one-segment fact on
+ * the right of a comparison (suite/40, `docs/design/expression-family-source22.md` A1), as Rust's
+ * `Operand::fact_mapping` does: exactly one key, naming a fact path. Anything else is refused
+ * rather than compared as the mapping it is. Which suite majors may carry it is the runtime's
+ * admission to decide; this reader only reads it.
+ */
+function parseFactOperand(path: string, key: string, value: { [key: string]: Node }): Operand {
+  const fact = value['fact'];
+  if (Object.keys(value).length !== 1 || typeof fact !== 'string' || !factPath.test(fact)) {
+    throw new Error(
+      `\`${path}: {${key}: …}\`: a comparison operand must be a scalar, or \`{fact: <path>}\` naming a fact`,
+    );
+  }
+  return new Operand({ path: fact, isFact: true });
 }
 
 /** Reads compact expressions. Unrepresentable literal data uses structured comparisons. */

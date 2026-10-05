@@ -556,7 +556,9 @@ fn misplaced(predicate: &Predicate, roots: &[Field]) -> Option<FactPath> {
             children.iter().find_map(|child| misplaced(child, roots))
         }
         Predicate::Not(child) => misplaced(child, roots),
-        Predicate::Compare { left, op, right } => match (caller(left), caller(right)) {
+        Predicate::Compare {
+            left, op, right, ..
+        } => match (caller(left), caller(right)) {
             (None, None) => None,
             (Some(path), None) | (None, Some(path)) => {
                 let other = if caller(left).is_some() { right } else { left };

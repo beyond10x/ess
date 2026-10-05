@@ -325,7 +325,9 @@ impl<'a> Check<'a> {
             Predicate::All(children) => format!("{}({})", self.iv("All"), self.children(children)?),
             Predicate::Any(children) => format!("{}({})", self.iv("Any"), self.children(children)?),
             Predicate::Not(inner) => format!("{}({})", self.iv("Not"), self.predicate(inner)?),
-            Predicate::Compare { left, op, right } => self.compare(left, *op, right)?,
+            Predicate::Compare {
+                left, op, right, ..
+            } => self.compare(left, *op, right)?,
             Predicate::Truthy(path) => format!("{}({})", self.iv("Truthy"), self.fact(path)?),
             Predicate::Defined(path) => self.defined(path)?,
             Predicate::AnyOf { path, values } => {

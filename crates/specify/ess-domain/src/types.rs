@@ -1699,6 +1699,11 @@ impl TypeRegistry {
     pub fn get(&self, name: &QualifiedName) -> Option<&NamedType> {
         self.types.get(name)
     }
+    /// The type declared as `name`, to rewrite in place: how an `ess/22` source's invariants are
+    /// resolved once the format is known (`docs/design/expression-family-source22.md`, A1).
+    pub(crate) fn get_mut(&mut self, name: &QualifiedName) -> Option<&mut NamedType> {
+        self.types.get_mut(name)
+    }
 
     /// The fields of the struct `reference` resolves to through `Optional` and newtypes, or `None`
     /// where it resolves to anything else. A nested payload mapping fills exactly these (ess/14).

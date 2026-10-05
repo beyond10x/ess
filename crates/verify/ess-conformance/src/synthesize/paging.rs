@@ -217,7 +217,13 @@ fn bind(predicate: &Predicate, params: &BTreeMap<String, ScenarioValue>) -> Pred
             Predicate::Any(children.iter().map(|child| bind(child, params)).collect())
         }
         Predicate::Not(inner) => Predicate::Not(Box::new(bind(inner, params))),
-        Predicate::Compare { left, op, right } => Predicate::Compare {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => Predicate::Compare {
+            kind: *kind,
             left: operand(left, params),
             op: *op,
             right: operand(right, params),

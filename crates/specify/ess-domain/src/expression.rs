@@ -6,9 +6,13 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+pub mod lexical;
+
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{
+    CompareKind, CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp,
+};
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
 
@@ -139,6 +143,23 @@ pub trait TypeEnvironment {
             site: true,
             format: true,
         }
+    }
+    /// Whether a one-segment fact that no binder names may stand on the right of a comparison —
+    /// the operand the canonical form writes as `{fact: …}`, which `ess/22` introduced
+    /// (`docs/design/expression-family-source22.md`, A1).
+    ///
+    /// `true` by default, for the reason [`Self::admits_text_length`] is.
+    fn admits_root_facts(&self) -> bool {
+        true
+    }
+    /// Whether this environment checks an authored source whose bare words name roots (`ess/22`
+    /// or later): a binder that shadows a root is then refused where a bare word would read it,
+    /// and a quoted word naming a root is refused with the unquoted repair.
+    ///
+    /// `false` by default: an IR keeps no bare words, and a binder that shadowed a root in an
+    /// admitted older source keeps meaning the binder.
+    fn resolves_bare_words(&self) -> bool {
+        false
     }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
@@ -342,6 +363,16 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         self.registry
             .format()
             .is_none_or(|format| format.major() >= crate::system::FormatVersion::V16.major())
+    }
+    fn admits_root_facts(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V22.major())
+    }
+    fn resolves_bare_words(&self) -> bool {
+        self.registry
+            .format()
+            .is_some_and(|format| format.major() >= crate::system::FormatVersion::V22.major())
     }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
@@ -771,6 +802,250 @@ fn canonical_ordinal(segment: &str) -> bool {
             && segment.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
+/// Decides every bare word of an authored predicate against `environment`
+/// (`docs/design/expression-family-source22.md`, A1), returning the resolved predicate.
+///
+/// In this order, for an unquoted, undotted word on the right of a comparison that no binder in
+/// scope names (a binder was already read as the binder, #289):
+///
+/// 1. the left side is enum-backed and declares the word as a variant: the variant, so an admitted
+///    `state == Open` keeps its meaning even beside a root named `Open`;
+/// 2. the word is exactly an observable root of the environment: that fact — a root named `now`
+///    included, which is why the current-time reading needs no root of that name;
+/// 3. otherwise the text it always was.
+///
+/// Nothing is refused here. [`check_predicate`] checks the result as it checks any predicate.
+pub fn resolve_lexical<E: TypeEnvironment>(
+    environment: &E,
+    lexical: &lexical::LexicalPredicate,
+) -> Predicate {
+    let resolved = lexical.lower_scoped(
+        &mut |left, _, word, scope| {
+            let bindings = scope_bindings(environment, scope);
+            let variant = match left {
+                Operand::Fact(path) => resolve(environment, path, "", &bindings)
+                    .ok()
+                    .and_then(|resolved| resolved.variants)
+                    .is_some_and(|variants| variants.iter().any(|variant| variant == word)),
+                Operand::Literal(_) => false,
+            };
+            if !variant && environment.root(word).is_some() {
+                if let Ok(path) = FactPath::new(word) {
+                    return Operand::Fact(path);
+                }
+            }
+            Operand::Literal(FactValue::Text(word.to_owned()))
+        },
+        &mut Vec::new(),
+    );
+    tag_instants(environment, resolved, &mut Vec::new())
+}
+
+/// Tags every comparison of two facts that both resolve to `Timestamp` to compare instants
+/// (`docs/design/expression-family-source22.md`, final review decision 2), so a reader with no
+/// declared types compares the instants and never the spellings. Everything else is unchanged.
+fn tag_instants<E: TypeEnvironment>(
+    environment: &E,
+    predicate: Predicate,
+    scope: &mut Vec<(FactPath, String)>,
+) -> Predicate {
+    match predicate {
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op,
+            right: Operand::Fact(right),
+            kind: CompareKind::Value,
+        } => {
+            let pairs: Vec<(&FactPath, &str)> = scope
+                .iter()
+                .map(|(over, bind)| (over, bind.as_str()))
+                .collect();
+            let bindings = bindings_of(environment, &pairs);
+            let instant = |path: &FactPath| {
+                resolve(environment, path, "", &bindings).is_ok_and(|resolved| {
+                    resolved.scalar.is_some() && environment.is_instant(&resolved.terminal)
+                })
+            };
+            let kind = if instant(&left) && instant(&right) {
+                CompareKind::Instant
+            } else {
+                CompareKind::Value
+            };
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                op,
+                right: Operand::Fact(right),
+                kind,
+            }
+        }
+        Predicate::All(children) => Predicate::All(
+            children
+                .into_iter()
+                .map(|child| tag_instants(environment, child, scope))
+                .collect(),
+        ),
+        Predicate::Any(children) => Predicate::Any(
+            children
+                .into_iter()
+                .map(|child| tag_instants(environment, child, scope))
+                .collect(),
+        ),
+        Predicate::Not(inner) => Predicate::Not(Box::new(tag_instants(environment, *inner, scope))),
+        Predicate::Forall(quantified) => {
+            Predicate::Forall(Box::new(tag_quantified(environment, *quantified, scope)))
+        }
+        Predicate::Exists(quantified) => {
+            Predicate::Exists(Box::new(tag_quantified(environment, *quantified, scope)))
+        }
+        other => other,
+    }
+}
+
+fn tag_quantified<E: TypeEnvironment>(
+    environment: &E,
+    quantified: Quantified,
+    scope: &mut Vec<(FactPath, String)>,
+) -> Quantified {
+    scope.push((quantified.over.clone(), quantified.bind.clone()));
+    let body = tag_instants(environment, quantified.body, scope);
+    scope.pop();
+    Quantified {
+        over: quantified.over,
+        bind: quantified.bind,
+        body,
+    }
+}
+
+/// The binders `scope` introduces, typed as [`Checker::quantified`] types them.
+fn scope_bindings<E: TypeEnvironment>(
+    environment: &E,
+    scope: &[&lexical::LexicalQuantified],
+) -> Vec<Binding<E::Type>> {
+    let pairs: Vec<(&FactPath, &str)> = scope
+        .iter()
+        .map(|quantified| (&quantified.over, quantified.bind.as_str()))
+        .collect();
+    bindings_of(environment, &pairs)
+}
+
+/// The binders of `(collection, binder)` pairs, outermost first, typed as
+/// [`Checker::quantified`] types them.
+fn bindings_of<E: TypeEnvironment>(
+    environment: &E,
+    scope: &[(&FactPath, &str)],
+) -> Vec<Binding<E::Type>> {
+    let mut bindings: Vec<Binding<E::Type>> = Vec::new();
+    for (over, bind) in scope {
+        let target = resolve(environment, over, "", &bindings).ok();
+        let reference =
+            target
+                .as_ref()
+                .and_then(|target| match environment.shape(&target.terminal) {
+                    Ok(Shape::List(element) | Shape::Map(element)) if target.scalar.is_none() => {
+                        Some(element)
+                    }
+                    _ => None,
+                });
+        bindings.push(Binding {
+            name: (*bind).to_owned(),
+            reference,
+            access: Access {
+                collection: true,
+                text_length: false,
+                depth: target.as_ref().map_or(0, |target| target.access.depth + 1),
+            },
+            optional: target.is_some_and(|target| target.optional),
+        });
+    }
+    bindings
+}
+
+/// A command's input guard with `input.<path>` read as the input `<path>` names
+/// (`docs/design/expression-family-source22.md`, A1, decision 6).
+///
+/// For a command that declares no input field named `input`, the caller's guard: the plain `when:`
+/// reads the command's input as its roots, so `input.depends_on` is `depends_on`. A path under a
+/// binder named `input` is the binder's and is left alone, and so is a bare `input`, which the
+/// checker refuses as the root it is not.
+pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
+    fn strip(path: &FactPath, bound: &[&str]) -> FactPath {
+        let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
+        if path.namespace() == namespace && path.segments().len() > 1 && !bound.contains(&namespace)
+        {
+            FactPath::from_segments(&path.segments()[1..])
+        } else {
+            path.clone()
+        }
+    }
+    fn operand(operand: &Operand, bound: &[&str]) -> Operand {
+        match operand {
+            Operand::Fact(path) => Operand::Fact(strip(path, bound)),
+            Operand::Literal(_) => operand.clone(),
+        }
+    }
+    fn walk<'a>(predicate: &'a Predicate, bound: &mut Vec<&'a str>) -> Predicate {
+        match predicate {
+            Predicate::Always | Predicate::Never => predicate.clone(),
+            Predicate::All(children) => {
+                Predicate::All(children.iter().map(|child| walk(child, bound)).collect())
+            }
+            Predicate::Any(children) => {
+                Predicate::Any(children.iter().map(|child| walk(child, bound)).collect())
+            }
+            Predicate::Not(inner) => Predicate::Not(Box::new(walk(inner, bound))),
+            Predicate::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } => Predicate::Compare {
+                kind: *kind,
+                left: operand(left, bound),
+                op: *op,
+                right: operand(right, bound),
+            },
+            Predicate::Truthy(path) => Predicate::Truthy(strip(path, bound)),
+            Predicate::Defined(path) => Predicate::Defined(strip(path, bound)),
+            Predicate::AnyOf { path, values } => Predicate::AnyOf {
+                path: strip(path, bound),
+                values: values.clone(),
+            },
+            Predicate::NoneOf { path, values } => Predicate::NoneOf {
+                path: strip(path, bound),
+                values: values.clone(),
+            },
+            Predicate::TextMatch { path, op, value } => Predicate::TextMatch {
+                path: strip(path, bound),
+                op: *op,
+                value: value.clone(),
+            },
+            Predicate::FoldMatch { path, op, values } => Predicate::FoldMatch {
+                path: strip(path, bound),
+                op: *op,
+                values: values.clone(),
+            },
+            Predicate::Forall(quantified) => {
+                Predicate::Forall(Box::new(quantifier(quantified, bound)))
+            }
+            Predicate::Exists(quantified) => {
+                Predicate::Exists(Box::new(quantifier(quantified, bound)))
+            }
+        }
+    }
+    fn quantifier<'a>(quantified: &'a Quantified, bound: &mut Vec<&'a str>) -> Quantified {
+        let over = strip(&quantified.over, bound);
+        bound.push(&quantified.bind);
+        let body = walk(&quantified.body, bound);
+        bound.pop();
+        Quantified {
+            over,
+            bind: quantified.bind.clone(),
+            body,
+        }
+    }
+    walk(predicate, &mut Vec::new())
+}
+
 /// Check every child and operand without evaluating or rewriting the predicate.
 pub fn check_predicate<E: TypeEnvironment>(
     environment: &E,
@@ -1001,17 +1276,26 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             .as_ref()
             .is_some_and(|variants| variants.contains(text));
         if !enum_variant && self.environment.root(text).is_some() {
-            self.checked.errors.push(error(
-                self.owner,
-                ValidationCode::TypeMismatch,
-                Some(path),
-                None,
+            let message = if self.environment.resolves_bare_words() {
+                format!(
+                    "`{expression}` reads `{text}` as the text literal \"{text}\", not the field \
+                     `{text}`: a quoted word, like the equality shorthand, is always text. To \
+                     compare with the field, write it unquoted, such as `{path} {op} {text}`"
+                )
+            } else {
                 format!(
                     "`{expression}` reads `{text}` as the text literal \"{text}\", not the field \
                      `{text}`: a right-hand side without a dot is a literal. To compare two fields, \
                      declare them in one struct and compare its members, such as \
                      `window.{path} {op} window.{text}`"
-                ),
+                )
+            };
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                message,
             ));
             return;
         }
@@ -1215,7 +1499,63 @@ impl<E: TypeEnvironment> Checker<'_, E> {
 
     /// One comparison: its operands agree in kind, and every ordering, enum and text-literal rule
     /// that applies to them holds.
+    /// The format gate and the operand rule of a comparison tagged to compare instants
+    /// (`docs/design/expression-family-source22.md`, final review decision 2): from `ess/22`, and
+    /// only between two facts that both resolve to `Timestamp`. `false` when the format refuses
+    /// it, so it is not checked a second time.
+    fn tagged_instants(
+        &mut self,
+        predicate: &Predicate,
+        left: &Operand,
+        right: &Operand,
+        kind: CompareKind,
+    ) -> bool {
+        if kind != CompareKind::Instant {
+            return true;
+        }
+        if !self.environment.admits_root_facts() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                left.fact_path(),
+                None,
+                format!(
+                    "`{predicate}` is tagged to compare instants, written `as: timestamp`, which \
+                     requires specification format ess/22"
+                ),
+            ));
+            return false;
+        }
+        for operand in [left, right] {
+            let instant = match operand {
+                Operand::Fact(path) => {
+                    let bindings = self.bindings.clone();
+                    resolve(self.environment, path, self.owner, &bindings).is_ok_and(|resolved| {
+                        resolved.scalar.is_some() && self.environment.is_instant(&resolved.terminal)
+                    })
+                }
+                Operand::Literal(_) => false,
+            };
+            if !instant {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    operand.fact_path(),
+                    None,
+                    format!(
+                        "`{predicate}` is tagged to compare instants, and `{operand}` is not a \
+                         Timestamp fact; only two Timestamp facts compare `as: timestamp`"
+                    ),
+                ));
+            }
+        }
+        true
+    }
+
     fn compare(&mut self, predicate: &Predicate, left: &Operand, op: CompareOp, right: &Operand) {
+        if !self.root_fact_operand(predicate, right) {
+            return;
+        }
         let left_type = self.operand(left);
         let right_type = self.operand(right);
         if let (Some(left_type), Some(right_type)) = (left_type, right_type) {
@@ -1258,6 +1598,49 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 }
             }
         }
+    }
+
+    /// The format gate and the shadowing rule for a one-segment fact on the right
+    /// (`docs/design/expression-family-source22.md`, A1, decision 5). `false` when refused here,
+    /// so the comparison is not checked a second time.
+    fn root_fact_operand(&mut self, predicate: &Predicate, right: &Operand) -> bool {
+        let Operand::Fact(path) = right else {
+            return true;
+        };
+        if path.segments().len() != 1 {
+            return true;
+        }
+        let name = path.namespace();
+        let bound = self.bindings.iter().any(|binding| binding.name == name);
+        if !bound && !self.environment.admits_root_facts() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` compares with the fact `{name}` on its right, written \
+                     `{{fact: {name}}}`, which requires specification format ess/22"
+                ),
+            ));
+            return false;
+        }
+        if bound && self.environment.resolves_bare_words() && self.environment.root(name).is_some()
+        {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` reads `{name}` as the binder in scope, which shadows the field \
+                     `{name}`: from ess/22 a bare word on the right names a field, so a binder of \
+                     the same name would make one spelling mean two things; rename the binder"
+                ),
+            ));
+            return false;
+        }
+        true
     }
 
     /// A string operator (beyond10x/ess#95): a `String` fact, or a newtype of one at any depth,
@@ -1395,7 +1778,16 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 }
             }
             Predicate::Not(inner) => self.predicate(inner),
-            Predicate::Compare { left, op, right } => self.compare(predicate, left, *op, right),
+            Predicate::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } => {
+                if self.tagged_instants(predicate, left, right, *kind) {
+                    self.compare(predicate, left, *op, right);
+                }
+            }
             Predicate::Truthy(path) | Predicate::Defined(path) => {
                 let Some(resolved) = self.read(path, false) else {
                     return;

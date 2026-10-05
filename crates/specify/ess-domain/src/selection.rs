@@ -210,7 +210,7 @@ fn predicate_count(predicate: &Predicate, at: &str) -> Result<usize, ValidationE
 
             Predicate::All(children) | Predicate::Any(children) => pending.extend(children),
             Predicate::Not(child) => pending.push(child),
-            Predicate::Always | Predicate::Never | Predicate::Defined(_) | Predicate::Compare { left: Operand::Fact(_), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(ess_primitives::facts::FactValue::Text(_)) } => {}
+            Predicate::Always | Predicate::Never | Predicate::Defined(_) | Predicate::Compare { left: Operand::Fact(_), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(ess_primitives::facts::FactValue::Text(_)) , .. } => {}
             // The bounded contract for string operators (docs/design/string-predicate-operators.md,
             // *Selection*): a text literal, not empty, and no longer than any admitted read, so one
             // pass over a read the selection already bounds decides it.

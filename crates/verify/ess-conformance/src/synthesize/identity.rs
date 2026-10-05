@@ -206,7 +206,9 @@ fn visit(
             inner.push(quantified.bind.as_str());
             visit(&quantified.body, &inner, tokens, kept, dropped);
         }
-        Predicate::Compare { left, op, right } => {
+        Predicate::Compare {
+            left, op, right, ..
+        } => {
             let (left, right) = (fact(left, binders), fact(right, binders));
             let decides = matches!(op, CompareOp::Eq | CompareOp::Ne)
                 && match (left, right) {
@@ -287,6 +289,7 @@ fn compared(predicate: &Predicate, param: &FactPath, out: &mut BTreeSet<String>)
             left: Operand::Fact(left),
             op: CompareOp::Eq | CompareOp::Ne,
             right: Operand::Fact(right),
+            ..
         } => {
             for (one, other) in [(left, right), (right, left)] {
                 if one == param && other.segments().len() == 1 {

@@ -70,6 +70,7 @@ import {
   fromNode,
   meaningDecimal,
   parseOperand,
+  parseTaggedCompare,
   TruthTrue,
   TruthUnknown,
   TEXT_OPERATORS,
@@ -2695,7 +2696,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /35 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /41 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -6074,10 +6075,18 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // Zero-invocation observation of a conditioned binding (beyond10x/ess#268).
   'ess-conformance/36': 36,
   'ess-conformance/37': 37,
+  // The persisted expression vocabulary (`docs/design/expression-family-source22.md`), cumulative
+  // over /36–/39; /38 and /39 are allocated to other work and this runtime has no reader for them yet.
+  'ess-conformance/40': 40,
+  'ess-conformance/41': 41,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
-const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37]);
+const COVERAGE_MAJORS = new Set([
+  5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
+  // The expression pair's coverage major.
+  41,
+]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
 export function coverageMajor(major: number): boolean {
@@ -7040,6 +7049,15 @@ export function admitPredicateEnvelope(value: Node, depth: number): void {
         case 'not':
           admitPredicateEnvelope(child, depth + 1);
           break;
+        case 'compare':
+          if (isObject(child) && Object.hasOwn(child, 'left')) {
+            // A tagged comparison (suite/40); admitPredicateVersion gates the major.
+            parseTaggedCompare(child);
+            break;
+          }
+          admitPredicatePath(key);
+          admitPredicateConstraint(child);
+          break;
         case 'forall':
         case 'exists': {
           const fields = closed(child, 'in as that', '');
@@ -7074,6 +7092,14 @@ export function admitPredicateScalar(value: Node): void {
   throw new Error('predicate operand must be a boolean, number or string');
 }
 
+/** Admits exactly `{fact: <path>}`, the canonical one-segment fact operand (suite/40). */
+function admitFactOperand(operand: { [key: string]: Node }): void {
+  const path = operand['fact'];
+  if (Object.keys(operand).length !== 1 || typeof path !== 'string' || !factPath.test(path)) {
+    throw new Error('a comparison operand must be a scalar, or {fact: <path>} naming a fact');
+  }
+}
+
 export function admitPredicateConstraint(value: Node): void {
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -7102,7 +7128,12 @@ export function admitPredicateConstraint(value: Node): void {
         case 'ge':
         case 'gte':
         case '>=':
-          admitPredicateScalar(operand);
+          if (isObject(operand)) {
+            // The explicit fact operand (suite/40); admitPredicateVersion gates the major.
+            admitFactOperand(operand);
+          } else {
+            admitPredicateScalar(operand);
+          }
           break;
         case 'any_of':
         case 'in':
@@ -10676,6 +10707,50 @@ export function admitPredicateVersion(value: Node, major: number): void {
   if (major < 8 && predicateNeedsLosslessReader(value)) {
     throw new Error('normalized structured comparison operands require suite/8 or /9');
   }
+  if (major < 40 && predicateUsesFactOperand(value)) {
+    throw new Error('a one-segment fact operand {fact: …} requires suite/40 or /41');
+  }
+  if (major < 40 && predicateUsesOperator(value, ['left'])) {
+    throw new Error('a comparison tagged as: timestamp requires suite/40 or /41');
+  }
+}
+
+/** Whether admitted predicate grammar carries the explicit fact operand `{fact: …}` (suite/40). */
+export function predicateUsesFactOperand(value: Node): boolean {
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesFactOperand);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key];
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesFactOperand(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (isObject(child) && predicateUsesFactOperand((child as { [key: string]: Node }).that)) {
+          return true;
+        }
+        break;
+      default:
+        if (isObject(child)) {
+          for (const operand of Object.values(child as { [key: string]: Node })) {
+            if (isObject(operand)) return true;
+          }
+        }
+    }
+  }
+  return false;
 }
 
 /** Whether admitted predicate grammar carries a case-insensitive operator (beyond10x/ess#140). */

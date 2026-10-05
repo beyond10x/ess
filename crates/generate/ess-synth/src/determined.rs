@@ -638,6 +638,9 @@ pub(crate) enum Kind {
     State,
     /// A `Boolean`.
     Bool,
+    /// A `Timestamp`, compared with another by the instant each names
+    /// (`docs/design/expression-family-source22.md`, decision 2).
+    Instant,
     /// Anything else: only `defined()` reads it.
     Opaque,
 }
@@ -826,6 +829,14 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
                     Primitive::Integer | Primitive::Decimal => Kind::Number(*name),
                     Primitive::String | Primitive::Uuid => Kind::Text,
                     Primitive::Boolean => Kind::Bool,
+                    // From ess/22 a `Timestamp` compares by its instant (decision 2); below it, it
+                    // stays the value no guard compares, with every reason it had.
+                    Primitive::Timestamp
+                        if ir.format().major()
+                            >= ess_domain::system::FormatVersion::V22.major() =>
+                    {
+                        Kind::Instant
+                    }
                     _ => Kind::Opaque,
                 };
                 return Ok(Resolved {
@@ -856,13 +867,20 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
                 "a truthiness test of `{path}`, which is not a `Boolean`"
             )),
         },
-        Predicate::Compare { left, op, right } => {
+        Predicate::Compare {
+            left, op, right, ..
+        } => {
             let kind = |operand: &Operand| match operand {
                 Operand::Fact(path) => resolve(ir, env, path).map(|it| Some(it.kind)),
                 Operand::Literal(_) => Ok(None),
             };
             let (left_kind, right_kind) = (kind(left)?, kind(right)?);
             let compared = match (&left_kind, &right_kind) {
+                // An instant (ess/22, see `resolve`) is compared with another fact only: a
+                // literal instant has no generated reading here, and `now` none at all.
+                (Some(Kind::Instant), None) | (None, Some(Kind::Instant)) => {
+                    return Err(format!("`{predicate}`, over a value no guard compares"))
+                }
                 (Some(kind), None) => {
                     literal_matches(kind, literal_of(right))?;
                     kind
@@ -880,7 +898,7 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
                 (None, None) => return Err(format!("`{predicate}`, comparing two literals")),
             };
             match (compared, op) {
-                (Kind::Number(_), _)
+                (Kind::Number(_) | Kind::Instant, _)
                 | (
                     Kind::Text | Kind::Enum(..) | Kind::State | Kind::Bool,
                     CompareOp::Eq | CompareOp::Ne,
@@ -940,6 +958,7 @@ fn comparable(left: &Kind, right: &Kind) -> bool {
         (Kind::Number(_), Kind::Number(_))
         | (Kind::Text, Kind::Text)
         | (Kind::Bool, Kind::Bool)
+        | (Kind::Instant, Kind::Instant)
         | (Kind::State, Kind::State) => true,
         (Kind::Enum(left, _), Kind::Enum(right, _)) => left == right,
         _ => false,

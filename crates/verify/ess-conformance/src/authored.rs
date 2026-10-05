@@ -1444,7 +1444,9 @@ fn at_every_run(guard: &Predicate, facts: &dyn ess_primitives::facts::FactSource
                 children.iter().try_for_each(|child| clocked(child, found))
             }
             Predicate::Not(inner) => clocked(inner, found),
-            Predicate::Compare { left, op, right } if reads_now(left) || reads_now(right) => {
+            Predicate::Compare {
+                left, op, right, ..
+            } if reads_now(left) || reads_now(right) => {
                 if matches!(op, CompareOp::Eq | CompareOp::Ne) {
                     return None;
                 }

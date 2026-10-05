@@ -1183,7 +1183,9 @@ impl<'ir> InputFacts<'ir> {
             | Predicate::NoneOf { path, .. }
             | Predicate::TextMatch { path, .. }
             | Predicate::FoldMatch { path, .. } => push(self.explain_path(path)),
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 let mut unresolved = false;
                 for operand in [left, right] {
                     if let Operand::Fact(path) = operand {

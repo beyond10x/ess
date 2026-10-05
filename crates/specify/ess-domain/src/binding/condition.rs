@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
+use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate, Truth};
 
 use crate::command::EventSpec;
 use crate::system::FormatVersion;
@@ -280,6 +280,7 @@ impl ConditionPlan {
                     left: Operand::Fact(path),
                     op: CompareOp::Eq | CompareOp::Ne,
                     right: Operand::Literal(literal),
+                    kind: CompareKind::Value,
                 } => match resolve_path(path, event, types, at) {
                     Ok(read) => {
                         if let Err(error) = literal_fits(&read, literal, at) {

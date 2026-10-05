@@ -81,6 +81,7 @@ impl<'a> Held<'a> {
             } => (
                 self.row.evaluate_with(|row| {
                     Predicate::Compare {
+                        kind: ess_primitives::predicate::CompareKind::Value,
                         left: Operand::Fact(FactPath::new(field).expect("resolved subject field")),
                         op: CompareOp::Eq,
                         right: Operand::Literal(FactValue::text(equals.clone())),
