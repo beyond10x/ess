@@ -51,6 +51,11 @@
 //! spelling is text to this reader for the same reason a bare word is, and
 //! [`Spelled::offsets`] marks where it was written unquoted.
 //!
+//! The UTF-8 byte length of a text — `label.utf8_bytes <= 255` — is [`Operand::Derived`], canonically
+//! `{compare: {left: {utf8_bytes: label}, op: lte, right: 255}}`, or `limit: {gte: {utf8_bytes:
+//! label}}` on the right. This reader reads `label.utf8_bytes` as the path it is spelled like: only
+//! the source format and the declarations say there is no member of that name, in `ess-domain`.
+//!
 //! # Quantifiers
 //!
 //! Everything above asks about one value. A claim about a *collection* — every element, or some
@@ -395,6 +400,106 @@ pub enum Operand {
     /// One fact moved by one constant, `lower + 5` or `issued_at - 24h`
     /// (`docs/design/expression-family-source22.md`, A2). Legal on the right of a comparison only.
     Offset(OffsetOperand),
+    /// A value derived from a fact rather than read at its path: the UTF-8 byte length of a text,
+    /// `{utf8_bytes: label}` (`docs/design/expression-family-source22.md`, "String `.utf8_bytes`",
+    /// final review decision 11). Legal as either operand of a comparison, and nowhere else.
+    Derived(Derived),
+}
+
+/// A value an evaluator derives from the fact at a path, never reads at a path of its own.
+///
+/// The resolved predicate carries it as this closed operand rather than as the path
+/// `label.utf8_bytes`, so a declared member named `utf8_bytes` keeps meaning that member and no
+/// evaluator decides what a path is by its last segment. Its canonical form is the one-key mapping
+/// `{utf8_bytes: <parent>}`, which suite `/40` and specification format `ess/22` introduce.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Derived {
+    /// The number of bytes the UTF-8 encoding of the text at the parent path takes, an `Integer`.
+    ///
+    /// A bound full-path observation, `<parent>.utf8_bytes`, wins over the parent — the rule a
+    /// text's `.count` follows (`FactSource::observe`) — but, unlike a `.count`, only a whole
+    /// number from zero is a byte length: any other bound value is `Unknown`, with no fallback to
+    /// the parent. Otherwise the parent's text is measured; an unobserved parent, an absent
+    /// `Optional` and a value that is no text are `Unknown`. Empty text is zero, and no Unicode
+    /// normalization occurs. A text holding a lone surrogate is no Unicode text and its byte length
+    /// is `Unknown` in every lane; a Rust `str` cannot hold one, so here it never arrives.
+    Utf8Bytes(FactPath),
+}
+
+impl Derived {
+    /// The key of the canonical mapping `{utf8_bytes: <parent>}`, and the path segment a source
+    /// format reads it from (`label.utf8_bytes`).
+    pub const UTF8_BYTES: &'static str = "utf8_bytes";
+
+    /// The fact this value is derived from.
+    pub fn parent(&self) -> &FactPath {
+        match self {
+            Self::Utf8Bytes(parent) => parent,
+        }
+    }
+
+    /// The same derivation of another fact.
+    #[must_use]
+    pub fn with_parent(&self, parent: FactPath) -> Self {
+        match self {
+            Self::Utf8Bytes(_) => Self::Utf8Bytes(parent),
+        }
+    }
+
+    /// The path a full-path observation of this value is bound at: `<parent>.utf8_bytes`.
+    pub fn observed_at(&self) -> FactPath {
+        match self {
+            Self::Utf8Bytes(parent) => parent.child(Self::UTF8_BYTES),
+        }
+    }
+
+    /// The value this derivation reads from `facts`, or `None` where it is `Unknown`.
+    pub fn value(&self, facts: &dyn FactSource) -> Option<FactValue> {
+        self.value_with(&|path| facts.fact(path))
+    }
+
+    /// [`Self::value`], reading each fact through `fact`: what a synthesizer writes in for a derived
+    /// operand whose parent it already knows. One rule for both, so a witness never measures text
+    /// differently from the evaluator that decides it.
+    pub fn value_with(&self, fact: &dyn Fn(&FactPath) -> Option<FactValue>) -> Option<FactValue> {
+        match self {
+            Self::Utf8Bytes(parent) => {
+                if let Some(bound) = fact(&self.observed_at()) {
+                    let length = bound.as_number()?;
+                    return (length.as_i64()? >= 0).then_some(FactValue::Number(length));
+                }
+                match fact(parent)? {
+                    FactValue::Text(text) => Some(FactValue::count(text.len())),
+                    FactValue::Bool(_) | FactValue::Number(_) => None,
+                }
+            }
+        }
+    }
+
+    /// The canonical mapping, `{utf8_bytes: <parent>}`.
+    pub fn to_node(&self) -> Node {
+        match self {
+            Self::Utf8Bytes(parent) => {
+                Node::Map([(Self::UTF8_BYTES.to_owned(), Node::Text(parent.to_string()))].into())
+            }
+        }
+    }
+}
+
+impl fmt::Display for Derived {
+    /// The canonical mapping in one line, never the path `label.utf8_bytes`: that spelling names a
+    /// declared member wherever there is one.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Utf8Bytes(parent) => write!(f, "{{{}: {parent}}}", Self::UTF8_BYTES),
+        }
+    }
+}
+
+impl serde::Serialize for Derived {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_node().serialize(serializer)
+    }
 }
 
 /// Which way an offset moves its base.
@@ -680,14 +785,17 @@ impl Operand {
             Self::Fact(path) => facts.observe(path),
             Self::Literal(value) => Some(value.clone()),
             Self::Offset(_) => None,
+            Self::Derived(derived) => derived.value(facts),
         }
     }
 
-    /// The fact path this operand reads, if any: an offset reads its base.
+    /// The fact path this operand reads, if any: an offset reads its base, and a derived value the
+    /// fact it is derived from.
     pub fn fact_path(&self) -> Option<&FactPath> {
         match self {
             Self::Fact(path) => Some(path),
             Self::Offset(offset) => Some(&offset.base),
+            Self::Derived(derived) => Some(derived.parent()),
             Self::Literal(_) => None,
         }
     }
@@ -704,6 +812,7 @@ impl Operand {
                 direction: offset.direction,
                 magnitude: offset.magnitude,
             }),
+            Self::Derived(derived) => Self::Derived(derived.with_parent(map(derived.parent()))),
             Self::Literal(value) => Self::Literal(value.clone()),
         }
     }
@@ -804,8 +913,9 @@ impl Operand {
         let refuse = || {
             ParseError::predicate(
                 &written(),
-                "a comparison operand must be a scalar, `{fact: <path>}` naming a fact, or \
-                 `{offset: {fact: <path>, add|subtract: <magnitude>}}`",
+                "a comparison operand must be a scalar, `{fact: <path>}` naming a fact, \
+                 `{offset: {fact: <path>, add|subtract: <magnitude>}}`, or `{utf8_bytes: <path>}` \
+                 naming a text",
             )
         };
         match entries.iter().next() {
@@ -813,6 +923,13 @@ impl Operand {
                 FactPath::new(path).map(Self::Fact).map_err(|error| {
                     ParseError::predicate(&written(), format!("`{{fact: …}}`: {error}"))
                 })
+            }
+            Some((key, Node::Text(path))) if entries.len() == 1 && key == Derived::UTF8_BYTES => {
+                FactPath::new(path)
+                    .map(|parent| Self::Derived(Derived::Utf8Bytes(parent)))
+                    .map_err(|error| {
+                        ParseError::predicate(&written(), format!("`{{utf8_bytes: …}}`: {error}"))
+                    })
             }
             Some((key, Node::Map(fields))) if entries.len() == 1 && key == "offset" => {
                 OffsetOperand::from_entries(fields)
@@ -842,7 +959,7 @@ fn instant_operand(
 ) -> Option<crate::time::Rfc3339Instant> {
     crate::time::Rfc3339Instant::parse_rfc3339(text).or_else(|| match operand {
         Operand::Literal(_) => crate::time::CurrentTime::parse(text)?.at(facts.now()?),
-        Operand::Fact(_) | Operand::Offset(_) => None,
+        Operand::Fact(_) | Operand::Offset(_) | Operand::Derived(_) => None,
     })
 }
 
@@ -917,6 +1034,7 @@ impl fmt::Display for Operand {
         match self {
             Self::Fact(path) => write!(f, "{path}"),
             Self::Offset(offset) => write!(f, "{offset}"),
+            Self::Derived(derived) => write!(f, "{derived}"),
             Self::Literal(FactValue::Text(text))
                 if text.contains('.')
                     || text.is_empty()
@@ -2110,6 +2228,34 @@ impl Predicate {
         found
     }
 
+    /// Whether any comparison, at any depth, reads a derived operand — the UTF-8 byte length of a
+    /// text, `{utf8_bytes: <path>}` (`docs/design/expression-family-source22.md`, decision 11): the
+    /// question the `ess/22` source gate and the suite pair `/40` and `/41` ask beside
+    /// [`Self::reads_offset`]. A path that merely ends in `utf8_bytes` is a field, and is not one.
+    pub fn reads_utf8_bytes(&self) -> bool {
+        match self {
+            Self::Compare { left, right, .. } => {
+                matches!(left, Operand::Derived(_)) || matches!(right, Operand::Derived(_))
+            }
+            Self::All(children) | Self::Any(children) => {
+                children.iter().any(Self::reads_utf8_bytes)
+            }
+            Self::Not(inner) => inner.reads_utf8_bytes(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.reads_utf8_bytes()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_) => false,
+        }
+    }
+
     /// A comparison by value: what every comparison was before decision 2's tag.
     pub fn compare(left: Operand, op: CompareOp, right: Operand) -> Self {
         Self::Compare {
@@ -2356,11 +2502,15 @@ impl Predicate {
         })
     }
 
-    /// Parses the closed canonical form of a tagged comparison (decision 2):
-    /// `{compare: {left: <path>, op: <keyword>, right: <operand>, as: timestamp}}`.
+    /// Parses the closed canonical `{compare: …}` form of a comparison: tagged to compare instants
+    /// (decision 2), `{compare: {left: <path>, op: <keyword>, right: <operand>, as: timestamp}}`, or
+    /// untagged with a derived operand (decision 11),
+    /// `{compare: {left: {utf8_bytes: <path>}, op: <keyword>, right: <operand>}}`.
     ///
-    /// Exactly those four keys. `left` is a fact path; `right` is a fact path, the explicit
-    /// `{fact: <path>}` or a scalar; `as` is `timestamp`, the one kind a tag names. A mapping under
+    /// Exactly those keys. `left` is a fact path or `{utf8_bytes: <path>}`; `right` is a fact path,
+    /// the explicit `{fact: <path>}`, an operand mapping or a scalar; `as` is `timestamp`, the one
+    /// kind a tag names, and never beside a derived operand, which compares as a number. The untagged
+    /// form carries a derived operand: every other comparison has a form of its own. A mapping under
     /// `compare` without `left` is a constraint on a fact named `compare`, as it always was.
     fn tagged_compare(value: &Node, binders: &[String]) -> Result<Self, ParseError> {
         let written = || format!("compare: {}", shallow(value));
@@ -2368,18 +2518,25 @@ impl Predicate {
             unreachable!("dispatched on a mapping");
         };
         let refuse = |reason: &str| ParseError::predicate(&written(), reason.to_owned());
-        if fields.len() != 4
-            || ["left", "op", "right", "as"]
+        let tagged = fields.contains_key("as");
+        if fields.len() != if tagged { 4 } else { 3 }
+            || ["left", "op", "right"]
                 .iter()
                 .any(|key| !fields.contains_key(*key))
         {
             return Err(refuse(
-                "a tagged comparison takes exactly `left`, `op`, `right` and `as`",
+                "a `{compare: …}` comparison takes exactly `left`, `op` and `right`, and `as` \
+                 where it is tagged",
             ));
         }
         let left = match &fields["left"] {
-            Node::Text(path) => FactPath::new(path)?,
-            _ => return Err(refuse("`left` names a fact path")),
+            Node::Text(path) => Operand::Fact(FactPath::new(path)?),
+            Node::Map(entries)
+                if entries.len() == 1 && entries.contains_key(Derived::UTF8_BYTES) =>
+            {
+                Operand::fact_mapping(entries, written)?
+            }
+            _ => return Err(refuse("`left` names a fact path or `{utf8_bytes: <path>}`")),
         };
         let op = match &fields["op"] {
             Node::Text(keyword) => CompareOp::from_keyword(keyword)
@@ -2393,13 +2550,35 @@ impl Predicate {
             Node::Map(entries) => Operand::fact_mapping(entries, written)?,
             _ => return Err(refuse("`right` is a scalar or `{fact: <path>}`")),
         };
+        let derived = [&left, &right]
+            .into_iter()
+            .any(|operand| matches!(operand, Operand::Derived(_)));
+        if !tagged {
+            if !derived {
+                return Err(refuse(
+                    "an untagged `{compare: …}` carries a derived operand, `{utf8_bytes: <path>}`; \
+                     compare two facts as `<path>: {<op>: …}`",
+                ));
+            }
+            return Ok(Self::Compare {
+                left,
+                op,
+                right,
+                kind: CompareKind::Value,
+            });
+        }
         if fields["as"] != Node::Text(CompareKind::TIMESTAMP.to_owned()) {
             return Err(refuse(
                 "`as` names the one kind a comparison is tagged with, `timestamp`",
             ));
         }
+        if derived || !matches!(left, Operand::Fact(_)) {
+            return Err(refuse(
+                "a derived operand compares as a number, never `as: timestamp`",
+            ));
+        }
         Ok(Self::Compare {
-            left: Operand::Fact(left),
+            left,
             op,
             right,
             kind: CompareKind::Instant,
@@ -2864,6 +3043,7 @@ impl Predicate {
         self.node_in(&mut Vec::new())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn node_in<'a>(&'a self, binders: &mut Vec<&'a str>) -> Node {
         let seq = |children: &'a [Self], binders: &mut Vec<&'a str>| {
             let mut nodes = Vec::with_capacity(children.len());
@@ -2929,6 +3109,17 @@ impl Predicate {
                 right,
                 kind: CompareKind::Instant,
             } => tagged_comparison_node(left, *op, right),
+            Self::Compare {
+                left,
+                op,
+                right,
+                kind: CompareKind::Value,
+            } if [left, right]
+                .into_iter()
+                .any(|operand| matches!(operand, Operand::Derived(_))) =>
+            {
+                derived_comparison_node(left, *op, right)
+            }
             // Always the closed mapping: `lower + 5` reads back as text wherever no declaration
             // says `lower` is a fact (A2).
             Self::Compare {
@@ -2991,36 +3182,52 @@ fn values_constraint_node(path: &FactPath, keyword: &str, values: &[FactValue]) 
 /// (decision 2). A fact on the right is always the explicit `{fact: …}`, so the form never depends
 /// on what a binder or a root is called.
 fn tagged_comparison_node(left: &Operand, op: CompareOp, right: &Operand) -> Node {
+    compare_node(left, op, right, Some(CompareKind::TIMESTAMP))
+}
+
+/// A comparison holding a derived operand (decision 11): on the right of a fact it is the tagged
+/// operand where an operand goes, `path: {<op>: {utf8_bytes: …}}`; anywhere else the comparison
+/// takes the untagged `{compare: …}` form, because a mapping cannot stand where the compact grammar
+/// wants a path.
+fn derived_comparison_node(left: &Operand, op: CompareOp, right: &Operand) -> Node {
+    match (left, right) {
+        (Operand::Fact(path), Operand::Derived(derived)) => Node::Map(
+            [(
+                path.to_string(),
+                Node::Map([(op.keyword().to_owned(), derived.to_node())].into()),
+            )]
+            .into(),
+        ),
+        _ => compare_node(left, op, right, None),
+    }
+}
+
+/// `{compare: {left, op, right}}`, and `as: <tag>` where the comparison is tagged: the closed
+/// canonical `{compare: …}` form (decisions 2 and 11). A fact on the left is its path and on the
+/// right always the explicit `{fact: …}`; an offset and a derived operand are their mappings.
+fn compare_node(left: &Operand, op: CompareOp, right: &Operand, tag: Option<&str>) -> Node {
     let operand = |operand: &Operand| match operand {
         Operand::Fact(path) => {
             Node::Map([("fact".to_owned(), Node::Text(path.to_string()))].into())
         }
         Operand::Offset(offset) => offset.to_node(),
+        Operand::Derived(derived) => derived.to_node(),
         Operand::Literal(value) => value_node(value),
     };
     let left = match left {
         Operand::Fact(path) => Node::Text(path.to_string()),
-        Operand::Offset(offset) => offset.to_node(),
-        Operand::Literal(value) => value_node(value),
+        other => operand(other),
     };
-    Node::Map(
-        [(
-            "compare".to_owned(),
-            Node::Map(
-                [
-                    ("left".to_owned(), left),
-                    ("op".to_owned(), Node::Text(op.keyword().to_owned())),
-                    ("right".to_owned(), operand(right)),
-                    (
-                        "as".to_owned(),
-                        Node::Text(CompareKind::TIMESTAMP.to_owned()),
-                    ),
-                ]
-                .into(),
-            ),
-        )]
-        .into(),
-    )
+    let mut fields: std::collections::BTreeMap<String, Node> = [
+        ("left".to_owned(), left),
+        ("op".to_owned(), Node::Text(op.keyword().to_owned())),
+        ("right".to_owned(), operand(right)),
+    ]
+    .into();
+    if let Some(tag) = tag {
+        fields.insert("as".to_owned(), Node::Text(tag.to_owned()));
+    }
+    Node::Map([("compare".to_owned(), Node::Map(fields))].into())
 }
 
 /// `path: {<op>: {fact: <fact>}}`: the canonical comparison with a one-segment fact on its right
@@ -3405,7 +3612,9 @@ impl schemars::JsonSchema for Predicate {
              two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, \
              right, as: timestamp}}`, and a comparison operand may be one fact moved by one \
              constant, `{offset: {fact: <path>, add|subtract: <magnitude>}}` — a whole number for \
-             an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`. From `ess/22` \
+             an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`. Either operand may \
+             be the UTF-8 byte length of a `String`, `{utf8_bytes: <path>}`, with the comparison \
+             written `{compare: {left, op, right}}` where it stands on the left. From `ess/22` \
              `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements \
              of a list share a key: the element, or the one scalar member `by` names."
                 .to_owned(),

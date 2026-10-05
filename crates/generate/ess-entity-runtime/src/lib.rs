@@ -507,6 +507,11 @@ pub enum LoweringCode {
     /// as, by}`): entity-core has no condition that compares keys across a list's elements, and
     /// a quantifier over one element at a time decides a different rule.
     DistinctUnsupported,
+    /// A predicate compares the UTF-8 byte length of a text (ess/22, `label.utf8_bytes <= 255`,
+    /// `{utf8_bytes: label}`): entity-core resolves `count` on arrays and maps only and has no
+    /// address for a text's byte length, and lowering it as a read of the text, or of a field
+    /// spelled `label.utf8_bytes`, would decide a different rule.
+    Utf8BytesUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -657,6 +662,17 @@ impl Projector<'_> {
                     "`{predicate}` requires distinct list members, and Entity Runtime has no \
                      condition that compares keys across a list's elements; a quantifier over one \
                      element at a time would decide a different rule"
+                ),
+            );
+        }
+        if predicate.reads_utf8_bytes() {
+            self.diagnostic(
+                LoweringCode::Utf8BytesUnsupported,
+                at,
+                format!(
+                    "`{predicate}` compares the UTF-8 byte length of a text, and Entity Runtime \
+                     has no address for one; lowering it as a read of the text, or of a field of \
+                     that name, would decide a different rule"
                 ),
             );
         }
@@ -3965,6 +3981,9 @@ fn lower_operand(operand: &Operand, rewrite: &PathRewrite) -> Value {
         // Refused before lowering (`OffsetUnsupported`), so no definition carrying this is ever
         // returned; the base alone is a reference, never the text the offset is spelled like.
         Operand::Offset(offset) => rewrite.path(&offset.base),
+        // Refused before lowering (`Utf8BytesUnsupported`), so no definition carrying this is ever
+        // returned; the parent alone is a reference, never a field spelled `<parent>.utf8_bytes`.
+        Operand::Derived(derived) => rewrite.path(derived.parent()),
     }
 }
 

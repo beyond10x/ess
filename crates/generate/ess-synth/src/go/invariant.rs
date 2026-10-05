@@ -434,6 +434,37 @@ impl<'a> Check<'a> {
                          check does not evaluate"
                     ))
                 }
+                // The UTF-8 byte length of a `String` (decision 11): `len` of a string that is
+                // UTF-8; one that is not — the bytes a lone surrogate leaves — decides nothing.
+                Operand::Derived(derived) => {
+                    let parent = derived.parent();
+                    match self.walk(parent)? {
+                        Walked::Value {
+                            mut guards,
+                            expression,
+                            terminal:
+                                ResolvedTypeRef::Primitive {
+                                    name: Primitive::String,
+                                },
+                        } => {
+                            self.emit.import("unicode/utf8");
+                            let bind = self.local("s");
+                            guards.push(Guard {
+                                condition: format!("utf8.ValidString({expression})"),
+                                found: expression,
+                                bind: bind.clone(),
+                            });
+                            let expression = format!("{}(len({bind}))", self.iv("Count"));
+                            self.walked_fact(Walked::Count { guards, expression }, parent)?
+                        }
+                        Walked::Absent => self.iv("Absent"),
+                        _ => {
+                            return Err(format!(
+                                "`{derived}` measures `{parent}`, which is no String"
+                            ))
+                        }
+                    }
+                }
                 Operand::Fact(path) => {
                     let walked = self.walk(path)?;
                     if let Walked::Value { terminal, .. } = &walked {

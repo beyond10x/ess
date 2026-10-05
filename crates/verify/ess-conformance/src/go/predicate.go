@@ -137,6 +137,10 @@ type operand struct {
 	literal Node
 	isFact  bool
 	offset  *offsetOperand
+	// utf8Bytes is the derived UTF-8 byte length of the text at `path` (suite/40,
+	// docs/design/expression-family-source22.md decision 11): `{utf8_bytes: <path>}`. Not a fact: no
+	// value is read at `path` itself, and a selection never reads one.
+	utf8Bytes bool
 }
 
 // offsetOperand is one fact moved by one constant (suite/40, docs/design/expression-family-source22.md
@@ -216,6 +220,9 @@ func (p predicate) String() string {
 }
 
 func (o operand) String() string {
+	if o.utf8Bytes {
+		return fmt.Sprintf("{utf8_bytes: %s}", o.path)
+	}
 	if o.offset != nil {
 		direction := "subtract"
 		if o.offset.add {
@@ -395,27 +402,52 @@ func fromEntry(key string, value any, binders []string) (predicate, error) {
 	}
 }
 
-// parseTaggedCompare reads `{compare: {left, op, right, as: timestamp}}`, a comparison tagged to
-// compare instants (suite/40, docs/design/expression-family-source22.md decision 2), as Rust's
-// `Predicate::tagged_compare` does: exactly those four keys. A mapping under `compare` without
-// `left` is a constraint on a fact named `compare`, as it always was.
+// parseTaggedCompare reads the closed `{compare: …}` form of a comparison (suite/40,
+// docs/design/expression-family-source22.md), as Rust's `Predicate::tagged_compare` does: tagged to
+// compare instants (decision 2), `{compare: {left, op, right, as: timestamp}}`, or untagged with a
+// derived operand (decision 11), `{compare: {left: {utf8_bytes: <path>}, op, right}}` — exactly
+// those keys. `as` never stands beside a derived operand, and the untagged form carries one. A
+// mapping under `compare` without `left` is a constraint on a fact named `compare`, as it always was.
 func parseTaggedCompare(fields map[string]any, binders []string) (predicate, error) {
 	refuse := func(reason string) (predicate, error) {
 		return predicate{}, fmt.Errorf("compare: %s", reason)
 	}
-	if len(fields) != 4 {
-		return refuse("a tagged comparison takes exactly `left`, `op`, `right` and `as`")
+	_, tagged := fields["as"]
+	_, hasOp := fields["op"]
+	_, hasRight := fields["right"]
+	want := 3
+	if tagged {
+		want = 4
 	}
-	left, ok := fields["left"].(string)
-	if !ok || !factPath.MatchString(left) {
-		return refuse("`left` names a fact path")
+	if len(fields) != want || !hasOp || !hasRight {
+		return refuse("a `{compare: …}` comparison takes exactly `left`, `op` and `right`, and `as` where it is tagged")
+	}
+	var left operand
+	switch value := fields["left"].(type) {
+	case string:
+		if !factPath.MatchString(value) {
+			return refuse("`left` names a fact path or `{utf8_bytes: <path>}`")
+		}
+		left = operand{path: value, isFact: true}
+	case map[string]any:
+		inner, ok := value["utf8_bytes"]
+		if !ok || len(value) != 1 {
+			return refuse("`left` names a fact path or `{utf8_bytes: <path>}`")
+		}
+		derived, err := parseUtf8BytesOperand("compare", "left", inner)
+		if err != nil {
+			return predicate{}, err
+		}
+		left = derived
+	default:
+		return refuse("`left` names a fact path or `{utf8_bytes: <path>}`")
 	}
 	spelled, _ := fields["op"].(string)
 	op, ok := compareSpellings[spelled]
 	if !ok {
 		return refuse("`op` is one of eq, ne, lt, lte, gt, gte")
 	}
-	if kind, _ := fields["as"].(string); kind != "timestamp" {
+	if kind, _ := fields["as"].(string); tagged && kind != "timestamp" {
 		return refuse("`as` names the one kind a comparison is tagged with, `timestamp`")
 	}
 	var right operand
@@ -433,7 +465,17 @@ func parseTaggedCompare(fields map[string]any, binders []string) (predicate, err
 	default:
 		return refuse("`right` is a scalar or `{fact: <path>}`")
 	}
-	return predicate{kind: "compare", left: operand{path: left, isFact: true}, op: op, right: right, instant: true}, nil
+	derived := left.utf8Bytes || right.utf8Bytes
+	if !tagged {
+		if !derived {
+			return refuse("an untagged `{compare: …}` carries a derived operand, `{utf8_bytes: <path>}`; compare two facts as `<path>: {<op>: …}`")
+		}
+		return predicate{kind: "compare", left: left, op: op, right: right}, nil
+	}
+	if derived {
+		return refuse("a derived operand compares as a number, never `as: timestamp`")
+	}
+	return predicate{kind: "compare", left: left, op: op, right: right, instant: true}, nil
 }
 
 func parseQuantifier(kind string, value any, binders []string) (predicate, error) {
@@ -621,7 +663,22 @@ func parseMappingOperand(path, key string, value map[string]any) (operand, error
 	if inner, ok := value["offset"]; ok && len(value) == 1 {
 		return parseOffsetOperand(path, key, inner)
 	}
+	if inner, ok := value["utf8_bytes"]; ok && len(value) == 1 {
+		return parseUtf8BytesOperand(path, key, inner)
+	}
 	return parseFactOperand(path, key, value)
+}
+
+// parseUtf8BytesOperand reads the derived UTF-8 byte length of a text, `{utf8_bytes: <path>}`
+// (suite/40, docs/design/expression-family-source22.md decision 11), as Rust's `Operand::fact_mapping`
+// does: one key, naming a fact path. Which suite majors may carry it is the runtime's admission to
+// decide; this reader only reads it.
+func parseUtf8BytesOperand(path, key string, value any) (operand, error) {
+	parent, ok := value.(string)
+	if !ok || !factPath.MatchString(parent) {
+		return operand{}, fmt.Errorf("`%s: {%s: {utf8_bytes: …}}` names the fact path of a text", path, key)
+	}
+	return operand{path: parent, utf8Bytes: true}, nil
 }
 
 // elapsedMagnitude is the current-time grammar of an elapsed magnitude: a whole number without a
@@ -1407,10 +1464,37 @@ func rebind(source factSource, bind, prefix string) factSource {
 }
 
 func (o operand) resolve(source factSource) (Node, bool) {
+	if o.utf8Bytes {
+		return utf8BytesOf(source, o.path)
+	}
 	if !o.isFact {
 		return o.literal, true
 	}
 	return readLeaf(source, o.path)
+}
+
+// utf8BytesOf is the UTF-8 byte length of the text at path, as Rust's `Derived::value`: a bound
+// `<path>.utf8_bytes` wins, and only a whole number from zero within int64 is a byte length — any
+// other bound value is Unknown, with no fallback to the text. Otherwise the text at path is
+// measured; an unbound path, null and a value that is no text are Unknown. A string that is no
+// UTF-8 — the bytes a lone surrogate leaves — is no Unicode text and its length is Unknown, never the
+// count of its bytes.
+func utf8BytesOf(source factSource, path string) (Node, bool) {
+	if bound, ok := source[path+".utf8_bytes"]; ok && bound != nil {
+		if _, aggregate := bound.(aggregatePresent); aggregate {
+			return nil, false
+		}
+		length, ok := numberValue(bound)
+		if !ok || !length.IsInt() || length.Sign() < 0 || !length.Num().IsInt64() {
+			return nil, false
+		}
+		return bound, true
+	}
+	text, isText := source[path].(string)
+	if !isText || !utf8.ValidString(text) {
+		return nil, false
+	}
+	return float64(len(text)), true
 }
 
 // readLeaf is one leaf read, the rule every evaluator lane shares (beyond10x/ess#104): a bound fact

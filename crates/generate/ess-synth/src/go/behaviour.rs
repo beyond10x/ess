@@ -3355,6 +3355,7 @@ impl Guards<'_, '_> {
                     .into_iter()
                     .find_map(|operand| match operand {
                         Operand::Fact(path) => Some(self.resolve(env, path).kind),
+                        Operand::Derived(derived) => Some(self.resolve_derived(env, derived).kind),
                         Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
@@ -3467,6 +3468,16 @@ impl Guards<'_, '_> {
         format!("{COMPARE_WITH_NOW_CALL}{left}, {now}.Value(), {clocked}, {seconds}, {accepts})")
     }
 
+    /// Resolves a derived operand the plan already checked.
+    fn resolve_derived(
+        &self,
+        env: &Env<'_>,
+        derived: &ess_primitives::predicate::Derived,
+    ) -> Resolved {
+        determined::resolve_derived(self.ir, env, derived)
+            .expect("the plan admitted only byte lengths of String paths")
+    }
+
     /// One comparison operand, normalized to what the comparison reads.
     fn operand(&mut self, env: &Env<'_>, operand: &Operand, kind: &Kind) -> String {
         let _ = kind;
@@ -3477,6 +3488,10 @@ impl Guards<'_, '_> {
             }
             Operand::Literal(value) => self.fact_literal(value),
             Operand::Offset(_) => unreachable!("an offset is compared by `offset`"),
+            Operand::Derived(derived) => {
+                let resolved = self.resolve_derived(env, derived);
+                self.read(&resolved)
+            }
         }
     }
 
@@ -3611,6 +3626,15 @@ impl Guards<'_, '_> {
                     }
                 }
                 Step::Count => {}
+                // A string that is no UTF-8 — the bytes a lone surrogate leaves — has no byte
+                // length: Unknown, never the count of its bytes.
+                Step::Utf8Bytes => {
+                    self.emit.import("unicode/utf8");
+                    guards.push(Guard {
+                        condition: format!("utf8.ValidString({expression})"),
+                        bind: None,
+                    });
+                }
             }
         }
         (guards, expression, current)
@@ -3638,7 +3662,8 @@ impl Guards<'_, '_> {
                 return format!("some({value})");
             }
         }
-        let go_type = if resolved.kind == Kind::Bool && resolved.steps.last() != Some(&Step::Count)
+        let go_type = if resolved.kind == Kind::Bool
+            && !matches!(resolved.steps.last(), Some(Step::Count | Step::Utf8Bytes))
         {
             "*bool"
         } else {
@@ -3698,7 +3723,8 @@ impl Guards<'_, '_> {
 
     /// What one present value at the end of a path reads, held in `at`.
     fn leaf(&mut self, resolved: &Resolved, at: &str, current: &ResolvedTypeRef) -> ReadLeaf {
-        if resolved.steps.last() == Some(&Step::Count) {
+        // A collection's element count, or a UTF-8 `string`'s bytes: `len` is the byte length.
+        if matches!(resolved.steps.last(), Some(Step::Count | Step::Utf8Bytes)) {
             self.emit.import("strconv");
             return ReadLeaf::Expression(format!("strconv.Itoa(len({at}))"));
         }

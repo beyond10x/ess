@@ -119,13 +119,19 @@ fn reads(
                 if let Operand::Fact(path) = side {
                     let literal: Vec<FactValue> = match other {
                         Operand::Literal(value) => vec![value.clone()],
-                        Operand::Fact(_) | Operand::Offset(_) => Vec::new(),
+                        Operand::Fact(_) | Operand::Offset(_) | Operand::Derived(_) => Vec::new(),
                     };
                     note(path, &literal);
                 }
                 // An offset (ess/22, A2) reads its base fact too.
                 if let Operand::Offset(offset) = side {
                     note(&offset.base, &[]);
+                }
+                // A byte length (ess/22, decision 11) reads the text it measures.
+                if let Operand::Derived(ess_primitives::predicate::Derived::Utf8Bytes(parent)) =
+                    side
+                {
+                    note(parent, &[]);
                 }
             }
         }

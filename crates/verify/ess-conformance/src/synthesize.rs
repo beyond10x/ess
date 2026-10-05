@@ -1013,6 +1013,15 @@ pub(crate) fn unsatisfied(guards: &[&Predicate], predicate: String, tried: usize
                         let cap = crate::witness::MAX_COUNT_WITNESS as f64;
                         (number.floor() + 1.0 > cap).then(|| (path.clone(), value.to_string()))
                     }
+                    // A UTF-8 byte length is built to the same cap, in bytes, and named by the
+                    // path it is written as (`docs/design/expression-family-source22.md`).
+                    (Operand::Derived(derived), Operand::Literal(value)) => {
+                        let number = value.as_number()?.get();
+                        #[allow(clippy::cast_precision_loss)]
+                        let cap = crate::witness::MAX_COUNT_WITNESS as f64;
+                        (number.floor() + 1.0 > cap)
+                            .then(|| (derived.observed_at(), value.to_string()))
+                    }
                     _ => None,
                 }),
             _ => None,

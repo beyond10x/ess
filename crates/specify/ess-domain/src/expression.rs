@@ -11,8 +11,8 @@ pub mod lexical;
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    CompareKind, CompareOp, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude, OffsetOperand,
-    Operand, Predicate, Quantified, TextOp,
+    CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude,
+    OffsetOperand, Operand, Predicate, Quantified, TextOp,
 };
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
@@ -759,7 +759,7 @@ fn resolve<E: TypeEnvironment>(
                 let next = match shape {
                     Shape::Struct => environment.member(&current, segment),
                     Shape::Scalar(ScalarKind::Text)
-                        if segment == "count" && environment.is_string(&current) =>
+                        if text_selector(segment) && environment.is_string(&current) =>
                     {
                         let at = (position, optional, access);
                         return text_length(environment, path, owner, at, &context);
@@ -796,12 +796,19 @@ fn resolve<E: TypeEnvironment>(
     }
 }
 
+/// The selectors a `String` answers: `.count`, its length (ess/11), and `.utf8_bytes`, whose path
+/// spelling [`utf8_bytes_path`] refuses (decision 11).
+fn text_selector(segment: &str) -> bool {
+    ["count", Derived::UTF8_BYTES].contains(&segment)
+}
+
 /// `.count` on a `String` at `(position, optional, access)`: the length of a text in Unicode scalar
 /// values (beyond10x/ess#104).
 ///
 /// Only a `String` has one — asked of the resolved terminal, so a newtype of one at any depth and
 /// an `Optional` of one are admitted — and every other text scalar falls through to the
 /// `cannot select` refusal it always had.
+/// `.utf8_bytes` reaches here too, and is refused as a path: it is a derived operand.
 fn text_length<E: TypeEnvironment>(
     environment: &E,
     path: &FactPath,
@@ -809,6 +816,9 @@ fn text_length<E: TypeEnvironment>(
     (position, optional, mut access): (usize, bool, Access),
     context: &str,
 ) -> Result<Resolution<E::Type>, ExpressionError> {
+    if path.segments().get(position).map(String::as_str) == Some(Derived::UTF8_BYTES) {
+        return Err(utf8_bytes_path(environment, path, position, owner, context));
+    }
     access.text_length = true;
     text_length_refusal(environment, path, position, owner, context)
         .map(|()| count_of(environment, optional, access))
@@ -887,6 +897,181 @@ pub fn distinct_key_kind<E: TypeEnvironment>(
     }
 }
 
+/// The refusal for `<text>.utf8_bytes` read as a path (`docs/design/expression-family-source22.md`,
+/// final review decision 11): the UTF-8 byte length of a `String` is a derived comparison operand,
+/// `{utf8_bytes: <text>}`, and never a fact at a path of its own. A comparison in an `ess/22`
+/// source has already been resolved to the operand, so what still reads the path is another
+/// position — a presence test, a value list, a text operator, a quantifier — a predicate assembled
+/// without its source spelling, or a source before `ess/22`. Nothing is read after it.
+fn utf8_bytes_path<E: TypeEnvironment>(
+    environment: &E,
+    path: &FactPath,
+    position: usize,
+    owner: &str,
+    context: &str,
+) -> ExpressionError {
+    let segments = path.segments();
+    let through = FactPath::from_segments(&segments[..=position]);
+    let parent = FactPath::from_segments(&segments[..position]);
+    let segment = segments.get(position).map(String::as_str);
+    if !environment.admits_root_facts() {
+        return error(
+            owner,
+            ValidationCode::UnsupportedFormatVersion,
+            Some(path),
+            segment,
+            format!(
+                "`{through}`: the UTF-8 byte length of a String requires specification format \
+                 ess/22"
+            ),
+        );
+    }
+    if let Some(next) = segments.get(position + 1) {
+        return error(
+            owner,
+            ValidationCode::UnobservableFact,
+            Some(path),
+            Some(next),
+            format!(
+                "`{through}` is the UTF-8 byte length of `{parent}`, an Integer; `{next}` selects \
+                 nothing from it{context}"
+            ),
+        );
+    }
+    error(
+        owner,
+        ValidationCode::TypeMismatch,
+        Some(path),
+        segment,
+        format!(
+            "`{through}` is the UTF-8 byte length of `{parent}`, which is legal only as a \
+             comparison operand, such as `{through} <= 255`, written `{{utf8_bytes: {parent}}}` \
+             where a predicate is assembled; it is no field to test, list, match or quantify \
+             over{context}"
+        ),
+    )
+}
+
+/// Reads `<parent>.utf8_bytes` on either side of every comparison as the UTF-8 byte length of the
+/// text at `<parent>` (`docs/design/expression-family-source22.md`, "String `.utf8_bytes`",
+/// decision 11) where it names no declared member — a struct member named `utf8_bytes` stays that
+/// member — and `<parent>` resolves to a `String` through newtypes and `Optional`: a root, a dotted
+/// path, a binder in scope, or, with `input_namespace`, `input.<path>` naming the input `<path>`.
+/// Every other position keeps the path, which the checker refuses.
+fn derive_selectors<E: TypeEnvironment>(
+    environment: &E,
+    predicate: Predicate,
+    scope: &mut Vec<(FactPath, String)>,
+    input_namespace: bool,
+) -> Predicate {
+    match predicate {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => {
+            let pairs: Vec<(&FactPath, &str)> = scope
+                .iter()
+                .map(|(over, bind)| (over, bind.as_str()))
+                .collect();
+            let bindings = bindings_of(environment, &pairs);
+            let derive = |operand: Operand| match operand {
+                Operand::Fact(path) => {
+                    derived_selector(environment, &bindings, &path, input_namespace)
+                        .map_or(Operand::Fact(path), Operand::Derived)
+                }
+                other => other,
+            };
+            Predicate::Compare {
+                left: derive(left),
+                op,
+                right: derive(right),
+                kind,
+            }
+        }
+        Predicate::All(children) => Predicate::All(
+            children
+                .into_iter()
+                .map(|child| derive_selectors(environment, child, scope, input_namespace))
+                .collect(),
+        ),
+        Predicate::Any(children) => Predicate::Any(
+            children
+                .into_iter()
+                .map(|child| derive_selectors(environment, child, scope, input_namespace))
+                .collect(),
+        ),
+        Predicate::Not(inner) => Predicate::Not(Box::new(derive_selectors(
+            environment,
+            *inner,
+            scope,
+            input_namespace,
+        ))),
+        Predicate::Forall(quantified) => Predicate::Forall(Box::new(derive_quantified(
+            environment,
+            *quantified,
+            scope,
+            input_namespace,
+        ))),
+        Predicate::Exists(quantified) => Predicate::Exists(Box::new(derive_quantified(
+            environment,
+            *quantified,
+            scope,
+            input_namespace,
+        ))),
+        other => other,
+    }
+}
+
+fn derive_quantified<E: TypeEnvironment>(
+    environment: &E,
+    quantified: Quantified,
+    scope: &mut Vec<(FactPath, String)>,
+    input_namespace: bool,
+) -> Quantified {
+    scope.push((quantified.over.clone(), quantified.bind.clone()));
+    let body = derive_selectors(environment, quantified.body, scope, input_namespace);
+    scope.pop();
+    Quantified {
+        over: quantified.over,
+        bind: quantified.bind,
+        body,
+    }
+}
+
+/// The derived operand `path` spells, where it is `<parent>.utf8_bytes` naming no declared member
+/// and `<parent>` resolves to a `String` here; see [`derive_selectors`].
+fn derived_selector<E: TypeEnvironment>(
+    environment: &E,
+    bindings: &[Binding<E::Type>],
+    path: &FactPath,
+    input_namespace: bool,
+) -> Option<Derived> {
+    let (last, parent) = path.segments().split_last()?;
+    if last != Derived::UTF8_BYTES || parent.is_empty() {
+        return None;
+    }
+    if resolve(environment, path, "", bindings).is_ok() {
+        return None;
+    }
+    let parent = FactPath::from_segments(parent);
+    let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
+    let reading = if input_namespace
+        && parent.namespace() == namespace
+        && parent.segments().len() > 1
+        && !bindings.iter().any(|binding| binding.name == namespace)
+        && resolve(environment, &parent, "", bindings).is_err()
+    {
+        FactPath::from_segments(&parent.segments()[1..])
+    } else {
+        parent.clone()
+    };
+    let resolved = resolve(environment, &reading, "", bindings).ok()?;
+    (resolved.scalar == Some(ScalarKind::Text) && environment.is_string(&resolved.terminal))
+        .then_some(Derived::Utf8Bytes(parent))
+}
+
 fn canonical_ordinal(segment: &str) -> bool {
     segment == "0"
         || (!segment.starts_with('0')
@@ -909,6 +1094,10 @@ fn canonical_ordinal(segment: &str) -> bool {
 ///    final review decision 4, rule 3a) — whatever the base's type, which the checker holds to
 ///    `Integer` or `Timestamp`;
 /// 4. otherwise the text it always was.
+///
+/// Then, on either side of every comparison, `<text>.utf8_bytes` naming no declared member where
+/// `<text>` is a `String` becomes the derived operand `{utf8_bytes: <text>}` (decision 11; see
+/// `derive_selectors`), and two `Timestamp` facts are tagged to compare instants.
 ///
 /// Nothing is refused here. [`check_predicate`] checks the result as it checks any predicate.
 pub fn resolve_lexical<E: TypeEnvironment>(
@@ -953,7 +1142,7 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
                     .ok()
                     .and_then(|resolved| resolved.variants)
                     .is_some_and(|variants| variants.iter().any(|variant| variant == word)),
-                Operand::Literal(_) | Operand::Offset(_) => false,
+                Operand::Literal(_) | Operand::Offset(_) | Operand::Derived(_) => false,
             };
             let text = Operand::Literal(FactValue::Text(word.to_owned()));
             if variant {
@@ -969,6 +1158,7 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
         },
         &mut Vec::new(),
     );
+    let resolved = derive_selectors(environment, resolved, &mut Vec::new(), input_namespace);
     let tagged = tag_instants(environment, resolved, &mut Vec::new());
     key_kinds(environment, tagged, &mut Vec::new(), input_namespace)
 }
@@ -1444,6 +1634,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             Operand::Offset(offset) => self
                 .read(&offset.base, false)
                 .map(|resolved| self.typed(resolved)),
+            Operand::Derived(derived) => self.derived(derived),
             Operand::Literal(value) => {
                 let scalar = ScalarKind::literal(value);
                 Some(ValueType {
@@ -1458,6 +1649,54 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 })
             }
         }
+    }
+
+    /// A derived operand (`docs/design/expression-family-source22.md`, decision 11): from `ess/22`,
+    /// the UTF-8 byte length of a `String` — through newtypes and `Optional` — which is an
+    /// `Integer`. The parent is read like any fact, so a producer publishes the text it measures.
+    fn derived(&mut self, derived: &Derived) -> Option<ValueType> {
+        let parent = derived.parent();
+        if !self.environment.admits_root_facts() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(parent),
+                None,
+                format!(
+                    "`{derived}`, the UTF-8 byte length of `{parent}`, requires specification \
+                     format ess/22"
+                ),
+            ));
+            return None;
+        }
+        let resolved = self.read(parent, false)?;
+        if resolved.scalar != Some(ScalarKind::Text)
+            || !self.environment.is_string(&resolved.terminal)
+        {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(parent),
+                None,
+                format!(
+                    "`{derived}` measures the UTF-8 bytes of a String, and `{parent}` is `{}`; \
+                     Bytes, Timestamp, Uuid, enums, numbers and collections have no UTF-8 byte \
+                     length",
+                    resolved.declared
+                ),
+            ));
+            return None;
+        }
+        Some(ValueType {
+            declared: format!("{derived} (Integer)"),
+            declaring_variants: None,
+            scalar: Some(ScalarKind::Number),
+            variants: None,
+            instant: false,
+            duration: false,
+            string: false,
+            integer: true,
+        })
     }
 
     fn mismatch(
@@ -1971,7 +2210,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                         resolved.scalar.is_some() && self.environment.is_instant(&resolved.terminal)
                     })
                 }
-                Operand::Literal(_) | Operand::Offset(_) => false,
+                Operand::Literal(_) | Operand::Offset(_) | Operand::Derived(_) => false,
             };
             if !instant {
                 self.checked.errors.push(error(
@@ -2081,8 +2320,13 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 Some(&offset.base),
                 None,
                 format!(
-                    "`{predicate}` compares a literal with an offset; the left of an offset \
-                     comparison is a fact"
+                    "`{predicate}` compares {} with an offset; the left of an offset comparison \
+                     is a fact",
+                    if matches!(left, Operand::Derived(_)) {
+                        "a derived value"
+                    } else {
+                        "a literal"
+                    }
                 ),
             ));
             return;

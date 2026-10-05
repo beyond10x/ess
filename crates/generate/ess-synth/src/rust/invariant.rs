@@ -346,6 +346,27 @@ impl<'a> Check<'a> {
                     "`{offset}` moves a fact by a constant, which the generated invariant check \
                      does not evaluate"
                 )),
+                // The UTF-8 byte length of a `String` (decision 11): `str::len`, which a Rust
+                // string — UTF-8 by type — always has.
+                Operand::Derived(derived) => {
+                    let parent = derived.parent();
+                    match this.walk(parent)? {
+                        Walked::Value {
+                            reach,
+                            terminal:
+                                ResolvedTypeRef::Primitive {
+                                    name: Primitive::String,
+                                },
+                        } => {
+                            let length = |at: &str| format!("iv::Fact::count({at}.as_str().len())");
+                            Ok(reach.map(length, length))
+                        }
+                        Walked::Absent => Ok("None".to_owned()),
+                        _ => Err(format!(
+                            "`{derived}` measures `{parent}`, which is no String"
+                        )),
+                    }
+                }
                 Operand::Fact(path) => {
                     let walked = this.walk(path)?;
                     if let Walked::Value { terminal, .. } = &walked {

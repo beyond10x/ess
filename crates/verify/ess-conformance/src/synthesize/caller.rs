@@ -676,6 +676,9 @@ fn write_predicate(
         Operand::Offset(offset) => fact(&offset.base)
             .and_then(|base| offset.value_at(&base))
             .map_or_else(|| it.clone(), Operand::Literal),
+        Operand::Derived(derived) => derived
+            .value_with(fact)
+            .map_or_else(|| it.clone(), Operand::Literal),
         Operand::Literal(_) => it.clone(),
     };
     match predicate {

@@ -232,6 +232,9 @@ fn written_in(filter: &Predicate, read: &dyn Fn(&FactPath) -> Option<FactValue>)
         Operand::Offset(offset) => read(&offset.base)
             .and_then(|base| offset.value_at(&base))
             .map_or_else(|| it.clone(), Operand::Literal),
+        Operand::Derived(derived) => derived
+            .value_with(read)
+            .map_or_else(|| it.clone(), Operand::Literal),
         Operand::Literal(_) => it.clone(),
     };
     match filter {

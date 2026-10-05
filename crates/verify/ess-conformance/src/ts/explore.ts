@@ -391,6 +391,8 @@ function paths(predicate: Predicate): string[] {
       if (node.right.isFact) found.add(node.right.path);
       // An offset reads its base (A2).
       if (node.right.offset !== null) found.add(node.right.offset.base);
+      // A byte length reads the text it measures (decision 11).
+      for (const side of [node.left, node.right]) if (side.utf8Bytes) found.add(side.path);
     } else if (node.kind === 'forall' || node.kind === 'exists') {
       found.add(node.over);
     } else if (node.path !== '') {

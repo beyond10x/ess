@@ -7223,10 +7223,14 @@ export function admitPredicateScalar(value: Node): void {
 
 /**
  * Admits a comparison operand mapping: one constant offset `{offset: {fact, add|subtract}}` (suite/40,
- * A2), read by the predicate reader, or the explicit fact operand.
+ * A2), read by the predicate reader, or the explicit fact operand. The derived UTF-8 byte length
+ * `{utf8_bytes: <path>}` (suite/40, decision 11) is read the same way.
  */
 function admitMappingOperand(operand: { [key: string]: Node }): void {
-  if (Object.keys(operand).length === 1 && Object.hasOwn(operand, 'offset')) {
+  if (
+    Object.keys(operand).length === 1 &&
+    (Object.hasOwn(operand, 'offset') || Object.hasOwn(operand, 'utf8_bytes'))
+  ) {
     fromNode({ admitted: { eq: operand } });
     return;
   }
@@ -11100,6 +11104,9 @@ export function admitPredicateVersion(value: Node, major: number): void {
   if (major < 8 && predicateNeedsLosslessReader(value)) {
     throw new Error('normalized structured comparison operands require suite/8 or /9');
   }
+  if (major < 40 && predicateUsesUtf8Bytes(value)) {
+    throw new Error('the UTF-8 byte length {utf8_bytes: …} requires suite/40 or /41');
+  }
   if (major < 40 && predicateUsesOffset(value)) {
     throw new Error('one constant offset {offset: …} requires suite/40 or /41');
   }
@@ -11150,6 +11157,61 @@ export function predicateUsesDistinct(value: Node): boolean {
       case 'distinct':
         if (isObject(child) && Object.hasOwn(child, 'as')) return true;
         break;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether admitted predicate grammar carries the derived UTF-8 byte length `{utf8_bytes: …}`
+ * (suite/40, `docs/design/expression-family-source22.md` decision 11): an operand of a constraint,
+ * or either side of the `{compare: …}` form. A member merely named `utf8_bytes` is a path, never a
+ * mapping, and selects nothing. Go's `predicateUsesUtf8Bytes`.
+ */
+export function predicateUsesUtf8Bytes(value: Node): boolean {
+  const derived = (operand: Node): boolean =>
+    isObject(operand) && Object.hasOwn(operand, 'utf8_bytes');
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesUtf8Bytes);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key] ?? null;
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesUtf8Bytes(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (
+          isObject(child) &&
+          predicateUsesUtf8Bytes((child as { [key: string]: Node }).that ?? null)
+        ) {
+          return true;
+        }
+        break;
+      default:
+        if (isObject(child)) {
+          const operators = child as { [key: string]: Node };
+          if (key === 'compare' && Object.hasOwn(operators, 'left')) {
+            if (derived(operators['left'] ?? null) || derived(operators['right'] ?? null)) {
+              return true;
+            }
+            break;
+          }
+          for (const operand of Object.values(operators)) {
+            if (derived(operand)) return true;
+          }
+        }
     }
   }
   return false;

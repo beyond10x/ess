@@ -19,7 +19,7 @@ use ess_compiler::ir::{
 };
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate};
+use ess_primitives::predicate::{CompareOp, Derived, Operand, Predicate};
 use ess_primitives::time::CurrentTime;
 
 /// `Ok` when every outcome of `command` is expressible; `Err` names the construct that keeps the
@@ -640,6 +640,9 @@ pub(crate) enum Step {
     Field(String),
     /// How many elements a list or map holds.
     Count,
+    /// How many bytes the UTF-8 encoding of a `String` takes (`docs/design/expression-family-source22.md`,
+    /// decision 11): `str::len` in Rust, `len` of a string that is UTF-8 in Go.
+    Utf8Bytes,
 }
 
 /// What a path reads, as a guard compares it.
@@ -868,6 +871,69 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
     Err(unknown())
 }
 
+/// Resolves a derived operand (`docs/design/expression-family-source22.md`, decision 11): the UTF-8
+/// byte length of a `String` read at its parent, one [`Step::Utf8Bytes`] past it, compared as an
+/// `Integer`. A view filter's is refused by name: no generated query measures text.
+pub(crate) fn resolve_derived(
+    ir: &EssIr,
+    env: &Env<'_>,
+    derived: &Derived,
+) -> Result<Resolved, String> {
+    if matches!(env, Env::Row(_)) {
+        return Err(format!(
+            "`{derived}`, a byte length the generated view query does not compare"
+        ));
+    }
+    let Derived::Utf8Bytes(parent) = derived;
+    let mut resolved = resolve(ir, env, parent)?;
+    if resolved.kind != Kind::Text || leaf_primitive(ir, &resolved) != Some(Primitive::String) {
+        return Err(format!(
+            "`{derived}`, the byte length of a value that is no String"
+        ));
+    }
+    resolved.steps.push(Step::Utf8Bytes);
+    resolved.kind = Kind::Number(Primitive::Integer);
+    Ok(resolved)
+}
+
+/// Whether any predicate of the model compares the UTF-8 byte length of a text, `{utf8_bytes: …}`
+/// (decision 11). Read off the canonical IR, where that mapping is the one `utf8_bytes` key whose
+/// value is a path: a member named `utf8_bytes` is written inside a path or as a field's name.
+pub(crate) fn reads_utf8_bytes(ir: &EssIr) -> bool {
+    serde_json::to_string(ir).is_ok_and(|text| text.contains("{\"utf8_bytes\":\""))
+}
+
+/// The primitive a resolved path ends in, under its newtypes and `Optional`s.
+pub(crate) fn leaf_primitive(ir: &EssIr, resolved: &Resolved) -> Option<Primitive> {
+    let mut current = resolved.root_type.clone();
+    for step in &resolved.steps {
+        current = match (step, &current) {
+            (Step::Optional, ResolvedTypeRef::Optional { of }) => (**of).clone(),
+            (Step::Newtype, ResolvedTypeRef::Declared { name }) => {
+                match &ir.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => of.clone(),
+                    _ => return None,
+                }
+            }
+            (Step::Field(field), ResolvedTypeRef::Declared { name }) => {
+                match &ir.named_type(name).body {
+                    ResolvedBody::Struct { fields, .. } => fields
+                        .iter()
+                        .find(|member| &member.name == field)?
+                        .type_ref
+                        .clone(),
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+    }
+    match current {
+        ResolvedTypeRef::Primitive { name } => Some(name),
+        _ => None,
+    }
+}
+
 /// `Ok` where every part of `predicate` is something an emitter decides with the evaluator's
 /// three-valued semantics; `Err` names the first part that is not.
 pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Result<(), String> {
@@ -898,6 +964,9 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
         } => {
             let kind = |operand: &Operand| match operand {
                 Operand::Fact(path) => resolve(ir, env, path).map(|it| Some(it.kind)),
+                Operand::Derived(derived) => {
+                    resolve_derived(ir, env, derived).map(|it| Some(it.kind))
+                }
                 Operand::Literal(_) | Operand::Offset(_) => Ok(None),
             };
             let (left_kind, right_kind) = (kind(left)?, kind(right)?);
@@ -1051,7 +1120,7 @@ pub(crate) fn reads_clock(command: &ResolvedCommand) -> bool {
 fn literal_of(operand: &Operand) -> Option<&FactValue> {
     match operand {
         Operand::Literal(value) => Some(value),
-        Operand::Fact(_) | Operand::Offset(_) => None,
+        Operand::Fact(_) | Operand::Offset(_) | Operand::Derived(_) => None,
     }
 }
 

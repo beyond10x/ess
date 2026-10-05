@@ -1,0 +1,52 @@
+{
+  "about": "The UTF-8 byte length of a String, the derived selector {utf8_bytes: <parent>} (docs/design/expression-family-source22.md, \"String .utf8_bytes\" and final review decisions 11 and 19). A `texts` row is one text written as its UTF-16 code units, so a lone surrogate can be written at all: `bytes` is the length of its UTF-8 encoding and `count` its number of Unicode scalar values, both null where the text holds a lone surrogate and is no Unicode text: its byte length is Unknown in every lane, and its `.count` is not asserted here. Each lane binds {label: <text>} and evaluates {compare: {left: {utf8_bytes: label}, op: eq, right: <bytes>}} and {label.count: {eq: <count>}}, and holds its faulty variants (scalar count, UTF-16 units, code points, graphemes) to disagree with at least one row. `evaluate` rows are whole predicates over a row; `refused` rows are documents every reader refuses. Answered by tests/utf8_bytes.rs, the Go fixture ess-conformance/tests/fixtures/utf8-bytes.go and ess-conformance/src/ts/predicate.test.ts.",
+  "texts": [
+    {"name": "empty", "units": [], "bytes": 0, "count": 0},
+    {"name": "ascii", "units": [97, 98, 99], "bytes": 3, "count": 3},
+    {"name": "a two-byte scalar, e acute", "units": [233], "bytes": 2, "count": 1},
+    {"name": "a three-byte scalar, the euro sign", "units": [8364], "bytes": 3, "count": 1},
+    {"name": "a four-byte scalar, U+1F600, two UTF-16 units", "units": [55357, 56832], "bytes": 4, "count": 1},
+    {"name": "composed e acute", "units": [99, 97, 102, 233], "bytes": 5, "count": 4},
+    {"name": "decomposed e acute, one grapheme of two scalars", "units": [99, 97, 102, 101, 769], "bytes": 6, "count": 5},
+    {"name": "mixed widths", "units": [97, 55357, 56832, 233, 8364], "bytes": 10, "count": 4},
+    {"name": "a lone high surrogate", "units": [55296], "bytes": null, "count": null},
+    {"name": "a lone low surrogate", "units": [56320], "bytes": null, "count": null},
+    {"name": "a lone surrogate between letters", "units": [97, 55357, 98], "bytes": null, "count": null},
+    {"name": "a reversed pair", "units": [56832, 55357], "bytes": null, "count": null}
+  ],
+  "evaluate": [
+    {"name": "at the byte bound", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 4}}, "row": {"label": "😀"}, "truth": "true"},
+    {"name": "one byte over the bound", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 4}}, "row": {"label": "😀a"}, "truth": "false"},
+    {"name": "beside the bound below", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lt", "right": 4}}, "row": {"label": "é!"}, "truth": "true"},
+    {"name": "greater by bytes, not by characters", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "gt", "right": 3}}, "row": {"label": "éé"}, "truth": "true"},
+    {"name": "count and bytes disagree on one text", "predicate": {"all": [{"label.count": {"eq": 1}}, {"compare": {"left": {"utf8_bytes": "label"}, "op": "eq", "right": 4}}]}, "row": {"label": "😀"}, "truth": "true"},
+    {"name": "the count bound holds where the byte bound does not", "predicate": {"all": [{"label.count": {"lte": 2}}, {"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 2}}]}, "row": {"label": "éé"}, "truth": "false"},
+    {"name": "a derived right operand", "predicate": {"limit": {"gte": {"utf8_bytes": "label"}}}, "row": {"label": "é", "limit": 2}, "truth": "true"},
+    {"name": "a derived right operand one short", "predicate": {"limit": {"gte": {"utf8_bytes": "label"}}}, "row": {"label": "é", "limit": 1}, "truth": "false"},
+    {"name": "two derived operands", "predicate": {"compare": {"left": {"utf8_bytes": "first"}, "op": "eq", "right": {"utf8_bytes": "second"}}}, "row": {"first": "é", "second": "ab"}, "truth": "true"},
+    {"name": "empty text is zero bytes", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "eq", "right": 0}}, "row": {"label": ""}, "truth": "true"},
+    {"name": "an unobserved text is unknown", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 4}}, "row": {}, "truth": "unknown"},
+    {"name": "an absent optional text is unknown", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 4}}, "row": {"label": null}, "truth": "unknown"},
+    {"name": "negation keeps unknown", "predicate": {"not": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 4}}}, "row": {}, "truth": "unknown"},
+    {"name": "a number has no UTF-8 bytes", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "gte", "right": 0}}, "row": {"label": 12}, "truth": "unknown"},
+    {"name": "a bound full-path observation wins over the parent", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "eq", "right": 9}}, "row": {"label": "abc", "label.utf8_bytes": 9}, "truth": "true"},
+    {"name": "a bound full-path observation is read without a parent", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "eq", "right": 9}}, "row": {"label.utf8_bytes": 9}, "truth": "true"},
+    {"name": "a bound text is no byte length, with no fallback to the parent", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "eq", "right": 3}}, "row": {"label": "abc", "label.utf8_bytes": "3"}, "truth": "unknown"},
+    {"name": "a bound negative number is no byte length", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lt", "right": 3}}, "row": {"label": "abc", "label.utf8_bytes": -1}, "truth": "unknown"},
+    {"name": "a bound fraction is no byte length", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lt", "right": 3}}, "row": {"label": "abc", "label.utf8_bytes": 2.5}, "truth": "unknown"},
+    {"name": "a null full-path observation observes nothing, so the parent decides", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "eq", "right": 3}}, "row": {"label": "abc", "label.utf8_bytes": null}, "truth": "true"},
+    {"name": "a member named utf8_bytes is an ordinary field", "predicate": {"record.utf8_bytes": {"eq": 3}}, "row": {"record": {"utf8_bytes": 3}}, "truth": "true"},
+    {"name": "a binder's text", "predicate": {"forall": {"in": "names", "as": "name", "that": {"compare": {"left": {"utf8_bytes": "name"}, "op": "lte", "right": 2}}}}, "row": {"names": ["é", "ab"]}, "truth": "true"},
+    {"name": "a binder's text one over", "predicate": {"forall": {"in": "names", "as": "name", "that": {"compare": {"left": {"utf8_bytes": "name"}, "op": "lte", "right": 2}}}}, "row": {"names": ["é", "€"]}, "truth": "false"}
+  ],
+  "refused": [
+    {"name": "an extra key", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lt", "right": 4, "extra": 1}}},
+    {"name": "no right side", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lt"}}},
+    {"name": "an unknown operator", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "like", "right": 4}}},
+    {"name": "tagged as an instant", "predicate": {"compare": {"left": {"utf8_bytes": "label"}, "op": "lt", "right": 4, "as": "timestamp"}}},
+    {"name": "an untagged compare without a derived operand", "predicate": {"compare": {"left": "label", "op": "lt", "right": 4}}},
+    {"name": "a selector beside another key", "predicate": {"limit": {"gte": {"utf8_bytes": "label", "fact": "label"}}}},
+    {"name": "a selector of no path", "predicate": {"limit": {"gte": {"utf8_bytes": 5}}}},
+    {"name": "a selector of a malformed path", "predicate": {"limit": {"gte": {"utf8_bytes": "label..x"}}}}
+  ]
+}

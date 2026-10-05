@@ -135,6 +135,44 @@ export function readLeaf(source: FactSource, path: string): [Node, boolean] {
   return [null, false];
 }
 
+/**
+ * The number of bytes the UTF-8 encoding of `text` takes, or null where `text` holds a lone
+ * surrogate and is no Unicode text. A JavaScript string is UTF-16 code units, so `length` counts
+ * units and `[...text]` code points; `TextEncoder` writes a lone surrogate as the three bytes of
+ * U+FFFD, which would measure a text nobody wrote — so well-formedness is checked first.
+ */
+export function utf8Length(text: string): number | null {
+  for (let index = 0; index < text.length; index += 1) {
+    const unit = text.charCodeAt(index);
+    if (unit >= 0xdc00 && unit <= 0xdfff) return null;
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const low = text.charCodeAt(index + 1);
+      if (!(low >= 0xdc00 && low <= 0xdfff)) return null;
+      index += 1;
+    }
+  }
+  return new TextEncoder().encode(text).length;
+}
+
+/**
+ * The UTF-8 byte length of the text at `path`, Go's `utf8BytesOf` and Rust's `Derived::value`: a
+ * bound `<path>.utf8_bytes` wins, and only a whole number from zero within `i64` is a byte length —
+ * any other bound value is Unknown, with no fallback to the text. Otherwise the text at `path` is
+ * measured; an unbound path, null, a value that is no text and a lone surrogate are Unknown.
+ */
+export function utf8BytesOf(source: FactSource, path: string): [Node, boolean] {
+  const observed = `${path}.utf8_bytes`;
+  const bound = source.get(observed);
+  if (source.has(observed) && bound !== null && bound !== undefined) {
+    const length = integerOf(bound);
+    return length === null || length < 0n ? [null, false] : [bound, true];
+  }
+  const text = source.get(path);
+  if (typeof text !== 'string') return [null, false];
+  const length = utf8Length(text);
+  return length === null ? [null, false] : [length, true];
+}
+
 export function facts(row: Row): FactSource {
   const flattened: FactSource = new Map();
   for (const [field, value] of Object.entries(row)) {
@@ -187,23 +225,40 @@ export interface OffsetOperand {
   spelled: string;
 }
 
-/** One side of a comparison: a fact to look up, a constant, or one fact moved by a constant. */
+/**
+ * One side of a comparison: a fact to look up, a constant, one fact moved by a constant, or the
+ * UTF-8 byte length of a text.
+ */
 export class Operand {
   path: string;
   literal: Node;
   isFact: boolean;
   offset: OffsetOperand | null;
+  /**
+   * The derived UTF-8 byte length of the text at `path` (suite/40,
+   * `docs/design/expression-family-source22.md` decision 11): `{utf8_bytes: <path>}`. Not a fact: no
+   * value is read at `path` itself, and a selection never reads one.
+   */
+  utf8Bytes: boolean;
 
   constructor(
-    fields: { path?: string; literal?: Node; isFact?: boolean; offset?: OffsetOperand } = {},
+    fields: {
+      path?: string;
+      literal?: Node;
+      isFact?: boolean;
+      offset?: OffsetOperand;
+      utf8Bytes?: boolean;
+    } = {},
   ) {
     this.path = fields.path ?? '';
     this.literal = fields.literal ?? null;
     this.isFact = fields.isFact ?? false;
     this.offset = fields.offset ?? null;
+    this.utf8Bytes = fields.utf8Bytes ?? false;
   }
 
   toString(): string {
+    if (this.utf8Bytes) return `{utf8_bytes: ${this.path}}`;
     if (this.offset !== null) {
       const direction = this.offset.add ? 'add' : 'subtract';
       return `{offset: {fact: ${this.offset.base}, ${direction}: ${this.offset.spelled}}}`;
@@ -212,6 +267,7 @@ export class Operand {
   }
 
   resolve(source: FactSource): [Node, boolean] {
+    if (this.utf8Bytes) return utf8BytesOf(source, this.path);
     if (!this.isFact) return [this.literal, true];
     return readLeaf(source, this.path);
   }
@@ -667,10 +723,12 @@ export function fromEntry(key: string, value: Node, binders: readonly string[] =
 }
 
 /**
- * Reads `{compare: {left, op, right, as: timestamp}}`, a comparison tagged to compare instants
- * (suite/40, `docs/design/expression-family-source22.md` decision 2), as Rust's
- * `Predicate::tagged_compare` does: exactly those four keys. A mapping under `compare` without
- * `left` is a constraint on a fact named `compare`, as it always was.
+ * Reads the closed `{compare: …}` form of a comparison (suite/40,
+ * `docs/design/expression-family-source22.md`), as Rust's `Predicate::tagged_compare` does: tagged
+ * to compare instants (decision 2), `{compare: {left, op, right, as: timestamp}}`, or untagged with
+ * a derived operand (decision 11), `{compare: {left: {utf8_bytes: <path>}, op, right}}` — exactly
+ * those keys. `as` never stands beside a derived operand, and the untagged form carries one. A
+ * mapping under `compare` without `left` is a constraint on a fact named `compare`, as it always was.
  */
 export function parseTaggedCompare(
   fields: { [key: string]: Node },
@@ -679,34 +737,62 @@ export function parseTaggedCompare(
   const refuse = (reason: string): never => {
     throw new Error(`compare: ${reason}`);
   };
-  if (Object.keys(fields).length !== 4) {
-    refuse('a tagged comparison takes exactly `left`, `op`, `right` and `as`');
+  const tagged = Object.hasOwn(fields, 'as');
+  if (
+    Object.keys(fields).length !== (tagged ? 4 : 3) ||
+    !Object.hasOwn(fields, 'op') ||
+    !Object.hasOwn(fields, 'right')
+  ) {
+    refuse(
+      'a `{compare: …}` comparison takes exactly `left`, `op` and `right`, and `as` where it is tagged',
+    );
   }
-  const left = fields['left'];
-  if (typeof left !== 'string' || !factPath.test(left)) refuse('`left` names a fact path');
+  const written = fields['left'] ?? null;
+  let left: Operand;
+  if (typeof written === 'string' && factPath.test(written)) {
+    left = new Operand({ path: written, isFact: true });
+  } else if (
+    isFactMapping(written) &&
+    Object.keys(written).length === 1 &&
+    Object.hasOwn(written, 'utf8_bytes')
+  ) {
+    left = parseUtf8BytesOperand('compare', 'left', written['utf8_bytes'] ?? null);
+  } else {
+    return refuse('`left` names a fact path or `{utf8_bytes: <path>}`');
+  }
   const spelled = fields['op'];
   const op =
     typeof spelled === 'string'
       ? comparisonOperators.find(([spelling]) => spelling === spelled)?.[1]
       : undefined;
   if (op === undefined) refuse('`op` is one of eq, ne, lt, lte, gt, gte');
-  if (fields['as'] !== 'timestamp') {
+  if (tagged && fields['as'] !== 'timestamp') {
     refuse('`as` names the one kind a comparison is tagged with, `timestamp`');
   }
   const compared = fields['right'] ?? null;
   let right: Operand;
   if (typeof compared === 'string') {
     right = parseOperand(compared, binders);
-  } else if (isFactMapping(compared)) {
+  } else if (isFactMapping(compared) && !(compared instanceof JsonNumber)) {
     right = parseMappingOperand('compare', 'right', compared);
   } else if (compared === null || Array.isArray(compared)) {
     return refuse('`right` is a scalar or `{fact: <path>}`');
   } else {
     right = new Operand({ literal: compared });
   }
+  const derived = left.utf8Bytes || right.utf8Bytes;
+  if (!tagged) {
+    if (!derived) {
+      refuse(
+        'an untagged `{compare: …}` carries a derived operand, `{utf8_bytes: <path>}`; compare two facts as `<path>: {<op>: …}`',
+      );
+    }
+    return new Predicate({ kind: 'compare', left, op: op as string, right });
+  }
+  if (derived) refuse('a derived operand compares as a number, never `as: timestamp`');
   return new Predicate({
     kind: 'compare',
-    left: new Operand({ path: left as string, isFact: true }),
+    left,
     op: op as string,
     right,
     instant: true,
@@ -1041,7 +1127,22 @@ function parseMappingOperand(path: string, key: string, value: { [key: string]: 
   if (Object.keys(value).length === 1 && Object.hasOwn(value, 'offset')) {
     return parseOffsetOperand(path, key, value['offset'] ?? null);
   }
+  if (Object.keys(value).length === 1 && Object.hasOwn(value, 'utf8_bytes')) {
+    return parseUtf8BytesOperand(path, key, value['utf8_bytes'] ?? null);
+  }
   return parseFactOperand(path, key, value);
+}
+
+/**
+ * Reads the derived UTF-8 byte length of a text, `{utf8_bytes: <path>}` (suite/40,
+ * `docs/design/expression-family-source22.md` decision 11), as Rust's `Operand::fact_mapping` does:
+ * one key, naming a fact path. Which suite majors may carry it is the runtime's admission to decide.
+ */
+export function parseUtf8BytesOperand(path: string, key: string, value: Node): Operand {
+  if (typeof value !== 'string' || !factPath.test(value)) {
+    throw new Error(`\`${path}: {${key}: {utf8_bytes: …}}\` names the fact path of a text`);
+  }
+  return new Operand({ path: value, utf8Bytes: true });
 }
 
 /**

@@ -91,6 +91,7 @@ pub(crate) const RELATED_GUARD: &str = "`when_related:`";
 pub(crate) const UNIT_VARIANT: &str = "a union variant with no payload (ess/22)";
 pub(crate) const OFFSET: &str = "one constant offset (`upper == lower + 5`, `issued_at - 24h`)";
 pub(crate) const DISTINCT: &str = "distinct list members (`distinct: {in, as, by}`)";
+pub(crate) const UTF8_BYTES: &str = "the UTF-8 byte length of a text (`label.utf8_bytes`)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -498,6 +499,15 @@ pub const CONSTRUCTS: &[Construct] = &[
         Needs::EntityCore("a condition that compares keys across a list's elements"),
         &["tests/distinct_guard.rs::a_guard_requiring_distinct_members_is_refused_by_name"],
     ),
+    refused(
+        UTF8_BYTES,
+        LoweringCode::Utf8BytesUnsupported,
+        Needs::EntityCore("an address for the UTF-8 byte length of a text"),
+        &[
+            "tests/utf8_bytes_guard.rs::a_guard_reading_a_byte_length_is_refused_by_name",
+            "tests/utf8_bytes_guard.rs::a_guard_comparing_two_byte_lengths_is_refused_by_name",
+        ],
+    ),
 ];
 
 impl LoweringCode {
@@ -536,6 +546,7 @@ impl LoweringCode {
         Self::UnitVariantUnsupported,
         Self::OffsetUnsupported,
         Self::DistinctUnsupported,
+        Self::Utf8BytesUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -755,6 +766,11 @@ impl LoweringCode {
                 "DistinctUnsupported",
                 DISTINCT,
                 "A predicate requires that no two elements of a list share a key.",
+            ),
+            Self::Utf8BytesUnsupported => (
+                "Utf8BytesUnsupported",
+                UTF8_BYTES,
+                "A predicate compares the UTF-8 byte length of a text.",
             ),
         }
     }

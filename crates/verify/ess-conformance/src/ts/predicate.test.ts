@@ -1525,3 +1525,134 @@ test('distinct: every paired fault disagrees with a vector', () => {
     );
   }
 });
+
+// ---- the UTF-8 byte length of a String (docs/design/expression-family-source22.md) -----------
+
+interface Utf8Text {
+  name: string;
+  units: number[];
+  bytes: number | null;
+  count: number | null;
+}
+
+/** The shared byte-length vectors. */
+function utf8Vectors(): {
+  texts: Utf8Text[];
+  evaluate: { name: string; predicate: Node; row: Row; truth: string }[];
+  refused: { name: string; predicate: Node }[];
+} {
+  // `crates/specify/ess-primitives/tests/vectors/utf8-bytes.json`, which `tests/utf8_bytes.rs`
+  // and `tests/fixtures/utf8-bytes.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/utf8-bytes.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      const document = strictJSON(readFileSync(candidate, 'utf8')) as unknown as {
+        texts: { name: string; units: Node[]; bytes: Node; count: Node }[];
+      } & Omit<ReturnType<typeof utf8Vectors>, 'texts'>;
+      return {
+        ...document,
+        texts: document.texts.map((text) => ({
+          name: text.name,
+          units: text.units.map((unit) => Number(unit)),
+          bytes: text.bytes === null ? null : Number(text.bytes),
+          count: text.count === null ? null : Number(text.count),
+        })),
+      };
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+test('utf8: the byte-length selector answers the shared vectors', () => {
+  const vectors = utf8Vectors();
+  let answered = 0;
+  for (const vector of vectors.texts) {
+    // A JavaScript string is UTF-16 code units, so a lone surrogate is a string like any other:
+    // the byte length of one is Unknown, never the three bytes of the U+FFFD an encoder writes.
+    const label = String.fromCharCode(...vector.units);
+    const row = source({ label });
+    if (vector.bytes === null) {
+      const any = parsePredicate(
+        predicateNumbers({ compare: { left: { utf8_bytes: 'label' }, op: 'gte', right: 0 } }),
+      );
+      assert.equal(any.evaluate(row), TruthUnknown, vector.name);
+    } else {
+      const bytes = parsePredicate(
+        predicateNumbers({
+          compare: { left: { utf8_bytes: 'label' }, op: 'eq', right: vector.bytes },
+        }),
+      );
+      assert.equal(bytes.evaluate(row), TruthTrue, `${vector.name}: ${vector.bytes} bytes`);
+      const count = parsePredicate(predicateNumbers({ 'label.count': { eq: vector.count } }));
+      assert.equal(count.evaluate(row), TruthTrue, `${vector.name}: ${vector.count} scalars`);
+    }
+    answered += 1;
+  }
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(predicateNumbers(vector.predicate)).evaluate(facts(vector.row));
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(predicateNumbers(vector.predicate)), vector.name);
+    assert.throws(() => admitPredicateVersion(vector.predicate, 40), vector.name);
+    answered += 1;
+  }
+  assert.ok(answered >= 40, `${answered} vectors answered`);
+});
+
+test('utf8: every faulty measure disagrees with a byte-length vector', () => {
+  const vectors = utf8Vectors();
+  type Measure = (text: string) => number | null;
+  const wellFormed = (text: string): boolean => {
+    for (let index = 0; index < text.length; index += 1) {
+      const unit = text.charCodeAt(index);
+      if (unit >= 0xdc00 && unit <= 0xdfff) return false;
+      if (unit >= 0xd800 && unit <= 0xdbff) {
+        const low = text.charCodeAt(index + 1);
+        if (!(low >= 0xdc00 && low <= 0xdfff)) return false;
+        index += 1;
+      }
+    }
+    return true;
+  };
+  const exact: Measure = (text) =>
+    wellFormed(text) ? new TextEncoder().encode(text).length : null;
+  const faults: [string, Measure][] = [
+    ['UTF-16 units (`length`)', (text) => text.length],
+    ['code points (`[...text]`)', (text) => [...text].length],
+    ['an encoder that replaces a lone surrogate', (text) => new TextEncoder().encode(text).length],
+    ['graphemes', (text) => [...text].filter((character) => !/[̀-ͯ]/u.test(character)).length],
+  ];
+  const answer = (measure: Measure, vector: Utf8Text): number | null =>
+    measure(String.fromCharCode(...vector.units));
+  for (const vector of vectors.texts) {
+    assert.equal(answer(exact, vector), vector.bytes, `the reference: ${vector.name}`);
+  }
+  for (const [fault, measure] of faults) {
+    assert.ok(
+      vectors.texts.some((vector) => answer(measure, vector) !== vector.bytes),
+      `no vector tells the ${fault} fault apart`,
+    );
+  }
+});
+
+test('utf8: below suite/40 the selector is refused before it is read', () => {
+  const derived = strictJSON(
+    '{"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 4}}',
+  );
+  assert.match(
+    raised(() => admitPredicateVersion(derived, 39)),
+    /suite\/40/,
+  );
+  const right = strictJSON('{"limit": {"gte": {"utf8_bytes": "label"}}}');
+  assert.match(
+    raised(() => admitPredicateVersion(right, 39)),
+    /suite\/40/,
+  );
+  admitPredicateVersion(derived, 40);
+  admitPredicateVersion(right, 41);
+});

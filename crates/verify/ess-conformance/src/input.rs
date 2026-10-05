@@ -600,6 +600,10 @@ impl ProofBudget {
                             path(&offset.base)?;
                             self.charge(offset.magnitude.to_string().len())?;
                         }
+                        Operand::Derived(derived) => {
+                            path(derived.parent())?;
+                            self.charge(ess_primitives::predicate::Derived::UTF8_BYTES.len())?;
+                        }
                         Operand::Literal(value) => literal(value)?,
                     }
                 }
@@ -1284,6 +1288,7 @@ impl<'ir> InputFacts<'ir> {
             Operand::Literal(value) => Some(value.clone()),
             // An offset names no value of its own; its base is explained as a path.
             Operand::Offset(_) => None,
+            Operand::Derived(derived) => derived.value(self),
         }
     }
 
@@ -1443,6 +1448,7 @@ pub(crate) fn predicate_projectable(
             projection_target(ir, &read.resolution).is_scalar()
                 || aggregate_presence(ir, read, &presence)
                 || (sequences && sequence_read(ir, read))
+                || lifted_text_length(ir, read, predicate)
         })
 }
 
@@ -1462,6 +1468,20 @@ fn sequence_read(ir: &EssIr, read: &ess_domain::expression::Read<ResolvedTypeRef
             projection_target(ir, resolution),
             Target::Aggregate("an unsupported Binary64 scalar") | Target::TooDeep
         )
+}
+
+/// Whether `read` is a text's `.count` in a predicate that already needs suite `/40`
+/// (`docs/design/expression-family-source22.md`, final review decision 1): every runner derives a
+/// text's length from the text a row publishes, so `/40` and `/41` carry it in `satisfies` beside
+/// `{utf8_bytes: …}`. A predicate needing no `/40` vocabulary keeps refusing it, so a suite that
+/// carried none keeps its format and bytes.
+pub(crate) fn lifted_text_length(
+    ir: &EssIr,
+    read: &ess_domain::expression::Read<ResolvedTypeRef>,
+    predicate: &Predicate,
+) -> bool {
+    projection_target(ir, &read.resolution) == Target::Aggregate("a text length")
+        && crate::expression_format::reads(predicate)
 }
 
 /// Whether `read` is a `defined()` (or `missing()`) of an `Optional` struct, union, list, map or

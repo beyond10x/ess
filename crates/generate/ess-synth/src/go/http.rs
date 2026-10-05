@@ -149,6 +149,9 @@ fn helpers_file(
     } else {
         SURFACE_HELPERS.to_owned()
     };
+    if crate::determined::reads_utf8_bytes(ir) {
+        helpers = refusing_lone_surrogates(&helpers);
+    }
     if http::checks_grants(ir) {
         helpers.push_str(&grant_helpers(ir));
         if http::checks_read_grants(ir) {
@@ -163,6 +166,76 @@ fn helpers_file(
     }
     emit.file(provenance, SERVER_DOC, &helpers)
 }
+
+/// The opening of `readJSON` in [`SURFACE_HELPERS`], which [`refusing_lone_surrogates`] extends.
+const READ_JSON: &str = "func readJSON(body []byte) (any, *response) {\n";
+
+/// The surface helpers of a model that measures text in UTF-8 bytes
+/// (`docs/design/expression-family-source22.md`, decision 19): `readJSON` refuses a body escaping a
+/// lone UTF-16 surrogate, which `encoding/json` would read as U+FFFD — three bytes of valid UTF-8
+/// nobody sent. The Rust surface's reader refuses it already. Only such a model gets the check, so
+/// every other surface keeps its bytes.
+///
+/// # Panics
+///
+/// When `readJSON` is not where it is expected: the fixed text and this edit cannot drift apart.
+fn refusing_lone_surrogates(helpers: &str) -> String {
+    assert!(
+        helpers.contains(READ_JSON),
+        "the surface helpers declare readJSON"
+    );
+    let refused = "\tif err := loneSurrogates(body); err != nil {\n\t\tanswer := refusal(400, \
+                   fmt.Sprintf(\"the body is not JSON text: %s\", err))\n\t\treturn nil, \
+                   &answer\n\t}\n";
+    let mut out = helpers.replacen(READ_JSON, &format!("{READ_JSON}{refused}"), 1);
+    out.push_str(LONE_SURROGATES);
+    out
+}
+
+/// The check [`refusing_lone_surrogates`] adds: the conformance runner's `scalarStrings`.
+const LONE_SURROGATES: &str = r#"
+// loneSurrogates refuses a `\u` escape of a lone UTF-16 surrogate, which the standard decoder
+// would replace with U+FFFD: a text nobody sent, and three bytes of valid UTF-8 where the text
+// has no byte length at all.
+func loneSurrogates(raw []byte) error {
+	quoted := false
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '"' {
+			quoted = !quoted
+			continue
+		}
+		if !quoted || raw[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(raw) || raw[i] != 'u' {
+			continue
+		}
+		if i+4 >= len(raw) {
+			return fmt.Errorf("an unfinished Unicode escape")
+		}
+		code, err := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
+		if err != nil {
+			return fmt.Errorf("a Unicode escape that is not four hexadecimal digits")
+		}
+		i += 4
+		if code >= 0xdc00 && code <= 0xdfff {
+			return fmt.Errorf("a lone low surrogate")
+		}
+		if code >= 0xd800 && code <= 0xdbff {
+			if i+6 >= len(raw) || string(raw[i+1:i+3]) != `\u` {
+				return fmt.Errorf("a lone high surrogate")
+			}
+			low, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
+			if err != nil || low < 0xdc00 || low > 0xdfff {
+				return fmt.Errorf("a high surrogate without its low half")
+			}
+			i += 6
+		}
+	}
+	return nil
+}
+"#;
 
 /// The Go identifier of one declared actor's constant: every segment of its qualified name,
 /// pascal-joined, so two domains declaring one local name cannot collide.

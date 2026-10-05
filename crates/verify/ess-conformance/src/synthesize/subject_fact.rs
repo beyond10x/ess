@@ -926,6 +926,28 @@ fn held_node(
     Some(node.clone())
 }
 
+/// A byte length of an input stays the byte length of that input; one of a stored text is the number
+/// the row's text measures, or grounds nothing where the row holds none (decision 11).
+fn ground_derived(
+    settled: &BTreeMap<String, super::Determined>,
+    bound: &[(&str, &Node)],
+    derived: &ess_primitives::predicate::Derived,
+) -> Option<Operand> {
+    let parent = derived.parent();
+    match input_path(parent) {
+        Some(rest) if !bound.iter().any(|(name, _)| *name == parent.namespace()) => {
+            Some(Operand::Derived(derived.with_parent(rest)))
+        }
+        _ => derived
+            .value_with(&|path| {
+                held_node(settled, bound, path)
+                    .as_ref()
+                    .and_then(super::fact_value)
+            })
+            .map(Operand::Literal),
+    }
+}
+
 /// One leaf of a row/input comparison, grounded on the row: a comparison with its stored side
 /// replaced by the value held there; a quantifier over a stored collection once per element the row
 /// holds, its binder read as that element (beyond10x/ess#240). A map's elements are its values in
@@ -973,6 +995,7 @@ fn ground_leaf(
                         .map(Operand::Literal),
                 }
             }
+            Operand::Derived(derived) => ground_derived(settled, bound, derived),
             Operand::Literal(value) => Some(Operand::Literal(value.clone())),
         }
     };

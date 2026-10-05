@@ -900,3 +900,60 @@ section above.
 - Undecidable rows: an absent key is `Unknown` in all three runners, which the Rust runner reports
   as `error` and the Go runner as `failed`. That split is older than this unit and holds for every
   undecidable `satisfies`.
+
+## U7 implementation seams (2026-10-05)
+
+Refreshed citations for the seams unit U7 (String `.utf8_bytes`) changed, and the calls it made where
+this page left a choice.
+
+- Operand and canonical form: `Operand::Derived` and `Derived::Utf8Bytes` (`parent`, `observed_at`,
+  `value`, `value_with`, `to_node`), the `utf8_bytes` arm of `Operand::fact_mapping`, the untagged
+  branch of `Predicate::tagged_compare`, `compare_node`, and `Predicate::reads_utf8_bytes`
+  (`crates/specify/ess-primitives/src/predicate.rs`). The derived operand on the right of a fact is
+  `path: {<op>: {utf8_bytes: <parent>}}`; every other comparison holding one is the untagged
+  `{compare: {left, op, right}}`, which a reader refuses without a derived operand, and `as:
+  timestamp` never stands beside one. Shared vectors:
+  `crates/specify/ess-primitives/tests/vectors/utf8-bytes.json` (texts as UTF-16 code units, so a
+  lone surrogate can be written).
+- Resolver and checker: `derive_selectors`/`derived_selector` run after the lexical lowering in
+  `resolve_lexical_reading`; `utf8_bytes_path` refuses the path spelling in `resolve`, by format
+  below `ess/22` and as `type_mismatch` in every non-operand position; `Checker::derived` types the
+  operand (`crates/specify/ess-domain/src/expression.rs`). A caller's byte length is a misplaced
+  caller read (`command/caller_value.rs`).
+- Decision 19, as implemented: a bound `<parent>.utf8_bytes` wins like a bound `.count`, but only a
+  whole number from zero (within `i64`) is a byte length; any other bound value is Unknown with no
+  fallback, and a bound `null` is no observation. Lone surrogates: unrepresentable in Rust (a JSON
+  escape is refused by the reader), refused by `utf8.ValidString` in the Go runner and the generated
+  Go guards and invariants, refused before `TextEncoder` in TypeScript (`utf8Length`).
+- Decision 1, as implemented: a text's `.count` is admitted in `satisfies` only in a predicate that
+  already needs `/40` (`input::lifted_text_length`, also in authored `satisfies`), so a predicate
+  without `/40` vocabulary keeps its refusal and every such suite its bytes.
+- Coordinator decision F5 (2026-10-05, after the E-U7 adversary pass): the lift above also moves an
+  `ess/22` invariant that pairs a text's `.count` with another `/40` form — an offset, or a tagged
+  instant comparison — from no `satisfies` under `/34` to an asserted `satisfies` under `/40`. That
+  is accepted as decision 1. Byte identity is owed to models whose predicates hold no `ess/22`
+  expression vocabulary: a `.count` alone and a member named `utf8_bytes`, in `ess/21` and `ess/22`,
+  keep their bytes (`tests/adversary_e_u7_probe.rs` asserts both sides).
+- Decision 19 over the wire: a generated Go server of a model that compares a byte length refuses a
+  request body escaping a lone surrogate with `400` (`loneSurrogates` before `readJSON`'s decoder,
+  `go/http.rs`), instead of reading U+FFFD; models without a byte length keep their surface bytes.
+  The generated Rust reader already refuses one (`rust/json.rs`, `unicode`); both answers are held
+  by `ess-synth/tests/expression_utf8_bytes.rs`.
+- Witnessing beyond a literal bound: two byte lengths compared with each other are tried as a wide
+  text against a narrow one at the deciding lengths (`é`/`ab`, `😀`/`a`, `😀`/`abc`,
+  `wide_narrow_pairs`), and each length is also tried packed with the widest scalars
+  (`resize_bytes`), so a guard on a text's `.count` and `.utf8_bytes` together is witnessed.
+- Follow-ups (pre-existing for `.count`, not fixed here): a view filter is witnessed by one scenario
+  on one side only (F4), and a stored-row guard comparing an input length with the row's length is
+  never witnessed true (F6).
+- Suite format: `expression_format::reads`; Go `parseUtf8BytesOperand`, `utf8BytesOf`,
+  `predicateUsesUtf8Bytes`; TypeScript `parseUtf8BytesOperand`, `utf8BytesOf`, `utf8Length`,
+  `predicateUsesUtf8Bytes`.
+- Synthesis: `byte_lengths`, `text_bytes_ladder`, `resize_bytes` and `wide_texts`
+  (`crates/verify/ess-conformance/src/witness.rs`): each bound and one byte either side, tried first
+  as text led by U+1F600 or `é`; the cap refusal names `<parent>.utf8_bytes`
+  (`synthesize::unsatisfied`).
+- Generated guards: `Step::Utf8Bytes` and `resolve_derived` (`crates/generate/ess-synth/src/determined.rs`);
+  generated invariants measure with `.as_str().len()` and Go `len` under `utf8.ValidString`
+  (`rust/invariant.rs`, `go/invariant.rs`); a view filter stays owed by name.
+- Entity Runtime: `LoweringCode::Utf8BytesUnsupported` (`lib.rs`, `subset.rs`).

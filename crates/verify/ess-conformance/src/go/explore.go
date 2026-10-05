@@ -475,6 +475,12 @@ func explorePaths(p predicate) []string {
 			if node.right.offset != nil {
 				found[node.right.offset.base] = true
 			}
+			// A byte length reads the text it measures (decision 11).
+			for _, side := range []operand{node.left, node.right} {
+				if side.utf8Bytes {
+					found[side.path] = true
+				}
+			}
 		case node.kind == "forall" || node.kind == "exists":
 			found[node.over] = true
 		case node.path != "":

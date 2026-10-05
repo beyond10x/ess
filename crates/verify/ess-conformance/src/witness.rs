@@ -519,6 +519,7 @@ fn search(
 pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool), WitnessGap>;
 
 /// [`search`], run.
+#[allow(clippy::too_many_lines)]
 fn search_uncached(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -637,6 +638,12 @@ fn search_uncached(
     // omission's own candidate — every other value at its base — is reserved inside it, so a guard
     // with many varied leaves cannot crowd the absent side of `defined(x)` out of it.
     let mut inputs = enumerate(&mut builder, command, &ladders, &omitted, &presence_omits)?;
+    // A text a guard measures in UTF-8 bytes is tried first at each length it is decided at as text
+    // with fewer scalars and UTF-16 units than bytes, so the branch it witnesses is sent text on
+    // which no other measure agrees — even where the base text is already that long in ASCII
+    // (`docs/design/expression-family-source22.md`, "String `.utf8_bytes`"). Only commands with
+    // such a guard get it, so every other suite keeps its bytes.
+    wide_first(&mut builder, command, &expanded, &mut inputs)?;
     // A case-insensitive guard's refuting side is witnessed by a one-character change of its
     // literal, not by whatever base text happens to refute it: a target comparing only lengths, or
     // only the first byte folded, accepts the base and passes (beyond10x/ess#140). Tried first, so
@@ -2310,6 +2317,11 @@ fn count_ladders(
 ) {
     let mut list_lengths: BTreeMap<FactPath, Vec<usize>> = BTreeMap::new();
     let mut map_lengths: BTreeMap<FactPath, Vec<usize>> = BTreeMap::new();
+    for (parent, lengths) in byte_lengths(guards) {
+        if builder.strings.contains(&parent) {
+            text_bytes_ladder(builder, &parent, &lengths, ladders);
+        }
+    }
     for path in read_paths(guards) {
         let Some(parent) = counted(&path) else {
             continue;
@@ -2353,6 +2365,314 @@ fn count_ladders(
         }
         ladders.insert(path.clone(), ladder);
     }
+}
+
+/// The byte lengths each text a guard measures with `{utf8_bytes: <parent>}` is tried at
+/// (`docs/design/expression-family-source22.md`, "String `.utf8_bytes`"): `.count`'s rule in bytes —
+/// `⌊v⌋`, `⌊v⌋ + 1` and `⌊v⌋ − 1` for each numeric literal `v` it is compared with, negatives,
+/// repeats and lengths past [`MAX_COUNT_WITNESS`] dropped — and either side of [`BASE_NUMBER`] where
+/// it is compared only with another fact, whose own ladder decides the rest. Keyed by the parent.
+fn byte_lengths(guards: &[&Predicate]) -> BTreeMap<FactPath, Vec<usize>> {
+    fn walk(predicate: &Predicate, found: &mut BTreeMap<FactPath, Vec<f64>>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::Compare { left, right, .. } => {
+                for (operand, other) in [(left, right), (right, left)] {
+                    let Operand::Derived(derived) = operand else {
+                        continue;
+                    };
+                    let values = found.entry(derived.parent().clone()).or_default();
+                    match other {
+                        Operand::Literal(value) => {
+                            values.extend(value.as_number().map(Number::get));
+                        }
+                        Operand::Fact(_) | Operand::Derived(_) | Operand::Offset(_) => {
+                            values.push(BASE_NUMBER);
+                        }
+                    }
+                }
+            }
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                walk(&quantified.body, found);
+            }
+            _ => {}
+        }
+    }
+    let mut found = BTreeMap::new();
+    for guard in guards {
+        walk(guard, &mut found);
+    }
+    found
+        .into_iter()
+        .map(|(parent, values)| {
+            let mut lengths = Vec::new();
+            for value in values {
+                let floor = value.floor();
+                for candidate in [floor, floor + 1.0, floor - 1.0] {
+                    if !(0.0..=f64::from(MAX_COUNT_WITNESS_U32)).contains(&candidate) {
+                        continue;
+                    }
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let length = candidate as usize;
+                    if !lengths.contains(&length) {
+                        lengths.push(length);
+                    }
+                }
+            }
+            (parent, lengths)
+        })
+        .collect()
+}
+
+/// The text at `path` resized to each of `lengths` UTF-8 bytes, appended to the ladder already
+/// there; [`text_length_ladder`]'s rule, in bytes.
+///
+/// Each length is tried first as text whose bytes outnumber its scalar values and its UTF-16 code
+/// units — U+1F600 (four bytes, one scalar, two units) where it fits, `é` (two bytes, one scalar)
+/// where only that does — and then in the text's own characters, so a target that counts anything
+/// but bytes decides a witnessed branch differently, and an alphabet that admits neither still has
+/// the text's own characters, which [`admitted_inputs`] keeps.
+fn text_bytes_ladder(
+    builder: &Builder<'_>,
+    path: &FactPath,
+    lengths: &[usize],
+    ladders: &mut BTreeMap<FactPath, Vec<Choice>>,
+) {
+    let Some((Leaf::Text, Node::Text(base))) = builder.leaves.get(path) else {
+        return;
+    };
+    let plain = builder
+        .plain_texts
+        .get(path)
+        .map_or(base.as_str(), String::as_str);
+    let ladder = ladders.entry(path.clone()).or_default();
+    let mut sources = vec![base.clone()];
+    sources.extend(ladder.iter().filter_map(|choice| match choice {
+        Choice::Value(Node::Text(text)) => Some(text.clone()),
+        _ => None,
+    }));
+    for source in &sources {
+        for &length in lengths {
+            for text in resize_bytes(source, length, plain) {
+                let node = Node::Text(text);
+                if node != Node::Text(base.clone())
+                    && !ladder.contains(&Choice::Value(node.clone()))
+                {
+                    ladder.push(Choice::Value(node));
+                }
+            }
+        }
+    }
+    if ladder.is_empty() {
+        ladders.remove(path);
+    }
+}
+
+/// `text` at exactly `length` UTF-8 bytes, never cutting a scalar: first led by one wide scalar
+/// (U+1F600 where four bytes fit, else `é` where two do), then in `text`'s own characters — or
+/// `plain`'s where it has none — cycled from its start, closed with the narrowest of them that
+/// still fits. Where no character fits the last bytes the variant is not built.
+fn resize_bytes(text: &str, length: usize, plain: &str) -> Vec<String> {
+    let own: Vec<char> = if text.is_empty() {
+        plain.chars().collect()
+    } else {
+        text.chars().collect()
+    };
+    let narrowest = own
+        .iter()
+        .copied()
+        .min_by_key(|character| character.len_utf8())
+        .unwrap_or('a');
+    let fill = |mut out: String| -> Option<String> {
+        let mut cycle = own.iter().copied().cycle();
+        while out.len() < length && !own.is_empty() {
+            let next = cycle.next().unwrap_or(narrowest);
+            let wanted = length - out.len();
+            if next.len_utf8() <= wanted {
+                out.push(next);
+            } else if narrowest.len_utf8() <= wanted {
+                out.push(narrowest);
+            } else {
+                return None;
+            }
+        }
+        while out.len() < length {
+            out.push('a');
+        }
+        Some(out)
+    };
+    let mut found = Vec::new();
+    let lead = if length >= 4 {
+        Some('\u{1F600}')
+    } else if length >= 2 {
+        Some('\u{e9}')
+    } else {
+        None
+    };
+    if let Some(wide) = lead {
+        found.extend(fill(wide.to_string()));
+    }
+    if let Some(own_text) = fill(String::new()) {
+        if !found.contains(&own_text) {
+            found.push(own_text);
+        }
+    }
+    // Packed with the widest scalars that fit, so a text is short in scalars and long in bytes at
+    // once: what a guard reading `.count` and `.utf8_bytes` of one text needs to see them disagree
+    // (eight bytes in two scalars, `😀😀`).
+    if length >= 2 {
+        let mut packed = "\u{1F600}".repeat(length / 4);
+        packed.push_str(match length % 4 {
+            3 => "\u{20ac}",
+            2 => "\u{e9}",
+            1 => "a",
+            _ => "",
+        });
+        if !found.contains(&packed) {
+            found.push(packed);
+        }
+    }
+    found
+}
+
+/// The witnesses tried for two byte lengths compared with each other, as `(left, right)`: one side
+/// wide and the other narrow at the lengths that decide every operator — equal in bytes and not in
+/// scalars (`é` and `ab`), and apart in bytes and equal or reversed in scalars (`😀` against `a` and
+/// against `abc`) — so a target counting anything but bytes decides one of them differently.
+const WIDE_NARROW: [(&str, usize); 3] = [("\u{e9}", 2), ("\u{1F600}", 1), ("\u{1F600}", 3)];
+
+/// Every pair of texts the guards compare by their UTF-8 byte lengths, `{utf8_bytes: p} <op>
+/// {utf8_bytes: q}`, in the order they are written.
+fn byte_length_pairs(guards: &[&Predicate]) -> Vec<(FactPath, FactPath)> {
+    fn walk(predicate: &Predicate, found: &mut Vec<(FactPath, FactPath)>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::Compare {
+                left: Operand::Derived(left),
+                right: Operand::Derived(right),
+                ..
+            } if left.parent() != right.parent() => {
+                let pair = (left.parent().clone(), right.parent().clone());
+                if !found.contains(&pair) {
+                    found.push(pair);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for guard in guards {
+        walk(guard, &mut found);
+    }
+    found
+}
+
+/// The overrides [`WIDE_NARROW`] spells for each pair of [`byte_length_pairs`], each way round: the
+/// narrow side in the text's own characters where they are single bytes.
+fn wide_narrow_pairs(
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+) -> Vec<BTreeMap<FactPath, Choice>> {
+    let narrow = |path: &FactPath, length: usize| {
+        let Some((Leaf::Text, Node::Text(base))) = builder.leaves.get(path) else {
+            return None;
+        };
+        let plain = builder
+            .plain_texts
+            .get(path)
+            .map_or(base.as_str(), String::as_str);
+        resize_bytes(base, length, plain)
+            .into_iter()
+            .find(|text| text.is_ascii())
+    };
+    let mut found = Vec::new();
+    for (left, right) in byte_length_pairs(guards) {
+        if !builder.strings.contains(&left) || !builder.strings.contains(&right) {
+            continue;
+        }
+        for (wide, length) in WIDE_NARROW {
+            for (wide_path, narrow_path) in [(&left, &right), (&right, &left)] {
+                let Some(narrow_text) = narrow(narrow_path, length) else {
+                    continue;
+                };
+                found.push(BTreeMap::from([
+                    (
+                        wide_path.clone(),
+                        Choice::Value(Node::Text(wide.to_owned())),
+                    ),
+                    (narrow_path.clone(), Choice::Value(Node::Text(narrow_text))),
+                ]));
+            }
+        }
+    }
+    found
+}
+
+/// `inputs` led by one input per [`wide_narrow_pairs`] pair, then one per [`wide_texts`] text, each
+/// the base with those texts changed.
+fn wide_first(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    inputs: &mut Vec<BTreeMap<String, Node>>,
+) -> Result<(), WitnessGap> {
+    let mut wide = Vec::new();
+    let mut overrides = wide_narrow_pairs(builder, guards);
+    overrides.extend(
+        wide_texts(builder, guards)
+            .into_iter()
+            .map(|(path, text)| BTreeMap::from([(path, Choice::Value(Node::Text(text)))])),
+    );
+    for changed in overrides {
+        let input = builder.input(command, &changed)?;
+        if !wide.contains(&input) {
+            wide.push(input);
+        }
+    }
+    if !wide.is_empty() {
+        inputs.retain(|input| !wide.contains(input));
+        wide.append(inputs);
+        *inputs = wide;
+        inputs.truncate(MAX_CANDIDATES);
+    }
+    Ok(())
+}
+
+/// For each text the guards measure in UTF-8 bytes and each length they decide it at, the text at
+/// that length led by a wide scalar ([`resize_bytes`]'s first variant), where it has one.
+fn wide_texts(builder: &Builder<'_>, guards: &[&Predicate]) -> Vec<(FactPath, String)> {
+    let mut found = Vec::new();
+    for (parent, lengths) in byte_lengths(guards) {
+        let Some((Leaf::Text, Node::Text(base))) = builder.leaves.get(&parent) else {
+            continue;
+        };
+        if !builder.strings.contains(&parent) {
+            continue;
+        }
+        let plain = builder
+            .plain_texts
+            .get(&parent)
+            .map_or(base.as_str(), String::as_str);
+        for length in lengths {
+            if let Some(text) = resize_bytes(base, length, plain)
+                .into_iter()
+                .find(|text| !text.is_ascii())
+            {
+                found.push((parent.clone(), text));
+            }
+        }
+    }
+    found
 }
 
 /// The path `path` counts, when it reads `<parent>.count`.
@@ -2595,6 +2915,10 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
         if builder.strings.contains(path) {
             let lengths = count_lengths(&declared, &value.child("count"), true);
             text_length_ladder(builder, path, &lengths, ladders);
+            // And for one over `{utf8_bytes: value}`, in bytes.
+            if let Some(lengths) = byte_lengths(&declared).get(&value) {
+                text_bytes_ladder(builder, path, lengths, ladders);
+            }
         }
     }
 }

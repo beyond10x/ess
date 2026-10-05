@@ -354,6 +354,45 @@ lists element by element. Generated Rust and Go behaviour owes a guard or a view
 by name, an entity invariant with it refuses the generated target by name, and Entity Runtime
 refuses it as `DistinctUnsupported`.
 
+### From `ess/22`: the UTF-8 byte length of a text
+
+From `ess/22` (beyond10x/ess#233), `.utf8_bytes` after a `String` — or a newtype or `Optional` of
+one — is the number of bytes the text's UTF-8 encoding takes, an `Integer`: `label.utf8_bytes <=
+255` holds a column limit that `.count`, which counts Unicode scalar values, cannot. `é` is two
+bytes and one scalar, `€` three bytes, U+1F600 four bytes, one scalar and two UTF-16 code units; `e`
+followed by a combining accent is three bytes. No Unicode normalization occurs, and empty text is
+zero. A guard `when: label.utf8_bytes > 255`, an invariant `title.utf8_bytes <= 64` and a
+comparison of two byte lengths, `label.utf8_bytes != code.utf8_bytes`, are all admitted.
+
+It is an operand of a comparison, on either side, and nothing else: `defined(label.utf8_bytes)`, a
+bare `label.utf8_bytes`, `any_of`, a text operator and a quantifier over it are refused as
+`type_mismatch`. It is not defined on `Bytes`, `Timestamp`, `Uuid`, an enum, a number or a
+collection, and nothing may follow it. A struct member that is itself named `utf8_bytes` is that
+member, in every format. Below `ess/22` the selector is refused naming `ess/22`.
+
+An absent `Optional`, an unobserved text and a value that is no text make the comparison unknown.
+A text holding a lone UTF-16 surrogate is no Unicode text, and its byte length is unknown in every
+runner: a Rust string cannot hold one, the Go runner refuses a string that is not UTF-8, and the
+TypeScript runner refuses a lone surrogate rather than measure the three bytes of the U+FFFD an
+encoder would write in its place. A generated Rust or Go server answers `400` to a request body
+that escapes one.
+
+An observation bound at the full path `<text>.utf8_bytes` wins over the text, as one bound at
+`<text>.count` does for `.count`. The two differ in what such an observation may be: any value
+bound at `.count` is compared as it is, while only a whole number from zero is a byte length —
+anything else bound at `.utf8_bytes` makes the comparison unknown, and the text is not read instead.
+
+The byte length is written back as its own operand, `{utf8_bytes: label}`: on the right as
+`limit: {gte: {utf8_bytes: label}}`, and on the left in the closed form `{compare: {left:
+{utf8_bytes: label}, op: lte, right: 255}}`, with exactly `left`, `op` and `right`. A suite carrying
+it is `ess-conformance/40` or `/41`; a member named `utf8_bytes` selects nothing. In such a
+`satisfies`, a text's `.count` is asserted on view rows beside it. Synthesis witnesses each bound at
+the length and one byte either side, as text led by a wide character where the alphabet admits one,
+so an implementation counting scalars, UTF-16 units or graphemes fails a scenario; past 1024 bytes
+the guard is refused as `ESS-SYNTH-018`. Generated Rust and Go behaviour and invariant checks
+measure with `str::len` and `len` of a valid UTF-8 `string`; a view filter with a byte length stays
+owed, and Entity Runtime refuses it as `Utf8BytesUnsupported`.
+
 ### Absence is not `null`
 
 An unquoted `null` on the right of `==` or `!=` is refused, with a hint that names `defined(x)` or
@@ -643,7 +682,10 @@ values (`ess/11`). `é` written as one character counts 1, and `e` followed by a
 counts 2: this is not a grapheme count. Synthesis witnesses a length guard with a text one character
 either side of the literal, drawn from the type's `alphabet:` when it declares one, up to 1024
 characters; past that the guard is refused as `ESS-SYNTH-018`. A length is not asserted on a view
-row in this suite format, so an invariant that reads one is held where values are built.
+row in this suite format, so an invariant that reads one is held where values are built — unless
+the same invariant reads an `ess/22` form, such as a [UTF-8 byte
+length](#from-ess22-the-utf-8-byte-length-of-a-text), whose suite format carries both. For the
+number of bytes a text takes, use `.utf8_bytes`.
 
 ```yaml ess-check="when" ess-expect="synthesizes"
 when: sku.count > 0

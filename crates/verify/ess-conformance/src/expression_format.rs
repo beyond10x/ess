@@ -10,10 +10,11 @@
 //! mapping or, worse, read the bare word it replaces as text. A binder and a dotted path are not
 //! such operands, so a suite comparing only those keeps its prior format and bytes (decision 5).
 //!
-//! One constant offset of a fact, `{offset: {fact, add|subtract}}` (A2), selects it too, and so do
-//! distinct list members, `{distinct: {in, as, by, kind}}`, whose key kind every reader requires.
-//! Later Family F units add their constructs here — the derived `Utf8Bytes` selector — each one
-//! more arm of [`reads`].
+//! One constant offset of a fact, `{offset: {fact, add|subtract}}` (A2), selects it too, and so does
+//! the derived UTF-8 byte length of a text, `{utf8_bytes: <path>}` (decision 11) — never a path that
+//! merely ends in `utf8_bytes`, which is a declared member. Later Family F units add their constructs
+//! here, each one more arm of [`reads`]: distinct list members, `{distinct: {in, as, by, kind}}`,
+//! whose key kind every reader requires.
 //!
 //! # Cumulative over 36–39
 //!
@@ -39,8 +40,8 @@ pub const ADMITTED: [u32; 2] = [ORDINARY, COVERAGE];
 /// What a refusal of a relabelled older suite says.
 pub const REQUIRES: &str =
     "the expression vocabulary of a one-segment fact operand `{fact: …}`, a \
-     comparison tagged `as: timestamp`, one constant offset `{offset: …}` or distinct list \
-     members `{distinct: …}` requires suite/40 or /41";
+     comparison tagged `as: timestamp`, one constant offset `{offset: …}`, the UTF-8 byte length \
+     `{utf8_bytes: …}` or distinct list members `{distinct: …}` requires suite/40 or /41";
 
 /// What a refusal of a `distinct` without its key kind says: a suite never carries a key whose
 /// equality its reader would have to infer.
@@ -52,6 +53,7 @@ pub fn reads(predicate: &Predicate) -> bool {
     predicate.reads_root_fact_operand()
         || predicate.compares_instants()
         || predicate.reads_offset()
+        || predicate.reads_utf8_bytes()
         || predicate.reads_distinct()
 }
 

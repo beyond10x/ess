@@ -2417,6 +2417,7 @@ impl Guards<'_> {
                     .into_iter()
                     .find_map(|operand| match operand {
                         Operand::Fact(path) => Some(self.resolve(env, path).kind),
+                        Operand::Derived(derived) => Some(self.resolve_derived(env, derived).kind),
                         Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
@@ -2507,6 +2508,16 @@ impl Guards<'_> {
             .expect("the plan admitted only guards whose paths resolve")
     }
 
+    /// Resolves a derived operand the plan already checked.
+    fn resolve_derived(
+        &self,
+        env: &Env<'_>,
+        derived: &ess_primitives::predicate::Derived,
+    ) -> Resolved {
+        determined::resolve_derived(self.ir, env, derived)
+            .expect("the plan admitted only byte lengths of String paths")
+    }
+
     /// One comparison operand, normalized to what the comparison reads.
     fn operand(&mut self, env: &Env<'_>, operand: &Operand, kind: &Kind) -> String {
         match operand {
@@ -2516,6 +2527,10 @@ impl Guards<'_> {
             }
             Operand::Literal(value) => fact_literal(value, kind),
             Operand::Offset(_) => unreachable!("an offset is compared by `offset`"),
+            Operand::Derived(derived) => {
+                let resolved = self.resolve_derived(env, derived);
+                self.read(&resolved)
+            }
         }
     }
 
@@ -2581,7 +2596,7 @@ impl Guards<'_> {
                 Step::Field(field) => {
                     let _ = write!(out, ".map(|value| &value.{})", name::value_ident(field));
                 }
-                Step::Count => {}
+                Step::Count | Step::Utf8Bytes => {}
             }
         }
         out
@@ -2603,7 +2618,8 @@ impl Guards<'_> {
     /// of a string, identity or enum, a `bool`.
     fn read(&mut self, resolved: &Resolved) -> String {
         let reference = self.reference(resolved);
-        if resolved.steps.last() == Some(&Step::Count) {
+        // A collection's element count, or a `String`'s UTF-8 bytes: `str::len` is the byte length.
+        if matches!(resolved.steps.last(), Some(Step::Count | Step::Utf8Bytes)) {
             return format!("{reference}.map(|value| value.len().to_string())");
         }
         let leaf = leaf_type(self.ir, resolved);

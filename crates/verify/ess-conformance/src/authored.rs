@@ -3335,6 +3335,7 @@ impl Compiler<'_> {
             for read in &checked.reads {
                 if !projection_target(self.ir, &read.resolution).is_scalar()
                     && !crate::input::aggregate_presence(self.ir, read, &presence)
+                    && !crate::input::lifted_text_length(self.ir, read, predicate)
                 {
                     self.refuse(Cause::UnreadablePredicate {
                         view: view.clone(),

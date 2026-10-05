@@ -18,7 +18,7 @@ use std::hash::{Hash, Hasher};
 
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::predicate::{
-    CompareKind, CompareOp, FoldOp, OffsetDirection, OffsetMagnitude, Operand, Predicate,
+    CompareKind, CompareOp, Derived, FoldOp, OffsetDirection, OffsetMagnitude, Operand, Predicate,
     Quantified, TextOp,
 };
 
@@ -120,6 +120,15 @@ fn operand(operand: &Operand, out: &mut Vec<Token>) {
                 } => {
                     out.push(Token::Tag(1));
                     out.push(Token::Text(format!("{seconds}{}", written_unit.letter())));
+                }
+            }
+        }
+        Operand::Derived(derived) => {
+            out.push(Token::Tag(3));
+            match derived {
+                Derived::Utf8Bytes(parent) => {
+                    out.push(Token::Tag(0));
+                    path(parent, out);
                 }
             }
         }

@@ -4848,10 +4848,15 @@ func admitPredicateEnvelope(value any, depth int) error {
 }
 
 // admitMappingOperand admits a comparison operand mapping: one constant offset `{offset: {fact,
-// add|subtract}}` (suite/40, A2), read by the predicate reader, or the explicit fact operand.
+// add|subtract}}` (suite/40, A2), read by the predicate reader, or the explicit fact operand. The
+// derived UTF-8 byte length `{utf8_bytes: <path>}` (suite/40, decision 11) is read the same way.
 func admitMappingOperand(operand map[string]any) error {
 	if inner, ok := operand["offset"]; ok && len(operand) == 1 {
 		_, err := parseOffsetOperand("admitted", "eq", inner)
+		return err
+	}
+	if inner, ok := operand["utf8_bytes"]; ok && len(operand) == 1 {
+		_, err := parseUtf8BytesOperand("admitted", "eq", inner)
 		return err
 	}
 	return admitFactOperand(operand)
@@ -8306,6 +8311,9 @@ func admitPredicateVersion(value any, major int) error {
 	if major < 14 && predicateUsesTextMatch(value) {
 		return fmt.Errorf("string predicate operators require suite/14 or /15")
 	}
+	if major < 40 && predicateUsesUtf8Bytes(value) {
+		return fmt.Errorf("the UTF-8 byte length {utf8_bytes: …} requires suite/40 or /41")
+	}
 	if major < 40 && predicateUsesOffset(value) {
 		return fmt.Errorf("one constant offset {offset: …} requires suite/40 or /41")
 	}
@@ -8345,6 +8353,59 @@ func predicateUsesDistinct(value any) bool {
 			case "distinct":
 				if fields, ok := child.(map[string]any); ok {
 					if _, keyed := fields["as"]; keyed {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// predicateUsesUtf8Bytes walks the admitted grammar for the derived UTF-8 byte length
+// `{utf8_bytes: …}` (suite/40, docs/design/expression-family-source22.md decision 11): an operand of
+// a constraint, or either side of the `{compare: …}` form. A member merely named `utf8_bytes` is a
+// path, never a mapping, and selects nothing.
+func predicateUsesUtf8Bytes(value any) bool {
+	derived := func(operand any) bool {
+		mapping, ok := operand.(map[string]any)
+		if !ok {
+			return false
+		}
+		_, found := mapping["utf8_bytes"]
+		return found
+	}
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesUtf8Bytes(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesUtf8Bytes(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesUtf8Bytes(fields["that"]) {
+					return true
+				}
+			default:
+				operators, ok := child.(map[string]any)
+				if !ok {
+					continue
+				}
+				if _, compared := operators["left"]; key == "compare" && compared {
+					if derived(operators["left"]) || derived(operators["right"]) {
+						return true
+					}
+					continue
+				}
+				for _, operand := range operators {
+					if derived(operand) {
 						return true
 					}
 				}
