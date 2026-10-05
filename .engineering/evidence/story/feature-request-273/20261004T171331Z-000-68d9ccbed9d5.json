@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T17:13:31Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-273",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance (64 related, coverage, admission, binding, synthesis targets) and ess-cli Firefox browser lanes (integration tree)",
+    "reference": "baseline: event expectations compared no identity fields (captured_identities 9 of 10 red on base); treatment: 651 passed 0 failed after pinning four binding-scenario misses to story:binding-site-identity-comparisons; browser lanes 45/45; diagnostics/generate/docs checks exit 0"
+  }
+}

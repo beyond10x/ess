@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-194
 kind: story
-status: draft
+status: active
 title: a binding cannot invoke only when an Optional path is present (ESS-BINDING-015 leaves no way to say 'skip')
 tags:
 - feature-request
@@ -12,7 +12,10 @@ refs:
 relations:
 - serves: vision:O2
 - depends_on: story:feature-request-268
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-04T15:32:48Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-04T15:32:48Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

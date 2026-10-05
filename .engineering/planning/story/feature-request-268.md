@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-268
 kind: story
-status: proposed
+status: active
 title: A binding invokes only when its event payload condition holds
 tags:
 - feature-request
@@ -54,9 +54,10 @@ scope:
   path: docs/design/binding-delivery-guarantees.md
 - confidence: cited
   path: docs/design/conditional-binding-failure-policies.md
-revision: 31
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-04T15:32:47Z", actor: "human:timo", revision: 32, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 

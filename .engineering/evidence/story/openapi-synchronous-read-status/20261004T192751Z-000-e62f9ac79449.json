@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T19:27:51Z",
+  "actor": "human:timo",
+  "artifact": "story:openapi-synchronous-read-status",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-gen -p ess-synth (integration tree)",
+    "reference": "baseline: a returns outcome had no response schema and only 202 (openapi_returns 2 red; served_returns fails to compile without the variant field); treatment: ess/22 answers 200 with response in OpenAPI, Rust and Go served servers; ess-gen+ess-synth 776 passed 0 failed; generate --check exit 0"
+  }
+}
