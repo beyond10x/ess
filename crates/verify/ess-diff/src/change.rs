@@ -387,6 +387,7 @@ impl SemanticChange {
     /// cause (ess/18, beyond10x/ess#195), and that is read through the boxed cause.
     pub fn minimum_format(&self) -> u32 {
         match self {
+            Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
             Self::Binding {
                 changed: BindingChange::CauseChanged { before, after },
                 ..
@@ -3147,6 +3148,19 @@ pub enum BindingChange {
         /// The policy it has.
         after: String,
     },
+    /// A failure policy selected per refusal of the invoked command differs, or one appeared or
+    /// went away (ess/22, beyond10x/ess#269). `ess-diff/14` vocabulary.
+    ///
+    /// The complete resolved table and fallback on each side, `None` for a universal policy —
+    /// whose own change is [`FailureChanged`](Self::FailureChanged), reported beside this one.
+    /// Aliases are resolved before the comparison, so naming the same refusals differently is no
+    /// change. No direction is decided: a table is a wiring of work, as every binding is.
+    RefusalPolicyChanged {
+        /// The table it had.
+        before: Option<crate::refusal_policy::RefusalPolicyContent>,
+        /// The table it has.
+        after: Option<crate::refusal_policy::RefusalPolicyContent>,
+    },
     /// The binding's wire name moved.
     WireNameChanged {
         /// What it was.
@@ -3205,12 +3219,19 @@ impl BindingChange {
             Self::MappingValueChanged { .. } => "mapping-value-changed",
             Self::DeliveryChanged { .. } => "delivery-changed",
             Self::FailureChanged { .. } => "failure-changed",
+            Self::RefusalPolicyChanged { .. } => "refusal-policy-changed",
             Self::WireNameChanged { .. } => "wire-name-changed",
             Self::DisplayNameChanged { .. } => "display-name-changed",
             Self::SummaryChanged { .. } => "summary-changed",
             Self::ContextFieldDisplayChanged { .. } => "context-field-display-changed",
             Self::ContextFieldSummaryChanged { .. } => "context-field-summary-changed",
         }
+    }
+
+    /// Whether this is `ess-diff/14` vocabulary: a refusal-selected failure policy (ess/22,
+    /// beyond10x/ess#269), the coordinated `/14` allocation every earlier reader refuses.
+    pub const fn is_refusal_policy(&self) -> bool {
+        matches!(self, Self::RefusalPolicyChanged { .. })
     }
 
     /// The command input a mapping change is about, or the context field a context-field change
@@ -3259,6 +3280,15 @@ impl BindingChange {
             }
             Self::FailureChanged { before, after } => {
                 format!("on failure {after}, was {before}")
+            }
+            Self::RefusalPolicyChanged { before, after } => {
+                let side = |content: &Option<crate::refusal_policy::RefusalPolicyContent>| {
+                    content.as_ref().map_or_else(
+                        || "one universal policy".to_owned(),
+                        crate::refusal_policy::RefusalPolicyContent::describe,
+                    )
+                };
+                format!("policy per refusal: {}, was: {}", side(after), side(before))
             }
             Self::WireNameChanged { before, after } => format!("wire name `{before}` → `{after}`"),
             Self::DisplayNameChanged { before, after } => {

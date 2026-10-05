@@ -214,6 +214,11 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
         let Some(bound) = &binding.retry else {
             continue;
         };
+        // A refusal-selected policy's bound is its `retry` policy's, validated with its table
+        // (ess/22, `super::refusal`), whose `final` must also fall inside what the retry selects.
+        if binding.refusals.is_some() {
+            continue;
+        }
         let at = format!("binding.{}.on_failure.retry", binding.name);
         if spec.system().format.major() < FormatVersion::V16.major() {
             errors.push(

@@ -382,6 +382,11 @@ fn bindings(bridge: &Bridge<'_>) -> Value {
             ResolvedFailure::Retry | ResolvedFailure::BoundedRetry { .. } => ("retry", None),
             ResolvedFailure::Drop => ("drop", None),
             ResolvedFailure::Escalate { emits } => ("escalate", Some(emits.to_string())),
+            // Refused before a catalog is written (`failure::refusal_policy`); named rather than
+            // given one word if it ever were not.
+            ResolvedFailure::ByRefusal { policy } => {
+                ("by_refusal", policy.escalation().map(ToString::to_string))
+            }
         };
         let mut value = json!({
             "name": source,

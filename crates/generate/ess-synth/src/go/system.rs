@@ -1292,7 +1292,7 @@ fn failure_policy(
             );
             out.push_str("\t}\n\treturn nil\n}\n");
         }
-        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => refused(),
         ResolvedFailure::Drop => {
             out.push_str(
                 "\t// `drop`: a declared refusal is given up silently, because that is what the \
@@ -1373,11 +1373,17 @@ fn selection_failure_policy(
                 held = name::exported(source)
             );
         }
-        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => refused(),
         ResolvedFailure::Drop => {}
         ResolvedFailure::Escalate { emits } => {
             let _ = writeln!(out, "escalation, unmet := s.obligations.{}SelectionEscalation(event, selectionFailure)\nif unmet != nil {{ return &TransportFailure{{Obligation: unmet}} }}\ns.published = append(s.published, {}{{Event: escalation}})", name::exported(source), emit.layout.system_event(emits.name()));
         }
     }
     out.push_str("return &TransportFailure{Selection: selectionFailure}\n}\n");
+}
+
+/// A bounded retry or a policy selected per refusal reached emission: both are refused before it,
+/// by `failure::retry_bound` and `failure::refusal_policy`.
+fn refused() -> ! {
+    unreachable!("refused by `failure::retry_bound` and `failure::refusal_policy`")
 }

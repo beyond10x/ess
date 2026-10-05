@@ -92,6 +92,73 @@ on every attempt and requires exactly `attempts` invocations, and forces a final
 requires exactly one. The generated Rust, Go and Web targets refuse a bounded retry by name,
 because their retry counts no attempts.
 
+## Choose the policy per refusal
+
+`ess/22` lets one binding answer different refusals of its command differently. Key the policies,
+and say which refusals each one takes:
+
+```yaml
+on_failure:
+  drop: [wrong-state]
+  retry: {outcomes: [demo.ledger.Unavailable, rejected], attempts: 3, final: [rejected]}
+  escalate:
+    emits: demo.ledger.RecordEscalated
+    except: [wrong-state, demo.ledger.Unavailable, rejected]
+```
+
+Each of `drop`, `retry` and `escalate` appears at most once, with exactly one selector:
+`outcomes: [...]`, or `except: [...]`. `drop` and an unbounded `retry` may write the list alone, as
+`drop` does above. `escalate` always writes a block with `emits:`. `retry` keeps `attempts:` and
+`final:`, and `final` needs `attempts:`.
+
+Exactly one policy writes `except:`. It is the explicit fallback: it takes every refusal the other
+policies do not, and every failure of an invoked command that carries no declared outcome, such as
+a transport error. `except: []` takes every refusal.
+
+A name selects as `final` does: an outcome that carries `error:`, by name, or the error, which
+stands for every outcome that reports it. Above, `demo.ledger.Unavailable` selects both
+`unavailable` and `busy`. A word such as `wrong_state` means nothing here unless it is the
+command's own outcome name. Names are resolved first. Then every refusal of the command must have
+exactly one policy.
+
+At run time, the actual answer of each attempt chooses the policy:
+
+| the attempt is answered | the binding |
+|---|---|
+| by an accepting outcome | is done |
+| by a refusal under `drop` | stops; the work is lost |
+| by a refusal under `escalate` | publishes the escalation event once from the attempt's actual input, and stops |
+| by a refusal under a bounded `retry` | stops on a `final` refusal or once `attempts` invocations were made in all; otherwise tries again |
+| with no declared outcome | does what the fallback does |
+
+The count is the total for the occurrence. Changing from one refusal to another never restarts it.
+A failure before the command could be invoked, such as an input that cannot be converted, is an
+unmet obligation: no attempt, no retry and no escalation. A binding condition that does not hold is
+still a skip with zero invocations.
+
+The rules:
+
+- Below `ess/22`, the selected shape is refused, naming `ess/22`. A universal policy keeps its
+  meaning and its bytes under every format.
+- A policy with both selectors, a policy without one beside one that has one, an empty `outcomes`
+  list, and an `escalate` without `emits:` are refused.
+- No `except:`, or two, is refused.
+- A name that is no refusal of the invoked command, or that names an accepting outcome, is refused.
+- A refusal two policies select, or that one selects and the fallback also takes, is refused, even
+  when two names select it under one policy. A refusal the fallback leaves out and no policy takes
+  is refused.
+- A `final` refusal the retry itself does not select is refused.
+
+Conformance witnesses each refusal on its own scenario, `<binding>/binding/refusal/<outcome>`: the
+refusal is forced on an `external:` branch, and the scenario requires the attempt count its policy
+owes, the escalation event published exactly once where it escalates (`expect_publication_count`),
+and, where it does not, that the escalation event is published no times for the whole window
+(`expect_no_publication`). An unbounded retry is witnessed as the universal `retry` is, through the
+same arrangement of the row the command addresses. A refusal no scenario can force
+is refused by name. These scenarios need suite/36 or /37. The generated Rust, Go and Web targets
+and the scenario player cannot select a policy per refusal yet, so they refuse such a binding by
+name (`bindings.<name>.on_failure`).
+
 ## Read a field inside an event envelope
 
 The `ess/3` format adds bounded binding accessors. Set `format: ess/3`

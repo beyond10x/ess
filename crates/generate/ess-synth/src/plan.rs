@@ -1099,7 +1099,16 @@ fn plan_bindings(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             },
             disposition: delivery_disposition(ir, binding),
         });
-        if let ResolvedFailure::Escalate { emits } = binding.on_failure() {
+        // A policy selected per refusal (ess/22) owes the same builder where any refusal, or its
+        // fallback, escalates.
+        let escalates = match binding.on_failure() {
+            ResolvedFailure::Escalate { emits } => Some(emits),
+            ResolvedFailure::ByRefusal { policy } => policy.escalation(),
+            ResolvedFailure::Retry
+            | ResolvedFailure::Drop
+            | ResolvedFailure::BoundedRetry { .. } => None,
+        };
+        if let Some(emits) = escalates {
             capabilities.push(PlannedCapability {
                 capability: Capability {
                     kind: CapabilityKind::BindingEscalation,
@@ -1179,6 +1188,16 @@ pub(crate) fn attempts_again(binding: &ResolvedBinding) -> bool {
     matches!(binding.delivery, ess_domain::binding::Delivery::AtLeastOnce)
 }
 
+/// The failure policy in the words a plan's obligation quotes: the word an author wrote, or, for a
+/// policy selected per refusal (ess/22), that it is selected — never the fallback's word alone.
+fn failure_text(binding: &ResolvedBinding) -> &'static str {
+    if binding.refusal_policy.is_some() {
+        "selected per refusal"
+    } else {
+        binding.failure.as_str()
+    }
+}
+
 /// Whether the generated system keeps a held-back list for this binding: it attempts again after
 /// an unmet obligation ([`attempts_again`]), or its declared refusal is answered with `retry`.
 pub(crate) fn holds_back(binding: &ResolvedBinding) -> bool {
@@ -1235,7 +1254,7 @@ fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDispo
             binding.cause,
             binding.command,
             ess_gen::graph::delivery_word(binding.delivery),
-            binding.failure.as_str(),
+            failure_text(binding),
             binding.command,
         )
     } else {
@@ -1245,7 +1264,7 @@ fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDispo
             binding.cause,
             binding.command,
             ess_gen::graph::delivery_word(binding.delivery),
-            binding.failure.as_str(),
+            failure_text(binding),
             acceptors.len(),
             binding.command,
             acceptors

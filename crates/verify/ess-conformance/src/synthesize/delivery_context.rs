@@ -485,6 +485,20 @@ pub(super) fn synthesize(
         .cause
         .event()
         .expect("a delivery context is on an event cause");
+    // A policy selected per refusal (ess/22, beyond10x/ess#269) of a delivered event: each refusal
+    // is refused by name, as a bounded retry's failure scenario is here, whatever else follows.
+    if let Some(policy) = &binding.refusal_policy {
+        super::refusal_policy::refuse_all(
+            binding,
+            policy,
+            &BindingGap::AccessorObservation {
+                reason: "DeliveryContext: a failure policy selected per refusal of a delivered \
+                         event is not synthesized yet"
+                    .into(),
+            },
+            refusals,
+        );
+    }
     // The delivered payloads are chosen for the context, not for an event-payload condition (ess/22,
     // beyond10x/ess#268): see `refuse_conditioned`.
     if binding.condition.is_some() {
@@ -532,6 +546,7 @@ pub(super) fn synthesize(
             BindingAspect::Flow => flow(ir, &delivered),
             BindingAspect::Mapping => mapping(&delivered),
             BindingAspect::Delivery => delivery(ir, &delivered),
+            BindingAspect::OnFailure if binding.refusal_policy.is_some() => continue,
             BindingAspect::OnFailure => on_failure(ir, &delivered),
             BindingAspect::FinalFailure
             | BindingAspect::ConditionFalse
@@ -705,7 +720,10 @@ fn on_failure(ir: &EssIr, delivered: &Delivered<'_>) -> Built {
     if matches!(policy, ResolvedFailure::Drop) {
         return Err(BindingGap::PolicySilent);
     }
-    if matches!(policy, ResolvedFailure::BoundedRetry { .. }) {
+    if matches!(
+        policy,
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. }
+    ) {
         return Err(BindingGap::AccessorObservation {
             reason: "DeliveryContext: a bounded retry of a delivered event is not synthesized yet"
                 .into(),
@@ -758,7 +776,9 @@ fn on_failure(ir: &EssIr, delivered: &Delivered<'_>) -> Built {
                 invoked.name, delivered.binding.name
             )
         }
-        ResolvedFailure::Drop | ResolvedFailure::BoundedRetry { .. } => {
+        ResolvedFailure::Drop
+        | ResolvedFailure::BoundedRetry { .. }
+        | ResolvedFailure::ByRefusal { .. } => {
             unreachable!("refused above, before anything was forced")
         }
     };

@@ -4065,6 +4065,7 @@ impl<'a> Resolver<'a> {
             &commands[&binding.command],
             context.as_ref(),
         )?;
+        let refusal_policy = self.refusal_policy(&binding, escalation.as_ref())?;
         Some(ResolvedBinding {
             name: binding.name,
             cause: crate::ir::ResolvedBindingCause::Event(event_handle),
@@ -4082,9 +4083,31 @@ impl<'a> Resolver<'a> {
                     .get(&binding.command)
                     .map(|command| crate::ir::ResolvedRetryBound::resolve(bound, command))
             }),
+            refusal_policy,
             naming: binding.naming,
             refs: binding.refs,
         })
+    }
+
+    /// The binding's refusal-selected failure policy (ess/22, beyond10x/ess#269), resolved against
+    /// the invoked command: `Some(None)` for a binding that declares none. Already admitted by
+    /// `Specification::validate`, which `compile` runs first, so `None` is reached only for a
+    /// policy that refused there.
+    #[allow(clippy::option_option)]
+    fn refusal_policy(
+        &self,
+        binding: &BindingSpec,
+        escalation: Option<&crate::ir::EventHandle>,
+    ) -> Option<Option<crate::ir::ResolvedRefusalPolicy>> {
+        let Some(policy) = &binding.refusals else {
+            return Some(None);
+        };
+        crate::ir::ResolvedRefusalPolicy::resolve(
+            policy,
+            self.spec.commands().get(&binding.command)?,
+            escalation,
+        )
+        .map(Some)
     }
 
     /// The binding's event-payload condition (ess/22, beyond10x/ess#268), resolved: `Some(None)`
@@ -4235,6 +4258,7 @@ impl<'a> Resolver<'a> {
             failure: binding.failure,
             escalation: None,
             retry: None,
+            refusal_policy: None,
             naming: binding.naming.clone(),
             refs: binding.refs.clone(),
         })

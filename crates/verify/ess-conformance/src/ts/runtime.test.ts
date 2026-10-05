@@ -494,6 +494,24 @@ test('a scenario identity is one of the seven shapes', () => {
   assert.throws(() => scenarioIdentity('pay-gateway/binding/other'), /malformed scenario ID/);
 });
 
+// A scenario per selected refusal (beyond10x/ess#269) arrived in suite/36 and /37.
+test('a selected refusal scenario identity requires suite/36', () => {
+  assert.throws(
+    () => scenarioIdentity('notify-ledger/binding/refusal/at-limit', 35),
+    /a scenario per selected refusal requires suite\/36 or \/37/,
+  );
+  assert.doesNotThrow(() => scenarioIdentity('notify-ledger/binding/refusal/at-limit', 36));
+  assert.doesNotThrow(() => scenarioIdentity('notify-ledger/binding/refusal/at-limit', 37));
+  assert.throws(
+    () => scenarioIdentity('notify-ledger/binding/refusal/At_Limit', 36),
+    /malformed scenario ID/,
+  );
+  assert.throws(
+    () => scenarioIdentity('notify-ledger/binding/policy/at-limit', 36),
+    /malformed scenario ID/,
+  );
+});
+
 test('a system name reduces to identifier segments', () => {
   assert.equal(reduce('Agent Call Distribution!'), 'Agent-Call-Distribution');
   assert.equal(reduce('!!!'), 'ess');

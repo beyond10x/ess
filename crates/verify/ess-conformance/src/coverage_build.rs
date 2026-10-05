@@ -555,7 +555,11 @@ fn coverage_version(
         "ess-conformance/43"
     } else if crate::expression_format::coverage_floor(suite).is_some() {
         "ess-conformance/41"
-    } else if crate::no_invocation::used_by(suite) || crate::no_invocation::refused_in(inventory) {
+    } else if crate::no_invocation::used_by(suite)
+        || crate::no_invocation::refused_in(inventory)
+        || crate::refusal_policy::used_by(suite)
+        || crate::refusal_policy::refused_in(inventory)
+    {
         "ess-conformance/37"
     } else if suite.provenance.scenario_initial_state.is_some()
         || crate::one_time_response::used_by(suite)

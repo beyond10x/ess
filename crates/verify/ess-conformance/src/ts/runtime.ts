@@ -3515,6 +3515,10 @@ export class ScenarioRun {
         return this.expectEveryInvocation(index, step);
       case 'expect_no_invocation':
         return this.expectNoInvocation(index, step);
+      case 'expect_no_publication':
+        return this.expectPublications(index, step, 0);
+      case 'expect_publication_count':
+        return this.expectPublications(index, step, step.count ?? 0);
       case 'expect_response_payload':
         return expectResponsePayload(this, index, step);
       case 'check_periodic':
@@ -4999,6 +5003,48 @@ export class ScenarioRun {
     return true;
   }
 
+  /**
+   * The event was published exactly `count` times under this scenario for the whole observation
+   * window, none where `count` is zero (suite/36, beyond10x/ess#269): more seen fails at once;
+   * exactly `count` passes only once the window has been read to its end.
+   */
+  async expectPublications(index: number, step: Step, count: number): Promise<boolean> {
+    const deadline = this.harness.noInvocationDeadline();
+    let seen: ObservedEvent[] = [];
+    for (let attempt = 0; attempt < deadline.attempts; attempt += 1) {
+      try {
+        seen =
+          (await this.target.observeEvents({
+            event: step.event,
+            correlation: this.correlation,
+            deadline: { attempts: deadline.attempts - attempt },
+          })) ?? [];
+      } catch (error) {
+        if (isUnsupported(error)) {
+          this.recordStatus(statusUnsupported);
+          this.t.diagnostic(
+            this.disclosure === undefined
+              ? errorText(error)
+              : 'ESS-CF-TARGET: protected target observation',
+          );
+          return true;
+        }
+        return this.targetError(
+          index,
+          `observing how often an event was published: ${errorText(error)}`,
+        );
+      }
+      if (seen.filter((event) => event.event === step.event).length > count) {
+        this.fail(index, `\`${step.event}\` was published more than ${count} time(s)`);
+        return true;
+      }
+    }
+    if (seen.filter((event) => event.event === step.event).length !== count) {
+      this.fail(index, `\`${step.event}\` was not published exactly ${count} time(s)`);
+    }
+    return true;
+  }
+
   recordStatus(status: string): void {
     const rank = [statusPassed, statusSkipped, statusUnsupported, statusError, statusFailed];
     if (rank.indexOf(status) > rank.indexOf(this.status)) this.status = status;
@@ -5984,6 +6030,13 @@ export function scenarioIdentity(id: string, major = 21): void {
         segment(2) === 'final-failure' ||
         segment(2) === 'condition-false' ||
         segment(2) === 'condition-absent');
+  } else if (parts.length === 4 && segment(1) === 'binding' && segment(2) === 'refusal') {
+    // One declared refusal a refusal-selected failure policy answers (beyond10x/ess#269) is
+    // suite/36 vocabulary.
+    if (major < 36) {
+      throw new Error('a scenario per selected refusal requires suite/36 or /37');
+    }
+    valid = k(segment(0)) && k(segment(3));
   } else if (parts.length === 3 && segment(1) === 'grant') {
     // The refusal an ungranted actor gets (beyond10x/ess#265) is suite/26 vocabulary.
     if (major < 26) {
@@ -7238,6 +7291,14 @@ export function admitStep(value: Node, major: number): void {
     case 'expect_no_invocation':
       if (major < 36) throw new Error('zero-invocation observation requires suite/36 or /37');
       required += ' binding command';
+      break;
+    case 'expect_no_publication':
+      if (major < 36) throw new Error('a scenario per selected refusal requires suite/36 or /37');
+      required += ' event';
+      break;
+    case 'expect_publication_count':
+      if (major < 36) throw new Error('a scenario per selected refusal requires suite/36 or /37');
+      required += ' event count';
       break;
     case 'resolve_fixtures':
       if (major < 18) throw new Error('fixture resolution requires suite/18 or /19');

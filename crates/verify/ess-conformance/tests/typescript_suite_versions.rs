@@ -1247,6 +1247,45 @@ fn bounded_retry_fresh_coverage_suite_35_runs_in_typescript_with_the_rust_verdic
     .coverage(&ir(BOUNDED_RETRY));
 }
 
+// ---- suite/36: a failure policy selected per refusal (beyond10x/ess#269) --------------------------
+
+const REFUSAL_POLICY: &str = include_str!("fixtures/refusal-policy.yaml");
+
+const REFUSAL_POLICY_CASE: Case<'static> = Case {
+    name: "refusal-policy",
+    version: "",
+    target: include_str!("fixtures/typescript-refusal-policy-target.mjs"),
+    modes: &[
+        "correct",
+        "fallback-everywhere",
+        "swapped-policy",
+        "extra-retry",
+        "duplicate-escalation",
+        "omits-attempt",
+        "retries-final",
+        "retries-drop",
+    ],
+    also_correct: &[],
+};
+
+#[test]
+fn refusal_policy_fresh_suite_36_runs_in_typescript_with_the_rust_verdicts() {
+    Case {
+        version: "ess-conformance/36",
+        ..REFUSAL_POLICY_CASE
+    }
+    .ordinary(&ir(REFUSAL_POLICY));
+}
+
+#[test]
+fn refusal_policy_fresh_coverage_suite_37_runs_in_typescript_with_the_rust_verdicts() {
+    Case {
+        version: "ess-conformance/37",
+        ..REFUSAL_POLICY_CASE
+    }
+    .coverage(&ir(REFUSAL_POLICY));
+}
+
 // ---- suite/26: `defined()` over an `Optional` aggregate (beyond10x/ess#176) -----------------------
 
 const QUEUE: &str = include_str!("fixtures/defined-over-optional-aggregates.yaml");

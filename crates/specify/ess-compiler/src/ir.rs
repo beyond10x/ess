@@ -88,6 +88,9 @@ use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Paging, R
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
+mod refusal;
+pub use refusal::{ResolvedRefusalAction, ResolvedRefusalPolicy, ResolvedRefusalRule};
+
 /// Declares every handle kind, its accessor on [`EssIr`], and the map it indexes — from one line
 /// each, so a handle cannot exist without a total lookup for it.
 ///
@@ -2034,6 +2037,16 @@ pub struct ResolvedBinding {
     /// it with the word, so a projection reads [`ResolvedFailure::BoundedRetry`] rather than this.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry: Option<ResolvedRetryBound>,
+    /// The failure policy selected per refusal of the invoked command (ess/22,
+    /// beyond10x/ess#269), where the binding declares one.
+    ///
+    /// The authority where present, read through [`ResolvedFailure::ByRefusal`]. Then
+    /// [`Self::failure`] is the fallback's word, [`Self::escalation`] the table's escalation event
+    /// and [`Self::retry`] its bound — a view [`ResolvedRefusalPolicy::agrees_with`] checks, which a
+    /// consumer asking what a binding may publish reads, and which no consumer may apply to every
+    /// refusal. Serialized only when present, so every other binding keeps its bytes.
+    #[serde(rename = "on_refusal", skip_serializing_if = "Option::is_none")]
+    pub refusal_policy: Option<ResolvedRefusalPolicy>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -2111,6 +2124,16 @@ pub enum ResolvedFailure<'a> {
         /// The attempts and the final outcomes.
         bound: &'a ResolvedRetryBound,
     },
+    /// A policy selected per refusal of the invoked command, with an explicit fallback for a
+    /// failure that carries no declared outcome (ess/22, beyond10x/ess#269).
+    ///
+    /// Its own arm, so that a consumer matching this enum cannot apply one word to every refusal
+    /// by reading the binding's universal fields: it has to say what it does per refusal, or
+    /// refuse.
+    ByRefusal {
+        /// The table and the fallback.
+        policy: &'a ResolvedRefusalPolicy,
+    },
 }
 
 impl ResolvedBinding {
@@ -2123,6 +2146,9 @@ impl ResolvedBinding {
     /// which is a programming mistake and not a specification's problem. The same reasoning, and
     /// the same wording, as the handle accessors above.
     pub fn on_failure(&self) -> ResolvedFailure<'_> {
+        if let Some(policy) = &self.refusal_policy {
+            return ResolvedFailure::ByRefusal { policy };
+        }
         match self.failure {
             Failure::Retry => match &self.retry {
                 None => ResolvedFailure::Retry,

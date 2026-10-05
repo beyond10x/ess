@@ -127,6 +127,29 @@ struct Scenario {
     pending_bindings: std::collections::VecDeque<bindings::Delivery>,
     dispatching: bool,
     facts: facts::Facts,
+    /// The answers a scenario scripted for its bindings' invocations of one command, consumed one
+    /// per attempt ([`Interpreted::script_binding_port`]).
+    port_script: Option<(
+        crate::scenario::CommandRef,
+        std::collections::VecDeque<PortAnswer>,
+    )>,
+}
+
+/// One scripted answer of a command port to a binding's attempt: a test adapter control, as
+/// [`configure_external_outcome`](ConformanceTarget::configure_external_outcome) is, never a
+/// capability the specification claims.
+///
+/// The suite forces one outcome on the next invocations; a refusal-selected failure policy
+/// (ess/22, beyond10x/ess#269) also owes behaviour for a sequence of different refusals within
+/// one retry, and for a port failure that carries no declared outcome, which only a scripted port
+/// can produce.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PortAnswer {
+    /// The invocation runs, forced to this declared `external:` outcome.
+    Outcome(ess_domain::command::OutcomeName),
+    /// The port fails the attempt with no declared outcome, as a transport or adapter failure
+    /// does: the command does not run, and the attempt still counts.
+    Untyped,
 }
 
 impl Scenario {
@@ -250,6 +273,18 @@ impl Interpreted {
             .map_err(|why| refusal(observation, &why))?;
         drop(scenario);
         self.complete_command(&request.command, &request.correlation, step, prepared)
+    }
+
+    /// Scripts this scenario's command port for the bindings that invoke `command`: each attempt
+    /// takes the next answer, and once they run out the model answers as it always does. Reset by
+    /// [`begin_scenario`](ConformanceTarget::begin_scenario); a later script replaces an earlier one.
+    pub fn script_binding_port(
+        &self,
+        command: &crate::scenario::CommandRef,
+        answers: impl IntoIterator<Item = PortAnswer>,
+    ) {
+        self.scenario.borrow_mut().port_script =
+            Some((command.clone(), answers.into_iter().collect()));
     }
 
     /// The model, or the refusal the seam has always answered with.

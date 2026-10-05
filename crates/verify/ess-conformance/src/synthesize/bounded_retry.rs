@@ -149,7 +149,7 @@ fn single_attempt(
 /// event — read conservatively, whichever branch the step takes and whichever branch each command a
 /// binding invokes on the way takes. Where every publisher needs such an arrangement, the count
 /// would include attempts the bound did not make, so the scenario is refused by name.
-fn clean_trigger(
+pub(super) fn clean_trigger(
     ir: &EssIr,
     binding: &ResolvedBinding,
     trigger: &Run,
@@ -285,7 +285,7 @@ fn forced_run(
 }
 
 /// Force `outcome` on the next invocation, or on the next `times` of them.
-fn force(outcome: OutcomeRef, times: Option<NonZeroU32>) -> ScenarioStep {
+pub(super) fn force(outcome: OutcomeRef, times: Option<NonZeroU32>) -> ScenarioStep {
     ScenarioStep::ConfigureExternalOutcome {
         force: outcome,
         times,
@@ -293,7 +293,7 @@ fn force(outcome: OutcomeRef, times: Option<NonZeroU32>) -> ScenarioStep {
 }
 
 /// Require exactly `count` invocations of `command` by `binding`.
-fn count(binding: BindingRef, command: CommandRef, count: NonZeroU32) -> ScenarioStep {
+pub(super) fn count(binding: BindingRef, command: CommandRef, count: NonZeroU32) -> ScenarioStep {
     ScenarioStep::ExpectInvocation {
         binding,
         command,

@@ -127,11 +127,18 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
         });
     }
 
-    Ok(EssDelta::new(
+    let delta = EssDelta::new(
         EssRevisionRef::of(before),
         EssRevisionRef::of(after),
         changes,
-    ))
+    );
+    // A change only `ess-diff/14` can carry (a refusal-selected policy, ess/22) makes the delta
+    // `/14`, and `/14` is classified by definition, so such a delta carries its classification
+    // even when nobody asked; every other delta keeps its format and bytes.
+    if delta.format.major() >= crate::compatibility::CLASSIFIED_DELTA_FORMAT {
+        return Ok(delta.classify(&crate::compatibility::UseIndex::new(before, after)));
+    }
+    Ok(delta)
 }
 
 /// What moved, and whom each change breaks (beyond10x/ess#290).
@@ -1254,6 +1261,12 @@ fn written_mapping(mapping: &ess_compiler::ir::ResolvedMapping) -> String {
 /// A binding's failure policy in one word, with the event an escalation publishes beside it.
 fn written_failure(binding: &ResolvedBinding) -> String {
     match binding.on_failure() {
+        ess_compiler::ir::ResolvedFailure::ByRefusal { policy } => format!(
+            "selected per refusal, otherwise {}",
+            crate::refusal_policy::RefusalPolicyContent::of(policy)
+                .fallback
+                .describe()
+        ),
         ess_compiler::ir::ResolvedFailure::Retry => "retry".to_owned(),
         ess_compiler::ir::ResolvedFailure::Drop => "drop".to_owned(),
         ess_compiler::ir::ResolvedFailure::Escalate { emits } => {
@@ -1983,10 +1996,34 @@ fn compare_bindings(
         });
     }
 
-    if was.failure != is.failure || was.escalation != is.escalation || was.retry != is.retry {
+    // A policy selected per refusal (ess/22, beyond10x/ess#269) is compared as its complete
+    // resolved table, whose universal fields are only a view of it; a universal policy keeps its
+    // own kind, reported beside the table where one side is universal.
+    let tables = (
+        was.refusal_policy
+            .as_ref()
+            .map(crate::refusal_policy::RefusalPolicyContent::of),
+        is.refusal_policy
+            .as_ref()
+            .map(crate::refusal_policy::RefusalPolicyContent::of),
+    );
+    let universal_moved =
+        was.failure != is.failure || was.escalation != is.escalation || was.retry != is.retry;
+    let both_universal = tables.0.is_none() && tables.1.is_none();
+    let one_side_universal = tables.0.is_none() || tables.1.is_none();
+    // Two universal policies compare exactly as they always did.
+    if universal_moved
+        && (both_universal || (one_side_universal && written_failure(was) != written_failure(is)))
+    {
         push(BindingChange::FailureChanged {
             before: written_failure(was),
             after: written_failure(is),
+        });
+    }
+    if tables.0 != tables.1 {
+        push(BindingChange::RefusalPolicyChanged {
+            before: tables.0,
+            after: tables.1,
         });
     }
 
@@ -2451,6 +2488,8 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "failure",
                     "escalation",
                     "retry",
+                    // `refusal-policy-changed` (ess/22, beyond10x/ess#269).
+                    "on_refusal",
                 ],
             );
             // The delivery context's channel and fields are compared by the cause and by the

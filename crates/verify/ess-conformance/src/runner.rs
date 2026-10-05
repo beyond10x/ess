@@ -56,6 +56,7 @@ mod bounded_retry;
 mod delivery_context;
 mod disclosure;
 mod no_invocation;
+mod no_publication;
 
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
@@ -637,6 +638,12 @@ impl<C: Clock> Runner<C> {
             } => self.expect_every_invocation(binding, command, selecting, input, run, target),
             ScenarioStep::ExpectNoInvocation { binding, command } => {
                 self.expect_no_invocation(binding, command, run, target)
+            }
+            ScenarioStep::ExpectNoPublication { event } => {
+                self.expect_publications(event, None, run, target)
+            }
+            ScenarioStep::ExpectPublicationCount { event, count } => {
+                self.expect_publications(event, Some(*count), run, target)
             }
             ScenarioStep::ExpectInvocation {
                 binding,

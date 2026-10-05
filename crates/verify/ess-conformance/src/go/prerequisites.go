@@ -494,6 +494,39 @@ func (r *run) expectNoInvocation(index int, step Step) bool {
 	return r.assertionFailure(index, "ESS-CF-INVOCATION: empty observation window")
 }
 
+// expectPublications requires that the event was published exactly `count` times under this
+// scenario for the whole observation window, none where count is zero (suite/36,
+// beyond10x/ess#269): more seen fails at once, exactly count passes only once the window has been
+// read to its end.
+func (r *run) expectPublications(index int, step Step, count int) bool {
+	attempts := r.harness.Deadline().Attempts
+	for attempt := 0; attempt < attempts; attempt++ {
+		events, err := r.target.ObserveEvents(EventObservationRequest{Event: step.Event, Correlation: r.correlation, Deadline: Deadline{Attempts: attempts - attempt}})
+		if err != nil {
+			if errors.Is(err, ErrUnsupported) {
+				return r.unsupportedObservation(index, err)
+			}
+			return r.targetFailure(index, err, "observing how often an event was published")
+		}
+		seen := 0
+		for _, event := range events {
+			if event.Event == step.Event {
+				seen++
+			}
+		}
+		if seen > count {
+			return r.assertionFailure(index, "ESS-CF-EVENT: unwanted publication")
+		}
+		if attempt+1 == attempts {
+			if seen == count {
+				return true
+			}
+			return r.assertionFailure(index, "ESS-CF-EVENT: publication count")
+		}
+	}
+	return r.assertionFailure(index, "ESS-CF-EVENT: empty observation window")
+}
+
 func admitStructured(value any, major, depth int) error {
 	if major < 32 {
 		return fmt.Errorf("structured values require suite/32 or /33")

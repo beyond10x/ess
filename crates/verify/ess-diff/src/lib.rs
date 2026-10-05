@@ -131,6 +131,7 @@ pub mod diff;
 pub mod graph;
 pub mod impact;
 pub mod raw;
+pub mod refusal_policy;
 pub mod render;
 
 pub use change::{

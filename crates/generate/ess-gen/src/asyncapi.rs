@@ -147,7 +147,8 @@ use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
     ResolvedBinding, ResolvedBody, ResolvedComponent, ResolvedEffect, ResolvedEvent,
-    ResolvedFailure, ResolvedMapping, ResolvedMappingValue, ResolvedTypeRef, TypeHandle,
+    ResolvedFailure, ResolvedMapping, ResolvedMappingValue, ResolvedRefusalAction, ResolvedTypeRef,
+    TypeHandle,
 };
 use ess_compiler::EssIr;
 use ess_domain::binding::{Delivery, Failure};
@@ -459,8 +460,15 @@ struct Reaction {
     delivery: Delivery,
     /// What the delivery guarantee obliges the handler to be.
     delivery_means: &'static str,
-    /// The word an author wrote, spelt as they wrote it.
-    on_failure: Failure,
+    /// The word an author wrote, spelt as they wrote it. Absent for a policy selected per refusal
+    /// (ess/22), which has no one word: [`Self::on_refusal`] says what answers each refusal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    on_failure: Option<Failure>,
+    /// A policy selected per refusal of the invoked command (ess/22, beyond10x/ess#269): every
+    /// declared refusal with its policy, and the fallback for a failure carrying no declared
+    /// outcome. Absent for a universal policy, so its document keeps its bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    on_refusal: Option<OnRefusal>,
     /// The event an `escalate` publishes, so a handler knows what it owes the rest of the system.
     ///
     /// `None` for `retry` and `drop`, which publish nothing — a retry because it is already
@@ -476,6 +484,121 @@ struct Reaction {
     /// the handler is supplied beside the payload. Absent for a binding that declares none.
     #[serde(skip_serializing_if = "Option::is_none")]
     delivery_context: Option<DeliveryContext>,
+}
+
+/// A failure policy selected per refusal (ess/22, beyond10x/ess#269), as a handler is owed it.
+#[derive(serde::Serialize)]
+struct OnRefusal {
+    /// Every declared refusal of the invoked command, in its declaration order.
+    refusals: Vec<RefusalRule>,
+    /// What answers a failure carrying no declared outcome.
+    fallback: RefusalAnswer,
+}
+
+/// One declared refusal and what answers it.
+#[derive(serde::Serialize)]
+struct RefusalRule {
+    outcome: String,
+    #[serde(flatten)]
+    answer: RefusalAnswer,
+}
+
+/// One policy of a selected table, with what it states.
+#[derive(serde::Serialize)]
+struct RefusalAnswer {
+    policy: Failure,
+    /// Total invocations for one occurrence, where a retry is bounded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attempts: Option<u32>,
+    /// The refusals that end a bounded retry at once.
+    #[serde(rename = "final", skip_serializing_if = "Vec::is_empty")]
+    finals: Vec<String>,
+    /// The event an escalation publishes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    emits: Option<String>,
+}
+
+impl RefusalAnswer {
+    fn of(ir: &EssIr, action: &ResolvedRefusalAction) -> Self {
+        let (attempts, finals, emits) = match action {
+            ResolvedRefusalAction::Drop => (None, Vec::new(), None),
+            ResolvedRefusalAction::Retry { bound } => (
+                bound.as_ref().map(|bound| bound.attempts),
+                bound
+                    .iter()
+                    .flat_map(|bound| bound.final_outcomes.iter().map(ToString::to_string))
+                    .collect(),
+                None,
+            ),
+            ResolvedRefusalAction::Escalate { emits } => {
+                (None, Vec::new(), Some(ir.event(emits).name.to_string()))
+            }
+        };
+        Self {
+            policy: action.word(),
+            attempts,
+            finals,
+            emits,
+        }
+    }
+
+    /// What it costs, in a clause.
+    fn means(&self) -> String {
+        match (self.policy, self.attempts, &self.emits) {
+            (Failure::Drop, _, _) => "is dropped and the work is lost".to_owned(),
+            (Failure::Escalate, _, Some(emits)) => {
+                format!("is escalated to a person, publishing `{emits}` once")
+            }
+            (Failure::Escalate, _, None) => "is escalated".to_owned(),
+            (Failure::Retry, None, _) => {
+                "is retried on whatever schedule the transport provides".to_owned()
+            }
+            (Failure::Retry, Some(attempts), _) => {
+                let finals = if self.finals.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        ", and {} ends it at once",
+                        self.finals
+                            .iter()
+                            .map(|outcome| format!("`{outcome}`"))
+                            .collect::<Vec<_>>()
+                            .join(" or ")
+                    )
+                };
+                format!("is retried up to {attempts} attempts in all, counted across every refusal{finals}")
+            }
+        }
+    }
+}
+
+/// The per-refusal table of a binding whose failure policy is selected per refusal.
+fn on_refusal(ir: &EssIr, binding: &ResolvedBinding) -> Option<OnRefusal> {
+    let ResolvedFailure::ByRefusal { policy } = binding.on_failure() else {
+        return None;
+    };
+    Some(OnRefusal {
+        refusals: policy
+            .refusals
+            .iter()
+            .map(|rule| RefusalRule {
+                outcome: rule.outcome.to_string(),
+                answer: RefusalAnswer::of(ir, &rule.action),
+            })
+            .collect(),
+        fallback: RefusalAnswer::of(ir, &policy.fallback),
+    })
+}
+
+/// The word a binding's failure policy is written with, or `None` where it is selected per
+/// refusal and has none.
+fn failure_word_of(binding: &ResolvedBinding) -> Option<Failure> {
+    binding.refusal_policy.is_none().then_some(binding.failure)
+}
+
+/// The failure policy as a description quotes it.
+fn quoted_failure(on_failure: Option<Failure>) -> String {
+    on_failure.map_or_else(|| "select the policy per refusal".to_owned(), word_for)
 }
 
 /// The delivery context a binding declares, as its handler is owed it.
@@ -506,7 +629,12 @@ struct Consumer {
     handled_by: Option<String>,
     invokes: String,
     delivery: Delivery,
-    on_failure: Failure,
+    /// Absent for a policy selected per refusal (ess/22), as on [`Reaction`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    on_failure: Option<Failure>,
+    /// The per-refusal table, as on [`Reaction`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    on_refusal: Option<OnRefusal>,
     /// The event an `escalate` publishes.
     #[serde(skip_serializing_if = "Option::is_none")]
     escalates_with: Option<String>,
@@ -1050,7 +1178,7 @@ fn send(ir: &EssIr, event: &ResolvedEvent, reactions: &Reactions<'_>) -> Operati
                     "`{}` reacts by invoking `{}`. On failure: `{}`.",
                     consumer.binding,
                     consumer.invokes,
-                    word_for(consumer.on_failure)
+                    quoted_failure(consumer.on_failure)
                 )
             })
             .collect::<Vec<_>>()
@@ -1159,7 +1287,7 @@ fn receive(ir: &EssIr, component: &ResolvedComponent, plan: &Plan<'_>) -> Operat
                 reaction.invokes,
                 word_for(reaction.delivery),
                 reaction.delivery_means,
-                word_for(reaction.on_failure),
+                quoted_failure(reaction.on_failure),
                 reaction.on_failure_means,
             )
         })
@@ -1189,7 +1317,8 @@ fn reaction(ir: &EssIr, binding: &ResolvedBinding) -> Reaction {
         invokes: ir.command(&binding.command).name.to_string(),
         delivery: binding.delivery,
         delivery_means: delivery_means(binding.delivery),
-        on_failure: binding.failure,
+        on_failure: failure_word_of(binding),
+        on_refusal: on_refusal(ir, binding),
         escalates_with: escalates_with(ir, binding),
         on_failure_means: failure_means(ir, binding),
         mapping: binding.mapping.iter().map(mapped_input).collect(),
@@ -1227,7 +1356,8 @@ fn consumer(ir: &EssIr, binding: &ResolvedBinding) -> Consumer {
         handled_by,
         invokes: ir.command(&binding.command).name.to_string(),
         delivery: binding.delivery,
-        on_failure: binding.failure,
+        on_failure: failure_word_of(binding),
+        on_refusal: on_refusal(ir, binding),
         escalates_with: escalates_with(ir, binding),
     }
 }
@@ -1236,6 +1366,9 @@ fn consumer(ir: &EssIr, binding: &ResolvedBinding) -> Consumer {
 fn escalates_with(ir: &EssIr, binding: &ResolvedBinding) -> Option<String> {
     match binding.on_failure() {
         ResolvedFailure::Escalate { emits } => Some(ir.event(emits).name.to_string()),
+        ResolvedFailure::ByRefusal { policy } => policy
+            .escalation()
+            .map(|emits| ir.event(emits).name.to_string()),
         ResolvedFailure::Retry | ResolvedFailure::Drop | ResolvedFailure::BoundedRetry { .. } => {
             None
         }
@@ -1342,6 +1475,28 @@ fn failure_means(ir: &EssIr, binding: &ResolvedBinding) -> String {
                 "the invocation is retried up to {} attempts in all, the first included{except}; \
                  after the last attempt the work is lost and nothing is published",
                 bound.attempts
+            )
+        }
+        ResolvedFailure::ByRefusal { policy } => {
+            let mut clauses: Vec<String> = policy
+                .refusals
+                .iter()
+                .map(|rule| {
+                    format!(
+                        "`{}` {}",
+                        rule.outcome,
+                        RefusalAnswer::of(ir, &rule.action).means()
+                    )
+                })
+                .collect();
+            clauses.push(format!(
+                "a failure that carries no declared outcome {}",
+                RefusalAnswer::of(ir, &policy.fallback).means()
+            ));
+            format!(
+                "the policy is selected by the actual refusal of `{}` after every attempt: {}",
+                ir.command(&binding.command).name,
+                clauses.join("; ")
             )
         }
     }

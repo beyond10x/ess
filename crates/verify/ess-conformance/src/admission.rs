@@ -527,6 +527,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || crate::absent_input::needs_newer(tag, major)
         || crate::delivery_context::needs_newer(tag, major)
         || crate::no_invocation::needs_newer(tag, major)
+        || crate::refusal_policy::needs_newer(tag, major)
         || (major < crate::grant::ORDINARY && tag == "expect_not_granted")
         || crate::view_grant::needs_newer(tag, major)
     {
@@ -538,6 +539,9 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
         _ if crate::no_invocation::step_keys(tag).is_some() => {
             crate::no_invocation::step_keys(tag).unwrap_or_default()
+        }
+        _ if crate::refusal_policy::step_keys(tag).is_some() => {
+            crate::refusal_policy::step_keys(tag).unwrap_or_default()
         }
         _ if crate::bounded_retry::step_keys(tag, major).is_some() => {
             crate::bounded_retry::step_keys(tag, major).unwrap_or_default()
@@ -740,6 +744,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::direct_response::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;
+    crate::refusal_policy::admit(suite)?;
     crate::structured_values::admit(suite)?;
     crate::fixtures::admit_format(suite)?;
     crate::absent_input::admit_format(suite)?;

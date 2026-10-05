@@ -2236,6 +2236,10 @@ func (r *run) step(index int, step Step) bool {
 		return r.expectEveryInvocation(index, step)
 	case "expect_no_invocation":
 		return r.expectNoInvocation(index, step)
+	case "expect_no_publication":
+		return r.expectPublications(index, step, 0)
+	case "expect_publication_count":
+		return r.expectPublications(index, step, step.Count)
 	case "expect_response_payload":
 		return r.expectResponsePayload(index, step)
 	case "check_periodic":
@@ -4106,6 +4110,9 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0]) && k(p[2])
 	case len(p) == 3 && p[1] == "binding":
 		valid = k(p[0]) && (p[2] == "delivery" || p[2] == "flow" || p[2] == "mapping" || p[2] == "on-failure" || p[2] == "final-failure" || p[2] == "condition-false" || p[2] == "condition-absent")
+	case len(p) == 4 && p[1] == "binding" && p[2] == "refusal":
+		// One declared refusal a refusal-selected failure policy answers (beyond10x/ess#269).
+		valid = k(p[0]) && k(p[3])
 	case len(p) == 5 && p[1] == "state" && (p[3] == "refuses" || p[3] == "accepts"):
 		valid = q(p[0]) && stateName.MatchString(p[2]) && q(p[4])
 	case len(p) == 6 && p[1] == "transition" && p[3] == "by":
@@ -4197,6 +4204,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		// A conditioned binding's negative witnesses (beyond10x/ess#268) arrived in suite/36 and /37.
 		if (strings.HasSuffix(id, "/binding/condition-false") || strings.HasSuffix(id, "/binding/condition-absent")) && major < 36 {
 			return suite, fmt.Errorf("zero-invocation observation requires suite/36 or /37")
+		}
+		// A scenario per selected refusal (beyond10x/ess#269) arrived in suite/36 and /37.
+		if strings.Contains(id, "/binding/refusal/") && major < 36 {
+			return suite, fmt.Errorf("a scenario per selected refusal requires suite/36 or /37")
 		}
 		// The refusal an ungranted actor gets (beyond10x/ess#265) arrived in suite/26 and /27.
 		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
@@ -4941,6 +4952,16 @@ func admitStep(value any, major int) error {
 			return fmt.Errorf("zero-invocation observation requires suite/36 or /37")
 		}
 		required += " binding command"
+	case "expect_no_publication":
+		if major < 36 {
+			return fmt.Errorf("a scenario per selected refusal requires suite/36 or /37")
+		}
+		required += " event"
+	case "expect_publication_count":
+		if major < 36 {
+			return fmt.Errorf("a scenario per selected refusal requires suite/36 or /37")
+		}
+		required += " event count"
 	case "resolve_fixtures":
 		if major < 18 {
 			return fmt.Errorf("fixture resolution requires suite/18 or /19")

@@ -166,6 +166,7 @@ pub mod reading;
 pub mod record;
 pub mod recorded;
 pub mod reference;
+pub mod refusal_policy;
 /// Exact observations of retained command results.
 pub mod replay;
 pub mod report;

@@ -215,7 +215,7 @@
       ]
     },
     "BindingFailure": {
-      "description": "What happens when the invoked command does not run: `retry`, `drop`, an `escalate:` block naming the event the escalation emits, or a `retry:` block stating its attempts and final refusals (ess/16).",
+      "description": "What happens when the invoked command does not run: `retry`, `drop`, an `escalate:` block naming the event the escalation emits, a `retry:` block stating its attempts and final refusals (ess/16), or `drop`, `retry` and `escalate` keyed, each selecting the refusals it answers with `outcomes:` or `except:` (ess/22).",
       "oneOf": [
         {
           "$ref": "#/definitions/Failure"
@@ -240,6 +240,146 @@
           "properties": {
             "retry": {
               "$ref": "#/definitions/RetryBound"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A failure policy selected per refusal of the invoked command (ess/22): `drop`, `retry` and `escalate`, each at most once, each with `outcomes:` or `except:`; exactly one has `except:` and is the fallback for a failure carrying no declared outcome.",
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "drop": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "required": [
+                        "outcomes"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "except"
+                      ]
+                    }
+                  ],
+                  "properties": {
+                    "except": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    },
+                    "outcomes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "escalate": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "required": [
+                    "outcomes"
+                  ]
+                },
+                {
+                  "required": [
+                    "except"
+                  ]
+                }
+              ],
+              "properties": {
+                "emits": {
+                  "type": "string"
+                },
+                "except": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                "outcomes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "additionalProperties": false
+            },
+            "retry": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "required": [
+                        "outcomes"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "except"
+                      ]
+                    }
+                  ],
+                  "properties": {
+                    "attempts": {
+                      "type": "integer",
+                      "minimum": 2.0
+                    },
+                    "except": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    },
+                    "final": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    },
+                    "outcomes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "additionalProperties": false

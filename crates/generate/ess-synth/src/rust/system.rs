@@ -706,6 +706,9 @@ fn system_struct(
             ResolvedFailure::BoundedRetry { .. } => {
                 unreachable!("refused by `failure::retry_bound`")
             }
+            ResolvedFailure::ByRefusal { .. } => {
+                unreachable!("refused by `failure::refusal_policy`")
+            }
             ResolvedFailure::Retry | ResolvedFailure::Drop => {}
         }
     }
@@ -1397,7 +1400,7 @@ fn delivery_arm(
                 &body,
             );
         }
-        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => refused(),
         ResolvedFailure::Drop => {
             let _ = writeln!(
                 out,
@@ -1449,7 +1452,7 @@ fn selection_failure_policy(
         ResolvedFailure::Retry => {
             let _ = writeln!(out, "self.{held}.push(event.clone());");
         }
-        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => refused(),
         ResolvedFailure::Drop => {}
         ResolvedFailure::Escalate { emits } => {
             let _ = writeln!(out, "let escalation = self.obligations.{ident}_selection_escalation(event, &failure)?; self.published.push(SystemEvent::{}(escalation));", variants[emits]);
@@ -1458,4 +1461,10 @@ fn selection_failure_policy(
     // The policy has run, so this binding's attempt ends here; the other bindings that react to
     // this event still run (`deliver`), and a failed selection is not held back (`attempt_…`).
     out.push_str("return Err(failure.into()); } };\n");
+}
+
+/// A bounded retry or a policy selected per refusal reached emission: both are refused before it,
+/// by `failure::retry_bound` and `failure::refusal_policy`.
+fn refused() -> ! {
+    unreachable!("refused by `failure::retry_bound` and `failure::refusal_policy`")
 }

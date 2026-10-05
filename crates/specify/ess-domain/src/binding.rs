@@ -73,6 +73,10 @@
 //! new is published for it either: the bound is observed as the number of invocations. See
 //! [`retry`].
 //!
+//! Under `ess/22` the policy may instead be **selected per refusal** of the invoked command —
+//! `drop`, `retry` and `escalate` keyed, each naming the refusals it answers, exactly one of them
+//! the explicit fallback. See [`refusal`].
+//!
 //! # Where each rule runs
 //!
 //! [`BindingSpec::validate`] is everything a binding can be wrong about on its own — the shape of
@@ -154,6 +158,7 @@ use crate::types::{
 pub mod condition;
 pub mod context;
 pub mod periodic;
+pub mod refusal;
 pub mod retry;
 use context::ExternalEvent;
 use periodic::PeriodicCause;
@@ -445,6 +450,10 @@ impl std::fmt::Display for Failure {
 /// are all read as "escalates, names no event". They are one author mistake in three spellings, so
 /// they get one refusal — [`MissingDeclaration`](ValidationCode::MissingDeclaration), from
 /// [`BindingSpec::validate`] — rather than a validation error and two different parse errors.
+///
+/// A block in which some policy writes a selector — a list, or `outcomes:` or `except:` — is a
+/// policy selected per refusal (ess/22, [`refusal`]): read into [`Self::selected`], with the three
+/// fields above its universal view. Every other shape is read here exactly as before.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawFailure {
     /// The word.
@@ -453,7 +462,13 @@ pub struct RawFailure {
     pub emits: Option<QualifiedName>,
     /// The bound a `retry:` block states, when the document wrote one.
     pub retry: Option<RetryBound>,
+    /// The policies of a refusal-selected `on_failure:` (ess/22), when the document wrote one.
+    pub selected: Option<refusal::RefusalPolicy>,
 }
+
+/// The universal `on_failure:` reader: every spelling, meaning and diagnostic `on_failure:` had
+/// before a selector existed.
+struct Universal(RawFailure);
 
 /// What an `escalate:` block says, as a document says it.
 ///
@@ -471,6 +486,29 @@ pub struct RawEscalation {
 }
 
 impl<'de> serde::Deserialize<'de> for RawFailure {
+    /// A refusal-selected shape is captured whole, so that below ess/22 it reaches the format
+    /// refusal instead of a universal-reader error; anything else is handed to the universal
+    /// reader unchanged, over the same document value.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = <serde_yaml::Value as serde::Deserialize>::deserialize(deserializer)?;
+        if refusal::is_selected(&value) {
+            let selected = refusal::read(&value).map_err(D::Error::custom)?;
+            let (failure, emits, retry) = selected.legacy_view();
+            return Ok(Self {
+                failure,
+                emits,
+                retry,
+                selected: Some(selected),
+            });
+        }
+        serde_yaml::from_value::<Universal>(value)
+            .map(|Universal(raw)| raw)
+            .map_err(D::Error::custom)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Universal {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Policy;
 
@@ -486,6 +524,7 @@ impl<'de> serde::Deserialize<'de> for RawFailure {
                     failure: policy_word(written)?,
                     emits: None,
                     retry: None,
+                    selected: None,
                 })
             }
 
@@ -528,11 +567,12 @@ impl<'de> serde::Deserialize<'de> for RawFailure {
                     failure,
                     emits,
                     retry,
+                    selected: None,
                 })
             }
         }
 
-        deserializer.deserialize_any(Policy)
+        deserializer.deserialize_any(Policy).map(Universal)
     }
 }
 
@@ -580,15 +620,109 @@ impl schemars::JsonSchema for RawFailure {
             generator.subschema_for::<Failure>(),
             schemars::schema::Schema::Object(block),
             schemars::schema::Schema::Object(bounded),
+            selected_schema(),
         ]);
         schema.metadata().description = Some(
             "What happens when the invoked command does not run: `retry`, `drop`, an \
-             `escalate:` block naming the event the escalation emits, or a `retry:` block stating \
-             its attempts and final refusals (ess/16)."
+             `escalate:` block naming the event the escalation emits, a `retry:` block stating \
+             its attempts and final refusals (ess/16), or `drop`, `retry` and `escalate` keyed, \
+             each selecting the refusals it answers with `outcomes:` or `except:` (ess/22)."
                 .to_owned(),
         );
         schema.into()
     }
+}
+
+/// The fourth spelling of `on_failure:`: policies keyed, each selecting refusals (ess/22,
+/// [`refusal`]). Every policy here carries a selector, so no universal spelling matches it, and
+/// none of the universal blocks admits a selector, so it matches none of them.
+fn selected_schema() -> schemars::schema::Schema {
+    use schemars::schema::{InstanceType, Schema, SchemaObject};
+    let names = || {
+        let mut list = SchemaObject {
+            instance_type: Some(InstanceType::Array.into()),
+            ..Default::default()
+        };
+        list.array().items = Some(
+            Schema::Object(SchemaObject {
+                instance_type: Some(InstanceType::String.into()),
+                ..Default::default()
+            })
+            .into(),
+        );
+        list.array().unique_items = Some(true);
+        Schema::Object(list)
+    };
+    let selects = |keys: &[(&str, Schema)]| {
+        let mut block = SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..Default::default()
+        };
+        for (key, schema) in keys {
+            block
+                .object()
+                .properties
+                .insert((*key).to_owned(), schema.clone());
+        }
+        block
+            .object()
+            .properties
+            .insert("outcomes".to_owned(), names());
+        block
+            .object()
+            .properties
+            .insert("except".to_owned(), names());
+        block.object().additional_properties = Some(Box::new(Schema::Bool(false)));
+        let required = |key: &str| {
+            let mut one = SchemaObject::default();
+            one.object().required.insert(key.to_owned());
+            Schema::Object(one)
+        };
+        block.subschemas().any_of = Some(vec![required("outcomes"), required("except")]);
+        Schema::Object(block)
+    };
+    let shorthand_or = |block: Schema| {
+        let mut either = SchemaObject::default();
+        either.subschemas().one_of = Some(vec![names(), block]);
+        Schema::Object(either)
+    };
+    let text = Schema::Object(SchemaObject {
+        instance_type: Some(InstanceType::String.into()),
+        ..Default::default()
+    });
+    let mut attempts = SchemaObject {
+        instance_type: Some(InstanceType::Integer.into()),
+        ..Default::default()
+    };
+    attempts.number().minimum = Some(f64::from(RetryBound::MIN_ATTEMPTS));
+    let mut policies = SchemaObject {
+        instance_type: Some(InstanceType::Object.into()),
+        ..Default::default()
+    };
+    policies
+        .object()
+        .properties
+        .insert("drop".to_owned(), shorthand_or(selects(&[])));
+    policies.object().properties.insert(
+        "retry".to_owned(),
+        shorthand_or(selects(&[
+            ("attempts", Schema::Object(attempts)),
+            ("final", names()),
+        ])),
+    );
+    policies
+        .object()
+        .properties
+        .insert("escalate".to_owned(), selects(&[("emits", text)]));
+    policies.object().min_properties = Some(1);
+    policies.object().additional_properties = Some(Box::new(Schema::Bool(false)));
+    policies.metadata().description = Some(
+        "A failure policy selected per refusal of the invoked command (ess/22): `drop`, `retry` \
+         and `escalate`, each at most once, each with `outcomes:` or `except:`; exactly one has \
+         `except:` and is the fallback for a failure carrying no declared outcome."
+            .to_owned(),
+    );
+    Schema::Object(policies)
 }
 
 /// One field of the command's input, and where its value comes from.
@@ -961,6 +1095,19 @@ pub struct BindingSpec {
     /// when present, so a binding that states no bound keeps its bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<RetryBound>,
+    /// The policies of a failure policy selected per refusal of the invoked command (ess/22,
+    /// [`refusal`]), as the document wrote them.
+    ///
+    /// The authority where present: [`Self::failure`] is then the explicit fallback's word,
+    /// [`Self::escalation`] the `escalate` policy's event and [`Self::retry`] the `retry` policy's
+    /// bound ([`refusal::RefusalPolicy::legacy_view`]) — a view, never one policy for every
+    /// refusal. Serialized only when present, so every other binding keeps its bytes.
+    #[serde(
+        rename = "on_refusal",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub refusals: Option<refusal::RefusalPolicy>,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -982,8 +1129,14 @@ impl BindingSpec {
         let mut errors = ValidationErrors::new();
         let prefix = MappingSource::EVENT_PREFIX;
 
-        errors.extend(self.check_escalation());
-        errors.extend(retry::check_shape(self));
+        // A refusal-selected policy's universal fields are a view of its table, which validation
+        // of the table owns; the universal rules would read the view as one policy.
+        if self.refusals.is_some() {
+            errors.extend(refusal::check_local(self));
+        } else {
+            errors.extend(self.check_escalation());
+            errors.extend(retry::check_shape(self));
+        }
         errors.extend(self.check_periodic_cause());
         if let Some(external) = self.cause.external() {
             errors.extend(external.validate(&format!("binding.{}.when", self.name)));
@@ -1268,6 +1421,7 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             failure: raw.on_failure.failure,
             escalation: raw.on_failure.emits,
             retry: raw.on_failure.retry,
+            refusals: raw.on_failure.selected,
             naming: Naming {
                 summary: raw.naming.summary.or(raw.summary),
                 ..raw.naming
@@ -3348,8 +3502,8 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         let schema =
             serde_json::to_value(schemars::schema_for!(RawBindingSpec)).expect("serialises");
         let policy = &schema["definitions"]["BindingFailure"];
-        let spellings = policy["oneOf"].as_array().expect("three spellings");
-        assert_eq!(spellings.len(), 3, "{policy}");
+        let spellings = policy["oneOf"].as_array().expect("four spellings");
+        assert_eq!(spellings.len(), 4, "{policy}");
         assert_eq!(
             spellings[0]["$ref"],
             serde_json::json!("#/definitions/Failure"),
@@ -3375,6 +3529,24 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
             spellings[2]["additionalProperties"],
             serde_json::json!(false),
             "the bound block takes nothing else: {policy}"
+        );
+        // The refusal-selected policy (ess/22): the fourth spelling, closed over the three policy
+        // words, each of which must carry a selector so no universal spelling matches it too.
+        assert_eq!(
+            spellings[3]["additionalProperties"],
+            serde_json::json!(false),
+            "{policy}"
+        );
+        let selected: Vec<&String> = spellings[3]["properties"]
+            .as_object()
+            .expect("the policies")
+            .keys()
+            .collect();
+        assert_eq!(selected, ["drop", "escalate", "retry"], "{policy}");
+        assert_eq!(
+            spellings[3]["properties"]["escalate"]["anyOf"],
+            serde_json::json!([{"required": ["outcomes"]}, {"required": ["except"]}]),
+            "{policy}"
         );
     }
 

@@ -239,15 +239,55 @@ pub(crate) fn one_time_response(
     }
 }
 
-/// Every binding construct the generated dispatch cannot represent, refused by name: a bounded
-/// retry ([`retry_bound`]) first, then an event-payload condition ([`binding_condition`]).
+/// Every binding construct the generated dispatch cannot represent, refused by name: a policy
+/// selected per refusal ([`refusal_policy`]) first, then a bounded retry ([`retry_bound`]), then
+/// an event-payload condition ([`binding_condition`]).
 pub(crate) fn binding_policies(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
+    refusal_policy(ir, plan, target)?;
     retry_bound(ir, plan, target)?;
     binding_condition(ir, plan, target)
+}
+
+/// A binding whose failure policy is selected per refusal (ess/22, beyond10x/ess#269) is refused
+/// by every target that delivers bindings. The command-line target delivers none, so it has
+/// nothing to refuse.
+///
+/// The generated dispatch answers every failure of a binding with one policy and counts no
+/// attempts, so emitting it would apply one policy — the fallback's, or none — to every declared
+/// refusal, and could not stop a retry at its total bound. Each binding is named, so the
+/// representation is owed rather than silently wrong; the refusal is checked before the bounded
+/// retry's, because a selected policy's retry bound is one of its own policies.
+pub(crate) fn refusal_policy(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    if target == Target::Clap {
+        return Ok(());
+    }
+    let causes = ir
+        .bindings()
+        .values()
+        .filter(|binding| binding.refusal_policy.is_some())
+        .map(|binding| {
+            TargetFailureCause::new(
+                TargetFailureCode::MissingRepresentation,
+                vec![format!("bindings.{}.on_failure", binding.name)],
+                "this target's dispatch answers every failure with one policy and counts no \
+                 attempts, so it cannot select the policy per refusal of the invoked command"
+                    .to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
 }
 
 /// A binding with an event-payload condition (ess/22, beyond10x/ess#268) is refused by every target

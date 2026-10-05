@@ -1947,6 +1947,64 @@ fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> Vec<Inline> {
             ));
             out
         }
+        ResolvedFailure::ByRefusal { policy } => {
+            let mut out = vec![
+                Inline::text("When it fails, its policy is "),
+                Inline::Strong {
+                    text: vec![Inline::text("selected per refusal")],
+                },
+                Inline::text(" of "),
+                Inline::code(ir.command(&binding.command).name.to_string()),
+                Inline::text(", by the actual answer of every attempt: "),
+            ];
+            for rule in &policy.refusals {
+                out.push(Inline::code(rule.outcome.to_string()));
+                out.push(Inline::text(" "));
+                out.extend(refusal_clause(ir, &rule.action));
+                out.push(Inline::text("; "));
+            }
+            out.push(Inline::text("a failure that carries no declared outcome "));
+            out.extend(refusal_clause(ir, &policy.fallback));
+            out.push(Inline::text(
+                ". A bounded retry counts every attempt of the occurrence, whichever refusal \
+                 answered it, and a failure before the command could be invoked runs no policy at \
+                 all.",
+            ));
+            out
+        }
+    }
+}
+
+/// What one policy of a refusal-selected table does, as a clause after the refusal it answers.
+fn refusal_clause(ir: &EssIr, action: &ess_compiler::ir::ResolvedRefusalAction) -> Vec<Inline> {
+    use ess_compiler::ir::ResolvedRefusalAction;
+    match action {
+        ResolvedRefusalAction::Drop => vec![Inline::text("is dropped: the work is lost")],
+        ResolvedRefusalAction::Retry { bound: None } => vec![Inline::text(
+            "is retried, on whatever schedule the transport provides",
+        )],
+        ResolvedRefusalAction::Retry { bound: Some(bound) } => {
+            let mut out = vec![Inline::text(format!(
+                "is retried up to {} attempts in all",
+                bound.attempts
+            ))];
+            if !bound.final_outcomes.is_empty() {
+                out.push(Inline::text(", except that "));
+                for (index, outcome) in bound.final_outcomes.iter().enumerate() {
+                    if index > 0 {
+                        out.push(Inline::text(" or "));
+                    }
+                    out.push(Inline::code(outcome.to_string()));
+                }
+                out.push(Inline::text(" ends it at once"));
+            }
+            out
+        }
+        ResolvedRefusalAction::Escalate { emits } => vec![
+            Inline::text("is escalated to a person, publishing "),
+            Inline::code(ir.event(emits).name.to_string()),
+            Inline::text(" once"),
+        ],
     }
 }
 
@@ -2542,7 +2600,14 @@ fn markdown_code(text: &str) -> Vec<Inline> {
 fn emitters(ir: &EssIr, event: &ResolvedEvent) -> Vec<Vec<Inline>> {
     let mut out = Vec::new();
     for binding in ir.bindings().values() {
-        if let ResolvedFailure::Escalate { emits } = binding.on_failure() {
+        let escalates = match binding.on_failure() {
+            ResolvedFailure::Escalate { emits } => Some(emits),
+            ResolvedFailure::ByRefusal { policy } => policy.escalation(),
+            ResolvedFailure::Retry
+            | ResolvedFailure::Drop
+            | ResolvedFailure::BoundedRetry { .. } => None,
+        };
+        if let Some(emits) = escalates {
             if emits.name() == &event.name {
                 out.push(vec![
                     Inline::text("Emitted when binding "),
@@ -2872,7 +2937,27 @@ fn binding_flow(ir: &EssIr, binding: &ResolvedBinding) -> String {
             );
             let _ = writeln!(out, "    outcome{index} --> emit{index}_{emitted}");
         }
-        if let Some(handle) = &outcome.error {
+        if let (Some(handle), ResolvedFailure::ByRefusal { policy }) =
+            (&outcome.error, binding.on_failure())
+        {
+            // Each refusal goes where its own selected policy sends it (ess/22).
+            let action = policy.select(Some(&outcome.name));
+            let _ = writeln!(out, "    error{index}[\"{}\"]", label(&handle.to_string()));
+            let _ = writeln!(out, "    outcome{index} --> error{index}");
+            let _ = writeln!(
+                out,
+                "    error{index} --> policy{index}[\"{}\"]",
+                label(&action_label(ir, action))
+            );
+            if let ess_compiler::ir::ResolvedRefusalAction::Escalate { emits } = action {
+                let _ = writeln!(
+                    out,
+                    "    escalation[\"{}\"]",
+                    label(&ir.event(emits).name.to_string())
+                );
+                let _ = writeln!(out, "    policy{index} --> escalation");
+            }
+        } else if let Some(handle) = &outcome.error {
             let _ = writeln!(out, "    error{index}[\"{}\"]", label(&handle.to_string()));
             let _ = writeln!(out, "    outcome{index} --> error{index}");
             let _ = writeln!(
@@ -2907,6 +2992,26 @@ fn failure_label(ir: &EssIr, binding: &ResolvedBinding) -> String {
         ResolvedFailure::Drop => "dropped: the work is lost".to_owned(),
         ResolvedFailure::BoundedRetry { bound } => {
             format!("retried up to {} attempts, then dropped", bound.attempts)
+        }
+        ResolvedFailure::ByRefusal { .. } => "selected per refusal".to_owned(),
+    }
+}
+
+/// Where one refusal of a refusal-selected policy goes, in a few words for a diagram node.
+fn action_label(ir: &EssIr, action: &ess_compiler::ir::ResolvedRefusalAction) -> String {
+    use ess_compiler::ir::ResolvedRefusalAction;
+    match action {
+        ResolvedRefusalAction::Drop => "dropped: the work is lost".to_owned(),
+        ResolvedRefusalAction::Retry { bound: None } => "retried by the transport".to_owned(),
+        ResolvedRefusalAction::Retry { bound: Some(bound) } if bound.final_outcomes.is_empty() => {
+            format!("retried up to {} attempts in all", bound.attempts)
+        }
+        ResolvedRefusalAction::Retry { bound: Some(bound) } => format!(
+            "retried up to {} attempts in all, unless final",
+            bound.attempts
+        ),
+        ResolvedRefusalAction::Escalate { emits } => {
+            format!("escalated, emitting {}", ir.event(emits).name)
         }
     }
 }

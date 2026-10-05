@@ -189,6 +189,7 @@ mod existence;
 mod grant;
 mod identity;
 mod paging;
+mod refusal_policy;
 mod related;
 mod related_guard;
 mod seeds;
@@ -1223,6 +1224,7 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::DeliverySingleAttempt
                 | BindingGap::RetriedUnforcible { .. }
                 | BindingGap::FinalUnforcible { .. }
+                | BindingGap::RefusalUnforcible { .. }
                 | BindingGap::ArrangementSetsOff { .. }
                 | BindingGap::DestinationIdentityUnavailable { .. }
                 | BindingGap::DestinationIneligible { .. }
@@ -1633,6 +1635,13 @@ pub enum BindingGap {
         /// The invoked command.
         command: CommandRef,
     },
+    /// The binding's failure policy is selected per refusal (ess/22, beyond10x/ess#269), and this
+    /// refusal of the invoked command cannot be forced: it is not declared `external:`. A named
+    /// coverage limitation, never a fabricated witness.
+    RefusalUnforcible {
+        /// The refusal.
+        outcome: OutcomeRef,
+    },
     /// Every command that publishes the binding's event needs an arrangement that publishes it
     /// too, so the binding would be invoked before the counted attempts begin.
     ArrangementSetsOff {
@@ -1734,6 +1743,10 @@ impl BindingGap {
             Self::FinalUnforcible { .. } => {
                 "declare the final refusal `external:`, which is what lets a scenario force it"
             }
+            Self::RefusalUnforcible { .. } => {
+                "declare the refusal `external:`, which is what lets a scenario force it, or cover \
+                 its policy with an authored scenario (ess-scenario/1)"
+            }
             Self::ArrangementSetsOff { .. } => {
                 "let some command publish the event without an arrangement that publishes it first; \
                  an attempt count is only a count of the attempts the bound made"
@@ -1809,6 +1822,11 @@ impl fmt::Display for BindingGap {
             Self::FinalUnforcible { command } => write!(
                 f,
                 "names final refusals of `{command}`, and none of them can be forced"
+            ),
+            Self::RefusalUnforcible { outcome } => write!(
+                f,
+                "selects its failure policy per refusal, and the refusal `{outcome}` cannot be \
+                 forced"
             ),
             Self::ArrangementSetsOff { event } => write!(
                 f,
@@ -2495,6 +2513,8 @@ pub(crate) fn needs_of(
             | ScenarioStep::ExpectNoError
             | ScenarioStep::ExpectError { .. }
             | ScenarioStep::ExpectNoEvent { .. }
+            | ScenarioStep::ExpectNoPublication { .. }
+            | ScenarioStep::ExpectPublicationCount { .. }
             | ScenarioStep::MarkInstant { .. }
             | ScenarioStep::ExpectNotBefore { .. }
             | ScenarioStep::ExpectWithin { .. }
@@ -12600,6 +12620,9 @@ fn binding_aspects(
             BindingAspect::Flow => flow(ir, invoked, &prepared, &event),
             BindingAspect::Mapping => mapping(ir, binding, invoked, trigger, &prepared, &event),
             BindingAspect::Delivery => delivery(ir, binding, invoked, &prepared, &event),
+            // A policy selected per refusal (ess/22, beyond10x/ess#269) makes no one claim for
+            // every failure: each declared refusal is witnessed on its own scenario, below.
+            BindingAspect::OnFailure if binding.refusal_policy.is_some() => continue,
             BindingAspect::OnFailure if binding.retry.is_some() => {
                 bounded_retry::exhausted(ir, binding, invoked, trigger, &event, actors)
             }
@@ -12635,6 +12658,13 @@ fn binding_aspects(
             refusals,
         );
     }
+    if let Some(policy) = &binding.refusal_policy {
+        refusal_policy::witnesses(
+            ir, binding, policy, invoked, trigger, &prepared, &event, actors, &source, suite,
+            refusals,
+        );
+        return;
+    }
     bounded_retry::final_failure(
         ir, binding, invoked, trigger, &event, actors, &source, suite, refusals,
     );
@@ -12666,13 +12696,19 @@ fn conditioned(
     match &witnesses.holds {
         Ok(trigger) => binding_aspects(ir, binding, trigger, actors, suite, refusals),
         Err(gap) => {
-            let finals = binding
-                .retry
-                .as_ref()
-                .is_some_and(|bound| !bound.final_outcomes.is_empty());
+            let selected = binding.refusal_policy.as_ref();
+            let finals = selected.is_none()
+                && binding
+                    .retry
+                    .as_ref()
+                    .is_some_and(|bound| !bound.final_outcomes.is_empty());
+            if let Some(policy) = selected {
+                refusal_policy::refuse_all(binding, policy, gap, refusals);
+            }
             let aspects = BindingAspect::ALL
                 .map(|(aspect, _)| aspect)
                 .into_iter()
+                .filter(|aspect| selected.is_none() || *aspect != BindingAspect::OnFailure)
                 .chain(finals.then_some(BindingAspect::FinalFailure));
             for aspect in aspects {
                 let id = ScenarioId::Binding {
@@ -13076,6 +13112,10 @@ fn on_failure(
         ResolvedFailure::BoundedRetry { .. } => {
             unreachable!("a bounded retry is synthesized by `bounded_retry::exhausted`")
         }
+        // No scenario of its own: `binding_aspects` files one per refusal instead.
+        ResolvedFailure::ByRefusal { .. } => {
+            unreachable!("a policy selected per refusal is synthesized by `refusal_policy`")
+        }
     };
     Ok((steps, clipped(&text), source))
 }
@@ -13272,7 +13312,9 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
             entity.clone().into()
         }
         ScenarioId::ValueInvariant { value, .. } => value.clone().into(),
-        ScenarioId::Binding { binding, .. } => binding.clone().into(),
+        ScenarioId::Binding { binding, .. } | ScenarioId::BindingRefusal { binding, .. } => {
+            binding.clone().into()
+        }
         ScenarioId::Aggregate { view } => view.clone().into(),
         ScenarioId::Grant { command } | ScenarioId::GrantAdmitted { command, .. } => {
             command.clone().into()

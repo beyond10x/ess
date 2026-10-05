@@ -53,6 +53,7 @@ pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
     response_replay_supported(input.selected().suite())?;
+    refusal_policy_supported(ir)?;
     let replay = crate::web_replay::AdmittedReplay::new(ir, input)?;
     let mut out = BTreeMap::new();
     for (path, contents) in [
@@ -90,6 +91,7 @@ pub fn emit(
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
     crate::admission::model(ir)?;
     response_replay_supported(suite)?;
+    refusal_policy_supported(ir)?;
     let json = suite.to_canonical_json()?;
     let mut out = BTreeMap::new();
     let mut add = |path: &str, contents: String| {
@@ -293,6 +295,25 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
         version = ir.version(),
         count = suite.scenarios.len(),
     )
+}
+
+/// A failure policy selected per refusal (ess/22, beyond10x/ess#269) has no representation in the
+/// page's model, whose closed binding names one failure word: printing the fallback's would claim
+/// it for every refusal. Refused by name, as the generated targets refuse it.
+fn refusal_policy_supported(ir: &EssIr) -> Result<(), crate::admission::AdmissionError> {
+    match ir
+        .bindings()
+        .values()
+        .find(|binding| binding.refusal_policy.is_some())
+    {
+        Some(binding) => Err(crate::admission::AdmissionError::new(
+            "UnsupportedConstruct",
+            format!("$model.bindings.{}.on_failure", binding.name),
+            "the scenario player names one failure word per binding and cannot show a failure \
+             policy selected per refusal",
+        )),
+        None => Ok(()),
+    }
 }
 
 fn response_replay_supported(

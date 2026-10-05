@@ -181,8 +181,9 @@ impl ConformanceSuite {
         if crate::synthesis_seeds::used_by(self) {
             return;
         }
-        // Zero-invocation observation (ess/22, beyond10x/ess#268) implies every major below it.
-        if crate::no_invocation::used_by(self) {
+        // Zero-invocation observation (ess/22, beyond10x/ess#268) and a scenario per selected
+        // refusal (beyond10x/ess#269) imply every major below them.
+        if crate::no_invocation::used_by(self) || crate::refusal_policy::used_by(self) {
             self.provenance.suite_version = SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
                 crate::no_invocation::ORDINARY
@@ -698,6 +699,18 @@ pub enum ScenarioId {
         /// Which of its clauses.
         aspect: BindingAspect,
     },
+    /// One declared refusal of a binding's invoked command, answered by the policy a
+    /// refusal-selected `on_failure:` chooses for it: `notify-ledger/binding/refusal/at-limit`
+    /// (suite/36 and /37, ess/22, beyond10x/ess#269, [`crate::refusal_policy`]).
+    ///
+    /// A variant rather than a [`BindingAspect`]: the refusal is part of the identity, and a
+    /// scenario per refusal is what lets a report say which refusal a target answered wrongly.
+    BindingRefusal {
+        /// Which binding.
+        binding: BindingRef,
+        /// The refusal, an outcome of the binding's invoked command that carries an `error:`.
+        outcome: OutcomeName,
+    },
     /// A check a person wrote: `billing.invoice/authored/two-issued-invoices-rank-latest-first`.
     ///
     /// The one id in this type that names no construct the model obliges, and that is exactly what
@@ -812,6 +825,7 @@ impl ScenarioId {
     /// `a_scenario_id_round_trips_through_its_rendered_form` asserts for every variant: an id
     /// written into a fault matrix, a report or a terminal is an id this can turn back into the
     /// construct it names.
+    #[allow(clippy::too_many_lines)]
     pub fn parse(value: &str) -> Result<Self, ParseError> {
         let reject = |reason: &str| ParseError::identifier("scenario id", value, reason.to_owned());
         let parts: Vec<&str> = value.split('/').collect();
@@ -890,6 +904,14 @@ impl ScenarioId {
                 name: AuthoredName::new(authored)
                     .map_err(|_| reject("has a malformed authored scenario name"))?,
             }),
+            [binding, Self::BINDING, "refusal", outcome] => Ok(Self::BindingRefusal {
+                binding: BindingRef::new(
+                    BindingName::new(binding)
+                        .map_err(|_| reject("has a malformed binding name"))?,
+                ),
+                outcome: OutcomeName::new(outcome)
+                    .map_err(|_| reject("has a malformed outcome name"))?,
+            }),
             [binding, Self::BINDING, aspect] => Ok(Self::Binding {
                 binding: BindingRef::new(
                     BindingName::new(binding)
@@ -908,6 +930,7 @@ impl ScenarioId {
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
                  `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>`, \
+                 `<binding>/binding/refusal/<outcome>`, \
                  `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>`, \
                  `<view>/grant/read/denied`, `<view>/grant/read/admitted/<actor>` or \
                  `<domain>/authored/<name>`",
@@ -959,6 +982,9 @@ impl fmt::Display for ScenarioId {
             }
             Self::Binding { binding, aspect } => {
                 write!(f, "{binding}/{}/{aspect}", Self::BINDING)
+            }
+            Self::BindingRefusal { binding, outcome } => {
+                write!(f, "{binding}/{}/refusal/{outcome}", Self::BINDING)
             }
             Self::Authored { domain, name } => {
                 write!(f, "{domain}/{}/{name}", Self::AUTHORED)
@@ -2361,6 +2387,33 @@ pub enum ScenarioStep {
         /// The command it invokes.
         command: CommandRef,
     },
+    /// Require that this event was **not** published under this scenario's correlation, for the
+    /// step's whole eventual window (suite/[`ORDINARY`](crate::refusal_policy::ORDINARY), ess/22,
+    /// beyond10x/ess#269).
+    ///
+    /// What a refusal answered by `drop` or `retry` owes where its binding escalates another one:
+    /// [`ExpectNoEvent`](Self::ExpectNoEvent) reads only the last command's direct events, and an
+    /// escalation is the binding's, published after that command returned. Any occurrence seen
+    /// fails at once; none passes only at the deadline. A target that cannot observe the event
+    /// answers unsupported, never pass.
+    ExpectNoPublication {
+        /// The event that must not be published.
+        event: EventRef,
+    },
+    /// Require that this event was published **exactly** `count` times under this scenario's
+    /// correlation, for the step's whole eventual window (suite/[`ORDINARY`](crate::refusal_policy::ORDINARY),
+    /// ess/22, beyond10x/ess#269).
+    ///
+    /// What an escalated refusal owes: one escalation per escalating attempt, so a sender that
+    /// publishes it twice for one attempt fails. More than `count` seen fails at once; exactly
+    /// `count` passes only at the deadline. A target that cannot observe the event answers
+    /// unsupported, never pass.
+    ExpectPublicationCount {
+        /// The event.
+        event: EventRef,
+        /// Exactly how many times it is published.
+        count: NonZeroU32,
+    },
     /// Read a view (§14).
     ///
     /// No freshness field, deliberately. The specification already decided it: `read_your_writes`
@@ -2989,6 +3042,19 @@ mod tests {
                 "`{rendered}` did not survive its own rendering"
             );
         }
+    }
+
+    #[test]
+    fn a_selected_refusal_scenario_id_round_trips_and_refuses_a_malformed_outcome() {
+        let id = ScenarioId::BindingRefusal {
+            binding: BindingRef::new(BindingName::new("notify-ledger").expect("valid")),
+            outcome: OutcomeName::new("at-limit").expect("valid"),
+        };
+        let rendered = id.to_string();
+        assert_eq!(rendered, "notify-ledger/binding/refusal/at-limit");
+        assert_eq!(ScenarioId::parse(&rendered).expect("it parses"), id);
+        ScenarioId::parse("notify-ledger/binding/refusal/At_Limit").expect_err("not an outcome");
+        ScenarioId::parse("notify-ledger/binding/refusal").expect_err("no aspect of that name");
     }
 
     #[test]

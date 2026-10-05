@@ -1,8 +1,52 @@
 # Conditional bindings and per-refusal policies (#268/#194, #269)
 
 Status: coordinator contract approved by final independent design review on 2026-10-03.
-#268/#194 implemented (unit ess-w3-268-194-binding-conditions, 2026-10-04); #269 pending.
+#268/#194 implemented (unit ess-w3-268-194-binding-conditions, 2026-10-04); #269 implemented
+(unit ess-w4-269-refusal-policy, 2026-10-05), slice below.
 Source syntax is coordinated ess/22; ess/21 remains the one-time-response allocation.
+
+#269 as implemented, and where it stops short of this contract:
+
+- `ess_domain::binding::refusal` reads the policy-keyed shape whenever some policy writes a
+  selector (a list, or `outcomes:`/`except:`); every other `on_failure:` goes to the unchanged
+  universal reader over the same document value, so its spellings and diagnostics are unchanged.
+  The captured shape is validated per specification: below ess/22 it is refused by format, and
+  aliases resolve before the disjoint/exhaustive checks. `BindingSpec::refusals` (serialized
+  `on_refusal`) is the authority; `failure` is the fallback's word, `escalation` the table's
+  escalation event and `retry` its bound, a view validation checks against the table.
+- The IR carries `ResolvedBinding::refusal_policy` (serialized `on_refusal`, omitted otherwise):
+  every declared refusal in command order mapped to Drop/Retry(bound)/Escalate(event handle),
+  plus the fallback. `on_failure()` answers `ResolvedFailure::ByRefusal`; the legacy fields
+  derive from the table as above (so "which events may a binding publish" readers keep working)
+  and `ResolvedRefusalPolicy::agrees_with` checks the view.
+- The conformance interpreter selects the policy from each attempt's actual answer, counts the
+  occurrence's total attempts against the bound, answers an untyped port failure with the
+  fallback, records a pre-input failure as an unmet binding-input obligation with zero attempts,
+  and reports an escalation-builder failure without publishing or retrying. A scripted command
+  port (`Interpreted::script_binding_port`) is the test adapter control for refusal sequences and
+  untyped failures.
+- Synthesis files one scenario per declared refusal, `<binding>/binding/refusal/<outcome>`
+  (suite/36 and /37, the binding pair this bundle allocated), and no universal `on-failure`
+  scenario for such a binding. Native, Go and TypeScript runners admit the id only from /36.
+  The existing instructions were not sufficient after all: `expect_no_event` reads only the last
+  command's direct events, and an escalation is the binding's, so a sender escalating a refusal
+  it should drop or retry passed. Two steps join /36: `expect_no_publication {event}` and
+  `expect_publication_count {event, count}`, the event published no times, or exactly `count`
+  times, under the scenario's correlation through the deadline (native, Go and TypeScript
+  runners); an escalated refusal requires its escalation exactly once, so two publications on one
+  attempt fail. An unbounded retry is witnessed through the arrangement the universal `retry` uses.
+- `ess-diff/14` carries `binding/<name>/refusal-policy-changed` with the complete resolved
+  table, keyed by outcome, and fallback on each side (a reorder of the command's refusals is no
+  change); a delta holding one is written as /14, classified, even when nobody asked, because /14
+  is classified by definition. Docs, AsyncAPI and graph render the table.
+- **Not done:** generated Rust, Go and web dispatch refuse a refusal-selected policy by name
+  (`MissingRepresentation`, `bindings.<name>.on_failure`), as they refuse a bounded retry, so the
+  named controls run against the binding-running native fixture and in-memory senders only, not
+  against generated runtimes. A refusal-selected policy on an event an external channel
+  delivers gets no refusal scenarios; each is refused by name. Browser composition is not
+  implemented: the scenario player refuses such a model by name
+  (`$model.bindings.<name>.on_failure`) rather than show the fallback's word. Generated-runtime
+  controls for duplicate escalation remain owed with the generated dispatch.
 
 #268/#194 as implemented, and where it stops short of this contract:
 
