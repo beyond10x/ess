@@ -3021,12 +3021,12 @@ fn exercise_run_in(
     models.mark(caller::InvocationPhase::Arrange, &mut views.arranged);
 
     let mut steps = run.steps();
+    let held = held_before(ir, command, outcome, &run);
     if let Some(error) = &outcome.error {
-        let (input, before) = (&run.input, &run.before_settled);
-        steps.push(expect_error(ir, outcome, error, input, before));
+        steps.push(expect_error(ir, outcome, error, &run.input, &held));
     }
     for event in &emitted {
-        let literals = determined_payload(ir, outcome, event, &run.input, &run.before_settled);
+        let literals = determined_payload(ir, outcome, event, &run.input, &held);
         let mut shape = crate::response::event_shape(ir, event, outcome);
         absent_by_reference_leaves(ir, outcome, event, &run, &mut shape);
         let mut references = determined_identities(
@@ -3505,6 +3505,14 @@ fn run_as(
         (Vec::new(), Vec::new())
     };
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
+    collision_witness(
+        ir,
+        command,
+        outcome,
+        (&supplied, actor.as_ref()),
+        &mut setup,
+        &mut after_steps,
+    );
     if outcome
         .subject
         .as_ref()
@@ -3530,10 +3538,18 @@ fn run_as(
 
     let before_settled = setup.settled.clone();
     let mut settled = setup.settled;
+    // A `sets:` reading the held state (ess/23, beyond10x/ess#458) reads the state the arrangement
+    // left the row in.
+    let held = match outcome.subject.as_ref() {
+        Some(subject) if subject.effect != ResolvedEffect::Creates => {
+            with_held_state(ir, &before_settled, &subject.entity, setup.before.as_ref())
+        }
+        _ => before_settled.clone(),
+    };
     absorb(
         &mut settled,
         outcome,
-        super::synthesize::settled(ir, outcome, &supplied, &before_settled),
+        super::synthesize::settled(ir, outcome, &supplied, &held),
     );
     let mut run = Run {
         after_steps,
@@ -6535,6 +6551,7 @@ fn determined_fields(
             }
             // ess/14: asserted where the arrangement determined what they read, as a literal.
             ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
@@ -6801,13 +6818,27 @@ fn view_expectations(
             *captured == instance_name(&ir.entity(&subject.entity).name, fallback_distinction(run))
         })
     };
+    let rekeyed = rekeyed_identity(outcome, run, ir);
     let identity = match (instance, &subject.instance) {
+        // A re-key (ess/23, beyond10x/ess#429): the row is read under the identity written.
+        _ if rekeyed.is_some() => rekeyed.clone(),
         (Some(captured), ResolvedInstance::Observed { .. }) if absent_run(captured) => {
             Some(ScenarioValue::instance(captured.clone()))
         }
         _ => identity_of(subject, instance),
     };
     let identity = identity.as_ref();
+    // What names the row in each view: the identity written, for a re-key.
+    let naming = |view: &ResolvedView| -> BTreeMap<String, ScenarioValue> {
+        let named = &ir.entity(&subject.entity).identity.name;
+        match &rekeyed {
+            Some(value) if view.field(named).is_some() => {
+                [(named.clone(), value.clone())].into_iter().collect()
+            }
+            Some(_) => BTreeMap::new(),
+            None => identifying(ir, subject, instance, view),
+        }
+    };
     let projections = row_projections(ir);
     let Some(views) = projections.get(&subject.entity) else {
         return out;
@@ -6861,7 +6892,7 @@ fn view_expectations(
 
     for (view, admits_subject) in &decided {
         let name = ViewRef::new(view.name.clone());
-        let fields = identifying(ir, subject, instance, view);
+        let fields = naming(view);
         let expectations = if *admits_subject {
             // Every projected field whose value this scenario determined, beside the identity that
             // says which row. A view whose rows all carry the same wrong value passes `Contains`
@@ -6953,7 +6984,7 @@ fn view_expectations(
         // the filter is unknown for every row, so the subject's row is not shown. Last, so every
         // assertion above stays with the read that sends it.
         let left_out = optional_text_params(view);
-        let fields = identifying(ir, subject, instance, view);
+        let fields = naming(view);
         if *admits_subject && !left_out.is_empty() && !fields.is_empty() {
             let mut absent = bound(ir, view, settled, identity);
             absent.retain(|param, _| !left_out.contains(&param.as_str()));
@@ -6979,6 +7010,15 @@ fn view_expectations(
         out.views.insert(name);
     }
     out
+}
+
+/// The identity a re-keying `updates:` (ess/23, beyond10x/ess#429) leaves its row under, as this
+/// run wrote it; `None` for every other branch, and where the run did not determine it.
+fn rekeyed_identity(outcome: &ResolvedOutcome, run: &Run, ir: &EssIr) -> Option<ScenarioValue> {
+    let write = outcome.identity_write(ir)?;
+    run.settled
+        .get(&write.target)
+        .map(|held| held.value.clone())
 }
 
 /// Every instance name a run's arrangement and branch captured, and the subject's own: a companion
@@ -7386,6 +7426,52 @@ fn awaits_nothing(
         })
 }
 
+/// The key the lifecycle state a row held before a branch is settled under, for `{subject:
+/// state}` (ess/23, beyond10x/ess#458) to read: not a field name — it holds spaces — so nothing
+/// reading fields by name finds it.
+const HELD_STATE: &str = "held lifecycle state";
+
+/// `before`, with the lifecycle state `state` the arrangement left a row of `entity` in, where it
+/// left one, under [`HELD_STATE`]. A copy for the one read that needs it: the run's own maps never
+/// carry it, so a view or an arrangement reading fields sees what it saw before.
+fn with_held_state(
+    ir: &EssIr,
+    before: &BTreeMap<String, Determined>,
+    entity: &EntityHandle,
+    state: Option<&StateName>,
+) -> BTreeMap<String, Determined> {
+    let mut out = before.clone();
+    if let Some(state) = state {
+        out.insert(
+            HELD_STATE.to_owned(),
+            Determined {
+                value: ScenarioValue::literal(Node::Text(state.to_string())),
+                type_ref: ir.entity(entity).state_field().type_ref,
+            },
+        );
+    }
+    out
+}
+
+/// What the row a run's branch reads held before it, its held state included (ess/23,
+/// beyond10x/ess#458): [`with_held_state`] over the run's own `before_settled`.
+fn held_before(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    run: &Run,
+) -> BTreeMap<String, Determined> {
+    match command.selection_subject(outcome) {
+        Some(subject) => with_held_state(
+            ir,
+            &run.before_settled,
+            &subject.entity,
+            run.before.as_ref(),
+        ),
+        None => run.before_settled.clone(),
+    }
+}
+
 /// The value an `ess/14` source leaves in `field`, where the scenario determines it
 /// (`docs/design/value-expressions.md`).
 ///
@@ -7399,6 +7485,7 @@ fn awaits_nothing(
 /// | `{increment: n}` | `before`'s number for the target plus `n`, exactly |
 /// | `{input: f, else: …}` | what the invocation sent for `f`; else the `else:` literal, or nothing |
 /// | nested mapping | the struct, where every leaf is a determined literal |
+/// | `{subject: state}` | the state [`with_held_state`] put in `before` (ess/23) |
 fn expression_value(
     ir: &EssIr,
     field: &ess_compiler::ir::ResolvedPayloadField,
@@ -7424,6 +7511,11 @@ fn expression_value_at(
     match &field.value {
         ResolvedPayloadValue::SubjectField { field: read, .. } => {
             before.get(read).map(|held| held.value.clone())
+        }
+        // ess/23 (beyond10x/ess#458): the state the arrangement left the row in, where the caller
+        // passed it ([`with_held_state`]).
+        ResolvedPayloadValue::SubjectState { .. } => {
+            before.get(HELD_STATE).map(|held| held.value.clone())
         }
         // ess/16 (#166): the referenced row's value, which `related::arrange` settled — absent
         // where a reference it follows was left absent (ess/22, beyond10x/ess#285).
@@ -8059,6 +8151,7 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
+        | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => {}
     }
@@ -8495,6 +8588,7 @@ fn settled(
             }
             // ess/14 (`docs/design/value-expressions.md`): read against the row before this act.
             ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
@@ -9404,11 +9498,12 @@ fn arrange_toward_bound(
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     let states = &ir.entity(entity).lifecycle.states;
+    let identity = &ir.entity(entity).identity;
     for creator in drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
     {
-        let mapped: BTreeMap<&str, &str> = creator
+        let mut mapped: BTreeMap<&str, &str> = creator
             .outcome
             .sets
             .iter()
@@ -9420,6 +9515,10 @@ fn arrange_toward_bound(
                 _ => None,
             })
             .collect();
+        let published = steered_identity(identity, filter, creator.outcome);
+        if let Some(field) = published {
+            mapped.entry(identity.name.as_str()).or_insert(field);
+        }
         let Some(bound) = creator_bindings(creator, &mapped, fields) else {
             continue;
         };
@@ -9468,7 +9567,7 @@ fn arrange_toward_bound(
                 let Some(route) = route_from(ir, entity, drivers, &start.state, target) else {
                     continue;
                 };
-                let Ok(reached) = advance(
+                let Ok(mut reached) = advance(
                     ir,
                     entity,
                     start.clone(),
@@ -9480,6 +9579,7 @@ fn arrange_toward_bound(
                 ) else {
                     continue;
                 };
+                settle_identity(&mut reached, identity, published.and_then(|f| input.get(f)));
                 if accept(&reached)
                     && best
                         .as_ref()
@@ -9494,6 +9594,58 @@ fn arrange_toward_bound(
         }
     }
     None
+}
+
+/// The input `creator` publishes its new row's identity from, where `filter` reads the identity
+/// itself (a row-set selector, ess/23, beyond10x/ess#429), so the arrangement is steered through
+/// it; `None` for every other filter, which maps what it mapped before.
+fn steered_identity<'a>(
+    identity: &ess_compiler::ir::ResolvedField,
+    filter: &Predicate,
+    creator: &'a ResolvedOutcome,
+) -> Option<&'a str> {
+    filter
+        .fact_paths()
+        .iter()
+        .any(|path| path.segments().len() == 1 && path.namespace() == identity.name)
+        .then(|| published_identity_input(creator))
+        .flatten()
+}
+
+/// `reached` with the identity it was created under, where the steering chose it.
+fn settle_identity(
+    reached: &mut Arrangement,
+    identity: &ess_compiler::ir::ResolvedField,
+    value: Option<&Node>,
+) {
+    if let Some(value) = value {
+        reached
+            .settled
+            .entry(identity.name.clone())
+            .or_insert_with(|| Determined {
+                value: ScenarioValue::literal(value.clone()),
+                type_ref: identity.type_ref.clone(),
+            });
+    }
+}
+
+/// The input a creation publishes its new row's identity from, where its event payload reads one
+/// directly: `instance: name` beside `payload: {…: {name: input.name}}`.
+fn published_identity_input(outcome: &ResolvedOutcome) -> Option<&str> {
+    let subject = outcome.subject.as_ref()?;
+    let ResolvedInstance::Observed { event, field } = &subject.instance else {
+        return None;
+    };
+    outcome
+        .payload
+        .iter()
+        .filter(|payload| payload.event == *event)
+        .flat_map(|payload| &payload.fields)
+        .find(|source| source.target == field.name && source.conversion.is_none())
+        .and_then(|source| match &source.value {
+            ResolvedPayloadValue::InputField { field, .. } => Some(field.as_str()),
+            _ => None,
+        })
 }
 
 /// Map the requested fields onto creator inputs only where the capture does not invalidate a
@@ -10364,7 +10516,8 @@ fn refused_here(
         // wrong" check. The fields its `payload:` determines are compared (ess/19).
         refusal.error.as_ref().map(|error| {
             let named = ErrorRef::from(error);
-            let expected = expect_error(ir, refusal, error, &supplied, &arrangement.settled);
+            let before = with_held_state(ir, &arrangement.settled, handle, Some(state));
+            let expected = expect_error(ir, refusal, error, &supplied, &before);
             steps.push(expected);
             source.insert(named.clone().into());
             named
@@ -10727,9 +10880,11 @@ fn unknown_answer<'c>(ir: &EssIr, command: &'c ResolvedCommand) -> Option<&'c Re
     }
 }
 
-/// What a `deletes:` branch (ess/15) is witnessed by, after its own assertions: every immediate
-/// row view of the entity holds no row with the removed identity, and the same command sent for
-/// it again takes the unknown-instance answer — a deleted identity is one no record carries.
+/// What a `deletes:` branch (ess/15), or a re-keying `updates:` (ess/23, beyond10x/ess#429), is
+/// witnessed by, after its own assertions: every immediate row view of the entity holds no row with
+/// the removed — or left — identity, and the same command sent for it again takes the
+/// unknown-instance answer: a deleted identity, like one a record was re-keyed away from, is one no
+/// record carries.
 ///
 /// Immediate views only, as preservation is (`docs/design/outcome-shapes.md`, open question 2): an
 /// eventual view may still show the row, and waiting for its absence is a claim about lag.
@@ -10741,11 +10896,11 @@ fn deletion_witness(
     source: &mut BTreeSet<EssSemanticRef>,
 ) -> Vec<ScenarioStep> {
     let mut steps = Vec::new();
-    let Some(subject) = outcome
-        .subject
-        .as_ref()
-        .filter(|subject| subject.effect == ResolvedEffect::Deletes)
-    else {
+    // A re-key (ess/23, beyond10x/ess#429) leaves the old identity naming nothing, as a deletion
+    // does: the same absence, and the same request again answered as for an unknown instance.
+    let Some(subject) = outcome.subject.as_ref().filter(|subject| {
+        subject.effect == ResolvedEffect::Deletes || outcome.identity_write(ir).is_some()
+    }) else {
         return steps;
     };
     let projections = row_projections(ir);
@@ -10830,6 +10985,84 @@ fn accepts_nothing(
         after.push(ScenarioStep::ExpectViewUnchanged { view: view.clone() });
         setup.source.insert(view.into());
     }
+}
+
+/// What the collision refusal of a re-keying `updates:` (ess/23, beyond10x/ess#429) is witnessed by
+/// beside its own assertions: every immediate view of the entity read whole before the send and
+/// after it holding the same rows, and the same request sent again with the new identity the
+/// addressed row's own, answered by the same refusal and again changing nothing — a rename to the
+/// identity a record already carries is the collision. Nothing for any other branch.
+fn collision_witness(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    (supplied, actor): (&BTreeMap<String, ScenarioValue>, Option<&ActorRef>),
+    setup: &mut Setup,
+    after: &mut Vec<ScenarioStep>,
+) {
+    let Some(rekey) = command.outcomes.iter().find(|other| {
+        command
+            .collision_answer(ir, other)
+            .is_some_and(|answer| answer.name == outcome.name)
+    }) else {
+        return;
+    };
+    let (Some(subject), Some(write)) = (&rekey.subject, rekey.identity_write(ir)) else {
+        return;
+    };
+    let ResolvedPayloadValue::InputField { field: written, .. } = &write.value else {
+        return;
+    };
+    let views: Vec<ViewRef> = ir
+        .views()
+        .values()
+        .filter(|view| {
+            view.source == subject.entity
+                && view.consistency == ess_domain::view::Consistency::ReadYourWrites
+                && paging::read_whole(view)
+        })
+        .map(|view| ViewRef::new(view.name.clone()))
+        .collect();
+    let unchanged = |steps: &mut Vec<ScenarioStep>| {
+        for view in &views {
+            steps.push(ScenarioStep::QueryView {
+                view: view.clone(),
+                params: BTreeMap::new(),
+            });
+            steps.push(ScenarioStep::ExpectViewUnchanged { view: view.clone() });
+        }
+    };
+    for view in &views {
+        setup.steps.push(ScenarioStep::QueryView {
+            view: view.clone(),
+            params: BTreeMap::new(),
+        });
+        setup
+            .steps
+            .push(ScenarioStep::SnapshotView { view: view.clone() });
+        setup.source.insert(view.clone().into());
+    }
+    unchanged(after);
+    let (Some(error), Some(addressed)) = (
+        outcome.error.as_ref(),
+        supplied.get(&subject.instance.field().name),
+    ) else {
+        return;
+    };
+    let mut own = supplied.clone();
+    own.insert(written.clone(), addressed.clone());
+    after.push(ScenarioStep::ExecuteCommand {
+        caller: BTreeMap::new(),
+        command: CommandRef::new(command.name.clone()),
+        actor: actor.cloned(),
+        input: own.clone(),
+    });
+    after.push(ScenarioStep::ExpectOutcome {
+        outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
+    });
+    after.push(expect_error(ir, outcome, error, &own, &BTreeMap::new()));
+    after.push(ScenarioStep::ExpectNoEvents);
+    unchanged(after);
 }
 
 /// Every immediate view a scenario can read whole: read-your-writes, no parameters. What an

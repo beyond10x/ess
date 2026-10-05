@@ -482,6 +482,17 @@ fn evaluate_row(
             return Truth::Unknown;
         }
     }
+    // The identity, where the steps settled it and the predicate reads it: a row-set selector over
+    // the identity (ess/23, beyond10x/ess#429) reads the row's own key. Bound only then, so every
+    // other predicate binds the fields it bound before.
+    if values.contains_key(&declared.identity.name)
+        && predicate
+            .fact_paths()
+            .iter()
+            .any(|path| path.segments().len() == 1 && path.namespace() == declared.identity.name)
+    {
+        fields.push(declared.identity.clone());
+    }
     // The held state is bound as `state` at the lifecycle's own type, beside the stored fields.
     if reads_held_state(ir, entity, predicate) {
         let Some(held) = held else {

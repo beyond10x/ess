@@ -98,12 +98,13 @@ pub(crate) const CALENDAR_WINDOW: &str =
     "a calendar window (`window: {at, days, from, to, offset}`, ess/22)";
 pub(crate) const COMPENSATING_REFUSAL: &str =
     "a refusal that compensates (`compensates: true`, ess/22)";
+pub(crate) const IDENTITY_CHANGE: &str = "a re-key (`updates:` writing the identity, ess/23)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
     use ess_compiler::ir::ResolvedPayloadValue as Source;
     match value {
-        Source::SubjectField { .. } => SUBJECT_VALUE,
+        Source::SubjectField { .. } | Source::SubjectState { .. } => SUBJECT_VALUE,
         Source::Increment { .. } => INCREMENT,
         Source::InputOrGenerated { .. } => FALLBACK,
         Source::InputField { field, .. } if ess_domain::command::input_path::is_path(field) => {
@@ -408,7 +409,10 @@ pub const CONSTRUCTS: &[Construct] = &[
         SUBJECT_VALUE,
         LoweringCode::ValueExpressionUnsupported,
         Needs::EntityCore("a value expression over the stored row"),
-        &["tests/lowerable_subset.rs::each_value_expression_is_refused_under_its_own_construct"],
+        &[
+            "tests/lowerable_subset.rs::each_value_expression_is_refused_under_its_own_construct",
+            "tests/subject_state_source.rs::entity_runtime_refuses_subject_state_by_name",
+        ],
     ),
     refused(
         FALLBACK,
@@ -536,6 +540,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         Needs::EntityCore("a refusal that changes the instance it answers for"),
         &["tests/compensating_refusal.rs::a_compensating_refusal_is_refused_by_name"],
     ),
+    refused(
+        IDENTITY_CHANGE,
+        LoweringCode::IdentityChangeUnsupported,
+        Needs::EntityCore("an operation that moves the instance it names to another identity"),
+        &["tests/identity_changing_updates.rs::a_rename_is_refused_by_name"],
+    ),
 ];
 
 impl LoweringCode {
@@ -578,6 +588,7 @@ impl LoweringCode {
         Self::RowSetUnsupported,
         Self::CalendarWindowUnsupported,
         Self::CompensatingRefusalUnsupported,
+        Self::IdentityChangeUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -817,6 +828,11 @@ impl LoweringCode {
                 "CompensatingRefusalUnsupported",
                 COMPENSATING_REFUSAL,
                 "A refusal changes its addressed instance before answering its error.",
+            ),
+            Self::IdentityChangeUnsupported => (
+                "IdentityChangeUnsupported",
+                IDENTITY_CHANGE,
+                "An update writes the identity and re-keys its record.",
             ),
         }
     }

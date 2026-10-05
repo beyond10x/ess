@@ -2670,12 +2670,18 @@ impl<'a> Writer<'a> {
                 let storage = self.storage(&entity.name);
                 let receiver = self.receiver;
                 let reads_before = outcome_reads_before(outcome);
+                let reads_state = outcome_reads_state(outcome);
                 let before = self.locals.before.clone();
                 let mut commit = None;
+                if reads_state && !matches!(effect, ResolvedEffect::Moves { .. }) {
+                    let held_state = self.locals.held_state.clone();
+                    self.lines
+                        .push(&format!("{held_state} := {held_row}.State"));
+                }
                 match effect {
                     ResolvedEffect::Moves { transition } => {
                         let wrong_reads = self.wrong_state_reads(entity);
-                        if wrong_reads.0 {
+                        if wrong_reads.0 || reads_state {
                             let held_state = self.locals.held_state.clone();
                             self.lines
                                 .push(&format!("{held_state} := {held_row}.State"));
@@ -2773,6 +2779,7 @@ impl<'a> Writer<'a> {
                 .iter()
                 .find(|source| source.target == field.name)
             {
+                reads.0 |= reads_state(&source.value);
                 reads.1 |= reads_subject(&source.value);
                 continue;
             }
@@ -3010,6 +3017,22 @@ impl<'a> Writer<'a> {
     ) -> String {
         let target = &field.target_type;
         match &field.value {
+            // The held lifecycle state (ess/23, beyond10x/ess#458): the selected row's own, or the
+            // state captured before the branch moved it.
+            ResolvedPayloadValue::SubjectState { type_ref } => {
+                let (row, _) =
+                    before.expect("the plan admits `{subject: state}` only where a row is held");
+                let read = if row == format!("{}.Data", self.locals.held) {
+                    format!("{}.State", self.locals.held)
+                } else {
+                    self.locals.held_state.clone()
+                };
+                if type_ref == target {
+                    read
+                } else {
+                    self.some(&read)
+                }
+            }
             ResolvedPayloadValue::InputField {
                 field: source,
                 type_ref,
@@ -3258,6 +3281,27 @@ impl<'a> Writer<'a> {
 }
 
 /// `true` where the branch reads the held row as it was before the outcome.
+/// Whether `outcome`'s `sets:` or event payload reads the held lifecycle state (ess/23).
+fn outcome_reads_state(outcome: &ResolvedOutcome) -> bool {
+    outcome.sets.iter().any(|set| reads_state(&set.value))
+        || outcome
+            .payload
+            .iter()
+            .flat_map(|payload| &payload.fields)
+            .any(|field| reads_state(&field.value))
+}
+
+/// Whether one value source reads the held lifecycle state, `{subject: state}` (ess/23).
+fn reads_state(value: &ResolvedPayloadValue) -> bool {
+    match value {
+        ResolvedPayloadValue::SubjectState { .. } => true,
+        ResolvedPayloadValue::Struct { fields } => {
+            fields.iter().any(|field| reads_state(&field.value))
+        }
+        _ => false,
+    }
+}
+
 fn outcome_reads_before(outcome: &ResolvedOutcome) -> bool {
     outcome.sets.iter().any(|set| reads_subject(&set.value))
         || outcome

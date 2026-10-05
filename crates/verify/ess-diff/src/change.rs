@@ -56,6 +56,36 @@ use ess_conformance::scenario::{
 };
 use ess_domain::name::{QualifiedName, Version};
 
+/// The words an `outcome-sets-changed` entry ends with where it writes the identity of the row an
+/// `updates:` re-keys (ess/23, beyond10x/ess#429, `docs/design/identity-changing-updates.md`):
+/// `name <- input.new_name, re-keying the record`.
+pub(crate) const REKEYING: &str = ", re-keying the record";
+
+/// The clause an `outcome-sets-changed` line says: what the branch writes moved, and — where one
+/// side writes the identity of the row an `updates:` re-keys (ess/23, beyond10x/ess#429) — that
+/// the branch now, or no longer, re-keys the record by it.
+fn sets_clause(outcome: &str, before: &[String], after: &[String]) -> String {
+    let rekeyed = |entries: &[String]| {
+        entries.iter().find_map(|entry| {
+            entry
+                .strip_suffix(REKEYING)
+                .and_then(|written| written.split(" <- ").next())
+                .map(str::to_owned)
+        })
+    };
+    match (rekeyed(before), rekeyed(after)) {
+        (None, Some(identity)) => format!(
+            "outcome `{outcome}` determined subject fields changed; it now re-keys the record by \
+             `{identity}`"
+        ),
+        (Some(identity), None) => format!(
+            "outcome `{outcome}` determined subject fields changed; it no longer re-keys the \
+             record by `{identity}`"
+        ),
+        _ => format!("outcome `{outcome}` determined subject fields changed"),
+    }
+}
+
 /// Where a change sits in the canonical order.
 ///
 /// Design §60 makes the category order a **format contract** rather than an accident of iteration,
@@ -2669,9 +2699,11 @@ impl CommandChange {
                 before,
                 after,
             } => format!("outcome `{outcome}` complete refusal observation {before} → {after}"),
-            Self::OutcomeSetsChanged { outcome, .. } => {
-                format!("outcome `{outcome}` determined subject fields changed")
-            }
+            Self::OutcomeSetsChanged {
+                outcome,
+                before,
+                after,
+            } => sets_clause(outcome, before, after),
             Self::OutcomeRefusesChanged {
                 outcome,
                 before,

@@ -80,6 +80,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | `RowSetUnsupported` | entity-core: a query over the rows of an entity, read atomically in one decision |
 | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | `CalendarWindowUnsupported` | entity-core: a weekday and time-of-day operand at a fixed offset, and a clock operand for `at: now` |
 | a refusal that compensates (`compensates: true`, ess/22) | `CompensatingRefusalUnsupported` | entity-core: a refusal that changes the instance it answers for |
+| a re-key (`updates:` writing the identity, ess/23) | `IdentityChangeUnsupported` | entity-core: an operation that moves the instance it names to another identity |
 
 ## Every code
 
@@ -124,5 +125,6 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `RowSetUnsupported` | a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | A branch reads the rows a selector selects, or one value of the one row it selects. |
 | `CalendarWindowUnsupported` | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | A guard holds an instant to a weekly window at a fixed offset. |
 | `CompensatingRefusalUnsupported` | a refusal that compensates (`compensates: true`, ess/22) | A refusal changes its addressed instance before answering its error. |
+| `IdentityChangeUnsupported` | a re-key (`updates:` writing the identity, ess/23) | An update writes the identity and re-keys its record. |
 
 [ess-lowering-end]: #

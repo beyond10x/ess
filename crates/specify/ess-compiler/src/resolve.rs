@@ -2785,6 +2785,22 @@ impl<'a> Resolver<'a> {
         subject: Option<&ResolvedEntity>,
     ) -> Option<ResolvedPayloadField> {
         let (value, from) = match source {
+            // The held lifecycle state (ess/23, beyond10x/ess#458), which `ess-domain` admitted on
+            // an existing row only and typed as the entity's `State`.
+            PayloadSource::SubjectField { field }
+                if field == ess_domain::entity::EntitySpec::STATE && subject.is_some() =>
+            {
+                let state = subject
+                    .map(ResolvedEntity::state_field)
+                    .expect("guarded above")
+                    .type_ref;
+                (
+                    ResolvedPayloadValue::SubjectState {
+                        type_ref: state.clone(),
+                    },
+                    state,
+                )
+            }
             PayloadSource::SubjectField { field } => {
                 let read = subject.and_then(|entity| {
                     std::iter::once(&entity.identity)

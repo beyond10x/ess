@@ -326,6 +326,30 @@ impl Rows {
     }
 }
 
+/// The literal values of a sent input, and of an input naming an arranged instance whose identity
+/// the steps named by a literal: the own-identity collision of a re-key (ess/23,
+/// beyond10x/ess#429) sends the addressed row's own instance as the new identity.
+fn resolved_literals(
+    supplied: &BTreeMap<String, ScenarioValue>,
+    rows: &Rows,
+) -> BTreeMap<String, Node> {
+    let mut out = literals(supplied);
+    for (field, value) in supplied {
+        let ScenarioValue::Instance { instance } = value else {
+            continue;
+        };
+        let named = rows
+            .held
+            .iter()
+            .filter(|row| row.instance.as_ref() == Some(instance))
+            .find_map(|row| row.identity.as_ref().and_then(ScenarioValue::as_literal));
+        if let Some(identity) = named {
+            out.insert(field.clone(), identity.clone());
+        }
+    }
+    out
+}
+
 /// The literal values of a sent input, as the predicates over it read them.
 fn literals(supplied: &BTreeMap<String, ScenarioValue>) -> BTreeMap<String, Node> {
     supplied
@@ -394,7 +418,7 @@ impl<'a> Reading<'a> {
             command,
             selection,
             supplied: supplied.clone(),
-            input: literals(supplied),
+            input: resolved_literals(supplied, rows),
             subject,
             rows: candidates,
         })
@@ -404,7 +428,13 @@ impl<'a> Reading<'a> {
     fn closed(&self, predicate: &Predicate) -> Result<Predicate, String> {
         let empty = BTreeMap::new();
         let subject = self.subject.as_ref().unwrap_or(&empty);
-        let written = written_in(predicate, &|path| subject_value(path, subject));
+        // The input the send names is written in where it is literal, as the arrangement reads it: an
+        // input naming an arranged instance — the addressed row of an `updates:` (ess/23,
+        // beyond10x/ess#429) — leaves the rest of the input unflattened, and the literal it compares
+        // with would read nothing.
+        let written = written_in(predicate, &|path| {
+            subject_value(path, subject).or_else(|| input_value(path, &self.input))
+        });
         if written.fact_paths().iter().any(|path| {
             path.segments().len() > 1
                 && path.namespace() == ess_domain::command::set_effects::SUBJECT_NAMESPACE
@@ -417,10 +447,32 @@ impl<'a> Reading<'a> {
     }
 
     fn truth(&self, row: &Row, predicate: &Predicate) -> Truth {
+        // The row's own identity, where the steps named it by a literal: a selector over the
+        // identity (ess/23, beyond10x/ess#429) reads the key the row is stored under.
+        // Only where the predicate reads the identity: every other predicate binds what it bound.
+        let identity = &self.ir.entity(&row.entity).identity;
+        let reads_identity = predicate
+            .fact_paths()
+            .iter()
+            .any(|path| path.segments().len() == 1 && path.namespace() == identity.name);
+        let mut settled = std::borrow::Cow::Borrowed(&row.settled);
+        if let Some(value) = row
+            .identity
+            .as_ref()
+            .filter(|value| reads_identity && value.as_literal().is_some())
+        {
+            settled
+                .to_mut()
+                .entry(identity.name.clone())
+                .or_insert_with(|| Determined {
+                    value: value.clone(),
+                    type_ref: identity.type_ref.clone(),
+                });
+        }
         subject_fact::row_truth_with(
             self.ir,
             &row.entity,
-            &row.settled,
+            &settled,
             &row.unwritten,
             Some(&row.state),
             predicate,
@@ -761,6 +813,15 @@ fn apply(
             };
             absorb(&mut row.settled, outcome, determined);
             row.unwritten = still_unwritten(&row.unwritten, outcome);
+            // A re-key (ess/23, beyond10x/ess#429): the row answers to the identity written, and
+            // the instance name the arrangement captured names the identity it left.
+            if let Some(write) = outcome.identity_write(ir) {
+                row.identity = row
+                    .settled
+                    .get(&write.target)
+                    .map(|held| held.value.clone());
+                row.instance = None;
+            }
             if let ResolvedEffect::Moves { transition } = &subject.effect {
                 row.state = transition.to.clone();
             }

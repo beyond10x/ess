@@ -132,12 +132,46 @@ pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Strin
         }
     }
     existence_identity(command)?;
-    related_composition(ir, command)?;
+    related_composition(ir, command).and_then(|()| rekey_composition(ir, command, guarded))?;
     for outcome in &command.outcomes {
         self::outcome(ir, command, outcome, guarded, selection)
             .map_err(|construct| format!("{construct}, in `{}`", outcome.name))?;
     }
     Ok(())
+}
+
+/// `Err` for a re-key (ess/23, beyond10x/ess#429) beside a guard over the addressed or a related
+/// row: a re-key is generated where the addressed row is read by its branch alone, and the
+/// collision refusal answers before it.
+fn rekey_composition(ir: &EssIr, command: &ResolvedCommand, guarded: bool) -> Result<(), String> {
+    if command
+        .outcomes
+        .iter()
+        .any(|outcome| outcome.identity_write(ir).is_some())
+        && (guarded || related(command).is_some())
+    {
+        return Err(
+            "a re-key (`updates:` writing the identity) beside a guard over the addressed or a \
+             related row"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+/// Whether `outcome` is the collision refusal of a re-key `command` declares (ess/23,
+/// beyond10x/ess#429): the one row-set guard an emitter answers, by looking the written identity up
+/// through the entity's storage port.
+pub(crate) fn collision_answer(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> bool {
+    command.outcomes.iter().any(|other| {
+        command
+            .collision_answer(ir, other)
+            .is_some_and(|answer| answer.name == outcome.name)
+    })
 }
 
 /// Every outcome construct, checked for one branch.
@@ -161,6 +195,10 @@ fn outcome(
     }
     let selection_entity = selection.map(|subject| ir.entity(&subject.entity));
     match &outcome.condition {
+        // The collision refusal of a re-key (ess/23, beyond10x/ess#429) selects the rows whose
+        // identity is the one written: one lookup by identity through the storage port, which the
+        // behaviour makes.
+        ResolvedCondition::RelatedSet { .. } if collision_answer(ir, command, outcome) => {}
         // Generated storage enumerates no rows by a selector in this cut (ess/22, beyond10x/ess#228,
         // #299): the command stays an obligation, named.
         ResolvedCondition::RelatedSet { .. } => {
@@ -313,12 +351,20 @@ fn outcome(
         (_, ResolvedInstance::Supplied { .. }) => {}
     }
     let held = !matches!(subject.effect, ResolvedEffect::Creates);
+    // The identity is written by a re-key (ess/23, beyond10x/ess#429), and by nothing else.
+    let rekey = outcome
+        .identity_write(ir)
+        .map(|write| write.target.as_str());
     for set in &outcome.sets {
-        entity
-            .fields
-            .iter()
-            .find(|field| field.name == set.target)
-            .ok_or_else(|| format!("a `sets:` of `{}`, not a field of the entity", set.target))?;
+        if rekey != Some(set.target.as_str()) {
+            entity
+                .fields
+                .iter()
+                .find(|field| field.name == set.target)
+                .ok_or_else(|| {
+                    format!("a `sets:` of `{}`, not a field of the entity", set.target)
+                })?;
+        }
         value(ir, command, set, held.then_some(entity), true)?;
     }
     payloads(ir, command, outcome, held.then_some(entity))
@@ -371,6 +417,18 @@ fn value(
             if held.is_none() {
                 return Err(format!(
                     "`{{subject:}}` for `{}` on a branch that holds no subject",
+                    field.target
+                ));
+            }
+            if !assignable(type_ref, target) {
+                return Err(format!("a value of another type for `{}`", field.target));
+            }
+        }
+        // The held lifecycle state (ess/23, beyond10x/ess#458), read as the row is.
+        ResolvedPayloadValue::SubjectState { type_ref } => {
+            if held.is_none() {
+                return Err(format!(
+                    "`{{subject: state}}` for `{}` on a branch that holds no subject",
                     field.target
                 ));
             }

@@ -1258,6 +1258,13 @@ impl Writer<'_> {
                 );
             }
         }
+        for outcome in command
+            .outcomes
+            .iter()
+            .filter(|outcome| determined::collision_answer(self.ir, command, outcome))
+        {
+            out.push_str(&self.collision_lookup(outcome));
+        }
         let guarded = determined::subject_guarded(command);
         let held = if guarded {
             let subject = determined::selection_subject(command)
@@ -1402,6 +1409,44 @@ impl Writer<'_> {
             "        // `{}`: an identity a record already carries, before any branch is taken.\n        \
              if {found} {{\n            return Ok({answer});\n        }}\n",
             existing.name
+        )
+    }
+
+    /// The collision refusal of a re-key (ess/23, beyond10x/ess#429), answered after the
+    /// input-guarded refusals and the addressed row's existence and before any branch is taken: a
+    /// row already carries the identity the re-key writes — the addressed row's own included, so a
+    /// rename to the identity a record already carries is the collision. An identity no row
+    /// carries is left to the branch, which answers it as unknown.
+    fn collision_lookup(&mut self, refusal: &ResolvedOutcome) -> String {
+        let command = self.command;
+        let ir = self.ir;
+        let (subject, written) = command
+            .outcomes
+            .iter()
+            .find(|outcome| {
+                command
+                    .collision_answer(ir, outcome)
+                    .is_some_and(|answer| answer.name == refusal.name)
+            })
+            .and_then(|rekey| {
+                let write = rekey.identity_write(ir)?;
+                let ResolvedPayloadValue::InputField { field, .. } = &write.value else {
+                    return None;
+                };
+                Some((rekey.subject.as_ref()?, field))
+            })
+            .expect("the plan admits a collision refusal beside the re-key it answers");
+        let storage = self.storage(&ir.entity(&subject.entity).name);
+        let answer = self.variant(refusal, Held::None, None);
+        format!(
+            "        // `{}`: a row carries the identity the re-key writes from `{written}`, the \
+             addressed row's\n        // own included; an identity no row carries is answered \
+             by the branch.\n        if {storage}::get(&self.ports, &input.{}).is_some() && \
+             {storage}::get(&self.ports, &input.{}).is_some() {{\n            return \
+             Ok({answer});\n        }}\n",
+            refusal.name,
+            name::value_ident(&subject.instance.field().name),
+            name::value_ident(written),
         )
     }
 
@@ -1819,12 +1864,13 @@ impl Writer<'_> {
                      else {{\n{unknown}            }};\n            let _ = &held;"
                 );
                 let reads_before = outcome_reads_before(outcome);
+                let reads_state = outcome_reads_state(outcome);
                 let mut commit = String::new();
                 match effect {
                     ResolvedEffect::Moves { transition } => {
                         let wrong = self.wrong_state_answer();
                         let wrong_reads = self.wrong_state_reads(entity);
-                        if wrong_reads.0 {
+                        if wrong_reads.0 || reads_state {
                             out.push_str("            let held_state = held.state;\n");
                         }
                         if reads_before || wrong_reads.1 {
@@ -1849,6 +1895,9 @@ impl Writer<'_> {
                             writeln!(commit, "            {storage}::put(&mut self.ports, next);");
                     }
                     ResolvedEffect::Updates | ResolvedEffect::Preserves => {
+                        if reads_state {
+                            out.push_str("            let held_state = held.state;\n");
+                        }
                         if reads_before {
                             out.push_str("            let before = held.data.clone();\n");
                         }
@@ -1856,6 +1905,15 @@ impl Writer<'_> {
                             matches!(effect, ResolvedEffect::Updates) || !outcome.sets.is_empty();
                         if writes {
                             self.write_sets(&mut out, outcome, "held", entity);
+                            // A re-key (ess/23, beyond10x/ess#429): the row leaves the identity
+                            // it was read under, and is inserted under the one written.
+                            if outcome.identity_write(self.ir).is_some() {
+                                let _ = writeln!(
+                                    commit,
+                                    "            {storage}::delete(&mut self.ports, \
+                                     &input.{identity});"
+                                );
+                            }
                             let _ = writeln!(
                                 commit,
                                 "            {storage}::put(&mut self.ports, next);"
@@ -1863,6 +1921,9 @@ impl Writer<'_> {
                         }
                     }
                     ResolvedEffect::Deletes => {
+                        if reads_state {
+                            out.push_str("            let held_state = held.state;\n");
+                        }
                         if reads_before {
                             out.push_str("            let before = held.data.clone();\n");
                         }
@@ -1909,6 +1970,7 @@ impl Writer<'_> {
                 .iter()
                 .find(|source| source.target == field.name)
             {
+                reads.0 |= reads_state(&source.value);
                 reads.1 |= reads_subject(&source.value);
                 continue;
             }
@@ -2192,6 +2254,15 @@ impl Writer<'_> {
             }
         };
         match &field.value {
+            // The held lifecycle state (ess/23, beyond10x/ess#458): the selected row's own, or the
+            // state captured before the branch moved it.
+            ResolvedPayloadValue::SubjectState { type_ref } => wrap(
+                type_ref,
+                match before.expect("the plan admits `{subject: state}` only where a row is held") {
+                    "held.data" => "held.state".to_owned(),
+                    _ => "held_state".to_owned(),
+                },
+            ),
             ResolvedPayloadValue::InputField {
                 field: source,
                 type_ref,
@@ -2769,6 +2840,27 @@ fn outcome_reads_before(outcome: &ResolvedOutcome) -> bool {
             .iter()
             .flat_map(|payload| &payload.fields)
             .any(|field| reads_subject(&field.value))
+}
+
+/// Whether `outcome`'s `sets:` or event payload reads the held lifecycle state (ess/23).
+fn outcome_reads_state(outcome: &ResolvedOutcome) -> bool {
+    outcome.sets.iter().any(|set| reads_state(&set.value))
+        || outcome
+            .payload
+            .iter()
+            .flat_map(|payload| &payload.fields)
+            .any(|field| reads_state(&field.value))
+}
+
+/// Whether one value source reads the held lifecycle state, `{subject: state}` (ess/23).
+fn reads_state(value: &ResolvedPayloadValue) -> bool {
+    match value {
+        ResolvedPayloadValue::SubjectState { .. } => true,
+        ResolvedPayloadValue::Struct { fields } => {
+            fields.iter().any(|field| reads_state(&field.value))
+        }
+        _ => false,
+    }
 }
 
 /// Whether one value source reads the row as it was before the outcome.

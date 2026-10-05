@@ -1,0 +1,109 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.docs
+summary: Documents whose refusals say which state the document holds and which one was asked for.
+types:
+  - {name: demo.docs.DocId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.docs.Doc
+    identity: {name: doc_id, type: demo.docs.DocId}
+    fields:
+      - {name: previous, type: Optional<demo.docs.Doc.State>}
+    lifecycle:
+      initial: Draft
+      states: [Draft, Published, Archived]
+      terminal: [Archived]
+      transitions:
+        - {name: publish, from: [Draft], to: Published}
+        - {name: archive, from: [Published], to: Archived}
+errors:
+  - name: demo.docs.StateConflict
+    summary: The document rests in a state the move does not start from.
+    fields:
+      - {name: doc_id, type: demo.docs.DocId}
+      - {name: current, type: demo.docs.Doc.State}
+      - {name: requested, type: demo.docs.Doc.State}
+  - name: demo.docs.NoSuchDoc
+    summary: No document carries the identity.
+    fields:
+      - {name: doc_id, type: demo.docs.DocId}
+events:
+  - name: demo.docs.DocCreated
+    fields:
+      - {name: doc_id, type: demo.docs.DocId}
+  - name: demo.docs.DocPublished
+    fields:
+      - {name: doc_id, type: demo.docs.DocId}
+      - {name: from, type: demo.docs.Doc.State}
+  - name: demo.docs.DocArchived
+    fields:
+      - {name: doc_id, type: demo.docs.DocId}
+actors:
+  - {name: demo.docs.Editor, may: [demo.docs.CreateDoc, demo.docs.PublishDoc, demo.docs.ArchiveDoc]}
+commands:
+  - name: demo.docs.CreateDoc
+    input:
+      - {name: doc_id, type: demo.docs.DocId}
+    outcomes:
+      - name: created
+        creates: demo.docs.Doc
+        instance: doc_id
+        emits: [demo.docs.DocCreated]
+        payload:
+          demo.docs.DocCreated: {doc_id: input.doc_id}
+  - name: demo.docs.PublishDoc
+    input:
+      - {name: doc_id, type: demo.docs.DocId}
+    outcomes:
+      - name: published
+        moves: demo.docs.Doc.publish
+        instance: doc_id
+        emits: [demo.docs.DocPublished]
+        payload:
+          demo.docs.DocPublished: {doc_id: input.doc_id, from: {subject: state}}
+      - name: conflict
+        wrong_state: true
+        error: demo.docs.StateConflict
+        payload:
+          demo.docs.StateConflict: {doc_id: input.doc_id, current: {subject: state}, requested: Published}
+      - name: missing
+        unknown_instance: true
+        error: demo.docs.NoSuchDoc
+        payload:
+          demo.docs.NoSuchDoc: {doc_id: input.doc_id}
+  - name: demo.docs.ArchiveDoc
+    input:
+      - {name: doc_id, type: demo.docs.DocId}
+    outcomes:
+      - name: archived
+        moves: demo.docs.Doc.archive
+        instance: doc_id
+        sets: {previous: {subject: state}}
+        emits: [demo.docs.DocArchived]
+        payload:
+          demo.docs.DocArchived: {doc_id: input.doc_id}
+      - name: conflict
+        wrong_state: true
+        error: demo.docs.StateConflict
+        payload:
+          demo.docs.StateConflict: {doc_id: input.doc_id, current: {subject: state}, requested: Archived}
+      - name: missing
+        unknown_instance: true
+        error: demo.docs.NoSuchDoc
+        payload:
+          demo.docs.NoSuchDoc: {doc_id: input.doc_id}
+views:
+  - name: demo.docs.Docs
+    source: demo.docs.Doc
+    consistency: read_your_writes
+    fields:
+      - {name: doc_id, type: demo.docs.DocId}
+      - {name: state, type: demo.docs.Doc.State}
+      - {name: previous, type: Optional<demo.docs.Doc.State>}
+components:
+  - component: docs-service
+    owns: {domains: [demo.docs]}
+    accepts: {commands: [demo.docs.CreateDoc, demo.docs.PublishDoc, demo.docs.ArchiveDoc]}
+    publishes: {events: [demo.docs.DocCreated, demo.docs.DocPublished, demo.docs.DocArchived]}
+    reached_by: network

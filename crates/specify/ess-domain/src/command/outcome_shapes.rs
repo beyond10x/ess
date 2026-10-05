@@ -581,6 +581,8 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     for (index, precondition) in preconditions.iter().enumerate() {
         errors.extend(validate_precondition(spec, index, precondition));
     }
+    // The identity write of an `updates:` (ess/23), checked beside the pair it may not join.
+    errors.extend(super::identity_write::validate(spec));
     errors
 }
 

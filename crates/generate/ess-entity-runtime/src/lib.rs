@@ -526,6 +526,10 @@ pub enum LoweringCode {
     /// true`, beyond10x/ess#197): an entity-core refusal changes nothing, and lowering the branch
     /// as a refusal would drop the change the specification promises.
     CompensatingRefusalUnsupported,
+    /// An `updates:` writes the entity's identity and re-keys the record (ess/23,
+    /// beyond10x/ess#429): an entity-core operation acts on the instance its request names, and has
+    /// no move of an instance to another identity.
+    IdentityChangeUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1415,6 +1419,55 @@ impl Projector<'_> {
         refused
     }
 
+    /// Refuses every branch of `command` that re-keys its record (ess/23, an `updates:` whose
+    /// `sets:` writes the identity, beyond10x/ess#429), and says whether it refused one: such a
+    /// command is not lowered further.
+    fn refuse_identity_changes(&mut self, command: &ResolvedCommand) -> bool {
+        let mut refused = false;
+        for outcome in &command.outcomes {
+            let Some(write) = outcome.identity_write(self.service.source()) else {
+                continue;
+            };
+            self.diagnostic(
+                LoweringCode::IdentityChangeUnsupported,
+                format!("{}.{}.sets.{}", command.name, outcome.name.as_str(), write.target),
+                "a branch that re-keys its record (ess/23, an `updates:` writing the identity) has \
+                 no Entity Runtime definition; an entity-core operation acts on the instance its \
+                 request names and cannot move it to another identity",
+            );
+            refused = true;
+        }
+        refused
+    }
+
+    /// Refuses every error field of `command` read from the held lifecycle state, `{subject:
+    /// state}` (ess/23, beyond10x/ess#458), by the `{subject: …}` row every such value is refused
+    /// under: an entity-core refusal carries no value read from the row it answers for. An event
+    /// payload or `sets:` reading it is refused where its value is lowered.
+    fn refuse_held_state_errors(&mut self, command: &ResolvedCommand) {
+        fn reads(field: &ResolvedPayloadField) -> bool {
+            match &field.value {
+                ResolvedPayloadValue::SubjectState { .. } => true,
+                ResolvedPayloadValue::Struct { fields } => fields.iter().any(reads),
+                _ => false,
+            }
+        }
+        for outcome in &command.outcomes {
+            if let Some(field) = outcome.error_payload.iter().find(|field| reads(field)) {
+                self.diagnostic_naming(
+                    LoweringCode::ValueExpressionUnsupported,
+                    subset::value_expression(&field.value),
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    format!(
+                        "`{}` in the error's `{}` has no entity-core lowering",
+                        field.value.describe(),
+                        field.target
+                    ),
+                );
+            }
+        }
+    }
+
     /// Refuses every set effect of `command` by name (ess/16, beyond10x/ess#167, #175), and says
     /// whether it refused one: such a command is not lowered further.
     fn refuse_set_effects(&mut self, command: &ResolvedCommand) -> bool {
@@ -1576,7 +1629,9 @@ impl Projector<'_> {
         let set_effects = self.refuse_set_effects(command);
         let related_guards = self.refuse_related_guards(command);
         let compensating = self.refuse_compensating_refusals(command);
-        if set_effects || related_guards || compensating {
+        let rekeying = self.refuse_identity_changes(command);
+        self.refuse_held_state_errors(command);
+        if set_effects || related_guards || compensating || rekeying {
             return false;
         }
         let mut targets = BTreeSet::new();
@@ -2136,6 +2191,7 @@ impl Projector<'_> {
                         ResolvedPayloadValue::Literal { .. }
                         | ResolvedPayloadValue::Cleared
                         | ResolvedPayloadValue::SubjectField { .. }
+                        | ResolvedPayloadValue::SubjectState { .. }
                         | ResolvedPayloadValue::Increment { .. }
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
@@ -2877,6 +2933,7 @@ impl Projector<'_> {
                 None
             }
             value @ (ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
@@ -3727,6 +3784,7 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
     matches!(
         value,
         ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }

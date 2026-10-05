@@ -977,6 +977,25 @@ pub struct ResolvedOutcome {
     pub affects: Vec<ResolvedAffect>,
 }
 
+impl ResolvedOutcome {
+    /// The `sets:` entry that writes the identity of the row an `updates:` addresses, where the
+    /// branch writes one: the branch re-keys the record (ess/23, beyond10x/ess#429,
+    /// `docs/design/identity-changing-updates.md`). The row read under `instance:` comes to rest
+    /// under the identity this entry writes, every field `sets:` does not name carried over, and
+    /// the old identity names nothing.
+    ///
+    /// Derived rather than carried: the IR of a re-key is the IR the same document compiled to
+    /// before `ess/23` gave it this meaning, so no model's bytes move.
+    pub fn identity_write(&self, ir: &EssIr) -> Option<&ResolvedPayloadField> {
+        let subject = self
+            .subject
+            .as_ref()
+            .filter(|subject| subject.effect == ResolvedEffect::Updates)?;
+        let identity = &ir.entity(&subject.entity).identity.name;
+        self.sets.iter().find(|set| set.target == *identity)
+    }
+}
+
 /// Every stored row of an entity a filter selects, and what a set outcome does to each (ess/16).
 ///
 /// A `moves:` takes the selected rows resting in the transition's `from` states and skips the
@@ -1059,6 +1078,16 @@ pub enum ResolvedPayloadValue {
         /// The entity field read.
         field: String,
         /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// The lifecycle state the addressed row held immediately before this outcome (ess/23,
+    /// beyond10x/ess#458): `{subject: state}`, read as `when_subject` and invariants read `state`.
+    ///
+    /// A variant of its own rather than [`Self::SubjectField`] naming `state`, so a reader that
+    /// looks a field up among the entity's declared fields never meets one that is not there. Only
+    /// a model using it carries it, so every other model keeps its bytes.
+    SubjectState {
+        /// The entity's `State` type.
         type_ref: ResolvedTypeRef,
     },
     /// The subject's value of the target field before this outcome, plus `by` (ess/14, `sets:`).
@@ -1532,6 +1561,7 @@ impl ResolvedPayloadValue {
             Self::Generated => "implementation-generated".to_owned(),
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
+            Self::SubjectState { .. } => "the state the subject held before the outcome".to_owned(),
             Self::RelatedField {
                 via,
                 through,
@@ -1721,6 +1751,54 @@ fn unstated_secrecy(secret: &bool) -> bool {
 }
 
 impl ResolvedCommand {
+    /// The refusal a re-keying `outcome` (see [`ResolvedOutcome::identity_write`]) takes for a new
+    /// identity another row already carries: the sibling refusal guarded by exactly
+    /// `when_related: {entity: <the entity>, where: <identity> == input.<field>, exists: true}`,
+    /// over the input the identity is written from (ess/23, beyond10x/ess#429). `ess-domain`
+    /// refuses a re-key without one, so every re-key that reaches the IR has it.
+    pub fn collision_answer<'a>(
+        &'a self,
+        ir: &EssIr,
+        outcome: &ResolvedOutcome,
+    ) -> Option<&'a ResolvedOutcome> {
+        let write = outcome.identity_write(ir)?;
+        let ResolvedPayloadValue::InputField { field, .. } = &write.value else {
+            return None;
+        };
+        let entity = &outcome.subject.as_ref()?.entity;
+        let identity = &ir.entity(entity).identity.name;
+        let input = format!(
+            "{}.{field}",
+            ess_domain::command::subject_fact::INPUT_NAMESPACE
+        );
+        self.outcomes.iter().find(|candidate| {
+            candidate.error.is_some()
+                && matches!(
+                    &candidate.condition,
+                    ResolvedCondition::RelatedSet {
+                        selection,
+                        test: ResolvedRowSetTest::Exists(true),
+                        input: None,
+                    } if selection.entity == *entity
+                        && matches!(
+                            &selection.filter,
+                            Predicate::Compare {
+                                left,
+                                op: ess_primitives::predicate::CompareOp::Eq,
+                                right,
+                                ..
+                            } if matches!(
+                                (left.fact_path(), right.fact_path()),
+                                (Some(left), Some(right))
+                                    if (left.to_string() == *identity && right.to_string() == input)
+                                        || (right.to_string() == *identity
+                                            && left.to_string() == input)
+                            )
+                        )
+                )
+        })
+    }
+
     /// Resolve the original success using the index minted with this command.
     pub fn replay_origin(&self, replay: &ResolvedReplay) -> &ResolvedOutcome {
         &self.outcomes[replay.index]
