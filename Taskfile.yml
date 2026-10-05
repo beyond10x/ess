@@ -99,6 +99,12 @@ tasks:
     cmds:
       - cargo test --locked -p ess-cli --test browser_response_conformance --test browser_product_adversary -- --include-ignored --test-threads=1
 
+  test-slow-probes:
+    desc: Run the slow byte-identity and WASM-parity probes the 30-minute CI shards leave out; run before tagging a release.
+    cmds:
+      - cargo test --locked -p ess-synth --test adversary_e_u2_bytes --test adversary_e_u6_bytes -- --ignored --test-threads=1
+      - cargo test --locked -p ess-conformance --test adversary_244b_window_free_bytes --test adversary_w3_266_267_dump --test adversary_287_pass1 -- --ignored --test-threads=1
+
   # The shards extract into the checkout's own `target/`: test binaries bake
   # `env!("CARGO_BIN_EXE_…")` and `env!("CARGO_TARGET_TMPDIR")` in at build time, so extracted
   # anywhere else those paths name nothing. That holds only where the archive was built in

@@ -171,6 +171,7 @@ fn digests(root: &Path) -> Vec<(String, String)> {
 
 const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 
+#[ignore = "slow probe: `task test-slow-probes`"]
 #[test]
 fn adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a() {
     let here = digests(&root());

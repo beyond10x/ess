@@ -55,9 +55,10 @@ fn run_lane(label: &str, case: &str, source: &str, go: &str, ts: &str) -> Value 
             .to_string()
             .contains("too few values to name an identity"));
     } else if matches!(case, "recursive" | "depth-32") {
-        // This fixture deliberately crosses the existing finite-witness resource boundary.
-        // Keep its two fixed-suite refusals visible while testing the explorer's own refusal.
-        assert_eq!(synthesis.refusals.len(), 2, "{:?}", synthesis.refusals);
+        // This fixture crosses the finite-witness resource boundary. Since finite recursive typed
+        // input fixtures are admitted (beyond10x/ess#416) the fixed suite may refuse none of it;
+        // whatever it still refuses names the recursion.
+        assert!(synthesis.refusals.len() <= 2, "{:?}", synthesis.refusals);
         assert!(synthesis
             .refusals
             .iter()

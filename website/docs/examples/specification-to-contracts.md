@@ -23,7 +23,7 @@ compiler resolves it, and the conformance run it obliges, both recorded from the
 
 One command, from `examples/billing/domains/invoice.yaml`:
 
-```yaml file=examples/billing/domains/invoice.yaml lines=191-258
+```yaml file=examples/billing/domains/invoice.yaml lines=191-259
 commands:
   - name: billing.invoice.CreateInvoice
 

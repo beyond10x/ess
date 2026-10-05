@@ -3434,9 +3434,6 @@ export async function exploreConcurrent(
       `explore: \`Calls\` is ${String(options.calls)}; each client makes at least one call, or 3 when it is 0`,
     );
   }
-  if (spawnSync('ess', ['--version'], { encoding: 'utf8' }).error !== undefined) {
-    throw new Error(NO_ESS);
-  }
   const path = options.path ?? '';
   const out = options.out ?? '';
   if (path === '') {
@@ -3450,6 +3447,11 @@ export async function exploreConcurrent(
     );
   }
   const ir = loadModel();
+  // The model is read first, so a source this mode refuses (one-time responses) is refused before
+  // anything else is asked of the host.
+  if (spawnSync('ess', ['--version'], { encoding: 'utf8' }).error !== undefined) {
+    throw new Error(NO_ESS);
+  }
   if (nonEmpty(ir.preconditions)) {
     throw new Error(
       "explore: concurrent exploration does not run the specification's preconditions, so it does not record against one that declares them",
