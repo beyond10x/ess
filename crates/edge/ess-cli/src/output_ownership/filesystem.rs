@@ -361,18 +361,29 @@ pub(super) fn parent(
     }
     bail!("output path names its anchor")
 }
-/// The snapshot of one output under `root`, or a refusal naming that output, relative to `root`,
-/// and the `ess` release that refused it: the message is often all a reporter can quote.
+/// The snapshot of one output under the output root `root`, or a refusal naming that output,
+/// relative to the root, and the `ess` release that refused it: the message is often all a
+/// reporter can quote.
 pub(super) fn image(
     root: &File,
     relative: &Path,
     mount: &Mount,
 ) -> Result<(Image, Option<Vec<u8>>)> {
-    snapshot(root, relative, mount).with_context(|| {
+    image_within(root, Path::new(""), relative, mount)
+}
+/// [`image`] of `name` in `directory`, which is `within` relative to the output root (such as
+/// `.ess-output`): the refusal still names the file relative to the output root.
+pub(super) fn image_within(
+    directory: &File,
+    within: &Path,
+    name: &Path,
+    mount: &Mount,
+) -> Result<(Image, Option<Vec<u8>>)> {
+    snapshot(directory, name, mount).with_context(|| {
         format!(
             "ess {} refused output {}",
             env!("CARGO_PKG_VERSION"),
-            relative.display()
+            within.join(name).display()
         )
     })
 }
@@ -389,7 +400,12 @@ fn snapshot(root: &File, relative: &Path, mount: &Mount) -> Result<(Image, Optio
     state::mode(mode)?;
     match FileType::from_raw_mode(stat.st_mode) {
         FileType::Directory => {
-            let fd = open_directory(&parent, &name, mount)?;
+            // Not `open_directory`: its refusal repeats the name the caller's context gives.
+            let fd = File::from(
+                fs::openat(&parent, &name, DIRECTORY, Mode::empty())
+                    .context("output path has an incompatible file type or symlink")?,
+            );
+            mount.check(&fd)?;
             ordinary_metadata(&fd, false)?;
             Ok((Image::Directory { mode }, None))
         }
@@ -430,10 +446,8 @@ fn snapshot(root: &File, relative: &Path, mount: &Mount) -> Result<(Image, Optio
                 Some(bytes),
             ))
         }
-        _ => bail!(
-            "output path has an incompatible file type or symlink: {}",
-            relative.display()
-        ),
+        // The path is in the context `image_within` adds; naming it here too printed it twice.
+        _ => bail!("output path has an incompatible file type or symlink"),
     }
 }
 fn ordinary_metadata(fd: &impl AsFd, file: bool) -> Result<()> {
@@ -552,8 +566,11 @@ pub(super) fn sync(fd: &impl AsFd, observer: &mut Observer<'_>, label: &str) -> 
     observer(&format!("after:sync:{label}"))?;
     Ok(())
 }
+/// Create `name` in `parent`, which is `within` relative to the output root, and read it back.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn write_new(
     parent: &File,
+    within: &Path,
     name: &OsStr,
     bytes: &[u8],
     mode: u32,
@@ -584,7 +601,7 @@ pub(super) fn write_new(
     observer(&format!("after:mode:{label}"))?;
     sync(&file, observer, label)?;
     let id = identity(&file)?;
-    let (actual, _) = image(parent, Path::new(name), mount)?;
+    let (actual, _) = image_within(parent, within, Path::new(name), mount)?;
     ensure!(
         actual
             == Image::File {

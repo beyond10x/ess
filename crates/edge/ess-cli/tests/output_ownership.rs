@@ -254,3 +254,32 @@ fn requires_pin_answers_producing_release() {
         );
     }
 }
+
+/// An output of the wrong type is refused naming it once, in the `ess <version> refused output`
+/// context, and not a second time in the cause.
+#[test]
+fn an_incompatible_output_type_is_named_once() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let first = f.site(false);
+    assert!(first.status.success(), "{first:?}");
+    let target = f.0.join("out/index.html");
+    fs::remove_file(&target).unwrap();
+    std::os::unix::fs::symlink(f.0.join("page.md"), &target).unwrap();
+    let again = f.site(false);
+    assert!(
+        !again.status.success(),
+        "a symlinked output is refused: {again:?}"
+    );
+    let stderr = String::from_utf8_lossy(&again.stderr);
+    let expected = format!(
+        "ess {} refused output index.html: output path has an incompatible file type or symlink",
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(stderr.contains(&expected), "{expected}: {stderr}");
+    assert_eq!(
+        stderr.matches("index.html").count(),
+        1,
+        "the refusal names the output once: {stderr}"
+    );
+}

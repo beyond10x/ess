@@ -231,9 +231,10 @@ struct GenerateArgs {
     out: Option<PathBuf>,
     /// Refuse when `--out` differs from the generated output, without writing it.
     ///
-    /// Every file the selected projections would write is compared byte for byte, and so is every
-    /// file `.ess-output` records for them: one no projection produces any more is drift too.
-    /// Exit 0 when `--out` is current, 1 with one line per drifted file.
+    /// Passing means the same command without `--check` changes nothing. Every file the selected
+    /// projections would write is compared byte for byte; a file `.ess-output` records for them
+    /// that no projection produces any more is drift, and so is a missing or stale `.ess-output`
+    /// record. Exit 0 when `--out` is current, 1 with one line per drifted file.
     #[arg(long, requires = "out")]
     check: bool,
     #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -3381,9 +3382,10 @@ impl Delivery<'_> {
                 let drifted = output_ownership::drift(root, &publications)?;
                 for drift in &drifted {
                     eprintln!(
-                        "{} {}; regenerate it with `ess generate`",
+                        "{} {}; {}",
                         root.join(&drift.path).display(),
-                        drift.reason
+                        drift.reason,
+                        drift.remedy
                     );
                 }
                 Ok(drifted.is_empty())
