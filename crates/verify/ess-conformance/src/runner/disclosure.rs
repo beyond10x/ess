@@ -192,8 +192,11 @@ fn constraints(
                         return Err(Violation::Payload);
                     };
                     let ty = variants.get(label).ok_or(Violation::Payload)?;
-                    if let Some(value) = values.get(ess_gen::schema::union_content_key(tag)) {
-                        constraints(authority, ty, value)?;
+                    match (ty, values.get(ess_gen::schema::union_content_key(tag))) {
+                        (Some(ty), Some(value)) => constraints(authority, ty, value)?,
+                        // A unit variant (ess/22) is the tag alone.
+                        (None, Some(_)) => return Err(Violation::Payload),
+                        (_, None) => {}
                     }
                 }
                 Declaration::Enum { .. } => {}

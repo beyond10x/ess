@@ -491,12 +491,16 @@ func (r replayObservation) exactType(source string, depth int, visited map[strin
 			}
 		}
 	case "union":
-		var variants map[string]string
-		if err := json.Unmarshal(body.Variants, &variants); err != nil {
+		variants, err := unionVariants(body.Variants)
+		if err != nil {
 			return err
 		}
 		for _, child := range variants {
-			if err := r.exactType(child, depth+1, visited); err != nil {
+			// A unit variant (ess/22) names no type.
+			if child == nil {
+				continue
+			}
+			if err := r.exactType(*child, depth+1, visited); err != nil {
 				return err
 			}
 		}

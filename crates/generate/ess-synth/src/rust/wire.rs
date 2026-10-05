@@ -162,6 +162,17 @@ fn type_encoder(
             let content = ess_gen::schema::union_content_key(tag);
             out.push_str("    match value {\n");
             for (label, payload) in variants {
+                // A unit variant (ess/22) is written as its tag alone.
+                let Some(payload) = payload else {
+                    let _ = writeln!(
+                        out,
+                        "        {path}::{} => {{\n            out.push('{{');\n            \
+                         json::member(out, {tag:?});\n            json::push_text(out, \
+                         {label:?});\n            out.push('}}');\n        }}",
+                        name::pascal(label)
+                    );
+                    continue;
+                };
                 let _ = writeln!(
                     out,
                     "        {path}::{}(held) => {{\n            out.push('{{');\n            \
@@ -249,6 +260,20 @@ fn type_decoder(
                  {expected:?})? {{"
             );
             for (position, (label, payload)) in variants.iter().enumerate() {
+                // A unit variant (ess/22) is its tag alone: a content member beside it, `null`
+                // included, is refused rather than ignored.
+                let Some(payload) = payload else {
+                    let _ = writeln!(
+                        out,
+                        "        {label:?} => {{\n            if let Some(found) = \
+                         value.member({content:?}) {{\n                return \
+                         Err(json::DecodeError::of(&json::nested(at, {content:?}), {:?}, \
+                         found));\n            }}\n            {path}::{}\n        }}",
+                        format!("no `{content}`: `{label}` carries nothing"),
+                        name::pascal(label)
+                    );
+                    continue;
+                };
                 let carried = ResolvedField {
                     name: content.to_owned(),
                     type_ref: payload.clone(),

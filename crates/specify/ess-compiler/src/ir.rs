@@ -350,8 +350,12 @@ pub enum ResolvedBody {
     Union {
         /// The field carrying the variant's name.
         tag: String,
-        /// The variants, by tag value.
-        variants: BTreeMap<String, ResolvedTypeRef>,
+        /// The variants, by tag value, each with the payload it carries.
+        ///
+        /// `None` is a unit variant (ess/22, beyond10x/ess#418), written `null`; a payload is
+        /// written as the reference it is, so the IR of a union with no unit variant keeps its
+        /// bytes and its `spec_digest`.
+        variants: BTreeMap<String, Option<ResolvedTypeRef>>,
     },
 }
 

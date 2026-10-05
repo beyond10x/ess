@@ -113,11 +113,19 @@ fn emit_projection(
             Operation::Union { variants, .. } => {
                 out.push_str("match value {\n");
                 for (label, next) in variants {
-                    let _ = writeln!(
-                        out,
-                        "{source}::{}(inner) => project_{next}(inner),",
-                        name::pascal(label)
-                    );
+                    match next {
+                        Some(next) => {
+                            let _ = writeln!(
+                                out,
+                                "{source}::{}(inner) => project_{next}(inner),",
+                                name::pascal(label)
+                            );
+                        }
+                        // A unit variant (ess/22) carries nothing to read.
+                        None => {
+                            let _ = writeln!(out, "{source}::{} => None,", name::pascal(label));
+                        }
+                    }
                 }
                 out.push('}');
             }

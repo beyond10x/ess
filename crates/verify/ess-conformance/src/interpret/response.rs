@@ -148,13 +148,17 @@ pub(super) fn base(
             }
             ResolvedBody::Union { tag, variants } => {
                 let (label, variant) = variants.iter().next()?;
-                inner.type_ref = variant.clone();
-                let value = base(ir, &inner, distinction, depth + 1)?;
-                let content = if tag == "value" { "content" } else { "value" };
-                Node::Map(BTreeMap::from([
-                    (tag.clone(), Node::Text(label.clone())),
-                    (content.into(), value),
-                ]))
+                let tagged = (tag.clone(), Node::Text(label.clone()));
+                match variant {
+                    Some(variant) => {
+                        inner.type_ref = variant.clone();
+                        let value = base(ir, &inner, distinction, depth + 1)?;
+                        let content = if tag == "value" { "content" } else { "value" };
+                        Node::Map(BTreeMap::from([tagged, (content.into(), value)]))
+                    }
+                    // A unit variant (ess/22) is the tag alone.
+                    None => Node::Map(BTreeMap::from([tagged])),
+                }
             }
             ResolvedBody::Enum { .. } => return None,
         },

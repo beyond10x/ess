@@ -28,6 +28,35 @@ pub(super) fn expression(
     )
 }
 
+/// The body of a union node's projection: the variant's own plan, or — for a unit variant (ess/22),
+/// which carries nothing to read — unavailable.
+fn union_projection(
+    out: &mut crate::accessor_output::Output,
+    emit: &Emit<'_>,
+    owner: &QualifiedName,
+    variants: &BTreeMap<String, Option<usize>>,
+    result: &str,
+) {
+    // Go refuses a type-switch binding no clause reads.
+    if variants.values().any(Option::is_some) {
+        out.push_str("switch branch := value.(type) {\n");
+    } else {
+        out.push_str("switch value.(type) {\n");
+    }
+    for (label, next) in variants {
+        let variant = emit.reference_variant(owner, label);
+        match next {
+            Some(next) => {
+                let _ = writeln!(out, "case {variant}: return project{next}(branch.Value)");
+            }
+            None => {
+                let _ = writeln!(out, "case {variant}: var zero {result}; return zero, false");
+            }
+        }
+    }
+    out.push_str("default: panic(\"invalid native union accessor value\")\n}");
+}
+
 pub(super) fn expression_from(
     plan: &AccessorPlan,
     handles: &BTreeMap<QualifiedName, TypeHandle>,
@@ -78,15 +107,7 @@ pub(super) fn expression_from(
                 let TypeRef::Named(owner) = &node.source else {
                     unreachable!("union accessor")
                 };
-                out.push_str("switch branch := value.(type) {\n");
-                for (label, next) in variants {
-                    let _ = writeln!(
-                        out,
-                        "case {}: return project{next}(branch.Value)",
-                        emit.reference_variant(owner, label)
-                    );
-                }
-                out.push_str("default: panic(\"invalid native union accessor value\")\n}");
+                union_projection(&mut out, emit, owner, variants, &result);
             }
         }
         out.push_str("\n}\n");

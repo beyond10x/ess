@@ -399,6 +399,11 @@ func oneTimeCanonicalDeclarations(raw any) map[string]any {
 			declaration["tag"] = body["tag"]
 			variants := map[string]any{}
 			for name, raw := range body["variants"].(map[string]any) {
+				// A unit variant (ess/22) is null: it names no type.
+				if raw == nil {
+					variants[name] = nil
+					continue
+				}
 				variants[name], _, _ = accessorType(raw.(string), 0)
 			}
 			declaration["variants"] = variants

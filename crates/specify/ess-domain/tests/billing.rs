@@ -355,7 +355,7 @@ fn types_used() -> (BTreeSet<String>, BTreeSet<&'static str>) {
             }
             TypeBody::Newtype { of, .. } => collect(of),
             TypeBody::Union { variants, .. } => {
-                for variant in variants.values() {
+                for variant in variants.values().flatten() {
                     collect(variant);
                 }
             }

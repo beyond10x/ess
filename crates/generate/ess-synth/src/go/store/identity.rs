@@ -136,9 +136,20 @@ impl<'a, 'ir> Keys<'a, 'ir> {
                     out.push_str("\t}\n\treturn memoryKey{}\n");
                 }
                 ResolvedBody::Union { variants, .. } => {
-                    out.push_str("\tswitch value := value.(type) {\n");
+                    // Go refuses a type-switch binding no clause reads: a union of unit variants
+                    // (ess/22) binds none.
+                    if variants.values().any(Option::is_some) {
+                        out.push_str("\tswitch value := value.(type) {\n");
+                    } else {
+                        out.push_str("\tswitch value.(type) {\n");
+                    }
                     for (variant, reference) in variants {
                         let ty = self.emit.reference_variant(&name, &variant);
+                        // A unit variant is keyed by its tag alone.
+                        let Some(reference) = reference else {
+                            let _ = writeln!(out, "\tcase {ty}:\n\t\treturn memoryKey{{kind: 6, items: []memoryKey{{{{kind: 4, text: {variant:?}}}}}}}");
+                            continue;
+                        };
                         let key = self.expression(&reference, "value.Value");
                         let _ = writeln!(out, "\tcase {ty}:\n\t\treturn memoryKey{{kind: 6, items: []memoryKey{{{{kind: 4, text: {variant:?}}}, {key}}}}}");
                     }

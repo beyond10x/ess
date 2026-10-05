@@ -394,7 +394,7 @@ function response(raw: Node, command: string): OneTimeResponse {
       body.variants = Object.fromEntries(
         Object.entries(body.variants).map(([variant, type]) => [
           variant,
-          accessorType(text(type), 0)[0],
+          type === null ? null : accessorType(text(type), 0)[0],
         ]),
       );
     }
@@ -855,8 +855,11 @@ export class DisclosureCaptures {
           this.constraints(authority, field.type, value[field.name]);
     } else if (declaration?.kind === 'union') {
       const key = declaration.tag === 'value' ? 'content' : 'value';
-      if (Object.hasOwn(value, key))
-        this.constraints(authority, declaration.variants[value[declaration.tag]], value[key]);
+      const carried = declaration.variants[value[declaration.tag]];
+      // A unit variant (ess/22) is the tag alone.
+      if (carried === null && Object.hasOwn(value, key)) throw new DisclosureViolation('payload');
+      if (carried !== null && Object.hasOwn(value, key))
+        this.constraints(authority, carried, value[key]);
     }
   }
   command(command: string, result: Node): void {

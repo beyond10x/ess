@@ -195,6 +195,11 @@ function validateValue(
       throw new Error('extra response union member');
     if (typeof value[tag] !== 'string' || !own(declaration.variants, value[tag]))
       throw new Error('response union tag');
+    // A unit variant (ess/22) is the tag alone.
+    if (declaration.variants[value[tag]] === null) {
+      if (own(value, content)) throw new Error('response unit variant payload');
+      return;
+    }
     return validateValue(
       declaration.variants[value[tag]],
       value[content],

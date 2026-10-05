@@ -286,7 +286,7 @@ fn union(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     tag: &str,
-    variants: &BTreeMap<String, ResolvedTypeRef>,
+    variants: &BTreeMap<String, Option<ResolvedTypeRef>>,
 ) {
     let type_name = emit.layout.declared(&declared.name);
     let _ = writeln!(
@@ -300,6 +300,16 @@ fn union(
     sealed(out, type_name);
     for (tag_value, type_ref) in variants {
         let variant_name = emit.layout.variant(&declared.name, tag_value);
+        // A unit variant (ess/22): the tag alone, an empty struct.
+        let Some(type_ref) = type_ref else {
+            let _ = writeln!(
+                out,
+                "\n// {variant_name} is the shape tagged `{tag_value}`, carrying nothing.\ntype \
+                 {variant_name} struct{{}}\n\nfunc ({variant_name}) {}() {{}}",
+                name::marker(type_name)
+            );
+            continue;
+        };
         let _ = writeln!(
             out,
             "\n// {variant_name} is the shape tagged `{tag_value}` — `{type_ref}`.\ntype \

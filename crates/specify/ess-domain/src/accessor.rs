@@ -47,8 +47,10 @@ pub enum Operation {
     Union {
         /// Declared discriminator field.
         tag: String,
-        /// Variant labels and their shared plans, in deterministic order.
-        variants: BTreeMap<String, usize>,
+        /// Variant labels and their shared plans, in deterministic order. A unit variant (ess/22,
+        /// beyond10x/ess#418) has no plan: it carries nothing, so every member read through it is
+        /// unavailable.
+        variants: BTreeMap<String, Option<usize>>,
     },
 }
 
@@ -60,7 +62,7 @@ impl Operation {
             Self::Field { next, .. } | Self::Newtype { next } | Self::Optional { next } => {
                 vec![*next]
             }
-            Self::Union { variants, .. } => variants.values().copied().collect(),
+            Self::Union { variants, .. } => variants.values().flatten().copied().collect(),
         }
     }
 
@@ -71,7 +73,7 @@ impl Operation {
                 *next = ids[*next];
             }
             Self::Union { variants, .. } => {
-                for next in variants.values_mut() {
+                for next in variants.values_mut().flatten() {
                     *next = ids[*next];
                 }
             }
@@ -560,7 +562,7 @@ fn check_edges(
             {
                 return Err(invalid());
             }
-            for next in variants.values() {
+            for next in variants.values().flatten() {
                 if child(*next)?.position != node.position {
                     return Err(invalid());
                 }
@@ -608,10 +610,11 @@ fn summarize<'a>(
                             "union accessor alternatives have different terminal types: {}",
                             variants
                                 .iter()
-                                .filter_map(|(name, id)| nodes[*id]
-                                    .leaf
-                                    .as_ref()
-                                    .map(|leaf| format!("{name}: {leaf}")))
+                                .filter_map(|(name, id)| {
+                                    (*id)
+                                        .and_then(|id| nodes[id].leaf.as_ref())
+                                        .map(|leaf| format!("{name}: {leaf}"))
+                                })
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ),
@@ -752,7 +755,11 @@ impl Builder<'_> {
                         for (label, ty) in variants {
                             self.charge(label, 1)?;
                             self.bytes = self.bytes.saturating_add(32);
-                            branches.insert(label.clone(), self.next(ty, position)?);
+                            let next = match ty {
+                                Some(ty) => Some(self.next(ty, position)?),
+                                None => None,
+                            };
+                            branches.insert(label.clone(), next);
                         }
                         Ok(Operation::Union {
                             tag,

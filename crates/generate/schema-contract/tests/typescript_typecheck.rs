@@ -28,6 +28,49 @@ const invalid: SampleDataChoice = {value: "unknown", content: "id"};
     assert!(output.status.success(), "{output:?}");
 }
 
+/// A union mixing a unit variant with a payload variant (ess/22, beyond10x/ess#418): the unit
+/// variant is the tag alone, so it carries no content member and the payload variant carries one.
+#[test]
+fn model_unit_variant_is_the_tag_alone_and_typechecks() {
+    let text =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/union-unit-variants.yaml");
+    let specification = ess_domain::spec::Specification::assemble([(
+        ess_domain::system::Source::new("work.yaml"),
+        ess_domain::spec::RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    let selected = ess_gen::schema::ModelTypes::select(
+        &ir,
+        &std::collections::BTreeSet::from(["demo.work.StatusReported".to_owned()]),
+    )
+    .unwrap();
+    let result = schema_contract::realize::Plan::from_model(&selected)
+        .unwrap()
+        .typescript();
+    let controls = r#"
+const open: DemoWorkStatus = {kind: "Open"};
+const complete: DemoWorkStatus = {kind: "Complete", value: {outcome: "shipped"}};
+const reported: DemoWorkStatusReported = {status: open};
+const bytes: string = JSON.stringify([open, complete, reported]);
+// @ts-expect-error: a unit variant carries no content member
+const openWithPayload: DemoWorkStatus = {kind: "Open", value: {outcome: "shipped"}};
+// @ts-expect-error: a payload variant carries its content member
+const completeWithoutPayload: DemoWorkStatus = {kind: "Complete"};
+// @ts-expect-error: no undeclared tag is admitted
+const closed: DemoWorkStatus = {kind: "Closed"};
+export {bytes, complete, openWithPayload, completeWithoutPayload, closed};
+"#;
+    let output = typecheck(&[format!("{}\n{controls}", result.declarations)]);
+    assert!(
+        output.status.success(),
+        "{output:?}\n{}",
+        result.declarations
+    );
+}
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};

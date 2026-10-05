@@ -171,12 +171,15 @@ func checkTypedGraph(declarations map[string]selectionDeclaration, source string
 			seen[label] = true
 		}
 	case "union":
-		var variants map[string]string
-		if body.Tag == "" || json.Unmarshal(body.Variants, &variants) != nil || len(variants) == 0 {
+		variants, err := unionVariants(body.Variants)
+		if body.Tag == "" || err != nil || len(variants) == 0 {
 			return fmt.Errorf("invalid response union")
 		}
 		for _, child := range variants {
-			children = append(children, child)
+			// A unit variant (ess/22) names no type to check.
+			if child != nil {
+				children = append(children, *child)
+			}
 		}
 	default:
 		return fmt.Errorf("unknown response declaration")
@@ -828,15 +831,20 @@ func normalizeNestedDeclaration(body selectionDeclaration) (selectionDeclaration
 			}
 		}
 	case "union":
-		var variants map[string]string
-		if err = json.Unmarshal(body.Variants, &variants); err != nil {
+		var variants map[string]*string
+		if variants, err = unionVariants(body.Variants); err != nil {
 			return body, err
 		}
 		for label, ty := range variants {
-			variants[label], err = nestedResponseType(ty, 0)
-			if err != nil {
-				return body, err
+			// A unit variant (ess/22) is null: it names no type.
+			if ty == nil {
+				continue
 			}
+			normalized, e := nestedResponseType(*ty, 0)
+			if e != nil {
+				return body, e
+			}
+			variants[label] = &normalized
 		}
 		body.Variants, err = json.Marshal(variants)
 	}
@@ -900,13 +908,16 @@ func nestedResponseReferences(body selectionDeclaration) ([]string, error) {
 		}
 		return nil, nil
 	case "union":
-		var variants map[string]string
-		if body.Tag == "" || json.Unmarshal(body.Variants, &variants) != nil || len(variants) == 0 {
+		variants, err := unionVariants(body.Variants)
+		if body.Tag == "" || err != nil || len(variants) == 0 {
 			return nil, fmt.Errorf("invalid structural union")
 		}
 		refs := []string{}
 		for _, ty := range variants {
-			refs = append(refs, ty)
+			// A unit variant (ess/22) reaches no type.
+			if ty != nil {
+				refs = append(refs, *ty)
+			}
 		}
 		return refs, nil
 	}
@@ -1174,6 +1185,25 @@ func nestedStringMap(values map[string]string) string {
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
+
+// nestedVariantMap is a union's variants as the canonical form spells them: a unit variant (ess/22)
+// is `null`.
+func nestedVariantMap(values map[string]*string) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		spelled := "null"
+		if values[key] != nil {
+			spelled = nestedJSONString(*values[key])
+		}
+		parts = append(parts, nestedJSONString(key)+":"+spelled)
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
 func nestedDeclarationCanonical(body selectionDeclaration) string {
 	value := `{"kind":` + nestedJSONString(body.Kind)
 	switch body.Kind {
@@ -1186,9 +1216,8 @@ func nestedDeclarationCanonical(body selectionDeclaration) string {
 		_ = json.Unmarshal(body.Variants, &labels)
 		value += `,"variants":` + nestedStringList(labels)
 	case "union":
-		var variants map[string]string
-		_ = json.Unmarshal(body.Variants, &variants)
-		value += `,"tag":` + nestedJSONString(body.Tag) + `,"variants":` + nestedStringMap(variants)
+		variants, _ := unionVariants(body.Variants)
+		value += `,"tag":` + nestedJSONString(body.Tag) + `,"variants":` + nestedVariantMap(variants)
 	}
 	return value + "}"
 }

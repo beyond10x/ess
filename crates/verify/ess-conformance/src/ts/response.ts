@@ -830,11 +830,12 @@ function checkType(
           variants === null ||
           Array.isArray(variants) ||
           Object.keys(variants).length === 0 ||
-          !Object.values(variants).every((child) => typeof child === 'string')
+          !Object.values(variants).every((child) => child === null || typeof child === 'string')
         ) {
           throw new Error('invalid response union');
         }
-        children.push(...(Object.values(variants) as string[]));
+        // A unit variant (ess/22) is `null`: it names no type to check.
+        children.push(...(Object.values(variants).filter((child) => child !== null) as string[]));
         break;
       }
       default:
@@ -1328,6 +1329,8 @@ function normalizeNestedDeclaration(body: SelectionDeclaration): void {
     case 'union':
       if (!isObject(body.variants)) throw new Error('invalid structural union');
       for (const [label, type] of Object.entries(body.variants)) {
+        // A unit variant (ess/22) is `null`: it names no type.
+        if (type === null) continue;
         if (typeof type !== 'string') throw new Error('invalid structural variant type');
         body.variants[label] = nestedType(type);
       }
@@ -1367,10 +1370,13 @@ function nestedReferences(body: SelectionDeclaration): string[] {
         throw new Error('invalid structural union tag');
       if (!isObject(body.variants) || !Object.keys(body.variants).length)
         throw new Error('invalid structural union');
-      return Object.values(body.variants).map((type) => {
-        if (typeof type !== 'string') throw new Error('invalid structural union variant');
-        return type;
-      });
+      // A unit variant (ess/22) is `null`: it names no type to reach.
+      return Object.values(body.variants)
+        .filter((type) => type !== null)
+        .map((type) => {
+          if (typeof type !== 'string') throw new Error('invalid structural union variant');
+          return type;
+        });
     }
     default:
       throw new Error('invalid structural kind');

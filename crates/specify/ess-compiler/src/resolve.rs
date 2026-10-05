@@ -1713,12 +1713,17 @@ impl<'a> Resolver<'a> {
                 let mut resolved = BTreeMap::new();
                 let mut complete = true;
                 for (variant, reference) in variants {
+                    // A unit variant (ess/22) carries nothing, so it names nothing to resolve.
+                    let Some(reference) = reference else {
+                        resolved.insert(variant.clone(), None);
+                        continue;
+                    };
                     let subject = format!("{}.{variant}", declared.name);
                     let mut variant_needles = vec![format!("{variant}: {reference}")];
                     variant_needles.extend_from_slice(needles);
                     match self.type_ref(code, reference, &subject, path, &variant_needles) {
                         Some(reference) => {
-                            resolved.insert(variant.clone(), reference);
+                            resolved.insert(variant.clone(), Some(reference));
                         }
                         None => complete = false,
                     }

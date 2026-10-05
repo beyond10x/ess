@@ -664,7 +664,7 @@ fn include_type_closure(
             ResolvedBody::Struct { fields, .. } => include_fields(&mut reached, fields),
             ResolvedBody::Enum { .. } => {}
             ResolvedBody::Union { variants, .. } => {
-                for variant in variants.values() {
+                for variant in variants.values().flatten() {
                     include_type_ref(&mut reached, variant);
                 }
             }

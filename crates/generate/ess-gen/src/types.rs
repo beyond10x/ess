@@ -799,7 +799,7 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
         ResolvedBody::Union { tag, variants } => Node {
             one_of: variants
                 .iter()
-                .map(|(label, payload)| variant(tag, label, payload))
+                .map(|(label, payload)| variant(tag, label, payload.as_ref()))
                 .collect(),
             ess_union_tag: Some(tag.clone()),
             ..Node::default()
@@ -819,7 +819,11 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
 /// The tag is a `const`, so exactly one branch can match and a decoder never has to guess which
 /// shape it is looking at. That is the property the model exists to guarantee — it offers no untagged
 /// form at all — and a choice without the `const` would have thrown it away here.
-fn variant(tag: &str, label: &str, payload: &ResolvedTypeRef) -> Node {
+///
+/// A unit variant (`None`, ess/22, beyond10x/ess#418) is the tag alone: no content property, and the
+/// object closed, so a content member written beside its tag is refused like any other undeclared
+/// member (`docs/design/union-unit-variants.md`).
+fn variant(tag: &str, label: &str, payload: Option<&ResolvedTypeRef>) -> Node {
     let content = content_key(tag);
     let mut properties = Properties::default();
     properties.insert(
@@ -830,13 +834,15 @@ fn variant(tag: &str, label: &str, payload: &ResolvedTypeRef) -> Node {
             ..Node::default()
         },
     );
-    properties.insert(content, type_ref(payload.required()));
 
     // The content key is a property of an object, so absence is spelt the way it is spelt at every
     // other field position: by leaving the name out of `required`, not by a `null` branch.
     let mut required = vec![tag.to_owned()];
-    if !payload.is_optional() {
-        required.push(content.to_owned());
+    if let Some(payload) = payload {
+        properties.insert(content, type_ref(payload.required()));
+        if !payload.is_optional() {
+            required.push(content.to_owned());
+        }
     }
 
     Node {
@@ -1242,6 +1248,7 @@ pub(crate) fn body_leaves(declared: &ResolvedBody) -> Vec<&TypeHandle> {
         ResolvedBody::Enum { .. } => Vec::new(),
         ResolvedBody::Union { variants, .. } => variants
             .values()
+            .flatten()
             .flat_map(ResolvedTypeRef::named_leaves)
             .collect(),
     }
@@ -1468,9 +1475,9 @@ mod tests {
         let node = variant(
             "kind",
             "person",
-            &ResolvedTypeRef::Primitive {
+            Some(&ResolvedTypeRef::Primitive {
                 name: Primitive::String,
-            },
+            }),
         );
         assert_eq!(node.required, vec!["kind".to_owned(), "value".to_owned()]);
         assert_eq!(node.additional, Some(Additional::Refused));

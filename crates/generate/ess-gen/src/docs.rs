@@ -748,7 +748,7 @@ fn referenced_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
             }
             ResolvedBody::Enum { .. } => {}
             ResolvedBody::Union { variants, .. } => {
-                for variant in variants.values() {
+                for variant in variants.values().flatten() {
                     note(variant);
                 }
             }
@@ -1410,12 +1410,17 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
             out.push(bullets(
                 variants
                     .iter()
-                    .map(|(variant, type_ref)| {
-                        vec![
+                    .map(|(variant, type_ref)| match type_ref {
+                        Some(type_ref) => vec![
                             Inline::code(variant.clone()),
                             Inline::text(" — "),
                             Inline::code(type_ref.to_string()),
-                        ]
+                        ],
+                        // A unit variant (ess/22): the tag alone.
+                        None => vec![
+                            Inline::code(variant.clone()),
+                            Inline::text(" — carries nothing; its value is the tag alone"),
+                        ],
                     })
                     .collect(),
             ));

@@ -7,9 +7,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   ErrUnsupported,
@@ -48,6 +48,7 @@ import {
   strictJSON,
   unsupported,
   UNEXECUTED_STEPS,
+  admitAccessor,
   writeReport,
 } from './runtime.js';
 import type {
@@ -1063,4 +1064,37 @@ test('a refused execution context configuration reaches no target', async () => 
     /64 lowercase hexadecimal digits/,
   );
   assert.equal(made, 0);
+});
+
+// ---- an accessor through a unit variant (ess/22, beyond10x/ess#418) ------------------------------
+
+// The observation the reference runner writes, in
+// `crates/verify/ess-conformance/tests/fixtures/unit-variant-accessor.json`; the Rust and Go answers
+// to the same payloads are `tests/union_unit_variants_accessor.rs`.
+function unitVariantAccessor(): string {
+  const relative = 'crates/verify/ess-conformance/tests/fixtures/unit-variant-accessor.json';
+  let directory = import.meta.dirname;
+  for (;;) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) return readFileSync(candidate, 'utf8');
+    const parent = dirname(directory);
+    if (parent === directory) throw new Error(`no ${relative} above ${import.meta.dirname}`);
+    directory = parent;
+  }
+}
+
+test('a unit variant is read as unavailable, and a payload beside its tag is malformed', () => {
+  const accessor = admitAccessor(strictJSON(unitVariantAccessor()));
+  assert.deepEqual(accessor.evaluate({ choice: { kind: 'gone' } }), [null, false]);
+  assert.deepEqual(accessor.evaluate({ choice: { kind: 'ready', value: { status: 'yes' } } }), [
+    'yes',
+    true,
+  ]);
+  for (const malformed of [
+    { kind: 'gone', value: 'gone' },
+    { kind: 'gone', value: null },
+    { kind: 'ready' },
+  ]) {
+    assert.throws(() => accessor.evaluate({ choice: malformed }), JSON.stringify(malformed));
+  }
 });

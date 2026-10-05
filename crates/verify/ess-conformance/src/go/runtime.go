@@ -6040,11 +6040,22 @@ type accessorShape struct {
 	Of       *accessorShape `json:"of"`
 }
 type accessorOperation struct {
-	Kind     string         `json:"kind"`
-	Field    accessorField  `json:"field"`
-	Next     int            `json:"next"`
-	Tag      string         `json:"tag"`
-	Variants map[string]int `json:"variants"`
+	Kind  string        `json:"kind"`
+	Field accessorField `json:"field"`
+	Next  int           `json:"next"`
+	Tag   string        `json:"tag"`
+	// Variants is each label's plan; nil is a unit variant (ess/22), through which nothing is read.
+	Variants map[string]*int `json:"variants"`
+}
+
+// unionVariants reads a union declaration's variants by label; a nil type is a unit variant
+// (ess/22, beyond10x/ess#418), the tag alone.
+func unionVariants(raw json.RawMessage) (map[string]*string, error) {
+	var variants map[string]*string
+	if err := json.Unmarshal(raw, &variants); err != nil {
+		return nil, err
+	}
+	return variants, nil
 }
 
 func accessorOptional(source string) (string, bool) {
@@ -6104,7 +6115,9 @@ func accessorChildren(op accessorOperation) []int {
 		sort.Strings(keys)
 		out := make([]int, 0, len(keys))
 		for _, k := range keys {
-			out = append(out, op.Variants[k])
+			if next := op.Variants[k]; next != nil {
+				out = append(out, *next)
+			}
 		}
 		return out
 	default:
@@ -6462,10 +6475,17 @@ func (a accessorObservation) evaluate(payload map[string]Node) (Node, bool, erro
 				content = "content"
 			}
 			value, present = fields[content]
+			if next == nil {
+				// A unit variant (ess/22) is the tag alone: nothing is read through it.
+				if present {
+					return nil, false, fmt.Errorf("accessor unit variant carries a payload")
+				}
+				return nil, false, nil
+			}
 			if !present {
 				return nil, false, fmt.Errorf("accessor union payload missing")
 			}
-			id = next
+			id = *next
 		}
 	}
 	return nil, false, fmt.Errorf("accessor operation budget exceeded")
@@ -7198,13 +7218,17 @@ func (s selectionObservation) typeFacts(source string) (accessorTypeFacts, error
 				pending = append(pending, field.Type)
 			}
 		case "union":
-			var variants map[string]string
-			if err := json.Unmarshal(body.Variants, &variants); err != nil {
+			variants, err := unionVariants(body.Variants)
+			if err != nil {
 				return facts, err
 			}
 			for _, name := range meaningKeys(selectionJSON(variants).(map[string]any)) {
-				node.Members = append(node.Members, variants[name])
-				pending = append(pending, variants[name])
+				// A unit variant (ess/22) reaches no type.
+				if variants[name] == nil {
+					continue
+				}
+				node.Members = append(node.Members, *variants[name])
+				pending = append(pending, *variants[name])
 			}
 		case "enum":
 		default:
@@ -7262,12 +7286,13 @@ func (s selectionObservation) checkPlan(plan accessorPlan, item bool) error {
 				return fmt.Errorf("selection alias differs")
 			}
 		case "union":
-			var variants map[string]string
-			if body.Kind != "union" || body.Tag != op.Tag || json.Unmarshal(body.Variants, &variants) != nil || len(variants) != len(op.Variants) {
+			variants, err := unionVariants(body.Variants)
+			if body.Kind != "union" || body.Tag != op.Tag || err != nil || len(variants) != len(op.Variants) {
 				return fmt.Errorf("selection union differs")
 			}
 			for label, index := range op.Variants {
-				if variants[label] != plan.Nodes[index].Source {
+				declared, ok := variants[label]
+				if !ok || (index == nil) != (declared == nil) || (index != nil && *declared != plan.Nodes[*index].Source) {
 					return fmt.Errorf("selection variant differs")
 				}
 			}
@@ -7977,8 +8002,8 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 			if !ok {
 				return fmt.Errorf("invalid_input")
 			}
-			var variants map[string]string
-			if json.Unmarshal(body.Variants, &variants) != nil {
+			variants, err := unionVariants(body.Variants)
+			if err != nil {
 				return fmt.Errorf("invalid_input")
 			}
 			target, ok := variants[label]
@@ -7997,7 +8022,14 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 				}
 			}
 			item, present := fields[key]
-			return s.validateValue(target, item, present, bytes, depth+1)
+			if target == nil {
+				// A unit variant (ess/22) is the tag alone.
+				if present {
+					return fmt.Errorf("invalid_input")
+				}
+				return nil
+			}
+			return s.validateValue(*target, item, present, bytes, depth+1)
 		}
 	}
 	if strings.HasPrefix(source, "List<") && strings.HasSuffix(source, ">") {

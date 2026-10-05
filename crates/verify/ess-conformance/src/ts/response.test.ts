@@ -383,6 +383,28 @@ test('a declaration reached twice is walked once', () => {
 
 // ---- comparing a returned response against an emitted event ---------------------------------------
 
+test('a unit variant (ess/22) is the tag alone, as the Go runtime answers', () => {
+  const union = decodeResponseObservation(
+    typed('billing.Method', {
+      'billing.Method': { kind: 'union', tag: 'kind', variants: { none: null, card: 'String' } },
+    }),
+  );
+  for (const value of [{ kind: 'none' }, { kind: 'card', value: 'c-1' }]) {
+    compareResponse(union, { receipt: value }, { receiptId: value });
+  }
+  for (const value of [
+    { kind: 'none', value: 'c-1' },
+    { kind: 'none', value: null },
+    { kind: 'card' },
+  ]) {
+    assert.throws(
+      () => compareResponse(union, { receipt: value }, { receiptId: value }),
+      /^Error: response field receipt: invalid_input$/,
+      JSON.stringify(value),
+    );
+  }
+});
+
 test('a response the command did not return is a refusal', () => {
   assert.throws(() => compareResponse(observation(), null, {}), /command returned no response/);
 });

@@ -1084,10 +1084,17 @@
               "type": "string"
             },
             "variants": {
-              "description": "The variants, by tag value.",
+              "description": "The variants, by tag value, each with the payload it carries.\n\nA variant written with no type (`Open:` or `Open: ~`) is a unit variant (ess/22, beyond10x/ess#418): it carries nothing, and its value on the wire is the tag alone.",
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/TypeRef"
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/TypeRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           },

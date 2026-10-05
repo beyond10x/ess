@@ -707,6 +707,12 @@ impl SystemChange {
     }
 }
 
+/// What a unit variant carries, as [`TypeChange::VariantTypeChanged`] writes it (ess/22,
+/// beyond10x/ess#418).
+///
+/// Not a type spelling: no declared or primitive type is called `unit`, so it cannot be read as one.
+pub const UNIT_PAYLOAD: &str = "unit";
+
 /// What moved about a declared type.
 ///
 /// Complete over [`ResolvedType`](ess_compiler::ir::ResolvedType): its `naming`, its `reading`, and
@@ -852,12 +858,16 @@ pub enum TypeChange {
         after: String,
     },
     /// A union variant carries a different payload type.
+    ///
+    /// A unit variant (ess/22) carries [`UNIT_PAYLOAD`]: a unit variant that gains a payload, or a
+    /// payload variant that loses one, is written with it on that side, and is breaking wherever the
+    /// union is used ([`crate::compatibility`]).
     VariantTypeChanged {
         /// Which variant.
         variant: String,
-        /// What it carried.
+        /// What it carried: a type, or [`UNIT_PAYLOAD`].
         before: String,
-        /// What it carries.
+        /// What it carries: a type, or [`UNIT_PAYLOAD`].
         after: String,
     },
     /// A union's tag field is spelt differently.

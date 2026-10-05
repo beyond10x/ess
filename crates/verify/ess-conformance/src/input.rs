@@ -984,6 +984,14 @@ fn setup_body(
                 .and_then(Node::as_text)
                 .and_then(|label| variants.get(label))
                 .ok_or("unknown or missing union tag")?;
+            // A unit variant (ess/22) is the tag alone.
+            let Some(selected) = selected else {
+                return if values.len() == 1 {
+                    Ok(())
+                } else {
+                    Err("a unit variant holds its tag alone".into())
+                };
+            };
             if values.len() != 2 {
                 return Err("a union holds exactly its tag and payload".into());
             }
@@ -1477,6 +1485,28 @@ fn project(
     project_value(ir, type_ref, value, path, depth, facts, errors);
 }
 
+/// A content member written beside a unit variant's tag (ess/22), as the undeclared field it is.
+///
+/// A unit variant declares nothing beside its tag; a payload variant keeps the shape-only reading
+/// the gate has always given a union.
+fn unit_variant_payload(
+    tag: &str,
+    variants: &std::collections::BTreeMap<String, Option<ResolvedTypeRef>>,
+    entries: &std::collections::BTreeMap<String, Node>,
+    path: &FactPath,
+) -> Option<ShapeError> {
+    let content = ess_gen::schema::union_content_key(tag);
+    let unit = entries
+        .get(tag)
+        .and_then(Node::as_text)
+        .and_then(|label| variants.get(label))
+        .is_some_and(Option::is_none);
+    (unit && entries.contains_key(content)).then(|| ShapeError::UndeclaredField {
+        at: path.to_string(),
+        field: content.to_owned(),
+    })
+}
+
 fn project_value(
     ir: &EssIr,
     type_ref: &ResolvedTypeRef,
@@ -1561,12 +1591,13 @@ fn project_value(
                     ),
                 },
                 // Shape only, as for a list: the tag is a text a fact could hold, and binding it is
-                // a decision this gate does not take.
-                ResolvedBody::Union { .. } => {
-                    if !matches!(value, Node::Map(_)) {
-                        wrong(errors, format!("{name} as a mapping"));
+                // a decision this gate does not take. A unit variant's content member is refused.
+                ResolvedBody::Union { tag, variants } => match value {
+                    Node::Map(entries) => {
+                        errors.extend(unit_variant_payload(tag, variants, entries, path));
                     }
-                }
+                    _ => wrong(errors, format!("{name} as a mapping")),
+                },
                 ResolvedBody::Struct { fields, .. } => {
                     let Some(entries) = value.as_map() else {
                         wrong(errors, format!("{name} as a mapping"));

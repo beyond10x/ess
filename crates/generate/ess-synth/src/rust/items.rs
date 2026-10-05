@@ -150,7 +150,7 @@ fn union(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     tag: &str,
-    variants: &BTreeMap<String, ResolvedTypeRef>,
+    variants: &BTreeMap<String, Option<ResolvedTypeRef>>,
 ) {
     let _ = writeln!(
         out,
@@ -165,12 +165,24 @@ fn union(
         emit.layout.type_name(&declared.name)
     );
     for (tag_value, type_ref) in variants {
-        let _ = writeln!(
-            out,
-            "    /// Tagged `{tag_value}` — `{type_ref}`.\n    {}({}),",
-            name::pascal(tag_value),
-            emit.rust_type(type_ref)
-        );
+        match type_ref {
+            Some(type_ref) => {
+                let _ = writeln!(
+                    out,
+                    "    /// Tagged `{tag_value}` — `{type_ref}`.\n    {}({}),",
+                    name::pascal(tag_value),
+                    emit.rust_type(type_ref)
+                );
+            }
+            // A unit variant (ess/22): the tag alone, carrying nothing.
+            None => {
+                let _ = writeln!(
+                    out,
+                    "    /// Tagged `{tag_value}`, carrying nothing.\n    {},",
+                    name::pascal(tag_value)
+                );
+            }
+        }
     }
     out.push_str("}\n");
 }

@@ -87,6 +87,7 @@ pub(crate) const EXISTENCE: &str =
 pub(crate) const CALLER: &str = "the caller (`{caller: …}`, `caller.<attribute>`)";
 pub(crate) const SET_EFFECT: &str = "a set effect (`instances:`, `affects:`, `{count: changed}`)";
 pub(crate) const RELATED_GUARD: &str = "`when_related:`";
+pub(crate) const UNIT_VARIANT: &str = "a union variant with no payload (ess/22)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -464,6 +465,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         Needs::EntityCore("a read of another entity's row"),
         &["tests/related_guard.rs::issue_211_a_command_guarded_by_a_related_row_is_refused_by_name"],
     ),
+    refused(
+        UNIT_VARIANT,
+        LoweringCode::UnitVariantUnsupported,
+        Needs::EntityCore("a union variant that admits no payload member; every entity-core variant admits one"),
+        &["tests/union_unit_variants.rs::a_stored_union_with_a_unit_variant_is_refused_by_name"],
+    ),
 ];
 
 impl LoweringCode {
@@ -499,6 +506,7 @@ impl LoweringCode {
         Self::CallerUnsupported,
         Self::SetEffectUnsupported,
         Self::RelatedGuardUnsupported,
+        Self::UnitVariantUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -703,6 +711,11 @@ impl LoweringCode {
                 "RelatedGuardUnsupported",
                 RELATED_GUARD,
                 "A branch is guarded by a row of another entity.",
+            ),
+            Self::UnitVariantUnsupported => (
+                "UnitVariantUnsupported",
+                UNIT_VARIANT,
+                "A union lowered as a field declares a variant that carries nothing.",
             ),
         }
     }

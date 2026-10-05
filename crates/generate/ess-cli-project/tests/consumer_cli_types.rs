@@ -505,7 +505,13 @@ fn unused_union_tag_and_variants_change_real_types_without_cli_effect() {
         };
         assert_eq!(actual, tag);
         assert_eq!(variants.len(), count);
-        assert_eq!(variants["text"].to_string(), "String");
+        assert_eq!(
+            variants["text"]
+                .as_ref()
+                .expect("a payload variant")
+                .to_string(),
+            "String"
+        );
         let TypeBody::Union {
             tag: actual,
             variants,

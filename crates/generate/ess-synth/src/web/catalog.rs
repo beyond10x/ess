@@ -477,14 +477,16 @@ fn types(bridge: &Bridge<'_>) -> Value {
                 );
                 let mut branches = Map::new();
                 for (label, payload) in variants {
-                    branches.insert(
-                        label.clone(),
-                        json!({
+                    // A unit variant (ess/22) carries nothing: no spelling and no type.
+                    let branch = match payload {
+                        Some(payload) => json!({
                             "spelling": payload.to_string(),
                             "type": serde_json::to_value(payload)
                                 .unwrap_or_else(|error| panic!("a type reference serialises: {error}")),
                         }),
-                    );
+                        None => json!({"spelling": null, "type": null}),
+                    };
+                    branches.insert(label.clone(), branch);
                 }
                 entry.insert("variants".to_owned(), Value::Object(branches));
             }

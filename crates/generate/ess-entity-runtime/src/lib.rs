@@ -494,6 +494,10 @@ pub enum LoweringCode {
     /// entity-core decides from a command's arguments and the one row its request addresses, and
     /// has no read of another entity's row.
     RelatedGuardUnsupported,
+    /// A union lowered as a field declares a unit variant (ess/22, beyond10x/ess#418): its value is
+    /// the tag alone, and every entity-core union variant admits a payload member, so a lowered
+    /// definition would accept `{"kind": "Open", "value": …}`, which ESS refuses.
+    UnitVariantUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1028,6 +1032,17 @@ impl Projector<'_> {
                     ResolvedBody::Union { tag, variants } => {
                         let mut lowered = BTreeMap::new();
                         for (variant, shape) in variants {
+                            let Some(shape) = shape else {
+                                self.diagnostic(
+                                    LoweringCode::UnitVariantUnsupported,
+                                    format!("{path}.{variant}"),
+                                    format!(
+                                        "`{variant}` is a unit variant, the tag alone; an Entity \
+                                         Runtime union variant always admits a payload member"
+                                    ),
+                                );
+                                continue;
+                            };
                             lowered.insert(
                                 variant.clone(),
                                 self.lower_field_inner(
@@ -1252,6 +1267,8 @@ impl Projector<'_> {
                     ResolvedBody::Union { tag, variants } => {
                         let content = if tag == "value" { "content" } else { "value" };
                         for (variant, shape) in variants {
+                            // A unit variant carries no invariant; lowering refuses it above.
+                            let Some(shape) = shape else { continue };
                             let before = out.len();
                             self.lower_nominal_invariants(
                                 shape,

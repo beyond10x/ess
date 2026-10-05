@@ -117,7 +117,8 @@ impl FormatVersion {
     pub const V20: Self = Self(20);
     /// Outcome-scoped one-time response disclosure authority.
     pub const V21: Self = Self(21);
-    /// Present-related predicate refusals compose after a held-row `wrong_state` refusal.
+    /// Present-related predicate refusals compose after a held-row `wrong_state` refusal; a union
+    /// variant may carry no payload (beyond10x/ess#418).
     pub const V22: Self = Self(22);
 
     /// How a format version is written.
@@ -630,10 +631,12 @@ fn body_inhabited(declared: &NamedType, inhabited: &BTreeSet<QualifiedName>) -> 
         // A variant is a name, not a reference to another type; an enum with no variants is refused
         // by `NamedType`'s own conversion, so anything reaching here has at least one.
         TypeBody::Enum { .. } => true,
-        // One buildable variant is enough.
-        TypeBody::Union { variants, .. } => variants
-            .values()
-            .any(|variant| reference_inhabited(variant, inhabited)),
+        // One buildable variant is enough, and a unit variant (ess/22) is always buildable.
+        TypeBody::Union { variants, .. } => variants.values().any(|variant| {
+            variant
+                .as_ref()
+                .is_none_or(|variant| reference_inhabited(variant, inhabited))
+        }),
     }
 }
 
@@ -794,7 +797,7 @@ fn unmet_requirements(
         }
         TypeBody::Enum { .. } => {}
         TypeBody::Union { variants, .. } => {
-            for variant in variants.values() {
+            for variant in variants.values().flatten() {
                 consider(variant);
             }
         }
@@ -826,6 +829,7 @@ fn names_something_undeclared(declared: &NamedType, registry: &TypeRegistry) -> 
         TypeBody::Enum { .. } => false,
         TypeBody::Union { variants, .. } => variants
             .values()
+            .flatten()
             .any(|variant| undeclared(variant, registry)),
     }
 }

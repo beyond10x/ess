@@ -187,6 +187,22 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
             ),
             TypeBody::Union { variants, .. } => {
                 for (name, ty) in variants {
+                    let Some(ty) = ty else {
+                        // An older reader fails a variant written with no type as `invalid type:
+                        // unit value, expected a string`, with no version hint (beyond10x/ess#418).
+                        if system.format.major() < FormatVersion::V22.major() {
+                            errors.push(
+                                ValidationError::new(
+                                    ValidationCode::UnsupportedFormatVersion,
+                                    format!("{at}.variants.{name}"),
+                                    "a union variant with no payload requires specification \
+                                     format ess/22",
+                                )
+                                .with_hint("declare `format: ess/22`, or give the variant a type"),
+                            );
+                        }
+                        continue;
+                    };
                     reference(
                         ty,
                         Some(system.format),

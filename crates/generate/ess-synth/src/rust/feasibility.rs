@@ -369,7 +369,9 @@ fn type_declarations(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
                         &format!("{source}.{variant}"),
                         "union variant",
                     );
-                    inventory.reference(&scope, reference, &format!("{source}.{variant}"));
+                    if let Some(reference) = reference {
+                        inventory.reference(&scope, reference, &format!("{source}.{variant}"));
+                    }
                 }
             }
         }
@@ -899,7 +901,7 @@ fn size_cycles(inventory: &mut Inventory, ir: &EssIr) {
             }
             ResolvedBody::Union { variants, .. } => {
                 for (variant, reference) in variants {
-                    if let Some(target) = size_reference(reference) {
+                    if let Some(target) = reference.as_ref().and_then(size_reference) {
                         edges.push((target, format!("{}.{variant}", declared.name)));
                     }
                 }

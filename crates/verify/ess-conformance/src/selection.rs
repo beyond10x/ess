@@ -36,8 +36,9 @@ pub enum Declaration {
     Union {
         /// Discriminator member.
         tag: String,
-        /// Exact alternatives.
-        variants: BTreeMap<String, TypeRef>,
+        /// Exact alternatives; `None` (written `null`) is a unit variant, the tag alone (ess/22,
+        /// beyond10x/ess#418).
+        variants: BTreeMap<String, Option<TypeRef>>,
     },
 }
 impl Declaration {
@@ -67,7 +68,7 @@ impl Declaration {
             Self::Newtype { of } => vec![of],
             Self::Struct { fields } => fields.iter().map(|f| &f.type_ref).collect(),
             Self::Enum { .. } => Vec::new(),
-            Self::Union { variants, .. } => variants.values().collect(),
+            Self::Union { variants, .. } => variants.values().flatten().collect(),
         }
     }
 }
@@ -181,7 +182,7 @@ impl Observation {
                     tag: tag.clone(),
                     variants: variants
                         .iter()
-                        .map(|(name, ty)| (name.clone(), unresolve(ty)))
+                        .map(|(name, ty)| (name.clone(), ty.as_ref().map(unresolve)))
                         .collect(),
                 },
             };
@@ -759,9 +760,18 @@ fn validate_value_inner(
                             .within(Segment::Member(unknown.clone())));
                     }
                 }
-                let ty = variants.get(label).ok_or_else(|| {
+                let Some(ty) = variants.get(label).ok_or_else(|| {
                     ValueError::from("invalid_input").within(Segment::Member(tag.clone()))
-                })?;
+                })?
+                else {
+                    // A unit variant (ess/22) is the tag alone.
+                    return if values.contains_key(content) {
+                        Err(ValueError::from("invalid_input")
+                            .within(Segment::Member(content.to_owned())))
+                    } else {
+                        Ok(())
+                    };
+                };
                 validate_value_inner(
                     ty,
                     values.get(content),

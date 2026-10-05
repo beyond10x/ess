@@ -75,7 +75,7 @@ enum StructuralDeclaration {
     },
     Union {
         tag: String,
-        variants: BTreeMap<String, TypeRef>,
+        variants: BTreeMap<String, Option<TypeRef>>,
     },
 }
 impl StructuralDeclaration {
@@ -184,7 +184,7 @@ impl NestedTargets {
                     tag: tag.clone(),
                     variants: variants
                         .iter()
-                        .map(|(k, v)| (k.clone(), crate::accessor::unresolve(v)))
+                        .map(|(k, v)| (k.clone(), v.as_ref().map(crate::accessor::unresolve)))
                         .collect(),
                 },
             };

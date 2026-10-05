@@ -429,6 +429,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
         }
         ResolvedBody::Union { tag, variants } => {
             let content = ess_gen::schema::union_content_key(tag);
+            // Bound even where every variant is a unit variant: the default clause reads `shape`.
             out.push_str("\tswitch shape := value.(type) {\n");
             for (label, payload) in variants {
                 let _ = writeln!(
@@ -438,16 +439,19 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                 );
                 let _ = writeln!(out, "\t\tout := map[string]any{{}}");
                 let _ = writeln!(out, "\t\tout[{tag:?}] = {label:?}");
-                let mut slot = 0;
-                encode_member(
-                    out,
-                    layout,
-                    "\t\t",
-                    content,
-                    "shape.Value",
-                    payload,
-                    &mut slot,
-                );
+                // A unit variant (ess/22) is written as its tag alone.
+                if let Some(payload) = payload {
+                    let mut slot = 0;
+                    encode_member(
+                        out,
+                        layout,
+                        "\t\t",
+                        content,
+                        "shape.Value",
+                        payload,
+                        &mut slot,
+                    );
+                }
                 out.push_str("\t\treturn out\n");
             }
             out.push_str(UNREACHABLE_SHAPE);
@@ -533,6 +537,10 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             );
             for (label, payload) in variants {
                 let _ = writeln!(out, "\tcase {label:?}:");
+                let Some(payload) = payload else {
+                    unit_variant_decoder(out, emit, &declared.name, content, label);
+                    continue;
+                };
                 let carried = ResolvedField {
                     name: content.to_owned(),
                     type_ref: payload.clone(),
@@ -554,6 +562,26 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
         }
     }
     out.push_str("}\n");
+}
+
+/// One unit variant's arm of a union decoder (ess/22): the tag alone. A content member beside it,
+/// `null` included, is refused in the Rust reader's words.
+fn unit_variant_decoder(
+    out: &mut String,
+    emit: &Emit<'_>,
+    union: &QualifiedName,
+    content: &str,
+    label: &str,
+) {
+    let _ = writeln!(
+        out,
+        "\t\tif object, ok := value.(map[string]any); ok {{\n\t\t\tif member, present := \
+         object[{content:?}]; present {{\n\t\t\t\treturn out, DecodeError{{At: nested(at, \
+         {content:?}), Expected: {:?}, Found: describes(member)}}\n\t\t\t}}\n\t\t}}\n\t\treturn \
+         {}{{}}, nil",
+        format!("no `{content}`: `{label}` carries nothing"),
+        emit.reference_variant(union, label)
+    );
 }
 
 /// The set of legal spellings, as one phrase a refusal can carry.

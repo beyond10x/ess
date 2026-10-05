@@ -316,7 +316,7 @@ fn validators(
                 ResolvedBody::Newtype { of, .. } => { let _ = writeln!(out, "selection_validate_{}(&value.0, bytes, depth+1)?;", ids[of]); }
                 ResolvedBody::Struct { fields, .. } => for field in fields { let _ = writeln!(out, "*bytes = bytes.saturating_add({}); selection_validate_{}(&value.{}, bytes, depth+1)?;", field.name.len(), ids[&field.type_ref], name::value_ident(&field.name)); },
                 ResolvedBody::Enum { variants } => { out.push_str("*bytes = bytes.saturating_add(match value {\n"); for variant in variants { let _ = writeln!(out, "{}::{} => {},", render(ty), name::pascal(variant), variant.len()); } out.push_str("});\n"); }
-                ResolvedBody::Union { variants, .. } => { out.push_str("match value {\n"); for (label, child) in variants { let _ = writeln!(out, "{}::{}(inner) => selection_validate_{}(inner, bytes, depth+1)?,", render(ty), name::pascal(label), ids[child]); } out.push_str("}\n"); }
+                ResolvedBody::Union { variants, .. } => { out.push_str("match value {\n"); for (label, child) in variants { match child { Some(child) => { let _ = writeln!(out, "{}::{}(inner) => selection_validate_{}(inner, bytes, depth+1)?,", render(ty), name::pascal(label), ids[child]); } None => { let _ = writeln!(out, "{}::{} => {{}}", render(ty), name::pascal(label)); } } } out.push_str("}\n"); }
             }
         }
         out.push_str(

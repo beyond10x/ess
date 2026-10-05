@@ -3654,18 +3654,28 @@ impl Compiler<'_> {
                     Slot::Inside(name.clone())
                 } else if key == payload {
                     let variant = entries.get(tag).and_then(Node::as_text);
-                    if let Some(type_ref) = variant.and_then(|variant| variants.get(variant)) {
+                    if let Some(Some(type_ref)) = variant.and_then(|variant| variants.get(variant))
+                    {
                         Slot::Typed(type_ref.clone())
                     } else {
                         if holds_reference(member) {
-                            self.refuse(Cause::ValueRejected {
-                                surface: surface.clone(),
-                                detail: format!(
+                            let detail = if variant.is_some_and(|v| variants.contains_key(v)) {
+                                format!(
+                                    "{}: `{}` of `{name}` is a unit variant and carries nothing",
+                                    place.written,
+                                    variant.unwrap_or("nothing"),
+                                )
+                            } else {
+                                format!(
                                     "{}: `{}` names no variant of `{name}`; it declares {}",
                                     place.written,
                                     variant.unwrap_or("nothing"),
                                     variants.keys().cloned().collect::<Vec<_>>().join(", ")
-                                ),
+                                )
+                            };
+                            self.refuse(Cause::ValueRejected {
+                                surface: surface.clone(),
+                                detail,
                             });
                         }
                         Slot::Undeclared
@@ -3967,8 +3977,9 @@ enum Container {
         name: String,
         /// The field carrying the variant's name.
         tag: String,
-        /// The payload type of each variant.
-        variants: BTreeMap<String, ResolvedTypeRef>,
+        /// The payload type of each variant; `None` for a unit variant, which carries nothing
+        /// (ess/22).
+        variants: BTreeMap<String, Option<ResolvedTypeRef>>,
     },
     /// A value whose parts are not typed one by one, by the name of its type.
     Opaque(String),

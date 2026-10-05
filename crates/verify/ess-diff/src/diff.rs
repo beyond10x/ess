@@ -475,13 +475,23 @@ fn enum_changes(was: &[EnumVariant], is: &[EnumVariant], push: &mut impl FnMut(T
     }
 }
 
+/// What a union variant carries, as a change writes it: its type, or the unit spelling.
+fn payload(carried: Option<&ResolvedTypeRef>) -> String {
+    carried.map_or_else(
+        || crate::change::UNIT_PAYLOAD.to_owned(),
+        ToString::to_string,
+    )
+}
+
 /// Every difference between two unions' variants.
 ///
 /// Keyed by tag value, which is a union's own identity for a variant, so a payload type that moved
-/// is reported as a moved payload rather than as one variant removed and another added.
+/// is reported as a moved payload rather than as one variant removed and another added. A unit
+/// variant (ess/22) carries [`UNIT_PAYLOAD`](crate::change::UNIT_PAYLOAD), so one that gains a payload, or a payload variant that
+/// loses its own, is a moved payload too.
 fn union_changes(
-    was: &BTreeMap<String, ResolvedTypeRef>,
-    is: &BTreeMap<String, ResolvedTypeRef>,
+    was: &BTreeMap<String, Option<ResolvedTypeRef>>,
+    is: &BTreeMap<String, Option<ResolvedTypeRef>>,
     push: &mut impl FnMut(TypeChange),
 ) {
     for variant in keys(was, is) {
@@ -494,8 +504,8 @@ fn union_changes(
             }),
             (Some(old), Some(new)) if old != new => push(TypeChange::VariantTypeChanged {
                 variant: variant.clone(),
-                before: old.to_string(),
-                after: new.to_string(),
+                before: payload(old.as_ref()),
+                after: payload(new.as_ref()),
             }),
             _ => {}
         }

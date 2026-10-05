@@ -362,9 +362,26 @@ fn validators(emit: &Emit<'_>, selection: &ResolvedSelectionPlan) -> Result<Stri
                     out.push_str("default: return SelectionInvalidInput\n}\n");
                 }
                 ResolvedBody::Union { variants, .. } => {
-                    out.push_str("switch branch := value.(type) {\n");
+                    // A unit variant (ess/22) carries nothing to validate, and Go refuses a
+                    // type-switch binding no clause reads.
+                    if variants.values().any(Option::is_some) {
+                        out.push_str("switch branch := value.(type) {\n");
+                    } else {
+                        out.push_str("switch value.(type) {\n");
+                    }
                     for (label, child) in variants {
-                        let _ = writeln!(out, "case {}: if cause := selectionValidate{}(branch.Value, bytes, depth+1); cause != \"\" {{ return cause }}", emit.reference_variant(handle.name(), label), ids[child]);
+                        match child {
+                            Some(child) => {
+                                let _ = writeln!(out, "case {}: if cause := selectionValidate{}(branch.Value, bytes, depth+1); cause != \"\" {{ return cause }}", emit.reference_variant(handle.name(), label), ids[child]);
+                            }
+                            None => {
+                                let _ = writeln!(
+                                    out,
+                                    "case {}:",
+                                    emit.reference_variant(handle.name(), label)
+                                );
+                            }
+                        }
                     }
                     out.push_str("default: return SelectionInvalidInput\n}\n");
                 }

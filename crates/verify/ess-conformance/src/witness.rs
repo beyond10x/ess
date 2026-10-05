@@ -186,12 +186,15 @@ impl Distinction {
     }
 }
 
-/// The wire key a union variant's value is carried under.
+/// The wire key a union variant's value is carried under beside the tag `tag`.
 ///
-/// `{"kind": "person", "value": …}` — the encoding `ess-gen` publishes in
-/// `generated/schema/types/billing.invoice.Payee.schema.json`, read from there rather than decided
-/// again here, because a witness in a second encoding is a witness no target can accept.
-const UNION_VALUE: &str = "value";
+/// `{"kind": "person", "value": …}`, or `content` where the tag is itself `value` — the encoding
+/// `ess-gen` publishes in `generated/schema/types/billing.invoice.Payee.schema.json`, read from
+/// there rather than decided again here, because a witness in a second encoding is a witness no
+/// target can accept.
+fn union_content_key(tag: &str) -> &'static str {
+    ess_gen::schema::union_content_key(tag)
+}
 
 /// A construct of the input that no safe value could be produced for.
 ///
@@ -802,11 +805,19 @@ pub(crate) fn proof_base(
                         for (label, kind) in variants {
                             budget.witness_candidate()?;
                             budget.charge(1 + tag.len() + label.len()).ok()?;
-                            if let Some(value) = build(ir, kind, budget, active, depth + 1) {
-                                let value = Node::Map(BTreeMap::from([
-                                    (tag.clone(), Node::Text(label.clone())),
-                                    (ess_gen::schema::union_content_key(tag).into(), value),
-                                ]));
+                            let built = match kind {
+                                Some(kind) => build(ir, kind, budget, active, depth + 1)
+                                    .map(|value| (ess_gen::schema::union_content_key(tag), value)),
+                                // A unit variant (ess/22) is the tag alone.
+                                None => None,
+                            };
+                            if kind.is_none() || built.is_some() {
+                                let mut value =
+                                    BTreeMap::from([(tag.clone(), Node::Text(label.clone()))]);
+                                if let Some((content, built)) = built {
+                                    value.insert(content.into(), built);
+                                }
+                                let value = Node::Map(value);
                                 if crate::input::validate_typed_value_bounded(
                                     ir,
                                     &ResolvedTypeRef::Declared { name: name.clone() },
@@ -3642,6 +3653,63 @@ impl<'ir> Builder<'ir> {
         }
     }
 
+    /// A tagged union's witness: the variant a unit union's distinction names, or its first label.
+    fn union_value(
+        &mut self,
+        type_ref: &ResolvedTypeRef,
+        tag: &str,
+        variants: &BTreeMap<String, Option<ResolvedTypeRef>>,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+    ) -> Result<Node, WitnessGap> {
+        let content = union_content_key(tag);
+        let labelled: Vec<_> = variants.iter().collect();
+        if labelled.is_empty() {
+            return Ok(Node::Map(BTreeMap::new()));
+        }
+        // A union with no unit variant keeps its one witness, its first label. One with a
+        // unit variant (ess/22) starts at the label this instance's distinction names, so
+        // further instances witness every variant, and takes the first from there that
+        // builds; a unit variant, the tag alone, always does — so a union admitted
+        // because of it is witnessed whatever the order of its labels.
+        let (start, tries) = if variants.values().any(Option::is_none) {
+            (self.distinction.get() % labelled.len(), labelled.len())
+        } else {
+            (0, 1)
+        };
+        let mut failed = None;
+        for nth in 0..tries {
+            let (label, variant) = labelled[(start + nth) % labelled.len()];
+            let tagged = (tag.to_owned(), Node::Text(label.clone()));
+            let Some(variant) = variant else {
+                return Ok(Node::Map(BTreeMap::from([tagged])));
+            };
+            // A payload that leads back to a type being built would nest to the depth
+            // limit; where a unit variant ends the recursion, it is skipped for one that
+            // does.
+            if tries > 1 && reaches(self.ir, variant, &self.building) {
+                continue;
+            }
+            match self.value(variant, path, overrides, depth + 1, false) {
+                Ok(inner) => {
+                    return Ok(Node::Map(BTreeMap::from([
+                        tagged,
+                        (content.to_owned(), inner),
+                    ])))
+                }
+                Err(gap) => {
+                    failed.get_or_insert(gap);
+                }
+            }
+        }
+        Err(failed.unwrap_or_else(|| WitnessGap {
+            path: path.to_string(),
+            type_ref: type_ref.to_string(),
+            reason: "refers to itself, so it has no finite value to send",
+        }))
+    }
+
     /// One value of the declared type `type_ref`, at `path`: [`value`](Self::value)'s arm for it.
     fn declared(
         &mut self,
@@ -3718,14 +3786,7 @@ impl<'ir> Builder<'ir> {
                 Ok(chosen(base))
             }
             ResolvedBody::Union { tag, variants } => {
-                let Some((label, variant)) = variants.iter().next() else {
-                    return Ok(Node::Map(BTreeMap::new()));
-                };
-                let inner = self.value(variant, path, overrides, depth + 1, false)?;
-                Ok(Node::Map(BTreeMap::from([
-                    (tag.clone(), Node::Text(label.clone())),
-                    (UNION_VALUE.to_owned(), inner),
-                ])))
+                self.union_value(type_ref, tag, variants, path, overrides, depth)
             }
             ResolvedBody::Struct { fields, invariants } => {
                 if record {
@@ -3853,6 +3914,7 @@ fn reaches(ir: &EssIr, type_ref: &ResolvedTypeRef, building: &[String]) -> bool 
                     ResolvedBody::Enum { .. } => false,
                     ResolvedBody::Union { variants, .. } => variants
                         .values()
+                        .flatten()
                         .any(|variant| walk(ir, variant, building, seen)),
                     ResolvedBody::Struct { fields, .. } => fields
                         .iter()
@@ -3895,10 +3957,16 @@ fn rebuilds(ir: &EssIr, type_ref: &ResolvedTypeRef, building: &[String]) -> bool
                 match &declared.body {
                     ResolvedBody::Newtype { of, .. } => walk(ir, of, building, seen),
                     ResolvedBody::Enum { .. } => false,
-                    ResolvedBody::Union { variants, .. } => variants
-                        .values()
-                        .next()
-                        .is_some_and(|variant| walk(ir, variant, building, seen)),
+                    // A unit variant (ess/22, beyond10x/ess#418) always builds, so such a union never
+                    // rebuilds; otherwise its witness is its first variant.
+                    ResolvedBody::Union { variants, .. } => {
+                        !variants.values().any(Option::is_none)
+                            && variants
+                                .values()
+                                .next()
+                                .and_then(Option::as_ref)
+                                .is_some_and(|variant| walk(ir, variant, building, seen))
+                    }
                     ResolvedBody::Struct { fields, .. } => fields
                         .iter()
                         .any(|field| walk(ir, &field.type_ref, building, seen)),

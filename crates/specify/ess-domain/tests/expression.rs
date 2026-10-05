@@ -85,7 +85,11 @@ fn registry() -> TypeRegistry {
             "sample.Union",
             TypeBody::Union {
                 tag: "kind".into(),
-                variants: [("email".into(), TypeRef::parse("sample.Email").unwrap())].into(),
+                variants: [(
+                    "email".into(),
+                    Some(TypeRef::parse("sample.Email").unwrap()),
+                )]
+                .into(),
             },
         ),
     ] {

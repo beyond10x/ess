@@ -233,7 +233,11 @@ fn a_field_keeps_the_shape_of_its_type_rather_than_a_rendering_of_it() {
         panic!("the example declares Payee as a union");
     };
     assert_eq!(tag, "kind");
-    let person = variants.get("person").expect("a person variant");
+    let person = variants
+        .get("person")
+        .expect("a person variant")
+        .as_ref()
+        .expect("a payload variant");
     assert_eq!(
         person.declared().expect("a named type").name(),
         &name("billing.invoice.Email"),

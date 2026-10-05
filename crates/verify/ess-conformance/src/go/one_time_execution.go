@@ -357,8 +357,8 @@ func oneTimeCheckConstraints(authority oneTimeResponse, ty string, value Node) s
 			}
 		}
 	case "union":
-		var variants map[string]string
-		if json.Unmarshal(declaration.Variants, &variants) != nil {
+		variants, err := unionVariants(declaration.Variants)
+		if err != nil {
 			return "ESS-CF-PAYLOAD"
 		}
 		row := value.(map[string]any)
@@ -368,7 +368,15 @@ func oneTimeCheckConstraints(authority oneTimeResponse, ty string, value Node) s
 			content = "content"
 		}
 		if child, ok := row[content]; ok {
-			return oneTimeCheckConstraints(authority, variants[tag], child)
+			carried, declared := variants[tag]
+			if !declared {
+				return oneTimeCheckConstraints(authority, "", child)
+			}
+			// A unit variant (ess/22) is the tag alone.
+			if carried == nil {
+				return "ESS-CF-PAYLOAD"
+			}
+			return oneTimeCheckConstraints(authority, *carried, child)
 		}
 	}
 	return ""

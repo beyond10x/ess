@@ -79,7 +79,7 @@ fn declarations_with_presence<'a>(
                 tag: tag.clone(),
                 variants: variants
                     .iter()
-                    .map(|(tag, ty)| (tag.clone(), crate::accessor::unresolve(ty)))
+                    .map(|(tag, ty)| (tag.clone(), ty.as_ref().map(crate::accessor::unresolve)))
                     .collect(),
             },
         };
@@ -209,9 +209,10 @@ fn members(declaration: &Declaration) -> Vec<(Option<&str>, &TypeRef)> {
             .map(|field| (Some(field.name.as_str()), &field.type_ref))
             .collect(),
         Declaration::Enum { .. } => Vec::new(),
+        // A unit variant (ess/22) carries no payload to check.
         Declaration::Union { variants, .. } => variants
             .iter()
-            .map(|(tag, ty)| (Some(tag.as_str()), ty))
+            .filter_map(|(tag, ty)| ty.as_ref().map(|ty| (Some(tag.as_str()), ty)))
             .collect(),
     }
 }

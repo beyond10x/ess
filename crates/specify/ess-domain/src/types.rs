@@ -940,8 +940,11 @@ pub enum TypeBody {
     Union {
         /// The field carrying the variant's name.
         tag: String,
-        /// The variants, by tag value.
-        variants: BTreeMap<String, TypeRef>,
+        /// The variants, by tag value, each with the payload it carries.
+        ///
+        /// `None` is a unit variant (ess/22, beyond10x/ess#418): it carries nothing, and its value
+        /// on the wire is the tag alone (`docs/design/union-unit-variants.md`).
+        variants: BTreeMap<String, Option<TypeRef>>,
     },
 }
 
@@ -1286,6 +1289,7 @@ impl NamedType {
             TypeBody::Enum { .. } => Vec::new(),
             TypeBody::Union { variants, .. } => variants
                 .values()
+                .flatten()
                 .flat_map(TypeRef::named_dependencies)
                 .collect(),
         }
@@ -1429,8 +1433,11 @@ pub enum RawTypeBody {
     Union {
         /// The field carrying the variant's name.
         tag: String,
-        /// The variants, by tag value.
-        variants: BTreeMap<String, TypeRef>,
+        /// The variants, by tag value, each with the payload it carries.
+        ///
+        /// A variant written with no type (`Open:` or `Open: ~`) is a unit variant (ess/22,
+        /// beyond10x/ess#418): it carries nothing, and its value on the wire is the tag alone.
+        variants: BTreeMap<String, Option<TypeRef>>,
     },
 }
 
@@ -2423,10 +2430,13 @@ mod tests {
             body: TypeBody::Union {
                 tag: "method".to_owned(),
                 variants: [
-                    ("card".to_owned(), TypeRef::Named(name("billing.Card"))),
+                    (
+                        "card".to_owned(),
+                        Some(TypeRef::Named(name("billing.Card"))),
+                    ),
                     (
                         "transfer".to_owned(),
-                        TypeRef::Named(name("billing.Transfer")),
+                        Some(TypeRef::Named(name("billing.Transfer"))),
                     ),
                 ]
                 .into(),

@@ -110,6 +110,11 @@ impl<'a> Keys<'a> {
                 ResolvedBody::Union { variants, .. } => {
                     let mut arms = String::new();
                     for (variant, reference) in variants {
+                        // A unit variant (ess/22) is keyed by its tag alone.
+                        let Some(reference) = reference else {
+                            let _ = writeln!(arms, "{ty}::{} => MemoryKey::List(vec![MemoryKey::Text({variant:?}.into())]),", name::pascal(&variant));
+                            continue;
+                        };
                         let key = self.expression(&reference, "value");
                         let _ = writeln!(arms, "{ty}::{}(value) => MemoryKey::List(vec![MemoryKey::Text({variant:?}.into()), {key}]),", name::pascal(&variant));
                     }

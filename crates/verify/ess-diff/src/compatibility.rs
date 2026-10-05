@@ -41,6 +41,8 @@
 //! | display name, summary or example moved | compatible everywhere: documentation |
 //! | a type widened (`expanded`) | breaking for readers of an output use; compatible for callers and history |
 //! | a type narrowed (`narrowed`) | breaking for callers of an input use and for stored history; compatible for readers |
+//! | a union variant gains or loses a required payload (ess/22) | breaking for every use: neither revision reads what the other writes |
+//! | a unit variant gains, or loses, an `Optional<…>` payload (ess/22) | decided as `expanded`, or `narrowed`: the tag alone is a value of both |
 //! | a type added or removed | compatible: every use of it is its own change |
 //! | an actor gains a grant, or any construct is added | compatible |
 //! | an actor loses a grant, an actor or a command is removed | breaking for callers |
@@ -402,11 +404,11 @@ fn type_dimensions(
     if matches!(changed, TypeChange::Added | TypeChange::Removed) {
         return [C, C, C];
     }
-    let [input, output, stored] = match relation {
+    let [input, output, stored] = unit_variant_dimensions(changed).unwrap_or(match relation {
         SemanticRelation::Expanded => [C, B, C],
         SemanticRelation::Narrowed => [B, C, B],
         SemanticRelation::Changed => [U, U, U],
-    };
+    });
     let at = |used: TypeUse, answer: Compatibility| if uses.contains(&used) { answer } else { C };
     // A use the classifier cannot place is a question the model does not answer: never better
     // than unknown, in any dimension.
@@ -420,6 +422,28 @@ fn type_dimensions(
         at(TypeUse::Output, output).max(floor),
         at(TypeUse::Stored, stored).max(floor),
     ]
+}
+
+/// Callers, readers and history for a union variant that gained or lost its payload (ess/22,
+/// beyond10x/ess#418), or `None` for any other change.
+///
+/// A required payload changes every value of the variant in both directions — `{"kind": "Open"}`
+/// against `{"kind": "Open", "value": …}` — so neither revision reads what the other writes:
+/// breaking wherever the union is used. An `Optional<…>` payload is read without its content
+/// member, so the tag alone stays a value of it: gaining one widens the variant, as `expanded`
+/// does, and losing one narrows it.
+fn unit_variant_dimensions(changed: &TypeChange) -> Option<Dimensions> {
+    let TypeChange::VariantTypeChanged { before, after, .. } = changed else {
+        return None;
+    };
+    let unit = |side: &str| side == crate::change::UNIT_PAYLOAD;
+    let optional = |side: &str| side.starts_with("Optional<");
+    match (before.as_str(), after.as_str()) {
+        (was, is) if unit(was) && optional(is) => Some([C, B, C]),
+        (was, is) if optional(was) && unit(is) => Some([B, C, B]),
+        (was, is) if unit(was) || unit(is) => Some([B, B, B]),
+        _ => None,
+    }
 }
 
 /// A change to a display name, a summary or an example, which no caller, reader or stored value

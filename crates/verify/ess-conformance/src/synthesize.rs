@@ -2578,6 +2578,28 @@ fn outcome_scenario_in(
         steps.extend(more);
         source.extend(depends);
     }
+    // ess/22 (#418): a branch whose input sends a union with a unit variant is run once more per
+    // further variant, so the suite sends the unit variant — the tag alone — and every payload
+    // variant beside it, and a target that encodes one as another fails. A union with no unit
+    // variant keeps its one witness, and a model without one keeps its suite's bytes.
+    if again {
+        let further =
+            unit_union_variants(models.arrangement, command).map_or(0, |(_, largest)| largest);
+        for nth in 1..further {
+            if let Some((more, depends, _)) = exercise_as(
+                models,
+                command,
+                outcome,
+                actors,
+                &id,
+                &mut Vec::new(),
+                Witness::UnionVariant(nth),
+            ) {
+                steps.extend(more);
+                source.extend(depends);
+            }
+        }
+    }
     // ess/18 (#201): a branch whose `when_subject_state:` lists several states is witnessed in each
     // of them, on a further row per state after the first invocation, so a target that mishandles
     // any listed state fails. A state refusal is witnessed per state by `state_refusals`.
@@ -2814,6 +2836,10 @@ enum Witness {
     /// absent ([`related::absence_points`]) left absent, and so copy an absent value (ess/22,
     /// beyond10x/ess#285, [`arranged_with_absent_reference`]).
     RelatedValueAbsent(usize),
+    /// A further instance whose input witnesses the `n`th variant of every union with a unit variant
+    /// it sends (ess/22, beyond10x/ess#418, [`arranged_with_union_variant`]), so a synthesized suite
+    /// sends each variant and not only the first label.
+    UnionVariant(usize),
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -3164,9 +3190,10 @@ fn run_as(
                     related_at = Distinction::further(nth);
                     related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
                 }
-                Witness::LiteralFallbacks | Witness::Listed(_) | Witness::RelatedValueAbsent(_) => {
-                    return Err(related_guard::unarranged())
-                }
+                Witness::LiteralFallbacks
+                | Witness::Listed(_)
+                | Witness::RelatedValueAbsent(_)
+                | Witness::UnionVariant(_) => return Err(related_guard::unarranged()),
             }
         } else {
             // A guard no input meets beside the invariants of the entity it copies the input into is
@@ -7225,6 +7252,9 @@ fn arranged_as(
         Witness::RelatedValueAbsent(point) => {
             arranged_with_absent_reference(ir, command, outcome, actors, point)
         }
+        Witness::UnionVariant(nth) => {
+            arranged_with_union_variant(ir, command, outcome, actors, nth)
+        }
         // Only a command reading a related row builds one, and `run_as` arranges it there.
         Witness::RelatedBoundary { .. } | Witness::RelatedAbsent(_) => {
             Err(related_guard::unarranged())
@@ -7354,6 +7384,116 @@ fn arranged_with_absent_reference(
         return Err(unarranged("the branch is not selected once it is left out"));
     }
     Ok((setup, input))
+}
+
+/// The distinction the union-variant witnesses (ess/22, beyond10x/ess#418) are counted from: past
+/// every absent-reference witness, so their rows and identities are their own.
+const UNION_VARIANT_WITNESS: usize = 2 * ABSENT_REFERENCE_WITNESS;
+
+/// How many variants the unions with a unit variant that `command`'s input reaches declare, as the
+/// least common multiple of their counts and the largest of them; `None` where it reaches none.
+///
+/// A union with no unit variant is not counted: it keeps its one witness, its first label.
+fn unit_union_variants(ir: &EssIr, command: &ResolvedCommand) -> Option<(usize, usize)> {
+    fn walk(
+        ir: &EssIr,
+        reference: &ResolvedTypeRef,
+        seen: &mut BTreeSet<QualifiedName>,
+        counts: &mut BTreeSet<usize>,
+    ) {
+        match reference {
+            ResolvedTypeRef::Primitive { .. } => {}
+            ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => {
+                walk(ir, of, seen, counts);
+            }
+            ResolvedTypeRef::Map { value, .. } => walk(ir, value, seen, counts),
+            ResolvedTypeRef::Declared { name } => {
+                if !seen.insert(name.name().clone()) {
+                    return;
+                }
+                match &ir.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => walk(ir, of, seen, counts),
+                    ResolvedBody::Struct { fields, .. } => {
+                        for field in fields {
+                            walk(ir, &field.type_ref, seen, counts);
+                        }
+                    }
+                    ResolvedBody::Enum { .. } => {}
+                    ResolvedBody::Union { variants, .. } => {
+                        if variants.values().any(Option::is_none) {
+                            counts.insert(variants.len());
+                        }
+                        for variant in variants.values().flatten() {
+                            walk(ir, variant, seen, counts);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut counts = BTreeSet::new();
+    let mut seen = BTreeSet::new();
+    for field in &command.input {
+        walk(ir, &field.type_ref, &mut seen, &mut counts);
+    }
+    let largest = *counts.last()?;
+    let lcm = counts.iter().fold(1_usize, |lcm, &count| {
+        let (mut a, mut b) = (lcm, count);
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        lcm / a * count
+    });
+    Some((lcm, largest))
+}
+
+/// The arrangement and input of [`Witness::UnionVariant`] (ess/22, beyond10x/ess#418): a further
+/// instance whose distinction is `nth` past a multiple of every unit union's variant count, so
+/// each such union the input sends is witnessed by its `nth` variant (the first from there that
+/// builds, [`crate::witness`]).
+///
+/// Only for a branch its input selects, as for [`Witness::LiteralFallbacks`]; a union has no
+/// predicate selectors, so no guard reads which variant was sent.
+fn arranged_with_union_variant(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    nth: usize,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let Some((lcm, largest)) = unit_union_variants(ir, command) else {
+        return Err(no_union_variant_run(command));
+    };
+    if nth == 0
+        || nth >= largest
+        || subject_fact::routes(command, outcome)
+        || has_subject_guards(command)
+    {
+        return Err(no_union_variant_run(command));
+    }
+    let distinction = Distinction::further(UNION_VARIANT_WITNESS.div_ceil(lcm) * lcm + nth);
+    let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let input = reach(ir, command, outcome, distinction)?;
+    let input = existence::fresh_created(ir, command, outcome, input, true)?;
+    let input = freshened(
+        ir,
+        command,
+        outcome,
+        input,
+        setup.before.as_ref(),
+        &setup.settled,
+    );
+    Ok((setup, input))
+}
+
+/// Why [`Witness::UnionVariant`] builds nothing. Never reported: the full invocation is the
+/// scenario, and this run only adds to it.
+fn no_union_variant_run(command: &ResolvedCommand) -> RefusalCause {
+    RefusalCause::NoWitness(WitnessGap {
+        path: command.name.to_string(),
+        type_ref: "union".into(),
+        reason: "no further variant of a union with a unit variant to witness",
+    })
 }
 
 /// Why [`Witness::LiteralFallbacks`] builds nothing. Never reported: the full invocation is the
@@ -9206,7 +9346,7 @@ pub(crate) fn reachable_types(
                 }
             }
             ResolvedBody::Union { variants, .. } => {
-                for variant in variants.values() {
+                for variant in variants.values().flatten() {
                     reachable_types(ir, variant, found);
                 }
             }

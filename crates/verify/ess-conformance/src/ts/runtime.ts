@@ -8194,7 +8194,8 @@ export interface AccessorOperation {
   field: AccessorField;
   next: number;
   tag: string;
-  variants: { [label: string]: number };
+  /** A unit variant (ess/22) has no plan: `null`, and every member read through it is unavailable. */
+  variants: { [label: string]: number | null };
 }
 
 export interface AccessorNode {
@@ -8252,10 +8253,11 @@ function decodeAccessorShape(value: Node): AccessorShape {
 
 function decodeAccessorOperation(value: Node): AccessorOperation {
   const held = isObject(value) ? value : {};
-  const variants: { [label: string]: number } = {};
+  const variants: { [label: string]: number | null } = {};
   if (isObject(held.variants)) {
     for (const label of Object.keys(held.variants)) {
-      variants[label] = decodeNumber((held.variants as { [key: string]: Node })[label]);
+      const next = (held.variants as { [key: string]: Node })[label];
+      variants[label] = next === null ? null : decodeNumber(next);
     }
   }
   return {
@@ -8572,9 +8574,9 @@ export function accessorChildren(operation: AccessorOperation): number[] {
     case 'newtype':
       return [operation.next];
     case 'union':
-      return sortStrings(Object.keys(operation.variants)).map(
-        (label) => operation.variants[label] as number,
-      );
+      return sortStrings(Object.keys(operation.variants))
+        .map((label) => operation.variants[label])
+        .filter((next): next is number => next !== null);
     default:
       return [];
   }
@@ -8723,9 +8725,16 @@ export class AccessorObservation {
           if (!Object.prototype.hasOwnProperty.call(operation.variants, tag)) {
             throw new Error('unknown accessor discriminator');
           }
-          const next = operation.variants[tag] as number;
+          const next = operation.variants[tag] as number | null;
           const content = operation.tag === 'value' ? 'content' : 'value';
           present = Object.prototype.hasOwnProperty.call(fields, content);
+          if (next === null) {
+            // A unit variant (ess/22) is the tag alone: nothing is read through it.
+            if (present) {
+              throw new Error('accessor unit variant carries a payload');
+            }
+            return [null, false];
+          }
           value = fields[content];
           if (!present) {
             throw new Error('accessor union payload missing');
@@ -9892,13 +9901,18 @@ function variantList(value: Node): string[] {
   });
 }
 
-function variantMap(value: Node): { [label: string]: string } {
+/** A union's variants by label; `null` is a unit variant (ess/22), the tag alone. */
+function variantMap(value: Node): { [label: string]: string | null } {
   if (!isObject(value)) {
     throw new Error('selection union variants must be an object');
   }
-  const result: { [label: string]: string } = {};
+  const result: { [label: string]: string | null } = {};
   for (const label of Object.keys(value)) {
     const target = value[label];
+    if (target === null) {
+      result[label] = null;
+      continue;
+    }
     if (typeof target !== 'string') {
       throw new Error('selection union variant must be text');
     }
@@ -10193,7 +10207,10 @@ export class SelectionObservation {
         case 'union': {
           const variants = variantMap(body.variants);
           for (const label of meaningKeys(variants)) {
-            const member = variants[label] as string;
+            const member = variants[label];
+            if (member === null || member === undefined) {
+              continue;
+            }
             node.members.push(member);
             pending.push(member);
           }
@@ -10269,8 +10286,11 @@ export class SelectionObservation {
             throw new Error('selection union differs');
           }
           for (const label of Object.keys(operation.variants)) {
+            const next = operation.variants[label] as number | null;
+            const declared = variants[label];
             if (
-              variants[label] !== itemAt(plan.nodes, operation.variants[label] as number).source
+              declared === undefined ||
+              (next === null ? declared !== null : declared !== itemAt(plan.nodes, next).source)
             ) {
               throw new Error('selection variant differs');
             }
@@ -10459,8 +10479,16 @@ export class SelectionObservation {
             }
           }
           const item = fields[key];
+          const carried = variants[label];
+          if (carried === null || carried === undefined) {
+            // A unit variant (ess/22) is the tag alone.
+            if (Object.prototype.hasOwnProperty.call(fields, key)) {
+              throw new Error('invalid_input');
+            }
+            return;
+          }
           this.validateValue(
-            variants[label] as string,
+            carried,
             item,
             Object.prototype.hasOwnProperty.call(fields, key),
             counter,

@@ -58,7 +58,9 @@ impl TypeFacts {
                         ResolvedBody::Struct { fields, .. } => {
                             fields.iter().map(|f| &f.type_ref).collect()
                         }
-                        ResolvedBody::Union { variants, .. } => variants.values().collect(),
+                        ResolvedBody::Union { variants, .. } => {
+                            variants.values().flatten().collect()
+                        }
                         ResolvedBody::Enum { .. } => Vec::new(),
                     };
                     for child in &children {

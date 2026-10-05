@@ -72,6 +72,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | the caller (`{caller: …}`, `caller.<attribute>`) | `CallerUnsupported` | entity-core: an operand for who sent the command |
 | a set effect (`instances:`, `affects:`, `{count: changed}`) | `SetEffectUnsupported` | entity-core: an operation over more than the one instance its request names |
 | `when_related:` | `RelatedGuardUnsupported` | entity-core: a read of another entity's row |
+| a union variant with no payload (ess/22) | `UnitVariantUnsupported` | entity-core: a union variant that admits no payload member; every entity-core variant admits one |
 
 ## Every code
 
@@ -109,5 +110,6 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `CallerUnsupported` | the caller (`{caller: …}`, `caller.<attribute>`) | A value or a guard reads the authenticated caller. |
 | `SetEffectUnsupported` | a set effect (`instances:`, `affects:`, `{count: changed}`) | An outcome changes rows beside, or instead of, the one its request names. |
 | `RelatedGuardUnsupported` | `when_related:` | A branch is guarded by a row of another entity. |
+| `UnitVariantUnsupported` | a union variant with no payload (ess/22) | A union lowered as a field declares a variant that carries nothing. |
 
 [ess-lowering-end]: #

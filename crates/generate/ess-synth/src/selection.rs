@@ -43,7 +43,9 @@ fn inventory(
                 ResolvedBody::Struct { fields, .. } => {
                     pending.extend(fields.iter().map(|field| field.type_ref.clone()));
                 }
-                ResolvedBody::Union { variants, .. } => pending.extend(variants.values().cloned()),
+                ResolvedBody::Union { variants, .. } => {
+                    pending.extend(variants.values().flatten().cloned());
+                }
                 ResolvedBody::Enum { .. } => {}
             },
             ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => {

@@ -1,0 +1,41 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.work
+types:
+  - name: demo.work.Completion
+    kind: struct
+    fields:
+      - {name: outcome, type: String}
+  - name: demo.work.Status
+    kind: union
+    tag: kind
+    variants:
+      Open:
+      Complete: demo.work.Completion
+events:
+  - name: demo.work.StatusReported
+    fields:
+      - {name: status, type: demo.work.Status}
+actors:
+  - name: demo.work.Reporter
+    may: [demo.work.ReportStatus]
+commands:
+  - name: demo.work.ReportStatus
+    input:
+      - {name: status, type: demo.work.Status}
+    outcomes:
+      - name: reported
+        emits: [demo.work.StatusReported]
+        payload:
+          demo.work.StatusReported:
+            status: input.status
+components:
+  - component: work-service
+    owns:
+      domains: [demo.work]
+    accepts:
+      commands: [demo.work.ReportStatus]
+    publishes:
+      events: [demo.work.StatusReported]
+    reached_by: network
