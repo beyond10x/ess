@@ -214,7 +214,8 @@ are arranged a second either side of each bound and on it: `param.from` is sent 
 `2020-01-01T10:00:00Z`, `param.to` as `2020-01-01T12:00:00Z`, and rows land at 09:59:59, 10:00:00,
 11:59:59 and 12:00:00 UTC. One further row inside is spelled at an offset under which its written
 text sorts outside (`2020-01-01T08:00:00-03:00`), so a target comparing text, ignoring a bound or
-making `to` inclusive counts another number. A range parameter read any other way, a bound on a
+making `to` inclusive counts another number. Each row outside the window holds every other
+conjunct of the filter, so the bound alone refutes it. A range parameter read any other way, a bound on a
 group key and two bounds on one side keep the `ESS-SYNTH-017` refusal.
 
 Refused today, and kept refused: `started_at >= now - 1h` in a view filter (`type_mismatch`, naming

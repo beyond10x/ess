@@ -1339,6 +1339,26 @@ fn parameter_spelling(text: &str) -> Option<(&str, &str)> {
         .then(|| (word, rest.trim()))
 }
 
+/// Which membership a refused parameter operand was written under (beyond10x/ess#438).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Membership {
+    /// `in`, `any_of`, `one_of`.
+    AnyOf,
+    /// `not_in`, `none_of`.
+    NoneOf,
+    /// `in_ignore_case`.
+    Folded,
+}
+
+/// What a parameter or input word names, for the rewrite a refusal suggests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Named {
+    /// A `List` or a `Map`: a quantifier ranges over it.
+    Collection,
+    /// One scalar value: an equality compares with it.
+    Value,
+}
+
 /// The hint for a comparison operand that starts with a parameter or an input and goes on as text
 /// (`param.limit_s * 1000`, beyond10x/ess#438): a comparison has no arithmetic but one constant
 /// offset, and a scale belongs before the read, in the unit the parameter is declared in.
@@ -1836,15 +1856,18 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     }
 
     /// A membership operand spelled as one dotted word naming a view parameter or a command input
-    /// (`queue_id: {in: param.queues}`, beyond10x/ess#438): a membership list holds literal values
-    /// only, so the word is the text it spells and the list never reads what the caller sent.
-    /// Refused in every format and against every field type — a `String` field would otherwise
-    /// admit the text silently — naming the quantifier that asks the question. `true` when refused.
+    /// (`queue_id: {in: param.queues}`, beyond10x/ess#438): a membership list — `in`, `not_in` and
+    /// their aliases, and `in_ignore_case` — holds literal values only, so the word is the text it
+    /// spells and the list never reads what the caller sent. Refused in every format and against
+    /// every field type — a `String` field would otherwise admit the text silently — naming the
+    /// form that asks the question of what the word names ([`Self::membership_hint`]). `true` when
+    /// refused.
     fn membership_parameter(
         &mut self,
         expression: &Predicate,
         path: &FactPath,
         value: &FactValue,
+        membership: Membership,
     ) -> bool {
         let FactValue::Text(text) = value else {
             return false;
@@ -1852,19 +1875,85 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         let Some((word, "")) = parameter_spelling(text) else {
             return false;
         };
+        let hint = self.membership_hint(path, word, membership);
         self.checked.errors.push(error(
             self.owner,
             ValidationCode::TypeMismatch,
             Some(path),
             None,
             format!(
-                "`{expression}` reads `{word}` as the text literal \"{word}\", not the list it \
-                 names: a membership list holds literal values only. To ask whether `{path}` is \
-                 one of the values `{word}` holds, write `exists: {{in: {word}, as: x, that: \
-                 {path} == x}}`"
+                "`{expression}` reads `{word}` as the text literal \"{word}\", not what it names: \
+                 a membership list holds literal values only. {hint}"
             ),
         ));
         true
+    }
+
+    /// The rewrite of `path` in, or not in, what `word` names: membership in a `List` or a `Map`
+    /// through `exists:`, which is refused over anything else; equality with a single value; and,
+    /// where `word` names nothing here, no rewrite. `in_ignore_case` loses its case folding in
+    /// either rewrite, and the hint says so.
+    fn membership_hint(&self, path: &FactPath, word: &str, membership: Membership) -> String {
+        let negated = membership == Membership::NoneOf;
+        let exact = if membership == Membership::Folded {
+            ", which compares exactly rather than ignoring case"
+        } else {
+            ""
+        };
+        match self.named(word) {
+            Some(Named::Collection) => {
+                let exists = format!("exists: {{in: {word}, as: x, that: {path} == x}}");
+                let form = if negated {
+                    format!("not: {{{exists}}}")
+                } else {
+                    exists
+                };
+                format!(
+                    "To ask whether `{path}` is {}one of the values `{word}` holds, write \
+                     `{form}`{exact}",
+                    if negated { "not " } else { "" }
+                )
+            }
+            Some(Named::Value) => format!(
+                "`{word}` is one value, not a list: write `{path} {} {word}`{exact}",
+                if negated { "!=" } else { "==" }
+            ),
+            None => format!(
+                "`{word}` names no list or value here; membership in a list the caller sends is \
+                 written `exists: {{in: <list>, as: x, that: {path} == x}}`"
+            ),
+        }
+    }
+
+    /// What a `param.<name>` or `input.<name>` word names here, read without recording a read or
+    /// an error: an `input.<path>` also names the input `<path>` where the place reads its input
+    /// fields bare.
+    fn named(&self, word: &str) -> Option<Named> {
+        let path = FactPath::new(word).ok()?;
+        let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
+        let resolved = resolve(self.environment, &path, self.owner, &self.bindings)
+            .ok()
+            .or_else(|| {
+                (path.namespace() == namespace && path.segments().len() > 1)
+                    .then(|| {
+                        resolve(
+                            self.environment,
+                            &FactPath::from_segments(&path.segments()[1..]),
+                            self.owner,
+                            &self.bindings,
+                        )
+                        .ok()
+                    })
+                    .flatten()
+            })?;
+        if resolved.scalar.is_some() {
+            return Some(Named::Value);
+        }
+        matches!(
+            self.environment.shape(&resolved.terminal),
+            Ok(Shape::List(_) | Shape::Map(_))
+        )
+        .then_some(Named::Collection)
     }
 
     fn enum_literal(&mut self, expression: &Predicate, typed: &ValueType, literal: &FactValue) {
@@ -2846,6 +2935,12 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 ));
                 continue;
             };
+            // `in_ignore_case` is a membership list too (beyond10x/ess#438).
+            if op == FoldOp::InIgnoreCase
+                && self.membership_parameter(predicate, path, value, Membership::Folded)
+            {
+                continue;
+            }
             // The #74 refusal, as for `==`: a bare word naming a declared field reads as that text.
             if self.environment.root(text).is_some() {
                 self.checked.errors.push(error(
@@ -2926,17 +3021,17 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 let Some(typed) = self.operand(&Operand::Fact(path.clone())) else {
                     return;
                 };
-                let op = if matches!(predicate, Predicate::AnyOf { .. }) {
-                    "AnyOf"
+                let (op, membership) = if matches!(predicate, Predicate::AnyOf { .. }) {
+                    ("AnyOf", Membership::AnyOf)
                 } else {
-                    "NoneOf"
+                    ("NoneOf", Membership::NoneOf)
                 };
                 if typed.scalar.is_none() {
                     self.mismatch(predicate, op, &typed, None);
                     return;
                 }
                 for value in values {
-                    if self.membership_parameter(predicate, path, value) {
+                    if self.membership_parameter(predicate, path, value, membership) {
                         continue;
                     }
                     let kind = ScalarKind::literal(value);

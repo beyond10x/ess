@@ -565,6 +565,9 @@ struct Row {
     /// The lifecycle state a measure's condition has this row rest in, where the contrast search
     /// chose one (beyond10x/ess#363, [`contrast::arrange`]).
     state: Option<StateName>,
+    /// Whether the row is refuted by a window's bound alone (beyond10x/ess#439): it must hold
+    /// every other conjunct of the filter, so that only the bound decides it ([`window_rows`]).
+    window_edge: bool,
 }
 
 /// Everything the arrangement decided before any command is chosen.
@@ -951,6 +954,8 @@ struct Bound {
     lower: bool,
     /// Whether a row at the parameter's instant passes (`>=`, `<=`).
     inclusive: bool,
+    /// The position of the conjunct it is, among the filter's top-level conjuncts.
+    conjunct: usize,
 }
 
 /// The instants a window's lower and upper parameters are sent at: two hours apart, so a row an
@@ -1005,6 +1010,7 @@ fn ordering_bound(predicate: &Predicate) -> Option<Bound> {
         field,
         lower,
         inclusive,
+        conjunct: 0,
     })
 }
 
@@ -1017,6 +1023,10 @@ struct Window {
     lower: Option<(String, bool)>,
     /// The parameter sent at [`WINDOW_TO`] and whether a row at it passes.
     upper: Option<(String, bool)>,
+    /// The view with every bound conjunct taken out of its filter: what a row outside the window
+    /// must still hold, so that the bound alone refutes it. `None` where the bounds are the whole
+    /// filter.
+    residual: Option<ResolvedView>,
 }
 
 impl Window {
@@ -1030,6 +1040,7 @@ impl Window {
             field: first.field.clone(),
             lower: None,
             upper: None,
+            residual: None,
         };
         for bound in bounds {
             if bound.field != window.field {
@@ -1053,6 +1064,22 @@ impl Window {
             *side = Some((bound.param.clone(), bound.inclusive));
         }
         Ok(Some(window))
+    }
+
+    /// The window with [`Self::residual`] taken from `view`: its filter without the bounds' own
+    /// conjuncts.
+    fn beside(self, view: &ResolvedView, bounds: &[Bound]) -> Self {
+        let rest: Vec<Predicate> = conjuncts(view.filter.as_ref())
+            .into_iter()
+            .enumerate()
+            .filter(|(at, _)| !bounds.iter().any(|bound| bound.conjunct == *at))
+            .map(|(_, conjunct)| conjunct.clone())
+            .collect();
+        let residual = (!rest.is_empty()).then(|| ResolvedView {
+            filter: Some(Predicate::All(rest)),
+            ..view.clone()
+        });
+        Self { residual, ..self }
     }
 
     fn at(text: &str) -> ess_primitives::time::Rfc3339Instant {
@@ -1159,16 +1186,20 @@ impl Window {
     }
 }
 
-/// Every row's instant in the window's field (beyond10x/ess#439): admitted rows inside, the first
-/// of group A at each inside edge and one spelled to sort outside; refuted rows outside, and a
-/// further refuted row in A for each outside edge `x` does not take, so every edge is in one read.
+/// Every row's instant in the window's field (beyond10x/ess#439). Admitted rows are inside, the
+/// first of group A at each inside edge and one spelled to sort outside. Group A gains one row per
+/// outside edge, `y1`, `y2`, … ([`Row::window_edge`]): each holds every other conjunct of the filter
+/// and is refuted by the bound alone, so a target that ignores a bound or moves an edge counts it.
+/// The pattern's other refuted rows keep their role: where the filter has conjuncts beside the
+/// window they are refuted by those, inside it; where the window is the whole filter they are
+/// outside it.
 fn window_rows(window: &Window, rows: &mut Vec<Row>) {
     let inside = window.inside();
     let outside = window.outside();
     let mut admitted = 0;
     let mut refuted = 0;
     for row in rows.iter_mut() {
-        let at = if row.admitted {
+        let at = if row.admitted || window.residual.is_some() {
             admitted += 1;
             &inside[(admitted - 1) % inside.len()]
         } else {
@@ -1178,19 +1209,18 @@ fn window_rows(window: &Window, rows: &mut Vec<Row>) {
         row.values
             .insert(window.field.clone(), Node::Text(at.clone()));
     }
-    if let Some(x) = rows
-        .iter()
-        .find(|row| !row.admitted && row.tuple == 0)
-        .cloned()
-    {
-        for (n, at) in outside.iter().enumerate().skip(1) {
-            let mut further = x.clone();
-            further.label = format!("y{n}");
-            further
-                .values
-                .insert(window.field.clone(), Node::Text(at.clone()));
-            rows.push(further);
-        }
+    let Some(template) = rows.iter().find(|row| row.tuple == 0).cloned() else {
+        return;
+    };
+    for (n, at) in outside.iter().enumerate() {
+        let mut edge = template.clone();
+        edge.label = format!("y{}", n + 1);
+        edge.admitted = false;
+        edge.window_edge = true;
+        edge.state = None;
+        edge.values
+            .insert(window.field.clone(), Node::Text(at.clone()));
+        rows.push(edge);
     }
 }
 
@@ -1504,7 +1534,10 @@ fn scenario(
                 && mapped.contains_key(bound.field.as_str())
                 && !aggregation.group_by.contains(&bound.field)
             {
-                bounds.push(bound);
+                bounds.push(Bound {
+                    conjunct: at,
+                    ..bound
+                });
                 continue;
             }
         }
@@ -1682,7 +1715,9 @@ fn scenario(
     // had, the change of an ungrouped `count` or `sum` included.
     let unscoped =
         !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() && !delta;
-    let window = Window::of(&bounds).map_err(|reason| unwitnessed(view, reason))?;
+    let window = Window::of(&bounds)
+        .map_err(|reason| unwitnessed(view, reason))?
+        .map(|window| window.beside(view, &bounds));
     let exact = isolated && (!selectors.is_empty() || window.is_some() || unscoped);
     if unscoped && !exact {
         return Err(RefusalCause::AggregateUnscoped {
@@ -2152,6 +2187,7 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
             values,
             label,
             state: None,
+            window_edge: false,
         }
     };
     let skips = |i: usize| plan.skipping.contains(&inputs[i].0);
@@ -2532,7 +2568,7 @@ fn arrange_and_observe(
             Ok(done) => done,
             // A refuted row of a parameter-scoped filter that no state refutes is moved out of the
             // scope the query binds.
-            Err(_) if !attempt.admitted && !plan.scopes.is_empty() => {
+            Err(_) if !attempt.admitted && !attempt.window_edge && !plan.scopes.is_empty() => {
                 for scope in &plan.scopes {
                     attempt
                         .values
@@ -2542,7 +2578,9 @@ fn arrange_and_observe(
             }
             // A filter that reads nothing but group selectors holds of every row under its own
             // key: the selection is refuted by the distinct groups, and no state is forced.
-            Err(_) if !attempt.admitted && plan.selectors_only() => continue,
+            Err(_) if !attempt.admitted && !attempt.window_edge && plan.selectors_only() => {
+                continue
+            }
             Err(error) => return Err(error),
         };
         if let (Some(key), Some(owner)) = (
@@ -2839,6 +2877,17 @@ fn drive_row(
         if shows(ir, plan.view, &reached.state, &reached.settled, &selecting) != Ok(row.admitted) {
             continue;
         }
+        // A window's edge row holds every other conjunct, so the bound alone refutes it.
+        if let Some(residual) = plan
+            .window
+            .as_ref()
+            .and_then(|window| window.residual.as_ref())
+            .filter(|_| row.window_edge)
+        {
+            if shows(ir, residual, &reached.state, &reached.settled, &selecting) != Ok(true) {
+                continue;
+            }
+        }
         if best
             .as_ref()
             .is_none_or(|held| reached.steps.len() < held.steps.len())
@@ -2847,11 +2896,20 @@ fn drive_row(
         }
     }
     let reached = best.ok_or_else(|| {
-        plan.unwitnessed(format!(
-            "no reachable state leaves row `{}` {} by the filter",
-            row.label,
-            if row.admitted { "admitted" } else { "refuted" }
-        ))
+        if row.window_edge {
+            plan.unwitnessed(format!(
+                "no reachable state holds every conjunct of the filter but the window's bounds \
+                 for row `{}`, so no row is refuted by a bound alone and the window is not \
+                 witnessed",
+                row.label
+            ))
+        } else {
+            plan.unwitnessed(format!(
+                "no reachable state leaves row `{}` {} by the filter",
+                row.label,
+                if row.admitted { "admitted" } else { "refuted" }
+            ))
+        }
     })?;
     kept_as_planned(plan, row, start, &reached)?;
     Ok(Created { reached, ..created })

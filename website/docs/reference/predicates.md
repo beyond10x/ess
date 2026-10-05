@@ -516,11 +516,13 @@ path. A comparison has no arithmetic beyond one constant offset, so `duration_ms
 1000` compares with the text `param.limit_s * 1000` and is refused as `type_mismatch`, naming the
 offset form and a parameter declared in the unit the field is stored in.
 
-`any_of`, `none_of` and their aliases hold literal values only (beyond10x/ess#438). An operand that
-is one dotted word naming a view parameter or a command input, `queue_id: {in: param.queues}`,
-would be the text it spells, so it is refused as `type_mismatch` in every format and against every
-field type. Membership in a list the caller sends is a quantifier: `exists: {in: param.queues, as:
-q, that: queue_id == q}`.
+`any_of`, `none_of`, their aliases and `in_ignore_case` hold literal values only
+(beyond10x/ess#438). An operand that is one dotted word naming a view parameter or a command input,
+`queue_id: {in: param.queues}`, would be the text it spells, so it is refused as `type_mismatch` in
+every format and against every field type. Membership in a list the caller sends is a quantifier,
+`exists: {in: param.queues, as: q, that: queue_id == q}` (`not:` around it for `none_of`); a
+parameter holding one value is compared with `==` or `!=`. The refusal names the form that fits
+what the word names.
 
 ### The equality shorthand reads a literal
 

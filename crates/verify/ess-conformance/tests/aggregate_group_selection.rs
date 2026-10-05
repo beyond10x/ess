@@ -1716,6 +1716,104 @@ fn membership_operand_naming_a_parameter_is_refused_with_quantifier_hint() {
     );
 }
 
+/// The class behind the membership refusal's hint (correction round 1): whatever the operand names
+/// — a list or a single value, a view parameter or a command input, under `in` or `in_ignore_case`
+/// — the form the hint names is one the author can apply, and applied it validates.
+#[test]
+fn membership_hint_names_a_form_that_validates() {
+    let labelled = replaced(
+        LIST_YAML,
+        "      - {name: duration_ms, type: Integer}\n    lifecycle",
+        "      - {name: duration_ms, type: Integer}\n      - {name: label, type: String}\n    lifecycle",
+    );
+    let listed_params = "params: [{name: queues, type: List<Integer>}]";
+    let view = |params: &str, filter: &str| {
+        replaced(
+            &labelled,
+            &format!("{listed_params}\n    {LIST_FILTER}"),
+            &format!("{params}\n    filter: {filter}"),
+        )
+    };
+    let guarded = |when: &str| {
+        replaced(
+            &replaced(
+                &replaced(
+                    LIST_YAML,
+                    "commands:\n",
+                    "errors:\n  - {name: demo.calls.Listed, summary: The queue is listed., fields: []}\ncommands:\n",
+                ),
+                "      - {name: duration_ms, type: Integer}\n    outcomes:",
+                "      - {name: duration_ms, type: Integer}\n      - {name: allowed, type: List<Integer>}\n      - {name: limit, type: Integer}\n    outcomes:",
+            ),
+            "      - name: recorded\n",
+            &format!(
+                "      - name: listed\n        when: {when}\n        error: demo.calls.Listed\n      - name: recorded\n"
+            ),
+        )
+    };
+    let cases = [
+        (
+            view(listed_params, "{queue_id: {in: param.queues}}"),
+            "{queue_id: {in: param.queues}}",
+            "exists: {in: param.queues, as: x, that: queue_id == x}",
+        ),
+        (
+            view(
+                "params: [{name: queue, type: Integer}]",
+                "{queue_id: {in: param.queue}}",
+            ),
+            "{queue_id: {in: param.queue}}",
+            "queue_id == param.queue",
+        ),
+        (
+            view(
+                "params: [{name: labels, type: List<String>}]",
+                "{label: {in_ignore_case: [param.labels]}}",
+            ),
+            "{label: {in_ignore_case: [param.labels]}}",
+            "exists: {in: param.labels, as: x, that: label == x}",
+        ),
+        (
+            view(
+                "params: [{name: wanted, type: String}]",
+                "{label: {in_ignore_case: [param.wanted]}}",
+            ),
+            "{label: {in_ignore_case: [param.wanted]}}",
+            "label == param.wanted",
+        ),
+        (
+            guarded("{queue_id: {in: input.allowed}}"),
+            "{queue_id: {in: input.allowed}}",
+            "exists: {in: input.allowed, as: x, that: queue_id == x}",
+        ),
+        (
+            guarded("{queue_id: {not_in: input.limit}}"),
+            "{queue_id: {not_in: input.limit}}",
+            "queue_id != input.limit",
+        ),
+        (
+            view(listed_params, "{queue_id: {none_of: param.queues}}"),
+            "{queue_id: {none_of: param.queues}}",
+            "not: {exists: {in: param.queues, as: x, that: queue_id == x}}",
+        ),
+    ];
+    for (text, written, hint) in cases {
+        let error = refused(&text);
+        assert!(error.contains("[type_mismatch]"), "{written}: {error}");
+        assert!(error.contains(hint), "{written} hints `{hint}`: {error}");
+        // A mapping form is written as a flow mapping, a comparison as it stands.
+        let form = if hint.contains(": ") {
+            format!("{{{hint}}}")
+        } else {
+            hint.to_owned()
+        };
+        let applied = replaced(&text, written, &form);
+        if let Err(error) = validated(&applied) {
+            panic!("{written}: the hinted `{hint}` is refused:\n{error}");
+        }
+    }
+}
+
 const LONG_VIEW: &str = "  - name: demo.calls.Long
     source: demo.calls.Call
     consistency: read_your_writes

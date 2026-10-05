@@ -142,7 +142,8 @@ views:
 `default:` on a parameter and `{in: param.queues}` are not admitted. `default:` is an unknown
 field. `in`, `any_of`, `one_of`, `not_in` and `none_of` hold literal values only, so `queue_id: {in:
 param.queues}` would compare with the text `param.queues`; it is refused as `type_mismatch`, naming
-the `exists` form, and so is a command input written the same way (`{in: input.allowed}`).
+the `exists` form for a list and `queue_id == param.queue` for a single value, and so is a command
+input written the same way (`{in: input.allowed}`) and `in_ignore_case`.
 
 Conformance sends a list parameter over a group key one arranged key at a time, as a list of one,
 and asserts that group exactly and every other arranged group absent. It then sends every arranged

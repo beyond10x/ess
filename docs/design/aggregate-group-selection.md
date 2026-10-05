@@ -55,8 +55,11 @@ A **range selector** (beyond10x/ess#439) bounds rows rather than selecting group
 key. A view with one is observed exactly under `Empty` authority. The lower bound is sent as
 `2020-01-01T10:00:00Z` and the upper as `2020-01-01T12:00:00Z`; admitted rows are arranged on each
 inside edge (at an inclusive bound, a second inside an exclusive one) and an hour inside, that one
-spelled at an offset under which its written text sorts outside a bound; refuted rows on each
-outside edge, with a further refuted row in group A for each edge `x` does not take. The expected
+spelled at an offset under which its written text sorts outside a bound. Group A gains one row on
+each outside edge (`y1`, `y2`, …) arranged so that every other conjunct of the filter holds of it,
+so the bound alone refutes it; with no such state the view is refused by name. Where the filter
+has conjuncts beside the window, the pattern's other refuted rows are refuted by those, inside the
+window; where the window is the whole filter, they lie outside it. The expected
 numbers come from `shows`, which compares instants. Bounds on two fields, two bounds on one side,
 and a bounded field an aggregate reads are refused by name; every other read of a `Timestamp`
 parameter keeps `ESS-SYNTH-017`. The caller resolves a named range or a sliding window into the two
