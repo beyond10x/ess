@@ -212,6 +212,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // The persisted expression vocabulary (`docs/design/expression-family-source22.md`).
     ("ess-conformance", 40, None),
     ("ess-conformance", 41, None),
+    ("ess-conformance", 42, None),
+    ("ess-conformance", 43, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

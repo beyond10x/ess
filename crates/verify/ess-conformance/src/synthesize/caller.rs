@@ -97,14 +97,22 @@ pub(super) struct InvocationModels<'a> {
     pub arrangement: &'a EssIr,
     pub acting: &'a EssIr,
     credentials: Option<(&'a EssIr, &'a Callers, Who)>,
+    /// The explicitly admitted synthesis seeds (beyond10x/ess#413): empty but for a seeded request.
+    pub seeds: &'a super::AdmittedSeeds,
 }
 
 impl<'a> InvocationModels<'a> {
     pub fn plain(ir: &'a EssIr) -> Self {
+        Self::seeded(ir, &super::seeds::EMPTY)
+    }
+
+    /// [`plain`](Self::plain), offering `seeds` where ordinary arrangement leaves a row unmet.
+    pub fn seeded(ir: &'a EssIr, seeds: &'a super::AdmittedSeeds) -> Self {
         Self {
             arrangement: ir,
             acting: ir,
             credentials: None,
+            seeds,
         }
     }
 
@@ -314,11 +322,13 @@ fn cross_single_command(ir: &EssIr, callers: &Callers, whole: &mut Synthesis) {
         arrangement: &first,
         acting: &second,
         credentials: Some((ir, callers, Who::First)),
+        seeds: &super::seeds::EMPTY,
     };
     let backward = InvocationModels {
         arrangement: &second,
         acting: &first,
         credentials: Some((ir, callers, Who::Second)),
+        seeds: &super::seeds::EMPTY,
     };
     for command in ir.commands().keys() {
         if callers.for_command(ir, Who::First, command)
@@ -725,6 +735,13 @@ pub(super) fn append_independent(
     scenario: &mut ConformanceScenario,
     again: &ConformanceScenario,
 ) -> Result<(), &'static str> {
+    // A row established by setup carries its literal identity, which is never renamed or drawn
+    // afresh (beyond10x/ess#413): a second run would establish the same row twice.
+    if established(&scenario.steps) || established(&again.steps) {
+        return Err(
+            "a row established by setup cannot be established again for the reversed callers",
+        );
+    }
     let mut identities = Identities::of(ir, [&*scenario, again]);
     let before = scenario.steps.len();
     append(ir, scenario, again, &mut identities)
@@ -747,15 +764,16 @@ fn append(
     identities: &mut Identities<'_>,
 ) -> Result<(), Exhausted> {
     let once = |steps: &[ScenarioStep]| {
-        steps.iter().any(|step| {
-            matches!(
-                step,
-                ScenarioStep::ResolveFixtures { .. }
-                    | ScenarioStep::CaptureCommandResult { .. }
-                    | ScenarioStep::ExpectReplayResult { .. }
-                    | ScenarioStep::CheckPeriodic { .. }
-            )
-        })
+        established(steps)
+            || steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ScenarioStep::ResolveFixtures { .. }
+                        | ScenarioStep::CaptureCommandResult { .. }
+                        | ScenarioStep::ExpectReplayResult { .. }
+                        | ScenarioStep::CheckPeriodic { .. }
+                )
+            })
     };
     if once(&scenario.steps) || once(&again.steps) || reads_every_row(ir, &again.steps) {
         return Ok(());
@@ -773,6 +791,14 @@ fn append(
         scenario.steps.extend(steps);
     }
     Ok(())
+}
+
+/// Whether `steps` establish a row by setup: its literal identity can be established only once in a
+/// scenario, so a second run of them cannot be appended.
+fn established(steps: &[ScenarioStep]) -> bool {
+    steps
+        .iter()
+        .any(|step| matches!(step, ScenarioStep::EstablishEntity { .. }))
 }
 
 /// The note for a swapped run left out of the scenario `id`.

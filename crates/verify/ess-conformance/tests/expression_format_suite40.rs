@@ -100,7 +100,7 @@ fn suite39_relabel_refuses_fact_before_execution() {
         let text = refused.to_string();
         assert!(
             text.contains("suite/40 or /41")
-                || (older.ends_with("39") && text.contains("1–37, 40 and 41")),
+                || (older.ends_with("39") && text.contains("1–37, 40, 41, 42 and 43")),
             "{older}: {text}"
         );
     }

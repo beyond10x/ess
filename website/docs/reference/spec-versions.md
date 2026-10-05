@@ -402,6 +402,16 @@ Each implies every major below it. Rust, Go and TypeScript execute the step with
 readers refuse these envelopes before target callbacks. A suite without them keeps its earlier
 format.
 
+`ess-conformance/42` and `ess-conformance/43`, unreleased, carry explicit synthesis seeds
+(beyond10x/ess#413): the provenance member `synthesis_seeds` records each selected source's digest,
+each admitted setup row, and where each row was used in a generated scenario. They are written only
+for a request that selected seeds, even when no seed was used; a seed-free suite keeps its earlier
+format and bytes. Version 42 is ordinary; 43 carries declared coverage. Each implies every major below it
+that readers implement; 38 and 39 are allocated to aggregate observation and refused by version. Rust, Go
+and TypeScript admit both, run their `establish_entity` steps through the existing setup
+capability with report/2, and refuse the record under any other major. Older readers refuse these
+envelopes before target callbacks.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

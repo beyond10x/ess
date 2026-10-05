@@ -65,27 +65,11 @@ pub const PACKAGE: &str = "essconform";
 /// This runtime's ceiling is independent of another language's port status.
 fn refuse_unadmitted(suite: &ConformanceSuite) -> Result<(), crate::admission::AdmissionError> {
     let version = suite.provenance.suite_version;
-    if version.major() > 41 {
+    if !crate::go::admitted_major(version.major()) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedTarget",
             "$.provenance.suite_version",
-            format!(
-                "the generated TypeScript runner admits suite versions up to \
-                 `ess-conformance/41` and would refuse `{version}`; \
-                 regenerate using a supported suite version"
-            ),
-        ));
-    }
-    // A major below the newest that other work has allocated and this runner does not read yet.
-    if !version.is_supported() {
-        return Err(crate::admission::AdmissionError::new(
-            "UnsupportedTarget",
-            "$.provenance.suite_version",
-            format!(
-                "the generated TypeScript runner admits suite versions up to \
-                 `ess-conformance/37`, then `ess-conformance/40` and `ess-conformance/41`, and \
-                 would refuse `{version}`; regenerate using a supported suite version"
-            ),
+            crate::go::unadmitted_message("TypeScript", version),
         ));
     }
     Ok(())
@@ -626,6 +610,7 @@ mod tests {
             ),
             component: None,
             scenario_initial_state: None,
+            synthesis_seeds: None,
         })
     }
 

@@ -298,6 +298,15 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
 fn response_replay_supported(
     suite: &ConformanceSuite,
 ) -> Result<(), crate::admission::AdmissionError> {
+    // A browser depiction is not evidence that a backend accepted seeded setup (beyond10x/ess#413).
+    if crate::synthesis_seeds::used_by(suite) {
+        return Err(crate::admission::AdmissionError::new(
+            "UnsupportedVocabulary",
+            "$suite.provenance.synthesis_seeds",
+            "browser replay refuses a suite generated with synthesis seeds: it cannot depict a \
+             backend establishing seeded setup",
+        ));
+    }
     if crate::fixtures::provisioned_by(suite) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedVocabulary",

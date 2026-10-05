@@ -395,7 +395,7 @@ fn suite39_relabel_refuses_fact() {
     let supported: Vec<u32> = ess_conformance::scenario::SUPPORTED_SUITE_FORMATS
         .iter()
         .copied()
-        .filter(|major| *major > 37)
+        .filter(|major| (38..=41).contains(major))
         .collect();
     assert_eq!(
         supported,

@@ -3090,17 +3090,37 @@ fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue], ordered: bool)
     };
     match leaf {
         Leaf::Number { integral } => {
-            let mut numbers: Vec<f64> = Vec::new();
+            let mut numbers: Vec<Number> = Vec::new();
             for literal in literals {
                 if let Some(number) = literal.as_number() {
-                    numbers.extend([number.get(), number.get() + 1.0, number.get() - 1.0]);
+                    // A literal binary64 does not carry — an `Integer` beyond 2^53 a row holds
+                    // (beyond10x/ess#413) — is stepped exactly; its binary64 neighbours would name
+                    // another value. Every literal binary64 carries keeps its candidates.
+                    if Number::new(number.get()).ok() == Some(number) {
+                        numbers.extend(
+                            [number.get(), number.get() + 1.0, number.get() - 1.0]
+                                .into_iter()
+                                .filter_map(|value| Number::new(value).ok()),
+                        );
+                    } else {
+                        numbers.extend(
+                            [
+                                Some(number),
+                                number.checked_add(Number::from(1_i64)),
+                                number.checked_add(Number::from(-1_i64)),
+                            ]
+                            .into_iter()
+                            .flatten(),
+                        );
+                    }
                 }
             }
-            numbers.extend([0.0, -1.0]);
-            for value in numbers {
-                let Ok(candidate) = Number::new(value) else {
-                    continue;
-                };
+            numbers.extend(
+                [0.0, -1.0]
+                    .into_iter()
+                    .filter_map(|value| Number::new(value).ok()),
+            );
+            for candidate in numbers {
                 if !*integral || candidate.is_integral() {
                     push(Node::Number(candidate));
                 }

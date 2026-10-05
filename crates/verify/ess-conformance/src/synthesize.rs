@@ -191,10 +191,13 @@ mod identity;
 mod paging;
 mod related;
 mod related_guard;
+mod seeds;
 mod set_effects;
 mod singleton;
 mod subject_fact;
 mod view_grant;
+
+pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
@@ -2037,14 +2040,59 @@ impl fmt::Display for InstanceNeed {
 /// value it chooses is a function of the model, and nothing here reads a clock or a random device.
 /// `tests/synthesis.rs` synthesises the billing example twice and compares bytes.
 pub fn synthesize(ir: &EssIr) -> Synthesis {
+    synthesize_in(ir, &seeds::EMPTY)
+}
+
+/// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
+/// `docs/design/synthesis-seeds.md`).
+///
+/// Ordinary arrangement is tried first everywhere; an admitted row is offered only where it left a
+/// stored-row obligation unmet. A nonempty set records its sources, selections and uses on the
+/// suite, which selects suite/42 even when no row was used. The empty set is [`synthesize`].
+///
+/// # Errors
+///
+/// [`SeedAdmissionError::WrongModel`] for seeds compiled against another model, and
+/// [`SeedAdmissionError::CallerModel`] for a model whose actors carry caller attributes, which is
+/// refused rather than synthesized without its seeds.
+pub fn synthesize_with_seeds(
+    ir: &EssIr,
+    seeds: &AdmittedSeeds,
+) -> Result<Synthesis, SeedAdmissionError> {
+    seeds.bound_to(ir)?;
+    let mut synthesis = synthesize_in(ir, seeds);
+    seeds.attach(ir, &mut synthesis.suite);
+    Ok(synthesis)
+}
+
+/// [`synthesize_for`], with explicitly admitted synthesis seeds: selections are kept whole, and a
+/// use is recorded only where its scenario is in the component's suite.
+///
+/// # Errors
+///
+/// As [`synthesize_with_seeds`], and [`SeedAdmissionError::UnknownComponent`] as
+/// [`synthesize_for`] refuses.
+pub fn synthesize_for_with_seeds(
+    ir: &EssIr,
+    component: &str,
+    seeds: &AdmittedSeeds,
+) -> Result<Synthesis, SeedAdmissionError> {
+    seeds.bound_to(ir)?;
+    let mut synthesis = synthesize_for_in(ir, component, seeds)?;
+    seeds.attach(ir, &mut synthesis.suite);
+    Ok(synthesis)
+}
+
+fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Each witness search is run once per question for the whole synthesis (beyond10x/ess#301).
     let _memoised = crate::witness_memo::memoise(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
-    // assignment, each read with the caller's values written in (`caller::synthesize`).
+    // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
+    // refused for such a model before this point (`AdmittedSeeds::bound_to`).
     let mut synthesis = if caller::uses(ir) {
         caller::synthesize(ir)
     } else {
-        synthesize_plain(ir, Focus::Whole)
+        synthesize_invocations(&caller::InvocationModels::seeded(ir, seeds), Focus::Whole)
     };
     grant::cross_caller(ir, &mut synthesis.suite, &mut synthesis.notes);
     // Who may read a read-granted view (beyond10x/ess#286), over the otherwise finished suite.
@@ -2256,6 +2304,14 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
 /// [`UnknownComponent`] when the specification declares no component of that name, carrying the
 /// names it does declare.
 pub fn synthesize_for(ir: &EssIr, component: &str) -> Result<Synthesis, UnknownComponent> {
+    synthesize_for_in(ir, component, &seeds::EMPTY)
+}
+
+fn synthesize_for_in(
+    ir: &EssIr,
+    component: &str,
+    seeds: &AdmittedSeeds,
+) -> Result<Synthesis, UnknownComponent> {
     let Some(realised) = ir
         .components()
         .values()
@@ -2271,7 +2327,7 @@ pub fn synthesize_for(ir: &EssIr, component: &str) -> Result<Synthesis, UnknownC
         });
     };
 
-    let whole = synthesize(ir);
+    let whole = synthesize_in(ir, seeds);
     let mut provenance = whole.suite.provenance.clone();
     provenance.component = Some(component.to_owned());
     let mut suite = ConformanceSuite::new(provenance);
@@ -3076,59 +3132,76 @@ fn run_as(
     // for every branch it decides; further witnesses are the boundaries of its predicates alone.
     let related = related_guard::routes(command, outcome);
     let mut related_at = Distinction::PLAIN;
-    let (mut setup, input) = if related {
-        match witness {
-            Witness::Full => related_guard::prepare_at_in(
-                models,
-                command,
-                outcome,
-                actors,
-                Distinction::PLAIN,
-                None,
-            )?,
-            Witness::RelatedBoundary { of, goal } => {
-                let goals = command
-                    .outcomes
-                    .get(of)
-                    .map(|branch| related_guard::boundary_goals(ir, command, branch))
-                    .unwrap_or_default();
-                let (named, _) = goals.get(goal).ok_or_else(related_guard::unarranged)?;
-                related_at = Distinction::further(goal + 1);
-                related_guard::prepare_at_in(
+    let (mut setup, input) =
+        if related {
+            match witness {
+                Witness::Full => related_guard::prepare_at_in(
                     models,
                     command,
                     outcome,
                     actors,
-                    related_at,
-                    Some(named),
-                )?
+                    Distinction::PLAIN,
+                    None,
+                )?,
+                Witness::RelatedBoundary { of, goal } => {
+                    let goals = command
+                        .outcomes
+                        .get(of)
+                        .map(|branch| related_guard::boundary_goals(ir, command, branch))
+                        .unwrap_or_default();
+                    let (named, _) = goals.get(goal).ok_or_else(related_guard::unarranged)?;
+                    related_at = Distinction::further(goal + 1);
+                    related_guard::prepare_at_in(
+                        models,
+                        command,
+                        outcome,
+                        actors,
+                        related_at,
+                        Some(named),
+                    )?
+                }
+                Witness::RelatedAbsent(nth) => {
+                    related_at = Distinction::further(nth);
+                    related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
+                }
+                Witness::LiteralFallbacks | Witness::Listed(_) | Witness::RelatedValueAbsent(_) => {
+                    return Err(related_guard::unarranged())
+                }
             }
-            Witness::RelatedAbsent(nth) => {
-                related_at = Distinction::further(nth);
-                related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
-            }
-            Witness::LiteralFallbacks | Witness::Listed(_) | Witness::RelatedValueAbsent(_) => {
-                return Err(related_guard::unarranged())
-            }
-        }
-    } else {
-        // A guard no input meets beside the invariants of the entity it copies the input into is
-        // refused naming them, where the guard alone is met (beyond10x/ess#234).
-        arranged_as(ir, command, outcome, actors, routed, witness).map_err(|cause| {
-            match (
-                &cause,
-                crate::witness::unmet_invariants(ir, command, outcome, true),
-            ) {
-                (RefusalCause::GuardUnsatisfiable { .. }, Ok(Some((named, tried)))) => {
-                    RefusalCause::GuardUnsatisfiable {
-                        predicate: named,
-                        tried,
+        } else {
+            // A guard no input meets beside the invariants of the entity it copies the input into is
+            // refused naming them, where the guard alone is met (beyond10x/ess#234).
+            let ordinary =
+                arranged_as(ir, command, outcome, actors, routed, witness).map_err(|cause| match (
+                    &cause,
+                    crate::witness::unmet_invariants(ir, command, outcome, true),
+                ) {
+                    (RefusalCause::GuardUnsatisfiable { .. }, Ok(Some((named, tried)))) => {
+                        RefusalCause::GuardUnsatisfiable {
+                            predicate: named,
+                            tried,
+                        }
+                    }
+                    _ => cause,
+                });
+            // Ordinary arrangement first; an explicitly admitted seed row only where it left the
+            // branch's stored row unmet (beyond10x/ess#413).
+            match ordinary {
+                Err(cause) if routed && witness == Witness::Full && !models.seeds.is_empty() => {
+                    match subject_fact::prepare_seeded(models, command, outcome, actors, &cause) {
+                        Ok(Ok(found)) => found,
+                        Ok(Err(notes)) => return Err(subject_fact::annotated(cause, &notes)),
+                        Err(unmet) => {
+                            return Err(subject_fact::annotated(
+                                cause,
+                                &[format!("a synthesis seed row was not applied: {unmet}")],
+                            ))
+                        }
                     }
                 }
-                _ => cause,
+                ordinary => ordinary?,
             }
-        })?
-    };
+        };
     // The input as it is sent, after every arrangement moved it: still within the invariants of
     // the entity the branch copies it into (beyond10x/ess#234).
     if let Some(named) = crate::witness::invariant_broken_by(ir, command, outcome, &input) {
@@ -8949,7 +9022,12 @@ fn fact_value(node: &Node) -> Option<FactValue> {
     match node {
         Node::Text(text) => Some(FactValue::text(text.clone())),
         Node::Bool(value) => Some(FactValue::text(value.to_string())),
-        Node::Number(number) => FactValue::number(number.get()).ok(),
+        // A value binary64 does not carry — an `Integer` beyond 2^53 a seeded row holds
+        // (beyond10x/ess#413) — is kept exact; every other number is read as it always was.
+        Node::Number(number) => match FactValue::number(number.get()) {
+            Ok(FactValue::Number(carried)) if carried != *number => Some(FactValue::from(*number)),
+            read => read.ok(),
+        },
         Node::Null | Node::Seq(_) | Node::Map(_) => None,
     }
 }

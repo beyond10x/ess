@@ -367,7 +367,27 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 41;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 43;
+
+/// Whether the generated runtimes admit `major`: `/1` through `/37`, the expression pair `/40` and
+/// `/41`, and the seed-bearing pair `/42` and `/43` (beyond10x/ess#413). `/38` and `/39` are
+/// allocated to aggregate observation and carry vocabulary they do not implement yet, and are
+/// refused as an unknown major is.
+pub(crate) fn admitted_major(major: u32) -> bool {
+    (1..=37).contains(&major)
+        || crate::expression_format::ADMITTED.contains(&major)
+        || crate::synthesis_seeds::seed_major(major)
+}
+
+/// The refusal both emitters write for a suite major their runtime does not admit.
+pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
+    format!(
+        "the generated {target} runner admits suite versions up to `ess-conformance/37`, the \
+         expression pair `ess-conformance/40` and `ess-conformance/41`, and the seed-bearing pair \
+         `ess-conformance/42` and `ess-conformance/43`, and would refuse `{version}`; regenerate \
+         using a supported suite version"
+    )
+}
 
 /// The oldest suite major the generated runners execute only under an explicit
 /// `ESS_REPORT_FORMAT=2`: `/5` through `/7` and `/8` onwards, the two gates in `Run` / `runWith`.
@@ -379,6 +399,7 @@ pub(crate) const REPORT_FORMAT_2_FROM_SUITE_MAJOR: u32 = 5;
 /// `tests/generated_docs.rs` holds against both runners' observed behaviour.
 pub(crate) fn requires_report_format_2(version: crate::scenario::SuiteFormat) -> bool {
     (REPORT_FORMAT_2_FROM_SUITE_MAJOR..=NEWEST_ADMITTED_SUITE_MAJOR).contains(&version.major())
+        && admitted_major(version.major())
 }
 
 /// Refuses a package whose suite version its own generated runner would refuse at admission.
@@ -390,28 +411,11 @@ pub(crate) fn refuse_unadmitted(
     target: &str,
 ) -> Result<(), crate::admission::AdmissionError> {
     let version = suite.provenance.suite_version;
-    if version.major() > NEWEST_ADMITTED_SUITE_MAJOR {
+    if !admitted_major(version.major()) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedTarget",
             "$.provenance.suite_version",
-            format!(
-                "the generated {target} runner admits suite versions up to \
-                 `ess-conformance/{NEWEST_ADMITTED_SUITE_MAJOR}` and would refuse `{version}`; \
-                 regenerate using a supported suite version"
-            ),
-        ));
-    }
-    // A major below the newest that other work has allocated and no runner here reads yet
-    // (`/38` and `/39` beside the binding pair `/36`–`/37` and the expression pair `/40`–`/41`).
-    if !version.is_supported() {
-        return Err(crate::admission::AdmissionError::new(
-            "UnsupportedTarget",
-            "$.provenance.suite_version",
-            format!(
-                "the generated {target} runner admits suite versions up to `ess-conformance/37`, \
-                 then `ess-conformance/40` and `ess-conformance/41`, and would refuse `{version}`; \
-                 regenerate using a supported suite version"
-            ),
+            unadmitted_message(target, version),
         ));
     }
     Ok(())
@@ -485,6 +489,7 @@ mod tests {
             ),
             component: None,
             scenario_initial_state: None,
+            synthesis_seeds: None,
         })
     }
 

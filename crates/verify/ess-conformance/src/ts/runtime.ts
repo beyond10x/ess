@@ -2696,7 +2696,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /41 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /43 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -6079,13 +6079,16 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // over /36–/39; /38 and /39 are allocated to other work and this runtime has no reader for them yet.
   'ess-conformance/40': 40,
   'ess-conformance/41': 41,
+  // Explicit synthesis seeds (beyond10x/ess#413): the seed-bearing pair.
+  'ess-conformance/42': 42,
+  'ess-conformance/43': 43,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
-  // The expression pair's coverage major.
-  41,
+  // The expression pair's and the seed-bearing pair's coverage majors.
+  41, 43,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -6109,7 +6112,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   const provenance = closed(
     root.provenance,
     'suite_version system specification_version spec_digest contract_digest',
-    'component scenario_initial_state',
+    'component scenario_initial_state synthesis_seeds',
   );
   const version = text(provenance.suite_version);
   const major = SUITE_MAJORS[version];
@@ -6120,7 +6123,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     (major >= 34 && provenance.scenario_initial_state !== 'empty') ||
     (major < 34 && Object.prototype.hasOwnProperty.call(provenance, 'scenario_initial_state'))
   ) {
-    throw new Error('scenario_initial_state must be empty exactly in suite/34 through /37');
+    throw new Error('scenario_initial_state must be empty exactly from suite/34');
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
@@ -6196,6 +6199,18 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     }
     for (const source of array(scenario.source)) {
       admitReference(source);
+    }
+  }
+  // Seed provenance (beyond10x/ess#413) belongs exactly to suite/42 and /43.
+  const carriesSeeds = Object.prototype.hasOwnProperty.call(provenance, 'synthesis_seeds');
+  if (carriesSeeds !== (major === 42 || major === 43)) {
+    throw new Error('synthesis_seeds is required exactly in suite/42 and /43');
+  }
+  if (carriesSeeds) {
+    try {
+      admitSynthesisSeeds(provenance.synthesis_seeds, scenarios, root.coverage);
+    } catch (error) {
+      throw new Error(`synthesis_seeds: ${errorText(error)}`);
     }
   }
   if (coverageMajor(major)) {
@@ -7634,6 +7649,220 @@ export function admitSetupLiteral(value: Node, depth: number): void {
     for (const key of Object.keys(value)) {
       admitSetupLiteral(value[key], depth + 1);
     }
+  }
+}
+
+/** The original-byte digest a synthesis seed source is recorded with. */
+const seedSourceDigest = /^sha256:[0-9a-f]{64}$/;
+
+/** Refuse an identity that is not a checked root-relative path. */
+function seedSourceIdentity(identity: string): void {
+  if (identity === '' || identity.includes('\\') || identity.includes(':')) {
+    throw new Error('invalid seed source identity');
+  }
+  for (const segment of identity.split('/')) {
+    if (segment === '' || segment === '.' || segment === '..') {
+      throw new Error('invalid seed source identity');
+    }
+  }
+  for (const character of identity) {
+    const code = character.codePointAt(0) as number;
+    if (code < 32 || (code >= 127 && code <= 159)) {
+      throw new Error('invalid seed source identity');
+    }
+  }
+}
+
+/**
+ * The first command step after `at` sending `instance`, where the next step asserts that command's
+ * outcome, and -1 otherwise.
+ */
+function seedAddressed(steps: Node[], at: number, instance: string): number {
+  for (let position = at + 1; position < steps.length; position++) {
+    const step = steps[position] as { [key: string]: Node };
+    if (step.step !== 'execute_command') {
+      continue;
+    }
+    const input = isObject(step.input) ? step.input : {};
+    const sent = Object.keys(input).some((field) => {
+      const reference = input[field];
+      return (
+        isObject(reference) &&
+        reference.kind === 'instance' &&
+        reference.instance === instance &&
+        Object.keys(reference).length === 2
+      );
+    });
+    if (!sent) {
+      continue;
+    }
+    const next = steps[position + 1];
+    if (
+      !isObject(next) ||
+      next.step !== 'expect_outcome' ||
+      !isObject(next.outcome) ||
+      next.outcome.command !== step.command
+    ) {
+      return -1;
+    }
+    return position;
+  }
+  return -1;
+}
+
+/**
+ * Check suite/42 and /43 seed provenance (beyond10x/ess#413) before any target callback: closed
+ * members, sorted distinct selections and applications, and every application bound to a generated
+ * scenario's own setup and asserted command steps.
+ */
+export function admitSynthesisSeeds(
+  raw: Node,
+  scenarios: { [id: string]: Node },
+  coverage: Node,
+): void {
+  const seeds = closed(raw, 'sources selections applications', '');
+  const sources = seeds.sources;
+  if (!isObject(sources) || Object.keys(sources).length === 0) {
+    throw new Error('sources must be a nonempty object');
+  }
+  for (const identity of Object.keys(sources)) {
+    seedSourceIdentity(identity);
+    const digest = sources[identity];
+    if (typeof digest !== 'string' || !seedSourceDigest.test(digest)) {
+      throw new Error('invalid source digest');
+    }
+  }
+  const selections = array(seeds.selections);
+  if (selections.length === 0 || selections.length > 64) {
+    throw new Error('selections must hold 1 to 64 records');
+  }
+  const records = new Map<string, { [key: string]: Node }>();
+  const used = new Set<string>();
+  let previous: [string, string] | undefined;
+  for (const item of selections) {
+    const record = closed(item, 'source instance entity identity fields state', '');
+    const source = text(record.source);
+    const instance = text(record.instance);
+    if (
+      !kebabName.test(instance) ||
+      !qualifiedName.test(text(record.entity)) ||
+      !stateName.test(text(record.state))
+    ) {
+      throw new Error('invalid selection name');
+    }
+    if (
+      previous !== undefined &&
+      (byteCompare(source, previous[0]) < 0 ||
+        (source === previous[0] && byteCompare(instance, previous[1]) <= 0))
+    ) {
+      throw new Error('selections must be sorted and distinct');
+    }
+    previous = [source, instance];
+    if (!Object.prototype.hasOwnProperty.call(sources, source)) {
+      throw new Error('a selection names an unknown source');
+    }
+    used.add(source);
+    if (!isObject(record.fields)) {
+      throw new Error('selection fields must be an object');
+    }
+    if (isNil(record.identity)) {
+      throw new Error('selection identity cannot be null');
+    }
+    admitSetupLiteral(record.identity, 0);
+    for (const field of Object.keys(record.fields)) {
+      if (!qualifiedName.test(field) || field.includes('.') || field.includes('-')) {
+        throw new Error('invalid entity field name');
+      }
+      admitSetupLiteral(record.fields[field], 0);
+    }
+    for (const other of records.values()) {
+      if (other.entity === record.entity && equal(other.identity, record.identity)) {
+        throw new Error('two selections share one qualified identity');
+      }
+    }
+    records.set(JSON.stringify([source, instance]), record);
+  }
+  if (used.size !== Object.keys(sources).length) {
+    throw new Error('a source is selected by no selection');
+  }
+  const bound = new Set<string>();
+  let previousScenario = '';
+  let previousStep = -1n;
+  for (const item of array(seeds.applications)) {
+    const application = closed(item, 'source instance scenario establish_step command_step', '');
+    const source = text(application.source);
+    const instance = text(application.instance);
+    const id = text(application.scenario);
+    const establish = unsigned(application.establish_step);
+    const command = unsigned(application.command_step);
+    if (
+      previousStep >= 0n &&
+      (byteCompare(id, previousScenario) < 0 ||
+        (id === previousScenario && establish <= previousStep))
+    ) {
+      throw new Error('applications must be sorted and distinct');
+    }
+    previousScenario = id;
+    previousStep = establish;
+    const record = records.get(JSON.stringify([source, instance]));
+    if (record === undefined) {
+      throw new Error('an application names an unknown selection');
+    }
+    const parts = id.split('/');
+    if (parts.length === 3 && parts[1] === 'authored') {
+      throw new Error('an application names an authored scenario');
+    }
+    if (!Object.prototype.hasOwnProperty.call(scenarios, id)) {
+      const outside =
+        isObject(coverage) &&
+        Array.isArray(coverage.outside) &&
+        (coverage.outside as Node[]).some(
+          (row) => isObject(row) && row.scenario === id && row.reason === 'selection_filter',
+        );
+      if (!outside) {
+        throw new Error('an application names a scenario the suite does not hold');
+      }
+      continue;
+    }
+    const steps = array((scenarios[id] as { [key: string]: Node }).steps);
+    if (establish >= BigInt(steps.length)) {
+      throw new Error('establish_step is not an establish_entity step');
+    }
+    const step = steps[Number(establish)] as { [key: string]: Node };
+    if (step.step !== 'establish_entity') {
+      throw new Error('establish_step is not an establish_entity step');
+    }
+    if (
+      step.entity !== record.entity ||
+      step.state !== record.state ||
+      !equal(step.identity, record.identity) ||
+      !equal(step.fields, record.fields)
+    ) {
+      throw new Error('the established row differs from the selection');
+    }
+    if (
+      command <= establish ||
+      seedAddressed(steps, Number(establish), step.instance as string) !== Number(command)
+    ) {
+      throw new Error('command_step is not the asserted command sent to the established row');
+    }
+    bound.add(JSON.stringify([id, establish.toString()]));
+  }
+  for (const id of Object.keys(scenarios)) {
+    const parts = id.split('/');
+    if (parts.length === 3 && parts[1] === 'authored') {
+      continue;
+    }
+    const steps = array((scenarios[id] as { [key: string]: Node }).steps);
+    steps.forEach((step, at) => {
+      if (
+        isObject(step) &&
+        step.step === 'establish_entity' &&
+        !bound.has(JSON.stringify([id, at.toString()]))
+      ) {
+        throw new Error(`generated scenario ${quoteGo(id)} establishes a row no application binds`);
+      }
+    });
   }
 }
 

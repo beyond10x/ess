@@ -41,6 +41,8 @@ use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand};
 
+use crate::synthesis_seeds::SeedRecord;
+
 /// The most search nodes one arrangement visits before it refuses.
 const MAX_NODES: usize = 64;
 
@@ -4568,7 +4570,7 @@ pub(super) fn around(
         actors,
         (&setup.settled, setup.before.as_ref()),
         (&mut present, &mut taken),
-        &mut refused,
+        (&setup.steps, &mut refused),
     )?;
     let (overlapping, overlap_source) =
         overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
@@ -5176,7 +5178,7 @@ pub(super) fn boundaries(
         Option<&super::StateName>,
     ),
     (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
-    refused: &mut Vec<RefusalCause>,
+    (known, refused): (&[ScenarioStep], &mut Vec<RefusalCause>),
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let ir = models.arrangement;
     let mut steps = Vec::new();
@@ -5206,9 +5208,63 @@ pub(super) fn boundaries(
     let decided_with_input = !links(ir, command, entity).is_empty()
         || hints.iter().any(|hint| reads_input(ir, entity, hint));
     let mut rows = 0;
+    // The absent-row witness a branch naming no subject of its own is opened with: a literal
+    // identity the scenario sends, which no seeded row may carry (beyond10x/ess#413).
+    let opened = if models.seeds.is_empty() || outcome.subject.is_some() {
+        Vec::new()
+    } else {
+        absent(ir, command, read, actors).map_or_else(|_| Vec::new(), |(opened, _)| opened)
+    };
     for ((refuted, held), kind) in goals {
+        let limit = kind != Further::Plain;
+        let linked = compares_link(
+            ir,
+            command,
+            entity,
+            &refuted.iter().chain(&held).cloned().collect::<Vec<_>>(),
+        );
+        let undecided = std::cell::Cell::new(false);
+        let mut decide = |node: &Arrangement| {
+            if !decided_with_input {
+                let truth = |predicate: &Predicate| {
+                    row_truth(
+                        ir,
+                        entity,
+                        &node.settled,
+                        &node.unwritten,
+                        Some(&node.state),
+                        predicate,
+                    )
+                };
+                if refuted.iter().any(|child| truth(child) != Truth::False)
+                    || held.iter().any(|child| truth(child) != Truth::True)
+                {
+                    return Ok(None);
+                }
+                if limit {
+                    return answer_at(ir, command, entity, node);
+                }
+                return Ok(
+                    reach_at(ir, command, outcome, entity, node)?.map(|input| (input, outcome))
+                );
+            }
+            let mut unsure = undecided.get();
+            let found = goal_input(
+                ir,
+                (command, outcome),
+                (entity, node),
+                (linked_inputs(ir, command, entity, node)?, &|_| Ok(true)),
+                (&refuted, &held),
+                &mut unsure,
+            );
+            // Kept whatever the goal answered, as the flag it replaces was.
+            undecided.set(unsure);
+            Ok(found?.map(|input| (input, outcome)))
+        };
+        // A side of a counter limit whose nearest value lies past the search's reach is not
+        // searched; an explicitly admitted seed row is offered before it is refused (#413).
         if let Further::Past(why) = &kind {
-            refused.push(limit_unreached(
+            let refusal = limit_unreached(
                 entity,
                 command,
                 outcome,
@@ -5217,39 +5273,57 @@ pub(super) fn boundaries(
                     predicate: why.clone(),
                     tried: 0,
                 }),
-            ));
+            );
+            // Past the bound a goal adds no row, seeded or not.
+            if rows >= MAX_BOUNDARIES {
+                refused.push(refusal);
+                continue;
+            }
+            let known = [known, &opened, &steps].concat();
+            match seeded(
+                models,
+                command,
+                (entity, read),
+                (&known, &free_instance(ir, entity, rows + 1, taken), 0),
+                &mut decide,
+            ) {
+                Ok((arrangement, (input, answering))) => {
+                    rows += 1;
+                    if answering.name != outcome.name {
+                        source.insert(
+                            OutcomeRef::new(command_ref.clone(), answering.name.clone()).into(),
+                        );
+                    }
+                    send_for_row(
+                        models,
+                        command,
+                        answering,
+                        actors,
+                        (read, &fields),
+                        arrangement,
+                        (&input, (&mut *present, &mut *taken)),
+                        (&mut steps, &mut source),
+                    )?;
+                }
+                Err(notes) => refused.push(annotated(refusal, &notes)),
+            }
             continue;
         }
-        let limit = kind == Further::Limit;
-        let linked = compares_link(
-            ir,
-            command,
-            entity,
-            &refuted.iter().chain(&held).cloned().collect::<Vec<_>>(),
-        );
-        // A side of a counter limit is refused on its own; any other goal refuses the branch.
-        let mut left = |cause: Option<(&RefusalCause, bool)>| -> Result<(), RefusalCause> {
+        if rows >= MAX_BOUNDARIES {
+            // Past the bound a goal adds no row; one isolating a link comparison was not searched,
+            // so whether a row meets it is unknown, and it is refused rather than left unwitnessed.
             match left_unwitnessed(
                 (entity, command, outcome),
                 (&refuted, &held),
                 (linked, limit),
-                cause,
+                None,
             ) {
-                Some(refusal) if limit => {
-                    refused.push(refusal);
-                    Ok(())
-                }
-                Some(refusal) => Err(refusal),
-                None => Ok(()),
+                Some(refusal) if limit => refused.push(refusal),
+                Some(refusal) => return Err(refusal),
+                None => {}
             }
-        };
-        if rows >= MAX_BOUNDARIES {
-            // Past the bound a goal adds no row; one isolating a link comparison was not searched,
-            // so whether a row meets it is unknown, and it is refused rather than left unwitnessed.
-            left(None)?;
             continue;
         }
-        let mut undecided = false;
         let found = search_unbound(
             ir,
             entity,
@@ -5258,46 +5332,42 @@ pub(super) fn boundaries(
             rows + 1,
             "boundary",
             taken,
-            |node| {
-                if !decided_with_input {
-                    let truth = |predicate: &Predicate| {
-                        row_truth(
-                            ir,
-                            entity,
-                            &node.settled,
-                            &node.unwritten,
-                            Some(&node.state),
-                            predicate,
-                        )
-                    };
-                    if refuted.iter().any(|child| truth(child) != Truth::False)
-                        || held.iter().any(|child| truth(child) != Truth::True)
-                    {
-                        return Ok(None);
-                    }
-                    if limit {
-                        return answer_at(ir, command, entity, node);
-                    }
-                    return Ok(
-                        reach_at(ir, command, outcome, entity, node)?.map(|input| (input, outcome))
-                    );
-                }
-                Ok(goal_input(
-                    ir,
-                    (command, outcome),
-                    (entity, node),
-                    (linked_inputs(ir, command, entity, node)?, &|_| Ok(true)),
-                    (&refuted, &held),
-                    &mut undecided,
-                )?
-                .map(|input| (input, outcome)))
-            },
+            &mut decide,
         )?;
         let (arrangement, (input, answering)) = match found {
             Ok(found) => found,
             Err(cause) => {
-                left(Some((&cause, undecided)))?;
-                continue;
+                // A side of a counter limit is refused on its own; any other goal refuses the
+                // branch. Only a side actually refused is offered an explicitly admitted seed row.
+                match left_unwitnessed(
+                    (entity, command, outcome),
+                    (&refuted, &held),
+                    (linked, limit),
+                    Some((&cause, undecided.get())),
+                ) {
+                    Some(refusal) if limit => {
+                        let known = [known, &opened, &steps].concat();
+                        match seeded(
+                            models,
+                            command,
+                            (entity, read),
+                            (
+                                &known,
+                                &free_instance(ir, entity, rows + 1, taken),
+                                spent(&cause),
+                            ),
+                            &mut decide,
+                        ) {
+                            Ok(found) => found,
+                            Err(notes) => {
+                                refused.push(annotated(refusal, &notes));
+                                continue;
+                            }
+                        }
+                    }
+                    Some(refusal) => return Err(refusal),
+                    None => continue,
+                }
             }
         };
         rows += 1;
@@ -5949,6 +6019,292 @@ fn eventual_observation(
     }
 }
 
+// ---- explicit synthesis seeds (beyond10x/ess#413, `docs/design/synthesis-seeds.md`) -----------
+
+/// A seeded arrangement and the input that selects the branch on it, or why each admitted row of
+/// the entity could not be offered.
+pub(super) type Seeded = Result<(Setup, BTreeMap<String, Node>), Vec<String>>;
+
+/// [`prepare`] from an explicitly admitted seed row, where no bounded arrangement selects the
+/// branch: the first eligible row, in admitted order, on which an input grounded from the row
+/// itself selects it. The row is established, observed, and then sent the command, exactly as an
+/// arranged row is. `Err` carries why rows of the entity could not be offered.
+pub(super) fn prepare_seeded(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    ordinary: &RefusalCause,
+) -> Result<Seeded, RefusalCause> {
+    let ir = models.arrangement;
+    let Some(subject) = reading(command, outcome) else {
+        return Ok(Err(Vec::new()));
+    };
+    let entity = &subject.entity;
+    let hints = hints(command);
+    let fields = read_fields(ir, entity, &hints);
+    // The absent-row witness this branch is opened with, where it names no subject of its own.
+    let opened = if outcome.subject.is_none() {
+        absent(ir, command, subject, actors).map_or_else(|_| Vec::new(), |(opened, _)| opened)
+    } else {
+        Vec::new()
+    };
+    let instance = super::instance_name(&ir.entity(entity).name, Distinction::PLAIN);
+    let found = seeded(
+        models,
+        command,
+        (entity, subject),
+        (&opened, &instance, spent(ordinary)),
+        &mut |node: &Arrangement| {
+            if let Some(input) = reach_linked(
+                ir,
+                command,
+                outcome,
+                entity,
+                node,
+                &|_, _| true,
+                Order::Unique,
+            )? {
+                return Ok(Some((input, false)));
+            }
+            if super::is_input_guarded_refusal(outcome) {
+                return Ok(
+                    refusal_first(ir, command, outcome, entity, node)?.map(|input| (input, true))
+                );
+            }
+            Ok(None)
+        },
+    );
+    let (mut arrangement, (input, before_row)) = match found {
+        Ok(found) => found,
+        Err(notes) => return Ok(Err(notes)),
+    };
+    let bound = bind_links(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        &mut arrangement,
+        &input,
+        &mut false,
+    )?;
+    observe_prepared(ir, entity, fields, before_row, &mut arrangement)?;
+    let after = match outcome.subject.as_ref().map(|own| &own.effect) {
+        Some(ResolvedEffect::Deletes) => None,
+        effect => Some(effect.and_then(ResolvedEffect::transition).map_or_else(
+            || arrangement.state.clone(),
+            |transition| transition.to.clone(),
+        )),
+    };
+    Ok(Ok((
+        Setup {
+            steps: arrangement.steps,
+            instance: Some(arrangement.instance),
+            bound,
+            source: arrangement.source,
+            after,
+            before: Some(arrangement.state),
+            settled: arrangement.settled,
+        },
+        input,
+    )))
+}
+
+/// The rows the bounded search of an obligation visited before it was refused: what its seed
+/// attempts leave of the arrangement budget ([`MAX_NODES`]) they share with that search.
+pub(super) fn spent(cause: &RefusalCause) -> usize {
+    match cause {
+        RefusalCause::GuardUnsatisfiable { tried, .. } => *tried,
+        _ => 0,
+    }
+}
+
+/// The first admitted seed row of `entity`, in admitted order, that `goal` accepts, established as
+/// `instance` — or why each row of the entity that could not be offered was not. A row the goal
+/// merely does not hold adds no note: it answers another obligation. Each row offered to `goal` is
+/// one node of the arrangement budget the obligation's own search already `spent` some of; no seed
+/// is offered once the budget is gone.
+fn seeded<T>(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    (entity, subject): (&EntityHandle, &ResolvedSubject),
+    (known, instance, spent): (&[ScenarioStep], &super::InstanceName, usize),
+    goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
+) -> Result<(Arrangement, T), Vec<String>> {
+    let ir = models.arrangement;
+    let declared = EntityRef::from(entity);
+    let mut notes = Vec::new();
+    let mut budget = MAX_NODES.saturating_sub(spent);
+    for seed in models
+        .seeds
+        .rows()
+        .iter()
+        .filter(|seed| seed.entity == declared)
+    {
+        let name = format!("`{}#{}`", seed.source.as_str(), seed.instance);
+        let why = seed_unsupported(ir, command, entity, subject)
+            .map(str::to_owned)
+            .or_else(|| {
+                collides(known, &declared, &seed.identity).then(|| {
+                    "its identity collides with an identity the scenario already establishes, \
+                     sends or observes"
+                        .to_owned()
+                })
+            });
+        if let Some(why) = why {
+            notes.push(format!("synthesis seed {name} not applied: {why}"));
+            continue;
+        }
+        if budget == 0 {
+            notes.push(format!(
+                "synthesis seed {name} not applied: the arrangement budget of {MAX_NODES} rows \
+                 this obligation shares with its bounded search is spent"
+            ));
+            break;
+        }
+        budget -= 1;
+        let node = seed_arrangement(ir, entity, seed, instance.clone());
+        match goal(&node) {
+            Ok(Some(found)) => return Ok((node, found)),
+            Ok(None) => {}
+            Err(cause) => notes.push(format!("synthesis seed {name} not applied: {cause}")),
+        }
+    }
+    Err(notes)
+}
+
+/// Why no seed row can be offered for `command` reading `subject`: a row that belongs to an owner,
+/// a command comparing a link to one, or a row the command does not name by an input. Seeds
+/// establish one independent row; related and owned arrangements stay ordinary or refused.
+fn seed_unsupported(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    subject: &ResolvedSubject,
+) -> Option<&'static str> {
+    if ir.owner_of(entity).is_some() {
+        return Some("the row belongs to an owner, which a seed does not establish");
+    }
+    if !links(ir, command, entity).is_empty() {
+        return Some("the command compares a link to an owner, which a seed does not establish");
+    }
+    if !matches!(subject.instance, ResolvedInstance::Supplied { .. }) {
+        return Some("the command does not name the row it reads by an input");
+    }
+    None
+}
+
+/// Whether `identity` of `entity` is already established by a step the scenario holds, or is sent
+/// or observed anywhere in one as a value: a seeded row never shares an identity with another row
+/// or an absence witness of the same scenario, and is never renamed to avoid one.
+fn collides(known: &[ScenarioStep], entity: &EntityRef, identity: &Node) -> bool {
+    fn holds(value: &serde_json::Value, wanted: &serde_json::Value) -> bool {
+        value == wanted
+            || match value {
+                serde_json::Value::Array(items) => items.iter().any(|item| holds(item, wanted)),
+                serde_json::Value::Object(members) => {
+                    members.values().any(|member| holds(member, wanted))
+                }
+                _ => false,
+            }
+    }
+    let Ok(wanted) = serde_json::to_value(identity) else {
+        return true;
+    };
+    known.iter().any(|step| match step {
+        ScenarioStep::EstablishEntity {
+            entity: other,
+            identity: held,
+            ..
+        } => other == entity && held == identity,
+        other => serde_json::to_value(other).is_ok_and(|value| holds(&value, &wanted)),
+    })
+}
+
+/// The row an admitted seed is, as an arrangement: established by one `establish_entity` step,
+/// every literal field settled at its declared type, and every Optional field it leaves out absent.
+fn seed_arrangement(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    seed: &SeedRecord,
+    instance: super::InstanceName,
+) -> Arrangement {
+    let declared = ir.entity(entity);
+    let mut types = BTreeSet::new();
+    for field in declared
+        .fields
+        .iter()
+        .chain(std::iter::once(&declared.identity))
+    {
+        super::reachable_types(ir, &field.type_ref, &mut types);
+    }
+    let mut source = BTreeSet::from([EssSemanticRef::from(EntityRef::from(entity))]);
+    source.extend(types.into_iter().map(EssSemanticRef::from));
+    Arrangement {
+        instance: instance.clone(),
+        state: seed.state.clone(),
+        steps: vec![ScenarioStep::EstablishEntity {
+            instance,
+            entity: seed.entity.clone(),
+            identity: seed.identity.clone(),
+            fields: seed.fields.clone(),
+            state: seed.state.clone(),
+        }],
+        source,
+        settled: declared
+            .fields
+            .iter()
+            .filter_map(|field| {
+                seed.fields.get(&field.name).map(|value| {
+                    (
+                        field.name.clone(),
+                        super::Determined {
+                            value: ScenarioValue::literal(value.clone()),
+                            type_ref: field.type_ref.clone(),
+                        },
+                    )
+                })
+            })
+            .collect(),
+        unwritten: declared
+            .fields
+            .iter()
+            .filter(|field| field.type_ref.is_optional() && !seed.fields.contains_key(&field.name))
+            .map(|field| field.name.clone())
+            .collect(),
+    }
+}
+
+/// The first further instance name from `first` no step of the scenario binds yet: where a seeded
+/// further row is established, numbered as [`search_unbound`] numbers its rows.
+fn free_instance(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    first: usize,
+    taken: &BTreeSet<super::InstanceName>,
+) -> super::InstanceName {
+    let name = &ir.entity(entity).name;
+    // Of `taken.len() + 1` distinct names, at least one is not taken.
+    (first..=first + taken.len())
+        .map(|nth| super::instance_name(name, Distinction::further(nth)))
+        .find(|instance| !taken.contains(instance))
+        .expect("one of more names than are taken is free")
+}
+
+/// `refusal`, saying why each admitted seed row of its entity was not applied.
+pub(super) fn annotated(refusal: RefusalCause, notes: &[String]) -> RefusalCause {
+    match refusal {
+        RefusalCause::GuardUnsatisfiable { predicate, tried } if !notes.is_empty() => {
+            RefusalCause::GuardUnsatisfiable {
+                predicate: format!("{predicate}; {}", notes.join("; ")),
+                tried,
+            }
+        }
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod counter413a_arithmetic_completeness {
     use super::{reachable, BTreeSet, Counter, Number};
@@ -6010,6 +6366,148 @@ mod counter413a_arithmetic_completeness {
         assert_eq!(
             reachable(&empty, Number::from(i64::MAX)),
             Some(BTreeSet::new())
+        );
+    }
+}
+
+#[cfg(test)]
+mod seed_budget {
+    use super::{reading, seeded, spent, Arrangement, RefusalCause, MAX_NODES};
+    use crate::authored::Source;
+    use crate::synthesize::caller::InvocationModels;
+    use crate::synthesize::{AdmittedSeeds, SeedSelection};
+
+    const MODEL: &str = "format: ess/20
+system: counter
+version: v1
+domain: counter.model
+entities:
+  - name: counter.model.Counter
+    identity: {name: id, type: Uuid}
+    fields:
+      - {name: revision, type: Integer}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: counter.model.Create
+    outcomes:
+      - name: created
+        creates: counter.model.Counter
+        instance: id
+        sets: {revision: 0}
+        emits: [counter.model.Created]
+        payload:
+          counter.model.Created: {id: {generated: true}}
+  - name: counter.model.Authorize
+    input:
+      - {name: id, type: Uuid}
+    outcomes:
+      - name: exhausted
+        when_subject: {predicate: revision >= 100}
+        error: counter.model.Exhausted
+      - name: authorized
+        updates: counter.model.Counter
+        instance: id
+        sets: {revision: {increment: 1}}
+        emits: [counter.model.Authorized]
+        payload:
+          counter.model.Authorized: {id: input.id}
+errors:
+  - {name: counter.model.Exhausted, fields: []}
+events:
+  - name: counter.model.Created
+    fields: [{name: id, type: Uuid}]
+  - name: counter.model.Authorized
+    fields: [{name: id, type: Uuid}]
+views:
+  - name: counter.model.Counters
+    source: counter.model.Counter
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: Uuid}
+      - {name: revision, type: Integer}
+";
+
+    const SEED: &str = "type: ess-scenario/2
+domain: counter.model
+scenario: counter-row
+summary: One counter row.
+arrange:
+  - instance: row
+    entity: counter.model.Counter
+    setup:
+      identity: 00000000-0000-4000-8000-00000000e001
+      fields: {revision: 7}
+      state: Active
+assert:
+  - view: counter.model.Counters
+    contains: {id: {$instance: row}, revision: 7}
+";
+
+    /// Seed attempts share the arrangement budget their obligation's bounded search spent part of
+    /// (beyond10x/ess#413, `docs/design/synthesis-seeds.md`): with the budget left, a row is
+    /// offered; with it gone, none is, and the refusal says why.
+    #[test]
+    fn a_seed_attempt_is_one_node_of_the_budget_its_search_spent() {
+        use ess_compiler::{resolve::compile, source::SourceMap};
+        use ess_domain::{spec::RawSpecFile, system::Source as File, Specification};
+        let spec = Specification::assemble([(
+            File::new("counter.yaml"),
+            RawSpecFile::parse(MODEL).unwrap(),
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        let ir = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+        let seeds = AdmittedSeeds::compile(
+            &ir,
+            &[SeedSelection {
+                source: Source::new("row.yaml", SEED),
+                instance: crate::InstanceName::new("row").unwrap(),
+            }],
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        let models = InvocationModels::seeded(&ir, &seeds);
+        let command = ir
+            .commands()
+            .values()
+            .find(|command| command.name.to_string() == "counter.model.Authorize")
+            .unwrap();
+        let outcome = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.to_string() == "authorized")
+            .unwrap();
+        let subject = reading(command, outcome).unwrap();
+        let instance = crate::InstanceName::new("counter").unwrap();
+        let mut offered = 0;
+        let mut accept = |_: &Arrangement| -> Result<Option<()>, RefusalCause> {
+            offered += 1;
+            Ok(Some(()))
+        };
+        let left = seeded(
+            &models,
+            command,
+            (&subject.entity, subject),
+            (&[], &instance, MAX_NODES - 1),
+            &mut accept,
+        );
+        assert!(left.is_ok());
+        let spent_all = seeded(
+            &models,
+            command,
+            (&subject.entity, subject),
+            (&[], &instance, MAX_NODES),
+            &mut accept,
+        );
+        let Err(notes) = spent_all else {
+            panic!("a seed was offered past the budget")
+        };
+        assert_eq!(offered, 1, "no row is offered once the budget is spent");
+        assert!(notes[0].contains("budget"), "{notes:?}");
+        assert_eq!(
+            spent(&RefusalCause::GuardUnsatisfiable {
+                predicate: String::new(),
+                tried: 9
+            }),
+            9
         );
     }
 }

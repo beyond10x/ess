@@ -90,7 +90,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 41
+const newestSuiteMajor = 43
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -99,8 +99,8 @@ const newestSuiteMajor = 41
 var suiteMajorsNotRead = map[int]bool{38: true, 39: true}
 
 // suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
-// Each major implies every major below it, so one number answers every "does this suite carry X"
-// question the admission asks.
+// Each major implies every major below it that this runtime reads, so one number answers every
+// "does this suite carry X" question the admission asks.
 func suiteMajor(version string) int {
 	for major := 1; major <= newestSuiteMajor; major++ {
 		if suiteMajorsNotRead[major] {
@@ -1780,7 +1780,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /41 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /43 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -4148,7 +4148,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component scenario_initial_state")
+	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component scenario_initial_state synthesis_seeds")
 	if err != nil {
 		return suite, err
 	}
@@ -4162,10 +4162,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	}
 	initial, declaresInitial := p["scenario_initial_state"]
 	if (major >= 34 && initial != "empty") || (major < 34 && declaresInitial) {
-		return suite, fmt.Errorf("scenario_initial_state must be empty exactly in suite/34 through /37")
+		return suite, fmt.Errorf("scenario_initial_state must be empty exactly from suite/34")
 	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
-		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /37")
+		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -4258,6 +4258,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			if err := admitReference(source); err != nil {
 				return suite, err
 			}
+		}
+	}
+	// Seed provenance (beyond10x/ess#413) belongs exactly to suite/42 and /43.
+	if seeds, carried := p["synthesis_seeds"]; carried != (major == 42 || major == 43) {
+		return suite, fmt.Errorf("synthesis_seeds is required exactly in suite/42 and /43")
+	} else if carried {
+		coverage, _ := root["coverage"].(map[string]any)
+		if err := admitSynthesisSeeds(seeds, scenarios, coverage); err != nil {
+			return suite, fmt.Errorf("synthesis_seeds: %w", err)
 		}
 	}
 	if coverageMajor(major) {
@@ -5286,6 +5295,231 @@ func admitSetupLiteral(value any, depth int) error {
 		for _, child := range value {
 			if err := admitSetupLiteral(child, depth+1); err != nil {
 				return err
+			}
+		}
+	}
+	return nil
+}
+
+// seedSourceDigest is the original-byte digest a synthesis seed source is recorded with.
+var seedSourceDigest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// seedSourceIdentity refuses an identity that is not a checked root-relative path.
+func seedSourceIdentity(identity string) error {
+	if identity == "" || strings.ContainsAny(identity, "\\:") {
+		return fmt.Errorf("invalid seed source identity")
+	}
+	for _, segment := range strings.Split(identity, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("invalid seed source identity")
+		}
+	}
+	for _, r := range identity {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("invalid seed source identity")
+		}
+	}
+	return nil
+}
+
+// seedAddressed is the first command step after `at` sending `instance`, where the next step asserts
+// that command's outcome, and -1 otherwise.
+func seedAddressed(steps []any, at int, instance string) int {
+	for position := at + 1; position < len(steps); position++ {
+		step, _ := steps[position].(map[string]any)
+		if step["step"] != "execute_command" {
+			continue
+		}
+		input, _ := step["input"].(map[string]any)
+		sent := false
+		for _, value := range input {
+			if reference, ok := value.(map[string]any); ok && reference["kind"] == "instance" && reference["instance"] == instance && len(reference) == 2 {
+				sent = true
+			}
+		}
+		if !sent {
+			continue
+		}
+		if position+1 >= len(steps) {
+			return -1
+		}
+		next, _ := steps[position+1].(map[string]any)
+		outcome, _ := next["outcome"].(map[string]any)
+		if next["step"] != "expect_outcome" || outcome == nil || outcome["command"] != step["command"] {
+			return -1
+		}
+		return position
+	}
+	return -1
+}
+
+// admitSynthesisSeeds checks suite/42 and /43 seed provenance (beyond10x/ess#413) before any
+// target callback: closed members, sorted distinct selections and applications, and every
+// application bound to a generated scenario's own setup and asserted command steps.
+func admitSynthesisSeeds(raw any, scenarios map[string]any, coverage map[string]any) error {
+	seeds, err := closed(raw, "sources selections applications", "")
+	if err != nil {
+		return err
+	}
+	sources, ok := seeds["sources"].(map[string]any)
+	if !ok || len(sources) == 0 {
+		return fmt.Errorf("sources must be a nonempty object")
+	}
+	for identity, digest := range sources {
+		if err := seedSourceIdentity(identity); err != nil {
+			return err
+		}
+		if text, ok := digest.(string); !ok || !seedSourceDigest.MatchString(text) {
+			return fmt.Errorf("invalid source digest")
+		}
+	}
+	selections, err := array(seeds["selections"])
+	if err != nil {
+		return err
+	}
+	if len(selections) == 0 || len(selections) > 64 {
+		return fmt.Errorf("selections must hold 1 to 64 records")
+	}
+	type key struct{ source, instance string }
+	records := map[key]map[string]any{}
+	used := map[string]bool{}
+	var previous *key
+	for _, item := range selections {
+		record, err := closed(item, "source instance entity identity fields state", "")
+		if err != nil {
+			return err
+		}
+		for _, member := range []string{"source", "instance", "entity", "state"} {
+			if _, err := text(record[member]); err != nil {
+				return fmt.Errorf("selection %s: %w", member, err)
+			}
+		}
+		if !kebabName.MatchString(record["instance"].(string)) || !qualifiedName.MatchString(record["entity"].(string)) || !stateName.MatchString(record["state"].(string)) {
+			return fmt.Errorf("invalid selection name")
+		}
+		current := key{record["source"].(string), record["instance"].(string)}
+		if previous != nil && (current.source < previous.source || (current.source == previous.source && current.instance <= previous.instance)) {
+			return fmt.Errorf("selections must be sorted and distinct")
+		}
+		previous = &current
+		if _, ok := sources[current.source]; !ok {
+			return fmt.Errorf("a selection names an unknown source")
+		}
+		used[current.source] = true
+		fields, ok := record["fields"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("selection fields must be an object")
+		}
+		if record["identity"] == nil {
+			return fmt.Errorf("selection identity cannot be null")
+		}
+		if err := admitSetupLiteral(record["identity"], 0); err != nil {
+			return err
+		}
+		for name, value := range fields {
+			if !qualifiedName.MatchString(name) || strings.ContainsAny(name, ".-") {
+				return fmt.Errorf("invalid entity field name")
+			}
+			if err := admitSetupLiteral(value, 0); err != nil {
+				return err
+			}
+		}
+		for _, other := range records {
+			if other["entity"] == record["entity"] && equal(other["identity"], record["identity"]) {
+				return fmt.Errorf("two selections share one qualified identity")
+			}
+		}
+		records[current] = record
+	}
+	if len(used) != len(sources) {
+		return fmt.Errorf("a source is selected by no selection")
+	}
+	applications, err := array(seeds["applications"])
+	if err != nil {
+		return err
+	}
+	bound := map[string]map[uint64]bool{}
+	previousScenario, previousStep := "", uint64(0)
+	for index, item := range applications {
+		application, err := closed(item, "source instance scenario establish_step command_step", "")
+		if err != nil {
+			return err
+		}
+		source, err := text(application["source"])
+		if err != nil {
+			return err
+		}
+		instance, err := text(application["instance"])
+		if err != nil {
+			return err
+		}
+		id, err := text(application["scenario"])
+		if err != nil {
+			return err
+		}
+		establish, err := unsigned(application["establish_step"])
+		if err != nil {
+			return err
+		}
+		command, err := unsigned(application["command_step"])
+		if err != nil {
+			return err
+		}
+		if index > 0 && (id < previousScenario || (id == previousScenario && establish <= previousStep)) {
+			return fmt.Errorf("applications must be sorted and distinct")
+		}
+		previousScenario, previousStep = id, establish
+		record, ok := records[key{source, instance}]
+		if !ok {
+			return fmt.Errorf("an application names an unknown selection")
+		}
+		if parts := strings.Split(id, "/"); len(parts) == 3 && parts[1] == "authored" {
+			return fmt.Errorf("an application names an authored scenario")
+		}
+		scenario, present := scenarios[id].(map[string]any)
+		if !present {
+			outside := false
+			if list, ok := coverage["outside"].([]any); ok {
+				for _, entry := range list {
+					if row, ok := entry.(map[string]any); ok && row["scenario"] == id && row["reason"] == "selection_filter" {
+						outside = true
+					}
+				}
+			}
+			if !outside {
+				return fmt.Errorf("an application names a scenario the suite does not hold")
+			}
+			continue
+		}
+		steps, _ := scenario["steps"].([]any)
+		if establish >= uint64(len(steps)) {
+			return fmt.Errorf("establish_step is not an establish_entity step")
+		}
+		step, _ := steps[establish].(map[string]any)
+		if step["step"] != "establish_entity" {
+			return fmt.Errorf("establish_step is not an establish_entity step")
+		}
+		if step["entity"] != record["entity"] || step["state"] != record["state"] || !equal(step["identity"], record["identity"]) || !equal(step["fields"], record["fields"]) {
+			return fmt.Errorf("the established row differs from the selection")
+		}
+		established, _ := step["instance"].(string)
+		if command <= establish || command >= uint64(len(steps)) || seedAddressed(steps, int(establish), established) != int(command) {
+			return fmt.Errorf("command_step is not the asserted command sent to the established row")
+		}
+		if bound[id] == nil {
+			bound[id] = map[uint64]bool{}
+		}
+		bound[id][establish] = true
+	}
+	for id, raw := range scenarios {
+		if parts := strings.Split(id, "/"); len(parts) == 3 && parts[1] == "authored" {
+			continue
+		}
+		scenario, _ := raw.(map[string]any)
+		steps, _ := scenario["steps"].([]any)
+		for at, item := range steps {
+			if step, ok := item.(map[string]any); ok && step["step"] == "establish_entity" && !bound[id][uint64(at)] {
+				return fmt.Errorf("generated scenario %q establishes a row no application binds", id)
 			}
 		}
 	}

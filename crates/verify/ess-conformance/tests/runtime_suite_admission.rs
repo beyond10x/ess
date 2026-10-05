@@ -61,6 +61,23 @@ views:
       - {name: text, type: String}
 ";
 
+/// One row of the model to seed with: no obligation of this model needs it.
+const NOTE_SEED: &str = "type: ess-scenario/2
+domain: demo.notes
+scenario: kept-note
+summary: A note established without a command.
+arrange:
+  - instance: kept
+    entity: demo.notes.Note
+    setup:
+      identity: kept-note
+      fields: {text: kept}
+      state: Open
+assert:
+  - view: demo.notes.Notes
+    contains: {note_id: {$instance: kept}, text: kept}
+";
+
 fn ir() -> EssIr {
     let raw = RawSpecFile::parse(MODEL).unwrap_or_else(|error| panic!("{error}"));
     let spec = Specification::assemble([(Source::new("notes.yaml"), raw)])
@@ -108,12 +125,41 @@ fn documents() -> Vec<(String, String)> {
         Some(ScenarioInitialState::Empty)
     );
     let covered = selected.original_json();
+    // The seed-bearing pair is written only with its record (beyond10x/ess#413): a real seeded
+    // synthesis of the same model, with one admitted row no obligation needs.
+    let seeds = ess_conformance::synthesize::AdmittedSeeds::compile(
+        &ir(),
+        &[ess_conformance::synthesize::SeedSelection {
+            source: ess_conformance::authored::Source::new("note.yaml", NOTE_SEED),
+            instance: ess_conformance::InstanceName::new("kept").unwrap(),
+        }],
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let seeded = ess_conformance::synthesize::synthesize_with_seeds(&ir(), &seeds)
+        .unwrap()
+        .suite
+        .to_canonical_json()
+        .unwrap();
+    let seeded_input = ess_conformance::coverage_build::build_with_seeds(
+        &ir(),
+        &[],
+        ess_conformance::coverage::Scope::System,
+        ess_conformance::coverage::Origins::Generated,
+        &seeds,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let seeded_covered = seeded_input.selected().original_json();
     let newest = SUPPORTED_SUITE_FORMATS.iter().copied().max().unwrap();
     emittable_majors()
         .into_iter()
         .chain([newest + 1])
         .map(|major| {
-            let current = if coverage(major) { covered } else { &ordinary };
+            let current = match major {
+                42 => &seeded,
+                43 => seeded_covered,
+                _ if coverage(major) => covered,
+                _ => &ordinary,
+            };
             let json = if major < 34 {
                 support_versions::legacy_json(current, major)
             } else {

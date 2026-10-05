@@ -151,6 +151,7 @@ impl AdmittedSuite {
             .get("coverage")
             .map(|c| crate::coverage::parse_inventory(c, &suite))
             .transpose()?;
+        crate::synthesis_seeds::admit(&suite, coverage.as_ref())?;
         let digest = Sha256::digest(original.as_bytes()).iter().fold(
             "sha256:".to_owned(),
             |mut text, byte| {
@@ -197,17 +198,36 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             "spec_digest",
             "contract_digest",
         ],
-        &["component", "scenario_initial_state"],
+        &["component", "scenario_initial_state", "synthesis_seeds"],
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
     if !matches!(version.major(), 1..=37)
         && !crate::expression_format::ADMITTED.contains(&version.major())
+        && !crate::synthesis_seeds::seed_major(version.major())
     {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–37, 40 and 41",
+            "execution readers admit suite majors 1–37, 40, 41, 42 and 43",
         ));
+    }
+    match p.get("synthesis_seeds") {
+        Some(seeds) if crate::synthesis_seeds::seed_major(version.major()) => {
+            crate::synthesis_seeds::admit_json(seeds)?;
+        }
+        Some(seeds) => {
+            return Err(seeds.error(
+                "UnsupportedVocabulary",
+                "synthesis seeds require suite/42 or /43",
+            ))
+        }
+        None if crate::synthesis_seeds::seed_major(version.major()) => {
+            return Err(root["provenance"].error(
+                "UnsupportedVocabulary",
+                "suite/42 and /43 require synthesis_seeds",
+            ))
+        }
+        None => {}
     }
     if version.major() >= 34 {
         if p.get("scenario_initial_state")
@@ -228,12 +248,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35 | 37 | 41
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35 | 37 | 41 | 43
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /37, and /41",
+            "coverage is required exactly for odd suite majors from /5 through /37, /41 and /43",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -715,6 +735,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// The construct-owned format gates: each refuses an explicitly pinned older suite version that
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::synthesis_seeds::admit(suite, None)?;
     crate::one_time_response::admit(suite)?;
     crate::direct_response::admit(suite)?;
     crate::delivery_context::admit(suite)?;
@@ -942,6 +963,37 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                 "setup must be followed by an assertion",
             ));
         }
+    }
+    Ok(())
+}
+
+/// The structural rules one setup row obeys wherever a suite carries it: finite, bounded literals,
+/// a non-null identity and local field names.
+pub(crate) fn setup_row(
+    identity: &Node,
+    fields: &std::collections::BTreeMap<String, Node>,
+    path: &str,
+) -> Result<(), AdmissionError> {
+    setup_literal(identity, 0, path)?;
+    for value in fields.values() {
+        setup_literal(value, 0, path)?;
+    }
+    if matches!(identity, Node::Null) {
+        return Err(AdmissionError::new(
+            "InvalidEntitySetup",
+            path,
+            "identity cannot be null",
+        ));
+    }
+    if fields
+        .keys()
+        .any(|key| !ess_domain::types::is_field_name(key))
+    {
+        return Err(AdmissionError::new(
+            "InvalidEntitySetup",
+            path,
+            "field names must be local identifiers",
+        ));
     }
     Ok(())
 }

@@ -128,9 +128,58 @@ fn merge_inventory(
     origins: Origins,
     known_generated: bool,
 ) -> Result<AdmittedInput, AdmissionError> {
+    merge_seeded(
+        ir,
+        batches,
+        (scope, origins),
+        known_generated,
+        &crate::synthesize::AdmittedSeeds::empty(),
+    )
+}
+/// [`build`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
+/// `docs/design/synthesis-seeds.md`): the generated half is synthesized with them, and the suite
+/// records their sources, selections and the uses its emitted generated scenarios hold, as
+/// coverage suite/43. A seed source is not an authored input: it adds nothing to
+/// `authored_sources`, and the same file passed in `sources` as well keeps both roles apart.
+///
+/// # Errors
+///
+/// An [`AdmissionError`] for authored-only acquisition, which generates nothing a seed could
+/// serve, and for seeds the model refuses, besides every refusal of [`build`].
+pub fn build_with_seeds(
+    ir: &EssIr,
+    sources: &[CoverageSource],
+    scope: Scope,
+    origins: Origins,
+    seeds: &crate::synthesize::AdmittedSeeds,
+) -> Result<AdmittedInput, AdmissionError> {
+    if !seeds.is_empty() && !origins.includes(Origin::Generated) {
+        return Err(seed_error(
+            &crate::synthesize::SeedAdmissionError::AuthoredOnly,
+        ));
+    }
+    seeds.bound_to(ir).map_err(|error| seed_error(&error))?;
+    merge_seeded(
+        ir,
+        &[compile_sources(ir, sources)?],
+        (scope, origins),
+        false,
+        seeds,
+    )
+}
+fn seed_error(error: &crate::synthesize::SeedAdmissionError) -> AdmissionError {
+    AdmissionError::new("InvalidSynthesisSeeds", "$seeds", error.to_string())
+}
+fn merge_seeded(
+    ir: &EssIr,
+    batches: &[AuthoredBatch],
+    (scope, origins): (Scope, Origins),
+    known_generated: bool,
+    seeds: &crate::synthesize::AdmittedSeeds,
+) -> Result<AdmittedInput, AdmissionError> {
     crate::admission::model(ir)?;
     let synthesis = if known_generated || origins.includes(Origin::Generated) {
-        crate::synthesize(ir)
+        crate::synthesize::synthesize_with_seeds(ir, seeds).map_err(|error| seed_error(&error))?
     } else {
         crate::Synthesis {
             suite: ConformanceSuite::new(crate::SuiteProvenance::of(ir)),
@@ -139,14 +188,14 @@ fn merge_inventory(
             notes: Vec::new(),
         }
     };
-    finish_inventory(ir, batches, scope, origins, synthesis)
+    finish_inventory(ir, batches, scope, origins, (synthesis, seeds))
 }
 fn finish_inventory(
     ir: &EssIr,
     batches: &[AuthoredBatch],
     scope: Scope,
     origins: Origins,
-    synthesis: crate::Synthesis,
+    (synthesis, seeds): (crate::Synthesis, &crate::synthesize::AdmittedSeeds),
 ) -> Result<AdmittedInput, AdmissionError> {
     crate::admission::model(ir)?;
     let component = match &scope {
@@ -236,6 +285,8 @@ fn finish_inventory(
         &owners,
         component.map(|c| (ir, c)),
     );
+    // Uses are read off the scenarios this inventory emits, after scope and origin selection.
+    seeds.attach(ir, &mut suite);
     classify(&mut inventory, &owners, &rejected_needs);
     inventory.sort_and_count()?;
     suite.select_fresh_format_for(ir);
@@ -500,58 +551,55 @@ fn coverage_version(
         || crate::bounded_retry::used_by(suite)
         || crate::grant::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
-    crate::scenario::SuiteFormat::parse(
-        if crate::expression_format::coverage_floor(suite).is_some() {
-            "ess-conformance/41"
-        } else if crate::no_invocation::used_by(suite)
-            || crate::no_invocation::refused_in(inventory)
-        {
-            "ess-conformance/37"
-        } else if suite.provenance.scenario_initial_state.is_some()
-            || crate::one_time_response::used_by(suite)
-            || crate::view_grant::used_by(suite)
-        {
-            "ess-conformance/35"
-        } else if crate::structured_values::used_by(suite) {
-            "ess-conformance/33"
-        } else if crate::delivery_context::used_by(suite) {
-            "ess-conformance/31"
-        } else if crate::direct_response::used_by(suite) {
-            "ess-conformance/29"
-        } else if round_three {
-            "ess-conformance/27"
-        } else if crate::presence::used_by(suite) {
-            "ess-conformance/25"
-        } else if crate::outcome_shapes::used_by(suite) {
-            "ess-conformance/23"
-        } else if crate::text_match_format::case_fold_used_by(suite) {
-            "ess-conformance/21"
-        } else if crate::fixtures::used_by(suite) {
-            "ess-conformance/19"
-        } else if crate::aggregate::used_by(suite)
-            || inventory
-                .refused
-                .iter()
-                .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
-        {
-            "ess-conformance/17"
-        } else if crate::text_match_format::used_by(suite) {
-            "ess-conformance/15"
-        } else if crate::replay::used_by(suite) {
-            "ess-conformance/13"
-        } else if suite.requires_preservation_format() {
-            "ess-conformance/11"
-        } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite)
-        {
-            "ess-conformance/9"
-        } else if suite.requires_extended_format()
-            || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
-        {
-            "ess-conformance/7"
-        } else {
-            coverage::COVERAGE_SUITE_FORMAT
-        },
-    )
+    crate::scenario::SuiteFormat::parse(if crate::synthesis_seeds::used_by(suite) {
+        "ess-conformance/43"
+    } else if crate::expression_format::coverage_floor(suite).is_some() {
+        "ess-conformance/41"
+    } else if crate::no_invocation::used_by(suite) || crate::no_invocation::refused_in(inventory) {
+        "ess-conformance/37"
+    } else if suite.provenance.scenario_initial_state.is_some()
+        || crate::one_time_response::used_by(suite)
+        || crate::view_grant::used_by(suite)
+    {
+        "ess-conformance/35"
+    } else if crate::structured_values::used_by(suite) {
+        "ess-conformance/33"
+    } else if crate::delivery_context::used_by(suite) {
+        "ess-conformance/31"
+    } else if crate::direct_response::used_by(suite) {
+        "ess-conformance/29"
+    } else if round_three {
+        "ess-conformance/27"
+    } else if crate::presence::used_by(suite) {
+        "ess-conformance/25"
+    } else if crate::outcome_shapes::used_by(suite) {
+        "ess-conformance/23"
+    } else if crate::text_match_format::case_fold_used_by(suite) {
+        "ess-conformance/21"
+    } else if crate::fixtures::used_by(suite) {
+        "ess-conformance/19"
+    } else if crate::aggregate::used_by(suite)
+        || inventory
+            .refused
+            .iter()
+            .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
+    {
+        "ess-conformance/17"
+    } else if crate::text_match_format::used_by(suite) {
+        "ess-conformance/15"
+    } else if crate::replay::used_by(suite) {
+        "ess-conformance/13"
+    } else if suite.requires_preservation_format() {
+        "ess-conformance/11"
+    } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
+        "ess-conformance/9"
+    } else if suite.requires_extended_format()
+        || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
+    {
+        "ess-conformance/7"
+    } else {
+        coverage::COVERAGE_SUITE_FORMAT
+    })
     .expect("constant suite version")
 }
 
@@ -616,8 +664,14 @@ mod tests {
             crate::RefusalCause::DuplicateScenario
         );
         let original_message = synthesis.refusals[0].to_string();
-        let input =
-            finish_inventory(&ir, &[], Scope::System, Origins::Generated, synthesis).unwrap();
+        let input = finish_inventory(
+            &ir,
+            &[],
+            Scope::System,
+            Origins::Generated,
+            (synthesis, &crate::synthesize::AdmittedSeeds::empty()),
+        )
+        .unwrap();
         let inventory = input.selected().coverage().unwrap();
         assert_eq!(inventory.counts.generated, 32);
         assert_eq!(inventory.counts.refused, 1);

@@ -156,8 +156,16 @@ impl ConformanceSuite {
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
         self.provenance.scenario_initial_state = Some(ScenarioInitialState::Empty);
-        self.provenance.suite_version =
-            SuiteFormat::parse("ess-conformance/34").expect("constant suite version");
+        // A seeded suite stays suite/42 whatever a later fresh pass appends (beyond10x/ess#413).
+        self.provenance.suite_version = SuiteFormat::parse(&format!(
+            "ess-conformance/{}",
+            if crate::synthesis_seeds::used_by(self) {
+                crate::synthesis_seeds::ORDINARY
+            } else {
+                34
+            }
+        ))
+        .expect("constant suite version");
     }
 
     /// [`select_fresh_format`](Self::select_fresh_format), with the constructs only the model can
@@ -168,6 +176,11 @@ impl ConformanceSuite {
     /// selection over the same suite cannot lower the number again.
     pub fn select_fresh_format_for(&mut self, ir: &ess_compiler::EssIr) {
         self.select_fresh_format();
+        // A seeded suite is suite/42 (beyond10x/ess#413), the newest pair, cumulative over every
+        // vocabulary below it; nothing here may lower it.
+        if crate::synthesis_seeds::used_by(self) {
+            return;
+        }
         // Zero-invocation observation (ess/22, beyond10x/ess#268) implies every major below it.
         if crate::no_invocation::used_by(self) {
             self.provenance.suite_version = SuiteFormat::parse(&format!(
@@ -360,6 +373,12 @@ pub struct SuiteProvenance {
     /// Required logical namespace before each scenario's setup. Legacy suites leave this absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenario_initial_state: Option<ScenarioInitialState>,
+    /// The explicit synthesis seeds this suite was generated with, and where each was used
+    /// (suite/42 and /43, beyond10x/ess#413, `docs/design/synthesis-seeds.md`).
+    ///
+    /// Left out of the document when it is `None`, so every seed-free suite keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synthesis_seeds: Option<crate::synthesis_seeds::SynthesisSeeds>,
 }
 
 /// The lifecycle precondition of a newly synthesized suite, not a physical database reset.
@@ -398,6 +417,7 @@ impl SuiteProvenance {
             contract_digest: digest(projection.contract_digest.as_str()),
             component: None,
             scenario_initial_state: None,
+            synthesis_seeds: None,
         }
     }
 }
@@ -409,7 +429,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 40, 41,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 40, 41, 42, 43,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -3240,6 +3260,7 @@ mod tests {
             .expect("a digest"),
             component: None,
             scenario_initial_state: None,
+            synthesis_seeds: None,
         }
     }
 }

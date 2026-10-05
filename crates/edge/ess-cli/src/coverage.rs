@@ -22,6 +22,21 @@ pub(super) fn fresh(
     component: Option<&str>,
     authored: bool,
 ) -> Result<AdmittedInput> {
+    fresh_seeded(
+        ir,
+        path,
+        (component, authored),
+        &ess_conformance::synthesize::AdmittedSeeds::empty(),
+    )
+}
+/// [`fresh`], with explicitly admitted synthesis seeds (beyond10x/ess#413); the empty set is
+/// [`fresh`] itself.
+fn fresh_seeded(
+    ir: &EssIr,
+    path: Option<&Path>,
+    (component, authored): (Option<&str>, bool),
+    seeds: &ess_conformance::synthesize::AdmittedSeeds,
+) -> Result<AdmittedInput> {
     let sources = sources(path)?;
     let scope = component.map_or(Ok(Scope::System), Scope::component)?;
     let origins = if authored {
@@ -31,21 +46,26 @@ pub(super) fn fresh(
     } else {
         Origins::Generated
     };
-    Ok(coverage_build::build(ir, &sources, scope, origins)?)
+    if seeds.is_empty() {
+        return Ok(coverage_build::build(ir, &sources, scope, origins)?);
+    }
+    Ok(coverage_build::build_with_seeds(
+        ir, &sources, scope, origins, seeds,
+    )?)
 }
 pub(super) fn generate(
     input: &SpecPath,
     target: SuiteTarget,
     out: Option<&Path>,
-    component: Option<&str>,
-    scenarios: Option<&Path>,
-    authored: bool,
-    compact: bool,
+    (component, scenarios): (Option<&str>, Option<&Path>),
+    (authored, compact): (bool, bool),
+    seeds: &[String],
 ) -> Result<ExitCode> {
     let Ok((ir, _)) = super::resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
-    let admitted = fresh(&ir, scenarios, component, authored)?;
+    let seeds = super::synthesis_seeds(&ir, seeds)?;
+    let admitted = fresh_seeded(&ir, scenarios, (component, authored), &seeds)?;
     let suite = admitted.selected();
     let inventory = suite.coverage().expect("coverage builder");
     let compact_json;

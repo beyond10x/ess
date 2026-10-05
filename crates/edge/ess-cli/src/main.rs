@@ -581,6 +581,22 @@ enum ConformCommand {
         /// Write fresh IR as compact JSON with one trailing newline; requires --target ir.
         #[arg(long)]
         compact: bool,
+        /// Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an
+        /// explicit synthesis seed; repeatable.
+        ///
+        /// A seed supplies only that nominated initial row: never the document's timeline,
+        /// assertions or any state its timeline reaches, and it appends no authored scenario
+        /// (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is
+        /// established only for a generated obligation no bounded arrangement reaches, and the
+        /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
+        /// `--suite-format 5`) and records its source, row and uses.
+        #[arg(
+            long = "synthesis-seed",
+            num_args = 2,
+            value_names = ["FILE", "INSTANCE"],
+            action = clap::ArgAction::Append
+        )]
+        synthesis_seed: Vec<String>,
     },
     /// Compile the scenarios an author wrote, and nothing the specification obliges.
     ///
@@ -3401,14 +3417,15 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             scenarios,
             suite_format,
             compact,
+            synthesis_seed,
         } => synthesize_suite(
             &input,
             target,
             out.as_deref(),
             component.as_deref(),
             scenarios.as_deref(),
-            &suite_format,
-            compact,
+            (&suite_format, compact),
+            &synthesis_seed,
         ),
         ConformCommand::Author {
             input,
@@ -4462,28 +4479,40 @@ fn synthesize_suite(
     out: Option<&Path>,
     component: Option<&str>,
     scenarios: Option<&Path>,
-    suite_format: &str,
-    compact: bool,
+    (suite_format, compact): (&str, bool),
+    seeds: &[String],
 ) -> Result<ExitCode> {
     if compact && target != SuiteTarget::Ir {
         bail!("--compact requires --target ir");
     }
     if suite_format == "5" {
-        return coverage::generate(input, target, out, component, scenarios, false, compact);
+        return coverage::generate(
+            input,
+            target,
+            out,
+            (component, scenarios),
+            (false, compact),
+            seeds,
+        );
     }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
     ess_conformance::admission::model(&ir)?;
+    // Every explicit seed is admitted before anything is synthesized or written.
+    let seeds = synthesis_seeds(&ir, seeds)?;
     let mut synthesis = match component {
-        None => ess_conformance::synthesize(&ir),
-        Some(name) => match ess_conformance::synthesize::synthesize_for(&ir, name) {
-            Ok(synthesis) => synthesis,
-            Err(unknown) => {
-                eprintln!("{unknown}");
-                return Ok(ExitCode::from(1));
+        None => ess_conformance::synthesize::synthesize_with_seeds(&ir, &seeds)?,
+        Some(name) => {
+            match ess_conformance::synthesize::synthesize_for_with_seeds(&ir, name, &seeds) {
+                Ok(synthesis) => synthesis,
+                Err(ess_conformance::synthesize::SeedAdmissionError::UnknownComponent(unknown)) => {
+                    eprintln!("{unknown}");
+                    return Ok(ExitCode::from(1));
+                }
+                Err(refused) => return Err(refused.into()),
             }
-        },
+        }
     };
     // The authored half, compiled against the same model and filed in the same suite. Refused
     // rather than merged where a scenario names something the specification does not declare: a
@@ -4535,6 +4564,15 @@ fn synthesize_suite(
             // And a question the specification does not answer, so no scenario is owed for it.
             for note in &synthesis.notes {
                 println!("note: {note}");
+            }
+            // Explicit seeds, apart from every count: a selection is an input, an application a
+            // use in an emitted generated scenario, and neither is an executed case.
+            if let Some(seeds) = &synthesis.suite.provenance.synthesis_seeds {
+                println!(
+                    "synthesis seeds: {} selected, {} applied",
+                    seeds.selections.len(),
+                    seeds.applications.len()
+                );
             }
             let written = written.unwrap_or_else(|| "nothing written".to_owned());
             // Counted apart, because they are not the same claim. A generated scenario is an
@@ -4660,7 +4698,14 @@ fn author_suite(
     suite_format: &str,
 ) -> Result<ExitCode> {
     if suite_format == "5" {
-        return coverage::generate(input, SuiteTarget::Ir, out, None, scenarios, true, false);
+        return coverage::generate(
+            input,
+            SuiteTarget::Ir,
+            out,
+            (None, scenarios),
+            (true, false),
+            &[],
+        );
     }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
@@ -4727,6 +4772,53 @@ fn authored_sources(scenarios: Option<&Path>) -> Result<Vec<ess_conformance::aut
         .into_iter()
         .map(authored_source)
         .collect())
+}
+
+/// The explicit `--synthesis-seed FILE INSTANCE` selections, admitted against `ir` before anything
+/// is synthesized or written (beyond10x/ess#413). No selection is the seed-free set.
+///
+/// FILE is one regular, non-symlink authored document, read with the same safeguards coverage
+/// discovery applies to one file and identified, as there, by its name relative to its directory;
+/// no directory is scanned and no manifest consulted.
+pub(crate) fn synthesis_seeds(
+    ir: &EssIr,
+    values: &[String],
+) -> Result<ess_conformance::synthesize::AdmittedSeeds> {
+    if values.is_empty() {
+        return Ok(ess_conformance::synthesize::AdmittedSeeds::empty());
+    }
+    // clap holds every occurrence to exactly two values, so the flat list pairs up in order.
+    if values.len() % 2 != 0 {
+        bail!("--synthesis-seed takes exactly FILE and INSTANCE");
+    }
+    let mut selections = Vec::new();
+    for pair in values.chunks(2) {
+        let [file, instance] = pair else {
+            bail!("--synthesis-seed takes exactly FILE and INSTANCE");
+        };
+        let path = Path::new(file);
+        let metadata = fs::symlink_metadata(path)
+            .with_context(|| format!("synthesis seed source {} is missing", path.display()))?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            bail!(
+                "synthesis seed source {} is not a regular non-symlink file; name one authored \
+                 document",
+                path.display()
+            );
+        }
+        let instance = ess_conformance::InstanceName::new(instance)
+            .map_err(|error| anyhow::anyhow!("synthesis seed instance `{instance}`: {error}"))?;
+        for input in input_discovery::acquire(path, input_discovery::Kind::Coverage)? {
+            selections.push(ess_conformance::synthesize::SeedSelection {
+                source: ess_conformance::authored::Source::new(input.identity, input.text),
+                instance: instance.clone(),
+            });
+        }
+    }
+    Ok(ess_conformance::synthesize::AdmittedSeeds::compile(
+        ir,
+        &selections,
+    )?)
 }
 
 fn authored_source(input: input_discovery::Input) -> ess_conformance::authored::Source {

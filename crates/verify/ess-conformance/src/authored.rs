@@ -2056,6 +2056,23 @@ fn map_key_newtypes(ir: &EssIr) -> ess_domain::types::MapKeyNewtypes {
     ))
 }
 
+/// Every arrangement a document declares, in order, with whether it carries a `setup` — what an
+/// explicit synthesis seed selects from (beyond10x/ess#413). Read exactly as [`compile_one`] reads
+/// the document; call it only for a source that compiled.
+pub(crate) fn arrangements(
+    ir: &EssIr,
+    source: &Source,
+) -> Result<Vec<(InstanceName, bool)>, String> {
+    let document: Document = map_key_newtypes(ir)
+        .scope(|| serde_yaml::from_str(&source.text))
+        .map_err(|error| error.to_string())?;
+    Ok(document
+        .arrange
+        .iter()
+        .map(|arrangement| (arrangement.instance.clone(), arrangement.setup.is_some()))
+        .collect())
+}
+
 /// One file, or every reason it produced nothing.
 pub(crate) fn compile_one(
     ir: &EssIr,
