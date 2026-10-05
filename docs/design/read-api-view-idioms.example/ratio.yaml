@@ -1,0 +1,63 @@
+domain: idioms.ratio
+
+summary: >-
+  Derived values over aggregates are the consumer's. The view returns both operands of a rate in one
+  row; the parameter of a duration filter is declared in the unit the field is stored in.
+
+events:
+  - name: idioms.ratio.CallRecorded
+    fields:
+      - {name: call_id, type: Uuid}
+
+entities:
+  - name: idioms.ratio.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: queue_id, type: String}
+      - {name: abandoned, type: Boolean}
+      - {name: duration_ms, type: Integer}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+
+commands:
+  - name: idioms.ratio.RecordCall
+    input:
+      - {name: queue_id, type: String}
+      - {name: abandoned, type: Boolean}
+      - {name: duration_ms, type: Integer}
+    outcomes:
+      - name: recorded
+        creates: idioms.ratio.Call
+        instance: call_id
+        sets: {queue_id: input.queue_id, abandoned: input.abandoned, duration_ms: input.duration_ms}
+        emits: [idioms.ratio.CallRecorded]
+        payload:
+          idioms.ratio.CallRecorded: {call_id: {generated: true}}
+
+views:
+  # The two operands of the abandonment rate, in one row per queue. The consumer divides, rounds and
+  # decides what a queue with no call reads as.
+  - name: idioms.ratio.QueueOutcomes
+    source: idioms.ratio.Call
+    consistency: read_your_writes
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: String}
+      - {name: queued, type: Integer, aggregate: {count: {}}}
+      - {name: abandoned, type: Integer, aggregate: {count: {}, where: abandoned == true}}
+
+  # The limit is declared in milliseconds, the unit `duration_ms` is stored in. An adapter that
+  # receives seconds converts before the read; one constant offset is all a filter adds.
+  - name: idioms.ratio.LongCalls
+    source: idioms.ratio.Call
+    consistency: read_your_writes
+    params:
+      - {name: limit_ms, type: Integer}
+    filter: duration_ms > param.limit_ms + 1000
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: String}
+      - {name: long_calls, type: Integer, aggregate: {count: {}}}

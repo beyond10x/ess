@@ -1,0 +1,77 @@
+domain: idioms.latest
+
+summary: >-
+  An order-dependent value needs a declared order. The latest instant per group is `max`; the latest
+  row of one group is an ordered, paged row view read with size 1; nested groups are a flat grouping
+  the consumer nests.
+
+events:
+  - name: idioms.latest.EventRecorded
+    fields:
+      - {name: event_id, type: Uuid}
+
+entities:
+  - name: idioms.latest.Event
+    identity: {name: event_id, type: Uuid}
+    fields:
+      - {name: outer, type: String}
+      - {name: inner, type: String}
+      - {name: at, type: Timestamp}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+
+commands:
+  - name: idioms.latest.RecordEvent
+    input:
+      - {name: outer, type: String}
+      - {name: inner, type: String}
+      - {name: at, type: Timestamp}
+    outcomes:
+      - name: recorded
+        creates: idioms.latest.Event
+        instance: event_id
+        sets: {outer: input.outer, inner: input.inner, at: input.at}
+        emits: [idioms.latest.EventRecorded]
+        payload:
+          idioms.latest.EventRecorded: {event_id: {generated: true}}
+
+views:
+  # The latest instant per group: `max` orders Timestamps by instant.
+  - name: idioms.latest.LatestAt
+    source: idioms.latest.Event
+    consistency: read_your_writes
+    group_by: [outer]
+    fields:
+      - {name: outer, type: String}
+      - {name: latest_at, type: Optional<Timestamp>, aggregate: {max: at}}
+
+  # The latest row of one group: newest first, ties broken by identity, read with size 1.
+  - name: idioms.latest.LatestEvent
+    source: idioms.latest.Event
+    consistency: read_your_writes
+    params:
+      - {name: outer, type: String}
+      - {name: page, type: Integer}
+      - {name: size, type: Integer}
+    filter: outer == param.outer
+    order_by: [at desc, event_id asc]
+    paging: {page: page, size: size}
+    fields:
+      - {name: event_id, type: Uuid}
+      - {name: outer, type: String}
+      - {name: inner, type: String}
+      - {name: at, type: Timestamp}
+
+  # One flat row per (outer, inner); the consumer nests the inner groups under their outer key.
+  - name: idioms.latest.ByOuterInner
+    source: idioms.latest.Event
+    consistency: read_your_writes
+    group_by: [outer, inner]
+    fields:
+      - {name: outer, type: String}
+      - {name: inner, type: String}
+      - {name: events, type: Integer, aggregate: {count: {}}}
+      - {name: latest_at, type: Optional<Timestamp>, aggregate: {max: at}}
