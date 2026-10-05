@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-452
 kind: story
-status: draft
+status: active
 title: An outcome that removes many records, and cascade removal
 tags:
 - ess-0.54.0
@@ -43,7 +43,10 @@ scope:
   path: docs/design/set-effects-over-filtered-instances.md
 - confidence: cited
   path: website/docs/guides/specify/selection-effects.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T20:40:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-10-05T20:40:14Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#452: An outcome that removes many records, and cascade removal.

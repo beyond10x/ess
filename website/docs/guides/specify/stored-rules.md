@@ -1,0 +1,87 @@
+---
+title: Rules stored as data
+sidebar_position: 4
+description: A rule the system stores as rows is the system's to evaluate; the specification types its parts, injects its verdict and folds stored results with a row-set guard.
+---
+
+# Rules stored as data
+
+## A rule stored as data is evaluated by the system
+
+Some systems store their rules as rows, written at run time: a condition's expression, operator and
+expectation, and a fold of ALL or ANY. ESS does not evaluate such a rule. The specification states
+the rule's parts as typed rows and leaves the verdict to the system's evaluator, as an `external:`
+outcome the suite injects:
+
+```yaml
+format: ess/16
+system: demo
+version: v1
+domain: demo.rules
+summary: Conditions stored as rows; whether a rule holds is the evaluator's decision.
+types:
+  - {name: demo.rules.ConditionId, kind: newtype, of: Uuid}
+  - {name: demo.rules.RuleId, kind: newtype, of: Uuid}
+  - {name: demo.rules.Operator, kind: enum, variants: [Equals, GreaterThan, Matches]}
+  - {name: demo.rules.Fold, kind: enum, variants: [All, Any]}
+entities:
+  - name: demo.rules.Condition
+    identity: {name: condition_id, type: demo.rules.ConditionId}
+    fields:
+      - {name: rule_id, type: demo.rules.RuleId}
+      - {name: expression, type: String}
+      - {name: operator, type: demo.rules.Operator}
+      - {name: expectation, type: String}
+      - {name: fold, type: demo.rules.Fold}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+errors:
+  - {name: demo.rules.RuleNotMet, fields: [{name: rule_id, type: demo.rules.RuleId}]}
+events:
+  - name: demo.rules.ConditionAdded
+    fields: [{name: condition_id, type: demo.rules.ConditionId}]
+  - name: demo.rules.RuleMet
+    fields: [{name: rule_id, type: demo.rules.RuleId}]
+commands:
+  - name: demo.rules.AddCondition
+    input:
+      - {name: condition_id, type: demo.rules.ConditionId}
+      - {name: rule_id, type: demo.rules.RuleId}
+      - {name: expression, type: String}
+      - {name: operator, type: demo.rules.Operator}
+      - {name: expectation, type: String}
+      - {name: fold, type: demo.rules.Fold}
+    outcomes:
+      - name: added
+        creates: demo.rules.Condition
+        instance: condition_id
+        sets:
+          rule_id: input.rule_id
+          expression: input.expression
+          operator: input.operator
+          expectation: input.expectation
+          fold: input.fold
+        emits: [demo.rules.ConditionAdded]
+        payload: {demo.rules.ConditionAdded: {condition_id: input.condition_id}}
+  - name: demo.rules.TestRule
+    input: [{name: rule_id, type: demo.rules.RuleId}]
+    outcomes:
+      - name: not-met
+        external: the evaluator finds the rule's stored conditions do not hold
+        error: demo.rules.RuleNotMet
+      - name: met
+        emits: [demo.rules.RuleMet]
+        payload: {demo.rules.RuleMet: {rule_id: input.rule_id}}
+components:
+  - component: rules
+    owns: {domains: [demo.rules]}
+    accepts: {commands: [demo.rules.AddCondition, demo.rules.TestRule]}
+    reached_by: network
+```
+
+The synthesized suite forces `not-met` and requires its error, and sends `TestRule` with no verdict
+forced for `met`. Where the system stores each condition's result as a row field, such as
+`holds: Boolean`, the ALL/ANY fold over those results is a fact the specification can state: from
+`ess/22`, a `when_related` row-set guard with `forall` or `exists`. The boundary, and why ESS does
+not interpret stored rules, is in
+[the stored-rules design note](https://github.com/beyond10x/ess/blob/main/docs/design/stored-rules-boundary.md).
+

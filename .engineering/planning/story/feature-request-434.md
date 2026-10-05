@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-434
 kind: story
-status: draft
+status: active
 title: A measure of how complete a specification is
 tags:
 - ess-0.54.0
@@ -24,7 +24,10 @@ scope:
   path: website/docs/guides/specify/layout-and-validation.md
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T20:40:16Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-05T20:40:16Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#434: A measure of how complete a specification is.

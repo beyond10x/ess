@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-440
 kind: story
-status: draft
+status: active
 title: Binding inputs read from stored state at consume time
 tags:
 - ess-0.54.0
@@ -21,7 +21,10 @@ scope:
   path: docs/design/filtered-related-reads.md
 - confidence: cited
   path: website/docs/guides/specify/bindings-and-components.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T20:40:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-10-05T20:40:16Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#440: Binding inputs read from stored state at consume time.

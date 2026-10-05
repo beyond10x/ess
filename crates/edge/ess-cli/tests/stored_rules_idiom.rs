@@ -13,7 +13,7 @@ use std::{
 };
 
 const NOTE: &str = "docs/design/stored-rules-boundary.md";
-const GUIDE: &str = "website/docs/guides/specify/guards-and-predicates.md";
+const GUIDE: &str = "website/docs/guides/specify/stored-rules.md";
 const GUIDE_HEADING: &str = "## A rule stored as data is evaluated by the system";
 
 fn root() -> PathBuf {

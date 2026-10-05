@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-450
 kind: story
-status: draft
+status: active
 title: Declared reference rows
 tags:
 - ess-0.54.0
@@ -45,7 +45,10 @@ scope:
   path: docs/design/enum-variant-wire-names.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T20:40:14Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "proposed", to: "active", at: "2026-10-05T20:40:14Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":5}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#450: Declared reference rows.
