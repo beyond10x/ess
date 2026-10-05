@@ -383,8 +383,51 @@ impl<'a> Query<'a, '_> {
         values
     }
 
-    /// One aggregate field over `members`, the rows of one partition.
+    /// One aggregate field over `members`, the rows of one partition — or, where the measure
+    /// declares `where:` (beyond10x/ess#363), over the members its condition holds for. An
+    /// unknown condition answers no row at all: the whole read is undetermined, never a partial
+    /// one.
     fn aggregate(&mut self, aggregate: &ResolvedAggregate, members: &str) -> String {
+        match &aggregate.r#where {
+            None => self.unconditioned(aggregate, members),
+            Some(condition) => {
+                let selected = self.select(condition, members);
+                self.unconditioned(aggregate, &selected)
+            }
+        }
+    }
+
+    /// The members of `members` `condition` holds for, collected into a fresh slice.
+    fn select(
+        &mut self,
+        condition: &ess_primitives::predicate::Predicate,
+        members: &str,
+    ) -> String {
+        let snapshot = self.snapshot();
+        let (selected, held, reading) = (
+            self.temp("selected"),
+            self.local("held"),
+            self.temp("reading"),
+        );
+        self.lines
+            .push("// `where:`: this measure reads only the rows its condition holds for.");
+        self.lines.push(&format!("var {selected} []{snapshot}"));
+        self.lines
+            .open(&format!("for _, {held} := range {members} {{"));
+        let entity = self.entity;
+        let truth = self.guards(&held).predicate(&Env::Row(entity), condition);
+        self.lines.push(&format!("{reading} := {truth}"));
+        self.refuse_if(&format!("{reading} == unknown"));
+        self.lines.open(&format!("if {reading} == verity {{"));
+        self.lines
+            .push(&format!("{selected} = append({selected}, {held})"));
+        self.lines.close("}");
+        self.lines.close("}");
+        selected
+    }
+
+    /// One aggregate field over every row of `members`.
+    fn unconditioned(&mut self, aggregate: &ResolvedAggregate, members: &str) -> String {
         let Some(input) = &aggregate.input else {
             return format!("int64(len({members}))");
         };

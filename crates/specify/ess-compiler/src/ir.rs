@@ -1610,11 +1610,16 @@ pub struct ResolvedAggregate {
     /// beyond10x/ess#148). Omitted when false, so a model that does not write it keeps its bytes.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub skip_absent: bool,
+    /// Which of the group's rows this measure reads (`where:`, `ess/22`, beyond10x/ess#363): the
+    /// resolved predicate over one source row and the view's parameters. Omitted when the source
+    /// writes none, so a model without one keeps its IR bytes and digests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#where: Option<Predicate>,
 }
 
 impl std::fmt::Display for ResolvedAggregate {
-    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, or `count()`: the rendering every
-    /// projection of the construct uses.
+    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, `count()`, or
+    /// `count() where state == Completed`: the rendering every projection of the construct uses.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1626,7 +1631,11 @@ impl std::fmt::Display for ResolvedAggregate {
             } else {
                 ""
             }
-        )
+        )?;
+        if let Some(condition) = &self.r#where {
+            write!(f, " where {condition}")?;
+        }
+        Ok(())
     }
 }
 
@@ -1660,10 +1669,14 @@ impl ResolvedAggregate {
                 format!("average of {input}, rounded to 6 places half-even")
             }
         };
-        if self.skip_absent {
+        let described = if self.skip_absent {
             format!("{described}, skipping absent values")
         } else {
             described
+        };
+        match &self.r#where {
+            Some(condition) => format!("{described}, over the rows where {condition}"),
+            None => described,
         }
     }
 }

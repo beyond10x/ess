@@ -94,9 +94,9 @@ const newestSuiteMajor = 43
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
-// the next lower major. Suite/40 and /41 (the persisted expression vocabulary,
-// docs/design/expression-family-source22.md) are cumulative over them.
-var suiteMajorsNotRead = map[int]bool{38: true, 39: true}
+// the next lower major. None is left: /38 and /39 carry conditional aggregate measures
+// (docs/design/conditional-aggregate-measures.md), whose suites hold ordinary expected rows.
+var suiteMajorsNotRead = map[int]bool{}
 
 // suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
 // Each major implies every major below it that this runtime reads, so one number answers every

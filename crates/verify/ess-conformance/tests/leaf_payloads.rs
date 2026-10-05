@@ -330,7 +330,7 @@ fn released_suite_formats_26_and_27_remain_supported_and_future_versions_refuse(
             "{version}"
         );
     }
-    assert!(!SuiteFormat::parse("ess-conformance/38")
+    assert!(!SuiteFormat::parse("ess-conformance/44")
         .unwrap()
         .is_supported());
 }

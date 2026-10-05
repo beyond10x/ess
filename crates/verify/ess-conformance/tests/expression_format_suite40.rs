@@ -92,17 +92,14 @@ fn suite39_relabel_refuses_fact_before_execution() {
         .suite
         .to_canonical_json()
         .expect("admitted");
-    // `/34` is the one older ordinary major whose envelope a `/40` suite otherwise satisfies, so
-    // the vocabulary is what refuses it; `/39` is no major this build reads at all.
-    for older in ["ess-conformance/34", "ess-conformance/39"] {
+    // `/34` and `/38` are older ordinary majors whose envelope a `/40` suite otherwise satisfies,
+    // so the vocabulary is what refuses them: `/38` carries conditional aggregate measures and
+    // still predates the expression vocabulary.
+    for older in ["ess-conformance/34", "ess-conformance/38"] {
         let relabelled = json.replace("ess-conformance/40", older);
         let refused = AdmittedSuite::from_json(&relabelled).expect_err(older);
         let text = refused.to_string();
-        assert!(
-            text.contains("suite/40 or /41")
-                || (older.ends_with("39") && text.contains("1–37, 40, 41, 42 and 43")),
-            "{older}: {text}"
-        );
+        assert!(text.contains("suite/40 or /41"), "{older}: {text}");
     }
 }
 

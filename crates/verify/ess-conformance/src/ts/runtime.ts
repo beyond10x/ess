@@ -6158,8 +6158,12 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // Zero-invocation observation of a conditioned binding (beyond10x/ess#268).
   'ess-conformance/36': 36,
   'ess-conformance/37': 37,
+  // Conditional aggregate measures (`docs/design/conditional-aggregate-measures.md`,
+  // beyond10x/ess#363): ordinary expected rows, cumulative over every major below.
+  'ess-conformance/38': 38,
+  'ess-conformance/39': 39,
   // The persisted expression vocabulary (`docs/design/expression-family-source22.md`), cumulative
-  // over /36–/39; /38 and /39 are allocated to other work and this runtime has no reader for them yet.
+  // over /36–/39.
   'ess-conformance/40': 40,
   'ess-conformance/41': 41,
   // Explicit synthesis seeds (beyond10x/ess#413): the seed-bearing pair.
@@ -6170,8 +6174,8 @@ const SUITE_MAJORS: { [version: string]: number } = {
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
-  // The expression pair's and the seed-bearing pair's coverage majors.
-  41, 43,
+  // The coverage majors of the conditional measure, expression and seed-bearing pairs.
+  39, 41, 43,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */

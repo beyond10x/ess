@@ -555,6 +555,8 @@ fn coverage_version(
         "ess-conformance/43"
     } else if crate::expression_format::coverage_floor(suite).is_some() {
         "ess-conformance/41"
+    } else if crate::conditional_measures::coverage_floor(ir, suite).is_some() {
+        "ess-conformance/39"
     } else if crate::no_invocation::used_by(suite)
         || crate::no_invocation::refused_in(inventory)
         || crate::refusal_policy::used_by(suite)

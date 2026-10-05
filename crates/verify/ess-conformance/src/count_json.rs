@@ -107,6 +107,8 @@ impl Json {
                         | "ess-conformance/35"
                         | "ess-conformance/36"
                         | "ess-conformance/37"
+                        | "ess-conformance/38"
+                        | "ess-conformance/39"
                         | "ess-conformance/40"
                         | "ess-conformance/41"
                         | "ess-conformance/42"

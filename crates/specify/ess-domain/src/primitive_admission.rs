@@ -430,6 +430,8 @@ fn aggregate_view(view: &crate::ViewSpec, format: FormatVersion, errors: &mut Va
     let Some(aggregation) = &view.aggregation else {
         return;
     };
+    // A measure's condition (`where:`, ess/22, beyond10x/ess#363).
+    errors.extend(view.conditional_measure_admission(format));
     if format.major() < FormatVersion::V10.major() {
         let at = if aggregation.group_by.is_empty() {
             "fields"

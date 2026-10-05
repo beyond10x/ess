@@ -1807,6 +1807,16 @@ fn compare_views(
     }
 }
 
+/// What the field `field` of `view` computes, where it is an aggregate.
+fn computes<'v>(
+    view: &'v ResolvedView,
+    field: &str,
+) -> Option<&'v ess_compiler::ir::ResolvedAggregate> {
+    view.aggregation
+        .as_ref()
+        .and_then(|aggregation| aggregation.functions.get(field))
+}
+
 /// Aggregate views (`docs/design/aggregate-views.md`): the grouping, then what each field
 /// computes, over the union of field names. A view with no aggregation on either side reports
 /// nothing here, so its delta keeps its format.
@@ -1823,11 +1833,19 @@ fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl F
             after: grouping(is),
         });
     }
-    let computes = |view: &ResolvedView, field: &str| {
-        view.aggregation
-            .as_ref()
-            .and_then(|aggregation| aggregation.functions.get(field))
-            .map(ToString::to_string)
+    // Compared as typed values — the function, the input field's name, `skip_absent` and the
+    // resolved condition (beyond10x/ess#363) — and rendered only to report the change: two
+    // spellings of one resolved condition are one aggregate, an explicit `where: true` is not an
+    // omitted one, and how the source field is shown or described is no computation at all.
+    let identity = |aggregate: Option<&ess_compiler::ir::ResolvedAggregate>| {
+        aggregate.map(|aggregate| {
+            (
+                aggregate.function,
+                aggregate.input.as_ref().map(|input| input.name.clone()),
+                aggregate.skip_absent,
+                aggregate.r#where.clone(),
+            )
+        })
     };
     let names: std::collections::BTreeSet<&str> = was
         .fields
@@ -1837,11 +1855,11 @@ fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl F
         .collect();
     for field in names {
         let (before, after) = (computes(was, field), computes(is, field));
-        if before != after {
+        if identity(before) != identity(after) {
             push(ViewChange::FieldAggregateChanged {
                 field: field.to_owned(),
-                before,
-                after,
+                before: before.map(ToString::to_string),
+                after: after.map(ToString::to_string),
             });
         }
     }

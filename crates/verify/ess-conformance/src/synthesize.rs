@@ -1087,6 +1087,12 @@ impl RefusalCause {
                 "group by, or filter by a parameter over, a `String` or `Uuid` field the creating \
                  command sets from its input"
             }
+            Self::AggregateUnwitnessed { reason, .. } if reason.starts_with(CONDITION_REASON) => {
+                "give a measure's condition rows on both sides of it that the creating command can \
+                 arrange — a field it sets from its input, or the lifecycle state — with a second \
+                 group every condition refuses, and an `avg`'s selected rows a mean rounding and \
+                 truncation tell apart; or declare the measure without `where:`"
+            }
             Self::AggregateUnwitnessed { .. } => {
                 "let the creating command set every field the view groups by or aggregates from \
                  its input, and read a parameter only as `field == param.name` at the top of the \
@@ -9232,6 +9238,26 @@ fn shows_row(
     let Some(filter) = &view.filter else {
         return Ok(true);
     };
+    row_truth(ir, view, filter, state, settled, identity, params)
+}
+
+/// How every refusal of a conditional measure's arrangement (beyond10x/ess#363) begins, so its
+/// help names the repair that applies to it.
+const CONDITION_REASON: &str = "a measure's condition";
+
+/// Whether `predicate`, read over one source row of `view` as its filter is — the row's state, what
+/// the scenario settled in its fields, its identity, and the parameters a read sends — holds. A
+/// measure's condition (beyond10x/ess#363) is read here exactly as the filter is. `Err` names the
+/// facts nothing answers, where the truth is unknown.
+fn row_truth(
+    ir: &EssIr,
+    view: &ResolvedView,
+    filter: &Predicate,
+    state: &StateName,
+    settled: &BTreeMap<String, Determined>,
+    identity: Option<&ScenarioValue>,
+    params: &BTreeMap<String, ScenarioValue>,
+) -> Result<bool, Vec<FactPath>> {
     // A filter reads the source's rows. A row-level view projects them at the source's types, so
     // its own fields type the facts; an aggregate view's fields are group keys and results, and
     // `talk_seconds` in its filter is the row's value and never the sum a field of that name holds.

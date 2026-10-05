@@ -182,14 +182,19 @@ impl ConformanceSuite {
             return;
         }
         // Zero-invocation observation (ess/22, beyond10x/ess#268) and a scenario per selected
-        // refusal (beyond10x/ess#269) imply every major below them.
+        // refusal (beyond10x/ess#269) imply every major below them. A conditional aggregate measure
+        // (beyond10x/ess#363) ranks above them, and the expression vocabulary above both; without
+        // one, the binding pair's number stands as it always has.
+        let conditional = crate::conditional_measures::ordinary_floor(ir, self);
         if crate::no_invocation::used_by(self) || crate::refusal_policy::used_by(self) {
             self.provenance.suite_version = SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
                 crate::no_invocation::ORDINARY
             ))
             .expect("constant suite version");
-            return;
+            if conditional.is_none() {
+                return;
+            }
         }
         if self.provenance.suite_version.major() < crate::defined_aggregates::ORDINARY
             && crate::defined_aggregates::used_by(ir, self)
@@ -199,6 +204,15 @@ impl ConformanceSuite {
                 crate::defined_aggregates::ORDINARY
             ))
             .expect("constant suite version");
+        }
+        // A conditional aggregate measure (`docs/design/conditional-aggregate-measures.md`): `/38`
+        // is cumulative over everything above, so it is the floor whatever selected a lower number.
+        if let Some(floor) = conditional {
+            if self.provenance.suite_version.major() < floor {
+                self.provenance.suite_version =
+                    SuiteFormat::parse(&format!("ess-conformance/{floor}"))
+                        .expect("constant suite version");
+            }
         }
         // The persisted expression vocabulary (`docs/design/expression-family-source22.md`):
         // `/40` is cumulative, so it is the floor whatever else selected a lower number.
@@ -430,7 +444,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 40, 41, 42, 43,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -3258,12 +3272,14 @@ mod tests {
             "ess-conformance/35",
             "ess-conformance/36",
             "ess-conformance/37",
+            "ess-conformance/38",
+            "ess-conformance/39",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/38").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/44").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

@@ -209,6 +209,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 35, None),
     ("ess-conformance", 36, None),
     ("ess-conformance", 37, None),
+    // Conditional aggregate measures (`docs/design/conditional-aggregate-measures.md`).
+    ("ess-conformance", 38, None),
+    ("ess-conformance", 39, None),
     // The persisted expression vocabulary (`docs/design/expression-family-source22.md`).
     ("ess-conformance", 40, None),
     ("ess-conformance", 41, None),

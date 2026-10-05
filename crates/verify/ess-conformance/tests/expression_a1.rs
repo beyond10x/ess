@@ -399,8 +399,13 @@ fn suite39_relabel_refuses_fact() {
         .collect();
     assert_eq!(
         supported,
-        vec![ORDINARY, COVERAGE],
-        "36–39 stay unregistered until their readers land"
+        vec![
+            ess_conformance::conditional_measures::ORDINARY,
+            ess_conformance::conditional_measures::COVERAGE,
+            ORDINARY,
+            COVERAGE
+        ],
+        "the conditional measure pair registers below the expression pair"
     );
 }
 

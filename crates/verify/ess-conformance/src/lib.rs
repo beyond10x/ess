@@ -132,6 +132,7 @@ pub mod aggregate_delta;
 pub mod authored;
 pub mod bounded_retry;
 pub mod caller_values;
+pub mod conditional_measures;
 mod count_json;
 pub mod counts;
 pub mod coverage;

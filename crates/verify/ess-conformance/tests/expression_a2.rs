@@ -533,15 +533,13 @@ fn a2_the_offset_invariants_select_suite40_and_old_relabels_are_refused() {
         "{json}"
     );
     AdmittedSuite::from_json(&json).expect("a /40 reader admits it");
-    for older in ["ess-conformance/34", "ess-conformance/39"] {
+    // `/34` and `/38` are older ordinary majors whose envelope a `/40` suite otherwise satisfies, so
+    // the vocabulary is what refuses them.
+    for older in ["ess-conformance/34", "ess-conformance/38"] {
         let relabelled = json.replace("ess-conformance/40", older);
         let refused = AdmittedSuite::from_json(&relabelled).expect_err(older);
         let text = refused.to_string();
-        assert!(
-            text.contains("suite/40 or /41")
-                || (older.ends_with("39") && text.contains("1–37, 40, 41, 42 and 43")),
-            "{older}: {text}"
-        );
+        assert!(text.contains("suite/40 or /41"), "{older}: {text}");
     }
     let input = ess_conformance::coverage_build::build(
         &ir(),

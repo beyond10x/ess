@@ -305,6 +305,7 @@ fn the_generated_queries_build_with_warnings_denied_and_pass_their_own_suite() {
         WORKSPACE_DEPENDENCIES,
         &harness_source(),
         &["check", "--workspace", "--all-targets"],
+        &VIEWS,
     );
 }
 
@@ -324,6 +325,7 @@ fn the_single_crate_layout_passes_the_same_suite_with_its_server_feature() {
         CRATE_DEPENDENCIES,
         &harness,
         &["check", "--all-targets", "--features", "server"],
+        &VIEWS,
     );
 }
 
@@ -336,6 +338,7 @@ fn run_suite(
     dependencies: &str,
     harness_source: &str,
     check: &[&str],
+    views: &[&str],
 ) {
     let scratch = Scratch(
         Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -365,13 +368,13 @@ fn run_suite(
         "the harness builds against the generated ports:\n{log}"
     );
 
-    assert_suite_passes(ir, &target.join("debug/harness"), &[]);
+    assert_suite_passes(ir, &target.join("debug/harness"), &[], views);
     drop(scratch);
 }
 
 /// Runs the suite the specification synthesizes against one harness process, which every scenario
 /// must pass, and which must read every view.
-fn assert_suite_passes(ir: &EssIr, binary: &Path, arguments: &[String]) {
+fn assert_suite_passes(ir: &EssIr, binary: &Path, arguments: &[String], views: &[&str]) {
     let synthesized = ess_conformance::synthesize(ir);
     let suite = synthesized.suite;
     let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
@@ -399,9 +402,9 @@ fn assert_suite_passes(ir: &EssIr, binary: &Path, arguments: &[String]) {
         &serde_json::to_value(&suite).expect("a suite serializes"),
         &mut read,
     );
-    for view in VIEWS {
+    for view in views {
         assert!(
-            read.contains(view),
+            read.contains(*view),
             "the suite reads `{view}` in some scenario; it reads {read:?}"
         );
     }
@@ -411,7 +414,9 @@ fn assert_suite_passes(ir: &EssIr, binary: &Path, arguments: &[String]) {
         suite.scenarios.len()
     );
     assert_eq!(report.scenarios.len(), suite.scenarios.len());
-    assert_ties_rank_by_the_next_key(&target);
+    if views.contains(&"ledger.work.TasksByOwner") {
+        assert_ties_rank_by_the_next_key(&target);
+    }
     drop(target);
 }
 
@@ -460,9 +465,15 @@ fn the_go_queries_build_and_pass_their_own_suite() {
         eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
         return;
     };
-    let ir = compile_text(&fixture());
+    go_suite(&go, &fixture(), "generated-views", &VIEWS);
+}
+
+/// Synthesizes `text` to Go, checks every view in `views` is generated, and builds and runs the
+/// generated surface against its own suite through the Go harness.
+fn go_suite(go: &str, text: &str, label: &str, views: &[&str]) {
+    let ir = compile_text(text);
     let synthesis = synthesize_for(&ir, Target::Go).expect("the fixture synthesizes to Go");
-    for view in VIEWS {
+    for view in views {
         assert_eq!(
             synthesis
                 .plan
@@ -472,7 +483,7 @@ fn the_go_queries_build_and_pass_their_own_suite() {
         );
     }
     let behaviour = &synthesis.artifacts["types/behaviour/behaviour.go"].contents;
-    for view in VIEWS {
+    for view in views {
         let method = view.rsplit('.').next().unwrap_or_default();
         let signature = format!(
             "func (b *Generated) {method}() ([]work.{method}, *obligation.UnmetObligation) {{"
@@ -483,8 +494,7 @@ fn the_go_queries_build_and_pass_their_own_suite() {
         );
     }
     let scratch = Scratch(
-        Path::new(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("generated-views-go-{}", std::process::id())),
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{label}-go-{}", std::process::id())),
     );
     let _ = std::fs::remove_dir_all(&scratch.0);
     let tree = scratch.0.join("ledger");
@@ -509,12 +519,12 @@ fn the_go_queries_build_and_pass_their_own_suite() {
         formatted && unformatted.trim().is_empty(),
         "the generated Go is gofmt-clean:\n{unformatted}"
     );
-    let (vetted, log) = go_tool(&tree, &go, &["vet", "./..."]);
+    let (vetted, log) = go_tool(&tree, go, &["vet", "./..."]);
     assert!(vetted, "the generated Go is vet clean:\n{log}");
     let binary = scratch.0.join("harness-bin");
     let (built, log) = go_tool(
         &harness,
-        &go,
+        go,
         &["build", "-o", binary.to_str().expect("a UTF-8 path"), "."],
     );
     assert!(
@@ -532,8 +542,102 @@ fn the_go_queries_build_and_pass_their_own_suite() {
             routes.extend([name, route.method.as_str().to_owned(), route.path]);
         }
     }
-    assert_suite_passes(&ir, &binary, &routes);
+    assert_suite_passes(&ir, &binary, &routes, views);
     drop(scratch);
+}
+
+// ---- conditional aggregate measures (beyond10x/ess#363) -----------------------------------------
+
+/// `tests/fixtures/conditional-measures-generated.yaml`: the ledger with one aggregate view whose
+/// measures each read their own subset of an owner's tasks — all six functions, a composite
+/// condition, and conditions over the lifecycle state and an enum.
+fn conditional_fixture() -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/conditional-measures-generated.yaml"),
+    )
+    .expect("the fixture is readable")
+}
+
+/// The conditioned fixture's one view.
+const CONDITIONAL_VIEWS: [&str; 1] = ["ledger.work.Scorecard"];
+
+/// The harness for the conditioned fixture, as committed.
+fn conditional_harness_source() -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/conditional-measures-harness/main.rs"),
+    )
+    .expect("the harness is readable")
+}
+
+#[test]
+fn conditional_measure_all_six_functions_execute_in_the_generated_rust_queries() {
+    let ir = compile_text(&conditional_fixture());
+    let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
+    assert_eq!(
+        synthesis
+            .plan
+            .disposition_of(CapabilityKind::ViewQuery, CONDITIONAL_VIEWS[0]),
+        Some(&SynthesisDisposition::Generated)
+    );
+    run_suite(
+        &ir,
+        &synthesis,
+        "conditional",
+        WORKSPACE_DEPENDENCIES,
+        &conditional_harness_source(),
+        &["check", "--workspace", "--all-targets"],
+        &CONDITIONAL_VIEWS,
+    );
+}
+
+#[test]
+fn conditional_measure_all_six_functions_execute_in_the_generated_go_queries() {
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the generated Go queries are unchecked here");
+        return;
+    };
+    go_suite(
+        &go,
+        &conditional_fixture(),
+        "conditional",
+        &CONDITIONAL_VIEWS,
+    );
+}
+
+/// A condition the generated query does not reproduce — a quantifier — keeps that view's query an
+/// obligation that names it, and leaves every other conditioned view generated.
+#[test]
+fn a_measure_condition_the_generated_query_does_not_reproduce_keeps_the_query_owed() {
+    let text =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml",
+        ))
+        .expect("the fixture is readable");
+    let ir = compile_text(&text);
+    let plan = SynthesisPlan::of(&ir);
+    for view in [
+        "demo.cases.Scorecard",
+        "demo.cases.Escalations",
+        "demo.cases.Urgent",
+    ] {
+        assert_eq!(
+            plan.disposition_of(CapabilityKind::ViewQuery, view),
+            Some(&SynthesisDisposition::Generated),
+            "`{view}`"
+        );
+    }
+    match plan.disposition_of(CapabilityKind::ViewQuery, "demo.cases.Tagged") {
+        Some(SynthesisDisposition::Obligation(obligation)) => {
+            let why = obligation.reason.describes();
+            assert!(
+                why.contains("in the condition of the field `rushed`"),
+                "{why}"
+            );
+        }
+        other => panic!("a quantified condition stays owed, not {other:?}"),
+    }
 }
 
 /// Where Go is, or `None` when this machine has none — said out loud, never passed silently.

@@ -158,7 +158,7 @@ fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
 /// Future majors still name the version, newest admitted major and target in their refusal.
 #[test]
 fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
-    for major in [38, 39] {
+    for major in [44, 45] {
         for (target, error) in [
             ("Go", go(&empty_suite(major)).unwrap_err()),
             ("TypeScript", typescript(&empty_suite(major)).unwrap_err()),
@@ -171,7 +171,7 @@ fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
             );
             for needle in [
                 format!("generated {target} runner"),
-                "`ess-conformance/37`".to_owned(),
+                "`ess-conformance/43`".to_owned(),
                 format!("`ess-conformance/{major}`"),
                 "regenerate using a supported suite version".to_owned(),
             ] {
@@ -231,8 +231,8 @@ fn adversary2_emit_boundary_is_the_limit_both_runtimes_declare() {
     let go_newest = go_newest(file(&go_runtime, "/runtime.go"));
     let ts_runtime = typescript(&empty_suite(4)).expect("suite/4 emits");
     let ts_majors = ts_majors(file(&ts_runtime, "/runtime.ts"));
-    // The registered majors up to the newest: contiguous but for the majors other work has
-    // allocated whose readers have not landed (`/36`–`/39` beside the expression pair `/40`, `/41`).
+    // The registered majors up to the newest: contiguous, now that the conditional measure pair
+    // `/38`, `/39` has its readers beside the expression pair `/40`, `/41`.
     let admitted: Vec<u32> = (1..=go_newest)
         .filter(|major| ess_conformance::scenario::SUPPORTED_SUITE_FORMATS.contains(major))
         .collect();

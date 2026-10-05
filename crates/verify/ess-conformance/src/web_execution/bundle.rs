@@ -329,6 +329,9 @@ fn check_provenance(ir: &ess_compiler::EssIr, execution: &Execution) -> Result<(
         {
             return Err(Error::AdmissionRefused);
         }
+        // A conditioned measure's observation under a major below its pair (beyond10x/ess#363).
+        crate::conditional_measures::admit_for(ir, suite.suite())
+            .map_err(|_| Error::AdmissionRefused)?;
         if actual
             .component
             .as_ref()

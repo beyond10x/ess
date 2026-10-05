@@ -1678,7 +1678,7 @@
       "additionalProperties": false
     },
     "RawAggregate": {
-      "description": "An aggregate as written: a map with exactly one function key and, beside a function that reads a value, `skip_absent: true`.",
+      "description": "An aggregate as written: a map with exactly one function key and, beside a function that reads a value, `skip_absent: true`; beside any function, `where:`, the rows of the group this measure reads (ess/22).",
       "oneOf": [
         {
           "description": "`{count: {}}`.",
@@ -1689,6 +1689,9 @@
           "properties": {
             "count": {
               "$ref": "#/definitions/Empty"
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1707,6 +1710,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1725,6 +1731,9 @@
             },
             "sum": {
               "type": "string"
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1743,6 +1752,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1761,6 +1773,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1779,6 +1794,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false

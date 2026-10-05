@@ -342,6 +342,9 @@ pub(crate) enum Site {
     TypeInvariant { name: QualifiedName, index: usize },
     /// A view's `filter:`.
     View { view: QualifiedName },
+    /// One aggregate field's `where:` (beyond10x/ess#363), over the same row and parameters as
+    /// the view's filter.
+    Measure { view: QualifiedName, field: String },
 }
 
 /// The lexical trees of one source's authored predicates, read from the document beside its typed
@@ -449,7 +452,16 @@ impl Written {
         }
         for view in items(document, "views") {
             if let Some(name) = named(&view) {
-                put(Site::View { view: name }, view.get("filter"));
+                put(Site::View { view: name.clone() }, view.get("filter"));
+                for (field, condition) in conditions(&view) {
+                    put(
+                        Site::Measure {
+                            view: name.clone(),
+                            field,
+                        },
+                        Some(condition),
+                    );
+                }
             }
         }
         written
@@ -462,6 +474,19 @@ impl Written {
             self.sites.entry(site).or_insert(tree);
         }
     }
+}
+
+/// Each aggregate field of a written view that declares `where:`, with its name and the condition.
+fn conditions(view: &serde_yaml::Value) -> Vec<(String, &serde_yaml::Value)> {
+    view.get("fields")
+        .and_then(serde_yaml::Value::as_sequence)
+        .into_iter()
+        .flatten()
+        .filter_map(|field| {
+            let name = field.get("name")?.as_str()?.to_owned();
+            Some((name, field.get("aggregate")?.get("where")?))
+        })
+        .collect()
 }
 
 /// The input guard an outcome's `when:` became, wherever its condition keeps it: the predicate
@@ -565,6 +590,14 @@ pub(crate) fn slot<'a>(
             _ => None,
         },
         Site::View { view } => views.get_mut(view)?.filter.as_mut(),
+        Site::Measure { view, field } => views
+            .get_mut(view)?
+            .aggregation
+            .as_mut()?
+            .functions
+            .get_mut(field)?
+            .r#where
+            .as_mut(),
     }
 }
 
@@ -730,6 +763,19 @@ pub(crate) fn resolutions(
                 let environment =
                     DomainEnvironment::new(registry, &fields).with_params(&view.params);
                 Some((filter.clone(), resolve_lexical(&environment, lexical)))
+            }),
+            Site::Measure { view, field } => spec.views().get(view).and_then(|view| {
+                let condition = view
+                    .aggregation
+                    .as_ref()?
+                    .function(field)?
+                    .r#where
+                    .as_ref()?;
+                let entity = spec.entities().get(&view.source)?;
+                let fields = entity.observable_fields();
+                let environment =
+                    DomainEnvironment::new(registry, &fields).with_params(&view.params);
+                Some((condition.clone(), resolve_lexical(&environment, lexical)))
             }),
         };
         // Only the predicate this source wrote: anything else put there is not this tree's.

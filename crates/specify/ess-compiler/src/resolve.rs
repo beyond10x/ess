@@ -3601,10 +3601,9 @@ impl<'a> Resolver<'a> {
             else {
                 continue;
             };
-            let aggregation = view
-                .aggregation
-                .as_ref()
-                .map(|aggregation| self.aggregation(aggregation, entities.get(source.name())));
+            let aggregation = view.aggregation.as_ref().map(|aggregation| {
+                self.aggregation(aggregation, entities.get(source.name()), &view)
+            });
             resolved.insert(
                 view.name.clone(),
                 ResolvedView {
@@ -3632,13 +3631,41 @@ impl<'a> Resolver<'a> {
     ///
     /// `ess-domain` refuses an input that is not one, so a miss means an unchecked in-memory
     /// specification, and compilation stays closed over it.
+    ///
+    /// A measure's condition is checked again here against the view's own environment — one row of
+    /// the source and the view's parameters — whoever assembled the specification: a predicate
+    /// that does not check there keeps compilation closed.
     fn aggregation(
         &mut self,
         aggregation: &ess_domain::view::Aggregation,
         entity: Option<&ResolvedEntity>,
+        view: &ViewSpec,
     ) -> ResolvedAggregation {
         let mut functions = BTreeMap::new();
         for (field, aggregate) in &aggregation.functions {
+            if let Some(condition) = &aggregate.r#where {
+                let source = self
+                    .spec
+                    .entities()
+                    .get(&view.source)
+                    .map(ess_domain::entity::EntitySpec::observable_fields);
+                let checked = source.map(|fields| {
+                    let environment =
+                        ess_domain::expression::DomainEnvironment::new(&self.registry, &fields)
+                            .with_params(&view.params);
+                    ess_domain::expression::check_predicate(
+                        &environment,
+                        condition,
+                        &format!("view.{}.{field}.where", view.name),
+                    )
+                    .errors
+                    .is_empty()
+                });
+                if checked != Some(true) {
+                    self.off_contract = true;
+                    continue;
+                }
+            }
             let input = match &aggregate.input {
                 None => None,
                 Some(input) => {
@@ -3656,6 +3683,7 @@ impl<'a> Resolver<'a> {
                     function: aggregate.function,
                     input,
                     skip_absent: aggregate.skip_absent,
+                    r#where: aggregate.r#where.clone(),
                 },
             );
         }

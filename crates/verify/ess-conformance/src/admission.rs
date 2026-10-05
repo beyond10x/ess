@@ -202,13 +202,11 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=37)
-        && !crate::expression_format::ADMITTED.contains(&version.major())
-        && !crate::synthesis_seeds::seed_major(version.major())
-    {
+    // The majors every execution reader admits, the generated runtimes' own table.
+    if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–37, 40, 41, 42 and 43",
+            "execution readers admit suite majors 1–43",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -248,12 +246,30 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35 | 37 | 41 | 43
+        5 | 7
+            | 9
+            | 11
+            | 13
+            | 15
+            | 17
+            | 19
+            | 21
+            | 23
+            | 25
+            | 27
+            | 29
+            | 31
+            | 33
+            | 35
+            | 37
+            | 39
+            | 41
+            | 43
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /37, /41 and /43",
+            "coverage is required exactly for odd suite majors from /5 through /43",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {

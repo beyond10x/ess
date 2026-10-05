@@ -157,6 +157,7 @@ impl AdmittedReplay {
                 "replay model differs from admitted suite identity",
             ));
         }
+        crate::conditional_measures::admit_for(ir, input.selected().suite())?;
         if let coverage::Scope::Component { component } = &input
             .selected()
             .coverage()

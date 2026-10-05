@@ -369,12 +369,12 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
 pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 43;
 
-/// Whether the generated runtimes admit `major`: `/1` through `/37`, the expression pair `/40` and
-/// `/41`, and the seed-bearing pair `/42` and `/43` (beyond10x/ess#413). `/38` and `/39` are
-/// allocated to aggregate observation and carry vocabulary they do not implement yet, and are
-/// refused as an unknown major is.
+/// Whether the generated runtimes admit `major`: `/1` through `/37`, the conditional aggregate
+/// measure pair `/38` and `/39` (beyond10x/ess#363), the expression pair `/40` and `/41`, and the
+/// seed-bearing pair `/42` and `/43` (beyond10x/ess#413).
 pub(crate) fn admitted_major(major: u32) -> bool {
     (1..=37).contains(&major)
+        || crate::conditional_measures::ADMITTED.contains(&major)
         || crate::expression_format::ADMITTED.contains(&major)
         || crate::synthesis_seeds::seed_major(major)
 }
@@ -382,10 +382,8 @@ pub(crate) fn admitted_major(major: u32) -> bool {
 /// The refusal both emitters write for a suite major their runtime does not admit.
 pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
     format!(
-        "the generated {target} runner admits suite versions up to `ess-conformance/37`, the \
-         expression pair `ess-conformance/40` and `ess-conformance/41`, and the seed-bearing pair \
-         `ess-conformance/42` and `ess-conformance/43`, and would refuse `{version}`; regenerate \
-         using a supported suite version"
+        "the generated {target} runner admits suite versions up to `ess-conformance/43`, and \
+         would refuse `{version}`; regenerate using a supported suite version"
     )
 }
 

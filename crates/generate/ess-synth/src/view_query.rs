@@ -71,6 +71,12 @@ fn aggregated(
     for (name, aggregate) in &aggregation.functions {
         self::aggregate(ir, entity, view_field(view, name)?, aggregate)
             .map_err(|construct| format!("{construct}, in the field `{name}`"))?;
+        // A measure's condition (beyond10x/ess#363) is rendered as a filter is, over one stored row.
+        if let Some(condition) = &aggregate.r#where {
+            determined::supported(ir, &Env::Row(entity), condition).map_err(|construct| {
+                format!("{construct}, in the condition of the field `{name}`")
+            })?;
+        }
     }
     Ok(())
 }

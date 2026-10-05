@@ -4010,6 +4010,11 @@ fn interpreter_for(
             suite.provenance.spec_digest
         );
     }
+    // A conditioned measure's observation under a major below its pair (beyond10x/ess#363): the
+    // model is in hand here, so the suite is refused before the interpreter runs a step.
+    if let Err(error) = ess_conformance::conditional_measures::admit_for(&ir, suite) {
+        bail!("`--target interpreted` refuses the suite: {error}");
+    }
     Ok(Ok(ess_conformance::interpret::Interpreted::for_model(*ir)))
 }
 

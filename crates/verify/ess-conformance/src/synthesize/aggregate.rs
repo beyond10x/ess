@@ -45,6 +45,8 @@ use crate::scenario::{
 };
 use crate::witness::{uuid_of, Distinction};
 
+mod contrast;
+
 /// The most inputs the page's pattern keeps apart: seven, with a group of nine rows.
 const MAX_INPUTS: usize = 7;
 
@@ -527,6 +529,9 @@ struct Row {
     values: BTreeMap<String, Node>,
     /// What the row is called in a refusal.
     label: String,
+    /// The lifecycle state a measure's condition has this row rest in, where the contrast search
+    /// chose one (beyond10x/ess#363, [`contrast::arrange`]).
+    state: Option<StateName>,
 }
 
 /// Everything the arrangement decided before any command is chosen.
@@ -1354,7 +1359,20 @@ fn scenario(
             }
         })
         .collect();
-    let m = group_size(inputs.len(), &beyond);
+    // A conditioned `avg` (beyond10x/ess#363) is over a proper subset of A whose mean must tell
+    // rounding from truncation, which three of at least six rows can and three of three cannot:
+    // the group is sized as for two inputs at least.
+    let conditioned_mean = aggregation.functions.values().any(|aggregate| {
+        aggregate.function == AggregateFunction::Avg && aggregate.r#where.is_some()
+    });
+    let m = group_size(
+        if conditioned_mean {
+            inputs.len().max(2)
+        } else {
+            inputs.len()
+        },
+        &beyond,
+    );
     // The pattern keeps every A value below `100·i + 85` up to nine rows (`t ≤ 7`); a group the
     // absent rows' counts made larger would let an A value reach the values b, x, c and bₖ hold.
     if m > group_size(MAX_INPUTS, &[]) {
@@ -1431,7 +1449,24 @@ fn scenario(
     if let Some(reason) = inadmissible(&plan) {
         return Err(unwitnessed(view, reason));
     }
-    let rows = rows(&plan, &inputs, m);
+    let mut rows = rows(&plan, &inputs, m);
+    // A measure that reads only the rows its condition admits (beyond10x/ess#363) needs a group
+    // holding rows on both sides of it, arranged so that its value decides the condition. Rows
+    // something outside the arrangement changes could move between its sides unseen.
+    if !contrast::conditioned(&plan).is_empty() {
+        if let Some(reason) = unsettled(ir, handle) {
+            return Err(unwitnessed(view, reason));
+        }
+        let keyed: BTreeSet<&str> = aggregation
+            .group_by
+            .iter()
+            .map(String::as_str)
+            .chain(plan.scopes.iter().map(|scope| scope.field.as_str()))
+            .collect();
+        let measured: BTreeSet<&str> = inputs.iter().map(|(name, _)| name.as_str()).collect();
+        let dimensions = contrast::dimensions(&plan, &mapped, &keyed, &measured);
+        contrast::arrange(&plan, &mut rows, &dimensions, &plan.params("in"))?;
+    }
     plan.related_owners = related_owners(&plan, &rows, actors)?;
     plan.guard_owners = guard_owners(&plan, &rows, actors)?;
     arrange_and_observe(&plan, creator, &mapped, rows, actors)
@@ -1625,6 +1660,7 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
             admitted,
             values,
             label,
+            state: None,
         }
     };
     let skips = |i: usize| plan.skipping.contains(&inputs[i].0);
@@ -2275,14 +2311,15 @@ fn drive_row(
     )?;
     let start = &created.reached;
 
-    let wanted_state =
-        plan.keys
-            .iter()
-            .zip(&plan.tuples[row.tuple].1)
-            .find_map(|((_, key), value)| match (key, value) {
-                (Key::State(_), Node::Text(state)) => StateName::new(state).ok(),
-                _ => None,
-            });
+    let wanted_state = plan
+        .keys
+        .iter()
+        .zip(&plan.tuples[row.tuple].1)
+        .find_map(|((_, key), value)| match (key, value) {
+            (Key::State(_), Node::Text(state)) => StateName::new(state).ok(),
+            _ => None,
+        })
+        .or_else(|| row.state.clone());
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(plan.handle).map_or(&[], Vec::as_slice);
     let targets: Vec<StateName> = match wanted_state {
@@ -3293,6 +3330,9 @@ fn observe(
     }
 
     let mut expectations = Vec::new();
+    // The conditioned measures some asserted group decides, and whether one asserted group selects
+    // nothing for every one of them (beyond10x/ess#363).
+    let (mut decided, mut nothing) = (BTreeSet::new(), false);
     for (tuple, members) in &groups {
         let keys: BTreeMap<String, ScenarioValue> = plan
             .aggregation
@@ -3319,10 +3359,11 @@ fn observe(
             continue;
         }
         if members.contains(&0) {
-            rounding_is_observable(plan, arranged, &admitted)?;
+            rounding_is_observable(plan, arranged, &admitted, params)?;
         }
+        nothing |= contrast::decisive(plan, arranged, &admitted, params, &mut decided)?;
         let mut fields = keys;
-        for (field, value) in aggregates_over(plan, arranged, &admitted)? {
+        for (field, value) in aggregates_over(plan, arranged, &admitted, params)? {
             fields.insert(field, ScenarioValue::literal(value));
         }
         expectations.push(ViewExpectation::Contains { fields });
@@ -3337,19 +3378,20 @@ fn observe(
             .any(|expectation| matches!(expectation, ViewExpectation::Contains { .. }))
         {
             let mut fields = BTreeMap::new();
-            for (field, value) in aggregates_over(plan, arranged, &[])? {
+            for (field, value) in aggregates_over(plan, arranged, &[], params)? {
                 fields.insert(field, ScenarioValue::literal(value));
             }
             expectations.push(ViewExpectation::Contains { fields });
         }
         expectations.push(one.clone());
     }
+    contrast::all_decisive(plan, &decided, nothing)?;
     read(view, &name, params, expectations, &mut steps);
 
     if plan.aggregation.is_ungrouped() {
         // Decision 4: the one row exists when no row passes the filter.
         let mut fields = BTreeMap::new();
-        for (field, value) in aggregates_over(plan, arranged, &[])? {
+        for (field, value) in aggregates_over(plan, arranged, &[], params)? {
             fields.insert(field, ScenarioValue::literal(value));
         }
         read(
@@ -3391,9 +3433,13 @@ fn observe_exact(
             .filter(|index| arranged[*index].admitted)
             .collect();
         if !admitted.is_empty() {
-            rounding_is_observable(plan, arranged, &admitted)?;
+            rounding_is_observable(plan, arranged, &admitted, params)?;
         }
     }
+    // The conditioned measures some asserted group decides, and whether one asserted group selects
+    // nothing for every one of them (beyond10x/ess#363).
+    let mut decided = BTreeSet::new();
+    let mut nothing = false;
     for read_with in selections(plan, arranged, groups, params) {
         let mut expectations = Vec::new();
         let mut answered = 0;
@@ -3428,8 +3474,9 @@ fn observe_exact(
                 expectations.push(ViewExpectation::Excludes { fields: keys });
                 continue;
             }
+            nothing |= contrast::decisive(plan, arranged, &admitted, &read_with, &mut decided)?;
             let mut fields = keys;
-            for (field, value) in aggregates_over(plan, arranged, &admitted)? {
+            for (field, value) in aggregates_over(plan, arranged, &admitted, &read_with)? {
                 fields.insert(field, ScenarioValue::literal(value));
             }
             expectations.push(ViewExpectation::Contains { fields });
@@ -3441,6 +3488,7 @@ fn observe_exact(
         });
         read(plan.view, name, &read_with, expectations, &mut steps);
     }
+    contrast::all_decisive(plan, &decided, nothing)?;
     let purpose = if plan.aggregation.is_ungrouped() {
         format!(
             "`{}` reports its one row's exact aggregates over the rows this scenario made",
@@ -3662,11 +3710,24 @@ fn rounding_is_observable(
     plan: &Plan<'_>,
     arranged: &[Arranged],
     members: &[usize],
+    params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<(), RefusalCause> {
     for (field, aggregate) in &plan.aggregation.functions {
         let (AggregateFunction::Avg, Some(input)) = (aggregate.function, &aggregate.input) else {
             continue;
         };
+        // A conditioned mean (beyond10x/ess#363) is over the rows its condition admits, and those
+        // are the rows whose mean must tell rounding from truncation.
+        let mut selected = Vec::new();
+        for index in members {
+            if let Some(condition) = &aggregate.r#where {
+                if !contrast::holds(plan, arranged, *index, field, condition, params)? {
+                    continue;
+                }
+            }
+            selected.push(*index);
+        }
+        let members = &selected;
         let values: Option<Vec<Node>> = members
             .iter()
             .map(|index| held(plan, &arranged[*index], *index, &input.name))
@@ -3696,25 +3757,43 @@ fn aggregates_over(
     plan: &Plan<'_>,
     arranged: &[Arranged],
     members: &[usize],
+    params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Vec<(String, Node)>, RefusalCause> {
     let mut out = Vec::new();
     for (field, aggregate) in &plan.aggregation.functions {
         out.push((
             field.clone(),
-            aggregate_over(plan, arranged, members, field, aggregate)?,
+            aggregate_over(plan, arranged, members, field, aggregate, params)?,
         ));
     }
     Ok(out)
 }
 
-/// One aggregate field's expected value over the admitted rows `members`.
+/// One aggregate field's expected value over the admitted rows `members` — of those, where the
+/// measure declares `where:` (beyond10x/ess#363), the ones its condition holds for under a read
+/// sending `params`.
 fn aggregate_over(
     plan: &Plan<'_>,
     arranged: &[Arranged],
     members: &[usize],
     field: &str,
     aggregate: &ess_compiler::ir::ResolvedAggregate,
+    params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Node, RefusalCause> {
+    let selected: Vec<usize>;
+    let members = match &aggregate.r#where {
+        None => members,
+        Some(condition) => {
+            let mut kept = Vec::new();
+            for index in members {
+                if contrast::holds(plan, arranged, *index, field, condition, params)? {
+                    kept.push(*index);
+                }
+            }
+            selected = kept;
+            &selected
+        }
+    };
     let (values, kind) = match &aggregate.input {
         None => (vec![Node::Null; members.len()], ValueKind::Other),
         Some(input) => {
@@ -3763,6 +3842,11 @@ fn observe_change(
     let admitted: Vec<usize> = (0..arranged.len())
         .filter(|index| arranged[*index].admitted)
         .collect();
+    // A conditioned measure (beyond10x/ess#363) is decided by the change only where its value
+    // over the admitted rows tells its condition from none and from the inverted one.
+    let mut decided = BTreeSet::new();
+    let nothing = contrast::decisive(plan, arranged, &admitted, &BTreeMap::new(), &mut decided)?;
+    contrast::all_decisive(plan, &decided, nothing)?;
     let mut changes = BTreeMap::new();
     let mut absent_is_zero = BTreeSet::new();
     let mut unasserted = Vec::new();
@@ -3771,7 +3855,14 @@ fn observe_change(
             unasserted.push(format!("`{field}`"));
             continue;
         }
-        let value = match aggregate_over(plan, arranged, &admitted, field, aggregate)? {
+        let value = match aggregate_over(
+            plan,
+            arranged,
+            &admitted,
+            field,
+            aggregate,
+            &BTreeMap::new(),
+        )? {
             Node::Null => Node::Number(Number::from(0_usize)),
             value => value,
         };

@@ -374,3 +374,33 @@ is over every row, including other scenarios' rows, so conformance reads it befo
 and asserts only how much each `count` and `sum` changed; its other aggregates are not asserted. A
 grouped view with neither, or an ungrouped one with no `count` or `sum`, gets no scenario and the
 refusal `ESS-SYNTH-016`.
+
+### Conditional measures
+
+From `format: ess/22` a measure may read only some rows of its group: `where:` beside the function
+is a condition over one source row and the view's parameters, written as a filter is.
+
+```yaml
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: total, type: Integer, aggregate: {count: {}}}
+      - {name: completed, type: Integer, aggregate: {count: {}, where: state == Completed}}
+      - {name: escalated_cost, type: Integer, aggregate: {sum: cents, where: escalated == true}}
+```
+
+The filter still decides which rows exist and which groups they form; each measure then reads the
+rows of its group its own condition holds for. A group stays in the result when a condition selects
+none of its rows: that measure's `count`, `count_distinct` and `sum` are `0`, its `min`, `max` and
+`avg` absent, and a `sum` with `skip_absent: true` absent. A condition reads the source row, never a
+result or another measure, and never `now`. A condition whose truth is unknown for some row — it
+compares an absent value — makes the whole read undetermined rather than counting the row out.
+`where: true` is a condition, not an omitted one; `null`, empty text and an empty list or map are
+refused. A parameter read only by a condition is a parameter of the view; a paging parameter may not
+be read by one.
+
+Conformance arranges, in one group, rows its condition admits and rows it refuses — varying the
+fields it reads that the creating command sets and the lifecycle state — so that each measure's
+exact value would change if its condition were dropped or inverted, and refuses the view
+(`ESS-SYNTH-017`) where no arrangement does. Such a suite is written as `ess-conformance/38` or
+`/39`. A view a binding or precondition changes the rows of is refused by name.

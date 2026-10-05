@@ -58,7 +58,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
 | `ess/20` | [0.49.0][r49] | `state`, the related row's held lifecycle state, in a `when_related:` predicate. |
 | `ess/21` | Unreleased | `one_time_response:` names required String response fields whose values may be disclosed only by their originating response. |
-| `ess/22` | Unreleased | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present; a command may guard on several related rows named by its input, each with its own `exists: false`. A `{related: …}` value may read through an `Optional<…>` reference, absent where it is, or across two references: `via: [<field>, <field of the row it names>]`. An outcome declaring `returns: true` is answered `200` with the command's response under `response`, in the `OpenAPI` projection and the synthesized Rust and Go servers; below `ess/22` it keeps `202` and no `response` member. An `affects:` entry may move the records it selects: `moves: <Entity>.<transition>`, skipping a selected record outside the move's `from` states (beyond10x/ess#229); below `ess/22` it is refused naming `ess/22`. An event binding may carry `when.where`, a finite condition over the event payload; it invokes only when the condition holds, and an Optional member the condition proves present may fill a required input. An actor's `may:` may name a view, which only the actors naming it may read. On the right of a comparison an unquoted word naming a field of the place is that field (`{fact: x}` written back); a plain `when:` reads `input.<field>`; two `Timestamp` fields compare as instants (`as: timestamp`); identity inputs compare only by `==` and `!=`; the right side may be one fact moved by one constant, `upper <= lower + 5` or `expires_at <= issued_at - 24h` (`{offset: {fact, add|subtract}}` written back), compared exactly for an `Integer` and by elapsed seconds for a `Timestamp`. A union variant may be declared with no payload (`Open:`): a unit variant, written on the wire as its tag alone (`{"kind": "Open"}`) and generated as a unit enum variant; below `ess/22` it is refused naming `ess/22`. `on_failure:` may select its policy per refusal of the invoked command: `drop`, `retry` and `escalate` keyed, each with `outcomes:` or `except:`, exactly one `except:` as the explicit fallback. |
+| `ess/22` | Unreleased | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present; a command may guard on several related rows named by its input, each with its own `exists: false`. A `{related: …}` value may read through an `Optional<…>` reference, absent where it is, or across two references: `via: [<field>, <field of the row it names>]`. An outcome declaring `returns: true` is answered `200` with the command's response under `response`, in the `OpenAPI` projection and the synthesized Rust and Go servers; below `ess/22` it keeps `202` and no `response` member. An `affects:` entry may move the records it selects: `moves: <Entity>.<transition>`, skipping a selected record outside the move's `from` states (beyond10x/ess#229); below `ess/22` it is refused naming `ess/22`. An event binding may carry `when.where`, a finite condition over the event payload; it invokes only when the condition holds, and an Optional member the condition proves present may fill a required input. An actor's `may:` may name a view, which only the actors naming it may read. On the right of a comparison an unquoted word naming a field of the place is that field (`{fact: x}` written back); a plain `when:` reads `input.<field>`; two `Timestamp` fields compare as instants (`as: timestamp`); identity inputs compare only by `==` and `!=`; the right side may be one fact moved by one constant, `upper <= lower + 5` or `expires_at <= issued_at - 24h` (`{offset: {fact, add|subtract}}` written back), compared exactly for an `Integer` and by elapsed seconds for a `Timestamp`. A union variant may be declared with no payload (`Open:`): a unit variant, written on the wire as its tag alone (`{"kind": "Open"}`) and generated as a unit enum variant; below `ess/22` it is refused naming `ess/22`. `on_failure:` may select its policy per refusal of the invoked command: `drop`, `retry` and `escalate` keyed, each with `outcomes:` or `except:`, exactly one `except:` as the explicit fallback. An aggregate may declare `where:`, the rows of its group one measure reads (beyond10x/ess#363); below `ess/22` it is refused at the `where:` naming `ess/22`. |
 
 The paragraphs below give each version's rules.
 
@@ -406,12 +406,22 @@ witnessed with the existing count and event steps, `expect_no_publication` and
 times, for the whole eventual window. A suite without them keeps its
 earlier format.
 
+`ess-conformance/38` and `ess-conformance/39` are unreleased. They carry the aggregate observation
+of a conditional measure (beyond10x/ess#363): an `<view>/aggregate` scenario over a view one of whose
+measures declares `where:`. The expected rows are ordinary rows; the number moves because a reader
+that does not know the construct would call a correct implementation broken. Which views those are
+is a fact about the model, so a reader holding the model — browser execution, replay — refuses such
+a suite labelled earlier before target callbacks. Version 38 is ordinary; 39 carries declared
+coverage. Each implies every major below it. Rust, Go and TypeScript execute them with report/2.
+Older readers refuse these envelopes before target callbacks. A suite without such a scenario keeps
+its earlier format.
+
 `ess-conformance/42` and `ess-conformance/43`, unreleased, carry explicit synthesis seeds
 (beyond10x/ess#413): the provenance member `synthesis_seeds` records each selected source's digest,
 each admitted setup row, and where each row was used in a generated scenario. They are written only
 for a request that selected seeds, even when no seed was used; a seed-free suite keeps its earlier
 format and bytes. Version 42 is ordinary; 43 carries declared coverage. Each implies every major below it
-that readers implement; 38 and 39 are allocated to aggregate observation and refused by version. Rust, Go
+that readers implement. Rust, Go
 and TypeScript admit both, run their `establish_entity` steps through the existing setup
 capability with report/2, and refuse the record under any other major. Older readers refuse these
 envelopes before target callbacks.

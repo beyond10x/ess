@@ -42,8 +42,6 @@ pub(super) fn query(
         crate::input::validate_typed_value(ir, &param.type_ref, value)
             .map_err(|_| unsupported())?;
     }
-    let entity = ir.entity(&view.source);
-    let declared = entity.observable_fields();
     let parameters = crate::input::TypedFacts::new(
         ir,
         &view.params,
@@ -55,33 +53,7 @@ pub(super) fn query(
         )
         .map_err(|_| unsupported())?,
     );
-    let mut selected = Vec::new();
-    for (name, identity, instance) in store.instances() {
-        if name != &entity.name {
-            continue;
-        }
-        let mut fields = instance.fields.clone();
-        fields.insert(entity.identity.name.clone(), identity.clone());
-        fields.insert("state".into(), Node::Text(instance.state.to_string()));
-        if let Some(filter) = &view.filter {
-            let row = crate::input::TypedFacts::new(
-                ir,
-                &declared,
-                crate::input::bind(ir, &declared, &fields, crate::input::Completeness::Partial)
-                    .map_err(|_| unsupported())?,
-            );
-            match filter.evaluate(&ViewFacts {
-                row: &row,
-                parameters: &parameters,
-            }) {
-                Truth::True => {}
-                Truth::False => continue,
-                Truth::Unknown => return Err(unsupported()),
-            }
-        }
-        selected.push(fields);
-    }
-    let mut rows = project(ir, view, selected)?;
+    let mut rows = project(ir, view, select(ir, view, store, &parameters)?)?;
     rows.sort_by(|left, right| rank(ir, view, left, right));
     let total = rows.len();
     if let Some(paging) = &view.paging {
@@ -117,6 +89,71 @@ pub(super) fn query(
     }
     Ok(result)
 }
+/// Every source row the filter admits, each with the measures whose condition (`where:`,
+/// beyond10x/ess#363) it satisfies. Each measure reads its own subset of the row's group; an
+/// unknown filter or condition makes the whole observation undetermined — never a partial row,
+/// never a false.
+fn select(
+    ir: &EssIr,
+    view: &ResolvedView,
+    store: &Store,
+    parameters: &crate::input::TypedFacts<'_>,
+) -> Result<Vec<(ViewRow, std::collections::BTreeSet<String>)>, TargetError> {
+    let entity = ir.entity(&view.source);
+    let declared = entity.observable_fields();
+    let conditions: Vec<(&String, &ess_primitives::predicate::Predicate)> = view
+        .aggregation
+        .iter()
+        .flat_map(|aggregation| &aggregation.functions)
+        .filter_map(|(name, aggregate)| {
+            aggregate
+                .r#where
+                .as_ref()
+                .map(|condition| (name, condition))
+        })
+        .collect();
+    let mut selected = Vec::new();
+    for (name, identity, instance) in store.instances() {
+        if name != &entity.name {
+            continue;
+        }
+        let mut fields = instance.fields.clone();
+        fields.insert(entity.identity.name.clone(), identity.clone());
+        fields.insert("state".into(), Node::Text(instance.state.to_string()));
+        let mut admitted_by = std::collections::BTreeSet::new();
+        if view.filter.is_some() || !conditions.is_empty() {
+            let row = crate::input::TypedFacts::new(
+                ir,
+                &declared,
+                crate::input::bind(ir, &declared, &fields, crate::input::Completeness::Partial)
+                    .map_err(|_| unsupported())?,
+            );
+            let facts = ViewFacts {
+                row: &row,
+                parameters,
+            };
+            if let Some(filter) = &view.filter {
+                match filter.evaluate(&facts) {
+                    Truth::True => {}
+                    Truth::False => continue,
+                    Truth::Unknown => return Err(unsupported()),
+                }
+            }
+            for (measure, condition) in &conditions {
+                match condition.evaluate(&facts) {
+                    Truth::True => {
+                        admitted_by.insert((*measure).clone());
+                    }
+                    Truth::False => {}
+                    Truth::Unknown => return Err(unsupported()),
+                }
+            }
+        }
+        selected.push((fields, admitted_by));
+    }
+    Ok(selected)
+}
+
 fn kind(ir: &EssIr, ty: &ResolvedTypeRef) -> crate::aggregate::ValueKind {
     use crate::aggregate::ValueKind;
     let mut ty = ty.required();
@@ -193,18 +230,21 @@ fn compare(
     left.cmp(&right)
 }
 
+/// The rows `selected` project to: each a source row the filter admits, with the measures whose
+/// condition it satisfies.
 fn project(
     ir: &EssIr,
     view: &ResolvedView,
-    selected: Vec<ViewRow>,
+    selected: Vec<(ViewRow, std::collections::BTreeSet<String>)>,
 ) -> Result<Vec<ViewRow>, TargetError> {
     let mut rows = Vec::new();
     if let Some(aggregation) = &view.aggregation {
-        let mut groups: BTreeMap<Vec<Node>, Vec<ViewRow>> = BTreeMap::new();
+        let mut groups: BTreeMap<Vec<Node>, Vec<(ViewRow, std::collections::BTreeSet<String>)>> =
+            BTreeMap::new();
         if aggregation.group_by.is_empty() {
             groups.insert(Vec::new(), Vec::new());
         }
-        for fields in selected {
+        for (fields, admitted_by) in selected {
             let mut key = Vec::new();
             for name in &aggregation.group_by {
                 let field = view
@@ -221,13 +261,16 @@ fn project(
                     .map_err(|_| unsupported())?;
                 key.push(value);
             }
-            groups.entry(key).or_default().push(fields);
+            groups.entry(key).or_default().push((fields, admitted_by));
         }
         for (key, members) in groups {
             let mut row: BTreeMap<_, _> = aggregation.group_by.iter().cloned().zip(key).collect();
             for (name, aggregate) in &aggregation.functions {
                 let mut values = Vec::new();
-                for fields in &members {
+                for (fields, admitted_by) in &members {
+                    if aggregate.r#where.is_some() && !admitted_by.contains(name) {
+                        continue;
+                    }
                     let value = match &aggregate.input {
                         None => Node::Null,
                         Some(field) => match fields.get(&field.name) {
@@ -255,7 +298,7 @@ fn project(
             rows.push(row);
         }
     } else {
-        for fields in selected {
+        for (fields, _) in selected {
             let mut row = BTreeMap::new();
             for field in &view.fields {
                 let Some(value) = fields.get(&field.name) else {
