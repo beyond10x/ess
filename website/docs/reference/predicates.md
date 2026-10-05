@@ -384,8 +384,8 @@ bound at `.count` is compared as it is, while only a whole number from zero is a
 anything else bound at `.utf8_bytes` makes the comparison unknown, and the text is not read instead.
 
 The byte length is written back as its own operand, `{utf8_bytes: label}`: on the right as
-`limit: {gte: {utf8_bytes: label}}`, and on the left in the closed form `{compare: {left:
-{utf8_bytes: label}, op: lte, right: 255}}`, with exactly `left`, `op` and `right`. A suite carrying
+`limit: {gte: {utf8_bytes: label}}`, and on the left in the closed form
+`{compare: {left: {utf8_bytes: label}, op: lte, right: 255}}`, with exactly `left`, `op` and `right`. A suite carrying
 it is `ess-conformance/40` or `/41`; a member named `utf8_bytes` selects nothing. In such a
 `satisfies`, a text's `.count` is asserted on view rows beside it. Synthesis witnesses each bound at
 the length and one byte either side, as text led by a wide character where the alphabet admits one,
