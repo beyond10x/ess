@@ -13,6 +13,9 @@ validates and synthesizes the example, and pins every refusal quoted below to to
 ```console
 ess specify validate --path docs/design/read-api-view-idioms.example
 ess verify conform synthesize --path docs/design/read-api-view-idioms.example --out suite.json
+ess verify conform run --target interpreted --report-format 2 \
+  --path docs/design/read-api-view-idioms.example \
+  --scenarios docs/design/read-api-view-idioms.scenarios/latest-tie.yaml
 ```
 
 Synthesis refuses three views of the example, each on purpose: `idioms.fold.NonZeroTotalByLabel` and
@@ -63,7 +66,11 @@ failing controls. That rule stands, so no row order is chosen here either. The i
 begin a row the specification holds:
 
 - The begin is held as one row per correlation key, written by a create-or-update pair
-  (`unknown_instance: true` beside `updates:`), so a later begin replaces the earlier one.
+  (`unknown_instance: true` beside `updates:`). The row's identity is that key: the caller composes
+  it from the correlation fields, one key per (customer, session), so a later begin of the pair
+  addresses the held row and replaces it. The composition is the caller's contract, and the model
+  does not check it: a begin sent under a second key for the same pair is a second row, and the
+  end refuses the two as ambiguous rather than choose one.
 - The end reads that row through a row-set selector over the correlation fields, with each count its
   own branch: `count: {gt: 1}` refuses as ambiguous, `count: {eq: 0}` drops the end, a `forall`
   over `began_at >= input.at` clamps the duration to 0, and the default branch copies `began_at` with
@@ -147,8 +154,11 @@ idioms, in `idioms.latest`:
   `{max: at}`, which orders `Timestamp` values by instant.
 - The latest row of one group is a parameterised row view with a declared `order_by` and `paging:`,
   read with size 1: `idioms.latest.LatestEvent`, `filter: outer == param.outer`, `order_by: [at desc,
-  event_id asc]`. The identity is the tie rule. Synthesis arranges several rows and asserts the
-  order and the pages.
+  event_id asc]`. The identity is the tie rule. Synthesis arranges several rows at distinct instants
+  and asserts the order and the pages; it arranges no tie, so the authored scenario
+  `docs/design/read-api-view-idioms.scenarios/latest-tie.yaml` records two events of one group at
+  one instant and requires them in ascending identity order. A target breaking ties the other way
+  fails it.
 - Nested groups are a flat `group_by: [outer, inner]` the consumer nests
   (`idioms.latest.ByOuterInner`).
 

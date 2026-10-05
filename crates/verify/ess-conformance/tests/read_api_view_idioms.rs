@@ -935,3 +935,311 @@ fn multi_source_view_fields_stay_refused() {
         "{unsourced}"
     );
 }
+
+// ---- correction round 1: the key a held row is addressed by, and the tie rule -------------------
+
+/// #442: the caller composes the held row's key from the correlation fields, so a later begin of
+/// the same customer and session addresses the held row, replaces its instant, and is the begin an
+/// end derives from.
+const COMPOSED_KEY: &str = r"
+type: ess-scenario/1
+domain: idioms.correlated
+scenario: later-begin-under-the-composed-key-is-held
+summary: A later begin under the key composed from customer and session replaces the held begin.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: idioms.correlated.Begin
+    input: {span_key: c1/s1, customer: c1, session: s1, at: 2026-01-05T08:00:00Z}
+    outcome: opened
+  - at: 2026-01-05T09:00:01Z
+    command: idioms.correlated.Begin
+    input: {span_key: c1/s1, customer: c1, session: s1, at: 2026-01-05T08:30:00Z}
+    outcome: superseded
+  - at: 2026-01-05T09:00:02Z
+    command: idioms.correlated.End
+    input: {customer: c1, session: s1, at: 2026-01-05T09:00:00Z}
+    outcome: derived
+assert:
+  - view: idioms.correlated.OpenSpans
+    counts: {at_least: 1, at_most: 1}
+  - view: idioms.correlated.SpanEnds
+    contains: {customer: c1, session: s1, began_at: 2026-01-05T08:30:00Z}
+";
+
+#[test]
+fn held_row_is_keyed_by_the_composed_correlation_key() {
+    section_states(
+        NOTE,
+        "## The latest earlier row is a held row",
+        &[
+            "the caller composes it from the correlation fields",
+            "a begin sent under a second key for the same pair is a second row",
+        ],
+    );
+    let text = read(CORRELATED);
+    let ir = correlated(&text);
+    let authoring = compile_authored(&ir, &[AuthoredSource::new("composed.yaml", COMPOSED_KEY)]);
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+    let mut suite = synthesize(&ir).suite;
+    suite.scenarios = authoring.scenarios;
+    assert_eq!(suite.scenarios.len(), 1);
+    assert_eq!(failed(&run(&suite, ir)), BTreeSet::new());
+    let keeps_first = text.replacen(
+        KEEPS_LATEST,
+        "        updates: idioms.correlated.OpenSpan
+        instance: span_key
+        sets: {customer: input.customer, session: input.session}",
+        1,
+    );
+    assert_eq!(
+        failed(&run(&suite, correlated(&keeps_first))).len(),
+        1,
+        "a target keeping the first begin of the key fails"
+    );
+}
+
+const LATEST_TIE: &str = "docs/design/read-api-view-idioms.scenarios/latest-tie.yaml";
+
+/// #446: synthesis arranges no tie, so the authored scenario records two events of one group at
+/// one instant and requires ascending identity order; a target breaking ties by descending
+/// identity fails it.
+#[test]
+fn latest_event_tie_scenario_decides_the_tie_rule() {
+    section_states(
+        NOTE,
+        "## An order-dependent value needs a declared order",
+        &[LATEST_TIE, "ascending identity order"],
+    );
+    let ir = example();
+    let authoring = compile_authored(&ir, &[AuthoredSource::new(LATEST_TIE, read(LATEST_TIE))]);
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+    let mut suite = synthesize(&ir).suite;
+    suite.scenarios = authoring.scenarios;
+    assert_eq!(suite.scenarios.len(), 1);
+    assert_eq!(
+        failed(&run(&suite, ir)),
+        BTreeSet::new(),
+        "identity ascending"
+    );
+    let descending = assemble(&changed(
+        "latest.yaml",
+        "order_by: [at desc, event_id asc]",
+        "order_by: [at desc, event_id desc]",
+    ))
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        failed(&run(&suite, descending)).len(),
+        1,
+        "a target breaking ties by descending identity fails"
+    );
+}
+
+// ---- adversary pass 1 (unit W1-3): the note's own claims, driven against the code ---------------
+
+/// The note's opening paragraph: "Synthesis refuses three views of the example, each on purpose",
+/// naming the two filtered fold views and `idioms.ratio.LongCalls`, all `ESS-SYNTH-017`.
+#[test]
+fn adversary_note_names_every_synthesis_refusal_of_the_example() {
+    const NAMED: [&str; 3] = [
+        "idioms.fold.NonZeroTotalByLabel",
+        "idioms.fold.NonZeroTotalBySession",
+        "idioms.ratio.LongCalls",
+    ];
+    let refused = refusals(&synthesize(&example()));
+    for name in NAMED {
+        assert!(
+            refused
+                .iter()
+                .any(|refusal| refusal.starts_with("ESS-SYNTH-017") && refusal.contains(name)),
+            "the note says synthesis refuses {name} as ESS-SYNTH-017: {refused:#?}"
+        );
+    }
+    let unnamed: Vec<&String> = refused
+        .iter()
+        .filter(|refusal| !NAMED.iter().any(|name| refusal.contains(name)))
+        .collect();
+    assert_eq!(
+        unnamed.len(),
+        0,
+        "the note names every refusal: {unnamed:#?}"
+    );
+}
+
+/// The note calls the example "a validated model" of every idiom; its whole synthesized suite
+/// passes on the interpreter.
+#[test]
+fn adversary_example_suite_passes_interpreted() {
+    let ir = example();
+    let synthesis = synthesize(&ir);
+    let statuses = run(&synthesis.suite, ir);
+    assert_eq!(failed(&statuses), BTreeSet::new(), "{statuses:#?}");
+}
+
+fn latest_suite() -> ConformanceSuite {
+    let ir = example();
+    let mut suite = synthesize(&ir).suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string().starts_with("idioms.latest."));
+    let authoring = compile_authored(&ir, &[AuthoredSource::new(LATEST_TIE, read(LATEST_TIE))]);
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+    suite.scenarios.extend(authoring.scenarios);
+    suite
+}
+
+/// #446 section: "Synthesis arranges several rows and asserts the order and the pages", so a
+/// target that reads the oldest row first fails the latest-row idiom.
+#[test]
+fn adversary_latest_event_suite_decides_the_declared_order() {
+    let suite = latest_suite();
+    assert_ne!(suite.scenarios.len(), 0, "idioms.latest has scenarios");
+    assert_eq!(failed(&run(&suite, example())), BTreeSet::new());
+    let oldest_first = assemble(&changed(
+        "latest.yaml",
+        "order_by: [at desc, event_id asc]",
+        "order_by: [at asc, event_id asc]",
+    ))
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_ne!(
+        failed(&run(&suite, oldest_first)).len(),
+        0,
+        "a target reading the oldest event first fails"
+    );
+}
+
+/// #446 section: "The identity is the tie rule." A target breaking ties the other way round fails.
+#[test]
+fn adversary_latest_event_suite_decides_the_tie_rule() {
+    let suite = latest_suite();
+    let reversed_tie = assemble(&changed(
+        "latest.yaml",
+        "order_by: [at desc, event_id asc]",
+        "order_by: [at desc, event_id desc]",
+    ))
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_ne!(
+        failed(&run(&suite, reversed_tie)).len(),
+        0,
+        "a target breaking ties by descending identity fails"
+    );
+}
+
+/// #442 section: "The begin is held as one row per correlation key ... so a later begin replaces
+/// the earlier one", and the end reads it "through a row-set selector over the correlation
+/// fields" (customer, session). Two begins of one correlation key, then an end without a duration:
+/// the end derives from the later begin.
+const LATER_BEGIN_OF_THE_KEY: &str = r"
+type: ess-scenario/1
+domain: idioms.correlated
+scenario: later-begin-of-the-key-is-held
+summary: A later begin of the same customer and session is the one an end reads.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: idioms.correlated.Begin
+    input: {span_key: c1/s1, customer: c1, session: s1, at: 2026-01-05T08:00:00Z}
+    outcome: opened
+  - at: 2026-01-05T09:00:01Z
+    command: idioms.correlated.Begin
+    input: {span_key: c1/s1, customer: c1, session: s1, at: 2026-01-05T08:30:00Z}
+    outcome: superseded
+  - at: 2026-01-05T09:00:02Z
+    command: idioms.correlated.End
+    input: {customer: c1, session: s1, at: 2026-01-05T09:00:00Z}
+    outcome: derived
+assert:
+  - view: idioms.correlated.SpanEnds
+    contains: {customer: c1, session: s1, began_at: 2026-01-05T08:30:00Z}
+";
+
+#[test]
+fn adversary_correlated_later_begin_of_the_key_is_the_held_row() {
+    let ir = correlated(&read(CORRELATED));
+    let synthesis = synthesize(&ir);
+    let authoring = compile_authored(
+        &ir,
+        &[AuthoredSource::new(
+            "later-begin.yaml",
+            LATER_BEGIN_OF_THE_KEY,
+        )],
+    );
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+    let mut suite = synthesis.suite;
+    suite.scenarios = authoring.scenarios;
+    assert_eq!(suite.scenarios.len(), 1);
+    let statuses = run(&suite, ir);
+    assert_eq!(
+        failed(&statuses),
+        BTreeSet::new(),
+        "one held row per correlation key: {statuses:#?}"
+    );
+}
+
+/// #441 section: the computed field is refused as `ESS-VIEW-001` and `ESS-VIEW-005`.
+#[test]
+fn adversary_computed_field_refusals_carry_the_codes_the_note_names() {
+    const MEASURE: &str = "aggregate: {count: {}, where: abandoned == true}}";
+    let computed = refused(&changed(
+        "ratio.yaml",
+        MEASURE,
+        &format!("{MEASURE}\n      - {{name: rate, type: Decimal}}"),
+    ));
+    for code in ["ESS-VIEW-001", "ESS-VIEW-005"] {
+        assert!(computed.contains(code), "{code}:\n{computed}");
+    }
+}
+
+/// #444 section: a field's `summary:` "which the JSON Schema projection carries as its description".
+#[test]
+fn adversary_unit_field_summary_reaches_the_schema_description() {
+    let artifacts = ess_gen::artifact::run(&ess_gen::schema::JsonSchema, &example())
+        .expect("the schema projection");
+    let entity: Value =
+        serde_json::from_str(&artifacts["schema/entities/idioms.units.Call.schema.json"].contents)
+            .expect("the entity schema is JSON");
+    assert_eq!(
+        entity["properties"]["talk_ms"]["description"], "Talk time in milliseconds.",
+        "{}",
+        entity["properties"]["talk_ms"]
+    );
+}
+
+/// #444 section: "`min` and `max` keep the newtype".
+#[test]
+fn adversary_unit_max_keeps_the_newtype() {
+    assemble(&appended(
+        "units.yaml",
+        "
+  - name: idioms.units.LongestTalkByQueue
+    source: idioms.units.Call
+    consistency: read_your_writes
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: String}
+      - {name: longest, type: Optional<idioms.units.Millis>, aggregate: {max: talk_ms}}
+",
+    ))
+    .unwrap_or_else(|error| panic!("a max declared Optional<Millis> validates:\n{error}"));
+}
+
+/// Companion to the case above, pinning why it fails: two begins of one correlation key under two
+/// `span_key` values are two held rows, so the end is refused as `ambiguous` rather than derived.
+#[test]
+fn adversary_correlated_two_spans_of_one_key_refuse_the_end_today() {
+    let ir = correlated(&read(CORRELATED));
+    let synthesis = synthesize(&ir);
+    let today = LATER_BEGIN_OF_THE_KEY
+        .replacen("span_key: c1/s1", "span_key: begin-1", 1)
+        .replacen("span_key: c1/s1", "span_key: begin-2", 1)
+        .replace("    outcome: superseded\n", "    outcome: opened\n")
+        .replace("    outcome: derived\n", "    outcome: ambiguous\n")
+        .replace(
+            "assert:\n  - view: idioms.correlated.SpanEnds\n    contains: {customer: c1, session: s1, began_at: 2026-01-05T08:30:00Z}\n",
+            "assert:\n  - view: idioms.correlated.OpenSpans\n    counts: {at_least: 2, at_most: 2}\n",
+        );
+    assert_ne!(today, LATER_BEGIN_OF_THE_KEY);
+    let authoring = compile_authored(&ir, &[AuthoredSource::new("today.yaml", &today)]);
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+    let mut suite = synthesis.suite;
+    suite.scenarios = authoring.scenarios;
+    assert_eq!(failed(&run(&suite, ir)), BTreeSet::new());
+}

@@ -4,12 +4,16 @@ version: v1
 domain: idioms.correlated
 summary: >-
   The latest earlier row is a held row (`docs/design/read-api-view-idioms.md`, beyond10x/ess#442).
-  A begin is held as one row per correlation key, written by a create-or-update pair, so a later
-  begin replaces the earlier one. An end either carries its own duration, or reads the one held begin
-  of its key through a row-set selector, with every other count its own branch: no begin drops the
-  end, two refuse as ambiguous, a begin not before the end clamps the duration to 0. The difference
+  A begin is held as one row per correlation key: its identity `span_key` is the key the caller
+  composes from the correlation fields (customer and session), and a create-or-update pair writes it,
+  so a later begin of the key replaces the earlier one. A begin under a second key for the same
+  correlation fields is a second row, and an end then refuses as ambiguous rather than choose one.
+  An end either carries its own duration, or reads the one held begin of its correlation fields
+  through a row-set selector, with every other count its own branch: no begin drops the end, two
+  refuse as ambiguous, a begin not before the end clamps the duration to 0. The difference
   between the two instants is the consumer's.
 types:
+  # The correlation key, composed by the caller from customer and session, one key per pair.
   - {name: idioms.correlated.SpanKey, kind: newtype, of: String}
 errors:
   - {name: idioms.correlated.Ambiguous, summary: More than one begin of the customer and session is held., fields: []}
