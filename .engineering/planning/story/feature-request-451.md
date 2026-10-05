@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-451
 kind: story
-status: draft
+status: active
 title: Rules held as data cannot be given semantics
 tags:
 - ess-0.54.0
@@ -24,7 +24,10 @@ scope:
   path: docs/design/stored-rules-boundary.md
 - confidence: cited
   path: website/docs/guides/specify/guards-and-predicates.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T14:53:32Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-05T14:53:33Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#451: Rules held as data cannot be given semantics.

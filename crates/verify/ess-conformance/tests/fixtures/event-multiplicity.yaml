@@ -1,0 +1,30 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.batch
+summary: A batch whose rewrap re-encrypts several records, publishing one event per record.
+entities:
+  - name: demo.batch.Batch
+    identity: {name: batch_id, type: String}
+    fields:
+      - {name: note, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.batch.Operator
+    may: [demo.batch.Rewrap]
+commands:
+  - name: demo.batch.Rewrap
+    input:
+      - {name: batch_id, type: String}
+    outcomes:
+      - name: rewrapped
+        creates: demo.batch.Batch
+        instance: batch_id
+        sets: {note: input.batch_id}
+        emits: [demo.batch.Rewrapped, demo.batch.Rewrapped, demo.batch.Rewrapped]
+        payload:
+          demo.batch.Rewrapped: {batch_id: input.batch_id}
+events:
+  - name: demo.batch.Rewrapped
+    fields:
+      - {name: batch_id, type: String}

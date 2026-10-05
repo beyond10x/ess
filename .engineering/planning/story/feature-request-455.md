@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-455
 kind: story
-status: draft
+status: active
 title: Overlapping input guards on an open domain pass validation
 tags:
 - ess-0.54.0
@@ -29,7 +29,10 @@ scope:
   path: website/docs/guides/specify/fields-and-invariants.md
 - confidence: cited
   path: website/docs/guides/specify/guards-and-predicates.md
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T14:53:31Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "proposed", to: "active", at: "2026-10-05T14:53:32Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#455: Overlapping input guards on an open domain pass validation.

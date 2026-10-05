@@ -206,18 +206,15 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–43",
+            "execution readers admit suite majors 1–45",
         ));
     }
     match p.get("synthesis_seeds") {
-        Some(seeds) if crate::synthesis_seeds::seed_major(version.major()) => {
+        Some(seeds) if crate::synthesis_seeds::admitted_in(version.major()) => {
             crate::synthesis_seeds::admit_json(seeds)?;
         }
         Some(seeds) => {
-            return Err(seeds.error(
-                "UnsupportedVocabulary",
-                "synthesis seeds require suite/42 or /43",
-            ))
+            return Err(seeds.error("UnsupportedVocabulary", crate::synthesis_seeds::OUTSIDE))
         }
         None if crate::synthesis_seeds::seed_major(version.major()) => {
             return Err(root["provenance"].error(
@@ -265,11 +262,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 39
             | 41
             | 43
+            | 45
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /43",
+            "coverage is required exactly for odd suite majors from /5 through /45",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {

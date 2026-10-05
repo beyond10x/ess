@@ -425,8 +425,19 @@ for a request that selected seeds, even when no seed was used; a seed-free suite
 format and bytes. Version 42 is ordinary; 43 carries declared coverage. Each implies every major below it
 that readers implement. Rust, Go
 and TypeScript admit both, run their `establish_entity` steps through the existing setup
-capability with report/2, and refuse the record under any other major. Older readers refuse these
-envelopes before target callbacks.
+capability with report/2, and refuse the record under any other major except the counted pair
+below. Older readers refuse these envelopes before target callbacks.
+
+`ess-conformance/44` and `ess-conformance/45`, unreleased, count event claims (beyond10x/ess#427).
+One command answer can publish one declared event several times, and a suite one of whose acts
+claims one event more than once is written at 44 (ordinary) or 45 (declared coverage). Every event
+claim after one command then takes an occurrence of its own: the first unclaimed occurrence carrying
+its values, else the first unclaimed one, reported as `ESS-CF-PAYLOAD`; a claim left with none fails
+`ESS-CF-EVENT` and names how many were published and how many the act claims. Each implies every
+major below it, the seed-bearing pair included, and carries `synthesis_seeds` where seeds were
+selected. Rust, Go and TypeScript execute both with report/2. Older readers refuse these envelopes
+by version, so none under-checks a regenerated suite. A suite labelled 43 or below keeps first-match
+semantics, and a suite with no repeated claim keeps its earlier format and bytes.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

@@ -48,14 +48,14 @@ Agent types: implementor `aep:implementor`, adversary `aep:adversary`.
 
 | unit | wave | stories | worktree id | branch | build dir | stage |
 |---|---|---|---|---|---|---|
-| W1-1 | 1 | 429, 458 | `ess-054-w1-1` | `unit/ess-054-w1-1-ess23-identity-state` | `/dev/shm/ess-054/W1-1` | planned |
-| W1-2 | 1 | 427, 428, 430 | `ess-054-w1-2` | `unit/ess-054-w1-2-conformance-defects` | `/dev/shm/ess-054/W1-2` | planned |
-| W1-3 | 1 | 441, 442, 443, 444, 446, 447 | `ess-054-w1-3` | `unit/ess-054-w1-3-read-api-idioms` | `/dev/shm/ess-054/W1-3` | planned |
-| W1-4 | 1 | ess-generate-check, 435, 436, 432, 433, 453, 457 | `ess-054-w1-4` | `unit/ess-054-w1-4-adoption-docs` | `/dev/shm/ess-054/W1-4` | planned |
+| W1-1 | 1 | 429, 458 | `ess-054-w1-1` | `unit/ess-054-w1-1-ess23-identity-state` | `/dev/shm/ess-054/W1-1` | implementor running |
+| W1-2 | 1 | 427, 428, 430 | `ess-054-w1-2` | `unit/ess-054-w1-2-conformance-defects` | `/dev/shm/ess-054/W1-2` | `a69a5425a5`; adversary pass 1: 2 findings (claim order decided as a set matching, story 427); correction running |
+| W1-3 | 1 | 441, 442, 443, 444, 446, 447 | `ess-054-w1-3` | `unit/ess-054-w1-3-read-api-idioms` | `/dev/shm/ess-054/W1-3` | merged `6818891ca2` (unit `07794d6e6b`); adversary pass 1: 2 findings fixed; read_api_view_idioms 35/0 |
+| W1-4 | 1 | ess-generate-check, 435, 436, 432, 433, 453, 457 | `ess-054-w1-4` | `unit/ess-054-w1-4-adoption-docs` | `/dev/shm/ess-054/W1-4` | merged `6192d9be25` (unit `73fe561053`); adversary pass 1: 4 findings fixed; 5 lanes 90/0 |
 | W2-1 | 2 | 452 | | | | planned |
 | W2-2 | 2 | 438, 439 | | | | planned |
-| W2-3 | 2 | 448, 426b, 426a | | | | planned |
-| W2-4 | 2 | 454, 455, 456, 451, 449 | | | | planned |
+| W2-3 | 2 | 448, 426b, 426a | `ess-054-w2-3` | `unit/ess-054-w2-3-precedence-diagnostics-448-426` | `<cache>/b10x-target/ess-054-W2-3` | implementor running from `6192d9be25` |
+| W2-4 | 2 | 454, 455, 456, 451, 449 | `ess-054-w2-4` | `unit/ess-054-w2-4-precedence-guide` | `<cache>/b10x-target/ess-054-W2-4` | implementor running from `6192d9be25` |
 | W3-1 | 3 | 459 | | | | planned |
 | W3-2 | 3 | 450, 445, 440 | | | | planned |
 | W3-3 | 3 | 434, 437 | | | | planned |

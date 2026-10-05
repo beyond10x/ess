@@ -488,3 +488,20 @@ fn issue_275_a_guard_leaving_no_fresh_identity_refuses_rather_than_breaking_it()
     });
     assert!(refused, "{:#?}", synthesis.refusals);
 }
+
+/// The scalar identity's swapped run keeps its bytes when struct identities are redrawn whole
+/// (beyond10x/ess#430): the digest of the canonical suite, pinned before that change.
+#[test]
+fn scalar_identity_bytes_unchanged() {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    let canonical = suite().to_canonical_json().unwrap();
+    let mut digest = String::new();
+    for byte in Sha256::digest(canonical.as_bytes()) {
+        write!(digest, "{byte:02x}").unwrap();
+    }
+    assert_eq!(
+        digest,
+        "b614c6c43fa764a3dfc2d55ba7fb58f9560b3f575481f4c24e6835a76062e46a"
+    );
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-448
 kind: story
-status: draft
+status: active
 title: specify validate stops at the first parse-level refusal of a file
 tags:
 - ess-0.54.0
@@ -42,7 +42,10 @@ scope:
   path: crates/specify/ess-primitives/src/predicate.rs
 - confidence: cited
   path: website/docs/reference/diagnostics.md
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-05T14:53:29Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "proposed", to: "active", at: "2026-10-05T14:53:29Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":4}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#448: specify validate stops at the first parse-level refusal of a file.

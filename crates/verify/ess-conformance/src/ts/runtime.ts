@@ -2730,7 +2730,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /43 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /45 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -2810,6 +2810,7 @@ export async function runWith(
         harness,
         harness.correlation(),
         SUITE_MAJORS[suite.provenance.suite_version]! >= 28,
+        SUITE_MAJORS[suite.provenance.suite_version]! >= 44,
       );
       let returned = false;
       let thrown: unknown;
@@ -3190,6 +3191,88 @@ function normalizeResult(result: CommandResult | undefined): ObservedCommandResu
 }
 
 /** ScenarioRun is one scenario in flight, and everything it has bound. */
+/**
+ * How many times the act at the head of `steps` — every step up to the next command — claims each
+ * event, by `expect_event` or `expect_event_values` (beyond10x/ess#427).
+ */
+export function actClaimSteps(steps: readonly Step[]): Step[] {
+  const claims: Step[] = [];
+  for (const step of steps) {
+    if (step.step === 'execute_command' || step.step === 'execute_command_without_input') break;
+    if (step.step === 'expect_event' || step.step === 'expect_event_values') claims.push(step);
+  }
+  return claims;
+}
+
+/**
+ * The Rust `event_multiplicity::assignment`: the occurrence each claim of one event in one act
+ * takes, by claim, or -1. A maximum matching of claims to distinct occurrences that carry them
+ * (`carries[claim][occurrence]`); among several, each claim in turn takes the lowest occurrence
+ * some maximum matching gives it. Every claim left out then takes, in turn, the lowest occurrence
+ * nothing took (beyond10x/ess#427).
+ */
+export function assignClaims(
+  carries: readonly (readonly boolean[])[],
+  occurrences: number,
+): number[] {
+  const edge = (claim: number, occurrence: number) => carries[claim]?.[occurrence] === true;
+  const maximum = (claims: number[], blocked: boolean[]): number => {
+    const owner: number[] = new Array<number>(blocked.length).fill(-1);
+    const augment = (claim: number, seen: boolean[]): boolean => {
+      for (let occurrence = 0; occurrence < blocked.length; occurrence += 1) {
+        if (blocked[occurrence] || seen[occurrence] || !edge(claim, occurrence)) continue;
+        seen[occurrence] = true;
+        const held = owner[occurrence] ?? -1;
+        if (held < 0 || augment(held, seen)) {
+          owner[occurrence] = claim;
+          return true;
+        }
+      }
+      return false;
+    };
+    return claims.filter((claim) => augment(claim, new Array<boolean>(blocked.length).fill(false)))
+      .length;
+  };
+  const span = (from: number) =>
+    Array.from({ length: Math.max(carries.length - from, 0) }, (_, at) => from + at);
+  const used: boolean[] = new Array<boolean>(occurrences).fill(false);
+  const best = maximum(span(0), used);
+  const taken: number[] = new Array<number>(carries.length).fill(-1);
+  let fixed = 0;
+  for (let claim = 0; claim < carries.length; claim += 1) {
+    for (let occurrence = 0; occurrence < occurrences; occurrence += 1) {
+      if (used[occurrence] || !edge(claim, occurrence)) continue;
+      used[occurrence] = true;
+      if (fixed + 1 + maximum(span(claim + 1), used) === best) {
+        taken[claim] = occurrence;
+        fixed += 1;
+        break;
+      }
+      used[occurrence] = false;
+    }
+  }
+  for (let claim = 0; claim < taken.length; claim += 1) {
+    if (taken[claim] !== -1) continue;
+    const free = used.indexOf(false);
+    if (free >= 0) {
+      used[free] = true;
+      taken[claim] = free;
+    }
+  }
+  return taken;
+}
+
+export function actClaims(steps: readonly Step[]): { [event: string]: number } {
+  const claims: { [event: string]: number } = {};
+  for (const step of steps) {
+    if (step.step === 'execute_command' || step.step === 'execute_command_without_input') break;
+    if (step.step === 'expect_event' || step.step === 'expect_event_values') {
+      claims[step.event] = (claims[step.event] ?? 0) + 1;
+    }
+  }
+  return claims;
+}
+
 export class ScenarioRun {
   readonly t: TestScope;
   readonly target: Target;
@@ -3269,6 +3352,17 @@ export class ScenarioRun {
   private disclosureIncomplete = false;
   private stepTargetError = false;
   private readonly continuedAssertions: boolean;
+  /**
+   * Suite/44 and later (beyond10x/ess#427): the claims of one event after one command are matched
+   * to its occurrences as a set. `claimed` are the claims of each event this act has made, by
+   * ordinal; `claims` how many times the act claims each event; `act` its claim steps; and
+   * `assigned` the occurrence each claim takes, by event and ordinal. All are reset per command.
+   */
+  private readonly countedClaims: boolean;
+  private claimed: { [event: string]: Set<number> } = {};
+  private claims: { [event: string]: number } = {};
+  private act: Step[] = [];
+  private assigned: { [event: string]: number[] } = {};
 
   constructor(
     t: TestScope,
@@ -3276,12 +3370,14 @@ export class ScenarioRun {
     harness: Harness,
     correlation: string,
     continuedAssertions = false,
+    countedClaims = false,
   ) {
     this.t = t;
     this.target = readAsJSON(target);
     this.harness = harness;
     this.correlation = correlation;
     this.continuedAssertions = continuedAssertions;
+    this.countedClaims = countedClaims;
   }
 
   async execute(id: string, scenario: Scenario): Promise<void> {
@@ -3343,6 +3439,14 @@ export class ScenarioRun {
           !(await this.countBefore(index, next.unpublished ?? []))
         ) {
           return;
+        }
+        // A command opens an act: no claim of it is made yet, and its claims are kept for matching
+        // them to the occurrences the command publishes (beyond10x/ess#427).
+        if (step.step === 'execute_command' || step.step === 'execute_command_without_input') {
+          this.claimed = {};
+          this.assigned = {};
+          this.claims = actClaims(scenario.steps.slice(index + 1));
+          this.act = actClaimSteps(scenario.steps.slice(index + 1));
         }
         // A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
         this.readRefusalExpected =
@@ -3912,7 +4016,78 @@ export class ScenarioRun {
     return true;
   }
 
+  /**
+   * An event claim from suite/44 (beyond10x/ess#427), as the Rust runner's `expect_counted_event`
+   * makes it: the act's claims of the event are matched to the occurrences the last command
+   * published as a set (`assignClaims`), so the order they are written in decides nothing. A claim
+   * the matching meets passes; one it leaves out takes an occurrence nothing took and reports its
+   * values; one with no occurrence left fails `ESS-CF-EVENT`, naming how many were published and
+   * how many the act claims.
+   */
+  claimEvent(
+    index: number,
+    event: string,
+    payload: { [field: string]: Node },
+    shape: { [path: string]: Held },
+  ): boolean {
+    const seen = this.observed[event] ?? [];
+    const claimed = (this.claimed[event] ??= new Set<number>());
+    const ordinal = claimed.size;
+    claimed.add(ordinal);
+    if (ordinal === 0) {
+      const carries = this.act
+        .filter((claim) => claim.event === event)
+        .map((claim) => {
+          const values =
+            claim.step === 'expect_event_values' ? this.claimValues(claim) : (claim.payload ?? {});
+          return seen.map(
+            (occurrence) =>
+              values !== null &&
+              matches(occurrence.payload, values) &&
+              holds(occurrence.payload, claim.shape ?? {}) === '',
+          );
+        });
+      this.assigned[event] = assignClaims(carries, seen.length);
+    }
+    const taken = this.assigned[event]?.[ordinal] ?? -1;
+    if (taken < 0) {
+      if (seen.length === 0) return this.fail(index, `ESS-CF-EVENT: \`${event}\` was not emitted`);
+      return this.fail(
+        index,
+        `ESS-CF-EVENT: ${seen.length} occurrence(s) of \`${event}\` published, ${this.claims[event] ?? 0} claimed`,
+      );
+    }
+    const carried = itemAt(seen, taken).payload;
+    if (!matches(carried, payload))
+      return this.fail(
+        index,
+        `ESS-CF-PAYLOAD: \`${event}\` was emitted, and it did not carry ${describe(payload)}`,
+      );
+    const reason = holds(carried, shape);
+    return reason === '' || this.fail(index, `\`${event}\` was emitted, and ${reason}`);
+  }
+
+  /**
+   * The values an `expect_event_values` step names, resolved without recording anything, for
+   * matching an act's claims to occurrences (beyond10x/ess#427); `null` where one cannot be
+   * resolved yet, and the step itself then says why.
+   */
+  claimValues(claim: Step): { [field: string]: Node } | null {
+    try {
+      return Object.fromEntries(
+        Object.entries((claim.payload ?? {}) as Record<string, Value>).map(([field, written]) => [
+          field,
+          this.resolve(written),
+        ]),
+      );
+    } catch {
+      return null;
+    }
+  }
+
   expectEventValues(index: number, step: Step): boolean {
+    if (this.countedClaims)
+      return this.claimEvent(index, step.event, step.payload ?? {}, step.shape ?? {});
     // Match the Rust runner: select the first direct occurrence by name, never by its values.
     const event = this.last.directEvents?.find((observed) => observed.event === step.event);
     if (!event) return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
@@ -3926,6 +4101,8 @@ export class ScenarioRun {
   }
 
   expectEvent(index: number, step: Step): boolean {
+    if (this.countedClaims)
+      return this.claimEvent(index, step.event, step.payload ?? {}, step.shape ?? {});
     const seen = this.observed[step.event] ?? [];
     if (seen.length === 0) {
       return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
@@ -6313,13 +6490,18 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // Explicit synthesis seeds (beyond10x/ess#413): the seed-bearing pair.
   'ess-conformance/42': 42,
   'ess-conformance/43': 43,
+  // Counted event claims (beyond10x/ess#427): every claim after one command takes an occurrence of
+  // its own. Cumulative over every major below, the seed-bearing pair included.
+  'ess-conformance/44': 44,
+  'ess-conformance/45': 45,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
-  // The coverage majors of the conditional measure, expression and seed-bearing pairs.
-  39, 41, 43,
+  // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
+  // pairs.
+  39, 41, 43, 45,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -6432,10 +6614,13 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       admitReference(source);
     }
   }
-  // Seed provenance (beyond10x/ess#413) belongs exactly to suite/42 and /43.
+  // Seed provenance (beyond10x/ess#413) is required exactly in suite/42 and /43, and admitted in the
+  // counted event-claim pair /44 and /45 above them, which is cumulative (beyond10x/ess#427).
   const carriesSeeds = Object.prototype.hasOwnProperty.call(provenance, 'synthesis_seeds');
-  if (carriesSeeds !== (major === 42 || major === 43)) {
-    throw new Error('synthesis_seeds is required exactly in suite/42 and /43');
+  if ((carriesSeeds && major < 42) || (!carriesSeeds && (major === 42 || major === 43))) {
+    throw new Error(
+      'synthesis_seeds is required exactly in suite/42 and /43, and admitted in /44 and /45',
+    );
   }
   if (carriesSeeds) {
     try {
