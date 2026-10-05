@@ -224,50 +224,7 @@ caller by name fails. Entity Runtime lowering refuses a caller read with `Caller
 
 ## An input refused when absent is present afterwards
 
-From source `ess/16`, an `Optional<T>` input reads as `T` in a branch that is only ever taken with
-the input present. There are two such branches:
-
-- the default branch, written with no `when:`, when a sibling refuses exactly the input's
-  absence with `error:` — `when: not defined(x)` or `when: missing(x)`;
-- a branch whose own guard requires the input: `when: defined(x)`, or an `all:` with it as a
-  member.
-
-```yaml
-commands:
-  - name: demo.notes.SubmitNote
-    input:
-      - {name: account_id, type: Optional<demo.notes.AccountId>}
-      - {name: text, type: String}
-    outcomes:
-      - name: account-missing
-        when: not defined(account_id)
-        error: demo.notes.AccountMissing
-      - name: submitted                       # the default: the account is present here
-        creates: demo.notes.Note
-        instance: note_id
-        sets: {account_id: input.account_id, text: input.text}
-        emits: [demo.notes.NoteSubmitted]
-        payload:
-          demo.notes.NoteSubmitted: {note_id: {generated: true}, account_id: input.account_id, text: input.text}
-```
-
-`input.account_id` fills the required `account_id` fields with no `conversions:` entry. A
-conversion from `Optional<AccountId>` to `AccountId` would admit the same copy on every command,
-whether anything refuses the absence first or not. Narrowing does not depend on the order outcomes
-are declared in. It applies to `input.<x>` in `payload:`, in `sets:` and in a leaf of a nested
-mapping, and only to a top-level input.
-
-Nothing else narrows. A refusal of the absence *and* something else, such as
-`{all: ["not defined(x)", "kind == Draft"]}`, leaves some absent requests to the default branch. A
-sibling that succeeds when `x` is absent refuses nothing. A guarded branch other than the default can
-match a request the refusal also matches. That includes a branch written `when: true`: it is a
-guard that always holds, not the default, and a runtime that tries branches in declared order would
-take it before a refusal declared after it. Write the default with no `when:`.
-
-The synthesized suite checks the narrowing: the refusal's scenario sends no `account_id` and requires
-`account-missing`, and the success scenario sends one. Below `ess/16` the copy is refused as a
-`type_mismatch`, as it always has been.
-[Design](https://github.com/beyond10x/ess/blob/main/docs/design/optional-input-narrowing.md).
+This section has its own page: [an input refused when absent is present afterwards](./narrowed-inputs.md).
 
 ## A view declares its consistency
 
@@ -305,6 +262,40 @@ A view declares exactly one of `shape` or inline `fields`. The named type must b
 still checks each of its fields against the source entity. Compiled IR carries both the shape handle
 and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
 once rather than copied per view.
+
+## A view served from a replica
+
+One service may accept writes at one central instance while every other environment reads from a
+local replica that trails it. Model it as one component: its commands are the writes, and its views
+are declared `consistency: eventual`, so the suite asserts their reads with `eventually`. A `role`
+setting says which instance an environment runs, and the store the instances share is a `requires:`
+entry on a `stateless: true` workload:
+
+```yaml
+types:
+  - {name: directory.accounts.Role, kind: enum, variants: [Primary, Replica]}
+views:
+  - name: directory.accounts.Accounts
+    source: directory.accounts.Account
+    consistency: eventual                                # a replica may trail the write
+    fields: [{name: account_id, type: Uuid}, {name: email, type: String}]
+components:
+  - component: directory                                 # one component, every environment
+    owns: {domains: [directory.accounts]}
+    settings:
+      - {name: role, type: directory.accounts.Role, required: true}
+      - {name: write-endpoint, type: Optional<String>}   # absent on the primary
+topology:
+  workloads:
+    directory: {stateless: true, replicas: {min: 2}, requires: [{postgres: directory-store}]}
+```
+
+Placed beside a domain that declares `directory.accounts.Account`, this validates. Each
+environment's values belong to its `ess-environment/1` document. Which instance is the
+write-primary, and read-your-writes at a named instance, are out of scope for the specification: a
+component is a logical boundary, not a placement, and a view declares one consistency. A workload
+has no `environments:` key; two stateful instances with no shared store are `ESS-TOPOLOGY-004`; a
+second component for the replica that owns nothing is `ESS-COMPONENT-007`.
 
 ## Who may read a view
 
@@ -367,3 +358,40 @@ continues the first — ranked no earlier, and not the same row. Each claim hold
 users share. A free-form filter expression the caller supplies is not something `paging:` or
 `params:` can declare; a closed set of filter fields can still be declared one optional parameter
 at a time. [Design](https://github.com/beyond10x/ess/blob/main/docs/design/view-paging.md).
+
+## A view field derived from the lifecycle state
+
+A status read often answers a value that follows from the lifecycle state: `live`, true in every
+state but `Closed`. A view field names a field of its source entity, so declare the value as a
+stored field, write it with `sets:` on every branch that enters a state with a different value, and
+state the mapping as invariants over `state`. The view projects the field:
+
+```yaml
+domain: desk.tickets
+entities:
+  - name: desk.tickets.Ticket
+    identity: {name: ticket_id, type: Uuid}
+    fields: [{name: live, type: Boolean}]          # the stored field
+    invariants:                                    # one value per state, checked after every branch
+      - {any: [state != Closed, live == false]}
+      - {any: [state == Closed, live == true]}
+    lifecycle:
+      initial: Open
+      states: [Open, Waiting, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: wait, from: [Open], to: Waiting}
+        - {name: close, from: [Open, Waiting], to: Closed}
+views:
+  - name: desk.tickets.Status
+    source: desk.tickets.Ticket
+    consistency: read_your_writes
+    fields: [{name: ticket_id, type: Uuid}, {name: live, type: Boolean}]
+```
+
+The branch that creates a ticket writes `sets: {live: true}`, the `close` outcome writes
+`sets: {live: false}`, and `wait` writes nothing because the value does not change. Synthesis checks
+the invariants after every outcome, so the mapping is checked in every state some branch enters. A
+branch that forgets its `sets:` still validates; the model's interpreter reports a broken invariant,
+naming the one over `state`, when it runs that branch. See
+[where a predicate is accepted](../../reference/predicates.md#where-a-predicate-is-accepted).

@@ -42,7 +42,7 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: inferred
   path: website/docs/reference/spec-versions.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:21Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:22Z", actor: "human:timo", revision: 11}
@@ -89,3 +89,7 @@ accept, redesigned — repeated claims are counted, so no `count:` or `events_ex
 - crates/edge/ess-xtask/src/docs.rs  inferred — `FORMAT_RELEASES` rows for `/44` and `/45` (the `ess-conformance` list it reads, :79-83)
 - website/docs/reference/spec-versions.md  inferred — the `/44`/`/45` paragraph beside the `/42`/`/43` one (:421)
 - crates/verify/ess-conformance/tests/fixtures/event-multiplicity.yaml  inferred — the fit-review model, committed
+
+## Decision after adversary pass 1
+
+Coordinator decision, 2026-10-05, after adversary pass 1 (review-result:ess-054-w1-2-adversary-1): first-fit claim matching failed an honest target when a claim naming no value preceded one naming a value. From ess-conformance/44, the claims of one event name within one act are matched to that act's occurrences as a set: a maximum bipartite matching from claim to an occurrence whose values it carries, identical in Rust, Go and TypeScript, choosing the lowest claim index and then the lowest occurrence index when several maximum matchings exist. Unmatched claims report as before. Suites below /44 keep first-match. This supersedes the first-unclaimed-occurrence rule above.

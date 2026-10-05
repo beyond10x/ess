@@ -26,7 +26,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
 | a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare. Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other; never beside a `when_subject*` guard. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | a command outcome's `when_related: {entity, where, …}` (`ess/22`) | the rows of `entity` that `where` selects: each candidate row's declared fields, identity and held lifecycle state `state` bare, the command's input as `input.<field>`, the addressed subject as it was before the branch as `subject.<field>`, and `now` as the decision's one instant; `forall` reads the same over each selected row | The rows are the store just before the branch is selected; no row the outcome writes is one of them. `exists` is a Boolean, `count` one comparison (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`) with a whole number, `forall` a second predicate, true of no rows. Conjunctive with `when`; never beside `via` or a `when_subject*` guard. See [a guard over the rows a selector selects](#a-guard-over-the-rows-a-selector-selects). |
-| an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
+| an entity's `invariants` | the entity's own fields and its lifecycle `state` | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
 | a view's `filter` | the source entity's fields and its lifecycle `state` | Selects the rows the view returns. |
@@ -478,6 +478,15 @@ invariants:
   - any:
       - not: channel == Phone
       - quantity <= 5
+```
+
+An entity invariant also reads the held lifecycle state as `state`. This one says a closed order
+still has a positive quantity; the same form states which value a stored field holds in each state
+(see [a view field derived from the lifecycle state](../guides/specify/values-and-views.md#a-view-field-derived-from-the-lifecycle-state)):
+
+```yaml ess-check="invariants" ess-expect="synthesizes"
+invariants:
+  - {any: [state != Closed, quantity > 0]}
 ```
 
 ## Map operators

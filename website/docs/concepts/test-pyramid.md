@@ -117,6 +117,8 @@ evaluator and the suite into your repository as one package. Commit it:
   add beside it, such as your test file, are kept.
 
 The cost is one copy per repository: a runner fix reaches you when you regenerate with a newer `ess`.
+[Commit what a reviewer reads, regenerate the rest](../guides/commit-generated-files.md) lists
+the other generated files and whether each is committed.
 
 The alternatives are not available today:
 

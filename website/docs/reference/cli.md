@@ -666,6 +666,7 @@ ess generate <COMMAND>
 | `--asset` | `<OUTPUT=PATH>`… | no |  | Publish a declared UTF-8 download verbatim, written `<output-path>=<source-path>` |
 | `--strict-links` |  | no |  | Refuse unpublished local link targets before writing any output |
 | `--out` | `<OUT>` | no |  |  |
+| `--check` |  | no |  | Refuse when `--out` differs from the generated output, without writing it.<br /><br />Passing means the same command without `--check` changes nothing. Every file the selected projections would write is compared byte for byte; a file `.ess-output` records for them that no projection produces any more is drift, and so is a missing or stale `.ess-output` record. Exit 0 when `--out` is current, 1 with one line per drifted file. |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
@@ -689,6 +690,7 @@ ess generate generate [OPTIONS]
 | `--asset` | `<OUTPUT=PATH>`… | no |  | Publish a declared UTF-8 download verbatim, written `<output-path>=<source-path>` |
 | `--strict-links` |  | no |  | Refuse unpublished local link targets before writing any output |
 | `--out` | `<OUT>` | no |  |  |
+| `--check` |  | no |  | Refuse when `--out` differs from the generated output, without writing it.<br /><br />Passing means the same command without `--check` changes nothing. Every file the selected projections would write is compared byte for byte; a file `.ess-output` records for them that no projection produces any more is drift, and so is a missing or stale `.ess-output` record. Exit 0 when `--out` is current, 1 with one line per drifted file. |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
