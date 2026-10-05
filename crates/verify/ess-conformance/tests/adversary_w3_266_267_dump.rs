@@ -80,6 +80,7 @@ fn synthesized(files: &[PathBuf], base: &Path) -> String {
     out
 }
 
+#[ignore = "slow probe: `task test-slow-probes`"]
 #[test]
 fn adv_every_model_synthesizes_one_document_and_dumps_for_base_comparison() {
     let root = root();

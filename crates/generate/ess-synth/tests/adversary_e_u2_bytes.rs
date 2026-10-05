@@ -106,6 +106,7 @@ fn guarded(name: &str, text: &str) -> String {
     })
 }
 
+#[ignore = "slow probe: `task test-slow-probes`"]
 #[test]
 fn adv_e_u2_byte_identity_probe() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");

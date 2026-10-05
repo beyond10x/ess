@@ -3705,10 +3705,6 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 	if options.Calls < 0 {
 		return ConcurrentResult{}, fmt.Errorf("explore: `Calls` is %d; each client makes at least one call, or 3 when it is 0", options.Calls)
 	}
-	ess, err := exec.LookPath("ess")
-	if err != nil {
-		return ConcurrentResult{}, ErrNoEss
-	}
 	if options.Path == "" {
 		return ConcurrentResult{}, errors.New("explore: concurrent exploration needs `Path`, the specification `ess` checks each history against")
 	}
@@ -3718,6 +3714,12 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 	ir, err := exploreLoad(exploreIR, exploreSuite)
 	if err != nil {
 		return ConcurrentResult{}, err
+	}
+	// The model is read first, so a source this mode refuses (one-time responses) is refused
+	// before anything else is asked of the host.
+	ess, err := exec.LookPath("ess")
+	if err != nil {
+		return ConcurrentResult{}, ErrNoEss
 	}
 	if exploreNonEmpty(ir["preconditions"]) {
 		return ConcurrentResult{}, errors.New("explore: concurrent exploration does not run the specification's preconditions, so it does not record against one that declares them")
