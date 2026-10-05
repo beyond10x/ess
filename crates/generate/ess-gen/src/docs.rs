@@ -1482,7 +1482,13 @@ fn outcome_prose(
     } else if let Some(set) = &outcome.instances {
         out.extend(crate::set_effects::set_sentence(ir, set));
     } else {
-        out.extend(effect_sentence(ir, outcome.subject.as_ref()));
+        out.extend(effect_sentence(
+            ir,
+            outcome.subject.as_ref(),
+            outcome
+                .identity_write(ir)
+                .map(|write| write.target.as_str()),
+        ));
     }
     out.extend(crate::set_effects::affects_sentences(ir, outcome));
     if let Some(error) = &outcome.error {
@@ -1563,7 +1569,14 @@ fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
 /// Written for every outcome and not only for the ones with a subject, because silence is the one
 /// answer a reader cannot interpret: "this branch changes no entity" and "the projection dropped the
 /// field" look identical on a page, and the first is a fact about the system.
-fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline> {
+///
+/// `rekey` is the identity a re-keying `updates:` writes (ess/23, beyond10x/ess#429): the record
+/// moves to the identity written rather than changing where it is.
+fn effect_sentence(
+    ir: &EssIr,
+    subject: Option<&ResolvedSubject>,
+    rekey: Option<&str>,
+) -> Vec<Inline> {
     let Some(subject) = subject else {
         return vec![Inline::text("No entity in this specification changes.")];
     };
@@ -1603,6 +1616,16 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline>
             Inline::text("It removes the "),
             Inline::code(entity.name.to_string()),
             Inline::text(" its input names; no view shows it afterwards."),
+        ],
+        ResolvedEffect::Updates if rekey.is_some() => vec![
+            Inline::text("It re-keys a "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(": the record comes to rest under the identity written to "),
+            Inline::code(rekey.unwrap_or_default().to_owned()),
+            Inline::text(
+                ", every field the branch does not write carried over, and its old identity \
+                 names nothing afterwards.",
+            ),
         ],
         ResolvedEffect::Updates => vec![
             Inline::text("It changes a "),

@@ -1169,6 +1169,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 }
                 ess_compiler::ir::ResolvedPayloadValue::Cleared => "cleared".to_owned(),
                 other @ (ess_compiler::ir::ResolvedPayloadValue::SubjectField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::SubjectState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
@@ -1484,7 +1485,7 @@ fn command_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChan
         match (before.commands().get(name), after.commands().get(name)) {
             (None, Some(_)) => push(CommandChange::Added),
             (Some(_), None) => push(CommandChange::Removed),
-            (Some(was), Some(is)) => compare_commands(was, is, name, &mut push),
+            (Some(was), Some(is)) => compare_commands(was, is, name, (before, after), &mut push),
             (None, None) => unreachable!("a key came from one of the two maps"),
         }
     }
@@ -1495,6 +1496,7 @@ fn compare_commands(
     was: &ResolvedCommand,
     is: &ResolvedCommand,
     name: &QualifiedName,
+    irs: (&EssIr, &EssIr),
     push: &mut impl FnMut(CommandChange),
 ) {
     if was.response != is.response {
@@ -1560,7 +1562,7 @@ fn compare_commands(
         }),
     });
 
-    outcome_changes(&was.outcomes, &is.outcomes, push);
+    outcome_changes(&was.outcomes, &is.outcomes, irs, push);
 
     for delta in naming_deltas(&was.naming, &is.naming, name.local()) {
         match delta {
@@ -1590,6 +1592,7 @@ fn compare_commands(
 fn outcome_changes(
     was: &[ResolvedOutcome],
     is: &[ResolvedOutcome],
+    irs: (&EssIr, &EssIr),
     push: &mut impl FnMut(CommandChange),
 ) {
     let declared: BTreeMap<&str, &ResolvedOutcome> = was
@@ -1659,7 +1662,7 @@ fn outcome_changes(
                 if let Some(changed) = outcome_error_payload_change(old, new, name) {
                     push(changed);
                 }
-                outcome_state_changes(old, new, name, push);
+                outcome_state_changes(old, new, name, irs, push);
                 if old.summary != new.summary {
                     push(CommandChange::OutcomeSummaryChanged {
                         outcome: (*name).to_owned(),
@@ -2156,7 +2159,12 @@ fn ranking_contracts(
         .collect()
 }
 
-fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String> {
+/// One `<target> <- <source>` entry per field a branch writes; the entry writing the identity of a
+/// row an `updates:` re-keys (`rekey`, ess/23, beyond10x/ess#429) says so.
+fn written_sets(
+    fields: &[ess_compiler::ir::ResolvedPayloadField],
+    rekey: Option<&ess_compiler::ir::ResolvedPayloadField>,
+) -> Vec<String> {
     fields
         .iter()
         .map(|field| {
@@ -2175,6 +2183,7 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 }
                 ess_compiler::ir::ResolvedPayloadValue::Cleared => "cleared".to_owned(),
                 other @ (ess_compiler::ir::ResolvedPayloadValue::SubjectField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::SubjectState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
@@ -2188,7 +2197,12 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 .as_ref()
                 .map(|reason| format!(" via `{reason}`"))
                 .unwrap_or_default();
-            format!("{} <- {source}{conversion}", field.target)
+            let rekeying = if rekey.is_some_and(|write| write.target == field.target) {
+                crate::change::REKEYING
+            } else {
+                ""
+            };
+            format!("{} <- {source}{conversion}{rekeying}", field.target)
         })
         .collect()
 }
@@ -2427,13 +2441,15 @@ fn outcome_state_changes(
     old: &ResolvedOutcome,
     new: &ResolvedOutcome,
     name: &str,
+    (before, after): (&EssIr, &EssIr),
     push: &mut impl FnMut(CommandChange),
 ) {
     if old.sets != new.sets {
+        // A re-key (ess/23, beyond10x/ess#429) is named in the entry that writes the identity.
         push(CommandChange::OutcomeSetsChanged {
             outcome: name.to_owned(),
-            before: written_sets(&old.sets),
-            after: written_sets(&new.sets),
+            before: written_sets(&old.sets, old.identity_write(before)),
+            after: written_sets(&new.sets, new.identity_write(after)),
         });
     }
     if old.instances != new.instances || old.affects != new.affects {
@@ -2799,7 +2815,7 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
             "affects every `{}` where `{}`{moves}: {}",
             affect.entity.name(),
             affect.filter,
-            written_sets(&affect.sets).join(", ")
+            written_sets(&affect.sets, None).join(", ")
         ));
     }
     lines

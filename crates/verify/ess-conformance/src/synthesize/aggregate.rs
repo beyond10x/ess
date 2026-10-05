@@ -486,7 +486,9 @@ fn unchosen(
         ResolvedPayloadValue::InputOrGenerated { .. } => "an input with a fallback",
         ResolvedPayloadValue::Generated => "`{generated: true}`",
         ResolvedPayloadValue::Cleared => "`{cleared: true}`",
-        ResolvedPayloadValue::SubjectField { .. } => "a `{subject: …}` source",
+        ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::SubjectState { .. } => {
+            "a `{subject: …}` source"
+        }
         ResolvedPayloadValue::Increment { .. } => "an `{increment: …}` source",
         ResolvedPayloadValue::Struct { .. } => "a nested mapping",
         ResolvedPayloadValue::ResponseField { .. } => "an external response",

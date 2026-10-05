@@ -1,0 +1,77 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.vault
+summary: Secrets addressed by name, renamed in place with every other field carried over.
+types:
+  - {name: demo.vault.SecretName, kind: newtype, of: String}
+entities:
+  - name: demo.vault.Secret
+    identity: {name: name, type: demo.vault.SecretName}
+    fields:
+      - {name: value, type: String}
+    lifecycle:
+      initial: Stored
+      states: [Stored]
+      terminal: [Stored]
+      transitions: []
+errors:
+  - {name: demo.vault.SecretExists, summary: A secret already carries the name., fields: []}
+  - {name: demo.vault.NameTaken, summary: Another secret carries the new name., fields: []}
+  - {name: demo.vault.NoSuchSecret, summary: No secret carries the name., fields: []}
+events:
+  - name: demo.vault.SecretStored
+    fields:
+      - {name: name, type: demo.vault.SecretName}
+  - name: demo.vault.SecretRenamed
+    fields:
+      - {name: name, type: demo.vault.SecretName}
+      - {name: new_name, type: demo.vault.SecretName}
+actors:
+  - {name: demo.vault.Keeper, may: [demo.vault.StoreSecret, demo.vault.RenameSecret]}
+commands:
+  - name: demo.vault.StoreSecret
+    input:
+      - {name: name, type: demo.vault.SecretName}
+      - {name: value, type: String}
+    outcomes:
+      - name: stored
+        creates: demo.vault.Secret
+        instance: name
+        sets: {value: input.value}
+        emits: [demo.vault.SecretStored]
+        payload:
+          demo.vault.SecretStored: {name: input.name}
+      - {name: already-stored, existing_instance: true, error: demo.vault.SecretExists}
+  - name: demo.vault.RenameSecret
+    input:
+      - {name: name, type: demo.vault.SecretName}
+      - {name: new_name, type: demo.vault.SecretName}
+    outcomes:
+      - name: taken
+        when_related:
+          entity: demo.vault.Secret
+          where: name == input.new_name
+          exists: true
+        error: demo.vault.NameTaken
+      - name: renamed
+        updates: demo.vault.Secret
+        instance: name
+        sets: {name: input.new_name}
+        emits: [demo.vault.SecretRenamed]
+        payload:
+          demo.vault.SecretRenamed: {name: input.name, new_name: input.new_name}
+      - {name: no-such-secret, unknown_instance: true, error: demo.vault.NoSuchSecret}
+views:
+  - name: demo.vault.Secrets
+    source: demo.vault.Secret
+    consistency: read_your_writes
+    fields:
+      - {name: name, type: demo.vault.SecretName}
+      - {name: value, type: String}
+components:
+  - component: vault-service
+    owns: {domains: [demo.vault]}
+    accepts: {commands: [demo.vault.StoreSecret, demo.vault.RenameSecret]}
+    publishes: {events: [demo.vault.SecretStored, demo.vault.SecretRenamed]}
+    reached_by: network

@@ -51,7 +51,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
 ];
 
 /// `true` when this build implements `format`.
@@ -120,6 +120,9 @@ impl FormatVersion {
     /// Present-related predicate refusals compose after a held-row `wrong_state` refusal; a union
     /// variant may carry no payload (beyond10x/ess#418).
     pub const V22: Self = Self(22);
+    /// An `updates:` whose `sets:` writes the identity re-keys the record (beyond10x/ess#429); the
+    /// held lifecycle state as a value source, `{subject: state}` (beyond10x/ess#458).
+    pub const V23: Self = Self(23);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

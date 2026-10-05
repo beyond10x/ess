@@ -205,6 +205,7 @@ pub(crate) mod absent_input;
 pub mod caller_value;
 pub mod finite;
 pub mod fixture_inputs;
+pub mod identity_write;
 pub mod input_path;
 mod narrowing;
 mod one_time_response;

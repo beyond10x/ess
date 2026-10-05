@@ -42,7 +42,7 @@ scope:
   path: crates/specify/ess-primitives/src/predicate.rs
 - confidence: cited
   path: website/docs/reference/diagnostics.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T14:53:29Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-05T14:53:29Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":4}}}
@@ -95,3 +95,7 @@ accept, redesigned. Predicate positions deserialize as `Node` and are parsed in 
 - crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml  inferred — fit-review case `b`, committed
 - crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-compact.yaml  inferred — fit-review case `c`, committed
 - crates/edge/ess-cli/tests/fixtures/parse-refusals/parse-plus-semantic.yaml  inferred — fit-review case `e`, committed
+
+## Decision after adversary pass 1
+
+Coordinator decision, 2026-10-05, after adversary pass 1 (review-result:ess-054-w2-3-adversary-1): a command, view or binding with an unparsable predicate is withheld whole, so its other refusals appear once the predicate parses; refusals of other declarations in the file are still reported. diagnostics.md states this. Aggregate where, instances.where, affects[].where and selection where move to the per-declaration pass in this story.
