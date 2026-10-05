@@ -479,7 +479,7 @@ pub fn export_controls() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(
                 stderr.contains(
-                    "suite/8 through /35 require explicit --report-format 2 before execution"
+                    "suite/8 through /41 require explicit --report-format 2 before execution"
                 ),
                 "{stderr}"
             );

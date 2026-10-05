@@ -23,8 +23,10 @@ one.
    instances, existence, filters, deletion and event value sources.
 5. [Values, credentials and views](specify/values-and-views.md) — value expressions, the caller's
    credential, and view consistency, paging and aggregates.
-6. [Components, bindings and wire names](specify/bindings-and-components.md) — the layers above the
-   domains, bindings between components, conversions, wire spellings and error wire codes.
+6. [Components and bindings](specify/bindings-and-components.md) — the layers above the domains
+   and bindings between components.
+7. [Conversions and wire names](specify/wire-names.md) — conversions between contexts, wire
+   spellings and error wire codes.
 
 ## Where each section went
 
@@ -72,10 +74,10 @@ an older link still finds it.
 - <a id="declare-a-periodic-host-cause"></a>[Declare a periodic host cause](specify/bindings-and-components.md#declare-a-periodic-host-cause)
 - <a id="read-the-channel-an-event-arrived-on"></a>[Read the channel an event arrived on](specify/bindings-and-components.md#read-the-channel-an-event-arrived-on)
 - <a id="preserve-clock-reading-provenance"></a>[Preserve clock-reading provenance](specify/bindings-and-components.md#preserve-clock-reading-provenance)
-- <a id="crossing-contexts-takes-a-declared-conversion"></a>[Crossing contexts takes a declared conversion](specify/bindings-and-components.md#crossing-contexts-takes-a-declared-conversion)
-- <a id="an-enum-variant-can-carry-its-own-wire-spelling"></a>[An enum variant can carry its own wire spelling](specify/bindings-and-components.md#an-enum-variant-can-carry-its-own-wire-spelling)
-- <a id="a-field-can-carry-its-own-wire-name"></a>[A field can carry its own wire name](specify/bindings-and-components.md#a-field-can-carry-its-own-wire-name)
-- <a id="say-whether-an-absent-optional-is-sent-as-null"></a>[Say whether an absent Optional is sent as null](specify/bindings-and-components.md#say-whether-an-absent-optional-is-sent-as-null)
+- <a id="crossing-contexts-takes-a-declared-conversion"></a>[Crossing contexts takes a declared conversion](specify/wire-names.md#crossing-contexts-takes-a-declared-conversion)
+- <a id="an-enum-variant-can-carry-its-own-wire-spelling"></a>[An enum variant can carry its own wire spelling](specify/wire-names.md#an-enum-variant-can-carry-its-own-wire-spelling)
+- <a id="a-field-can-carry-its-own-wire-name"></a>[A field can carry its own wire name](specify/wire-names.md#a-field-can-carry-its-own-wire-name)
+- <a id="say-whether-an-absent-optional-is-sent-as-null"></a>[Say whether an absent Optional is sent as null](specify/wire-names.md#say-whether-an-absent-optional-is-sent-as-null)
 - <a id="three-layers-above-the-domains"></a>[Three layers above the domains](specify/bindings-and-components.md#three-layers-above-the-domains)
 - <a id="check-what-you-just-wrote-resolved"></a>[Check what you just wrote resolved](specify/layout-and-validation.md#check-what-you-just-wrote-resolved)
 - <a id="names"></a>[Names](specify/layout-and-validation.md#names)

@@ -14,12 +14,14 @@ checked against.
 
 1. [Synthesize a suite](verify/synthesize-a-suite.md) — generate the suite a specification requires.
 2. [Author scenarios](verify/author-scenarios.md) — add scenarios a person wrote, compile them on
-   their own, run a chosen subset, and what they can arrange and observe.
-3. [Runners and reports](verify/runners.md) — run a suite against a built-in target, a generated Go
+   their own, run a chosen subset, and what they can arrange and expect.
+3. [Observations](verify/observations.md) — what a suite observes beyond an act's own answer:
+   held state, retries, selection, periodic activity, clocks, event context and binding accessors.
+4. [Runners and reports](verify/runners.md) — run a suite against a built-in target, a generated Go
    or TypeScript package or a Rust target, and read the report.
-4. [Audit a suite with specification mutants](verify/mutation-audit.md) — measure whether the suite
+5. [Audit a suite with specification mutants](verify/mutation-audit.md) — measure whether the suite
    notices a changed specification, against a built-in target or your own implementation.
-5. [Explore command sequences and histories](verify/explore.md) — random sequences and concurrent
+6. [Explore command sequences and histories](verify/explore.md) — random sequences and concurrent
    histories.
 
 ## Where each section went
@@ -32,10 +34,10 @@ an older link still finds it.
 - <a id="expect-an-external-branch-in-an-authored-scenario"></a>[Expect an external branch in an authored scenario](verify/author-scenarios.md#expect-an-external-branch-in-an-authored-scenario)
 - <a id="establish-backend-state-in-an-authored-scenario"></a>[Establish backend state in an authored scenario](verify/author-scenarios.md#establish-backend-state-in-an-authored-scenario)
 - <a id="name-several-instances-in-one-input"></a>[Name several instances in one input](verify/author-scenarios.md#name-several-instances-in-one-input)
-- <a id="observe-outcomes-selected-by-held-state"></a>[Observe outcomes selected by held state](verify/author-scenarios.md#observe-outcomes-selected-by-held-state)
-- <a id="observe-retries-of-the-original-result"></a>[Observe retries of the original result](verify/author-scenarios.md#observe-retries-of-the-original-result)
-- <a id="observe-selection-periodic-activity-and-clock-evidence"></a>[Observe selection, periodic activity and clock evidence](verify/author-scenarios.md#observe-selection-periodic-activity-and-clock-evidence)
-- <a id="deliver-an-event-with-its-context"></a>[Deliver an event with its context](verify/author-scenarios.md#deliver-an-event-with-its-context)
+- <a id="observe-outcomes-selected-by-held-state"></a>[Observe outcomes selected by held state](verify/observations.md#observe-outcomes-selected-by-held-state)
+- <a id="observe-retries-of-the-original-result"></a>[Observe retries of the original result](verify/observations.md#observe-retries-of-the-original-result)
+- <a id="observe-selection-periodic-activity-and-clock-evidence"></a>[Observe selection, periodic activity and clock evidence](verify/observations.md#observe-selection-periodic-activity-and-clock-evidence)
+- <a id="deliver-an-event-with-its-context"></a>[Deliver an event with its context](verify/observations.md#deliver-an-event-with-its-context)
 - <a id="run-a-supported-target"></a>[Run a supported target](verify/runners.md#run-a-supported-target)
 - <a id="hold-your-own-implementation-to-the-suite"></a>[Hold your own implementation to the suite](verify/runners.md#hold-your-own-implementation-to-the-suite)
 - <a id="audit-the-suite-with-specification-mutants"></a>[Audit the suite with specification mutants](verify/mutation-audit.md#audit-the-suite-with-specification-mutants)
@@ -46,6 +48,6 @@ an older link still finds it.
 - <a id="opt-into-explicit-outcome-counts"></a>[Opt into explicit outcome counts](verify/runners.md#opt-into-explicit-outcome-counts)
 - <a id="where-passed-failed-and-skipped-live"></a>[Where passed, failed and skipped live](verify/runners.md#where-passed-failed-and-skipped-live)
 - <a id="opt-into-declared-coverage"></a>[Opt into declared coverage](verify/runners.md#opt-into-declared-coverage)
-- <a id="observe-bounded-binding-accessors"></a>[Observe bounded binding accessors](verify/author-scenarios.md#observe-bounded-binding-accessors)
+- <a id="observe-bounded-binding-accessors"></a>[Observe bounded binding accessors](verify/observations.md#observe-bounded-binding-accessors)
 - <a id="what-the-report-proves"></a>[What the report proves](verify/runners.md#what-the-report-proves)
 - <a id="a-target-in-rust"></a>[A target in Rust](verify/runners.md#a-target-in-rust)

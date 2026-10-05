@@ -46,6 +46,7 @@ const sidebars: SidebarsConfig = {
             'guides/specify/commands-and-outcomes',
             'guides/specify/values-and-views',
             'guides/specify/bindings-and-components',
+            'guides/specify/wire-names',
           ],
         },
         {
@@ -55,6 +56,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'guides/verify/synthesize-a-suite',
             'guides/verify/author-scenarios',
+            'guides/verify/observations',
             'guides/verify/runners',
             'guides/verify/one-time-responses',
             'guides/verify/mutation-audit',
