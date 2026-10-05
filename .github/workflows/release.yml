@@ -197,7 +197,7 @@ jobs:
       checkout-ref: ${{ needs.resolve.outputs.commit }}
 
   wasm:
-    name: Verify the compiler in the browser lab
+    name: Verify the WebAssembly realization
     needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -231,8 +231,8 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
-      - name: Build and verify the WASM compiler and browser lab
-        run: task site-lab
+      - name: Build and drive the WebAssembly realization
+        run: task web-check
 
   package:
     needs: resolve

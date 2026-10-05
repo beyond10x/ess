@@ -193,6 +193,10 @@ fn complete_real_fixture_inventory_keeps_versions_slots_events_effects_and_fulfi
     );
     assert_eq!(issue.emits.len(), 1);
     assert_eq!(issue.set["issued_at"], json!("$args.input.issued_at"));
+    // The issuing instant is the caller's (`sets: {issued_at: input.issued_at}`), so it is a
+    // source-determined assignment and no host action; `note` stays the host's to fulfil.
+    assert!(issue.set.contains_key("issued_at"));
+    assert!(!issue.fulfills.contains_key("issued_at"));
     assert!(issue.fulfills.contains_key("note"));
     let pay = &invoice.operations["billing.invoice.PayInvoice"].outcomes[0];
     assert!(matches!(pay.effect, entity_core::OutcomeEffect::Moves { ref to, .. } if to == "Paid"));

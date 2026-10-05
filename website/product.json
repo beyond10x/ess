@@ -1,0 +1,89 @@
+{
+  "format": "b10x-product-landing/1",
+  "product": {
+    "name": "ESS",
+    "mark": "Es",
+    "eyebrow": "Executable system specifications · experimental",
+    "promise": ["Specify once.", "Derive contracts.", "Prove the code."],
+    "lede": "ESS turns system intent into a validated typed model, deterministic artifacts and an executable conformance suite. A specification is YAML; the compiler resolves every reference, the projections derive documentation and interface contracts from the result, and the same model generates the scenarios an implementation must pass. Nothing it does applies infrastructure.",
+    "actions": [
+      {"label": "Get started", "href": "/docs/getting-started", "kind": "primary"},
+      {"label": "See the model", "href": "#domain"}
+    ],
+    "meta": "Rust · YAML specifications · canonical JSON IR · Apache-2.0",
+    "art": {
+      "kind": "code-pair",
+      "data": "data/billing-invoice-money.code-pair.json",
+      "caption": "A declared type of examples/billing and the OpenAPI schema ess generates from it, quoted verbatim by cargo xtask site-data and checked for drift by task check."
+    },
+    "kpis": ["capabilities", "shipped", "planned", "entities"]
+  },
+  "sections": [
+    {
+      "kind": "features",
+      "eyebrow": "What it does",
+      "title": "Model, project, prove.",
+      "lede": "Architecture notes, API descriptions, manifests and test plans each hold a fragment of a system, and nothing proves they still describe the same thing. ESS makes those claims typed input: validation refuses unresolved meaning, compilation produces deterministic IR, and every projection states its coverage and obligations.",
+      "items": [
+        {"title": "Model", "description": "Systems, domains, entities, commands, outcomes, events, views, components, bindings and topology are validated as typed structures. Every reference resolves to a compiler-minted handle.", "status": "shipped", "href": "/docs/concepts/ess"},
+        {"title": "Project", "description": "Markdown and HTML documentation, JSON Schema, OpenAPI 3.1 and AsyncAPI 3.0 come from the compiled IR. Each adapter declares the subset and direction it supports.", "status": "shipped", "href": "/docs/guides/generate-artifacts"},
+        {"title": "Prove", "description": "The specification synthesizes its own conformance suite. Run it against a built-in target, or emit a Go or TypeScript runner and hold your implementation to it.", "status": "shipped", "href": "/docs/guides/verify-conformance"},
+        {"title": "Synthesize", "description": "Structural Rust, Go, browser and Clap code from the same model. What the specification does not determine stays a typed obligation for someone to implement.", "status": "shipped", "href": "/docs/guides/synthesize"},
+        {"title": "Import", "description": "OpenAPI documents and sanitized Kubernetes observations become typed input. An importer never guesses: unsupported constructs remain coverage gaps, obligations or refusals.", "status": "shipped", "href": "/docs/guides/check-infrastructure"},
+        {"title": "Track change", "description": "verify diff compares two revisions of a specification semantically; verify impact reports the conformance scenarios and generated artifacts the change invalidates.", "status": "shipped", "href": "/docs/guides/track-change"}
+      ]
+    },
+    {
+      "kind": "flow",
+      "eyebrow": "How it works",
+      "title": "From a specification to a verdict.",
+      "lede": "Each step is a command that runs today. The terminal below is these steps on the billing example, recorded rather than typed.",
+      "steps": [
+        {"label": "Author", "title": "system.yaml", "description": "A system, its domains, entities, commands and views, as YAML."},
+        {"label": "Validate", "title": "ess specify validate", "description": "Every reference resolves; meaning the model cannot express is refused."},
+        {"label": "Compile", "title": "canonical IR", "description": "Resolved handles, ordered collections, one serialization."},
+        {"label": "Project", "title": "ess generate", "description": "Documentation, schemas and interface contracts from the IR."},
+        {"label": "Prove", "title": "ess verify conform", "description": "Synthesize the suite the specification obliges, then run it."}
+      ]
+    },
+    {
+      "kind": "terminal",
+      "eyebrow": "See it run",
+      "title": "The same steps, on the billing example.",
+      "lede": "Validate, compile, synthesize the suite the specification obliges and run it against the built-in billing target.",
+      "session": "data/ess.terminal.json"
+    },
+    {
+      "kind": "domain-graph",
+      "eyebrow": "See a specification run",
+      "title": "The billing example, as its compiler sees it.",
+      "lede": "The invoicing domain of examples/billing, drawn from the IR that ess specify compile produces. Entities with their identities and fields, the lifecycle each one moves through and the commands that move it, and the relations between them. Hover an entity to trace what it relates to.",
+      "data": "data/billing-invoice.domain-graph.json",
+      "caption": "Generated from the compiled IR by cargo xtask site-data; task check fails when it falls behind the specification."
+    },
+    {
+      "kind": "terminal",
+      "eyebrow": "Generate",
+      "title": "Contracts and code from the same model.",
+      "lede": "One projection and one synthesis target, on the same specification. The synthesis report counts what it generated, what it left as an obligation and what it refused.",
+      "session": "data/generate.terminal.json"
+    },
+    {
+      "kind": "status",
+      "eyebrow": "Status",
+      "title": "Experimental. Here is exactly what exists.",
+      "lede": "Shipped means a command that runs today in the current source. Planned means on the roadmap and not scheduled. Live imports and the commands named execute, publish, fetch and reconcile are explicit credential edges.",
+      "items": "data/status.json"
+    },
+    {
+      "kind": "related",
+      "eyebrow": "Related tools",
+      "title": "Built with ESS, and beside it.",
+      "tools": [
+        {"id": "canon", "relation": "beside"},
+        {"id": "loom", "relation": "specified-by", "via": "loom.run"},
+        {"id": "commission", "relation": "specified-by", "via": "commission.responsibility"}
+      ]
+    }
+  ]
+}

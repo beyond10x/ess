@@ -312,10 +312,10 @@ function identityOwner(ir: Node, type: string): string | null {
 }
 
 /**
- * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`, a `timestamp`,
- * and a type whose values are constrained: concurrent exploration does not judge an answer by this
- * model, `ess` does, so a drawn value outside the constraint is a question the target answers and the
- * checker judges.
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`,
+ * a `timestamp` and a type whose values are constrained: concurrent exploration does not judge an
+ * answer by this model, `ess` does, so a drawn value outside the constraint is a question the target
+ * answers and the checker judges.
  */
 function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };

@@ -1198,9 +1198,12 @@ fn the_committed_billing_suite_holds_the_authored_scenario_beside_the_generated_
         .collect();
     assert_eq!(
         authored,
-        vec!["billing.invoice/authored/outstanding-invoices-rank-latest-first"]
+        vec![
+            "billing.invoice/authored/outstanding-invoices-rank-by-instant",
+            "billing.invoice/authored/outstanding-invoices-rank-latest-first",
+        ]
     );
-    assert_eq!(suite.len(), 33, "thirty-two obligations and one assertion");
+    assert_eq!(suite.len(), 34, "thirty-two obligations and two assertions");
 }
 
 #[test]

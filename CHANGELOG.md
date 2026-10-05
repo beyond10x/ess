@@ -24,6 +24,24 @@
 - Generated behaviour contexts expose fallible companion methods, so an unavailable context
   answer refuses execution before storage or event effects. Existing context implementations keep
   their original methods; generated memory contexts implement the fallible seam.
+- The `/ess/` site uses the shared docs-system product-site template, like the other product
+  sites. Its landing page is `website/product.json`; its terminal sessions and the billing domain
+  graph are recorded from the real `ess` binary by `cargo xtask site-data`, which
+  `projection-check` holds to a fresh recording. The browser lab is gone: `/ess/lab` redirects to
+  `/ess/docs/visualise`, and `task site-lab` is replaced by `task web-check`, which still builds
+  the synthesized billing browser realization for WebAssembly and drives its boundary.
+- The billing example's `IssueInvoice` takes the issuing instant, `issued_at: Timestamp`, and its
+  `issued` outcome records it. `OutstandingInvoices` ranks by `issued_at desc`, which no outcome
+  set before, so its order was the implementation's and the authored
+  `outstanding-invoices-rank-latest-first` scenario could not be decided. The model still reads no
+  clock: the caller states the instant. The committed suite, projections, synthesized trees and
+  site data are regenerated, and the visualise page now shows that scenario as met.
+- A declared order over RFC 3339 instants is checked by instant, not by text: the Rust runner and
+  the emitted Go and TypeScript runtimes rank two texts that each name an instant by that instant,
+  so `2026-01-05T10:00:01+02:00` ranks before `2026-01-05T09:00:03Z`. The reference target and the
+  billing realization sort `issued_at` the same way. A second authored billing scenario,
+  `outstanding-invoices-rank-by-instant`, issues the later instant first and spells the earlier
+  one with an offset, so a target that ranks by issue order or by text now fails the suite.
 
 ## [0.52.0] — 2026-10-03
 

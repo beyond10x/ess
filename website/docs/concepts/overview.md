@@ -2,13 +2,11 @@
 title: Architecture overview
 sidebar_position: 1
 description: The pure model, deterministic compiler, adapters, projectors, delivery chain and the explicit executor edge.
+status: shipped
+lede: ESS keeps system semantics and external authority on different sides of an explicit boundary. Everything that reads a specification and writes a document is deterministic and offline; a small, named set of commands calls external tools, and nothing else does.
 ---
 
 # Architecture overview
-
-ESS keeps system semantics and external authority on different sides of an explicit boundary.
-Everything that reads a specification and writes a document is deterministic and offline. A small,
-named set of commands calls external tools, and nothing else does.
 
 ```mermaid
 flowchart LR

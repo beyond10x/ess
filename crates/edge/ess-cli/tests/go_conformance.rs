@@ -179,7 +179,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     assert!(passed, "a correct implementation did not pass:\n{printed}");
     assert_eq!(
         scenarios(&printed, "PASS").len(),
-        33,
+        34,
         "every scenario must run, and a suite that skipped them all would also pass:\n{printed}"
     );
 
@@ -188,7 +188,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     // rather than against a constant.
     let written = report(&directory);
     assert_eq!(written["execution_status"], "passed");
-    assert_eq!(written["counts"]["total"], 33);
+    assert_eq!(written["counts"]["total"], 34);
     assert_eq!(written["counts"]["failed"], 0);
     assert_eq!(written["outcomes"]["failed"], serde_json::json!([]));
     assert_eq!(written["spec_digest"], suite_digest(&directory));
@@ -234,7 +234,7 @@ fn one_deliberate_defect_fails_the_scenarios_responsible_for_it_and_no_others() 
     // The report names the same thirteen, as failures, and calls the run failed.
     let written = report(&directory);
     assert_eq!(written["execution_status"], "failed");
-    assert_eq!(written["counts"]["total"], 33);
+    assert_eq!(written["counts"]["total"], 34);
     assert_eq!(written["counts"]["failed"], 13);
     assert_eq!(
         written["outcomes"]["failed"],
@@ -269,6 +269,7 @@ fn a_view_returned_in_the_wrong_order_fails_exactly_the_scenarios_that_assert_it
             "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
             "billing.invoice.IssueInvoice/outcome/issued",
             "billing.invoice.PayInvoice/outcome/settled",
+            "billing.invoice/authored/outstanding-invoices-rank-by-instant",
             "billing.invoice/authored/outstanding-invoices-rank-latest-first",
         ],
         "exactly the scenarios that assert `OutstandingInvoices`'s declared order, and no others: \
@@ -309,6 +310,7 @@ fn a_view_that_drops_rows_fails_the_scenarios_that_say_how_many_it_holds() {
             "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
             "billing.invoice.IssueInvoice/outcome/issued",
             "billing.invoice.PayInvoice/outcome/settled",
+            "billing.invoice/authored/outstanding-invoices-rank-by-instant",
             "billing.invoice/authored/outstanding-invoices-rank-latest-first",
         ],
         "exactly the scenarios that arranged more than one row in `OutstandingInvoices`, the \
@@ -739,14 +741,14 @@ func TestConformance(t *testing.T) { essconform.Run(t, func() essconform.Target 
         "{raw}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(scenarios(&raw, "FAIL").len(), 33, "{raw}");
+    assert_eq!(scenarios(&raw, "FAIL").len(), 34, "{raw}");
     let text = std::fs::read_to_string(report_path(&directory)).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["format"], "ess-conformance-report/2", "{text}");
     assert_eq!(value["producer_profile"], "go-scenario-status/2");
     assert_eq!(
         value["counts"],
-        serde_json::json!({"total":33,"passed":0,"failed":0,"error":0,"unsupported":33,"skipped":0})
+        serde_json::json!({"total":34,"passed":0,"failed":0,"error":0,"unsupported":34,"skipped":0})
     );
     let original = std::fs::read_to_string(directory.join("essconform/suite.json")).unwrap();
     let suite = ess_conformance::AdmittedSuite::from_json(&original).unwrap();
@@ -1374,6 +1376,9 @@ fn count_retained_runtime_preserves_legacy_behavior_and_does_not_gain_version_ch
     let directory = count_module("count-retained-runtime");
     let legacy = include_str!("fixtures/go-count-legacy/runtime.go");
     std::fs::write(directory.join("essconform/runtime.go"), legacy).unwrap();
+    // The retained runtime's own predicate reader: the current one calls helpers it never had.
+    let predicate = include_str!("fixtures/go-count-legacy/predicate.go");
+    std::fs::write(directory.join("essconform/predicate.go"), predicate).unwrap();
     let mut fixture = std::fs::read_to_string(directory.join("essconform/count_test.go")).unwrap();
     fixture = fixture.replace("; \"strconv\"", "");
     fixture = fixture

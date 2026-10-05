@@ -3830,7 +3830,7 @@ func ranked(view string, orderBy []string, rows []Row) (bool, string, bool) {
 					view, key[0],
 				), true
 			}
-			order, ok := compare(left, right)
+			order, ok := rankOrder(left, right)
 			if !ok {
 				return false, fmt.Sprintf(
 					"`%s` holds values of two kinds in `%s`, which have no order between them",
@@ -3854,6 +3854,23 @@ func ranked(view string, orderBy []string, rows []Row) (bool, string, bool) {
 		}
 	}
 	return true, "", false
+}
+
+// rankOrder orders two values of one ranking key. Two texts that each name an RFC 3339 instant
+// are ordered by those instants, not by their spellings: a `Timestamp` travels as text, and
+// `2026-01-05T10:00:01+02:00` is before `2026-01-05T09:00:03Z` although its text is greater.
+// Everything else orders as compare does. The Rust runner's `compare_nodes` reads rows the same way.
+func rankOrder(left, right Node) (int, bool) {
+	leftText, leftIsText := left.(string)
+	rightText, rightIsText := right.(string)
+	if leftIsText && rightIsText {
+		leftAt, leftOk := parseInstant(leftText)
+		rightAt, rightOk := parseInstant(rightText)
+		if leftOk && rightOk {
+			return leftAt.compare(rightAt), true
+		}
+	}
+	return compare(left, right)
 }
 
 // compare orders two row values, reporting false where nothing orders them.
@@ -8476,8 +8493,10 @@ func predicateUsesFactOperand(value any) bool {
 			default:
 				if operators, ok := child.(map[string]any); ok {
 					for _, operand := range operators {
-						if _, ok := operand.(map[string]any); ok {
-							return true
+						if mapping, ok := operand.(map[string]any); ok {
+							if _, fact := mapping["fact"]; fact {
+								return true
+							}
 						}
 					}
 				}

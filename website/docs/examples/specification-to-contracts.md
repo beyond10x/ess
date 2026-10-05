@@ -18,23 +18,8 @@ the build. Entity relations and the account field visible in the billing example
 
 ## The source
 
-**[Open this specification in the lab](https://beyond10x.github.io/ess/lab)** — the file, the
-model it compiles to and a real run of it in WebAssembly, stepped side by side.
-
-What the lab runs is this specification, executing in your browser. It fetches
-`billing_web_realized.wasm` — the module `ess generate synthesize --target web` emits from
-`examples/billing/`, linked with the hand-written behaviour in `examples/billing-realization/` and
-built for `wasm32-unknown-unknown` — and sends five commands over its boundary: one accepted, two
-declared moves, one move the lifecycle does not have, and one refusal a guard decides. That is every
-way this model can answer. The outcomes, the log, the binding invocations and the view rows are what
-came back; the middle panel is the compiler's own model, asked for out of the same module. Nothing
-in the lab is a recording of an earlier run.
-
-Four values are chosen rather than derived: an account id, an email address, and two amounts. A
-specification declares types and not instances, so somebody has to pick an input. Everything the run
-then says about them came back over the module's boundary. Generated invoice identifiers come from
-a counter inside the module rather than from a clock, so the same script produces a byte-identical
-stream of steps on every load, and `website/src/pages/lab/_run.test.mjs` holds it there.
+The ESS product site's Visualise page draws this specification: the invoicing domain as the
+compiler resolves it, and the conformance run it obliges, both recorded from the real `ess` binary.
 
 One command, from `examples/billing/domains/invoice.yaml`:
 
@@ -92,8 +77,9 @@ commands:
         # to be in order and never to be in the right order.
         #
         # `invoice_id` has no line here for the reason it has none above: the identity is the
-        # implementation's to assign. `issued_at` stays absent here; `IssueInvoice` stores the
-        # explicit issuing timestamp its caller supplies, so the view's ordering has a source.
+        # implementation's to assign. `issued_at` has none because `CreateInvoice` is not what
+        # sets it: a draft has not been issued, and `IssueInvoice` below is what records the
+        # instant.
         #
         # `reminder_count` starts at zero, and says so, because the invariant `reminder_count >= 0`
         # reads it: a required field no creating branch sets holds whatever the implementation
@@ -318,5 +304,5 @@ See [Synthesize code from a specification](../guides/synthesize.md) and
 `generated/schema/commands/billing.invoice.CreateInvoice.schema.json`;
 `generated/openapi/invoice-service.yaml`; `generated/asyncapi/invoice-service.yaml`;
 `generated/docs/domains/billing-invoice.md`; `generated/site/index.html`;
-`Taskfile.yml` (`projection-check` and `site-lab`, which
-builds the module the lab runs and holds its output to `website/src/pages/lab/_run.test.mjs`).
+`Taskfile.yml` (`projection-check`, which holds the generated files and the recorded `ess`
+sessions to a fresh run).

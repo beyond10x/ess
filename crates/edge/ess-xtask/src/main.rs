@@ -1,5 +1,6 @@
 //! Repository-only maintenance checks for ESS.
 
+mod admonitions;
 mod cli_reference;
 mod consumer_coverage;
 mod diagnostics;
@@ -7,6 +8,8 @@ mod docs;
 #[path = "../../ess-cli/src/git_checkout.rs"]
 mod git_checkout;
 mod infra_acceptance;
+mod presentation;
+mod site_data;
 mod support;
 mod whats_changed;
 
@@ -113,6 +116,24 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Refuse a published page whose admonition has a space-separated title, `:::note Title`.
+    Admonitions,
+    /// Record or check the site's `ess` sessions, domain graphs and billing presentation under
+    /// `website/data/`.
+    SiteData {
+        /// Compare byte for byte without writing.
+        #[arg(long)]
+        check: bool,
+        /// An `ess` binary to record with; defaults to building this workspace's.
+        #[arg(long)]
+        ess: Option<PathBuf>,
+        /// An `ess-ui` binary to write the presentation with; defaults to the commit
+        /// `website/package.json` pins, installed under `$ESS_UI_ROOT` or `~/.cache/ess-ui`.
+        #[arg(long)]
+        ess_ui: Option<PathBuf>,
+    },
+    /// Install the `ess-ui` that `website/package.json` pins, when missing, and print its path.
+    EssUi,
     /// Regenerate or check `WHATS-CHANGED.md` from the `changes/` fragments.
     WhatsChanged {
         /// Compare byte for byte without writing.
@@ -186,6 +207,14 @@ fn run(cli: Cli) -> Result<String, String> {
         Command::InfraAcceptance(args) => {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
         }
+        Command::Admonitions => admonitions::run(&root).map_err(|error| format!("{error:#}")),
+        Command::SiteData { check, ess, ess_ui } => {
+            site_data::run(&root, check, ess.as_deref(), ess_ui.as_deref())
+                .map_err(|error| format!("{error:#}"))
+        }
+        Command::EssUi => presentation::binary(&root)
+            .map(|path| format!("{}\n", path.display()))
+            .map_err(|error| format!("{error:#}")),
         Command::WhatsChanged { check } => {
             whats_changed::run(&root, check).map_err(|error| format!("{error:#}"))
         }
@@ -1456,7 +1485,7 @@ mod tests {
             .iter()
             .filter_map(|step| step["run"].as_str())
             .collect::<Vec<_>>();
-        assert!(runs.contains(&"task site-lab"));
+        assert!(runs.contains(&"task web-check"));
         assert!(
             !include_str!("../../../../.github/workflows/release.yml").contains("task site-build")
         );

@@ -172,7 +172,7 @@ fn the_complete_committed_billing_suite_passes_against_interpreted() {
     let scenarios = report["scenarios"].as_array().expect("scenarios");
     assert_eq!(
         scenarios.len(),
-        33,
+        34,
         "every scenario of the committed billing suite was run"
     );
     let with_status = |wanted: &str| -> BTreeSet<&str> {

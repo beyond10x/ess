@@ -91,7 +91,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Examples',
-      items: ['examples/specification-to-contracts'],
+      items: ['examples/specification-to-contracts', 'visualise'],
     },
     {
       type: 'category',

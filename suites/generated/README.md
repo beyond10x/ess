@@ -43,10 +43,15 @@ tie-break, which of two rows is first — and it is only as good as the person. 
 their ids: an authored one is written `<domain>/authored/<name>`, so a report, a fault matrix and a
 `go test -run` filter can each tell them apart without being told.
 
-The one here is
-[`examples/billing-scenarios/outstanding-invoices-rank-latest-first.yaml`](../../examples/billing-scenarios/outstanding-invoices-rank-latest-first.yaml).
-Synthesis checks that `OutstandingInvoices` is in its declared order. The authored scenario also
-names the expected row order for its arrangement. Fresh suites declare
+The two here are
+[`examples/billing-scenarios/outstanding-invoices-rank-latest-first.yaml`](../../examples/billing-scenarios/outstanding-invoices-rank-latest-first.yaml)
+and
+[`examples/billing-scenarios/outstanding-invoices-rank-by-instant.yaml`](../../examples/billing-scenarios/outstanding-invoices-rank-by-instant.yaml).
+Synthesis emits the claim that `OutstandingInvoices` is *in* its declared order and refuses to say
+which row is first, because §8 permits a target to be shared and a row this scenario did not create
+could outrank both. A person who knows that is not the case for this system says so there. The
+second issues the later instant first and spells the earlier one with an offset, so a target that
+ranks `issued_at` by issue order or by its text fails it. Fresh suites declare
 `scenario_initial_state: empty`: each scenario begins with an empty logical namespace before its
 arrangement, even when the implementation shares a physical target.
 

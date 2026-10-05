@@ -31,6 +31,7 @@ import {
   executionContextDocument,
   goMarshal,
   holds,
+  instant,
   integral,
   isUnsupported,
   lookup,
@@ -39,6 +40,7 @@ import {
   paddedBase64,
   primitive,
   publicBuild,
+  rankOrder,
   ranked,
   reduce,
   render,
@@ -580,6 +582,20 @@ test('values compare structurally and numbers compare across carriers', () => {
   assert.deepEqual(compare('b', 'a'), [1, true]);
   assert.deepEqual(compare(false, true), [-1, true]);
   assert.deepEqual(compare(1, 'a'), [0, false]);
+});
+
+test('ranking orders RFC 3339 instants and not their spellings', () => {
+  // 08:00:01Z written with an offset is before 09:00:03Z, although its text is greater.
+  assert.deepEqual(rankOrder('2026-01-05T10:00:01+02:00', '2026-01-05T09:00:03Z'), [-1, true]);
+  assert.deepEqual(rankOrder('2026-01-05T09:00:03.5Z', '2026-01-05T09:00:03Z'), [1, true]);
+  assert.deepEqual(rankOrder('2026-01-05T08:00:01Z', '2026-01-05t10:00:01+02:00'), [0, true]);
+  // Text that names no instant orders by its bytes, as compare does.
+  assert.deepEqual(rankOrder('2026-02-30T00:00:00Z', '2026-01-05T09:00:03Z'), [1, true]);
+  assert.deepEqual(instant('2026-01-05T09:00:60Z'), undefined);
+  assert.deepEqual(instant('1970-01-01T00:00:01.25-00:01'), [61, 250000000]);
+  const rows: Row[] = [{ at: '2026-01-05T09:00:03Z' }, { at: '2026-01-05T10:00:01+02:00' }];
+  assert.deepEqual(ranked('v', ['at desc'], rows), [true, '', false]);
+  assert.deepEqual(ranked('v', ['at'], rows)[0], false);
 });
 
 test('ranking reads adjacent pairs and holds for fewer than two rows', () => {

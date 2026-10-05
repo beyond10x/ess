@@ -29,12 +29,6 @@ examples/billing-web/target/
 # page's last candidate path, and a build artifact either way.
 generated/web/*/*.wasm
 
-# The module the website's lab runs, built by `task lab` from `examples/billing-web`. Not
-# committed for the reason the tree it comes from is not: a `.wasm` is a build artifact, and the
-# page fetches it at runtime rather than importing it, so a missing one is a state the lab shows
-# rather than a build that breaks.
-website/static/lab/
-
 # Governed runs write model transcripts here; they carry the running account’s MCP inventory and
 # per-run spend, which a public tree should not carry. The readable account of a run is its wave
 # page (docs/plan/). The decision was recorded in docs/plan/gap-register.md, which no longer exists

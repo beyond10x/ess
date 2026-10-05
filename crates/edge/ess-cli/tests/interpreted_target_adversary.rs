@@ -119,7 +119,7 @@ fn real_interpreted_execution_and_empty_suite_verdicts_are_distinct() {
     );
     assert_eq!(code, Some(0));
     let scenarios = report["scenarios"].as_array().expect("executed scenarios");
-    assert_eq!(scenarios.len(), 33);
+    assert_eq!(scenarios.len(), 34);
     assert!(scenarios
         .iter()
         .all(|scenario| scenario["status"] == "passed"));

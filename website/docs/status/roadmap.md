@@ -2,11 +2,11 @@
 title: Roadmap
 sidebar_position: 3
 description: The evidence-driven direction for new ESS model kinds and adapters.
+status: planned
+lede: ESS grows from concrete adapter needs rather than a universal meta-model.
 ---
 
 # Roadmap
-
-ESS grows from concrete adapter needs rather than a universal meta-model.
 
 The [maturity outlook](./outlook.md) proposes the reliability, compatibility, naming, and
 verification work needed to make the existing toolchain dependable. It describes improvement

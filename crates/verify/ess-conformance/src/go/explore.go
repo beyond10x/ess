@@ -362,9 +362,10 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 	return exploreResolveAs(ir, ref, depth, false)
 }
 
-// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `decimal`, a `timestamp`, and a type whose
-// values are constrained: concurrent exploration does not judge an answer by this model, `ess` does,
-// so a drawn value outside the constraint is a question the target answers and the checker judges.
+// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `decimal`, a `timestamp`
+// and a type whose values are constrained: concurrent exploration does not judge an answer by this
+// model, `ess` does, so a drawn value outside the constraint is a question the target answers and
+// the checker judges.
 func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
 	if depth > 32 {
 		return exploreKind{kind: "unsupported", why: "nested too deeply"}

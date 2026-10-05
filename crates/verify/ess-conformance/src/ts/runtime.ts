@@ -5870,7 +5870,7 @@ export function ranked(view: string, orderBy: string[], rows: Row[]): [boolean, 
           true,
         ];
       }
-      const [order, ok] = compare(earlier[key[0]], later[key[0]]);
+      const [order, ok] = rankOrder(earlier[key[0]], later[key[0]]);
       if (!ok) {
         return [
           false,
@@ -5894,6 +5894,134 @@ export function ranked(view: string, orderBy: string[], rows: Row[]): [boolean, 
     }
   }
   return [true, '', false];
+}
+
+/**
+ * rankOrder orders two values of one ranking key. Two texts that each name an RFC 3339 instant
+ * are ordered by those instants, not by their spellings: a `Timestamp` travels as text, and
+ * `2026-01-05T10:00:01+02:00` is before `2026-01-05T09:00:03Z` although its text is greater.
+ * Everything else orders as compare does. The Rust runner's `compare_nodes` reads rows the same way.
+ */
+export function rankOrder(left: Node, right: Node): [number, boolean] {
+  if (typeof left === 'string' && typeof right === 'string') {
+    const one = instant(left);
+    const other = instant(right);
+    if (one !== undefined && other !== undefined) {
+      const [oneSeconds, oneNanos] = one;
+      const [otherSeconds, otherNanos] = other;
+      if (oneSeconds !== otherSeconds) {
+        return [oneSeconds < otherSeconds ? -1 : 1, true];
+      }
+      if (oneNanos !== otherNanos) {
+        return [oneNanos < otherNanos ? -1 : 1, true];
+      }
+      return [0, true];
+    }
+  }
+  return compare(left, right);
+}
+
+/**
+ * instant is the instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds,
+ * or undefined where it names none. The production `ess_primitives::time::Rfc3339Instant` parses
+ * and nothing wider: a `T` or `t` separator, seconds 00–59, up to nine fraction digits, and `Z`,
+ * `z` or a `±HH:MM` offset.
+ */
+export function instant(value: string): [number, number] | undefined {
+  const digits = (from: number, to: number): number | undefined => {
+    if (from >= to || to > value.length) {
+      return undefined;
+    }
+    let total = 0;
+    for (let index = from; index < to; index += 1) {
+      const code = value.charCodeAt(index);
+      if (code < 48 || code > 57) {
+        return undefined;
+      }
+      total = total * 10 + (code - 48);
+    }
+    return total;
+  };
+  const at = (index: number, expected: string): boolean =>
+    index < value.length && expected.includes(value.charAt(index));
+  if (!at(4, '-') || !at(7, '-') || !at(10, 'Tt') || !at(13, ':') || !at(16, ':')) {
+    return undefined;
+  }
+  const year = digits(0, 4);
+  const month = digits(5, 7);
+  const day = digits(8, 10);
+  if (year === undefined || month === undefined || day === undefined) {
+    return undefined;
+  }
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  let length: number;
+  if ([1, 3, 5, 7, 8, 10, 12].includes(month)) {
+    length = 31;
+  } else if ([4, 6, 9, 11].includes(month)) {
+    length = 30;
+  } else if (month === 2) {
+    length = leap ? 29 : 28;
+  } else {
+    return undefined;
+  }
+  if (day < 1 || day > length) {
+    return undefined;
+  }
+  const hour = digits(11, 13);
+  const minute = digits(14, 16);
+  const second = digits(17, 19);
+  if (
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    return undefined;
+  }
+  let position = 19;
+  let nanos = 0;
+  if (at(position, '.')) {
+    const start = position + 1;
+    let end = start;
+    while (end < value.length && value.charCodeAt(end) >= 48 && value.charCodeAt(end) <= 57) {
+      end += 1;
+    }
+    const width = end - start;
+    if (width === 0 || width > 9) {
+      return undefined;
+    }
+    const fraction = digits(start, end);
+    if (fraction === undefined) {
+      return undefined;
+    }
+    nanos = fraction * 10 ** (9 - width);
+    position = end;
+  }
+  let offset: number;
+  const rest = value.slice(position);
+  if (rest === 'Z' || rest === 'z') {
+    offset = 0;
+  } else if (rest.length === 6 && (rest[0] === '+' || rest[0] === '-') && rest[3] === ':') {
+    const hours = digits(position + 1, position + 3);
+    const minutes = digits(position + 4, position + 6);
+    if (hours === undefined || minutes === undefined || hours > 23 || minutes > 59) {
+      return undefined;
+    }
+    offset = (hours * 3600 + minutes * 60) * (rest[0] === '-' ? -1 : 1);
+  } else {
+    return undefined;
+  }
+  const shifted = month <= 2 ? year - 1 : year;
+  const era = Math.floor(shifted / 400);
+  const yearOfEra = shifted - era * 400;
+  const shiftedMonth = month <= 2 ? month + 9 : month - 3;
+  const dayOfYear = Math.floor((153 * shiftedMonth + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
+  const days = era * 146097 + dayOfEra - 719468;
+  return [days * 86400 + hour * 3600 + minute * 60 + second - offset, nanos];
 }
 
 /** compare orders two row values, reporting false where nothing orders them. */
@@ -11288,7 +11416,7 @@ export function predicateUsesFactOperand(value: Node): boolean {
       default:
         if (isObject(child)) {
           for (const operand of Object.values(child as { [key: string]: Node })) {
-            if (isObject(operand)) return true;
+            if (isObject(operand) && Object.hasOwn(operand, 'fact')) return true;
           }
         }
     }

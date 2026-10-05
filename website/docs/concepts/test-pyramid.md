@@ -2,6 +2,8 @@
 title: A suite at every level of a test pyramid
 sidebar_position: 4
 description: Run one conformance suite as a component, integration or end-to-end test, and decide whether to commit or fetch the generated runner.
+status: shipped
+lede: One conformance suite runs as a component, integration or end-to-end test. The level is a property of the target, never of the suite.
 ---
 
 # A suite at every level of a test pyramid
