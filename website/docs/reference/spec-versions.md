@@ -119,7 +119,7 @@ declares its result type exactly: `Integer` for the counts and for `sum` of an `
 for `min` and `max`, and `Optional<Decimal>` for `avg`, rounded to 6 places half-even. An older build
 refuses the header, and this build refuses the construct under an earlier header with
 `unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
-[aggregate views](../guides/specify/values-and-views.md#aggregate-views).
+[aggregate views](../guides/specify/aggregate-views.md).
 
 `ess/11`, introduced in [0.34.0][r34], admits three things. A newtype of `String` may declare `alphabet:`, the
 characters every value is drawn from. A command input may declare `example:`, the value synthesis

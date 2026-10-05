@@ -1782,8 +1782,8 @@ impl PayloadSource {
                 let earlier = legacy_reading(&written)
                     .and_then(|raw| Self::try_from(raw).map(Box::new).map_err(str::to_owned));
                 match Predicate::deserialize((*written).clone()) {
-                    Ok(predicate) => (predicate, None, earlier),
-                    Err(error) => (Predicate::Always, Some(error.to_string()), earlier),
+                    Ok(predicate) => (predicate, None, earlier.into()),
+                    Err(error) => (Predicate::Always, Some(error.to_string()), earlier.into()),
                 }
             }
             None => (filter, None, row_set::Legacy::none().filter),

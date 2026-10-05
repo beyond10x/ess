@@ -562,16 +562,36 @@ pub(super) fn filtered_reads() -> bool {
 pub struct Legacy {
     /// The `where:` value as a nested-mapping leaf read it before `ess/22`, or that reader's
     /// refusal.
-    pub(super) filter: Result<Box<PayloadSource>, String>,
+    pub(super) filter: LegacyFilter,
     /// Why the `where:` value is not a predicate, where it is not; `None` where it is.
     pub(super) predicate: Option<String>,
+}
+
+/// The `where:` value as the nested reader below `ess/22` read it, or that reader's refusal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LegacyFilter {
+    /// The value it read.
+    Read(Box<PayloadSource>),
+    /// Why it refused the value.
+    Refused(String),
+}
+
+impl From<Result<Box<PayloadSource>, String>> for LegacyFilter {
+    fn from(reading: Result<Box<PayloadSource>, String>) -> Self {
+        match reading {
+            Ok(read) => Self::Read(read),
+            Err(refusal) => Self::Refused(refusal),
+        }
+    }
 }
 
 impl Legacy {
     /// A read assembled in code, which has no earlier reading.
     pub fn none() -> Self {
         Self {
-            filter: Err("a filtered read assembled in code has no earlier reading".to_owned()),
+            filter: LegacyFilter::Refused(
+                "a filtered read assembled in code has no earlier reading".to_owned(),
+            ),
             predicate: None,
         }
     }
@@ -627,8 +647,8 @@ fn nested(source: &mut PayloadSource, at: &str, errors: &mut ValidationErrors) {
             legacy,
         } => {
             let filter = match &legacy.filter {
-                Ok(filter) => (**filter).clone(),
-                Err(refusal) => {
+                LegacyFilter::Read(filter) => (**filter).clone(),
+                LegacyFilter::Refused(refusal) => {
                     errors.push(ValidationError::new(
                         ValidationCode::TypeMismatch,
                         at.to_owned(),

@@ -1,7 +1,7 @@
 //! `schemas/ess-history.schema.json` admits what the Rust, Go and TypeScript writers write, in both
 //! formats, and refuses what the reader refuses about `decision_time` (beyond10x/ess#244).
 //!
-//! The two documents are `crates/verify/ess-conformance/tests/fixtures/history2/written*.json`:
+//! The two documents are `crates/verify/ess-conformance/tests/fixtures/history2/written.json` and `written-format1.json`:
 //! the bytes every writer produces for the same operations (`history_format2.rs`,
 //! `src/ts/explore.test.ts`), so a writer validating its own output against the schema passes in
 //! both formats.

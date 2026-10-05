@@ -66,7 +66,7 @@ an older link still finds it.
 - <a id="an-input-refused-when-absent-is-present-afterwards"></a>[An input refused when absent is present afterwards](specify/values-and-views.md#an-input-refused-when-absent-is-present-afterwards)
 - <a id="a-view-declares-its-consistency"></a>[A view declares its consistency](specify/values-and-views.md#a-view-declares-its-consistency)
 - <a id="a-view-can-be-paged"></a>[A view can be paged](specify/values-and-views.md#a-view-can-be-paged)
-- <a id="aggregate-views"></a>[Aggregate views](specify/values-and-views.md#aggregate-views)
+- <a id="aggregate-views"></a>[Aggregate views](specify/aggregate-views.md)
 - <a id="a-binding-says-what-happens-when-it-fails"></a>[A binding says what happens when it fails](specify/bindings-and-components.md#a-binding-says-what-happens-when-it-fails)
 - <a id="bound-a-retry"></a>[Bound a retry](specify/bindings-and-components.md#bound-a-retry)
 - <a id="read-a-field-inside-an-event-envelope"></a>[Read a field inside an event envelope](specify/bindings-and-components.md#read-a-field-inside-an-event-envelope)

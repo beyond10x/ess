@@ -12,7 +12,7 @@ authority; this list only helps you find it.
 | Term | Meaning | Defined in |
 |---|---|---|
 | Actor | Who may invoke which commands. | [The model](../concepts/ess.md#the-model) |
-| Aggregate view | A view with `group_by:` that reports counts, sums and extremes over one entity's rows. | [Aggregate views](../guides/specify/values-and-views.md#aggregate-views) |
+| Aggregate view | A view with `group_by:` that reports counts, sums and extremes over one entity's rows. | [Aggregate views](../guides/specify/aggregate-views.md) |
 | Ambient precondition | A command every command of the system runs inside, such as an open session. | [Ambient preconditions](../guides/specify/commands-and-outcomes.md#a-system-can-run-inside-ambient-preconditions) |
 | Authored scenario | A conformance scenario a person wrote as an `ess-scenario/*` document, joined to a suite only when `--scenarios` names it. | [Author scenarios](../guides/verify/author-scenarios.md#select-authored-scenarios-explicitly) |
 | Binding | An event-to-command reaction across contexts, including what happens when it fails. | [Bindings](../guides/specify/bindings-and-components.md#a-binding-says-what-happens-when-it-fails) |
