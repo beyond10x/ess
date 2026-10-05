@@ -153,7 +153,8 @@ that records its rows is judged at the consistency the view declares: under `rea
 client reads a state older than its own last write, and under `eventual` each client's reads converge
 once its first `--settle` reads after the last write (default 4) are past. Reads that cannot be judged
 are listed with their reason. The same history and budget always print the same report;
-`--format json` prints it as JSON.
+`--format json` prints it as JSON. What the check holds a history to, and the limits of that
+promise, is [when commands race](../../concepts/ess.md#when-commands-race).
 
 ### Draw a history as client lanes
 

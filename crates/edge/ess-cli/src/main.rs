@@ -229,6 +229,13 @@ struct GenerateArgs {
     site: site::Options,
     #[arg(long)]
     out: Option<PathBuf>,
+    /// Refuse when `--out` differs from the generated output, without writing it.
+    ///
+    /// Every file the selected projections would write is compared byte for byte, and so is every
+    /// file `.ess-output` records for them: one no projection produces any more is drift too.
+    /// Exit 0 when `--out` is current, 1 with one line per drifted file.
+    #[arg(long, requires = "out")]
+    check: bool,
     #[arg(long, value_enum, default_value_t = Format::Text)]
     format: Format,
     /// Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.
@@ -1588,7 +1595,11 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         &arguments.input.path,
         arguments.kind,
         &arguments.site,
-        arguments.out.as_deref(),
+        match (arguments.out.as_deref(), arguments.check) {
+            (None, _) => Delivery::Print,
+            (Some(root), false) => Delivery::Write(root),
+            (Some(root), true) => Delivery::Check(root),
+        },
         arguments.format,
         arguments.strict,
         arguments.transport.as_deref(),
@@ -3238,12 +3249,23 @@ fn unowned_domains(ir: &ess_compiler::EssIr) -> Vec<&ess_domain::name::Qualified
         .collect()
 }
 
+/// What `generate` does with the projections it rendered.
+#[derive(Debug, Clone, Copy)]
+enum Delivery<'a> {
+    /// List them; write nothing.
+    Print,
+    /// Publish them into this ownership root.
+    Write(&'a Path),
+    /// Compare them with what this ownership root holds; write nothing.
+    Check(&'a Path),
+}
+
 /// Resolve once, then render the selected projection and preflight its complete output set.
 fn generate(
     path: &Path,
     kind: Option<Projection>,
     site_options: &site::Options,
-    out: Option<&Path>,
+    delivery: Delivery<'_>,
     format: Format,
     strict: bool,
     transport: Option<&Path>,
@@ -3335,25 +3357,48 @@ fn generate(
                 .map(|a| (a.path.as_str(), a.contents.as_str())),
         )?);
     }
-    if let Some(root) = out {
-        output_ownership::publish(root, publications)?;
+    if !delivery.deliver(publications)? {
+        return Ok(ExitCode::from(1));
     }
     if matches!(format, Format::Text) {
         for artifact in artifacts.values() {
             println!("{} — {} byte(s)", artifact.path, artifact.contents.len());
         }
-        println!(
-            "{} artifact(s){}",
-            artifacts.len(),
-            out.map_or_else(
-                || ", nothing written".to_owned(),
-                |path| format!(", written to {}", path.display())
-            )
-        );
+        println!("{} artifact(s), {}", artifacts.len(), delivery.summary());
     } else {
         render(&artifacts, format)?;
     }
     Ok(ExitCode::SUCCESS)
+}
+
+impl Delivery<'_> {
+    /// Publish, compare or do nothing; `false` when `--check` found drift, after naming each file.
+    fn deliver(self, publications: Vec<output_ownership::Publication>) -> Result<bool> {
+        match self {
+            Delivery::Print => Ok(true),
+            Delivery::Write(root) => output_ownership::publish(root, publications).map(|()| true),
+            Delivery::Check(root) => {
+                let drifted = output_ownership::drift(root, &publications)?;
+                for drift in &drifted {
+                    eprintln!(
+                        "{} {}; regenerate it with `ess generate`",
+                        root.join(&drift.path).display(),
+                        drift.reason
+                    );
+                }
+                Ok(drifted.is_empty())
+            }
+        }
+    }
+
+    /// The end of the inventory line: where the artifacts went, if anywhere.
+    fn summary(self) -> String {
+        match self {
+            Delivery::Print => "nothing written".to_owned(),
+            Delivery::Write(root) => format!("written to {}", root.display()),
+            Delivery::Check(root) => format!("current in {}", root.display()),
+        }
+    }
 }
 
 fn synthesize(
@@ -5093,7 +5138,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
                 &path,
                 Some(Projection::OpenApi),
                 &site::Options::default(),
-                out.as_deref(),
+                out.as_deref().map_or(Delivery::Print, Delivery::Write),
                 format,
                 strict,
                 None,

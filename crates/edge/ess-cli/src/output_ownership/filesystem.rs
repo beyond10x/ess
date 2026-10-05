@@ -361,11 +361,22 @@ pub(super) fn parent(
     }
     bail!("output path names its anchor")
 }
+/// The snapshot of one output under `root`, or a refusal naming that output, relative to `root`,
+/// and the `ess` release that refused it: the message is often all a reporter can quote.
 pub(super) fn image(
     root: &File,
     relative: &Path,
     mount: &Mount,
 ) -> Result<(Image, Option<Vec<u8>>)> {
+    snapshot(root, relative, mount).with_context(|| {
+        format!(
+            "ess {} refused output {}",
+            env!("CARGO_PKG_VERSION"),
+            relative.display()
+        )
+    })
+}
+fn snapshot(root: &File, relative: &Path, mount: &Mount) -> Result<(Image, Option<Vec<u8>>)> {
     let Some((parent, name)) = parent(root, relative, mount)? else {
         return Ok((Image::Absent, None));
     };
@@ -760,6 +771,36 @@ mod xattr_tests {
             assert!(
                 !platform_xattr(name),
                 "{} was attached by somebody other than the platform and must be refused",
+                String::from_utf8_lossy(name)
+            );
+        }
+    }
+
+    /// Admission stays by exact name: a Darwin label an OS imposes would be added beside the Linux
+    /// ones, never a `com.apple.*` namespace, and the labels that change execution stay foreign.
+    #[test]
+    fn platform_label_admission_stays_exact() {
+        for name in [&b"security.selinux"[..], b"security.SMACK64"] {
+            assert_eq!(
+                platform_xattr(name),
+                cfg!(target_os = "linux"),
+                "{} is admitted on Linux only",
+                String::from_utf8_lossy(name)
+            );
+        }
+        for name in [
+            &b"user.ess_test"[..],
+            b"security.capability",
+            b"system.posix_acl_access",
+            b"system.posix_acl_default",
+            b"com.apple.quarantine",
+            b"com.apple.",
+            b"com.apple.provenance.extra",
+            b"com.apple.ResourceFork",
+        ] {
+            assert!(
+                !platform_xattr(name),
+                "{} must stay refused",
                 String::from_utf8_lossy(name)
             );
         }

@@ -22,3 +22,6 @@ Then pick the runner for your implementation's language: [TypeScript](./start/ru
 [Go](./start/runners/go.md) or [Rust](./start/runners/rust.md).
 [Explore the repository example](./start/explore-the-example.md) runs a larger specification from
 a checkout.
+
+This path generates a contract and a suite. A repository can stop earlier or go further:
+[Adopt ESS at the depth you need](./concepts/adoption-modes.md) names the modes and what each checks.

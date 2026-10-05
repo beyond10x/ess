@@ -360,3 +360,64 @@ fn a_read_of_a_view_not_declared_current_is_listed_and_not_judged() {
     );
     assert_eq!(checked.not_judged[0].consistency, "eventual");
 }
+
+/// What a specification promises when two commands race, stated on the concepts page beside the
+/// tests above that hold it, and linked from the two verify guides that rely on it.
+#[test]
+fn concepts_page_states_the_race_promise() {
+    let docs = root().join("website/docs");
+    let page = std::fs::read_to_string(docs.join("concepts/ess.md")).expect("concepts/ess.md");
+    let headings: Vec<&str> = page.lines().filter(|l| l.starts_with("## ")).collect();
+    let derived = headings
+        .iter()
+        .position(|h| *h == "## What gets derived")
+        .expect("concepts/ess.md keeps `## What gets derived`");
+    let race = headings
+        .iter()
+        .position(|h| *h == "## When commands race")
+        .expect("concepts/ess.md has the heading `## When commands race`");
+    assert!(
+        race > derived,
+        "`## When commands race` comes after `## What gets derived`"
+    );
+    let start = page.find("\n## When commands race\n").expect("heading") + 1;
+    let rest = &page[start..];
+    let section = &rest[..rest[3..].find("\n## ").map_or(rest.len(), |end| end + 3)];
+    for phrase in [
+        "one sequential order",
+        "per subject",
+        "lock local to one process",
+        "`check-history`",
+        "a single-client suite cannot see a race",
+        "subject by subject",
+        "set effect",
+        "shared partition",
+        "unanswered call",
+    ] {
+        assert!(
+            section.contains(phrase),
+            "`## When commands race` is missing {phrase}"
+        );
+    }
+    for guide in [
+        "guides/verify/one-time-responses.md",
+        "guides/verify/explore.md",
+    ] {
+        let text = std::fs::read_to_string(docs.join(guide)).expect("guide");
+        assert!(
+            text.contains("../../concepts/ess.md#when-commands-race"),
+            "{guide} links ../../concepts/ess.md#when-commands-race"
+        );
+    }
+    let explore = std::fs::read_to_string(docs.join("guides/verify/explore.md")).expect("explore");
+    let start = explore
+        .find("\n## Check a concurrent history\n")
+        .expect("explore.md keeps `## Check a concurrent history`")
+        + 1;
+    let rest = &explore[start..];
+    let section = &rest[..rest[3..].find("\n## ").map_or(rest.len(), |end| end + 3)];
+    assert!(
+        section.contains("../../concepts/ess.md#when-commands-race"),
+        "the `Check a concurrent history` section links the race promise"
+    );
+}

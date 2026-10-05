@@ -167,3 +167,90 @@ fn identical_generation_keeps_complete_enrollment_bytes_and_repairs_owned_edits(
     assert_eq!(fs::read(f.0.join("out/index.html")).unwrap(), expected);
     assert!(f.0.join("out/assets/style.css").is_file());
 }
+
+/// Set one extended attribute on an existing output, as a person or another program would.
+fn set_label(path: &Path, name: &str, value: &[u8]) -> rustix::io::Result<()> {
+    let file = fs::File::open(path).unwrap();
+    rustix::fs::fsetxattr(&file, name, value, rustix::fs::XattrFlags::empty())
+}
+
+#[test]
+fn foreign_attribute_refusal_names_output_path_and_ess_version() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let first = f.site(false);
+    assert!(first.status.success(), "{first:?}");
+    match set_label(&f.0.join("out/index.html"), "user.ess_test", b"1") {
+        Ok(()) => {}
+        Err(rustix::io::Errno::NOTSUP) => {
+            eprintln!("not run: this filesystem carries no user attributes");
+            return;
+        }
+        Err(error) => panic!("setting user.ess_test for the test: {error}"),
+    }
+    let before = snapshot(&f.0);
+    let again = f.site(false);
+    assert!(
+        !again.status.success(),
+        "a foreign attribute refuses regeneration: {again:?}"
+    );
+    let stderr = String::from_utf8_lossy(&again.stderr);
+    for expected in [
+        "user.ess_test".to_owned(),
+        "index.html".to_owned(),
+        format!("ess {}", env!("CARGO_PKG_VERSION")),
+    ] {
+        assert!(
+            stderr.contains(&expected),
+            "the refusal names {expected}: {stderr}"
+        );
+    }
+    assert_eq!(snapshot(&f.0), before, "nothing was written");
+}
+
+/// macOS attaches `com.apple.provenance` to files some processes write. Regenerating committed
+/// output over such a file succeeds and leaves it unchanged. A refused `setxattr` fails the case:
+/// the label must be on the file for the case to decide anything.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_regenerates_over_os_provenance_label() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let first = f.site(false);
+    assert!(first.status.success(), "{first:?}");
+    let target = f.0.join("out/index.html");
+    set_label(
+        &target,
+        "com.apple.provenance",
+        b"\x01\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    )
+    .expect("setting com.apple.provenance on a generated output");
+    let before = snapshot(&f.0);
+    let again = f.site(false);
+    assert!(
+        again.status.success(),
+        "regeneration over an OS provenance label succeeds: {again:?}"
+    );
+    assert_eq!(snapshot(&f.0), before, "the output is unchanged");
+}
+
+#[test]
+fn requires_pin_answers_producing_release() {
+    let page = fs::read_to_string(workspace().join("website/docs/guides/generate-artifacts.md"))
+        .expect("generate-artifacts.md");
+    let start = page
+        .find("\n## Repeated generation and recovery\n")
+        .expect("the section `## Repeated generation and recovery`");
+    let rest = &page[start + 1..];
+    let section = &rest[..rest[3..].find("\n## ").map_or(rest.len(), |end| end + 3)];
+    for phrase in [
+        "`requires: ess X.Y.Z`",
+        "producing release",
+        "specify/layout-and-validation.md",
+    ] {
+        assert!(
+            section.contains(phrase),
+            "`## Repeated generation and recovery` is missing {phrase}"
+        );
+    }
+}

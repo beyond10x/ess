@@ -48,6 +48,7 @@ specification, and it does not host the site it renders.
 |---|---|
 | Install `ess`, pin it for a project, and get from an empty directory to a passing conformance run | [Getting started](./getting-started.md) |
 | Understand what a specification declares and what is derived from it | [The model](./concepts/ess.md) |
+| Adopt ESS without generating your code, or decide how far to go | [Adopt ESS at the depth you need](./concepts/adoption-modes.md) |
 | See one command's source next to every contract generated from it | [The billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) |
 | Look up a command, a format version or a predicate | [CLI](./reference/cli.md), [format versions](./reference/spec-versions.md), [predicates](./reference/predicates.md) |
 | Know what is supported today and what is not | [Where this stands](./status/where-this-stands.md) |

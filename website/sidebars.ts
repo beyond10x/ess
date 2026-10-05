@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'concepts/overview',
         'concepts/ess',
+        'concepts/adoption-modes',
         'concepts/component-delivery',
         'concepts/test-pyramid',
       ],
@@ -46,6 +47,7 @@ const sidebars: SidebarsConfig = {
             'guides/specify/commands-and-outcomes',
             'guides/specify/selection-effects',
             'guides/specify/values-and-views',
+            'guides/specify/narrowed-inputs',
             'guides/specify/aggregate-views',
             'guides/specify/bindings-and-components',
             'guides/specify/binding-conditions',
@@ -68,6 +70,7 @@ const sidebars: SidebarsConfig = {
         },
         'guides/track-change',
         'guides/generate-artifacts',
+        'guides/commit-generated-files',
         'guides/synthesize',
         'guides/check-infrastructure',
         'guides/record-realization',
