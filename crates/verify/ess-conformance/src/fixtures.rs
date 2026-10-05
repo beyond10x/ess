@@ -81,6 +81,10 @@ impl Contract {
     }
 
     /// Admit the source type authority before invoking the fixture provider.
+    ///
+    /// A type that reaches itself only behind `Optional`, `List` or `Map` has finite values and is
+    /// admitted; one with no such boundary has none and is refused, naming the fixture input and
+    /// the members that close the cycle (beyond10x/ess#416).
     pub fn validate(&self) -> Result<(), String> {
         if self.fields.is_empty() || self.fields.len() > 256 || self.declarations.len() > 4096 {
             return Err("fixture field/declaration bound".into());
@@ -90,7 +94,7 @@ impl Contract {
             .iter()
             .map(|field| Field::new(field.name.as_str(), field.type_ref.clone()))
             .collect();
-        crate::typed_fields::validate([typed.as_slice()], &self.declarations)?;
+        crate::typed_fields::validate_input([typed.as_slice()], &self.declarations)?;
         if serde_json::to_vec(self).map_err(|e| e.to_string())?.len() > 1_048_576 {
             return Err("fixture contract byte limit".into());
         }
@@ -110,7 +114,7 @@ impl Contract {
         }
         let mut bytes = 0;
         for field in &self.fields {
-            crate::selection::validate_response_value(
+            crate::selection::validate_fixture_value(
                 &field.type_ref,
                 values.get(field.name.as_str()),
                 &self.declarations,

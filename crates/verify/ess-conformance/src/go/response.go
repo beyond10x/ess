@@ -107,11 +107,18 @@ func responseAssignable(from, to string) bool {
 	return false
 }
 func checkResponseType(declarations map[string]selectionDeclaration, source string, used, stack map[string]bool, depth int) error {
+	return checkTypedGraph(declarations, source, used, stack, depth, false)
+}
+
+// checkTypedGraph walks a closed type graph. A response refuses every recursive type; a fixture
+// input (`input`) admits one here, and finiteDeclarations decides whether it has a finite value
+// (beyond10x/ess#416).
+func checkTypedGraph(declarations map[string]selectionDeclaration, source string, used, stack map[string]bool, depth int, input bool) error {
 	if depth > 128 {
 		return fmt.Errorf("response type depth limit")
 	}
 	if inner, ok := accessorOptional(source); ok {
-		return checkResponseType(declarations, inner, used, stack, depth+1)
+		return checkTypedGraph(declarations, inner, used, stack, depth+1, input)
 	}
 	if strings.HasPrefix(source, "Map<") && !strings.HasPrefix(source, "Map<String, ") {
 		return fmt.Errorf("response map key must be String")
@@ -120,12 +127,15 @@ func checkResponseType(declarations map[string]selectionDeclaration, source stri
 		if err != nil {
 			return err
 		}
-		return checkResponseType(declarations, inner, used, stack, depth+1)
+		return checkTypedGraph(declarations, inner, used, stack, depth+1, input)
 	}
 	if source == "Json" || accessorPrimitive(source) && source != "Binary64" {
 		return nil
 	}
 	body, ok := declarations[source]
+	if ok && stack[source] && input {
+		return nil
+	}
 	if !ok || stack[source] {
 		return fmt.Errorf("missing/recursive response type")
 	}
@@ -172,11 +182,130 @@ func checkResponseType(declarations map[string]selectionDeclaration, source stri
 		return fmt.Errorf("unknown response declaration")
 	}
 	for _, child := range children {
-		if err := checkResponseType(declarations, child, used, stack, depth+1); err != nil {
+		if err := checkTypedGraph(declarations, child, used, stack, depth+1, input); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// validateFixtureTypes admits a fixture contract's closed type graph. A type that reaches itself
+// only behind Optional, List or Map has finite values, which a provider may supply and the value
+// depth guard bounds; one with no such boundary has none (beyond10x/ess#416).
+func validateFixtureTypes(fields []accessorField, declarations map[string]selectionDeclaration) error {
+	used := map[string]bool{}
+	seen := map[string]bool{}
+	for _, field := range fields {
+		if field.Name == "" || seen[field.Name] {
+			return fmt.Errorf("duplicate/empty fixture input field")
+		}
+		seen[field.Name] = true
+		if err := checkTypedGraph(declarations, field.Type, used, map[string]bool{}, 0, true); err != nil {
+			return err
+		}
+	}
+	if len(used) != len(declarations) {
+		return fmt.Errorf("unrelated fixture declarations")
+	}
+	finite := finiteDeclarations(declarations)
+	for _, field := range fields {
+		if name := unfiniteFrom(declarations, field.Type, finite, map[string]bool{}); name != "" {
+			return fmt.Errorf("fixture input %s has no finite value: %s recurs with no Optional, List or Map boundary", field.Name, name)
+		}
+	}
+	return nil
+}
+
+// declarationChildren are the type references a declaration holds, union variants in label order.
+func declarationChildren(body selectionDeclaration) []string {
+	children := []string{}
+	switch body.Kind {
+	case "newtype":
+		children = append(children, body.Of)
+	case "struct":
+		for _, field := range body.Fields {
+			children = append(children, field.Type)
+		}
+	case "union":
+		var variants map[string]string
+		_ = json.Unmarshal(body.Variants, &variants)
+		labels := make([]string, 0, len(variants))
+		for label := range variants {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+		for _, label := range labels {
+			children = append(children, variants[label])
+		}
+	}
+	return children
+}
+
+// finiteDeclarations is the model's inhabitation rule: the least fixpoint in which Optional, List
+// and Map are base cases, a struct needs every field and a union one variant.
+func finiteDeclarations(declarations map[string]selectionDeclaration) map[string]bool {
+	finite := map[string]bool{}
+	inhabited := func(source string) bool {
+		if _, ok := accessorOptional(source); ok {
+			return true
+		}
+		if _, ok, _ := accessorCollection(source); ok {
+			return true
+		}
+		if _, declared := declarations[source]; !declared {
+			return true
+		}
+		return finite[source]
+	}
+	for grew := true; grew; {
+		grew = false
+		for name, body := range declarations {
+			if finite[name] {
+				continue
+			}
+			children := declarationChildren(body)
+			admitted := body.Kind != "union"
+			for _, child := range children {
+				if body.Kind == "union" && inhabited(child) {
+					admitted = true
+					break
+				}
+				if body.Kind != "union" && !inhabited(child) {
+					admitted = false
+					break
+				}
+			}
+			if admitted {
+				finite[name] = true
+				grew = true
+			}
+		}
+	}
+	return finite
+}
+
+// unfiniteFrom is the first declaration with no finite value that source reaches, or "".
+func unfiniteFrom(declarations map[string]selectionDeclaration, source string, finite, seen map[string]bool) string {
+	if inner, ok := accessorOptional(source); ok {
+		return unfiniteFrom(declarations, inner, finite, seen)
+	}
+	if inner, ok, _ := accessorCollection(source); ok {
+		return unfiniteFrom(declarations, inner, finite, seen)
+	}
+	body, declared := declarations[source]
+	if !declared || seen[source] {
+		return ""
+	}
+	if !finite[source] {
+		return source
+	}
+	seen[source] = true
+	for _, child := range declarationChildren(body) {
+		if name := unfiniteFrom(declarations, child, finite, seen); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 func (r responseObservation) compare(response, payload map[string]Node) error {
 	if err := r.validate(); err != nil {

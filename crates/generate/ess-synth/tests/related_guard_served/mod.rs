@@ -215,9 +215,20 @@ fn clear_generated_packages(root: &Path, target_dir: &Path) {
 
 /// What each scenario of the suite `ir` synthesizes reported against the entry point `binary`.
 pub fn run(ir: &EssIr, binary: &Path) -> BTreeMap<String, Status> {
+    run_with_fixtures(ir, binary, None)
+}
+
+/// [`run`], with `fixtures` supplied as the independently provisioned values of every scenario
+/// that resolves fixtures before it starts; `None` leaves the adapter without a provider.
+pub fn run_with_fixtures(
+    ir: &EssIr,
+    binary: &Path,
+    fixtures: Option<BTreeMap<String, ess_primitives::node::Node>>,
+) -> BTreeMap<String, Status> {
     let suite = ess_conformance::synthesize(ir).suite;
     let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).expect("admitted");
-    let adapter = HttpTarget::new(binary, ir);
+    let mut adapter = HttpTarget::new(binary, ir);
+    adapter.fixtures = fixtures;
     let report = ess_conformance::Runner::for_suite(&suite)
         .run_admitted(&admitted, &adapter)
         .into_report();
@@ -377,6 +388,7 @@ struct HttpTarget {
     routes: BTreeMap<String, (String, String)>,
     events: std::cell::RefCell<Vec<ess_conformance::ObservedEvent>>,
     sequence: std::cell::Cell<u64>,
+    fixtures: Option<BTreeMap<String, ess_primitives::node::Node>>,
 }
 
 impl HttpTarget {
@@ -399,6 +411,7 @@ impl HttpTarget {
             routes,
             events: std::cell::RefCell::default(),
             sequence: std::cell::Cell::new(0),
+            fixtures: None,
         }
     }
 
@@ -427,6 +440,20 @@ fn json_of(node: &ess_primitives::node::Node) -> serde_json::Value {
 }
 
 impl ess_conformance::ConformanceTarget for HttpTarget {
+    fn fixture_values(
+        &self,
+        _: &ess_conformance::ScenarioContext,
+        _: &ess_conformance::fixtures::Contract,
+    ) -> Result<BTreeMap<String, ess_primitives::node::Node>, ess_conformance::TargetError> {
+        // Without values the adapter answers as a target with no provider does.
+        self.fixtures.clone().ok_or_else(|| {
+            ess_conformance::TargetError::unsupported(
+                "fixture values",
+                "no pre-execution fixture provider",
+            )
+        })
+    }
+
     fn identity(
         &self,
     ) -> Result<ess_conformance::ImplementationIdentity, ess_conformance::TargetError> {

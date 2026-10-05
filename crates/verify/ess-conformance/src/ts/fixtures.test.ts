@@ -203,3 +203,57 @@ test('delivery invocation selectors and expected inputs admit fixture references
     assert.throws(() => admitFixtureSteps([observation]), /fixture declarations/);
   }
 });
+
+// beyond10x/ess#416: a type that reaches itself only through Optional, List or Map has finite
+// values, which a fixture may supply; one with no such boundary has none and stays refused.
+test('recursive fixture contracts admit terminated recursion and refuse required recursion', () => {
+  const value = 'probe.Value';
+  const recursive = (declarations: Record<string, Node>) => ({
+    fields: [{ name: 'finite-value', type: value }],
+    declarations,
+  });
+  const struct = (...fields: [string, string][]) => ({
+    kind: 'struct',
+    fields: fields.map(([name, type]) => ({ name, type })),
+  });
+  const list = admitFixtures(
+    recursive({ [value]: struct(['text', 'String'], ['children', `List<${value}>`]) }),
+  );
+  for (const declarations of [
+    { [value]: struct(['text', 'String'], ['next', `Optional<${value}>`]) },
+    { [value]: struct(['named', `Map<String, ${value}>`]) },
+    {
+      [value]: { kind: 'union', tag: 'kind', variants: { leaf: 'String', pair: 'probe.Pair' } },
+      'probe.Pair': struct(['left', value], ['right', value]),
+    },
+  ]) {
+    admitFixtures(recursive(declarations));
+  }
+  for (const declarations of [
+    { [value]: struct(['text', 'String'], ['self', value]) },
+    {
+      [value]: struct(['text', 'String'], ['other', 'probe.Other']),
+      'probe.Other': struct(['back', value]),
+    },
+  ]) {
+    assert.throws(
+      () => admitFixtures(recursive(declarations)),
+      /fixture input finite-value has no finite value/,
+    );
+  }
+  const tree = {
+    text: 'root',
+    children: [
+      { text: 'a', children: [] },
+      { text: 'b', children: [{ text: 'c', children: [] }] },
+    ],
+  };
+  const resolved = fixtureValues(list, { 'finite-value': tree });
+  assert.deepEqual(JSON.parse(JSON.stringify(resolved)), { 'finite-value': tree });
+  const wrong = JSON.parse(JSON.stringify(tree).replace('"text":"c"', '"text":5'));
+  assert.throws(() => fixtureValues(list, { 'finite-value': wrong }));
+  let deep: Node = { text: 'deep', children: [] };
+  for (let level = 0; level < 70; level++) deep = { text: 'deep', children: [deep] };
+  // Either depth guard may stop it first: the copy's JSON nesting or the typed walk's.
+  assert.throws(() => fixtureValues(list, { 'finite-value': deep }), /resource|JSON nesting/);
+});

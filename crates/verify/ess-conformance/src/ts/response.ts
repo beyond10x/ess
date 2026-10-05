@@ -635,6 +635,104 @@ export function validateTypedFields(
   }
 }
 
+/**
+ * Admit a fixture contract's closed type graph. A type that reaches itself only behind Optional,
+ * List or Map has finite values, which a provider may supply and the value depth guard bounds; one
+ * with no such boundary has none (beyond10x/ess#416).
+ */
+export function validateFixtureTypes(
+  fields: AccessorField[],
+  declarations: Record<string, SelectionDeclaration>,
+): void {
+  const used = new Set<string>();
+  const seen = new Set<string>();
+  for (const field of fields) {
+    if (field.name === '' || seen.has(field.name)) {
+      throw new Error('duplicate/empty fixture input field');
+    }
+    seen.add(field.name);
+    checkType({ declarations }, field.type, used, new Set<string>(), 0, false, true);
+  }
+  if (used.size !== Object.keys(declarations).length) {
+    throw new Error('unrelated fixture declarations');
+  }
+  const finite = finiteDeclarations(declarations);
+  for (const field of fields) {
+    const name = unfiniteFrom(declarations, field.type, finite, new Set<string>());
+    if (name !== undefined) {
+      throw new Error(
+        `fixture input ${field.name} has no finite value: ${name} recurs with no Optional, List or Map boundary`,
+      );
+    }
+  }
+}
+
+/** The type references a declaration holds, union variants in label order. */
+function declarationChildren(body: SelectionDeclaration): string[] {
+  switch (body.kind) {
+    case 'newtype':
+      return [body.of ?? ''];
+    case 'struct':
+      return (body.fields ?? []).map((field) => field.type);
+    case 'union': {
+      const variants = body.variants as Record<string, string>;
+      return Object.keys(variants)
+        .sort()
+        .map((label) => variants[label]!);
+    }
+    default:
+      return [];
+  }
+}
+
+/**
+ * The model's inhabitation rule: the least fixpoint in which Optional, List and Map are base
+ * cases, a struct needs every field and a union one variant.
+ */
+function finiteDeclarations(declarations: Record<string, SelectionDeclaration>): Set<string> {
+  const finite = new Set<string>();
+  const inhabited = (source: string): boolean =>
+    accessorOptional(source)[1] ||
+    accessorCollection(source)[1] ||
+    owned(declarations, source) === undefined ||
+    finite.has(source);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [name, body] of Object.entries(declarations)) {
+      if (finite.has(name)) continue;
+      const children = declarationChildren(body);
+      const admitted = body.kind === 'union' ? children.some(inhabited) : children.every(inhabited);
+      if (admitted) {
+        finite.add(name);
+        grew = true;
+      }
+    }
+  }
+  return finite;
+}
+
+/** The first declaration with no finite value that `source` reaches. */
+function unfiniteFrom(
+  declarations: Record<string, SelectionDeclaration>,
+  source: string,
+  finite: Set<string>,
+  seen: Set<string>,
+): string | undefined {
+  const [inner, optional] = accessorOptional(source);
+  if (optional) return unfiniteFrom(declarations, inner, finite, seen);
+  const [item, collection] = accessorCollection(source);
+  if (collection) return unfiniteFrom(declarations, item, finite, seen);
+  const body = owned(declarations, source);
+  if (body === undefined || seen.has(source)) return undefined;
+  if (!finite.has(source)) return source;
+  seen.add(source);
+  for (const child of declarationChildren(body)) {
+    const name = unfiniteFrom(declarations, child, finite, seen);
+    if (name !== undefined) return name;
+  }
+  return undefined;
+}
+
 /** A response field's type holds a target's type, widening only into `Optional`. */
 export function responseAssignable(from: string, to: string): boolean {
   if (from === to) {
@@ -654,13 +752,14 @@ function checkType(
   stack: Set<string>,
   depth: number,
   allowJson = false,
+  input = false,
 ): void {
   if (depth > DEPTH_LIMIT) {
     throw new Error('response type depth limit');
   }
   const [inner, optional] = accessorOptional(source);
   if (optional) {
-    checkType(observation, inner, used, stack, depth + 1, allowJson);
+    checkType(observation, inner, used, stack, depth + 1, allowJson, input);
     return;
   }
   if (source.startsWith('Map<') && !source.startsWith('Map<String, ')) {
@@ -668,13 +767,18 @@ function checkType(
   }
   const [item, collection] = accessorCollection(source);
   if (collection) {
-    checkType(observation, item, used, stack, depth + 1, allowJson);
+    checkType(observation, item, used, stack, depth + 1, allowJson, input);
     return;
   }
   if ((allowJson && source === 'Json') || (accessorPrimitive(source) && source !== 'Binary64')) {
     return;
   }
   const body = owned(observation.declarations, source);
+  // A fixture input admits recursion here; `finiteDeclarations` decides whether it has a finite
+  // value (beyond10x/ess#416). A response refuses every recursive type.
+  if (body !== undefined && stack.has(source) && input) {
+    return;
+  }
   if (body === undefined || stack.has(source)) {
     throw new Error('missing/recursive response type');
   }
@@ -737,7 +841,7 @@ function checkType(
         throw new Error('unknown response declaration');
     }
     for (const child of children) {
-      checkType(observation, child, used, stack, depth + 1, allowJson);
+      checkType(observation, child, used, stack, depth + 1, allowJson, input);
     }
   } finally {
     stack.delete(source);

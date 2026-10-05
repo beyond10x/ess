@@ -38,7 +38,7 @@ func (c FixtureContract) validate() error {
 			return err
 		}
 	}
-	if err := validateTypedFields([][]accessorField{c.Fields}, c.Declarations); err != nil {
+	if err := validateFixtureTypes(c.Fields, c.Declarations); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(c)

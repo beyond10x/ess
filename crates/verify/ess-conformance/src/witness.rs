@@ -3401,6 +3401,12 @@ impl<'ir> Builder<'ir> {
                 Some(Choice::Null) => return Ok(Some(Node::Null)),
                 _ => {}
             }
+            // Absence is the base case of a type that refers to itself through `Optional`
+            // (beyond10x/ess#416): filling this member would build a type already under
+            // construction again, the same way, to the depth limit.
+            if rebuilds(self.ir, type_ref, &self.building) {
+                return Ok(None);
+            }
         }
         self.value(type_ref, path, overrides, depth, record)
             .map(Some)
@@ -3828,6 +3834,51 @@ fn reaches(ir: &EssIr, type_ref: &ResolvedTypeRef, building: &[String]) -> bool 
                     ResolvedBody::Union { variants, .. } => variants
                         .values()
                         .any(|variant| walk(ir, variant, building, seen)),
+                    ResolvedBody::Struct { fields, .. } => fields
+                        .iter()
+                        .any(|field| walk(ir, &field.type_ref, building, seen)),
+                }
+            }
+        }
+    }
+    !building.is_empty() && walk(ir, type_ref, building, &mut BTreeSet::new())
+}
+
+/// Whether the base value of `type_ref` would build one of the declared types in `building`
+/// again: the builder's own choices, followed — every member filled, a union's first variant,
+/// and no list or map, whose base is empty or [`reaches`]'s to bound.
+///
+/// Such a value has no end, so where this holds for an `Optional` member, leaving it out is the
+/// only finite base. A model where it holds was refused at the depth limit before this rule, so
+/// no witness that was built before changes.
+fn rebuilds(ir: &EssIr, type_ref: &ResolvedTypeRef, building: &[String]) -> bool {
+    fn walk(
+        ir: &EssIr,
+        type_ref: &ResolvedTypeRef,
+        building: &[String],
+        seen: &mut BTreeSet<String>,
+    ) -> bool {
+        match type_ref {
+            ResolvedTypeRef::Primitive { .. }
+            | ResolvedTypeRef::List { .. }
+            | ResolvedTypeRef::Map { .. } => false,
+            ResolvedTypeRef::Optional { of } => walk(ir, of, building, seen),
+            ResolvedTypeRef::Declared { name } => {
+                let declared = ir.named_type(name);
+                let spelled = declared.name.to_string();
+                if building.contains(&spelled) {
+                    return true;
+                }
+                if !seen.insert(spelled) {
+                    return false;
+                }
+                match &declared.body {
+                    ResolvedBody::Newtype { of, .. } => walk(ir, of, building, seen),
+                    ResolvedBody::Enum { .. } => false,
+                    ResolvedBody::Union { variants, .. } => variants
+                        .values()
+                        .next()
+                        .is_some_and(|variant| walk(ir, variant, building, seen)),
                     ResolvedBody::Struct { fields, .. } => fields
                         .iter()
                         .any(|field| walk(ir, &field.type_ref, building, seen)),

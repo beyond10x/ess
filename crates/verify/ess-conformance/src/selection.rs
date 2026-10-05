@@ -540,6 +540,7 @@ fn validate_value(
         depth,
         ValueProfile::Selection,
     )
+    .map_err(|error| error.code)
 }
 pub(crate) fn validate_response_value(
     ty: &TypeRef,
@@ -548,6 +549,25 @@ pub(crate) fn validate_response_value(
     bytes: &mut usize,
 ) -> Result<(), &'static str> {
     validate_value_inner(ty, value, declarations, bytes, 0, ValueProfile::Response)
+        .map_err(|error| error.code)
+}
+
+/// A response-profile check of an independently supplied fixture value, naming where it failed.
+///
+/// The value may be a finite instance of a recursive type (beyond10x/ess#416); the depth guard
+/// bounds the walk, and a value deeper than it is refused at the member the guard stopped at.
+pub(crate) fn validate_fixture_value(
+    ty: &TypeRef,
+    value: Option<&Node>,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    bytes: &mut usize,
+) -> Result<(), String> {
+    validate_value_inner(ty, value, declarations, bytes, 0, ValueProfile::Response).map_err(
+        |error| match error.path() {
+            path if path.is_empty() => error.code.to_owned(),
+            path => format!("{} at `{path}`", error.code),
+        },
+    )
 }
 
 pub(crate) fn validate_direct_response_value(
@@ -564,6 +584,54 @@ pub(crate) fn validate_direct_response_value(
         0,
         ValueProfile::DirectResponse,
     )
+    .map_err(|error| error.code)
+}
+
+/// Why a value was refused, and the members and items from the root down to where.
+///
+/// The path is collected only on the way out of a failure, innermost member first, so a value
+/// that is admitted costs nothing for it.
+struct ValueError {
+    code: &'static str,
+    reversed: Vec<Segment>,
+}
+
+enum Segment {
+    Member(String),
+    Item(usize),
+    Key(String),
+}
+
+impl From<&'static str> for ValueError {
+    fn from(code: &'static str) -> Self {
+        Self {
+            code,
+            reversed: Vec::new(),
+        }
+    }
+}
+
+impl ValueError {
+    fn within(mut self, segment: Segment) -> Self {
+        self.reversed.push(segment);
+        self
+    }
+
+    /// `children[1].text`, `named["a b"].text`: members dotted, items and map keys bracketed.
+    fn path(&self) -> String {
+        use std::fmt::Write as _;
+        let mut path = String::new();
+        for segment in self.reversed.iter().rev() {
+            // Writing into a `String` cannot fail.
+            let _ = match segment {
+                Segment::Member(name) if path.is_empty() => write!(path, "{name}"),
+                Segment::Member(name) => write!(path, ".{name}"),
+                Segment::Item(index) => write!(path, "[{index}]"),
+                Segment::Key(key) => write!(path, "[{key:?}]"),
+            };
+        }
+        path
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -602,6 +670,44 @@ impl ValueProfile {
     }
 }
 
+/// [`validate_value_inner`]'s arm for a declared struct, whose members sit one level below it.
+fn validate_struct_value(
+    fields: &[Field],
+    value: &Node,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    bytes: &mut usize,
+    depth: usize,
+    profile: ValueProfile,
+) -> Result<(), ValueError> {
+    let Node::Map(values) = value else {
+        return Err("invalid_input".into());
+    };
+    if profile.closed() {
+        if let Some(unknown) = values
+            .keys()
+            .find(|key| !fields.iter().any(|f| &f.name == *key))
+        {
+            return Err(ValueError::from("invalid_input").within(Segment::Member(unknown.clone())));
+        }
+    }
+    for field in fields {
+        *bytes = bytes.saturating_add(field.name.len());
+        profile
+            .presence(field, values.get(&field.name))
+            .map_err(|code| ValueError::from(code).within(Segment::Member(field.name.clone())))?;
+        validate_value_inner(
+            &field.type_ref,
+            values.get(&field.name),
+            declarations,
+            bytes,
+            depth + 1,
+            profile,
+        )
+        .map_err(|error| error.within(Segment::Member(field.name.clone())))?;
+    }
+    Ok(())
+}
+
 fn validate_value_inner(
     ty: &TypeRef,
     value: Option<&Node>,
@@ -609,9 +715,9 @@ fn validate_value_inner(
     bytes: &mut usize,
     depth: usize,
     profile: ValueProfile,
-) -> Result<(), &'static str> {
+) -> Result<(), ValueError> {
     if depth > 128 || *bytes > 1_048_576 {
-        return Err("resource");
+        return Err("resource".into());
     }
     if let TypeRef::Optional(of) = ty {
         return if value.is_none() || matches!(value, Some(Node::Null)) {
@@ -631,45 +737,31 @@ fn validate_value_inner(
                     *bytes = bytes.saturating_add(text.len());
                     Ok(())
                 }
-                _ => Err("invalid_input"),
+                _ => Err("invalid_input".into()),
             },
             Declaration::Struct { fields } => {
-                let Node::Map(values) = value else {
-                    return Err("invalid_input");
-                };
-                if profile.closed()
-                    && values
-                        .keys()
-                        .any(|key| !fields.iter().any(|f| &f.name == key))
-                {
-                    return Err("invalid_input");
-                }
-                for field in fields {
-                    *bytes = bytes.saturating_add(field.name.len());
-                    profile.presence(field, values.get(&field.name))?;
-                    validate_value_inner(
-                        &field.type_ref,
-                        values.get(&field.name),
-                        declarations,
-                        bytes,
-                        depth + 1,
-                        profile,
-                    )?;
-                }
-                Ok(())
+                validate_struct_value(fields, value, declarations, bytes, depth, profile)
             }
             Declaration::Union { tag, variants } => {
                 let Node::Map(values) = value else {
-                    return Err("invalid_input");
+                    return Err("invalid_input".into());
                 };
                 let Some(Node::Text(label)) = values.get(tag) else {
-                    return Err("invalid_input");
+                    return Err(
+                        ValueError::from("invalid_input").within(Segment::Member(tag.clone()))
+                    );
                 };
                 let content = ess_gen::schema::union_content_key(tag);
-                if profile.closed() && values.keys().any(|key| key != tag && key != content) {
-                    return Err("invalid_input");
+                if profile.closed() {
+                    if let Some(unknown) = values.keys().find(|key| *key != tag && *key != content)
+                    {
+                        return Err(ValueError::from("invalid_input")
+                            .within(Segment::Member(unknown.clone())));
+                    }
                 }
-                let ty = variants.get(label).ok_or("invalid_input")?;
+                let ty = variants.get(label).ok_or_else(|| {
+                    ValueError::from("invalid_input").within(Segment::Member(tag.clone()))
+                })?;
                 validate_value_inner(
                     ty,
                     values.get(content),
@@ -678,35 +770,40 @@ fn validate_value_inner(
                     depth + 1,
                     profile,
                 )
+                .map_err(|error| error.within(Segment::Member(content.to_owned())))
             }
         },
-        TypeRef::Primitive(kind) => validate_primitive(*kind, value, bytes, depth, profile),
+        TypeRef::Primitive(kind) => {
+            validate_primitive(*kind, value, bytes, depth, profile).map_err(ValueError::from)
+        }
         TypeRef::List(of) => {
             let Node::Seq(values) = value else {
-                return Err("invalid_input");
+                return Err("invalid_input".into());
             };
             if values.len() > profile.collection_limit() {
-                return Err("resource");
+                return Err("resource".into());
             }
-            for value in values {
-                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, profile)?;
+            for (index, value) in values.iter().enumerate() {
+                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, profile)
+                    .map_err(|error| error.within(Segment::Item(index)))?;
             }
             Ok(())
         }
         TypeRef::Map(key, of) if profile.closed() && *key == ess_domain::Primitive::String => {
             let Node::Map(values) = value else {
-                return Err("invalid_input");
+                return Err("invalid_input".into());
             };
             if values.len() > profile.collection_limit() {
-                return Err("resource");
+                return Err("resource".into());
             }
             for (name, child) in values {
                 *bytes = bytes.saturating_add(name.len());
-                validate_value_inner(of, Some(child), declarations, bytes, depth + 1, profile)?;
+                validate_value_inner(of, Some(child), declarations, bytes, depth + 1, profile)
+                    .map_err(|error| error.within(Segment::Key(name.clone())))?;
             }
             Ok(())
         }
-        TypeRef::Map(_, _) => Err("unsupported"),
+        TypeRef::Map(_, _) => Err("unsupported".into()),
         TypeRef::Optional(_) => unreachable!(),
     }
 }

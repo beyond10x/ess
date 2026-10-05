@@ -715,6 +715,21 @@ impl Inhabitation {
     }
 }
 
+impl TypeRegistry {
+    /// Every declaration `check_inhabitation` refuses: the ones no finite value can inhabit.
+    ///
+    /// The one termination rule, for a reader outside this crate that holds a closed registry of
+    /// its own — a conformance fixture contract, say (beyond10x/ess#416). `Optional`, `List` and
+    /// `Map` are base cases and a union needs one buildable variant, so a type that reaches itself
+    /// only through one of those is absent from this set. Like `Inhabitation::refuses_declaration`
+    /// it answers about declarations, and it is silent about one whose only blocker is a name the
+    /// registry does not hold.
+    #[must_use]
+    pub fn without_finite_value(&self) -> BTreeSet<QualifiedName> {
+        Inhabitation::of(self).refused
+    }
+}
+
 /// Reports every type no value can inhabit.
 ///
 /// The set is [`Inhabitation::refused`], and every other pass that stays silent because this one
