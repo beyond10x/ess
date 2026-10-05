@@ -886,7 +886,10 @@ pub struct ResolvedOutcome {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub retains_result: bool,
     /// Compiler-minted source/7 requirement: observe the complete held subject and zero direct
-    /// events for an ordinary named wrong-state refusal. This grants no product effect authority.
+    /// events for an ordinary named wrong-state refusal, and from source/23 for a named refusal
+    /// selected by `when_subject: {predicate: …}` that names no subject of its own
+    /// (beyond10x/ess#461); validation admits no such refusal in the `{field, equals}` shape. This
+    /// grants no product effect authority.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub complete_refusal: bool,
     /// How a generated test reaches this branch.

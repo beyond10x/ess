@@ -282,9 +282,40 @@ and dispatches it. A `read_your_writes` view is read once; where the only such v
 the observation goes in an `eventually` block that waits until the view shows the arranged parcel.
 A refused parcel is asserted unchanged only through a `read_your_writes` view: an `eventual` view
 that has not caught up shows the old row too, so without one that check is left out.
+From `ess/23` a refused record is asserted unchanged in every field, not only in the guarded ones:
+the scenario snapshots the whole record before the command and compares it afterwards, as it does
+for a `wrong_state` refusal. A target that refuses and still writes a field the guard does not
+read fails. Where the `read_your_writes` views do not project every field, the suite compares what
+they project and names the rest in a note. Below `ess/23` only the guarded fields are compared.
 In a state the command does not move from, no branch is selected by the stored fields, and the
 refusal scenario sends the command as it does for a command without `when_subject`. The older
 `when_subject: {field, equals}` form keeps `ess/6`.
+
+A command that refuses a changed stored field and updates the record only while it is `Active`
+cannot write `when_subject_state: Active` on the update beside the `when_subject:` refusal: the
+two strategies stay apart, and the command is refused `ESS-COMMAND-004`, whose hint names this
+form. Read the held state in the predicate instead: `when_subject: {predicate: state != Active}`
+on a refusal declared before the update, which then needs no guard of its own:
+
+```yaml
+- name: seed-change-refused
+  when_subject:
+    predicate: seed_digest != input.seed_digest
+  error: demo.inst.SeedChangeRefused
+- name: not-active
+  when_subject:
+    predicate: state != Active
+  error: demo.inst.InstanceNotActive
+- name: updated
+  updates: demo.inst.Instance
+  instance: name
+  sets: {description: input.description}
+```
+
+Declaration order decides which refusal answers when both hold. From `ess/23` a refusal whose
+predicate reads `state` is witnessed on a record in each state it claims. With the states `Active`,
+`Suspended` and `Removed`, `not-active` is witnessed on a suspended record and on a removed one, so
+a target that updates a suspended record fails.
 
 ## An outcome the input cannot decide says that too
 

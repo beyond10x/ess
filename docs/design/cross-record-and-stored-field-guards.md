@@ -273,6 +273,22 @@ and that check is omitted where no immediate view projects it. The scenario stil
 outcome, the error and that no event was published. `unknown_instance:` does not compete for
 selection beside the guarded branches.
 
+From `ess/23` (beyond10x/ess#461) a refusal selected by `when_subject: {predicate: …}` that
+names no subject of its own compiles with `complete_refusal`, as a named wrong-state refusal has
+since `ess/7`. The `{field, equals}` shape gives no such refusal: validation refuses a
+`{field, equals}` branch that names no subject (`conflicting_declaration`, "a subject-state guard
+requires an existing moves or updates subject"). Its scenario snapshots the complete subject before
+the command (`snapshot_complete_subject`) and requires it unchanged after it
+(`expect_complete_subject_unchanged`), with no direct event (`expect_no_events`), through
+`preserve_refused_subject`: a target that refuses and still writes a field the guard does not
+read fails. So that a write is visible, every input an accepting branch's `sets:` writes into the
+record is sent with a value other than the one the arranged record stores, where the input still
+selects the refusal (`subject_fact::refused_writes_apart`). Where the immediate views cover only part of the subject, the published fields are
+observed and the rest named in a `PartialObservation` note (beyond10x/ess#132), and no new
+synthesis refusal arises. Below `ess/23` the guarded-field observation above stands, and the
+suite keeps its bytes. Changing the format moves the IR header, which `ess verify diff` reports as
+`outcome-observation-changed`.
+
 **Wrong state.** A guarded branch is selected in any state, before `wrong_state:` applies: the
 stored fields select a branch in a state no move of the command starts from, exactly as they do in
 one it does start from. Entity Runtime orders branches that way (input-guarded refusals, the other
@@ -348,6 +364,13 @@ beside `when_subject` for the lifecycle complement, which the ess/6 fixture
 (`crates/verify/ess-conformance/tests/fixtures/subject-history.yaml`) already does. From `ess/18`
 `state` is also a leaf of the fact strategy's predicate (below); the lifecycle strategy and the
 refusal on mixing the two in one command are unchanged.
+
+beyond10x/ess#461 asked for `when_subject:` and `when_subject_state:` on different branches of one
+command, with a joint state × stored-field partition. That is declined: it is a second spelling of
+`state ==` within one command and reopens this split. The refusal (`conflicting_declaration`,
+`ESS-COMMAND-004`) keeps its code and message, and gains a hint naming the form that states the
+same command, `when_subject: {predicate: state == Active}` on the update or
+`when_subject: {predicate: state != Active}` on a refusal declared before it.
 
 ### Projections
 
@@ -431,6 +454,17 @@ as a closed domain. No entity field can be named `state`.
   `S` is decided by that search over every branch together, input halves included: where no input
   and row miss them all, their rows are the scenario. A branch that may be taken in `S` and that no
   bounded arrangement reaches refuses the scenario with that cause; no state is dropped.
+- **Claimed states.** From `ess/23` (beyond10x/ess#461) the same rule holds for a refusal's own
+  scenario: a `complete_refusal` refusal whose predicate reads `state` is witnessed, beside its
+  first row, on a further row in each other declared state where the predicate with `state` bound
+  alone is not false (`subject_fact::claimed_states`), and where no guarded branch declared before
+  it is selected by `state` alone, since declaration order answers there with that branch.
+  `state != Active` over `Active`, `Suspended`, `Removed` is witnessed on a suspended and a
+  removed row, each with the complete snapshot, so a target that accepts the command on either
+  fails; declared after `state == Removed`, it is witnessed on the suspended row only. A state no
+  bounded arrangement reaches the refusal in is refused beside the scenario, which stands: the
+  refusal reads "has a scenario … that leaves a held state it claims unwitnessed", and a search
+  that found no row names the state.
 - **Runtimes.** Entity Runtime lowers `state` to `$from_state`: `$state` in an outcome selector
   is the destination, which entity-core refuses. The interpreted target does not evaluate a
   subject guard and reports such a scenario `unsupported`, naming the guard.
