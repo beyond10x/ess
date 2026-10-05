@@ -133,6 +133,9 @@ impl Emitter<'_> {
                         .expect("String write");
                 }
                 output.push_str("}\n");
+                if let Some(attributes) = self.plan.attributes.get(&node.pointer) {
+                    accessors(&mut output, name, &values, attributes);
+                }
                 self.output.insert(name.to_owned(), output);
                 return;
             }
@@ -407,4 +410,49 @@ pub(super) fn package_name(name: &str) -> bool {
             "serde_json",
         ]
         .contains(&name)
+}
+
+/// One accessor per typed variant attribute of the enum `name` (`ess/23`, beyond10x/ess#450),
+/// answering each variant's value: `bool`, `i64`, or the text — a `Decimal` as its decimal string —
+/// and `Option` of these where a variant may leave the attribute unfilled.
+fn accessors(
+    output: &mut String,
+    name: &str,
+    values: &BTreeSet<String>,
+    attributes: &[super::EnumAttribute],
+) {
+    writeln!(output, "\nimpl {name} {{").expect("String write");
+    for attribute in attributes {
+        let ty = match attribute.kind.as_str() {
+            "boolean" => "bool",
+            "integer" => "i64",
+            _ => "&'static str",
+        };
+        let ty = if attribute.optional {
+            format!("Option<{ty}>")
+        } else {
+            ty.to_owned()
+        };
+        writeln!(
+            output,
+            "    /// The `{}` each variant declares.\n    pub fn {}(&self) -> {ty} {{\n        match self {{",
+            attribute.name,
+            field_name(&attribute.name)
+        )
+        .expect("String write");
+        for (index, wire) in values.iter().enumerate() {
+            let value = attribute.values.get(wire).map(|value| match value {
+                serde_json::Value::String(text) => format!("{text:?}"),
+                other => other.to_string(),
+            });
+            let value = match (value, attribute.optional) {
+                (Some(value), true) => format!("Some({value})"),
+                (None, _) => "None".to_owned(),
+                (Some(value), false) => value,
+            };
+            writeln!(output, "            Self::V{index} => {value},").expect("String write");
+        }
+        output.push_str("        }\n    }\n");
+    }
+    output.push_str("}\n");
 }

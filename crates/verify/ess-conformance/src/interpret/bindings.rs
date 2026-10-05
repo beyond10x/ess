@@ -327,7 +327,12 @@ fn mapped(
     for field in &binding.mapping {
         let value = match &field.value {
             ResolvedMappingValue::EventField { field, .. } => payload.get(field).cloned(),
-            ResolvedMappingValue::Literal { value } => Some(Node::Text(value.clone())),
+            // Typed against the input it fills: `true` over a `Boolean`, never the text `"true"`
+            // (beyond10x/ess#445).
+            ResolvedMappingValue::Literal { value } => Some(
+                crate::input::mapping_literal(ir, &field.target_type, value)
+                    .ok_or_else(|| unsupported("binding constant is not a value of its input"))?,
+            ),
             ResolvedMappingValue::DeliveryContext { field, .. } => {
                 context.and_then(|values| values.get(field)).cloned()
             }

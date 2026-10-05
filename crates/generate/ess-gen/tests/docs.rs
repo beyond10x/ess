@@ -952,10 +952,10 @@ fn adversary_literal_docs_do_not_invent_a_representation_for_optional_cycles() {
 
 #[test]
 fn adversary_literal_docs_cannot_be_generated_from_nontext_literal_inputs() {
+    // `'1'` is a value of `Integer` and `Decimal`, as it is in `sets:` (beyond10x/ess#445), and
+    // is no value of `Boolean`.
     for target in [
-        "Integer",
         "Boolean",
-        "Decimal",
         "Uuid",
         "List<String>",
         "Map<String, String>",

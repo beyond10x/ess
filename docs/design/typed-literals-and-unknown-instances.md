@@ -51,6 +51,7 @@ diagnostic with a repair instead of a parser error.
 |---|---|---|
 | `sets:` | `RawPayloadSource` | as above |
 | `payload:` | `RawPayloadSource` | as above; one reader for both |
+| `mapping:` (a binding) | `AuthoredMappingSource` (`MappingSource::Scalar`) | as above, by the same function (beyond10x/ess#445): `'true'` and `true` fill a `Boolean` input, `3` over text is refused with `quote it`; an admitted constant compiles to `ResolvedMappingValue::Literal`, read against the target type by every target. A target no literal spells keeps the binding's own refusal, which names a field of the event as the source instead of an input |
 | `when_subject: {field, equals}` | an enum variant name | unchanged: it names a variant, never a number or a boolean, and a typed scalar there would be refused by the enum check anyway |
 | predicates (`when:`, `when_subject: {predicate}`, invariants, filters) | already typed (`quantity: {gte: 5}`) | unchanged |
 | fixtures | no source-format position; authored scenarios and suites are JSON and already typed | unchanged |

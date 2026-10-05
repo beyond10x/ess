@@ -685,6 +685,9 @@ pub(crate) fn resolutions(
     written: &Written,
 ) -> Vec<(Site, Predicate)> {
     use crate::command::subject_fact::INPUT_NAMESPACE;
+    // A read of an enum attribute (ess/23, beyond10x/ess#450) is lowered to membership in the
+    // environment each site is resolved in, so no later pass reads one.
+    use crate::expression::attributes::lower;
     use crate::expression::{
         read_input_namespace, resolve_lexical, resolve_lexical_reading, DomainEnvironment,
     };
@@ -709,9 +712,10 @@ pub(crate) fn resolutions(
                     lexical: &LexicalPredicate| {
         let environment = DomainEnvironment::new(registry, fields);
         if declares(&entity.fields, INPUT_NAMESPACE) {
-            resolve_lexical(&environment, lexical)
+            lower(&environment, resolve_lexical(&environment, lexical))
         } else {
-            resolve_lexical(&environment.with_input(&command.input), lexical)
+            let environment = environment.with_input(&command.input);
+            lower(&environment, resolve_lexical(&environment, lexical))
         }
     };
     let mut resolved = Vec::new();
@@ -729,7 +733,7 @@ pub(crate) fn resolutions(
                 if namespace {
                     predicate = read_input_namespace(&predicate);
                 }
-                Some((current.clone(), predicate))
+                Some((current.clone(), lower(&environment, predicate)))
             }),
             Site::Subject {
                 command,
@@ -837,7 +841,7 @@ pub(crate) fn resolutions(
                 let environment = DomainEnvironment::new(registry, &fields);
                 Some((
                     invariant.predicate.clone(),
-                    resolve_lexical(&environment, lexical),
+                    lower(&environment, resolve_lexical(&environment, lexical)),
                 ))
             }),
             Site::TypeInvariant { name, index } => registry.get(name).and_then(|declared| {
@@ -856,7 +860,7 @@ pub(crate) fn resolutions(
                 let environment = DomainEnvironment::new(registry, fields);
                 Some((
                     invariant.predicate.clone(),
-                    resolve_lexical(&environment, lexical),
+                    lower(&environment, resolve_lexical(&environment, lexical)),
                 ))
             }),
             Site::View { view } => spec.views().get(view).and_then(|view| {
@@ -865,7 +869,10 @@ pub(crate) fn resolutions(
                 let fields = entity.observable_fields();
                 let environment =
                     DomainEnvironment::new(registry, &fields).with_params(&view.params);
-                Some((filter.clone(), resolve_lexical(&environment, lexical)))
+                Some((
+                    filter.clone(),
+                    lower(&environment, resolve_lexical(&environment, lexical)),
+                ))
             }),
             Site::Measure { view, field } => spec.views().get(view).and_then(|view| {
                 let condition = view
@@ -878,7 +885,10 @@ pub(crate) fn resolutions(
                 let fields = entity.observable_fields();
                 let environment =
                     DomainEnvironment::new(registry, &fields).with_params(&view.params);
-                Some((condition.clone(), resolve_lexical(&environment, lexical)))
+                Some((
+                    condition.clone(),
+                    lower(&environment, resolve_lexical(&environment, lexical)),
+                ))
             }),
         };
         // Only the predicate this source wrote: anything else put there is not this tree's.

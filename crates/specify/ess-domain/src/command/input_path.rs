@@ -77,6 +77,16 @@ pub enum Unresolved {
         /// The struct's members, in declaration order.
         declared: Vec<String>,
     },
+    /// A segment names a typed attribute of the enum before it (`ess/23`, beyond10x/ess#450),
+    /// which this cut reads only in a predicate.
+    Attribute {
+        /// The path up to the enum, joined by `.`.
+        at: String,
+        /// The attribute named.
+        attribute: String,
+        /// The enum.
+        owner: crate::name::QualifiedName,
+    },
     /// A segment follows a value that has no members.
     Opaque {
         /// The path up to that value, joined by `.`.
@@ -102,6 +112,13 @@ pub fn resolve(
     let mut route_optional = false;
     for segment in segments {
         let Some(members) = types.struct_fields(&current) else {
+            if let Some(owner) = attributed_enum(types, &current, segment) {
+                return Err(Unresolved::Attribute {
+                    at,
+                    attribute: segment.to_owned(),
+                    owner,
+                });
+            }
             return Err(Unresolved::Opaque {
                 at,
                 type_ref: current,
@@ -170,6 +187,22 @@ impl Unresolved {
                 ),
                 format!("`{owner}` has: {}", declared.join(", ")),
             ),
+            Self::Attribute {
+                at: before,
+                attribute,
+                owner,
+            } => (
+                ValidationCode::UnsupportedConstruct,
+                format!(
+                    "`input.{path}` reads the attribute `{attribute}` of `{owner}` as a value; \
+                     this cut reads an enum attribute only in a predicate, where it is lowered to \
+                     membership over the variants (ess/23)"
+                ),
+                format!(
+                    "read `input.{before}` whole, or decide by the attribute in a guard: \
+                     `when: {before}.{attribute} == …`"
+                ),
+            ),
             Self::Opaque {
                 at: before,
                 type_ref,
@@ -209,4 +242,27 @@ pub fn optional_route(at: &ConstructRef, path: &str, what: &str) -> ValidationEr
     .with_hint(
         "make every struct on the route required, or read the identity from a top-level input",
     )
+}
+
+/// The enum `type_ref` is, through `Optional` and newtypes, where it declares `attribute`.
+fn attributed_enum(
+    types: &TypeRegistry,
+    type_ref: &TypeRef,
+    attribute: &str,
+) -> Option<crate::name::QualifiedName> {
+    let mut current = type_ref;
+    for _ in 0..=crate::types::MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Named(name) => match &types.get(name)?.body {
+                crate::types::TypeBody::Newtype { of, .. } => current = of,
+                crate::types::TypeBody::Enum { variants } => {
+                    return variants.first()?.attribute(attribute).map(|_| name.clone());
+                }
+                _ => return None,
+            },
+            _ => return None,
+        }
+    }
+    None
 }

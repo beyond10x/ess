@@ -266,11 +266,19 @@ beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused
 `ConstructKind` renders the plural head. The same #448 refusals of an entity's invariant and of a
 binding's `where` are typed sites, and add nothing here.
 
+`binding.rs` rose from 35 to 36 string-located sites with beyond10x/ess#445: a binding constant is
+refused by the rule `sets:` types a literal by, raised at the mapping entry's own dotted location
+beside the refusals that were already there. `types.rs` rose from 17 to 23, and its `types` head
+from 9 to 13, with beyond10x/ess#450: an enum's typed variant attributes are refused at
+`types.<name>.attributes…` and `types.<name>.variants.<variant>.attributes…` — the format gate,
+a name declared twice, a type no literal spells, a value of the wrong type, a required value left
+out and a value for an undeclared attribute — for the reason the #426 and #448 sites above are.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
 actor.rs 3 2
-binding.rs 35 0
+binding.rs 36 0
 command.rs 13 55
 component.rs 15 9
 domain.rs 5 0
@@ -282,7 +290,7 @@ selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
-types.rs 17 1
+types.rs 23 1
 view.rs 29 0
 wire.rs 1 0
 ```
@@ -331,7 +339,7 @@ outcome_groups outcome_group.rs 17
 topology topology.rs 6
 types primitive_admission.rs 1
 types system.rs 3
-types types.rs 9
+types types.rs 13
 types wire.rs 1
 view primitive_admission.rs 3
 view view.rs 13

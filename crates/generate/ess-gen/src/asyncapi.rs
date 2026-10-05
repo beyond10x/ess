@@ -697,9 +697,10 @@ enum MappedSource {
         #[serde(rename = "type")]
         type_ref: String,
     },
-    /// A value written into the binding, whose type the compiler took on trust.
+    /// A value written into the binding: text, or a `Boolean`, `Integer` or `Decimal` constant
+    /// written as the JSON scalar it is (beyond10x/ess#445).
     Literal {
-        value: String,
+        value: serde_json::Value,
     },
 }
 
@@ -1329,7 +1330,11 @@ fn reaction(ir: &EssIr, binding: &ResolvedBinding) -> Reaction {
         on_refusal: on_refusal(ir, binding),
         escalates_with: escalates_with(ir, binding),
         on_failure_means: failure_means(ir, binding),
-        mapping: binding.mapping.iter().map(mapped_input).collect(),
+        mapping: binding
+            .mapping
+            .iter()
+            .map(|mapping| mapped_input(ir, mapping))
+            .collect(),
         selection: binding
             .selection
             .as_ref()
@@ -1394,7 +1399,7 @@ fn escalates_with(ir: &EssIr, binding: &ResolvedBinding) -> Option<String> {
 }
 
 /// One entry of a binding's mapping.
-fn mapped_input(mapping: &ResolvedMapping) -> MappedInput {
+fn mapped_input(ir: &EssIr, mapping: &ResolvedMapping) -> MappedInput {
     MappedInput {
         target: mapping.target.clone(),
         target_type: mapping.target_type.to_string(),
@@ -1433,7 +1438,7 @@ fn mapped_input(mapping: &ResolvedMapping) -> MappedInput {
                 }
             }
             ResolvedMappingValue::Literal { value } => MappedSource::Literal {
-                value: value.clone(),
+                value: literal_value(ir, mapping, value),
             },
         },
         conversion: mapping.conversion.clone(),
@@ -1554,4 +1559,16 @@ fn schemas<'a>(ir: &'a EssIr, plans: &[Plan<'a>]) -> Table<Fragment> {
 /// One fragment of this document's schema table.
 fn fragment(node: &Node) -> Fragment {
     under_components(node, TYPE_KEY)
+}
+
+/// A binding constant as the JSON value the invoked command receives: the scalar over a
+/// `Boolean`, `Integer` or `Decimal` input, the text otherwise (beyond10x/ess#445).
+fn literal_value(ir: &EssIr, mapping: &ResolvedMapping, value: &str) -> serde_json::Value {
+    let text = || serde_json::Value::String(value.to_owned());
+    match ir.literal_primitive(&mapping.target_type) {
+        Some(ess_domain::types::Primitive::Boolean) => serde_json::Value::Bool(value == "true"),
+        Some(_) => serde_json::from_str::<serde_json::Number>(value)
+            .map_or_else(|_| text(), serde_json::Value::Number),
+        None => text(),
+    }
 }

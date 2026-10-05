@@ -1908,7 +1908,7 @@ impl PayloadSource {
 }
 
 /// `serde_json`'s shortest round-trip spelling of a finite binary64.
-fn decimal_text(value: f64) -> Option<String> {
+pub(crate) fn decimal_text(value: f64) -> Option<String> {
     serde_json::Number::from_f64(value).map(|number| number.to_string())
 }
 
@@ -3384,7 +3384,7 @@ impl CommandSpec {
             )
         });
         let deferred = types.is_none()
-            && finite::paths(&guards).is_some_and(|paths| {
+            && (finite::paths(&guards).is_some_and(|paths| {
                 paths.iter().all(|path| {
                     self.input.iter().any(|field| {
                         field.name == path.namespace()
@@ -3395,7 +3395,10 @@ impl CommandSpec {
                             )
                     })
                 })
-            });
+            })
+                // A guard that may read an enum attribute (ess/23) is lowered to membership only
+                // once the types are known, so its coverage is decided then.
+                || crate::expression::attributes::may_read(&guards, &self.input));
 
         if deferred {
             return Ok(ValidationErrors::new());
@@ -4351,7 +4354,10 @@ struct LiteralRefusal {
 /// `Timestamp` or a `Uuid` admitted in this function and not in the reader that sends it is exactly
 /// how the two come apart. `Decimal` joined in beyond10x/ess#135, with its reader in
 /// `ess-primitives` so that both sides call one function.
-fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'static str>> {
+pub(crate) fn primitive_literal(
+    primitive: Primitive,
+    value: &str,
+) -> Result<(), Option<&'static str>> {
     let spelling = match primitive {
         Primitive::Boolean => {
             if value == "true" || value == "false" {
@@ -4408,7 +4414,7 @@ fn scalar_representation(
     value: &str,
     scalar: ScalarKind,
     place: &str,
-    command: &CommandSpec,
+    command: &dyn LiteralSource,
     resolved: Resolved<'_>,
 ) -> Option<LiteralRefusal> {
     use crate::binding::{representation, Representation, Resolution};
@@ -4464,7 +4470,7 @@ fn literal_representation(
     held: &Field,
     value: &str,
     place: &str,
-    command: &CommandSpec,
+    command: &dyn LiteralSource,
     resolved: Resolved<'_>,
 ) -> Option<LiteralRefusal> {
     use crate::binding::{representation, Representation, Resolution};
@@ -4475,7 +4481,7 @@ fn literal_representation(
             hint: format!(
                 "a literal may be text, a variant of an enum, `true` or `false`, a whole number \
                  or a decimal; anything else has to come from an input of `{}`",
-                command.name
+                command.source_name()
             ),
         })
     };
@@ -4557,6 +4563,83 @@ fn literal_representation(
             "`{owner}.{target}` has structure, and a literal in a {place} is one piece of text"
         )),
     }
+}
+
+/// What a value no literal spells has to come from instead, named in the literal rule's hint: the
+/// command whose input it would be, for `sets:`, `payload:` and a binding's `mapping:`, or the enum
+/// whose variant attribute it is (beyond10x/ess#450).
+pub(crate) trait LiteralSource {
+    /// The name the hint gives.
+    fn source_name(&self) -> &QualifiedName;
+}
+
+impl LiteralSource for CommandSpec {
+    fn source_name(&self) -> &QualifiedName {
+        &self.name
+    }
+}
+
+impl LiteralSource for QualifiedName {
+    fn source_name(&self) -> &QualifiedName {
+        self
+    }
+}
+
+/// A binding `mapping:` constant over `held`, an input of `command`, by the rule `sets:` and
+/// `payload:` type a literal by (beyond10x/ess#445): the refusal's reason and hint, or `None` to
+/// admit it. `scalar` is the YAML scalar an unquoted constant was written as, `None` for text.
+///
+/// A binding has no command input to take a value from, so the binding keeps its own refusal for
+/// the targets no literal spells; this is called for the rest.
+pub(crate) fn mapping_literal(
+    command: &CommandSpec,
+    held: &Field,
+    value: &str,
+    scalar: Option<ScalarKind>,
+    types: &TypeRegistry,
+    conversions: &crate::types::ConversionRegistry,
+    inhabitation: &crate::system::Inhabitation,
+) -> Option<(String, String)> {
+    literal_refusal(
+        (&command.name, &held.name),
+        held,
+        (value, scalar),
+        "`mapping:` entry of a binding",
+        &command.name,
+        (types, conversions, inhabitation),
+    )
+}
+
+/// A literal `value`, written as the YAML `scalar` (`None` for text), as the value of `held`, the
+/// member `target` of `owner`: the refusal's reason and hint, or `None` to admit it. The rule
+/// `sets:` and `payload:` type a literal by, for the positions outside a command's outcome — a
+/// binding's `mapping:` (beyond10x/ess#445) and an enum variant's `attributes:`
+/// (beyond10x/ess#450). `source` is what a value no literal spells has to come from instead.
+pub(crate) fn literal_refusal(
+    (owner, target): (&QualifiedName, &str),
+    held: &Field,
+    (value, scalar): (&str, Option<ScalarKind>),
+    place: &str,
+    source: &QualifiedName,
+    (types, conversions, inhabitation): (
+        &TypeRegistry,
+        &crate::types::ConversionRegistry,
+        &crate::system::Inhabitation,
+    ),
+) -> Option<(String, String)> {
+    let resolved = Resolved {
+        types,
+        conversions,
+        inhabitation,
+        paths: false,
+    };
+    let refusal = match scalar {
+        Some(scalar) => {
+            scalar_representation(owner, target, held, value, scalar, place, source, resolved)
+        }
+        None => literal_representation(owner, target, held, value, place, source, resolved),
+    };
+    refusal.map(|refusal| (refusal.reason, refusal.hint))
 }
 
 /// An immutable fact: something that happened, named in the domain's own words.

@@ -326,10 +326,17 @@ impl Specification {
             headers.as_slice(),
             [Some(format)] if format.major() >= FormatVersion::V22.major()
         );
+        // And from `ess/23` an enum attribute (beyond10x/ess#450), lowered once the types are known.
+        let reads_attributes = matches!(
+            headers.as_slice(),
+            [Some(format)] if format.major() >= FormatVersion::V23.major()
+        );
         crate::command::converting_input_namespace(reads_input_namespace, || {
-            for (source, file) in files {
-                parts.push(collected.absorb(&source, file, &mut errors));
-            }
+            crate::expression::attributes::converting(reads_attributes, || {
+                for (source, file) in files {
+                    parts.push(collected.absorb(&source, file, &mut errors));
+                }
+            });
         });
 
         let lifecycle_types: Vec<NamedType> = collected

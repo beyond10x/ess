@@ -1346,12 +1346,15 @@ pub(crate) enum DeterminedInput<'a> {
         /// The declared type it is wrapped into.
         to: &'a TypeHandle,
     },
-    /// The literal, wrapped outside-in by this chain of newtypes over text.
+    /// The literal, wrapped outside-in by this chain of newtypes over text, or over a `Boolean`,
+    /// `Integer` or `Decimal` constant (beyond10x/ess#445).
     Literal {
-        /// The value, as the binding wrote it.
+        /// The value, as the binding wrote it: the text, or the constant's canonical spelling.
         value: &'a str,
-        /// The newtypes around it, outermost first; empty when the target is plain text.
+        /// The newtypes around it, outermost first; empty when the target is the primitive itself.
         wraps: Vec<&'a TypeHandle>,
+        /// What the value is: `String` for text, or the primitive a constant is a value of.
+        primitive: ess_domain::types::Primitive,
     },
     /// The literal names a declared variant of the target enum.
     Variant {
@@ -1483,33 +1486,45 @@ pub(crate) fn determined_prepared_input<'a>(
                 }
             }
             let mut wraps = Vec::new();
-            literal_reaches_text(ir, &mapping.target_type, &mut wraps)
-                .then_some(DeterminedInput::Literal { value, wraps })
+            literal_primitive(ir, &mapping.target_type, &mut wraps).map(|primitive| {
+                DeterminedInput::Literal {
+                    value,
+                    wraps,
+                    primitive,
+                }
+            })
         }
     }
 }
 
-/// `true` when a target type is text under however many newtype wrappers, collecting the
-/// wrappers outermost-first on the way down.
-fn literal_reaches_text<'a>(
+/// The primitive a literal fills under however many newtype wrappers — text, or a `Boolean`,
+/// `Integer` or `Decimal` constant (beyond10x/ess#445) — collecting the wrappers outermost-first on
+/// the way down. `None` for anything else, which stays an obligation.
+fn literal_primitive<'a>(
     ir: &'a EssIr,
     target: &'a ResolvedTypeRef,
     wraps: &mut Vec<&'a TypeHandle>,
-) -> bool {
+) -> Option<ess_domain::types::Primitive> {
+    use ess_domain::types::Primitive;
     match target {
-        ResolvedTypeRef::Primitive { name } => *name == ess_domain::types::Primitive::String,
+        ResolvedTypeRef::Primitive {
+            name:
+                name
+                @ (Primitive::String | Primitive::Boolean | Primitive::Integer | Primitive::Decimal),
+        } => Some(*name),
         ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
             ResolvedBody::Newtype { of, .. } => {
                 wraps.push(name);
-                literal_reaches_text(ir, of, wraps)
+                literal_primitive(ir, of, wraps)
             }
             ResolvedBody::Struct { .. }
             | ResolvedBody::Enum { .. }
-            | ResolvedBody::Union { .. } => false,
+            | ResolvedBody::Union { .. } => None,
         },
-        ResolvedTypeRef::Optional { .. }
+        ResolvedTypeRef::Primitive { .. }
+        | ResolvedTypeRef::Optional { .. }
         | ResolvedTypeRef::List { .. }
-        | ResolvedTypeRef::Map { .. } => false,
+        | ResolvedTypeRef::Map { .. } => None,
     }
 }
 

@@ -4429,7 +4429,7 @@ impl<'a> Resolver<'a> {
             let (field, table, is_context) = match source {
                 MappingSource::HostContext { field } => (field, &context, true),
                 MappingSource::HostRead { field } => (field, &read, false),
-                MappingSource::Literal { value } => {
+                MappingSource::Literal { value } | MappingSource::Scalar { value, .. } => {
                     mapping.push(literal_mapping(input, value));
                     continue;
                 }
@@ -4625,7 +4625,9 @@ impl<'a> Resolver<'a> {
                         None => complete = false,
                     }
                 }
-                Some(MappingSource::Literal { value }) => {
+                // A constant compiles to its canonical text however it was written, and every
+                // target reads it against `target_type` (beyond10x/ess#445).
+                Some(MappingSource::Literal { value } | MappingSource::Scalar { value, .. }) => {
                     resolved.push(literal_mapping(input, value));
                 }
                 Some(MappingSource::Selection { selection, path }) => {
@@ -5034,7 +5036,9 @@ impl<'a> Resolver<'a> {
                     format!("{target}: event.{}", segments.join("."))
                 }
                 MappingSource::Selection { .. } => format!("{target}:"),
-                MappingSource::Literal { value } => format!("{target}: {value}"),
+                MappingSource::Literal { value } | MappingSource::Scalar { value, .. } => {
+                    format!("{target}: {value}")
+                }
             });
         }
         needles.push(format!("id: {}", binding.name));

@@ -1406,8 +1406,8 @@ fn siblings_rest(
 
 /// What a binding's mapping fills each input of its invoked command with, as a scenario observes
 /// it: a field of the triggering event becomes [`ScenarioValue::Observed`], because no generator
-/// knows what the upstream implementation published there, and a literal becomes the text the
-/// binding wrote.
+/// knows what the upstream implementation published there, and a literal becomes the value the
+/// binding wrote, typed against the input it fills.
 pub(super) fn mapped_input(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -1484,12 +1484,19 @@ pub(super) fn mapped_input(
                         accessor,
                     }
                 }
-                // A literal reaches the model as text and fills a target that is a `String` or an
-                // enum underneath — `ess-domain` refuses any other target — so the text is the value
-                // and no conversion is being invented here.
-                ResolvedMappingValue::Literal { value } => {
-                    ScenarioValue::literal(Node::Text(value.clone()))
-                }
+                // A literal over text or an enum is the text; over a `Boolean`, `Integer` or
+                // `Decimal` it is that value (beyond10x/ess#445). `ess-domain` refuses any other
+                // target, so no conversion is being invented here.
+                ResolvedMappingValue::Literal { value } => ScenarioValue::literal(
+                    crate::input::mapping_literal(ir, &mapped.target_type, value).ok_or_else(
+                        || BindingGap::AccessorObservation {
+                            reason: format!(
+                                "the constant `{value}` is not a value of `{}`",
+                                mapped.target_type
+                            ),
+                        },
+                    )?,
+                ),
             };
             Ok((mapped.target.clone(), value))
         })

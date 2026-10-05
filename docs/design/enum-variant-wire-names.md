@@ -96,3 +96,44 @@ for a change every deployed consumer breaks on.
 reader of `ess-diff/1` … `ess-diff/4` rather than being read with a case it does not know. This is
 the mechanism `story:error-wire-codes` installed for `ErrorChange::WireNameChanged` at
 `ess-diff/4`.
+
+## Typed attributes on the variant object form (ess/23, beyond10x/ess#450)
+
+The object form gains `attributes:`, a typed value per attribute the enum declares:
+
+```yaml
+- name: demo.plans.Plan
+  kind: enum
+  attributes:
+    - {name: max_seats, type: Integer}
+    - {name: sso, type: Boolean}
+  variants:
+    - {name: Basic, attributes: {max_seats: 5, sso: false}}
+    - {name: Team, attributes: {max_seats: 50, sso: true}}
+```
+
+- **Declaration.** `attributes: [{name, type}]` on the enum, the shape of `fields:`. A type is a
+  `Boolean`, `Integer`, `Decimal` or `String`, a newtype of one, an enum, or an `Optional` of these;
+  a `List` or `Map` is refused by name. Below `ess/23` the declaration is
+  `unsupported_format_version`.
+- **Values.** Each variant fills every attribute that is not `Optional`, by the rule `sets:` types
+  a literal by (`literal_representation`, reached through the `LiteralSource` the hint names): a
+  missing value is `missing_declaration`, a value for an undeclared attribute
+  `undeclared_reference`, a value that is not one of the type `type_mismatch`.
+- **Where it is held.** `EnumVariant::attributes` carries every declared attribute in declaration
+  order with the variant's value, so the declaration is read off any variant and neither
+  `TypeBody::Enum` nor the IR's `ResolvedBody::Enum` changed shape. A variant that declares no
+  attributes keeps its bytes: bare, or the naming map it always was.
+- **Reading.** A predicate reads `<fact>.<attribute>` and is lowered to membership over the
+  variants that satisfy it where each authored predicate is resolved
+  (`ess-domain/src/expression/attributes.rs`): a comparison with a literal, `any_of`, `none_of`,
+  `defined(…)` and truthiness become `any_of` over variants; a comparison with another fact
+  expands to one branch per variant within 128 predicate nodes. What cannot be lowered is refused
+  by name. Reading an attribute as a value (`input.plan.max_seats` in `sets:`) is refused in this
+  cut.
+- **Projections.** `x-ess-attributes` on the enum's JSON Schema and OpenAPI node (one entry per
+  attribute: name, type, kind, and each value by wire spelling), a table in the generated
+  documentation, and one accessor per attribute in the types-only Rust, Go and TypeScript outputs.
+- **Revision comparison.** No released delta format has a case for an attribute, so an attribute
+  declared, removed or revalued stays in the residual and is `unclassified-changed`; a guard whose
+  lowered membership moved is its own `outcome-condition-changed`.
