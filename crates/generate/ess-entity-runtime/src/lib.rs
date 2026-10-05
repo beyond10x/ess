@@ -518,6 +518,10 @@ pub enum LoweringCode {
     /// request addresses, and has neither a query over other rows nor the atomic authority to read
     /// them in one decision.
     RowSetUnsupported,
+    /// A guard holds an instant to a calendar window (ess/22, `window: {at, days, from, to,
+    /// offset}`): entity-core has no weekday or time-of-day operand, and no clock for `at: now`, so
+    /// any lowering would decide a different rule.
+    CalendarWindowUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -649,6 +653,17 @@ impl Projector<'_> {
         predicate: &Predicate,
         at: &str,
     ) {
+        for window in predicate.windows() {
+            self.diagnostic(
+                LoweringCode::CalendarWindowUnsupported,
+                at,
+                format!(
+                    "`{window}` holds an instant to a calendar window, and Entity Runtime has no \
+                     weekday, time-of-day or clock operand; any lowering would decide a different \
+                     rule"
+                ),
+            );
+        }
         if predicate.reads_offset() {
             self.diagnostic(
                 LoweringCode::OffsetUnsupported,
@@ -3908,10 +3923,12 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         Predicate::Always => Condition::Literal(true),
         // A fold never reaches a lowered definition: every lowered predicate site carrying one is
         // refused as `CaseFoldUnsupported` first (`refuse_text_lengths`), and a refusal returns no
-        // output. So does `distinct`, refused as `DistinctUnsupported`.
-        Predicate::Never | Predicate::FoldMatch { .. } | Predicate::Distinct(_) => {
-            Condition::Literal(false)
-        }
+        // output. So does `distinct`, refused as `DistinctUnsupported`, and a calendar window, as
+        // `CalendarWindowUnsupported`.
+        Predicate::Never
+        | Predicate::FoldMatch { .. }
+        | Predicate::Distinct(_)
+        | Predicate::Window(_) => Condition::Literal(false),
         Predicate::All(children) if children.is_empty() => Condition::Literal(true),
         Predicate::All(children) => Condition::All {
             all: children

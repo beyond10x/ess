@@ -14,6 +14,7 @@ use ess_primitives::predicate::{
     CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude,
     OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp, TextOperand,
 };
+use ess_primitives::window::{CalendarWindow, WindowInstant};
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
 
@@ -1534,6 +1535,13 @@ pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
                 over: strip(&distinct.over, bound),
                 ..(**distinct).clone()
             })),
+            Predicate::Window(window) => Predicate::Window(Box::new(CalendarWindow {
+                at: match &window.at {
+                    WindowInstant::Fact(path) => WindowInstant::Fact(strip(path, bound)),
+                    WindowInstant::Now => WindowInstant::Now,
+                },
+                ..(**window).clone()
+            })),
         }
     }
     fn quantifier<'a>(quantified: &'a Quantified, bound: &mut Vec<&'a str>) -> Quantified {
@@ -2866,6 +2874,81 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 self.quantified(predicate, quantified);
             }
             Predicate::Distinct(distinct) => self.distinct(predicate, distinct),
+            Predicate::Window(window) => self.window(predicate, window),
+        }
+    }
+
+    /// A calendar window (`docs/design/calendar-window-guards.md`): from `ess/22`, only where the
+    /// current time is admitted — a command outcome's guard — over `now` or a `Timestamp` fact, and
+    /// never `now` where the word also names a field or a binder.
+    fn window(&mut self, predicate: &Predicate, window: &CalendarWindow) {
+        let path = window.at.fact_path();
+        if !self.environment.admits_root_facts() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                path,
+                None,
+                format!(
+                    "`{predicate}` is a calendar window, which requires specification format \
+                     ess/22; write `format: ess/22` on the source that declares the system"
+                ),
+            ));
+            return;
+        }
+        if !self.environment.current_time().site {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                path,
+                None,
+                format!(
+                    "`{predicate}` is a calendar window, which is admitted only in a command \
+                     outcome's guard: its `when:` over the input, and its `when_subject:` and \
+                     `when_related:` predicates over a stored row. An invariant, a view filter, a \
+                     selection and a set-effect filter are not read while a request is decided"
+                ),
+            ));
+            return;
+        }
+        match &window.at {
+            WindowInstant::Now => {
+                let word = WindowInstant::NOW;
+                if self.environment.root(word).is_some()
+                    || self.bindings.iter().any(|binding| binding.name == word)
+                {
+                    self.checked.errors.push(error(
+                        self.owner,
+                        ValidationCode::TypeMismatch,
+                        None,
+                        None,
+                        format!(
+                            "`{predicate}` reads `at: now` as the current time, and `now` here also \
+                             names a field or a binder; rename it, so the window says which one it \
+                             means"
+                        ),
+                    ));
+                }
+            }
+            WindowInstant::Fact(path) => {
+                let Some(resolved) = self.read(path, false) else {
+                    return;
+                };
+                let typed = self.typed(resolved);
+                if !(typed.instant && typed.scalar.is_some()) {
+                    self.checked.errors.push(error(
+                        self.owner,
+                        ValidationCode::TypeMismatch,
+                        Some(path),
+                        None,
+                        format!(
+                            "`{predicate}` places `{path}` in a calendar window, and `{path}` is \
+                             `{}`, not a Timestamp",
+                            typed.declared
+                        ),
+                    ));
+                }
+            }
         }
     }
 }

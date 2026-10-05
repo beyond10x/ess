@@ -144,6 +144,7 @@ fn samples() -> Vec<Predicate> {
             // compile error here rather than a silent gap.
             Predicate::TextMatch { .. }
             | Predicate::FoldMatch { .. }
+            | Predicate::Window(_)
             | Predicate::Forall(_)
             | Predicate::All(_)
             | Predicate::Any(_)

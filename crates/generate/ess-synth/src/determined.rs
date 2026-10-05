@@ -1069,6 +1069,11 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
         Predicate::Distinct(_) => Err(format!(
             "`{predicate}`, distinct list members no generated behaviour compares"
         )),
+        // No generated behaviour evaluates a calendar window (`docs/design/calendar-window-guards.md`):
+        // the command stays owed, naming it, rather than rendered without it.
+        Predicate::Window(_) => Err(format!(
+            "`{predicate}`, a calendar window no generated guard evaluates"
+        )),
         _ => Err(format!("the guard `{predicate}`")),
     }
 }

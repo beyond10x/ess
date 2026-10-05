@@ -1715,6 +1715,7 @@ fn remapped(
                 ..(**distinct).clone()
             }))
         }
+        Predicate::Window(window) => Predicate::Window(Box::new(window.map_path(path))),
     }
 }
 
@@ -1803,6 +1804,20 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
                     FactValue::Text(text) => FactValue::Text(swap_ascii_case(text)),
                     other => other.clone(),
                 }));
+            }
+        }
+        // A calendar window over `path` decides at the boundaries of its days and hours: every
+        // instant a second either side of each, on the reference week, spelled in UTC — so a
+        // window at a non-zero offset is always sent an instant written with another offset than
+        // its own (`docs/design/calendar-window-guards.md`).
+        Predicate::Window(window) => {
+            if window.at.fact_path() == Some(path) {
+                found.extend(
+                    window
+                        .boundaries()
+                        .into_iter()
+                        .map(|instant| FactValue::Text(instant.to_rfc3339())),
+                );
             }
         }
         Predicate::Always

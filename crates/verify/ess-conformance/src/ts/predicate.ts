@@ -273,6 +273,141 @@ export class Operand {
   }
 }
 
+const WINDOW_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+
+/**
+ * A calendar window at UTC or a fixed offset (`docs/design/calendar-window-guards.md`), as Rust's
+ * `CalendarWindow` and Go's `windowPredicate`: the instant moved by the offset falls on a listed
+ * weekday at or after `from` and before `to`; a window with `from` after `to` crosses midnight and
+ * belongs to the day it opens. No zone data.
+ */
+export class CalendarWindow {
+  /** `at: now`: the decision's current time, which a runner never has. */
+  now = false;
+  /** Monday first. */
+  days: boolean[] = [false, false, false, false, false, false, false];
+  /** Minutes after midnight; `to` may be 1440, the end of the day. */
+  from = 0;
+  to = 0;
+  /** Minutes east of UTC. */
+  offset = 0;
+
+  /** The weekday (Monday 0) and the second of the day of `seconds` moved by the offset. */
+  local(seconds: bigint): [number, number] {
+    const local = seconds + BigInt(this.offset * 60);
+    let day = local / 86400n;
+    if (local % 86400n !== 0n && local < 0n) day -= 1n;
+    const second = Number(local - day * 86400n);
+    return [Number((((day + 3n) % 7n) + 7n) % 7n), second];
+  }
+
+  /** Whether the instant `seconds` after the epoch falls inside the window. */
+  contains(seconds: bigint): boolean {
+    const [day, second] = this.local(seconds);
+    const from = this.from * 60;
+    const to = this.to * 60;
+    if (this.from > this.to) {
+      return (this.days[day]! && second >= from) || (this.days[(day + 6) % 7]! && second < to);
+    }
+    return this.days[day]! && from <= second && second < to;
+  }
+
+  toString(path = ''): string {
+    const at = this.now ? 'now' : path;
+    const days = WINDOW_DAYS.filter((_, index) => this.days[index]);
+    const clock = (minutes: number): string =>
+      `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    let offset = 'Z';
+    if (this.offset !== 0) {
+      const magnitude = Math.abs(this.offset);
+      offset = `${this.offset < 0 ? '-' : '+'}${clock(magnitude)}`;
+    }
+    return `window(at ${at}, ${days.join(' ')}, ${clock(this.from)}-${clock(this.to)}, ${offset})`;
+  }
+}
+
+/**
+ * Reads `{window: {at, days, from, to, offset}}` as Rust's `CalendarWindow::parse_mapping` does,
+ * refusing what it refuses: another key, a missing one, a named time zone, an offset that is not
+ * `Z` or `±HH:MM` within 14 hours, a time that is not quoted `HH:MM`, `from` equal to `to`, `to`
+ * 00:00, no day, a day twice or a day not spelled `mon` to `sun`.
+ */
+export function parseWindow(fields: { [key: string]: Node }): Predicate {
+  const refuse = (reason: string): never => {
+    throw new Error(`window: ${reason}`);
+  };
+  for (const key of Object.keys(fields)) {
+    if (['zone', 'tz', 'timezone', 'time_zone'].includes(key)) {
+      refuse(`\`${key}\` names a time zone, and a calendar window takes a fixed offset`);
+    }
+    if (!['at', 'days', 'from', 'to', 'offset'].includes(key)) {
+      refuse(
+        `a window takes \`at\`, \`days\`, \`from\`, \`to\` and \`offset\`; \`${key}\` is none of them`,
+      );
+    }
+  }
+  for (const key of ['at', 'days', 'from', 'to', 'offset']) {
+    if (!Object.hasOwn(fields, key)) refuse(`a window takes \`${key}\`, and this one has none`);
+  }
+  const window = new CalendarWindow();
+  let path = '';
+  const at = fields['at'];
+  if (at === 'now') {
+    window.now = true;
+  } else if (typeof at === 'string' && factPath.test(at)) {
+    path = at;
+  } else {
+    refuse('`at` is `now` or the fact path of a Timestamp');
+  }
+  const days = fields['days'];
+  if (!Array.isArray(days) || days.length === 0)
+    refuse('`days` lists at least one of `mon` to `sun`');
+  for (const day of days as Node[]) {
+    const index = WINDOW_DAYS.indexOf(day as (typeof WINDOW_DAYS)[number]);
+    if (typeof day !== 'string' || index < 0) refuse(`\`${String(day)}\` is no day`);
+    if (window.days[index]) refuse(`\`days\` lists \`${String(day)}\` twice`);
+    window.days[index] = true;
+  }
+  const clock = (key: string): number => {
+    const text = fields[key];
+    if (typeof text !== 'string' || !/^[0-9]{2}:[0-9]{2}$/.test(text)) {
+      return refuse(`\`${key}\` is a time written as quoted text, "HH:MM"`);
+    }
+    const hours = Number(text.slice(0, 2));
+    const minutes = Number(text.slice(3));
+    if (minutes > 59 || hours > 24 || (hours === 24 && minutes !== 0)) {
+      return refuse(`\`${key}: ${text}\` is no time of day`);
+    }
+    return hours * 60 + minutes;
+  };
+  window.from = clock('from');
+  window.to = clock('to');
+  if (window.from === 1440) refuse('`from` is at most 23:59');
+  if (window.to === 0) refuse('`to` 00:00 is the end of the day, which a window writes `24:00`');
+  if (window.from === window.to) {
+    refuse('`from` and `to` are equal: a window is either empty or the whole day');
+  }
+  const offset = fields['offset'];
+  if (typeof offset !== 'string') refuse('`offset` is `Z` or `±HH:MM`');
+  if (offset !== 'Z') {
+    const text = offset as string;
+    if (!/^[+-][0-9]{2}:[0-9]{2}$/.test(text)) {
+      refuse(
+        `\`offset: ${text}\` is no fixed offset: write \`Z\` or \`±HH:MM\`; a named time zone is refused`,
+      );
+    }
+    const hours = Number(text.slice(1, 3));
+    const minutes = Number(text.slice(4));
+    const magnitude = hours * 60 + minutes;
+    if (minutes > 59 || magnitude > 14 * 60) refuse(`\`offset: ${text}\` is past 14:00 either way`);
+    if (magnitude === 0 && text.startsWith('-')) {
+      refuse('`offset: -00:00` is the unknown local offset; write `Z`');
+    }
+    window.offset = text.startsWith('-') ? -magnitude : magnitude;
+  }
+  return new Predicate({ kind: 'window', path, window });
+}
+
 interface PredicateFields {
   kind?: string;
   children?: Predicate[];
@@ -287,6 +422,7 @@ interface PredicateFields {
   body?: Predicate | null;
   key?: string;
   keyKind?: string;
+  window?: CalendarWindow | null;
 }
 
 /** A condition over facts. */
@@ -309,6 +445,8 @@ export class Predicate {
   /** distinct (suite/40): the key under `bind`, empty for the element itself, and its kind. */
   key: string;
   keyKind: string;
+  /** A calendar window; `path` holds the fact it reads, empty for `now`. */
+  window: CalendarWindow | null;
 
   constructor(fields: PredicateFields = {}) {
     this.kind = fields.kind ?? '';
@@ -324,6 +462,7 @@ export class Predicate {
     this.body = fields.body ?? null;
     this.key = fields.key ?? '';
     this.keyKind = fields.keyKind ?? '';
+    this.window = fields.window ?? null;
   }
 
   toString(): string {
@@ -371,6 +510,8 @@ export class Predicate {
         return `${this.kind} ${this.bind} in ${this.over}: (${this.body})`;
       case 'distinct':
         return `distinct ${this.bind} in ${this.over}${this.key === '' ? '' : ` by ${this.key}`} as ${this.keyKind}`;
+      case 'window':
+        return this.window!.toString(this.path);
       default:
         return this.kind;
     }
@@ -424,6 +565,16 @@ export class Predicate {
         return this.quantify(source);
       case 'distinct':
         return this.distinct(source);
+      case 'window': {
+        // `now` is the decision's current time, which a runner never reads: Unknown. A fact is read
+        // as the instant it names, never its spelling; text that names none is Unknown.
+        if (this.window!.now) return TruthUnknown;
+        const [value, ok] = readLeaf(source, this.path);
+        if (!ok || typeof value !== 'string') return TruthUnknown;
+        const at = parseInstant(value);
+        if (at === undefined) return TruthUnknown;
+        return truthOf(this.window!.contains(at.seconds));
+      }
       default:
         return TruthUnknown;
     }
@@ -715,6 +866,13 @@ export function fromEntry(key: string, value: Node, binders: readonly string[] =
     case 'compare':
       if (isFactMapping(value) && Object.hasOwn(value, 'left')) {
         return parseTaggedCompare(value, binders);
+      }
+      return parseConstraint(key, value, binders);
+    case 'window':
+      // A mapping under `window` carrying `at` is a calendar window; any other is a constraint on
+      // a fact named `window`, as it always was.
+      if (isFactMapping(value) && Object.hasOwn(value, 'at')) {
+        return parseWindow(value);
       }
       return parseConstraint(key, value, binders);
     default:

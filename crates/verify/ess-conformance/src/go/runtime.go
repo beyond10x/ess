@@ -4816,6 +4816,22 @@ func admitPredicateEnvelope(value any, depth int) error {
 				if err := admitPredicateConstraint(child); err != nil {
 					return err
 				}
+			case "window":
+				if fields, ok := child.(map[string]any); ok {
+					if _, window := fields["at"]; window {
+						// A calendar window (suite/40); admitPredicateVersion gates the major.
+						if _, err := parseWindow(fields); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				if err := admitPredicatePath(key); err != nil {
+					return err
+				}
+				if err := admitPredicateConstraint(child); err != nil {
+					return err
+				}
 			case "forall", "exists":
 				fields, err := closed(child, "in as that", "")
 				if err != nil {
@@ -8342,6 +8358,11 @@ func admitPredicateVersion(value any, major int) error {
 	}
 	if major < 40 && predicateUsesOperator(value, "left") {
 		return fmt.Errorf("a comparison tagged as: timestamp requires suite/40 or /41")
+	}
+	// A calendar window, `window: {at, …}` (docs/design/calendar-window-guards.md): `at` is no
+	// constraint operator, so a mapping carrying it under any key is one.
+	if major < 40 && predicateUsesOperator(value, "at") {
+		return fmt.Errorf("a calendar window {window: {at, days, from, to, offset}} requires suite/40 or /41")
 	}
 	return nil
 }

@@ -517,6 +517,9 @@ predicate_forms! {
     // Distinct list members (`ess/22`, beyond10x/ess#237) compare keys with each other and carry no
     // literal at all.
     Distinct => false,
+    // A calendar window (`docs/design/calendar-window-guards.md`) compares an instant with days and
+    // times of its own, never a literal with a fact, so the enum-variant rule has no case of it.
+    Window => false,
 }
 
 /// The form a predicate is, as an exhaustive match.
@@ -540,6 +543,7 @@ fn form_of(predicate: &Predicate) -> Form {
         Predicate::TextMatch { .. } => Form::TextMatch,
         Predicate::FoldMatch { .. } => Form::FoldMatch,
         Predicate::Distinct(_) => Form::Distinct,
+        Predicate::Window(_) => Form::Window,
     }
 }
 
@@ -568,12 +572,14 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             carries_a_literal(&quantified.body)
         }
-        // Nothing to compare: these read a fact, or nothing at all.
+        // Nothing to compare: these read a fact, or nothing at all. A window holds an instant to
+        // its own days and times, never to a literal of the fact's.
         Predicate::Always
         | Predicate::Never
         | Predicate::Truthy(_)
         | Predicate::Defined(_)
-        | Predicate::Distinct(_) => false,
+        | Predicate::Distinct(_)
+        | Predicate::Window(_) => false,
     }
 }
 

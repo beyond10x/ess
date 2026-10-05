@@ -290,7 +290,34 @@ fn walk(predicate: &Predicate, out: &mut Vec<Token>) {
                     .to_owned(),
             ));
         }
+        // Validation refuses a window outside a command guard; keyed all the same, by every field.
+        Predicate::Window(held) => {
+            out.push(Token::Tag(15));
+            window(held, out);
+        }
     }
+}
+
+/// A calendar window, by every field: the instant it reads, its days, `from`, `to` and offset.
+fn window(window: &ess_primitives::window::CalendarWindow, out: &mut Vec<Token>) {
+    match window.at.fact_path() {
+        Some(fact) => {
+            out.push(Token::Tag(0));
+            path(fact, out);
+        }
+        None => out.push(Token::Tag(1)),
+    }
+    out.push(Token::Text(
+        window
+            .days
+            .iter()
+            .map(ess_primitives::window::Weekday::keyword)
+            .collect::<Vec<_>>()
+            .join(" "),
+    ));
+    out.push(Token::Len(usize::from(window.from)));
+    out.push(Token::Len(usize::from(window.to)));
+    out.push(Token::Text(window.offset_text()));
 }
 
 /// The order of two optional conditions: none first, then the structural keys.

@@ -390,6 +390,14 @@ impl<'a> Check<'a> {
                      check does not evaluate"
                 ))
             }
+            // Validation admits a calendar window only in a command guard, and the shared invariant
+            // evaluator reads no window: refused by name rather than rendered as something else.
+            Predicate::Window(window) => {
+                return Err(format!(
+                    "`{window}` is a calendar window, which the generated invariant check does not \
+                     evaluate"
+                ))
+            }
         })
     }
 

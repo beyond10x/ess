@@ -72,6 +72,7 @@ import {
   parseOperand,
   parseDistinct,
   parseTaggedCompare,
+  parseWindow,
   TruthTrue,
   TruthUnknown,
   TEXT_OPERATORS,
@@ -7312,6 +7313,12 @@ export function admitPredicateEnvelope(value: Node, depth: number): void {
             parseDistinct(child);
             break;
           }
+        case 'window':
+          if (isObject(child) && Object.hasOwn(child, 'at')) {
+            // A calendar window (suite/40); admitPredicateVersion gates the major.
+            parseWindow(child as { [key: string]: Node });
+            break;
+          }
           admitPredicatePath(key);
           admitPredicateConstraint(child);
           break;
@@ -11246,6 +11253,13 @@ export function admitPredicateVersion(value: Node, major: number): void {
   }
   if (major < 40 && predicateUsesOperator(value, ['left'])) {
     throw new Error('a comparison tagged as: timestamp requires suite/40 or /41');
+  }
+  // A calendar window, `window: {at, …}` (docs/design/calendar-window-guards.md): `at` is no
+  // constraint operator, so a mapping carrying it under any key is one.
+  if (major < 40 && predicateUsesOperator(value, ['at'])) {
+    throw new Error(
+      'a calendar window {window: {at, days, from, to, offset}} requires suite/40 or /41',
+    );
   }
 }
 

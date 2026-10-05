@@ -113,6 +113,7 @@ impl Orderings {
             }
         }
         found.stored(ir, command);
+        found.stored_windows(ir, command);
         found
     }
 
@@ -217,6 +218,44 @@ impl Orderings {
         }
     }
 
+    /// A calendar window over a stored field, in any predicate over the row, holds that field to
+    /// fixed instants beside the `now` orderings another predicate writes on it: carried over to the
+    /// input it is written from, so a value chosen at a window's boundary stays that instant, and a
+    /// field also ordered against `now` is refused by name ([`Self::straddled`]) rather than decided
+    /// at the reference (`docs/design/calendar-window-guards.md`).
+    fn stored_windows(&mut self, ir: &EssIr, command: &ResolvedCommand) {
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            for set in outcome.sets.iter().filter(|set| set.conversion.is_none()) {
+                let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
+                    continue;
+                };
+                let Ok(input) = FactPath::new(field) else {
+                    continue;
+                };
+                let now = self.bounds.get(&input).is_some_and(|bounds| {
+                    bounds.iter().any(|bound| matches!(bound, Bound::Now(_)))
+                });
+                if !now {
+                    continue;
+                }
+                let windows: Vec<Bound> = stored_predicates(ir, &subject.entity)
+                    .flat_map(Predicate::windows)
+                    .filter(|window| {
+                        window
+                            .at
+                            .fact_path()
+                            .is_some_and(|path| path.segments() == [set.target.clone()])
+                    })
+                    .flat_map(window_bounds)
+                    .collect();
+                self.bounds.entry(input).or_default().extend(windows);
+            }
+        }
+    }
+
     /// Syntactic: `ess-domain` admits the operand only against a `Timestamp` in a command's input
     /// guard, so an admitted IR carries it nowhere else.
     fn walk(&mut self, predicate: &Predicate, binders: &mut Vec<String>) {
@@ -255,6 +294,20 @@ impl Orderings {
                     };
                     if !binders.iter().any(|binder| binder == path.namespace()) {
                         self.bounds.entry(path.clone()).or_default().push(bound);
+                    }
+                }
+            }
+            // A calendar window over a path holds it to fixed instants: each boundary on the week
+            // synthesis tries it on, ordered (`docs/design/calendar-window-guards.md`). A value
+            // chosen there is sent as that instant, never relative to the moment of sending, which
+            // would put it on another weekday.
+            Predicate::Window(window) => {
+                if let Some(path) = window.at.fact_path() {
+                    if !binders.iter().any(|binder| binder == path.namespace()) {
+                        self.bounds
+                            .entry(path.clone())
+                            .or_default()
+                            .extend(window_bounds(window));
                     }
                 }
             }
@@ -354,8 +407,23 @@ impl Orderings {
     }
 }
 
+/// The fixed instants a calendar window holds its path to: each boundary synthesis tries it at.
+fn window_bounds(window: &ess_primitives::window::CalendarWindow) -> Vec<Bound> {
+    window
+        .boundaries()
+        .into_iter()
+        .map(|instant| Bound::Fixed {
+            instant,
+            ordered: true,
+        })
+        .collect()
+}
+
 /// Every predicate over a stored row of `entity` a command decides by: each `when_subject:`
 /// predicate over it, and each identity-addressed `when_related:` predicate over it.
+///
+/// Not a command with a [`clocked_window`]: no scenario sends one, so the instants it orders a row
+/// against steer no value another command's scenario sends.
 pub(crate) fn stored_predicates<'ir>(
     ir: &'ir EssIr,
     entity: &EntityHandle,
@@ -379,6 +447,7 @@ pub(crate) fn stored_predicates<'ir>(
     });
     ir.commands()
         .values()
+        .filter(|command| clocked_window(command).is_none())
         .flat_map(move |command| {
             let entity = entity.clone();
             command
@@ -454,6 +523,42 @@ pub(crate) fn now_compared(predicate: &Predicate) -> Vec<(FactPath, bool)> {
     out
 }
 
+/// The first calendar window over the current time any decision of `command` reads — in an input
+/// guard, a `when_subject:` predicate or a `when_related:` predicate — where there is one
+/// (`docs/design/calendar-window-guards.md`).
+///
+/// A suite holds no clock: a target decides `now` by its own, and no step places that clock on a
+/// weekday or an hour, so no scenario sending such a command can say which branch it takes.
+pub(crate) fn clocked_window(
+    command: &ResolvedCommand,
+) -> Option<ess_primitives::window::CalendarWindow> {
+    command.outcomes.iter().find_map(|outcome| {
+        let stored = match &outcome.condition {
+            ResolvedCondition::SubjectPredicate { predicate, .. }
+            | ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { predicate },
+                ..
+            } => Some(predicate),
+            _ => None,
+        };
+        input_predicate(&outcome.condition)
+            .into_iter()
+            .chain(stored)
+            .flat_map(Predicate::windows)
+            .find(|window| window.at == ess_primitives::window::WindowInstant::Now)
+            .cloned()
+    })
+}
+
+/// What a refusal of a scenario sending a command with a [`clocked_window`] says.
+pub(crate) const CLOCKED_WINDOW: &str =
+    "a calendar window over `now` is decided by the target's own clock, which no suite step sets";
+
+/// The refusal path naming `window`.
+pub(crate) fn clocked_window_path(window: &ess_primitives::window::CalendarWindow) -> String {
+    format!("`{window}` is a calendar window over the current time")
+}
+
 /// The input half of a condition, as `ess-compiler`'s predicate sites read it.
 fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
     match condition {
@@ -516,6 +621,10 @@ pub(crate) fn install(
             let Some(declared) = ir.commands().get(command.name()) else {
                 continue;
             };
+            if let Some(window) = clocked_window(declared) {
+                refused.push((id.clone(), clocked_window_path(&window), CLOCKED_WINDOW));
+                break;
+            }
             let orderings = Orderings::of(ir, declared);
             if let Some(path) = orderings.uncarried() {
                 refused.push((

@@ -648,6 +648,12 @@ impl ProofBudget {
                     self.charge(width)?;
                 }
             }
+            Predicate::Window(window) => {
+                if let Some(read) = window.at.fact_path() {
+                    path(read)?;
+                }
+                self.charge(window.to_string().len())?;
+            }
             Predicate::Always | Predicate::Never => {}
         }
         self.charge(width)
@@ -1283,6 +1289,12 @@ impl<'ir> InputFacts<'ir> {
             | Predicate::Any(_)
             | Predicate::Not(_)
             | Predicate::Defined(_) => push(Reason::Unclassified),
+            // A window over a fact is `Unknown` where the fact is unbound, as `Truthy` is; over
+            // `now`, or over text that names no instant, it is not classified.
+            Predicate::Window(window) => match window.at.fact_path() {
+                Some(path) if self.observe(path).is_none() => push(self.explain_path(path)),
+                _ => push(Reason::Unclassified),
+            },
         }
     }
 

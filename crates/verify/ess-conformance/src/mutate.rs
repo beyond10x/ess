@@ -583,13 +583,7 @@ fn states(set: &BTreeSet<StateName>) -> String {
 fn ordering_leaves(predicate: &Predicate) -> Vec<&Predicate> {
     let mut found = Vec::new();
     preorder(predicate, &mut |node| {
-        if matches!(
-            node,
-            Predicate::Compare {
-                op: CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge,
-                ..
-            }
-        ) {
+        if is_ordering(node) {
             found.push(node);
         }
     });
@@ -660,14 +654,45 @@ fn edit_nth(
     walk(predicate, select, &mut seen, index, edit)
 }
 
+/// An ordering comparison, or a calendar window — two orderings of an instant's time of day, whose
+/// boundaries `guard-boundary` moves as it moves a comparison's
+/// (`docs/design/calendar-window-guards.md`).
 fn is_ordering(node: &Predicate) -> bool {
     matches!(
         node,
         Predicate::Compare {
             op: CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge,
             ..
-        }
+        } | Predicate::Window(_)
     )
+}
+
+/// A window whose inclusive `from` is a minute later: the instant at `from` falls outside it, as
+/// a comparison made strict excludes its literal. `None` where `from` would reach 24:00 or `to`.
+fn window_from_later(
+    window: &ess_primitives::window::CalendarWindow,
+) -> Option<ess_primitives::window::CalendarWindow> {
+    let from = window.from + 1;
+    (from < ess_primitives::window::MINUTES_PER_DAY && from != window.to).then(|| {
+        ess_primitives::window::CalendarWindow {
+            from,
+            ..window.clone()
+        }
+    })
+}
+
+/// A window whose exclusive `to` is a minute later: the instant at `to` falls inside it, as an
+/// inclusive `to` would. `None` past 24:00 or onto `from`.
+fn window_to_later(
+    window: &ess_primitives::window::CalendarWindow,
+) -> Option<ess_primitives::window::CalendarWindow> {
+    let to = window.to + 1;
+    (to <= ess_primitives::window::MINUTES_PER_DAY && to != window.from).then(|| {
+        ess_primitives::window::CalendarWindow {
+            to,
+            ..window.clone()
+        }
+    })
 }
 
 fn is_connective(node: &Predicate) -> bool {
@@ -675,6 +700,12 @@ fn is_connective(node: &Predicate) -> bool {
 }
 
 fn swap_strictness(node: &mut Predicate) {
+    if let Predicate::Window(window) = node {
+        if let Some(moved) = window_from_later(window) {
+            **window = moved;
+        }
+        return;
+    }
     if let Predicate::Compare { op, .. } = node {
         *op = match *op {
             CompareOp::Ge => CompareOp::Gt,
@@ -732,6 +763,10 @@ fn flip_equality(node: &mut Predicate) {
 fn outward(node: &Predicate) -> Option<Predicate> {
     use ess_primitives::facts::{FactValue, Number};
     use ess_primitives::predicate::Operand;
+    // A calendar window's `to` a minute later: its accepting side gains the instant at `to`.
+    if let Predicate::Window(window) = node {
+        return window_to_later(window).map(|moved| Predicate::Window(Box::new(moved)));
+    }
     let Predicate::Compare {
         left, op, right, ..
     } = node
@@ -1408,11 +1443,17 @@ fn moved_count(op: &str, bound: i64) -> Option<(&'static str, i64)> {
 /// and, where it has one, its outward literal; then each equality that is not the whole guard.
 fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Vec<Mutation>) {
     for (leaf, node) in ordering_leaves(when).into_iter().enumerate() {
-        found.push(Mutation::GuardBoundary {
-            command: command.to_owned(),
-            outcome: outcome.to_owned(),
-            leaf,
-        });
+        // A window whose `from` cannot move a minute later (23:59, or onto `to`) has no
+        // strictness mutant: one would be the unchanged window, scored as a survivor.
+        let unmoved =
+            matches!(node, Predicate::Window(window) if window_from_later(window).is_none());
+        if !unmoved {
+            found.push(Mutation::GuardBoundary {
+                command: command.to_owned(),
+                outcome: outcome.to_owned(),
+                leaf,
+            });
+        }
         if outward(node).is_some() {
             found.push(Mutation::GuardOutward {
                 command: command.to_owned(),

@@ -956,6 +956,7 @@ fn ground_derived(
 /// redirect_uris: r == input.application` over a row holding `{k: v}` grounds `v == application`,
 /// and the input is tried at `v`, which satisfies it, and at its neighbours, which do not. An empty
 /// collection grounds nothing: the input cannot move a quantifier over it.
+#[allow(clippy::too_many_lines)]
 fn ground_leaf(
     settled: &BTreeMap<String, super::Determined>,
     bound: &[(&str, &Node)],
@@ -1046,6 +1047,19 @@ fn ground_leaf(
             value: ess_primitives::predicate::TextOperand::Fact { path: operand, .. },
         } if !bound.iter().any(|(name, _)| *name == operand.namespace()) => {
             ground_text_operand(settled, bound, path, *op, operand, out);
+        }
+        // A calendar window over the command's input (`at: input.<path>`) steers the input as a
+        // window over that input path: its boundaries are the values the input is tried at
+        // (`docs/design/calendar-window-guards.md`). One over a stored field reads no input.
+        Predicate::Window(window) => {
+            if let Some(rest) = window
+                .at
+                .fact_path()
+                .filter(|path| !bound.iter().any(|(name, _)| *name == path.namespace()))
+                .and_then(input_path)
+            {
+                out.push(Predicate::Window(Box::new(window.map_path(|_| rest))));
+            }
         }
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             let elements = match held_node(settled, bound, &quantified.over) {
@@ -2034,8 +2048,47 @@ fn refusal_input(
                 ) == Truth::False
         })
     };
-    let row_guards: &[Predicate] = if on_row { &halves } else { &[] };
-    let inputs = refusal_candidates(ir, entity, arrangement, command, row_guards, distinction)?;
+    // A branch answered by state — the attempted one or a sibling — whose stored guard holds the
+    // command's input to a calendar window (`docs/design/calendar-window-guards.md`) is sent an
+    // input inside that window where one exists: the branch is then selected and answered by the
+    // wrong state, which is the answer whichever of the two a target takes first. Outside the
+    // window the command's default would answer instead.
+    let windowed: Vec<Predicate> = if on_row {
+        guarded(command)
+            .filter(|other| answered_by_state(other))
+            .filter_map(|other| stored(&other.condition))
+            .filter(|predicate| {
+                predicate.windows().iter().any(|window| {
+                    window
+                        .at
+                        .fact_path()
+                        .is_some_and(|path| input_path(path).is_some())
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let mut row_guards: Vec<Predicate> = if on_row { halves.clone() } else { Vec::new() };
+    row_guards.extend(windowed.iter().cloned());
+    let mut inputs =
+        refusal_candidates(ir, entity, arrangement, command, &row_guards, distinction)?;
+    if !windowed.is_empty() {
+        let inside = |input: &BTreeMap<String, Node>| {
+            windowed.iter().all(|predicate| {
+                guard_truth_with(
+                    ir,
+                    entity,
+                    &arrangement.settled,
+                    &arrangement.unwritten,
+                    Some(&arrangement.state),
+                    predicate,
+                    Some((command, input)),
+                ) == Truth::True
+            })
+        };
+        inputs.sort_by_key(|input| !inside(input));
+    }
     let mut through_row = None;
     let mut lost_on_row = false;
     'candidates: for input in &inputs {
@@ -5189,6 +5242,52 @@ fn further_goals(
             goals.push((goal, kind));
         }
     }
+    for goal in window_goals(ir, entity, hints) {
+        if !goals.iter().any(|(known, _)| known == &goal) {
+            goals.push((goal, Further::Plain));
+        }
+    }
+    goals
+}
+
+/// One further row per deciding instant of each calendar window a stored-field predicate holds a
+/// stored field, or the command's `input.<path>`, to (`docs/design/calendar-window-guards.md`):
+/// that field at that instant. A row is kept for the branch it selects, so the inside instants
+/// witness the guarded branch and the outside ones its default — an inclusive `to`, an extra or a
+/// dropped day, a moved `from` and an ignored offset each decide one of them otherwise.
+fn window_goals(ir: &EssIr, entity: &EntityHandle, hints: &[Predicate]) -> Vec<Goal> {
+    let declared = ir.entity(entity);
+    let mut goals: Vec<Goal> = Vec::new();
+    for hint in hints {
+        for window in hint.windows() {
+            let Some(path) = window.at.fact_path() else {
+                continue;
+            };
+            let stored = path.segments().len() == 1
+                && declared
+                    .fields
+                    .iter()
+                    .any(|field| field.name == path.namespace());
+            if !stored && input_path(path).is_none() {
+                continue;
+            }
+            for instant in window.deciding_instants() {
+                let goal = (
+                    Vec::new(),
+                    vec![Predicate::compare(
+                        Operand::Fact(path.clone()),
+                        CompareOp::Eq,
+                        Operand::Literal(ess_primitives::facts::FactValue::Text(
+                            instant.to_rfc3339(),
+                        )),
+                    )],
+                );
+                if !goals.contains(&goal) {
+                    goals.push(goal);
+                }
+            }
+        }
+    }
     goals
 }
 
@@ -5505,7 +5604,17 @@ pub(super) fn boundaries(
     } else {
         absent(ir, command, read, actors).map_or_else(|_| Vec::new(), |(opened, _)| opened)
     };
+    // A calendar window's further row is a stored field at one instant: the search is steered to it
+    // by that instant, which the guard's own candidates need not reach.
+    let windowed = window_goals(ir, entity, &hints);
     for ((refuted, held), kind) in goals {
+        let steered: Vec<Predicate>;
+        let hints: &[Predicate] = if windowed.contains(&(refuted.clone(), held.clone())) {
+            steered = hints.iter().chain(&held).cloned().collect();
+            &steered
+        } else {
+            &hints
+        };
         let limit = kind != Further::Plain;
         let linked = compares_link(
             ir,
@@ -5618,7 +5727,7 @@ pub(super) fn boundaries(
             ir,
             entity,
             actors,
-            &hints,
+            hints,
             rows + 1,
             "boundary",
             taken,

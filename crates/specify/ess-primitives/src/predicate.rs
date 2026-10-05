@@ -1358,6 +1358,12 @@ pub enum Predicate {
     ///
     /// Empty and one element hold; unobserved is [`Truth::Unknown`]. See [`Distinct`].
     Distinct(Box<Distinct>),
+    /// An instant falls inside a weekly calendar window at UTC or a fixed offset (`ess/22`,
+    /// beyond10x/ess#244, `docs/design/calendar-window-guards.md`).
+    ///
+    /// An unobserved instant, text that names none, and `now` read without a clock are
+    /// [`Truth::Unknown`].
+    Window(Box<crate::window::CalendarWindow>),
 }
 
 /// A predicate as read from a document, with the one fact about its spelling that the reading
@@ -1795,6 +1801,7 @@ impl Predicate {
             Self::Forall(quantified) => quantified.evaluate(facts, true),
             Self::Exists(quantified) => quantified.evaluate(facts, false),
             Self::Distinct(distinct) => distinct.evaluate(facts),
+            Self::Window(window) => window.evaluate(facts).0,
         }
     }
 
@@ -2103,6 +2110,7 @@ impl Predicate {
                 right,
                 kind,
             } => Self::evaluate_compare(left, *op, right, *kind, facts),
+            Self::Window(window) => window.evaluate(facts),
             other => (other.evaluate(facts), None),
         }
     }
@@ -2179,6 +2187,13 @@ impl Predicate {
                     visit(&distinct.over);
                 }
             }
+            Self::Window(window) => {
+                if let Some(path) = window.at.fact_path() {
+                    if !bound.contains(&path.namespace()) {
+                        visit(path);
+                    }
+                }
+            }
         }
     }
 
@@ -2225,7 +2240,8 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
-            | Self::FoldMatch { .. } => {}
+            | Self::FoldMatch { .. }
+            | Self::Window(_) => {}
         }
     }
 
@@ -2249,7 +2265,8 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::FoldMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2274,7 +2291,8 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::FoldMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2307,7 +2325,8 @@ impl Predicate {
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
             | Self::FoldMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2351,7 +2370,8 @@ impl Predicate {
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
             | Self::FoldMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2376,7 +2396,8 @@ impl Predicate {
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
             | Self::FoldMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2399,7 +2420,8 @@ impl Predicate {
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
             | Self::FoldMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2420,8 +2442,46 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
-            | Self::FoldMatch { .. } => false,
+            | Self::FoldMatch { .. }
+            | Self::Window(_) => false,
         }
+    }
+
+    /// Whether any leaf, at any depth, is a calendar window (`ess/22`,
+    /// `docs/design/calendar-window-guards.md`): the question the source gate asks.
+    pub fn reads_window(&self) -> bool {
+        !self.windows().is_empty()
+    }
+
+    /// Every calendar window of this predicate, at any depth, in pre-order.
+    pub fn windows(&self) -> Vec<&crate::window::CalendarWindow> {
+        fn walk<'a>(predicate: &'a Predicate, found: &mut Vec<&'a crate::window::CalendarWindow>) {
+            match predicate {
+                Predicate::Window(window) => found.push(window),
+                Predicate::All(children) | Predicate::Any(children) => {
+                    for child in children {
+                        walk(child, found);
+                    }
+                }
+                Predicate::Not(inner) => walk(inner, found),
+                Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                    walk(&quantified.body, found);
+                }
+                Predicate::Always
+                | Predicate::Never
+                | Predicate::Compare { .. }
+                | Predicate::Truthy(_)
+                | Predicate::Defined(_)
+                | Predicate::AnyOf { .. }
+                | Predicate::NoneOf { .. }
+                | Predicate::TextMatch { .. }
+                | Predicate::FoldMatch { .. }
+                | Predicate::Distinct(_) => {}
+            }
+        }
+        let mut found = Vec::new();
+        walk(self, &mut found);
+        found
     }
 
     /// Every [`Distinct`] in this predicate, at any depth, outermost first, each with the binders
@@ -2477,7 +2537,8 @@ impl Predicate {
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
             | Self::FoldMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2510,7 +2571,8 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
-            | Self::Distinct(_) => false,
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -2646,6 +2708,22 @@ impl Predicate {
             {
                 words.literal();
                 Self::tagged_compare(value, binders)
+            }
+            // A calendar window (`docs/design/calendar-window-guards.md`). A mapping under `window`
+            // without `at` is a constraint on a fact named `window`, as it always was; one with it
+            // was never a constraint, `at` being no operator, and is refused below `ess/22` naming
+            // the format that reads it.
+            "window" if matches!(value, Node::Map(fields) if fields.contains_key("at")) => {
+                if !source22_operands() {
+                    return Err(ParseError::predicate(
+                        &format!("window: {}", shallow(value)),
+                        "a calendar window, `window: {at, days, from, to, offset}`, requires \
+                         specification format ess/22",
+                    ));
+                }
+                Ok(Self::Window(Box::new(
+                    crate::window::CalendarWindow::parse_mapping(value)?,
+                )))
             }
             "none" | "none_of_these" => {
                 let children = value
@@ -3316,6 +3394,8 @@ impl Predicate {
             // Explicit: there is no compact form. `kind` is written once resolved and left out
             // before, so a source document reads back as written.
             Self::Distinct(distinct) => distinct.to_node(),
+            // Explicit: a window has no compact form.
+            Self::Window(window) => Node::Map([("window".to_owned(), window.to_node())].into()),
             // Explicit, never the compact fallback below: there is no compact form, so a string
             // operator rendered as text would be a document no reader parses back. A text operand
             // is written as the text, with no quotes added, because the reader takes it verbatim; a
@@ -3745,6 +3825,7 @@ impl fmt::Display for InScope<'_, '_> {
                     None => Ok(()),
                 }
             }
+            Predicate::Window(window) => write!(f, "{window}"),
         }
     }
 }
@@ -3853,7 +3934,10 @@ impl schemars::JsonSchema for Predicate {
              `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements \
              of a list share a key: the element, or the one scalar member `by` names. A \
              string operator may compare with a view parameter, `{param: <name>}`, or a command \
-             input, `{input: <name>}`."
+             input, `{input: <name>}`. A command guard may hold an instant to a calendar \
+             window at UTC or a fixed offset, `{window: {at: now | <path>, days: [mon, …], \
+             from: \"HH:MM\", to: \"HH:MM\", offset: Z | ±HH:MM}}`; a named time zone is \
+             refused."
                 .to_owned(),
         );
         schema.into()

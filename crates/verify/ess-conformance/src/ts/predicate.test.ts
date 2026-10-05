@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  CalendarWindow,
   Operand,
   compareInstants,
   parseInstant,
@@ -1655,4 +1656,138 @@ test('utf8: below suite/40 the selector is refused before it is read', () => {
   );
   admitPredicateVersion(derived, 40);
   admitPredicateVersion(right, 41);
+});
+
+// ---- calendar windows (docs/design/calendar-window-guards.md) ------------------------------
+
+interface WindowVectors {
+  evaluate: { name: string; window: Node; t: Node; truth: string }[];
+  refused: { name: string; window: Node }[];
+  canonical: { name: string; written: Node; canonical: Node }[];
+}
+
+/** The shared window vectors, which `tests/calendar_window.rs` and the Go fixture answer too. */
+function windowVectors(): WindowVectors {
+  const relative = 'crates/specify/ess-primitives/tests/vectors/calendar-window.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      return JSON.parse(readFileSync(candidate, 'utf8')) as WindowVectors;
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+const windowRow = (t: Node): FactSource => (t === null ? facts({}) : facts({ t } as Row));
+
+test('window: a calendar window answers the shared vectors', () => {
+  const vectors = windowVectors();
+  let answered = 0;
+  for (const vector of vectors.evaluate) {
+    const truth = fromNode({ window: vector.window }).evaluate(windowRow(vector.t));
+    assert.equal(truth, vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => fromNode({ window: vector.window }), vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.canonical) {
+    assert.equal(
+      fromNode({ window: vector.written }).toString(),
+      fromNode({ window: vector.canonical }).toString(),
+      vector.name,
+    );
+    answered += 1;
+  }
+  assert.ok(answered >= 60, `${answered} vectors answered`);
+  // `now` reads no clock here, and a field named `now` is no clock.
+  const now = fromNode({
+    window: { at: 'now', days: ['mon'], from: '08:00', to: '16:00', offset: 'Z' },
+  });
+  assert.equal(now.evaluate(facts({ now: '2020-01-06T09:00:00Z' } as Row)), TruthUnknown);
+});
+
+test('window: a suite carrying one is read from suite/40, and /39 refuses it', () => {
+  const node: Node = {
+    window: { at: 'ready_at', days: ['mon'], from: '08:00', to: '16:00', offset: 'Z' },
+  };
+  assert.throws(() => admitPredicateVersion(node, 39), /calendar window/);
+  admitPredicateVersion(node, 40);
+  admitPredicateVersion({ window: { eq: 'open' } }, 39);
+});
+
+test('window: every paired fault disagrees with a vector', () => {
+  const vectors = windowVectors();
+  type Fault = (window: CalendarWindow, text: string) => boolean | undefined;
+  const healthy: Fault = (window, text) => {
+    const at = parseInstant(text);
+    return at === undefined ? undefined : window.contains(at.seconds);
+  };
+  const shifted =
+    (minutes: number): Fault =>
+    (window, text) =>
+      healthy(
+        Object.assign(Object.create(CalendarWindow.prototype), window, { offset: minutes }),
+        text,
+      );
+  const faults: [string, Fault][] = [
+    ['host time at -07:00', shifted(-7 * 60)],
+    ['the offset ignored', shifted(0)],
+    [
+      'to inclusive',
+      (window, text) => {
+        const at = parseInstant(text);
+        if (at === undefined) return undefined;
+        const [day, second] = window.local(at.seconds);
+        if (window.from < window.to) {
+          return window.days[day]! && second >= window.from * 60 && second <= window.to * 60;
+        }
+        return healthy(window, text);
+      },
+    ],
+    [
+      "the crossing on the instant's own day",
+      (window, text) => {
+        const at = parseInstant(text);
+        if (at === undefined) return undefined;
+        const [day, second] = window.local(at.seconds);
+        if (window.from > window.to) {
+          return window.days[day]! && (second >= window.from * 60 || second < window.to * 60);
+        }
+        return healthy(window, text);
+      },
+    ],
+    [
+      'the written clock read',
+      (window, text) => {
+        if (text.length < 19) return undefined;
+        const at = parseInstant(`${text.slice(0, 19)}Z`);
+        if (at === undefined) return undefined;
+        const utc = Object.assign(Object.create(CalendarWindow.prototype), window, { offset: 0 });
+        return utc.contains(at.seconds);
+      },
+    ],
+  ];
+  const answer = (fault: Fault, window: CalendarWindow, value: Node): string => {
+    if (typeof value !== 'string') return 'unknown';
+    const inside = fault(window, value);
+    if (inside === undefined) return 'unknown';
+    return inside ? 'true' : 'false';
+  };
+  for (const vector of vectors.evaluate) {
+    const window = fromNode({ window: vector.window }).window!;
+    assert.equal(answer(healthy, window, vector.t), vector.truth, `the reference: ${vector.name}`);
+  }
+  for (const [name, fault] of faults) {
+    assert.ok(
+      vectors.evaluate.some(
+        (vector) =>
+          answer(fault, fromNode({ window: vector.window }).window!, vector.t) !== vector.truth,
+      ),
+      `no vector tells the ${name} fault apart`,
+    );
+  }
 });

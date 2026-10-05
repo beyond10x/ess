@@ -2314,6 +2314,29 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
             }),
         ));
     }
+    // A scenario of a command deciding by a calendar window over `now` that an earlier stage
+    // already refused — its guard decided at the synthesis reference, where no target's clock is —
+    // is refused for the reason that holds whatever the reference says
+    // (`docs/design/calendar-window-guards.md`).
+    for (name, command) in ir.commands() {
+        let Some(window) = crate::now_offset::clocked_window(command) else {
+            continue;
+        };
+        let sent = name.to_string();
+        for refusal in &mut refusals {
+            if refusal.scenario.as_ref().is_some_and(|id| {
+                id.to_string()
+                    .split('/')
+                    .any(|segment| segment == sent.as_str())
+            }) {
+                refusal.cause = RefusalCause::NoWitness(WitnessGap {
+                    path: crate::now_offset::clocked_window_path(&window),
+                    type_ref: "Timestamp".into(),
+                    reason: crate::now_offset::CLOCKED_WINDOW,
+                });
+            }
+        }
+    }
     suite.select_fresh_format_for(ir);
 
     Synthesis {
@@ -11532,6 +11555,93 @@ fn ordered_bounds<'p>(conjuncts: &[&'p Predicate]) -> Vec<Bound<'p>> {
     found
 }
 
+/// Every calendar window over an input fact in a guard's conjuncts, at any depth — under `any:`,
+/// `all:` and `not:` alike — with the conjunct it sits in and the input it reads
+/// (`docs/design/calendar-window-guards.md`). A window over `now` is not one: no input moves it.
+fn window_bounds<'p>(
+    conjuncts: &[&'p Predicate],
+) -> Vec<(
+    usize,
+    &'p FactPath,
+    &'p ess_primitives::window::CalendarWindow,
+)> {
+    conjuncts
+        .iter()
+        .enumerate()
+        .flat_map(|(index, conjunct)| {
+            conjunct
+                .windows()
+                .into_iter()
+                .filter_map(move |window| Some((index, window.at.fact_path()?, window)))
+        })
+        .collect()
+}
+
+/// A window's boundary instant as a further witness sends it: spelled at an offset under which a
+/// reader of its written clock decides it otherwise ([`CalendarWindow::spelled_against`]).
+///
+/// [`CalendarWindow::spelled_against`]: ess_primitives::window::CalendarWindow::spelled_against
+fn window_witness(
+    window: &ess_primitives::window::CalendarWindow,
+    instant: ess_primitives::time::Rfc3339Instant,
+) -> Node {
+    Node::Text(window.spelled_against(instant))
+}
+
+/// `primary` with each calendar window's input moved to each boundary instant of its window
+/// (`docs/design/calendar-window-guards.md`): the rows a guarded branch is further witnessed at,
+/// which the caller keeps where they still select it.
+fn window_rows(primary: &Row, conjuncts: &[&Predicate]) -> Vec<Row> {
+    window_bounds(conjuncts)
+        .into_iter()
+        .flat_map(|(_, path, window)| {
+            window
+                .boundaries()
+                .into_iter()
+                .filter_map(|instant| with_leaf(primary, path, window_witness(window, instant)))
+        })
+        .collect()
+}
+
+/// The rows a default branch is witnessed at for a sibling's calendar windows: each boundary
+/// instant, on the sibling's own witness where it has one, at which that window alone refuses the
+/// sibling and every other conjunct holds.
+fn window_refutations(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    conjuncts: &[&Predicate],
+    reference: Option<&Row>,
+    primary: &Row,
+) -> Vec<Row> {
+    let mut found = Vec::new();
+    for (index, path, window) in window_bounds(conjuncts) {
+        for instant in window.boundaries() {
+            let value = window_witness(window, instant);
+            let Some(candidate) = reference
+                .and_then(|base| with_leaf(base, path, value.clone()))
+                .or_else(|| with_leaf(primary, path, value))
+            else {
+                continue;
+            };
+            let Ok(facts) = flatten(ir, command, &candidate) else {
+                continue;
+            };
+            let alone = conjuncts.iter().enumerate().all(|(at, conjunct)| {
+                let decided = facts.decide(conjunct);
+                if at == index {
+                    matches!(decided, Decision::Refuted(_))
+                } else {
+                    matches!(decided, Decision::Satisfied)
+                }
+            });
+            if alone {
+                found.push(candidate);
+            }
+        }
+    }
+    found
+}
+
 /// `input` with the scalar at `path` replaced, or nothing where the path does not land on one.
 fn with_leaf(
     input: &BTreeMap<String, Node>,
@@ -11744,6 +11854,11 @@ fn boundary_inputs(
                     keep(candidate, &mut rows);
                 }
             }
+            // Each side of each boundary of a calendar window over an input: `keep` sends the
+            // branch every boundary instant that still selects it.
+            for candidate in window_rows(primary, &conjuncts) {
+                keep(candidate, &mut rows);
+            }
             // Each disjunct of an `any` holding alone (beyond10x/ess#155): a witness satisfying
             // every disjunct at once is also a witness of the `all` a connective mutant writes.
             for conjunct in &conjuncts {
@@ -11795,6 +11910,13 @@ fn boundary_inputs(
                     if alone {
                         keep(candidate, &mut rows);
                     }
+                }
+                // Each boundary instant of a calendar window over an input at which the window
+                // alone refuses the sibling, every other conjunct held.
+                for candidate in
+                    window_refutations(ir, command, &conjuncts, reference.as_ref(), primary)
+                {
+                    keep(candidate, &mut rows);
                 }
                 // Each conjunct of an `all` failing alone, whatever it compares (beyond10x/ess#155):
                 // a default witnessed only where every conjunct fails is also the default of the
@@ -12817,6 +12939,8 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
             over: onto(&distinct.over),
             ..(**distinct).clone()
         })),
+        // The instant a window reads moves with the rest; `now` names no path.
+        Predicate::Window(window) => Predicate::Window(Box::new(window.map_path(onto))),
     }
 }
 

@@ -233,6 +233,13 @@ impl CivilDate {
         Self::from_days_from_epoch(days)
     }
 
+    /// The date `days` days after 1970-01-01 (before it when negative): the inverse of
+    /// [`Self::days_from_epoch`].
+    #[must_use]
+    pub fn from_epoch_day(days: i64) -> Self {
+        Self::from_days_from_epoch(days)
+    }
+
     /// The date `days` days after 1970-01-01; Howard Hinnant's `civil_from_days`.
     fn from_days_from_epoch(days: i64) -> Self {
         let shifted = days + 719_468;
@@ -835,6 +842,49 @@ impl Rfc3339Instant {
         (FIRST_SPELLED_SECOND..=LAST_SPELLED_SECOND)
             .contains(&instant.seconds)
             .then_some(instant)
+    }
+
+    /// The whole UTC seconds since 1970-01-01T00:00:00Z (negative before it), the fraction dropped:
+    /// the second this instant falls in.
+    #[must_use]
+    pub fn epoch_seconds(self) -> i64 {
+        self.seconds
+    }
+
+    /// The instant `seconds` whole UTC seconds after 1970-01-01T00:00:00Z, or `None` past the years
+    /// an RFC 3339 `date-time` spells (0000 through 9999).
+    #[must_use]
+    pub fn from_epoch_seconds(seconds: i64) -> Option<Self> {
+        (FIRST_SPELLED_SECOND..=LAST_SPELLED_SECOND)
+            .contains(&seconds)
+            .then_some(Self { seconds, nanos: 0 })
+    }
+
+    /// The instant spelled at a fixed offset of `offset_minutes` east of UTC (`Z` for zero): the
+    /// same instant [`Self::to_rfc3339`] names, its clock read in that offset. `None` where the
+    /// offset is past 23:59 either way, or the shifted clock is past the years a `date-time` spells.
+    #[must_use]
+    pub fn to_rfc3339_at(self, offset_minutes: i32) -> Option<String> {
+        if offset_minutes == 0 {
+            return Some(self.to_rfc3339());
+        }
+        let magnitude = offset_minutes.unsigned_abs();
+        if magnitude >= 24 * 60 {
+            return None;
+        }
+        let local = Self::from_epoch_seconds(self.seconds + i64::from(offset_minutes) * 60)?;
+        let local = Self {
+            seconds: local.seconds,
+            nanos: self.nanos,
+        }
+        .to_rfc3339();
+        let sign = if offset_minutes < 0 { '-' } else { '+' };
+        Some(format!(
+            "{}{sign}{:02}:{:02}",
+            local.strip_suffix('Z')?,
+            magnitude / 60,
+            magnitude % 60
+        ))
     }
 
     /// The first whole second at or after this instant: the instant itself when it has no fraction.

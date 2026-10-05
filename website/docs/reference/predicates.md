@@ -779,6 +779,54 @@ generated Rust or Go behaviour reads its context's command clock once per decisi
 a decision that needs one is refused naming the command clock, and every answer decided before it
 stands. See `docs/design/expression-family-source22.md`, A3.
 
+### A calendar window
+
+From `format: ess/22` (beyond10x/ess#244), a command guard may hold an instant to a weekly window:
+listed weekdays, a time of day from `from` up to `to`, at UTC or a fixed offset. It is admitted
+where `now` is — a command outcome's `when:`, its `when_subject:` predicate and an
+identity-addressed `when_related:` predicate — in the structured form only:
+
+```text
+when:
+  window: {at: now, days: [mon, tue, wed, thu], from: "08:00", to: "16:00", offset: "+01:00"}
+when_subject:
+  predicate:
+    window: {at: ready_at, days: [fri], from: "22:00", to: "02:00", offset: Z}
+```
+
+`at` is `now`, the decision's one instant, or a `Timestamp` field the site reads. `days` lists at
+least one of `mon`, `tue`, `wed`, `thu`, `fri`, `sat` and `sun`, each once. `from` and `to` are quoted
+`"HH:MM"`: `from` is inclusive, `to` exclusive, and `24:00` is the end of the day (`00:00` as `to` is
+refused naming it). A window whose `from` is after its `to` crosses midnight and belongs to the day
+it opens: `days: [fri], from: "22:00", to: "02:00"` holds Friday 22:00 to Saturday 02:00, and not
+Friday 01:00. `offset` is `Z` or `±HH:MM`, at most 14 hours either way; `+00:00` is written back as
+`Z` and `-00:00` is refused.
+
+A named time zone — `offset: Europe/Berlin`, `offset: UTC`, a `zone:` key — is refused at source,
+naming the fixed-offset spelling. A window is evaluated with the same integer arithmetic in Rust, Go
+and TypeScript and needs no zone data, so it does **not** follow daylight saving: `08:00 to 16:00 at
++01:00` is 07:00 to 15:00 UTC all year. The instant is compared, never its spelling:
+`2020-01-06T02:30:00-05:00` is 08:30 at `+01:00`.
+
+The fact unobserved, an absent `Optional`, text that names no instant and `now` read without a clock
+make the window unknown. Below `ess/22` it is refused, naming `ess/22`; an invariant, a view filter,
+a selection and a set-effect filter refuse it as `type_mismatch`, and `at: now` where a field or
+binder is also named `now` is refused. `window:` without `at` is a constraint on a fact named
+`window`, as before.
+
+A generated suite witnesses a window over an input — in a `when:`, or read as `input.<field>` in a
+stored row's predicate, at any depth of the guard — a second either side of every `from` and `to` on
+the week of Monday 2020-01-06. Each further row spells its instant at an offset under which the
+instant's written clock, read as UTC, falls on the other side, so a target comparing spellings fails.
+A window over a stored instant is arranged through the input that writes it, on a row for each of
+its deciding instants: `from` and `to` on a listed day, a second before `from`, the last second
+before `to`, and `from` on each unlisted day. A window in an authored `satisfies:` is refused by
+name. A window over `now` is refused by name in synthesis: the target decides
+it by its own clock, and no suite step sets that clock. The interpreter decides it at the command
+clock it is handed. Generated Rust and Go behaviour leaves a command with a window owed, naming the
+window, and Entity Runtime refuses it as `CalendarWindowUnsupported`. See
+`docs/design/calendar-window-guards.md`.
+
 ## String operators
 
 `starts_with`, `ends_with` and `contains` test a text fact against a literal. They need

@@ -41,7 +41,8 @@ pub const ADMITTED: [u32; 2] = [ORDINARY, COVERAGE];
 pub const REQUIRES: &str =
     "the expression vocabulary of a one-segment fact operand `{fact: …}`, a \
      comparison tagged `as: timestamp`, one constant offset `{offset: …}`, the UTF-8 byte length \
-     `{utf8_bytes: …}` or distinct list members `{distinct: …}` requires suite/40 or /41";
+     `{utf8_bytes: …}`, distinct list members `{distinct: …}` or a calendar window `{window: …}` \
+     requires suite/40 or /41";
 
 /// What a refusal of a `distinct` without its key kind says: a suite never carries a key whose
 /// equality its reader would have to infer.
@@ -49,12 +50,17 @@ pub const UNKINDED: &str =
     "`{distinct: …}` in a suite names its key kind (`kind:`), which no reader infers";
 
 /// Whether this predicate carries vocabulary only a `/40` reader reads.
+///
+/// A calendar window (`docs/design/calendar-window-guards.md`) is admitted only in a command guard,
+/// which no suite predicate carries; a suite that carries one all the same is held to `/40` like
+/// the rest of the persisted family F vocabulary.
 pub fn reads(predicate: &Predicate) -> bool {
     predicate.reads_root_fact_operand()
         || predicate.compares_instants()
         || predicate.reads_offset()
         || predicate.reads_utf8_bytes()
         || predicate.reads_distinct()
+        || predicate.reads_window()
 }
 
 /// Whether a suite runner reads this predicate over a view row with every sequence bound element

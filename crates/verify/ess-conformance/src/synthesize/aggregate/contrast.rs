@@ -153,6 +153,12 @@ fn reads(
         }
         // A `distinct` (ess/22) reads its list.
         Predicate::Distinct(distinct) => note(&distinct.over, &[]),
+        // Validation admits a window only in a command guard; a read all the same.
+        Predicate::Window(window) => {
+            if let Some(path) = window.at.fact_path() {
+                note(path, &[]);
+            }
+        }
     }
 }
 

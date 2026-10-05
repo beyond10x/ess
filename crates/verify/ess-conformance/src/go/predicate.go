@@ -128,6 +128,73 @@ type predicate struct {
 	// distinct (suite/40): the key under `bind`, empty for the element itself, and its kind.
 	key     string
 	keyKind string
+	// window is a calendar window (docs/design/calendar-window-guards.md); `path` holds the fact
+	// it reads, empty for `now`.
+	window *windowPredicate
+}
+
+// windowPredicate is a calendar window at UTC or a fixed offset, as Rust's `CalendarWindow`: the
+// instant moved by the offset falls on a listed weekday at or after `from` and before `to`; a
+// window with `from` after `to` crosses midnight and belongs to the day it opens. No zone data.
+type windowPredicate struct {
+	// now is `at: now`: the decision's current time, which a runner never has.
+	now bool
+	// days is Monday first.
+	days [7]bool
+	// from and to are minutes after midnight; to may be 1440, the end of the day.
+	from int64
+	to   int64
+	// offset is minutes east of UTC.
+	offset int64
+}
+
+var windowDays = [7]string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+
+// local is the weekday (Monday 0) and the second of the day of `seconds` moved by the offset.
+func (w *windowPredicate) local(seconds int64) (int, int64) {
+	local := seconds + w.offset*60
+	day := floorDiv(local, 86400)
+	return int(((day+3)%7 + 7) % 7), local - day*86400
+}
+
+func floorDiv(a, b int64) int64 {
+	quotient := a / b
+	if (a%b != 0) && ((a < 0) != (b < 0)) {
+		quotient--
+	}
+	return quotient
+}
+
+// contains is whether the instant `seconds` after the epoch falls inside the window.
+func (w *windowPredicate) contains(seconds int64) bool {
+	day, second := w.local(seconds)
+	from, to := w.from*60, w.to*60
+	if w.from > w.to {
+		return (w.days[day] && second >= from) || (w.days[(day+6)%7] && second < to)
+	}
+	return w.days[day] && from <= second && second < to
+}
+
+func (w *windowPredicate) String(path string) string {
+	at := path
+	if w.now {
+		at = "now"
+	}
+	days := []string{}
+	for index, listed := range w.days {
+		if listed {
+			days = append(days, windowDays[index])
+		}
+	}
+	offset := "Z"
+	if w.offset != 0 {
+		sign, magnitude := '+', w.offset
+		if magnitude < 0 {
+			sign, magnitude = '-', -magnitude
+		}
+		offset = fmt.Sprintf("%c%02d:%02d", sign, magnitude/60, magnitude%60)
+	}
+	return fmt.Sprintf("window(at %s, %s, %02d:%02d-%02d:%02d, %s)", at, strings.Join(days, " "), w.from/60, w.from%60, w.to/60, w.to%60, offset)
 }
 
 // operand is one side of a comparison: a fact to look up, a constant, or one fact moved by a
@@ -214,6 +281,8 @@ func (p predicate) String() string {
 			rendered += " by " + p.key
 		}
 		return rendered + " as " + p.keyKind
+	case "window":
+		return p.window.String(p.path)
 	default:
 		return p.kind
 	}
@@ -397,9 +466,129 @@ func fromEntry(key string, value any, binders []string) (predicate, error) {
 			}
 		}
 		return parseConstraint(key, value, binders)
+	case "window":
+		// A mapping under `window` carrying `at` is a calendar window; any other is a constraint on a
+		// fact named `window`, as it always was.
+		if fields, ok := value.(map[string]any); ok {
+			if _, window := fields["at"]; window {
+				return parseWindow(fields)
+			}
+		}
+		return parseConstraint(key, value, binders)
 	default:
 		return parseConstraint(key, value, binders)
 	}
+}
+
+// parseWindow reads `{window: {at, days, from, to, offset}}` as Rust's
+// `CalendarWindow::parse_mapping` does, refusing what it refuses: another key, a missing one, a
+// named time zone, an offset that is not `Z` or `±HH:MM` within 14 hours, a time that is not quoted
+// `HH:MM`, `from` equal to `to`, `to` 00:00, no day, a day twice or a day not spelled `mon` to `sun`.
+func parseWindow(fields map[string]any) (predicate, error) {
+	refuse := func(reason string) (predicate, error) {
+		return predicate{}, fmt.Errorf("window: %s", reason)
+	}
+	for key := range fields {
+		switch key {
+		case "zone", "tz", "timezone", "time_zone":
+			return refuse(fmt.Sprintf("`%s` names a time zone, and a calendar window takes a fixed offset", key))
+		case "at", "days", "from", "to", "offset":
+		default:
+			return refuse(fmt.Sprintf("a window takes `at`, `days`, `from`, `to` and `offset`, and nothing else; `%s` is none of them", key))
+		}
+	}
+	for _, key := range []string{"at", "days", "from", "to", "offset"} {
+		if _, ok := fields[key]; !ok {
+			return refuse(fmt.Sprintf("a window takes `%s`, and this one has none", key))
+		}
+	}
+	window := &windowPredicate{}
+	path := ""
+	at, ok := fields["at"].(string)
+	switch {
+	case !ok:
+		return refuse("`at` is `now` or the fact path of a Timestamp")
+	case at == "now":
+		window.now = true
+	case factPath.MatchString(at):
+		path = at
+	default:
+		return refuse("`at` is `now` or the fact path of a Timestamp")
+	}
+	days, ok := fields["days"].([]any)
+	if !ok || len(days) == 0 {
+		return refuse("`days` lists at least one of `mon` to `sun`")
+	}
+	for _, day := range days {
+		name, _ := day.(string)
+		index := -1
+		for candidate, spelled := range windowDays {
+			if spelled == name {
+				index = candidate
+			}
+		}
+		if index < 0 {
+			return refuse(fmt.Sprintf("`%v` is no day", day))
+		}
+		if window.days[index] {
+			return refuse(fmt.Sprintf("`days` lists `%s` twice", name))
+		}
+		window.days[index] = true
+	}
+	clock := func(key string) (int64, error) {
+		text, ok := fields[key].(string)
+		if !ok || len(text) != 5 || text[2] != ':' {
+			return 0, fmt.Errorf("window: `%s` is a time written as quoted text, \"HH:MM\"", key)
+		}
+		hours, hoursErr := strconv.Atoi(text[:2])
+		minutes, minutesErr := strconv.Atoi(text[3:])
+		if hoursErr != nil || minutesErr != nil || text[0] < '0' || text[0] > '9' || text[3] < '0' || text[3] > '9' || minutes > 59 || hours > 24 || (hours == 24 && minutes != 0) {
+			return 0, fmt.Errorf("window: `%s: %s` is no time of day", key, text)
+		}
+		return int64(hours*60 + minutes), nil
+	}
+	var err error
+	if window.from, err = clock("from"); err != nil {
+		return predicate{}, err
+	}
+	if window.to, err = clock("to"); err != nil {
+		return predicate{}, err
+	}
+	switch {
+	case window.from == 1440:
+		return refuse("`from` is at most 23:59")
+	case window.to == 0:
+		return refuse("`to` 00:00 is the end of the day, which a window writes `24:00`")
+	case window.from == window.to:
+		return refuse("`from` and `to` are equal: a window is either empty or the whole day")
+	}
+	offset, ok := fields["offset"].(string)
+	if !ok {
+		return refuse("`offset` is `Z` or `±HH:MM`")
+	}
+	if offset != "Z" {
+		valid := len(offset) == 6 && (offset[0] == '+' || offset[0] == '-') && offset[3] == ':'
+		for _, index := range []int{1, 2, 4, 5} {
+			valid = valid && offset[index] >= '0' && offset[index] <= '9'
+		}
+		if !valid {
+			return refuse(fmt.Sprintf("`offset: %s` is no fixed offset: write `Z` or `±HH:MM`; a named time zone is refused", offset))
+		}
+		hours, _ := strconv.Atoi(offset[1:3])
+		minutes, _ := strconv.Atoi(offset[4:6])
+		magnitude := int64(hours*60 + minutes)
+		switch {
+		case minutes > 59 || magnitude > 14*60:
+			return refuse(fmt.Sprintf("`offset: %s` is past 14:00 either way", offset))
+		case magnitude == 0 && offset[0] == '-':
+			return refuse("`offset: -00:00` is the unknown local offset; write `Z`")
+		}
+		if offset[0] == '-' {
+			magnitude = -magnitude
+		}
+		window.offset = magnitude
+	}
+	return predicate{kind: "window", path: path, window: window}, nil
 }
 
 // parseTaggedCompare reads the closed `{compare: …}` form of a comparison (suite/40,
@@ -1023,6 +1212,22 @@ func (p predicate) evaluate(source factSource) truth {
 		return p.quantify(source)
 	case "distinct":
 		return p.distinct(source)
+	case "window":
+		// `now` is the decision's current time, which a runner never reads: Unknown. A fact is
+		// read as the instant it names, never its spelling; text that names none is Unknown.
+		if p.window.now {
+			return truthUnknown
+		}
+		value, ok := readLeaf(source, p.path)
+		text, isText := value.(string)
+		if !ok || !isText {
+			return truthUnknown
+		}
+		at, ok := parseInstant(text)
+		if !ok {
+			return truthUnknown
+		}
+		return truthOf(p.window.contains(at.seconds))
 	default:
 		return truthUnknown
 	}

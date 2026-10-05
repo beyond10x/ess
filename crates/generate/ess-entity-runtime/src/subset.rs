@@ -94,6 +94,8 @@ pub(crate) const DISTINCT: &str = "distinct list members (`distinct: {in, as, by
 pub(crate) const UTF8_BYTES: &str = "the UTF-8 byte length of a text (`label.utf8_bytes`)";
 pub(crate) const ROW_SET: &str =
     "a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`)";
+pub(crate) const CALENDAR_WINDOW: &str =
+    "a calendar window (`window: {at, days, from, to, offset}`, ess/22)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -517,6 +519,15 @@ pub const CONSTRUCTS: &[Construct] = &[
         Needs::EntityCore("a query over the rows of an entity, read atomically in one decision"),
         &["tests/row_sets.rs::a_row_set_guard_and_a_filtered_read_are_refused_by_name"],
     ),
+    refused(
+        CALENDAR_WINDOW,
+        LoweringCode::CalendarWindowUnsupported,
+        Needs::EntityCore("a weekday and time-of-day operand at a fixed offset, and a clock operand for `at: now`"),
+        &[
+            "tests/calendar_window_guard.rs::a_guard_holding_an_input_to_a_calendar_window_is_refused_by_name",
+            "tests/calendar_window_guard.rs::a_guard_holding_now_to_a_calendar_window_is_refused_by_name",
+        ],
+    ),
 ];
 
 impl LoweringCode {
@@ -557,6 +568,7 @@ impl LoweringCode {
         Self::DistinctUnsupported,
         Self::Utf8BytesUnsupported,
         Self::RowSetUnsupported,
+        Self::CalendarWindowUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -786,6 +798,11 @@ impl LoweringCode {
                 "RowSetUnsupported",
                 ROW_SET,
                 "A branch reads the rows a selector selects, or one value of the one row it selects.",
+            ),
+            Self::CalendarWindowUnsupported => (
+                "CalendarWindowUnsupported",
+                CALENDAR_WINDOW,
+                "A guard holds an instant to a weekly window at a fixed offset.",
             ),
         }
     }

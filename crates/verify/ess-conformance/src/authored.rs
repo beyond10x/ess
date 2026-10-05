@@ -3310,6 +3310,25 @@ impl Compiler<'_> {
             });
         }
         if let Some(predicate) = &assertion.satisfies {
+            // A calendar window is admitted only in a command outcome's guard
+            // (`docs/design/calendar-window-guards.md`), never in a suite predicate: refused by name.
+            if let Some(window) = predicate.windows().first() {
+                self.refuse(Cause::InvalidPredicate {
+                    view: view.clone(),
+                    diagnostic: ess_domain::expression::ExpressionError {
+                        code: ess_primitives::error::ValidationCode::TypeMismatch,
+                        owner: format!("authored row {view}.satisfies"),
+                        path: window.at.fact_path().cloned(),
+                        segment: None,
+                        boundary: None,
+                        message: format!(
+                            "`{window}` is a calendar window, which is admitted only in a command \
+                             outcome's guard and never in a suite predicate such as `satisfies:`"
+                        ),
+                    },
+                });
+                return None;
+            }
             let checked = ess_compiler::expression::check_predicate(
                 self.ir,
                 fields,
