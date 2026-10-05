@@ -160,6 +160,7 @@ fn root(name: &str) -> PathBuf {
 
 /// A trap in the target after the runner received an issued secret, and a factory panic carrying
 /// one, end as a visible execution error with no report and no plaintext on any page channel.
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
 #[test]
 fn adversary_trap_and_factory_panic_never_disclose_or_report() {
     let root = root("trap");
@@ -186,6 +187,7 @@ fn adversary_trap_and_factory_panic_never_disclose_or_report() {
 /// An explicit Abort of a running target is the design's aborted/cleanup-unconfirmed terminal
 /// state (browser-conformance-product.md section 3 and 7). The page must not additionally raise
 /// a product `internal_failure` alert for a cancellation the user asked for.
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
 #[test]
 fn adversary_abort_of_a_running_target_is_not_reported_as_internal_failure() {
     let root = root("abort");
@@ -216,6 +218,7 @@ fn adversary_abort_of_a_running_target_is_not_reported_as_internal_failure() {
 
 /// A factory that fails with a typed product error ends as a visible execution error, with no
 /// report, no download and no issued plaintext on any channel (design section 8).
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
 #[test]
 fn adversary_factory_error_ends_visibly_without_report_or_disclosure() {
     let root = root("factory-error");
@@ -240,6 +243,7 @@ fn adversary_factory_error_ends_visibly_without_report_or_disclosure() {
 /// Start a run whose target never returns and poll the page until the product's own 300-second
 /// watchdog ends it. Each poll is its own short `BiDi` call: one call cannot outlive the session
 /// timeout, and the watchdog is the product's, not the harness's.
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
 #[test]
 fn adversary_watchdog_timeout_ends_cleanup_unconfirmed_without_report_or_disclosure() {
     const START: &str = r"(async()=>{
@@ -316,6 +320,7 @@ fn adversary_watchdog_timeout_ends_cleanup_unconfirmed_without_report_or_disclos
 /// After a run that issued fresh secrets completed in the worker, a Load of changed original
 /// bytes is refused and the old capability is gone. Every worker message on that path, the page
 /// and the `BiDi` log stay free of every issued plaintext.
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
 #[test]
 fn adversary_admission_refusal_after_an_executed_secret_discloses_nothing() {
     use ess_conformance::web_execution::{abi::load_request, bundle::hash};

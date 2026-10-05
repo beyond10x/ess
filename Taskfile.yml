@@ -94,6 +94,11 @@ tasks:
       # serde_json's `arbitrary_precision` is off, so these are different binaries.
       - cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} {{if eq .FEATURE_OFF "number-semantics"}}-E '{{.FEATURE_OFF_NUMBER_SEMANTICS}}'{{end}} --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst
 
+  test-browser-product:
+    desc: Run the browser-product Firefox tests a 30-minute CI shard cannot hold; run before tagging a release.
+    cmds:
+      - cargo test --locked -p ess-cli --test browser_response_conformance --test browser_product_adversary -- --include-ignored --test-threads=1
+
   # The shards extract into the checkout's own `target/`: test binaries bake
   # `env!("CARGO_BIN_EXE_…")` and `env!("CARGO_TARGET_TMPDIR")` in at build time, so extracted
   # anywhere else those paths name nothing. That holds only where the archive was built in
