@@ -199,7 +199,7 @@ fn relink(
                 })));
             }
             let fresh = super::super::fresh_identity(ir, command, &input, None)?;
-            Some(crate::now_offset::sent(command, &input, &fresh))
+            Some(crate::now_offset::sent(ir, command, &input, &fresh))
         }
     };
     let ScenarioStep::ExecuteCommand { input: sent, .. } = &mut steps[created] else {

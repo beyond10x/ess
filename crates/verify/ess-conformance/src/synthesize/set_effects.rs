@@ -778,7 +778,7 @@ fn set_scenario(
     let moves = matches!(set.effect, ResolvedEffect::Moves { .. });
     let views = observed(ir, entity, at(), (moves, &outcome.sets))?;
     let input = reach(ir, command, outcome, Distinction::PLAIN)?;
-    let supplied = supply(command, &input, None, None, &BTreeMap::new());
+    let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
     let selection = Selection {
         ir,
         command,
@@ -1167,6 +1167,7 @@ fn affects_segment(
         _ => reach(ir, command, outcome, Distinction::PLAIN)?,
     };
     let supplied = supply(
+        ir,
         command,
         &input,
         Some(subject),
@@ -1351,7 +1352,7 @@ fn zero_match(
     (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
 ) -> Result<(), RefusalCause> {
     let ir = models.arrangement;
-    let supplied = supply(command, input, None, None, &BTreeMap::new());
+    let supplied = supply(ir, command, input, None, None, &BTreeMap::new());
     invocation(
         models,
         command,

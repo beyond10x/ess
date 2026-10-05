@@ -331,6 +331,7 @@ pub(super) fn state_answered_rows(
         source.insert(view.into());
         let outcome_ref = OutcomeRef::new(command_ref.clone(), branch.name.clone());
         let supplied = supply(
+            ir,
             command,
             &input,
             reading(command, branch),
@@ -431,13 +432,35 @@ fn evaluate_row(
 ) -> Truth {
     let declared = ir.entity(entity);
     let mut fields = declared.fields.clone();
+    // A stored instant the predicate orders against the current time is held only as a
+    // `now_offset` its creator was sent, read at the reference instant the guards are decided at
+    // (ess/22, A3); a literal one would be decided at the reference and not at a run, so it is
+    // left undetermined, as a generated one is.
+    let now_roots: BTreeSet<&str> = crate::now_offset::now_compared(predicate)
+        .into_iter()
+        .filter(|(_, whole)| *whole)
+        .filter_map(|(path, _)| {
+            declared
+                .fields
+                .iter()
+                .find(|field| field.name == path.namespace())
+                .map(|field| field.name.as_str())
+        })
+        .collect();
     let mut values: BTreeMap<String, Node> = settled
         .iter()
-        .filter_map(|(name, determined)| {
-            determined
-                .value
+        .filter_map(|(name, determined)| match &determined.value {
+            ScenarioValue::NowOffset { seconds } => crate::now_offset::reference()
+                .plus_seconds(*seconds)
+                .map(|instant| (name.clone(), Node::Text(instant.to_rfc3339()))),
+            ScenarioValue::Literal { value }
+                if now_roots.contains(name.as_str()) && *value != Node::Null =>
+            {
+                None
+            }
+            other => other
                 .as_literal()
-                .map(|value| (name.clone(), value.clone()))
+                .map(|value| (name.clone(), value.clone())),
         })
         .collect();
     // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239): the
@@ -825,6 +848,13 @@ impl ess_primitives::facts::FactSource for RowAndInput<'_> {
             Some((input, rest)) => input.orders_text_by_bytes(&rest),
             None => self.row.orders_text_by_bytes(path),
         }
+    }
+
+    /// The reference instant every guard of the decision is decided at, a stored row's ordering
+    /// against `now` included (ess/22, A3): the instant each `now_offset` a row holds is read
+    /// from, as an input guard's is ([`crate::now_offset::reference`]).
+    fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
+        Some(crate::now_offset::reference())
     }
 }
 
@@ -3926,6 +3956,78 @@ fn unarrangeable(
     None
 }
 
+/// The refusal for a stored instant one of `predicates` orders against the current time that no
+/// arranging branch can carry (ess/22, `docs/design/expression-family-source22.md`, A3), naming the
+/// stored path; `None` where every such instant can be carried.
+///
+/// Synthesis decides a row's guards at the fixed reference instant, and only a value sent to the
+/// creator as a `now_offset` keeps that decision at a run: it travels through the creator's
+/// `sets:` into the row, resolved from the moment the run sends it. So such an instant is arranged
+/// only as a whole field some arranging branch writes from a whole input field without a
+/// conversion. One the implementation generates, a literal, a converted value, a member inside a
+/// structure and an element a quantifier binds cannot be, and are refused rather than decided at
+/// the reference: no clock value is fabricated.
+///
+/// `creating` counts only the branches that create the row: a stored instant every creator leaves
+/// to the implementation or to a literal may still be carried by a later branch writing it from its
+/// input, and where no arrangement reaches the branch that way the search's refusal is restated as
+/// this one.
+pub(super) fn now_uncarried(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+    creating: bool,
+) -> Option<RefusalCause> {
+    let declared = ir.entity(entity);
+    let all = ir.drivers();
+    let drivers: Vec<&Driver<'_>> = all
+        .get(entity)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|driver| !creating || matches!(driver.effect, ResolvedEffect::Creates))
+        .collect();
+    for predicate in predicates {
+        for (path, whole) in crate::now_offset::now_compared(predicate) {
+            let root = path.namespace();
+            if !declared.fields.iter().any(|field| field.name == root) {
+                continue;
+            }
+            let carried = whole
+                && drivers.iter().any(|driver| {
+                    driver.outcome.sets.iter().any(|set| {
+                        set.target == root
+                            && set.conversion.is_none()
+                            && matches!(set.value, ResolvedPayloadValue::InputField { .. })
+                    })
+                });
+            if !carried {
+                return Some(RefusalCause::NoWitness(WitnessGap {
+                    path: format!("{}.{path}", declared.name),
+                    type_ref: "Timestamp".into(),
+                    reason: "a stored instant ordered against the current time is arranged only \
+                             as a whole field an arranging branch writes from a whole input \
+                             field, sent as a now_offset; this one is generated, a literal, \
+                             converted or inside a value, and no clock value is fabricated",
+                }));
+            }
+        }
+    }
+    None
+}
+
+/// [`now_uncarried`] over every arranging branch, as the refusal; otherwise over the creators only,
+/// as the refusal a failed search is restated as.
+fn now_refusal(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+) -> Result<Option<RefusalCause>, RefusalCause> {
+    match now_uncarried(ir, entity, predicates, false) {
+        Some(refusal) => Err(refusal),
+        None => Ok(now_uncarried(ir, entity, predicates, true)),
+    }
+}
+
 /// Records, for a row no input selects `outcome` on, every input whose own stored and input guards
 /// hold of that row, and which sibling input-guarded refusal claimed it (beyond10x/ess#178). A row
 /// whose state no move of the command starts from is the wrong-state family's and is skipped.
@@ -4165,11 +4267,15 @@ pub(super) fn prepare(
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
     }
+    // A stored instant ordered against `now` no arranging branch carries is refused by name; one
+    // no creator carries names the search's refusal where no later branch reached it (A3).
+    let named = now_refusal(ir, entity, &hints)?;
     // Where a quantifier over a stored collection compares its elements with the input, the row
     // and input witness it element by element wherever some arrangement does ([`arranged_row`]),
     // and every refinement below keeps that.
     let ((arrangement, input), found) =
-        arranged_row(ir, command, outcome, entity, actors, &hints, &label)?;
+        arranged_row(ir, command, outcome, entity, actors, &hints, &label)
+            .map_err(|cause| named.unwrap_or(cause))?;
     let order = found.order();
     let strict = |node: &Arrangement, input: &BTreeMap<String, Node>| {
         witnesses_elements(ir, command, entity, &hints, node, input)
@@ -4561,7 +4667,7 @@ pub(super) fn absent(
         caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
-        input: supply(command, &input, None, None, &BTreeMap::new()),
+        input: supply(ir, command, &input, None, None, &BTreeMap::new()),
     }];
     let forbidden = not_emitted(ir, &[]);
     for event in &forbidden {
@@ -5596,6 +5702,7 @@ fn send_for_row(
     source.append(&mut arrangement.source);
     source.insert(view.into());
     let supplied = supply(
+        ir,
         command,
         input,
         Some(read),

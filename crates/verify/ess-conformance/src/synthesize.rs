@@ -3282,6 +3282,7 @@ fn run_as(
         outcome.subject.as_ref()
     };
     let supplied = supply(
+        ir,
         command,
         &input,
         reads,
@@ -3535,6 +3536,7 @@ fn run_state_refusal(
         reason,
     })?;
     let input = supply(
+        ir,
         command,
         &input,
         Some(subject),
@@ -4899,6 +4901,7 @@ fn invoke_created_with(
     })?;
     let mut invoked = invoke_with(ir, driver, None, actors, &setup.bound, input);
     let supplied = supply(
+        ir,
         driver.command,
         input,
         driver.outcome.subject.as_ref(),
@@ -4936,6 +4939,7 @@ fn invoke_with(
         });
     }
     let supplied = supply(
+        ir,
         driver.command,
         input,
         driver.outcome.subject.as_ref(),
@@ -5142,6 +5146,7 @@ fn instance_name(entity: &QualifiedName, distinction: Distinction) -> InstanceNa
 /// invariant 13 makes an identity opaque — so replacing them cannot invalidate the decision that
 /// chose the rest of the input.
 fn supply(
+    ir: &EssIr,
     command: &ResolvedCommand,
     input: &BTreeMap<String, Node>,
     subject: Option<&ResolvedSubject>,
@@ -5218,7 +5223,7 @@ fn supply(
                 _ => match bound.get(field) {
                     Some(owner) => ScenarioValue::instance(owner.clone()),
                     None => command.fixture_inputs.get(field).map_or_else(
-                        || crate::now_offset::sent(command, field, value),
+                        || crate::now_offset::sent(ir, command, field, value),
                         |fixture| ScenarioValue::Fixture {
                             fixture: fixture.clone(),
                         },
@@ -9683,6 +9688,7 @@ fn refused_here(
         steps.extend(preservation.before.iter().cloned());
     }
     let supplied = supply(
+        ir,
         attempt.command,
         &input,
         attempt.outcome.subject.as_ref(),
@@ -10003,7 +10009,7 @@ fn unknown_instance(
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
-    let supplied = supply(command, &input, None, None, &BTreeMap::new());
+    let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
     let mut steps = vec![
         ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
@@ -10790,6 +10796,7 @@ fn from_source(
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     let supplied = supply(
+        ir,
         command,
         &input,
         Some(subject),

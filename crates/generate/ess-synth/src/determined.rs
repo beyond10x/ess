@@ -885,8 +885,10 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
             };
             let (left_kind, right_kind) = (kind(left)?, kind(right)?);
             let compared = match (&left_kind, &right_kind) {
-                // An instant (ess/22, see `resolve`) is compared with another fact only: a
-                // literal instant has no generated reading here, and `now` none at all.
+                // An instant (ess/22, see `resolve`) is ordered against the current time on its
+                // right, read from the decision's one instant ([`reads_clock`], family F A3), or
+                // compared with another fact; a literal instant has no generated reading here.
+                (Some(Kind::Instant), None) if current_time(right, *op).is_some() => return Ok(()),
                 (Some(Kind::Instant), None) | (None, Some(Kind::Instant)) => {
                     return Err(format!("`{predicate}`, over a value no guard compares"))
                 }
@@ -968,6 +970,59 @@ fn offset_supported(
             "`{predicate}`, an offset over values no generated guard moves"
         )),
     }
+}
+
+/// The current-time operand an ordering's right-hand literal is, where it is one: `now`, moved by
+/// a whole number of seconds (ess/16 in an input guard; ess/22 in a stored row's predicate too).
+pub(crate) fn current_time(operand: &Operand, op: CompareOp) -> Option<CurrentTime> {
+    match operand {
+        Operand::Literal(FactValue::Text(text)) if op.needs_ordering() => CurrentTime::parse(text),
+        _ => None,
+    }
+}
+
+/// Whether a guard reads the current time anywhere in it.
+fn predicate_reads_clock(predicate: &Predicate) -> bool {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            children.iter().any(predicate_reads_clock)
+        }
+        Predicate::Not(child) => predicate_reads_clock(child),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            predicate_reads_clock(&quantified.body)
+        }
+        Predicate::Compare { op, right, .. } => current_time(right, *op).is_some(),
+        _ => false,
+    }
+}
+
+/// `true` where a generated behaviour of `command` reads the decision's one instant: some guard of
+/// it — an input guard, a `when_subject:` predicate or a `when_related:` predicate — orders an
+/// instant against the current time (`docs/design/expression-family-source22.md`, A3). The
+/// behaviour reads the command clock once, before any guard, and every such guard reads that one
+/// instant.
+pub(crate) fn reads_clock(command: &ResolvedCommand) -> bool {
+    command.outcomes.iter().any(|outcome| {
+        let (stored, input) = match &outcome.condition {
+            ResolvedCondition::When { predicate }
+            | ResolvedCondition::ExternalWhen { predicate, .. } => (None, Some(predicate)),
+            ResolvedCondition::SubjectState { predicate, .. }
+            | ResolvedCondition::StateChange { predicate, .. }
+            | ResolvedCondition::SubjectField { predicate, .. } => (None, predicate.as_ref()),
+            ResolvedCondition::SubjectPredicate { predicate, input } => {
+                (Some(predicate), input.as_ref())
+            }
+            ResolvedCondition::Related { test, input, .. } => (
+                match test {
+                    ResolvedRelatedTest::Holds { predicate } => Some(predicate),
+                    ResolvedRelatedTest::Absent => None,
+                },
+                input.as_ref(),
+            ),
+            _ => (None, None),
+        };
+        stored.into_iter().chain(input).any(predicate_reads_clock)
+    })
 }
 
 /// The literal an operand is, where it is one.

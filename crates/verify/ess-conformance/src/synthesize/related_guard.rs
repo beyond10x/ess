@@ -2474,7 +2474,7 @@ fn send_each_without_row(
     };
     let command_ref = super::CommandRef::new(command.name.clone());
     for other in others {
-        let supplied = super::supply(command, &other, None, None, bound);
+        let supplied = super::supply(ir, command, &other, None, None, bound);
         let expected = super::expect_error(ir, outcome, error, &supplied, &BTreeMap::new());
         steps.push(super::ScenarioStep::ExecuteCommand {
             command: command_ref.clone(),
@@ -2584,6 +2584,11 @@ fn with_row(
 ) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
     let guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
     let predicates = predicates(command);
+    // A related row's instant ordered against the current time is arranged only through its
+    // creator's input, as a `now_offset` (ess/22, A3); one nothing can carry is refused by name.
+    if let Some(refusal) = subject_fact::now_uncarried(ir, entity, &predicates, false) {
+        return Err(refusal);
+    }
     let first = block_start(base, distinction);
     // The rows beside this one (beyond10x/ess#283): their comparisons with the input are tried
     // too, and an input is taken only where each leaves the branch to answer.

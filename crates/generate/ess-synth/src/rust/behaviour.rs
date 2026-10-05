@@ -202,6 +202,9 @@ pub(super) struct Uses {
     /// Some behaviour asks the context about an `external:` branch.
     pub(super) external: bool,
     pub(super) externals: BTreeSet<String>,
+    /// Some behaviour reads the command clock: a guard of it orders an instant against the current
+    /// time (ess/22, family F A3).
+    pub(super) clock: bool,
     /// Helper functions used, by name.
     helpers: BTreeSet<&'static str>,
 }
@@ -375,7 +378,7 @@ fn storage_trait(
 
 /// The context port: only the methods some generated behaviour asks.
 fn context_trait(out: &mut String, uses: &Uses) {
-    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external {
+    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
         return;
     }
     out.push_str(
@@ -417,6 +420,17 @@ fn context_trait(out: &mut String, uses: &Uses) {
              test forces a branch by answering `true`\n    /// for it alone; a deployment asks \
              whatever decides it.\n    fn external(&mut self, command: ExternalCommand<'_>, outcome: \
              &'static str) -> bool;\n",
+        );
+    }
+    if uses.clock {
+        separate(out);
+        out.push_str(
+            "    /// The instant of the command decision being made now, or `None` where this \
+             context has no\n    /// clock. Read once per decision, before any guard: every \
+             guard ordering an instant against\n    /// the current time reads that one instant, \
+             and a decision that needs it and has none is\n    /// refused naming the command \
+             clock, never decided with another instant.\n    fn command_clock(&mut self) -> \
+             Option<crate::primitives::Timestamp>;\n",
         );
     }
     out.push_str("}\n");
@@ -493,6 +507,9 @@ fn helpers(out: &mut String, uses: &Uses) {
              Result<bool, UnmetObligation> {\n    truth.ok_or_else(|| undeclared(command))\n}\n",
         );
     }
+    if uses.helpers.contains("decided_at") {
+        out.push_str(DECIDED_AT);
+    }
     if uses.helpers.contains("all") {
         out.push_str(
             "\n/// Three-valued conjunction: false wins, then Unknown.\nfn all(truths: \
@@ -539,7 +556,12 @@ fn helpers(out: &mut String, uses: &Uses) {
     if uses.helpers.contains("compare_offset_instants") {
         out.push_str(COMPARE_OFFSET_INSTANTS);
     }
-    if uses.helpers.contains("compare_instants") || uses.helpers.contains("compare_offset_instants")
+    if uses.helpers.contains("compare_with_now") {
+        out.push_str(COMPARE_WITH_NOW);
+    }
+    if uses.helpers.contains("compare_instants")
+        || uses.helpers.contains("compare_offset_instants")
+        || uses.helpers.contains("compare_with_now")
     {
         out.push_str(INSTANT_OF);
     }
@@ -653,8 +675,49 @@ fn compare_offset_instants(
 }
 ";
 
-/// What [`COMPARE_INSTANTS`] and [`COMPARE_OFFSET_INSTANTS`] read an instant with, written once
-/// after whichever of them a guard uses.
+/// The call a guard ordering an instant against the current time is rendered as: the stored or
+/// input instant on the left, the decision's one instant moved by whole seconds on the right
+/// (`docs/design/expression-family-source22.md`, A3).
+const COMPARE_WITH_NOW_CALL: &str = "compare_with_now(";
+
+/// A guard's ordering of an instant against the decision's one instant (A3).
+const COMPARE_WITH_NOW: &str = "
+/// Orders an RFC 3339 rendering against the decision's one instant moved by `seconds`, by the
+/// instants each names; an unread value, no instant to read, or one that names no instant is
+/// Unknown — never ordered by its spelling, and never read from another clock.
+fn compare_with_now(
+    value: Option<String>,
+    now: &Result<Option<crate::primitives::Timestamp>, UnmetObligation>,
+    seconds: i64,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    let (at, nanos) = instant_of(&value?)?;
+    let (decided, decided_nanos) = instant_of(&now.as_ref().ok()?.as_ref()?.0)?;
+    Some(accepts((at, nanos).cmp(&(decided.checked_add(seconds)?, decided_nanos))))
+}
+";
+
+/// The decision of a guard reading the decision's one instant (A3).
+const DECIDED_AT: &str = "
+/// A guard's truth, where it has one. Unknown with no instant to read is the command clock this
+/// decision needs and its context did not supply: the context's own unavailable answer where it
+/// named one, otherwise the missing command clock, named as such. Any other Unknown selects no
+/// branch, so the model declares no outcome.
+fn decided_at(
+    truth: Option<bool>,
+    now: &Result<Option<crate::primitives::Timestamp>, UnmetObligation>,
+    command: &'static str,
+) -> Result<bool, UnmetObligation> {
+    match (truth, now) {
+        (Some(truth), _) => Ok(truth),
+        (None, Err(unavailable)) => Err(unavailable.clone()),
+        (None, Ok(None)) => Err(UnmetObligation { capability: \"command clock\", source: command }),
+        (None, Ok(Some(_))) => Err(undeclared(command)),
+    }
+}
+";
+
+/// The instant an RFC 3339 `date-time` names, shared by every instant comparison.
 const INSTANT_OF: &str = "
 /// The instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds.
 fn instant_of(text: &str) -> Option<(i64, u32)> {
@@ -1027,7 +1090,7 @@ struct Writer<'a> {
 
 /// A fallible companion preserves the existing context API and its implementations.
 fn fallible_context(out: &mut String, uses: &Uses) {
-    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external {
+    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
         return;
     }
     out.push_str("\n/// Context answers that may be unavailable, without fabricated values.\n/// Existing `Context` implementations receive the blanket adapter.\npub trait TryContext {\n");
@@ -1043,6 +1106,10 @@ fn fallible_context(out: &mut String, uses: &Uses) {
     if uses.external {
         out.push_str("/// Decides the named external branch, or names the unavailable answer.\nfn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation>;\n");
         adapter.push_str("fn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation> { Ok(Context::external(self, command, outcome)) }\n");
+    }
+    if uses.clock {
+        out.push_str("/// The decision's one instant, `None` where the context has no clock, or a named unavailable answer.\nfn try_command_clock(&mut self) -> Result<Option<crate::primitives::Timestamp>, UnmetObligation>;\n");
+        adapter.push_str("fn try_command_clock(&mut self) -> Result<Option<crate::primitives::Timestamp>, UnmetObligation> { Ok(Context::command_clock(self)) }\n");
     }
     out.push_str("}\n");
     adapter.push_str("}\n");
@@ -1100,6 +1167,17 @@ impl Writer<'_> {
     fn body(&mut self) -> String {
         let command = self.command;
         let mut out = String::new();
+        if determined::reads_clock(command) {
+            // The decision's one instant, read once at its edge before any guard or row is read
+            // (ess/22, family F A3); every guard ordering an instant against `now` reads it.
+            self.uses.clock = true;
+            self.bounds.context = true;
+            out.push_str(
+                "        // The decision's one instant: read once, before any guard, and read by \
+                 every guard that\n        // orders an instant against the current time.\n        \
+                 let now = self.ports.try_command_clock();\n",
+            );
+        }
         let related = determined::related(command);
         let orders =
             related.is_some() && determined::orders_present_related_refusal(self.ir, command);
@@ -1506,8 +1584,14 @@ impl Writer<'_> {
 
     /// `decided(<truth>, "<command>")?`.
     fn decided(&mut self, truth: &str) -> String {
-        self.uses.helpers.insert("decided");
         self.uses.helpers.insert("undeclared");
+        // A guard reading the decision's instant that is Unknown with no instant to read is the
+        // command clock missing, named as such (ess/22, family F A3).
+        if truth.contains(COMPARE_WITH_NOW_CALL) {
+            self.uses.helpers.insert("decided_at");
+            return format!("decided_at({truth}, &now, \"{}\")?", self.command.name);
+        }
+        self.uses.helpers.insert("decided");
         format!("decided({truth}, \"{}\")?", self.command.name)
     }
 
@@ -2220,6 +2304,7 @@ impl Guards<'_> {
     }
 
     /// A predicate as an `Option<bool>` expression: `None` is Unknown.
+    #[allow(clippy::too_many_lines)]
     fn predicate(&mut self, env: &Env<'_>, predicate: &Predicate) -> String {
         match predicate {
             Predicate::Always => "Some(true)".to_owned(),
@@ -2264,6 +2349,12 @@ impl Guards<'_> {
                         Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
+                let accepts = acceptor(*op);
+                if let (Kind::Instant, Some(current)) =
+                    (&kind, determined::current_time(right, *op))
+                {
+                    return self.with_now(env, left, &kind, accepts, current.offset_seconds());
+                }
                 let left = self.operand(env, left, &kind);
                 let right = self.operand(env, right, &kind);
                 if let Kind::Number(_) | Kind::Instant = kind {
@@ -2274,7 +2365,6 @@ impl Guards<'_> {
                         "compare_numbers"
                     };
                     self.uses.helpers.insert(helper);
-                    let accepts = acceptor(*op);
                     format!("{helper}({left}, {right}, core::cmp::Ordering::{accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
@@ -2320,6 +2410,24 @@ impl Guards<'_> {
             }
             _ => unreachable!("the plan admits only the guards `determined::supported` names"),
         }
+    }
+
+    /// An instant ordered against the current time: it reads the decision's one instant, `now`,
+    /// moved by the operand's whole `seconds` (ess/22, family F A3).
+    fn with_now(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        kind: &Kind,
+        accepts: &str,
+        seconds: i64,
+    ) -> String {
+        let left = self.operand(env, left, kind);
+        self.uses.helpers.insert("compare_with_now");
+        format!(
+            "{COMPARE_WITH_NOW_CALL}{left}, &now, {seconds}, \
+             core::cmp::Ordering::{accepts})"
+        )
     }
 
     /// Resolves a path the plan already checked.

@@ -153,6 +153,16 @@ pub trait TypeEnvironment {
             format: true,
         }
     }
+    /// The format from which this site admits the current-time operand where its format does not
+    /// yet, as a refusal of a well-formed ordering names it; `None` everywhere else.
+    ///
+    /// A `when_subject:` or `when_related:` predicate over a stored row admits it from `ess/22`
+    /// (`docs/design/expression-family-source22.md`, A3). Below that format such a site answers
+    /// [`Self::current_time`] as it did before — a site that does not admit the operand — so every
+    /// other use of the word keeps the refusal or the meaning it had there.
+    fn current_time_later(&self) -> Option<&'static str> {
+        None
+    }
     /// Whether a one-segment fact that no binder names may stand on the right of a comparison —
     /// the operand the canonical form writes as `{fact: …}`, which `ess/22` introduced
     /// (`docs/design/expression-family-source22.md`, A1).
@@ -202,7 +212,9 @@ pub trait TypeEnvironment {
 pub struct CurrentTimeAdmission {
     /// The site is a command outcome's input guard (a `when:`, alone or beside a held state, a
     /// state change, a stored field, a `when_subject:` or an external cause): the predicate over a
-    /// request's input, read while it is being handled, which is the moment `now` names.
+    /// request's input, read while it is being handled, which is the moment `now` names. From
+    /// `ess/22` it is also that outcome's `when_subject:` or `when_related:` predicate over a
+    /// stored row, read in the same decision (`docs/design/expression-family-source22.md`, A3).
     pub site: bool,
     /// The specification's format is `ess/16` or later.
     pub format: bool,
@@ -307,8 +319,20 @@ pub struct DomainEnvironment<'a> {
     fields: &'a [Field],
     params: Option<&'a [Field]>,
     namespace: &'static str,
-    current_time: bool,
+    current_time: CurrentTimeSite,
     caller: Option<&'a [Field]>,
+}
+
+/// Which predicate site a [`DomainEnvironment`] admits the current-time operand at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CurrentTimeSite {
+    /// None: an invariant, a view filter, a selection, a set-effect filter.
+    None,
+    /// A command outcome's input guard, from `ess/16`.
+    Input,
+    /// A command outcome's `when_subject:` or `when_related:` predicate over a stored row, from
+    /// `ess/22`.
+    Stored,
 }
 
 impl<'a> DomainEnvironment<'a> {
@@ -319,7 +343,7 @@ impl<'a> DomainEnvironment<'a> {
             fields,
             params: None,
             namespace: "param",
-            current_time: false,
+            current_time: CurrentTimeSite::None,
             caller: None,
         }
     }
@@ -348,7 +372,16 @@ impl<'a> DomainEnvironment<'a> {
     /// command outcome's input guard (`when:`) is checked in (beyond10x/ess#171).
     #[must_use]
     pub fn with_current_time(mut self) -> Self {
-        self.current_time = true;
+        self.current_time = CurrentTimeSite::Input;
+        self
+    }
+    /// Admit the current-time operand where the format does (`ess/22`): the environment a command
+    /// outcome's `when_subject:` or `when_related:` predicate over a stored row is checked in. The
+    /// decision reads every row with the one instant it reads its input guard with
+    /// (`docs/design/expression-family-source22.md`, A3).
+    #[must_use]
+    pub fn with_stored_current_time(mut self) -> Self {
+        self.current_time = CurrentTimeSite::Stored;
         self
     }
 }
@@ -390,13 +423,23 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
     }
     fn current_time(&self) -> CurrentTimeAdmission {
-        CurrentTimeAdmission {
-            site: self.current_time,
-            format: self
-                .registry
+        let at = |version: crate::system::FormatVersion| {
+            self.registry
                 .format()
-                .is_none_or(|format| format.major() >= crate::system::FormatVersion::V16.major()),
+                .is_none_or(|format| format.major() >= version.major())
+        };
+        CurrentTimeAdmission {
+            site: match self.current_time {
+                CurrentTimeSite::None => false,
+                CurrentTimeSite::Input => true,
+                CurrentTimeSite::Stored => at(crate::system::FormatVersion::V22),
+            },
+            format: at(crate::system::FormatVersion::V16),
         }
+    }
+    fn current_time_later(&self) -> Option<&'static str> {
+        (self.current_time == CurrentTimeSite::Stored && !self.current_time().site)
+            .then_some("ess/22")
     }
     type Type = TypeRef;
 
@@ -1446,6 +1489,33 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// A well-formed ordering against the current time in a stored row's predicate below the
+    /// format that admits it there (`ess/22`, A3), refused naming that format; `false` where the
+    /// site has no later format to name, and every other use keeps what it had.
+    fn stored_current_time_later(
+        &mut self,
+        expression: &Predicate,
+        path: &FactPath,
+        text: &str,
+    ) -> bool {
+        let Some(required) = self.environment.current_time_later() else {
+            return false;
+        };
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::UnsupportedFormatVersion,
+            Some(path),
+            None,
+            format!(
+                "`{expression}` orders the stored Timestamp `{path}` against the current time, \
+                 `{text}`, which a `when_subject:` or `when_related:` predicate requires \
+                 specification format {required} for; write `format: {required}` on the source \
+                 that declares the system"
+            ),
+        ));
+        true
+    }
+
     /// A text literal written as the current-time operand against the `Timestamp` `path`
     /// (beyond10x/ess#171, `ess/16`): recorded where it is admitted, refused by what it lacks
     /// elsewhere. `true` when this decided the literal; `false` leaves it to the rules every other
@@ -1464,6 +1534,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
         let admission = self.environment.current_time();
         let parsed = CurrentTime::parse(text).is_some();
+        if op.needs_ordering() && parsed && self.stored_current_time_later(expression, path, text) {
+            return true;
+        }
         let (code, message, hint) = match (op.needs_ordering(), parsed, admission) {
             (
                 true,
@@ -1505,9 +1578,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 format!(
                     "`{expression}` compares the Timestamp `{path}` with the current time, \
                      `{text}`, which is admitted only in a command outcome's `when:` over its \
-                     input: that is the one predicate read while a request is being handled, and \
-                     an invariant, a view filter, a selection or a `when_subject:` predicate over \
-                     stored fields is not"
+                     input and, from ess/22, in its `when_subject:` and `when_related:` \
+                     predicates: those are read while a request is being handled, and an \
+                     invariant, a view filter, a selection or a set-effect filter is not"
                 ),
                 "compare with a fixed RFC 3339 instant here, such as \"2020-01-01T00:00:00Z\", \
                  or move the rule into the command's `when:`"

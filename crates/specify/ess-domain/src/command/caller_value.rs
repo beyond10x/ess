@@ -381,7 +381,8 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 };
                 if reads_caller(predicate, &entity.fields) {
                     let at = site.clone().key("when_subject");
-                    let mut environment = DomainEnvironment::new(types, &entity.fields);
+                    let mut environment =
+                        DomainEnvironment::new(types, &entity.fields).with_stored_current_time();
                     if !entity
                         .fields
                         .iter()

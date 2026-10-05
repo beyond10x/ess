@@ -11,6 +11,13 @@
 //! row a view returns afterwards is required to hold exactly what was sent. The target is told
 //! nothing new; it receives an RFC 3339 instant like any other.
 //!
+//! From `ess/22` a `when_subject:` or `when_related:` predicate may order a stored `Timestamp`
+//! against the current time too (`docs/design/expression-family-source22.md`, A3). Such an instant
+//! is arranged through the input of the command that writes the row: the value synthesis chose for
+//! the row is sent to that command as a `now_offset` and travels through its `sets:` into the row,
+//! so the arrangement and every later assertion of the row refer to the one resolved instant, while
+//! the command under test decides by its own clock at its own moment.
+//!
 //! Witnesses sit a second from each boundary and never on it, on the side a latency cannot flip:
 //! `now - 61s` requires the refusal, `now - 59s` the accepting branch. A target that handles the
 //! request under a second after the runner resolved the value decides both as the suite requires.
@@ -22,7 +29,10 @@
 
 use std::collections::BTreeMap;
 
-use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedCondition};
+use ess_compiler::ir::{
+    EntityHandle, EssIr, ResolvedCommand, ResolvedCondition, ResolvedPayloadValue,
+    ResolvedRelatedTest,
+};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate};
@@ -68,6 +78,7 @@ pub fn earliest_run() -> Rfc3339Instant {
 
 /// One comparison of an input path with a literal instant: an ordering against the current-time
 /// operand, or a comparison with a fixed RFC 3339 instant.
+#[derive(Clone, Copy)]
 enum Bound {
     /// `now` moved by this many seconds.
     Now(i64),
@@ -91,15 +102,107 @@ struct Orderings {
 
 impl Orderings {
     /// The orderings `command`'s input guards write: the plain `when:` and the input half of every
-    /// other condition, which `ess-domain` admits the operand in.
-    fn of(command: &ResolvedCommand) -> Self {
+    /// other condition, which `ess-domain` admits the operand in — and, from `ess/22`, the
+    /// orderings a stored row's predicate writes over a field `command` writes from a whole input
+    /// field ([`Self::stored`]).
+    fn of(ir: &EssIr, command: &ResolvedCommand) -> Self {
         let mut found = Self::default();
         for outcome in &command.outcomes {
             if let Some(predicate) = input_predicate(&outcome.condition) {
                 found.walk(predicate, &mut Vec::new());
             }
         }
+        found.stored(ir, command);
         found
+    }
+
+    /// Every ordering of a stored field against the current time that a `when_subject:` or
+    /// `when_related:` predicate writes over a row `command` writes (ess/22,
+    /// `docs/design/expression-family-source22.md`, A3), with the fixed instants the same field is
+    /// compared with there, carried over to the input field `command` writes the field from.
+    ///
+    /// A stored instant is arranged by the creator's input: the value synthesis chose for the row
+    /// is sent to the creator as a `now_offset` and travels through its `sets:` into the row, so the
+    /// run resolves it from the moment of sending, as it resolves an input guard's. Only a whole
+    /// field written from a whole input field without a conversion is carried; anything else is
+    /// left to the arrangement, which refuses it by name.
+    fn stored(&mut self, ir: &EssIr, command: &ResolvedCommand) {
+        // A stored row's predicate may order the command's own input, read under `input.`,
+        // against the current time: that input is sent relative to the moment of sending too.
+        for outcome in &command.outcomes {
+            let (entity, predicate) = match &outcome.condition {
+                ResolvedCondition::SubjectPredicate { predicate, .. } => {
+                    match command.selection_subject(outcome) {
+                        Some(subject) => (&subject.entity, predicate),
+                        None => continue,
+                    }
+                }
+                ResolvedCondition::Related {
+                    entity,
+                    test: ResolvedRelatedTest::Holds { predicate },
+                    ..
+                } => (entity, predicate),
+                _ => continue,
+            };
+            let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
+            if ir
+                .entity(entity)
+                .fields
+                .iter()
+                .any(|field| field.name == namespace)
+            {
+                continue;
+            }
+            let mut over_row = Self::default();
+            over_row.walk(predicate, &mut Vec::new());
+            for (path, bounds) in over_row.bounds {
+                if let Some((root, rest)) = path.segments().split_first() {
+                    if root == namespace && !rest.is_empty() {
+                        self.bounds
+                            .entry(FactPath::from_segments(rest))
+                            .or_default()
+                            .extend(bounds);
+                    }
+                }
+            }
+        }
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            let writes: BTreeMap<&str, &str> = outcome
+                .sets
+                .iter()
+                .filter(|set| set.conversion.is_none())
+                .filter_map(|set| match &set.value {
+                    ResolvedPayloadValue::InputField { field, .. } => {
+                        Some((set.target.as_str(), field.as_str()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if writes.is_empty() {
+                continue;
+            }
+            for predicate in stored_predicates(ir, &subject.entity) {
+                let mut over_row = Self::default();
+                over_row.walk(predicate, &mut Vec::new());
+                for (path, bounds) in over_row.bounds {
+                    if path.segments().len() != 1
+                        || !bounds.iter().any(|bound| matches!(bound, Bound::Now(_)))
+                    {
+                        continue;
+                    }
+                    let Some(input) = writes.get(path.namespace()) else {
+                        continue;
+                    };
+                    let Ok(input) = FactPath::new(input) else {
+                        continue;
+                    };
+                    self.bounds.entry(input).or_default().extend(bounds);
+                }
+            }
+        }
     }
 
     /// Syntactic: `ess-domain` admits the operand only against a `Timestamp` in a command's input
@@ -239,6 +342,87 @@ impl Orderings {
     }
 }
 
+/// Every predicate over a stored row of `entity` a command decides by: each `when_subject:`
+/// predicate over it, and each identity-addressed `when_related:` predicate over it.
+pub(crate) fn stored_predicates<'ir>(
+    ir: &'ir EssIr,
+    entity: &EntityHandle,
+) -> impl Iterator<Item = &'ir Predicate> + 'ir {
+    let entity = entity.clone();
+    ir.commands().values().flat_map(move |command| {
+        let entity = entity.clone();
+        command
+            .outcomes
+            .iter()
+            .filter_map(move |outcome| match &outcome.condition {
+                ResolvedCondition::SubjectPredicate { predicate, .. }
+                    if command
+                        .selection_subject(outcome)
+                        .is_some_and(|subject| subject.entity == entity) =>
+                {
+                    Some(predicate)
+                }
+                ResolvedCondition::Related {
+                    entity: related,
+                    test: ResolvedRelatedTest::Holds { predicate },
+                    ..
+                } if *related == entity => Some(predicate),
+                _ => None,
+            })
+    })
+}
+
+/// Every path `predicate` orders against the current time, and whether a `now_offset` can carry
+/// the value it reads: a whole field can; a member inside a structure cannot, and an element a
+/// quantifier binds is reported as the collection it walks, which cannot either.
+pub(crate) fn now_compared(predicate: &Predicate) -> Vec<(FactPath, bool)> {
+    fn walk(
+        predicate: &Predicate,
+        binders: &mut Vec<(String, FactPath)>,
+        out: &mut Vec<(FactPath, bool)>,
+    ) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, binders, out);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, binders, out),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                binders.push((quantified.bind.clone(), quantified.over.clone()));
+                walk(&quantified.body, binders, out);
+                binders.pop();
+            }
+            Predicate::Compare {
+                left, op, right, ..
+            } if op.needs_ordering() => {
+                for (fact, literal) in [(left, right), (right, left)] {
+                    let (Operand::Fact(path), Operand::Literal(FactValue::Text(text))) =
+                        (fact, literal)
+                    else {
+                        continue;
+                    };
+                    if CurrentTime::parse(text).is_none() {
+                        continue;
+                    }
+                    match binders
+                        .iter()
+                        .rev()
+                        .find(|(bind, _)| bind == path.namespace())
+                    {
+                        Some((_, over)) => out.push((over.clone(), false)),
+                        None => out.push((path.clone(), path.segments().len() == 1)),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(predicate, &mut Vec::new(), &mut out);
+    out
+}
+
 /// The input half of a condition, as `ess-compiler`'s predicate sites read it.
 fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
     match condition {
@@ -262,12 +446,17 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
 /// the field against the current time and synthesis chose the instant from a `now` boundary or as
 /// the plain witness, a whole number of seconds from [`reference`]; the literal otherwise,
 /// including an instant chosen from a fixed instant's boundary.
-pub(crate) fn sent(command: &ResolvedCommand, field: &str, value: &Node) -> ScenarioValue {
+pub(crate) fn sent(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+    value: &Node,
+) -> ScenarioValue {
     let Node::Text(text) = value else {
         return ScenarioValue::literal(value.clone());
     };
     Rfc3339Instant::parse_rfc3339(text)
-        .filter(|instant| Orderings::of(command).chosen_from_now(field, *instant))
+        .filter(|instant| Orderings::of(ir, command).chosen_from_now(field, *instant))
         .and_then(|instant| instant.whole_seconds_since(reference()))
         .filter(|seconds| seconds.unsigned_abs() <= MAX_SECONDS.unsigned_abs())
         .map_or_else(
@@ -295,7 +484,7 @@ pub(crate) fn install(
             let Some(declared) = ir.commands().get(command.name()) else {
                 continue;
             };
-            let orderings = Orderings::of(declared);
+            let orderings = Orderings::of(ir, declared);
             if let Some(path) = orderings.uncarried() {
                 refused.push((
                     id.clone(),
@@ -314,7 +503,7 @@ pub(crate) fn install(
             }
             for (field, value) in input.iter_mut() {
                 if let ScenarioValue::Literal { value: literal } = value {
-                    *value = sent(declared, field, literal);
+                    *value = sent(ir, declared, field, literal);
                 }
             }
         }

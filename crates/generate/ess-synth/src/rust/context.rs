@@ -25,7 +25,7 @@ pub(super) fn unmet(ir: &EssIr, uses: &Uses) -> BTreeSet<String> {
 }
 
 pub(super) fn implementation(ir: &EssIr, layout: &Layout, uses: &Uses) -> String {
-    if uses.callers.is_empty() && uses.assigned.is_empty() && !uses.external {
+    if uses.callers.is_empty() && uses.assigned.is_empty() && !uses.external && !uses.clock {
         return String::new();
     }
     let types = Layout::crate_ident(layout.package());
@@ -54,6 +54,11 @@ pub(super) fn implementation(ir: &EssIr, layout: &Layout, uses: &Uses) -> String
     }
     if uses.external {
         let _ = writeln!(out, "fn try_external(&mut self, _command: {types}::behaviour::ExternalCommand<'_>, _outcome: &'static str) -> Result<bool, {types}::obligation::UnmetObligation> {{ Err({types}::behaviour::unmet_context(\"external branch answer\")) }}");
+    }
+    if uses.clock {
+        // The network entry is the deployment's host, and this is its explicit command clock: the
+        // host's UTC clock, read once per decision by the behaviour (ess/22, family F A3).
+        let _ = writeln!(out, "/// The host's UTC clock, the command clock this network entry supplies: read once per decision.\nfn try_command_clock(&mut self) -> Result<Option<{types}::primitives::Timestamp>, {types}::obligation::UnmetObligation> {{ Ok(Some({types}::primitives::Timestamp(time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).expect(\"UTC time formats\")))) }}");
     }
     out.push_str("}\n");
     out

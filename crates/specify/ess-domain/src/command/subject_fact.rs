@@ -432,7 +432,8 @@ fn check(
         return errors;
     }
     let readable = readable_fields(entity, admits_state(types));
-    let mut environment = DomainEnvironment::new(types, &readable);
+    // The decision reads the row with the one instant it reads its input with (ess/22, A3).
+    let mut environment = DomainEnvironment::new(types, &readable).with_stored_current_time();
     if admits_input && !declares_input_field(entity) {
         environment = environment.with_input(&command.input);
     }

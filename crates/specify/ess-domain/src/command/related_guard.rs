@@ -1234,7 +1234,9 @@ fn check(
         return errors;
     }
     let readable = readable_fields(entity, types);
-    let mut environment = DomainEnvironment::new(types, &readable);
+    // The decision reads the related row with the one instant it reads its input with (ess/22,
+    // A3).
+    let mut environment = DomainEnvironment::new(types, &readable).with_stored_current_time();
     let reads_input = !entity
         .fields
         .iter()

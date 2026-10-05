@@ -91,7 +91,8 @@ fn binary(
         let server = layout.server();
         let memory = emit.qualify(server, "NewMemoryPorts");
         let all = behaviour::requirements(&collector, seams, None);
-        let context = !all.callers.is_empty() || !all.generates.is_empty() || all.external;
+        let context =
+            !all.callers.is_empty() || !all.generates.is_empty() || all.external || all.clock;
         let generated = emit.qualify(
             layout.behaviour(),
             if context { "NewWithContext" } else { "New" },

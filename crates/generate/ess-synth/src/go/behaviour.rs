@@ -179,6 +179,9 @@ pub(super) struct Uses {
     /// Some method asks the context about an `external:` branch.
     pub(super) external: bool,
     pub(super) externals: BTreeSet<String>,
+    /// Some method reads the command clock: a guard of it orders an instant against the current
+    /// time (ess/22, family F A3).
+    pub(super) clock: bool,
     /// Helpers used, by name.
     helpers: BTreeSet<&'static str>,
 }
@@ -354,6 +357,8 @@ const HELPER_NAMES: &[&str] = &[
     "magnitudeOrder",
     "compareNumbers",
     "compareInstants",
+    "compareWithNow",
+    "clockUnmet",
     "isEq",
     "isNe",
     "isLt",
@@ -595,7 +600,7 @@ fn context_ports(
     external_commands: &BTreeMap<QualifiedName, String>,
 ) -> bool {
     external_command(out, emit, external_commands);
-    let context = context_interface(out, uses);
+    let context = context_interface(out, emit, uses);
     if context {
         out.push_str(&fallible_context(emit, uses));
     }
@@ -603,8 +608,8 @@ fn context_ports(
 }
 
 /// The context port: only the methods some generated method asks. `true` where there is one.
-fn context_interface(out: &mut String, uses: &Uses) -> bool {
-    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external {
+fn context_interface(out: &mut String, emit: &Emit<'_>, uses: &Uses) -> bool {
+    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
         return false;
     }
     out.push_str(
@@ -647,8 +652,54 @@ fn context_interface(out: &mut String, uses: &Uses) -> bool {
              asks whatever decides it.\n\tExternal(command ExternalCommand, outcome string) bool\n",
         );
     }
+    if uses.clock {
+        separate(out);
+        let _ = writeln!(
+            out,
+            "\t// CommandClock is the instant of the command decision being made now and true, or \
+             false\n\t// where this context has no clock. Read once per decision, before any \
+             guard: every guard\n\t// ordering an instant against the current time reads that \
+             one instant, and a decision\n\t// that needs it and has none is refused naming the \
+             command clock, never decided with\n\t// another instant.\n\tCommandClock() ({}, bool)",
+            clock_type(emit)
+        );
+    }
     out.push_str("}\n");
     true
+}
+
+/// The acceptor helper accepting what `op` accepts.
+fn acceptor(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Eq => "isEq",
+        CompareOp::Ne => "isNe",
+        CompareOp::Lt => "isLt",
+        CompareOp::Le => "isLe",
+        CompareOp::Gt => "isGt",
+        CompareOp::Ge => "isGe",
+    }
+}
+
+/// The call a guard ordering an instant against the current time is rendered as (A3).
+const COMPARE_WITH_NOW_CALL: &str = "compareWithNow(";
+
+/// The locals a method reading the command clock holds the decision's one instant in, and whether
+/// the clock gave one: the same names wherever the method's guards read them.
+fn clock_locals(reserved: &BTreeSet<String>) -> (String, String) {
+    (fresh(reserved, "now"), fresh(reserved, "clocked"))
+}
+
+/// The local holding the context's unavailable answer for the command clock, where it named one:
+/// an unavailable clock is no clock, and is answered only where a guard needs the instant.
+fn clock_unavailable(reserved: &BTreeSet<String>) -> String {
+    fresh(reserved, "clockUnavailable")
+}
+
+/// The Go type of the command clock's reading: the generated `Timestamp`.
+fn clock_type(emit: &Emit<'_>) -> String {
+    emit.go_type(&ResolvedTypeRef::Primitive {
+        name: Primitive::Timestamp,
+    })
 }
 
 /// An additive context path; old Ports{Context: ...} callers continue to work.
@@ -671,6 +722,11 @@ fn fallible_context(emit: &Emit<'_>, uses: &Uses) -> String {
             "\tTryExternal(command ExternalCommand, outcome string) (bool, {unmet})"
         );
         let _ = writeln!(helpers, "\n// readExternal prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) readExternal(command ExternalCommand, outcome string) (bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.TryExternal(command, outcome)\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\treturn false, UnmetContext(\"external branch answer\")\n\t}}\n\treturn {receiver}.ports.Context.External(command, outcome), nil\n}}");
+    }
+    if uses.clock {
+        let ty = clock_type(emit);
+        let _ = writeln!(out, "\tTryCommandClock() ({ty}, bool, {unmet})");
+        let _ = writeln!(helpers, "\n// readCommandClock prefers the fallible port, then adapts the legacy context. No context\n// is no clock: a decision that needs the instant is refused naming the command clock.\nfunc ({receiver} *Generated) readCommandClock() ({ty}, bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.TryCommandClock()\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\tvar zero {ty}\n\t\treturn zero, false, nil\n\t}}\n\tnow, clocked := {receiver}.ports.Context.CommandClock()\n\treturn now, clocked, nil\n}}");
     }
     out.push_str("}\n");
     out.push_str(&helpers);
@@ -819,6 +875,10 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
             "compareOffsetInstants",
             &["instant", "truth", "known", "compareNumbers"],
         ),
+        (
+            "compareWithNow",
+            &["instant", "truth", "known", "compareNumbers"],
+        ),
         ("numberKey", &["numberParts"]),
         ("numberOrder", &["numberParts"]),
         ("sumValues", &["numberParts", "fitsWide"]),
@@ -850,7 +910,10 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
             for import in *imports {
                 emit.import(import);
             }
-            let text = if *helper == "undeclared" || *helper == "unrepresentable" {
+            let text = if *helper == "undeclared"
+                || *helper == "unrepresentable"
+                || *helper == "clockUnmet"
+            {
                 text.replace("UNMET", &emit.unmet()).replace(
                     "OBLIGATION",
                     &emit.qualify(emit.layout.obligation(), "UnmetObligation"),
@@ -1065,6 +1128,37 @@ func compareInstants(left *string, right *string, accepts func(int) bool) truth 
 		order = 1
 	}
 	return known(accepts(order))
+}
+"),
+    ("compareWithNow", &[], "
+// compareWithNow orders an RFC 3339 rendering against the decision's one instant moved by seconds,
+// by the instants each names; an unread value, no instant to read, or one that names no instant is
+// unknown — never ordered by its spelling, and never read from another clock.
+func compareWithNow(value *string, now string, clocked bool, seconds int64, accepts func(int) bool) truth {
+	if value == nil || !clocked {
+		return unknown
+	}
+	valueSeconds, valueNanos, valueOk := instant(*value)
+	nowSeconds, nowNanos, nowOk := instant(now)
+	if !valueOk || !nowOk {
+		return unknown
+	}
+	nowSeconds += seconds
+	order := 0
+	switch {
+	case valueSeconds < nowSeconds, valueSeconds == nowSeconds && valueNanos < nowNanos:
+		order = -1
+	case valueSeconds > nowSeconds, valueSeconds == nowSeconds && valueNanos > nowNanos:
+		order = 1
+	}
+	return known(accepts(order))
+}
+"),
+    ("clockUnmet", &[], "
+// clockUnmet is the typed refusal of a decision that needs the command clock's instant where the
+// context supplied none.
+func clockUnmet(source string) UNMET {
+	return &OBLIGATION{Capability: \"command clock\", Source: source}
 }
 "),
     ("compareNumbers", &[], "
@@ -1665,6 +1759,31 @@ impl<'a> Writer<'a> {
     #[allow(clippy::too_many_lines)]
     fn body(&mut self) {
         let command = self.command;
+        if determined::reads_clock(command) {
+            // The decision's one instant, read once at its edge before any guard or row is read
+            // (ess/22, family F A3); every guard ordering an instant against `now` reads it.
+            self.uses.clock = true;
+            let (now, clocked) = clock_locals(self.reserved);
+            let unavailable = clock_unavailable(self.reserved);
+            self.lines.push(
+                "// The decision's one instant: read once, before any guard, and read by every \
+                 guard that",
+            );
+            self.lines.push(
+                "// orders an instant against the current time. An unavailable clock is no \
+                 clock, answered",
+            );
+            self.lines.push("// only where a guard needs the instant.");
+            self.lines.push(&format!(
+                "{now}, {clocked}, {unavailable} := {}.readCommandClock()",
+                self.receiver
+            ));
+            self.lines.open(&format!("if {unavailable} != nil {{"));
+            self.lines.push(&format!("{clocked} = false"));
+            self.lines.close("}");
+            self.lines
+                .push(&format!("_, _, _ = {now}, {clocked}, {unavailable}"));
+        }
         let related = determined::related(command);
         let orders =
             related.is_some() && determined::orders_present_related_refusal(self.ir, command);
@@ -1873,6 +1992,22 @@ impl<'a> Writer<'a> {
         let reading = self.temp("g");
         self.lines.push(&format!("{reading} := {truth}"));
         self.lines.open(&format!("if {reading} == unknown {{"));
+        // A guard reading the decision's instant that is unknown with no instant to read is the
+        // command clock missing, named as such (ess/22, family F A3).
+        if truth.contains(COMPARE_WITH_NOW_CALL) {
+            self.uses.helpers.insert("clockUnmet");
+            let (_, clocked) = clock_locals(self.reserved);
+            let unavailable = clock_unavailable(self.reserved);
+            self.lines.open(&format!("if !{clocked} {{"));
+            self.lines.open(&format!("if {unavailable} != nil {{"));
+            self.lines.push(&format!("return nil, {unavailable}"));
+            self.lines.close("}");
+            self.lines.push(&format!(
+                "return nil, clockUnmet({})",
+                go_string(&self.command.name.to_string())
+            ));
+            self.lines.close("}");
+        }
         self.lines.push(&format!(
             "return nil, undeclared({})",
             go_string(&self.command.name.to_string())
@@ -3034,18 +3169,6 @@ struct Guards<'a, 'w> {
     row_entity: Option<&'a ResolvedEntity>,
 }
 
-/// The generated acceptor of an ordering `op` decides by, one of the `isEq`…`isGe` helpers.
-fn acceptor(op: CompareOp) -> &'static str {
-    match op {
-        CompareOp::Eq => "isEq",
-        CompareOp::Ne => "isNe",
-        CompareOp::Lt => "isLt",
-        CompareOp::Le => "isLe",
-        CompareOp::Gt => "isGt",
-        CompareOp::Ge => "isGe",
-    }
-}
-
 impl Guards<'_, '_> {
     /// A fresh temporary named from `base`.
     fn temp(&mut self, base: &str) -> String {
@@ -3055,6 +3178,7 @@ impl Guards<'_, '_> {
     }
 
     /// A predicate as a `truth` expression.
+    #[allow(clippy::too_many_lines)]
     fn predicate(&mut self, env: &Env<'_>, predicate: &Predicate) -> String {
         self.uses.helpers.insert("truth");
         match predicate {
@@ -3100,6 +3224,12 @@ impl Guards<'_, '_> {
                         Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
+                let accepts = acceptor(*op);
+                if let (Kind::Instant, Some(current)) =
+                    (&kind, determined::current_time(right, *op))
+                {
+                    return self.with_now(env, left, &kind, accepts, current.offset_seconds());
+                }
                 let left = self.operand(env, left, &kind);
                 let right = self.operand(env, right, &kind);
                 if let Kind::Number(_) | Kind::Instant = kind {
@@ -3110,7 +3240,6 @@ impl Guards<'_, '_> {
                         "compareNumbers"
                     };
                     self.uses.helpers.insert(helper);
-                    let accepts = acceptor(*op);
                     format!("{helper}({left}, {right}, {accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
@@ -3186,6 +3315,22 @@ impl Guards<'_, '_> {
     fn resolve(&self, env: &Env<'_>, path: &ess_primitives::facts::FactPath) -> Resolved {
         determined::resolve(self.ir, env, path)
             .expect("the plan admitted only guards whose paths resolve")
+    }
+
+    /// An instant ordered against the current time: it reads the decision's one instant, moved by
+    /// the operand's whole `seconds` (ess/22, family F A3).
+    fn with_now(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        kind: &Kind,
+        accepts: &str,
+        seconds: i64,
+    ) -> String {
+        let left = self.operand(env, left, kind);
+        let (now, clocked) = clock_locals(self.reserved);
+        self.uses.helpers.insert("compareWithNow");
+        format!("{COMPARE_WITH_NOW_CALL}{left}, {now}.Value(), {clocked}, {seconds}, {accepts})")
     }
 
     /// One comparison operand, normalized to what the comparison reads.

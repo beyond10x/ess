@@ -667,11 +667,21 @@ when: {starts_at: {ge: now - 1h}}
 ```
 
 `now` goes on the right of `<`, `<=`, `>` or `>=`. The offset is written `<n>s`, `<n>m` or `<n>h`
-with no leading zero; there are no days, so write `24h`. Anywhere else — an invariant, a view
-filter, a selection, a `when_subject:` predicate over stored fields — the operand is refused,
-because none of those is the guard over a request's input read while it is handled. `==` and `!=`
-against `now` are refused too: an instant is ordered against the current time, never equated with
-it. Below `ess/16` the guard is refused as
+with no leading zero; there are no days, so write `24h`. From `format: ess/22` a `when_subject:`
+predicate and the predicate of an identity-addressed `when_related:` may order a stored
+`Timestamp` against `now` too:
+
+```text
+when_subject: {predicate: expires_at >= now - 1h}
+when_related: {via: input.member_id, predicate: banned_until > now + 30s}
+```
+
+One command decision reads one instant: its input guard and every row it reads are decided with
+it, over the rows as they were before the outcome. Below `ess/22` such a stored ordering is refused
+as `unsupported_format_version`, naming `ess/22`. Anywhere else — an invariant, a view filter, a
+selection, a set-effect filter — the operand is refused, because none of those is read while a
+request is handled. `==` and `!=` against `now` are refused too: an instant is ordered against the
+current time, never equated with it. Below `ess/16` the guard is refused as
 `unsupported_format_version`. Over a `String`, `now` is still the text `now`.
 
 A generated suite witnesses such a guard a second either side of its boundary and never on it:
@@ -686,6 +696,16 @@ replaces a whole input field. It also refuses a field ordered against `now` and 
 instant between `2019-12-30T23:59:59Z`, the instant it decides values at, and
 `2026-09-27T00:00:00Z`: that instant lies on the other side of `now` at every run. See
 `docs/design/current-time-guards.md`.
+
+A stored instant is arranged through the input of the command that writes it: the value chosen for
+the row is sent to that command as a `now_offset` and travels through its `sets:` into the row,
+and the row read back is required to hold it. A stored instant no such input carries — one the
+implementation generates, a literal, a converted value, a member inside a structure — is refused
+by name rather than decided at the reference instant. A target supplies the decision's instant
+from its own clock: the interpreter reads a command clock it is handed once per decision, and a
+generated Rust or Go behaviour reads its context's command clock once per decision. With no clock,
+a decision that needs one is refused naming the command clock, and every answer decided before it
+stands. See `docs/design/expression-family-source22.md`, A3.
 
 ## String operators
 

@@ -25,7 +25,7 @@ pub(super) fn unmet(ir: &EssIr, uses: &Uses) -> BTreeSet<String> {
 
 pub(super) fn implementation(emit: &Emit<'_>, uses: &Uses) -> String {
     let mut out = String::from("\n// MemoryContext supplies UUIDs and clock timestamps only.\ntype MemoryContext struct{}\n");
-    if uses.attributes.is_empty() && uses.assigned.is_empty() && !uses.external {
+    if uses.attributes.is_empty() && uses.assigned.is_empty() && !uses.external && !uses.clock {
         return out;
     }
     let unmet = emit.unmet();
@@ -58,6 +58,16 @@ pub(super) fn implementation(emit: &Emit<'_>, uses: &Uses) -> String {
     if uses.external {
         let command = emit.qualify(emit.layout.behaviour(), "ExternalCommand");
         let _ = writeln!(out, "\nfunc (*MemoryContext) TryExternal(_ {command}, _ string) (bool, {unmet}) {{\n\treturn false, {unavailable}(\"external branch answer\")\n}}");
+    }
+    if uses.clock {
+        // The network entry is the deployment's host, and this is its explicit command clock: the
+        // host's UTC clock, read once per decision by the behaviour (ess/22, family F A3).
+        let timestamp = ResolvedTypeRef::Primitive {
+            name: Primitive::Timestamp,
+        };
+        let ty = emit.go_type(&timestamp);
+        let now = value(emit, &timestamp, "");
+        let _ = writeln!(out, "\n// TryCommandClock is the host's UTC clock, the command clock this network entry supplies:\n// read once per decision.\nfunc (*MemoryContext) TryCommandClock() ({ty}, bool, {unmet}) {{\n\treturn {now}, true, nil\n}}");
     }
     if uses
         .assigned

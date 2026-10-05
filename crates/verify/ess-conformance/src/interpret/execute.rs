@@ -67,11 +67,9 @@ use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
-use ess_primitives::facts::FactValue;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Operand, Predicate, Truth};
-use ess_primitives::time::CurrentTime;
+use ess_primitives::predicate::{Predicate, Truth};
 
 use crate::input::{self, Completeness, TypedFacts};
 use crate::scenario::{CommandRef, ErrorRef, EventRef, OutcomeRef};
@@ -1234,58 +1232,19 @@ fn refused_by_input(
 /// which owes the response and the retained result themselves, is still refused both.
 fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermined> {
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
+    // Every guard reading the current time — an input guard, and a `when_subject:` or
+    // `when_related:` predicate over a stored row (ess/22, family F A3) — reads the decision's one
+    // instant ([`Context::now`]) over the pre-outcome snapshot; with none, the first such guard the
+    // precedence order reaches is Unknown.
     for outcome in &spec.outcomes {
-        let at = branch(spec, outcome);
-        // An input guard reading the current time reads the decision's one instant
-        // ([`Context::now`]). A stored-row predicate reading it is not executed yet.
-        match &outcome.condition {
-            ResolvedCondition::When { .. }
-            | ResolvedCondition::Otherwise
-            | ResolvedCondition::External { .. }
-            | ResolvedCondition::ExternalWhen { .. }
-            | ResolvedCondition::WrongState
-            | ResolvedCondition::UnknownInstance
-            | ResolvedCondition::ExistingInstance
-            | ResolvedCondition::InputAbsent
-            | ResolvedCondition::SubjectState { .. }
-            | ResolvedCondition::StateChange { .. }
-            | ResolvedCondition::SubjectField { .. } => {}
-            ResolvedCondition::SubjectPredicate { predicate, .. } => {
-                if reads_now(predicate) {
-                    return gap(format!("the current-time guard of `{at}`"));
-                }
-            }
-            ResolvedCondition::Related { test, .. } => {
-                if matches!(test, ResolvedRelatedTest::Holds { predicate } if reads_now(predicate))
-                {
-                    return gap(format!("the current-time guard of `{at}`"));
-                }
-            }
-        }
         if !recorded && (outcome.replays.is_some() || outcome.retains_result) {
-            return gap(format!("the retained result of `{at}`"));
+            return gap(format!(
+                "the retained result of `{}`",
+                branch(spec, outcome)
+            ));
         }
     }
     Ok(())
-}
-
-/// Whether a guard compares a fact with the current time (`now`, `now - 60s`; ess/16). An input
-/// guard reads the decision's instant; a stored-row predicate reading it is refused by name until
-/// its evaluation over stored rows exists (family F A3), because comparing the operand as text
-/// would take a branch the specification does not.
-fn reads_now(predicate: &Predicate) -> bool {
-    match predicate {
-        Predicate::All(children) | Predicate::Any(children) => children.iter().any(reads_now),
-        Predicate::Not(inner) => reads_now(inner),
-        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            reads_now(&quantified.body)
-        }
-        Predicate::Compare { left, right, .. } => [left, right].into_iter().any(|operand| {
-            matches!(operand, Operand::Literal(FactValue::Text(text))
-                if CurrentTime::parse(text).is_some())
-        }),
-        _ => false,
-    }
 }
 
 /// The step for a request no declared branch covers.

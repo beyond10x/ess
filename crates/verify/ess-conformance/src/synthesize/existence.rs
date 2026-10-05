@@ -386,6 +386,7 @@ fn arranged_refusal(
     models.mark(InvocationPhase::Arrange, &mut steps);
     steps.extend(preservation.before);
     let supplied = supply(
+        ir,
         command,
         &refused,
         Some(subject),
@@ -548,6 +549,7 @@ fn held_state_refusals(
             part.steps.extend(preservation.before);
             part.source.extend(preservation.source);
             let supplied = supply(
+                ir,
                 command,
                 &input,
                 Some(subject),
@@ -890,7 +892,7 @@ fn segment(
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
     let mut steps = setup.steps.clone();
     steps.extend(preservation.before.iter().cloned());
-    let supplied = supply(command, &second, None, None, &BTreeMap::new());
+    let supplied = supply(ir, command, &second, None, None, &BTreeMap::new());
     let expected = super::expect_error(ir, declared, error, &supplied, &setup.settled);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
