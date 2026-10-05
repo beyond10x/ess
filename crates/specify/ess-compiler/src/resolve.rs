@@ -330,6 +330,11 @@ pub mod codes {
         pub const NULL_COMPARISON: u16 = 17;
         /// An invariant reads a required field that a creating branch leaves with no value.
         pub const UNSET_AT_CREATION: u16 = 18;
+        /// A relation the specification relies on and does not declare, reported as a warning.
+        ///
+        /// The one class `ess specify validate` reports as `Severity::Warning` rather than refuses
+        /// (beyond10x/ess#437): the specification is legal and compiles as it did.
+        pub const IMPLIED_RELATION: u16 = 19;
 
         /// Every class, in code order.
         pub const ALL: &[u16] = &[
@@ -351,6 +356,7 @@ pub mod codes {
             ACCESSOR_RESOURCE,
             NULL_COMPARISON,
             UNSET_AT_CREATION,
+            IMPLIED_RELATION,
         ];
 
         /// One catalogue row. Private so every row is written the same way.
@@ -486,6 +492,13 @@ pub mod codes {
                 "An invariant reads a required field that a creating branch leaves with no value.",
                 "Set the field with a `sets:` entry on the creating branch, or declare it \
                  `Optional<…>`.",
+            ),
+            doc(
+                IMPLIED_RELATION,
+                "IMPLIED_RELATION",
+                "A relation the specification relies on and does not declare, reported as a warning.",
+                "Declare the `references` relation the warning names, or the target's `owns`; a \
+                 warning leaves the exit status and the compiled model unchanged.",
             ),
         ];
     }
@@ -640,6 +653,14 @@ pub mod codes {
         /// creating outcome: the usual repair is a `sets:` entry there, the other is declaring the
         /// field `Optional<…>`, and the hint names both.
         CREATION_LEAVES_INVARIANT_FIELD_UNSET = family::COMMAND, class::UNSET_AT_CREATION;
+
+        /// A stored entity field is typed as the named identity of exactly one entity, and no
+        /// `references` or `owns` relation carries it (beyond10x/ess#437). A warning.
+        STORED_FIELD_IMPLIES_RELATION = family::ENTITY, class::IMPLIED_RELATION;
+
+        /// A `when_related:` row is settled by its identity type alone, where a relation on the
+        /// field carrying it could say which entity it names (beyond10x/ess#437). A warning.
+        RELATED_GUARD_IMPLIES_RELATION = family::COMMAND, class::IMPLIED_RELATION;
     }
 
     /// `true` when two families are the same string.
@@ -1010,6 +1031,43 @@ fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
     diagnostics
 }
 
+/// `ess-domain`'s advisories about a specification that compiles, as warnings with codes and
+/// source lines (beyond10x/ess#437).
+///
+/// The warning sibling of [`diagnose_locating`]: the same family, class, span and hint, at
+/// [`Severity::Warning`]. Nothing here feeds [`compile`], so a specification compiles to the same
+/// bytes whether or not anybody asked for its warnings; `ess specify validate` asks.
+///
+/// Today one rule: a relation the model implies and does not declare —
+/// [`ess_domain::entity::implied_relations`] for a stored field, and
+/// [`ess_domain::command::related_guard::implied_relations`] for a `when_related:` row.
+pub fn advise_locating(
+    specification: &Specification,
+    sources: &SourceMap,
+    files: &[impl AsRef<str>],
+) -> Diagnostics {
+    let mut advisories = ess_domain::entity::implied_relations(specification.entities());
+    advisories.extend(ess_domain::command::related_guard::implied_relations(
+        specification,
+    ));
+    let bridged = bridge(&advisories, &Locator::new(sources, files));
+    let mut warnings = Diagnostics::new();
+    // `bridge` keeps one diagnostic per advisory, in order.
+    for (advisory, diagnostic) in advisories.as_slice().iter().zip(bridged.as_slice()) {
+        warnings.push(Diagnostic {
+            severity: Severity::Warning,
+            details: vec![Detail::Note {
+                text: format!(
+                    "`ess-domain` warns of this as `{}`; it is legal and compiles as written",
+                    advisory.code.as_str()
+                ),
+            }],
+            ..diagnostic.clone()
+        });
+    }
+    warnings
+}
+
 /// Whether a refusal keeps the `SPEC` family wherever it is located: a predicate that does not
 /// parse, which until beyond10x/ess#448 was refused while the document was read, before any
 /// construct existed to file it under.
@@ -1193,6 +1251,7 @@ pub fn class_of(code: ValidationCode) -> u16 {
         | Refused::UnknownPhase => codes::class::LIFECYCLE,
         Refused::InvariantReadsUnsetField => codes::class::UNSET_AT_CREATION,
         Refused::NullComparison => codes::class::NULL_COMPARISON,
+        Refused::ImpliedRelation => codes::class::IMPLIED_RELATION,
         _ => codes::class::OTHER,
     }
 }

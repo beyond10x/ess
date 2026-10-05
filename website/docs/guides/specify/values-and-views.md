@@ -169,6 +169,9 @@ value an obligation.
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
 
+### A relation the model only implies
+Where a stored field is typed as exactly one entity's named identity, or a `when_related:` row is settled by that type alone, and no relation says so, `ess specify validate` prints a warning, `ESS-ENTITY-019` (`ESS-COMMAND-019` for the guard): declare a `references` relation on the field, or the target's `owns`. A warning changes neither the exit status nor the compiled model; a bare primitive identity such as `Uuid`, and a row set selector (`entity`, `where`), are not linted ([how to read it](./layout-and-validation.md#a-relation-the-model-only-implies)).
+
 ## Read the caller's credential
 
 From source `ess/16` an actor may declare `attributes:`: typed fields its credential carries, such as

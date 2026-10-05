@@ -81,6 +81,49 @@ pub fn referenced_entity<'a>(
     via_type: &TypeRef,
     carrier: Option<(&EntitySpec, &str)>,
 ) -> Referenced<'a> {
+    if let Some(target) = declared_entity(spec, via_type, carrier) {
+        return Referenced::Entity(target);
+    }
+    let mut named: Vec<&EntitySpec> = spec
+        .entities()
+        .values()
+        .filter(|entity| entity.identity.type_ref == *via_type)
+        .collect();
+    match named.len() {
+        0 => Referenced::NoEntity,
+        1 => Referenced::Entity(named.remove(0)),
+        _ => Referenced::Ambiguous(named),
+    }
+}
+
+/// The entity a carrier's field names by its type alone (beyond10x/ess#437): the one
+/// [`referenced_entity`] settles, where no relation on the carrier settles it.
+///
+/// `None` where a declared relation says which entity it is, or where the type names no entity or
+/// several. The carrier is the field a relation could be declared on; a `via` with no carrier has
+/// nowhere to declare one, so it is not asked about.
+pub fn implied_entity<'a>(
+    spec: &'a Specification,
+    via_type: &TypeRef,
+    carrier: (&EntitySpec, &str),
+) -> Option<&'a EntitySpec> {
+    if declared_entity(spec, via_type, Some(carrier)).is_some() {
+        return None;
+    }
+    match referenced_entity(spec, via_type, Some(carrier)) {
+        Referenced::Entity(target) => Some(target),
+        Referenced::NoEntity | Referenced::Ambiguous(_) => None,
+    }
+}
+
+/// The entity a relation the carrier carries names, where its identity is exactly `via_type`: a
+/// `references` of cardinality `one` the carrier's entity declares on the field, or the `owns` of
+/// its owner through it.
+fn declared_entity<'a>(
+    spec: &'a Specification,
+    via_type: &TypeRef,
+    carrier: Option<(&EntitySpec, &str)>,
+) -> Option<&'a EntitySpec> {
     let declared = carrier.and_then(|(entity, field)| {
         entity.relations.iter().find(|relation| {
             relation.kind == RelationKind::References
@@ -100,21 +143,9 @@ pub fn referenced_entity<'a>(
             })
         })
     });
-    if let Some(target) = referenced.or(owner) {
-        if target.identity.type_ref == *via_type {
-            return Referenced::Entity(target);
-        }
-    }
-    let mut named: Vec<&EntitySpec> = spec
-        .entities()
-        .values()
-        .filter(|entity| entity.identity.type_ref == *via_type)
-        .collect();
-    match named.len() {
-        0 => Referenced::NoEntity,
-        1 => Referenced::Entity(named.remove(0)),
-        _ => Referenced::Ambiguous(named),
-    }
+    referenced
+        .or(owner)
+        .filter(|target| target.identity.type_ref == *via_type)
 }
 
 /// Reads every `{related: {via, field}}` of a document below `ess/16` back as the nested mapping it

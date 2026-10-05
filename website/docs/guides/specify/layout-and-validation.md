@@ -139,6 +139,57 @@ Every problem is reported in one run — one typo, two consequences, both stated
 `1`. The second is the more useful of the two: the branch says it creates an invoice and publishes
 its identity in an emitted event, and the misspelling took away the event that was carrying it.
 
+## How complete is it
+
+A valid specification can still leave things undecided. `ess specify validate --format json` (or
+`yaml`) answers how much, as data a merge can be gated on: when conformance synthesis owes
+anything, the report carries a `completeness` object. It is advisory: the exit status and the text
+output do not change, and the object is left out when nothing is owed.
+
+| Key | What it lists | `ess verify conform synthesize` prints it as |
+|---|---|---|
+| `unscenarioed` | each construct synthesis gives no scenario: `code` (such as `ESS-SYNTH-011`), `subject`, `scenario` | `refused:` |
+| `outside` | with `--component <name>`, each scenario that component's suite does not hold: `scenario`, `needs` | `outside:` |
+| `unanswered` | each question the specification does not answer, so no scenario is owed for it | `note:` |
+| `counts` | one count per list; `unscenarioed` equals the `refusal(s)` figure | the summary line |
+
+A model that conformance synthesis does not admit at all, such as one with a finite `Binary64`,
+carries `unsynthesizable` instead, with the `reason`, `path` and `detail` of each refusal. The billing
+example carries one `unanswered` note, about who enforces a grant. Gate on the codes, which are
+stable: for example, fail a pull request when `completeness.counts.unscenarioed` grows.
+
+Two things are deliberately not in it. What a target leaves to the implementation depends on the
+target: `ess generate synthesize` writes each capability's disposition, obligations included, to
+`plan.json` for the target it is asked for
+([the plan](../synthesize.md#the-plan-every-capability-gets-exactly-one-disposition)). And
+`UNMAPPED:` markers and open questions written as YAML comments are not the model: ESS reads no
+comments, so the `ess` plugin's author and retrofit skills report those.
+
+## A relation the model only implies
+
+Some specifications rely on a relation they never declare. `ess specify validate` warns about two
+exact shapes, on standard error before its verdict and as `warnings` in `--format json`, in the
+shape of a refusal's `diagnostics`:
+
+```text
+warning[ESS-ENTITY-019]: `probe.staff.Agent` stores `pool`, typed `probe.staff.PoolId`, which identifies `probe.staff.Pool`, and no relation declares that it names a `probe.staff.Pool`
+  `ess-domain` warns of this as `implied_relation`; it is legal and compiles as written
+  help: declare a `references` relation on `probe.staff.Agent`: `{name: pool, kind: references, target: probe.staff.Pool, cardinality: one, via: pool}`, or an `owns` relation on `probe.staff.Pool` carried by `pool`
+```
+
+- `ESS-ENTITY-019`: a stored field typed exactly, or `Optional<…>` or `List<…>` of, a declared
+  named type that identifies exactly one entity, with no `references` on it and no `owns` carried
+  by it. An aggregate view's group key is one of its source entity's fields, so it is reported
+  there.
+- `ESS-COMMAND-019`: a `when_related:` row whose `via` a field carries — a stored field of the
+  addressed subject, or the field the branch fills from the input — and that its named identity
+  type alone settled, because no relation on that field says which entity it names.
+
+Declaring the relation the hint names silences the warning. Neither shape changes the exit
+status, the compiled model or anything generated. A field or `via` typed as a bare primitive such
+as `Uuid` is not linted, because many entities share one and naming one would be a guess, and a
+row set selector (`when_related: {entity, where}`) is a query, not a relation.
+
 ## Check what you just wrote resolved
 
 `ess specify compile --path <specification> --format json` emits complete top-level `views`,

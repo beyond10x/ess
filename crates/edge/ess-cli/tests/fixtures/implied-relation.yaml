@@ -1,0 +1,60 @@
+format: ess/23
+system: probe
+version: v1
+domain: probe.staff
+summary: >-
+  Agents work in pools. An agent stores the identity of its pool, and no relation says that the
+  field names a pool (beyond10x/ess#437).
+types:
+  - {name: probe.staff.PoolId, kind: newtype, of: Uuid}
+  - {name: probe.staff.AgentId, kind: newtype, of: Uuid}
+entities:
+  - name: probe.staff.Pool
+    identity: {name: pool_id, type: probe.staff.PoolId}
+    fields:
+      - {name: open, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: probe.staff.Agent
+    identity: {name: agent_id, type: probe.staff.AgentId}
+    fields:
+      - {name: pool, type: probe.staff.PoolId}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - name: probe.staff.PoolAdded
+    fields:
+      - {name: pool_id, type: probe.staff.PoolId}
+  - name: probe.staff.AgentAdded
+    fields:
+      - {name: agent_id, type: probe.staff.AgentId}
+commands:
+  - name: probe.staff.AddPool
+    input:
+      - {name: open, type: Boolean}
+    outcomes:
+      - name: added
+        creates: probe.staff.Pool
+        instance: pool_id
+        emits: [probe.staff.PoolAdded]
+        payload:
+          probe.staff.PoolAdded: {pool_id: {generated: true}}
+        sets:
+          open: input.open
+  - name: probe.staff.AddAgent
+    input:
+      - {name: pool, type: probe.staff.PoolId}
+    outcomes:
+      - name: added
+        creates: probe.staff.Agent
+        instance: agent_id
+        emits: [probe.staff.AgentAdded]
+        payload:
+          probe.staff.AgentAdded: {agent_id: {generated: true}}
+        sets:
+          pool: input.pool
+views:
+  - name: probe.staff.Agents
+    source: probe.staff.Agent
+    consistency: read_your_writes
+    fields:
+      - {name: agent_id, type: probe.staff.AgentId}
+      - {name: pool, type: probe.staff.PoolId}

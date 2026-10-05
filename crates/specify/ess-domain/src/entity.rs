@@ -1506,6 +1506,77 @@ pub fn validate_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> Val
     errors
 }
 
+/// Every stored field that implies a relation no declaration carries (beyond10x/ess#437): a field
+/// typed exactly, or `Optional<…>` or `List<…>` of, a declared named type that is the identity of
+/// exactly one entity, which no `references` the field's entity declares on it, and no `owns`
+/// another entity declares over it through it, carries.
+///
+/// Advisory: each is a [`ValidationCode::ImpliedRelation`] the compiler reports as a warning, and
+/// nothing here refuses. It is the resolution [`crate::command::related_value::referenced_entity`]
+/// falls back on, inverted: where that settles which entity an identity names by its type alone,
+/// this says the specification never said so. A field typed as a bare primitive, such as `Uuid`,
+/// is never linted — many entities share one, and naming one would be a guess. The identity
+/// itself is not a stored field and is not linted either. An aggregate view groups by fields drawn
+/// from its source entity, so a group key that implies a relation is reported here, on the field.
+pub fn implied_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> ValidationErrors {
+    let mut advisories = ValidationErrors::new();
+    for holder in entities.values() {
+        for field in &holder.fields {
+            let (named, cardinality) = match &field.type_ref {
+                TypeRef::Named(name) => (name, Cardinality::One),
+                TypeRef::Optional(inner) => match inner.as_ref() {
+                    TypeRef::Named(name) => (name, Cardinality::One),
+                    _ => continue,
+                },
+                TypeRef::List(inner) => match inner.as_ref() {
+                    TypeRef::Named(name) => (name, Cardinality::Many),
+                    _ => continue,
+                },
+                _ => continue,
+            };
+            let mut identified = entities.values().filter(|entity| {
+                matches!(&entity.identity.type_ref, TypeRef::Named(identity) if identity == named)
+            });
+            let (Some(target), None) = (identified.next(), identified.next()) else {
+                continue;
+            };
+            let referenced = holder.relations.iter().any(|relation| {
+                relation.kind == RelationKind::References && relation.via == field.name
+            });
+            let owned = entities.values().any(|owner| {
+                owner.relations.iter().any(|relation| {
+                    relation.kind == RelationKind::Owns
+                        && relation.target == holder.name
+                        && relation.via == field.name
+                })
+            });
+            if referenced || owned {
+                continue;
+            }
+            advisories.push(
+                ValidationError::at(
+                    ConstructRef::new(ConstructKind::Entity, holder.name.to_string())
+                        .key("fields")
+                        .named(field.name.as_str()),
+                    ValidationCode::ImpliedRelation,
+                    format!(
+                        "`{}` stores `{}`, typed `{}`, which identifies `{}`, and no relation \
+                         declares that it names a `{}`",
+                        holder.name, field.name, field.type_ref, target.name, target.name
+                    ),
+                )
+                .with_hint(format!(
+                    "declare a `references` relation on `{}`: `{{name: {}, kind: references, \
+                     target: {}, cardinality: {cardinality}, via: {}}}`, or an `owns` relation on \
+                     `{}` carried by `{}`",
+                    holder.name, field.name, target.name, field.name, target.name, field.name
+                )),
+            );
+        }
+    }
+    advisories
+}
+
 /// A relation whose target nothing declares.
 fn undeclared_target(
     entities: &BTreeMap<QualifiedName, EntitySpec>,

@@ -266,6 +266,9 @@ beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused
 `ConstructKind` renders the plural head. The same #448 refusals of an entity's invariant and of a
 binding's `where` are typed sites, and add nothing here.
 
+`entity.rs` rose from 4 to 5 typed sites with beyond10x/ess#437: the advisory on a stored field that
+implies a relation is sited at `entity <name>.fields.<field>`, a warning rather than a refusal.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -274,7 +277,7 @@ binding.rs 35 0
 command.rs 13 55
 component.rs 15 9
 domain.rs 5 0
-entity.rs 17 4
+entity.rs 17 5
 expression.rs 1 0
 outcome_group.rs 17 0
 primitive_admission.rs 16 8
